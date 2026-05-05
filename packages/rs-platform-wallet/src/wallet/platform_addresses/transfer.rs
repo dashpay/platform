@@ -219,15 +219,14 @@ impl PlatformAddressWallet {
             min_input_amount,
         );
 
-        // Surface the "every funded address is also an output" case
-        // distinctly from generic insufficient-balance: when the
-        // candidate set is empty but at least one address satisfies
-        // the per-input minimum and is filtered out solely because it
-        // overlaps `outputs`, raise a typed
-        // `OnlyOutputAddressesFunded` error so callers don't have to
-        // parse downstream message strings.
+        // Surface the "no input is selectable" failure modes distinctly
+        // from generic insufficient-balance: when the candidate set is
+        // empty, classify why (funded-but-also-output addresses, or
+        // addresses with non-zero balance but each below the per-input
+        // minimum) and raise a typed `NoSelectableInputs` error so
+        // callers don't have to parse downstream message strings.
         if candidates.is_empty() {
-            if let Some(err) = detect_only_output_addresses_funded(
+            if let Some(err) = detect_no_selectable_inputs(
                 address_balances.iter().copied(),
                 outputs,
                 min_input_amount,
@@ -329,18 +328,24 @@ where
     candidates
 }
 
-/// Detect the "only output addresses are funded" failure mode and
-/// produce a typed [`PlatformWalletError::OnlyOutputAddressesFunded`].
+/// Detect the "no selectable inputs" failure modes and produce a
+/// typed [`PlatformWalletError::NoSelectableInputs`].
 ///
 /// Caller invokes this only when [`build_auto_select_candidates`]
-/// returned empty. We re-scan `address_balances` with the outputs
-/// filter dropped — any address satisfying the per-input minimum that
-/// also appears in `outputs` proves the candidate set was emptied
-/// solely by the input-equals-output filter, not by genuine
-/// insufficient balance. Returns `None` when no such address exists,
-/// letting the caller fall through to the generic insufficient-balance
-/// path inside the selector helpers.
-fn detect_only_output_addresses_funded<I>(
+/// returned empty. Re-scans `address_balances` and classifies why no
+/// candidate survived:
+///
+/// - `funded_outputs`: addresses whose balance reaches
+///   `min_input_amount` but which also appear as destination outputs
+///   (the protocol's input-equals-output filter removed them).
+/// - `sub_min_*`: addresses with non-zero balance but each below
+///   `min_input_amount`, so none can legally appear as an input even
+///   though aggregate funds exist.
+///
+/// Returns `None` only when neither category applies — i.e. no funded
+/// address exists at all — letting the caller fall through to the
+/// generic insufficient-balance path inside the selector helpers.
+fn detect_no_selectable_inputs<I>(
     address_balances: I,
     outputs: &BTreeMap<PlatformAddress, Credits>,
     min_input_amount: Credits,
@@ -348,16 +353,27 @@ fn detect_only_output_addresses_funded<I>(
 where
     I: IntoIterator<Item = (PlatformAddress, Credits)>,
 {
-    let funded_outputs: Vec<PlatformAddress> = address_balances
-        .into_iter()
-        .filter(|(addr, balance)| *balance >= min_input_amount && outputs.contains_key(addr))
-        .map(|(addr, _)| addr)
-        .collect();
-    if funded_outputs.is_empty() {
+    let mut funded_outputs: Vec<PlatformAddress> = Vec::new();
+    let mut sub_min_count: usize = 0;
+    let mut sub_min_aggregate: Credits = 0;
+    for (addr, balance) in address_balances {
+        if balance >= min_input_amount {
+            if outputs.contains_key(&addr) {
+                funded_outputs.push(addr);
+            }
+        } else if balance > 0 {
+            sub_min_count = sub_min_count.saturating_add(1);
+            sub_min_aggregate = sub_min_aggregate.saturating_add(balance);
+        }
+    }
+    if funded_outputs.is_empty() && sub_min_count == 0 {
         None
     } else {
-        Some(PlatformWalletError::OnlyOutputAddressesFunded {
-            outputs: funded_outputs,
+        Some(PlatformWalletError::NoSelectableInputs {
+            funded_outputs,
+            sub_min_count,
+            sub_min_aggregate,
+            min_input_amount,
         })
     }
 }
@@ -1610,12 +1626,12 @@ mod auto_select_tests {
         );
     }
 
-    /// CMT-014: when every funded address is also an output (the
-    /// `OnlyOutputAddressesFunded` failure mode), the detector
-    /// returns the typed error carrying the exact set of offending
-    /// addresses, not a generic insufficient-balance string.
+    /// CMT-005/014: when every funded address is also an output (the
+    /// input-equals-output failure mode), the detector returns
+    /// `NoSelectableInputs` with the exact set of offending addresses
+    /// in `funded_outputs` and zero sub-minimum entries.
     #[test]
-    fn detect_only_output_addresses_funded_typed_payload() {
+    fn detect_no_selectable_inputs_funded_outputs_payload() {
         let pv = LATEST_PLATFORM_VERSION;
         let min_input = pv.dpp.state_transitions.address_funds.min_input_amount;
 
@@ -1628,21 +1644,29 @@ mod auto_select_tests {
                 .collect();
         let address_balances = [(addr_a, min_input * 5), (addr_b, min_input * 4)];
 
-        let err = detect_only_output_addresses_funded(
+        let err = detect_no_selectable_inputs(
             address_balances.iter().copied(),
             &outputs,
             min_input,
         )
-        .expect("expected OnlyOutputAddressesFunded");
+        .expect("expected NoSelectableInputs");
         match &err {
-            PlatformWalletError::OnlyOutputAddressesFunded { outputs: payload } => {
+            PlatformWalletError::NoSelectableInputs {
+                funded_outputs,
+                sub_min_count,
+                sub_min_aggregate,
+                min_input_amount,
+            } => {
                 assert_eq!(
-                    payload.iter().copied().collect::<BTreeSet<_>>(),
+                    funded_outputs.iter().copied().collect::<BTreeSet<_>>(),
                     [addr_a, addr_b].iter().copied().collect::<BTreeSet<_>>(),
-                    "payload must list every funded output address",
+                    "funded_outputs must list every funded output address",
                 );
+                assert_eq!(*sub_min_count, 0, "no sub-min addresses in this fixture");
+                assert_eq!(*sub_min_aggregate, 0);
+                assert_eq!(*min_input_amount, min_input);
             }
-            other => panic!("expected OnlyOutputAddressesFunded, got {other:?}"),
+            other => panic!("expected NoSelectableInputs, got {other:?}"),
         }
         // QA-001: Display interpolates the payload so
         // error.to_string() carries it across boundaries that strip
@@ -1650,74 +1674,114 @@ mod auto_select_tests {
         let rendered = err.to_string();
         assert!(
             rendered.contains("funded addresses"),
-            "Display must explain the failure: {rendered}"
+            "Display must explain the funded-outputs case: {rendered}"
         );
     }
 
-    /// No funded addresses at all (every entry below the per-input
-    /// minimum) → detector returns `None`, letting the caller fall
-    /// through to the existing insufficient-balance error path inside
-    /// the selector helpers rather than misclassifying as "only
-    /// outputs funded".
+    /// CMT-005: every address holds non-zero balance but each is
+    /// below `min_input_amount` → detector reports the typed
+    /// `NoSelectableInputs` with the sub-min aggregate populated and
+    /// `funded_outputs` empty. Callers see a precise diagnostic
+    /// instead of the generic "available 0 credits" string.
     #[test]
-    fn detect_only_output_addresses_funded_returns_none_when_unfunded() {
+    fn detect_no_selectable_inputs_all_sub_min_aggregate() {
+        let pv = LATEST_PLATFORM_VERSION;
+        let min_input = pv.dpp.state_transitions.address_funds.min_input_amount;
+
+        let addr_a = p2pkh(0xA1);
+        let addr_b = p2pkh(0xB2);
+        let target = p2pkh(0xCC);
+        // Both below floor; aggregate is non-zero.
+        let address_balances = [(addr_a, min_input / 2), (addr_b, min_input / 4)];
+        let outputs = outputs_for(target, min_input);
+
+        let err = detect_no_selectable_inputs(
+            address_balances.iter().copied(),
+            &outputs,
+            min_input,
+        )
+        .expect("expected NoSelectableInputs for sub-min aggregate");
+        match &err {
+            PlatformWalletError::NoSelectableInputs {
+                funded_outputs,
+                sub_min_count,
+                sub_min_aggregate,
+                min_input_amount,
+            } => {
+                assert!(
+                    funded_outputs.is_empty(),
+                    "funded_outputs must be empty when no address reaches min_input_amount",
+                );
+                assert_eq!(*sub_min_count, 2);
+                assert_eq!(*sub_min_aggregate, min_input / 2 + min_input / 4);
+                assert_eq!(*min_input_amount, min_input);
+            }
+            other => panic!("expected NoSelectableInputs, got {other:?}"),
+        }
+        let rendered = err.to_string();
+        assert!(
+            rendered.contains("below the per-input minimum"),
+            "Display must explain the sub-min case: {rendered}"
+        );
+    }
+
+    /// No funds at all (every balance is zero) → detector returns
+    /// `None`, letting the caller fall through to the generic
+    /// insufficient-balance error path. The sub-min branch fires only
+    /// when at least one address has a strictly positive balance below
+    /// the floor — a zero-balance address carries no diagnostic value.
+    #[test]
+    fn detect_no_selectable_inputs_returns_none_when_no_funds() {
         let pv = LATEST_PLATFORM_VERSION;
         let min_input = pv.dpp.state_transitions.address_funds.min_input_amount;
 
         let addr_a = p2pkh(0xA1);
         let addr_b = p2pkh(0xB2);
         let outputs = outputs_for(addr_a, min_input);
-        // Both below floor — no funded addresses at all.
-        let address_balances = [(addr_a, min_input / 2), (addr_b, min_input / 4)];
+        let address_balances = [(addr_a, 0u64), (addr_b, 0u64)];
 
-        let err = detect_only_output_addresses_funded(
+        let err = detect_no_selectable_inputs(
             address_balances.iter().copied(),
             &outputs,
             min_input,
         );
         assert!(
             err.is_none(),
-            "no funded address means generic insufficient-balance, not the typed error"
+            "all-zero balances mean generic insufficient-balance, not the typed error"
         );
     }
 
-    /// At least one funded non-output candidate exists → detector
-    /// returns `None`, letting the regular candidate path proceed.
-    /// (Belt-and-braces: in production this branch is unreachable
-    /// because `auto_select_inputs` only consults the detector when
-    /// `build_auto_select_candidates` returned empty — but the helper
-    /// must still behave correctly when called in isolation.)
+    /// Both failure modes coexist: one funded-but-also-output address
+    /// AND one sub-min address. Detector must report both — the typed
+    /// error is the union, not a partition.
     #[test]
-    fn detect_only_output_addresses_funded_returns_none_when_non_output_funded() {
+    fn detect_no_selectable_inputs_combines_both_cases() {
         let pv = LATEST_PLATFORM_VERSION;
         let min_input = pv.dpp.state_transitions.address_funds.min_input_amount;
 
         let addr_out = p2pkh(0xC3);
-        let addr_in = p2pkh(0xD4);
+        let addr_dust = p2pkh(0xD4);
         let outputs = outputs_for(addr_out, min_input);
-        let address_balances = [(addr_out, min_input * 5), (addr_in, min_input * 3)];
+        let address_balances = [(addr_out, min_input * 5), (addr_dust, min_input / 3)];
 
-        // Both funded; addr_out IS an output, addr_in is NOT. The
-        // helper still scans for funded outputs and would produce a
-        // typed error — but the production flow only calls this when
-        // candidates is empty, which requires no funded non-output
-        // candidates to exist. Calling here with a funded non-output
-        // is a contract violation by the caller; the helper still
-        // returns the typed error because both filters look only at
-        // the outputs side. Document that the contract is "call only
-        // when candidates.is_empty()" by asserting the typed-error
-        // result with the funded output payload.
-        let err = detect_only_output_addresses_funded(
+        let err = detect_no_selectable_inputs(
             address_balances.iter().copied(),
             &outputs,
             min_input,
         )
-        .expect("typed error fires whenever a funded output exists");
+        .expect("expected NoSelectableInputs combining both cases");
         match err {
-            PlatformWalletError::OnlyOutputAddressesFunded { outputs: payload } => {
-                assert_eq!(payload, vec![addr_out]);
+            PlatformWalletError::NoSelectableInputs {
+                funded_outputs,
+                sub_min_count,
+                sub_min_aggregate,
+                min_input_amount: _,
+            } => {
+                assert_eq!(funded_outputs, vec![addr_out]);
+                assert_eq!(sub_min_count, 1);
+                assert_eq!(sub_min_aggregate, min_input / 3);
             }
-            other => panic!("expected OnlyOutputAddressesFunded, got {other:?}"),
+            other => panic!("expected NoSelectableInputs, got {other:?}"),
         }
     }
 

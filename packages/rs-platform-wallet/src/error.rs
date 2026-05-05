@@ -1,4 +1,5 @@
 use dpp::address_funds::PlatformAddress;
+use dpp::fee::Credits;
 use dpp::identifier::Identifier;
 use key_wallet::Network;
 
@@ -74,11 +75,28 @@ pub enum PlatformWalletError {
     AddressOperation(String),
 
     #[error(
-        "all funded addresses are also outputs of this transfer: {outputs:?}; \
-         either rotate to a fresh receive address or use \
-         InputSelection::Explicit and split the operation"
+        "no selectable inputs for auto-selection: \
+         funded addresses {funded_outputs:?} all also appear as outputs of this \
+         transfer (rotate to a fresh receive address or use \
+         InputSelection::Explicit and split the operation); \
+         {sub_min_count} other address(es) hold an aggregate balance of {sub_min_aggregate} \
+         credits but each is below the per-input minimum {min_input_amount} (consolidate \
+         funds onto a single address before retrying)"
     )]
-    OnlyOutputAddressesFunded { outputs: Vec<PlatformAddress> },
+    NoSelectableInputs {
+        /// Addresses whose balance reaches `min_input_amount` but which
+        /// also appear as destination outputs and are therefore filtered
+        /// out by the protocol's input-equals-output rule.
+        funded_outputs: Vec<PlatformAddress>,
+        /// Count of addresses whose individual balance is below
+        /// `min_input_amount` (aggregate is non-zero but no single
+        /// address can legally appear as an input).
+        sub_min_count: usize,
+        /// Aggregate balance stranded across `sub_min_count` addresses.
+        sub_min_aggregate: Credits,
+        /// Per-input minimum from the active platform version.
+        min_input_amount: Credits,
+    },
 
     #[error("Platform address not found in wallet: {0}")]
     AddressNotFound(String),
