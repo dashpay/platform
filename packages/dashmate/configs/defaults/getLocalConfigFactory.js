@@ -36,13 +36,13 @@ export default function getLocalConfigFactory(getBaseConfig) {
         zmq: {
           port: 49998,
         },
-        // Build the BIP158 cfilter index and advertise
-        // NODE_COMPACT_FILTERS to peers so BIP157 SPV clients
-        // (e.g. the swift-sdk iOS example app pointed at
-        // `local_seed`) can sync filter headers + filters against
-        // the local cluster. Local-only — other presets keep this
-        // off to avoid the disk + CPU overhead of the cfilter
-        // index on long mainnet/testnet chains.
+        // Mirrors the `core.compactFilters: true` set on the base
+        // config; restated explicitly here because the local
+        // preset is the canonical surface where dev BIP157 SPV
+        // clients (e.g. the swift-sdk iOS example app pointed at
+        // `local_seed`) need cfilter sync to work, and we want
+        // that requirement to survive any future flip of the base
+        // default.
         compactFilters: true,
       },
       dashmate: {

@@ -156,11 +156,12 @@ export default function getBaseConfigFactory() {
         },
         indexes: [],
         // BIP158 cfilter index + NODE_COMPACT_FILTERS service bit.
-        // Off by default — mainnet / testnet operators rarely want
-        // the disk + CPU overhead of the cfilter index. The `local`
-        // preset overrides this to `true` so dev SPV clients can
-        // sync filters against dashmate's seed node.
-        compactFilters: false,
+        // Default-on across every preset so dashmate-managed nodes
+        // are BIP157 SPV-friendly out of the box. Operators who
+        // can't spare the cfilter index disk overhead (~10% of
+        // chain size on mainnet) can flip this off via
+        // `dashmate config set core.compactFilters false`.
+        compactFilters: true,
       },
       platform: {
         quorumList: {
