@@ -155,3 +155,127 @@ impl Drive {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::util::storage_flags::StorageFlags;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::config::v0::DataContractConfigSettersV0;
+    use dpp::tests::fixtures::get_dashpay_contract_fixture;
+    use dpp::version::PlatformVersion;
+
+    /// Exercises the non-history branch of `add_contract_to_storage_v0` with
+    /// `estimated_costs_only_with_layer_info` populated (the else path at the
+    /// end of the function). This runs a direct stateless insert, which
+    /// produces `PathKeyElementSize` ops rather than `PathFixedSizeKeyRefElement`
+    /// ops. PR #3516 covers the apply=true (stateful) path extensively; this
+    /// targets the estimation branch of the non-history path directly.
+    ///
+    /// We invoke the public `insert_contract(apply=false)`, which drops into
+    /// `insert_contract_element_v0/v1 -> insert_contract_operations_v0` which
+    /// in turn invokes `add_contract_to_storage_v0` with
+    /// `estimated_costs_only_with_layer_info = Some(..)` — this is the exact
+    /// branch that was previously un-exercised for a non-history contract.
+    #[test]
+    fn test_add_contract_to_storage_v0_non_history_estimate_path() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        // default config has keeps_history=false and readonly=false
+        contract.config_mut().set_readonly(false);
+
+        let fee = drive
+            .insert_contract(
+                &contract,
+                BlockInfo::default(),
+                false, // apply=false drives the PathKeyElementSize estimation branch
+                None,
+                platform_version,
+            )
+            .expect("non-history estimate path should succeed");
+
+        assert!(fee.processing_fee > 0 || fee.storage_fee > 0);
+    }
+
+    /// Exercises the history-branch estimate path of `add_contract_to_storage_v0`:
+    /// - `keeps_history=true`
+    /// - `estimated_costs_only_with_layer_info = Some(..)`  (apply=false)
+    /// - `is_first_insert=true` (inside `insert_contract_operations_v0`)
+    /// This goes through `add_estimation_costs_for_levels_up_to_contract_document_type_excluded`
+    /// AND the `PathKeyElementSize` reference branch at the end of the history block.
+    #[test]
+    fn test_add_contract_to_storage_v0_history_first_insert_estimate_path() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        contract.config_mut().set_keeps_history(true);
+        contract.config_mut().set_readonly(false);
+
+        let fee = drive
+            .insert_contract(
+                &contract,
+                BlockInfo {
+                    time_ms: 500,
+                    height: 1,
+                    core_height: 1,
+                    epoch: Default::default(),
+                },
+                false, // estimation
+                None,
+                platform_version,
+            )
+            .expect("history+estimate first insert should succeed");
+
+        assert!(fee.processing_fee > 0 || fee.storage_fee > 0);
+    }
+
+    /// Also exercises the history branch, but with actual apply (not estimate).
+    /// `add_contract_to_storage_v0`'s history path with `is_first_insert=true`
+    /// creates the empty history tree and the reference-to-timestamp sibling.
+    /// An existing `test_apply_contract_with_history_keeps_history_insert_and_update`
+    /// test in mod.rs covers insert+update, but this test specifically targets
+    /// the borderline case of a contract with `readonly=true` + `keeps_history=true`,
+    /// which drives the `storage_flags = None` path at the top of `insert_contract_v0/v1`
+    /// combined with the history branch in `add_contract_to_storage_v0`. This
+    /// specific combination (readonly AND history) was not previously covered.
+    ///
+    /// NOTE: readonly=true requires can_be_deleted=false path; see the storage_flags
+    /// computation. This results in `element_flags = None` propagated into
+    /// `add_contract_to_storage_v0`, driving the `storage_flags.as_ref().map(..)`
+    /// None paths.
+    #[test]
+    fn test_add_contract_to_storage_v0_history_with_readonly_none_flags() {
+        use dpp::data_contract::config::v0::DataContractConfigSettersV0;
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        contract.config_mut().set_keeps_history(true);
+        contract.config_mut().set_readonly(true);
+        contract.config_mut().set_can_be_deleted(false);
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo {
+                    time_ms: 123,
+                    height: 1,
+                    core_height: 1,
+                    epoch: Default::default(),
+                },
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("history+readonly+none-flags insert should succeed");
+    }
+}

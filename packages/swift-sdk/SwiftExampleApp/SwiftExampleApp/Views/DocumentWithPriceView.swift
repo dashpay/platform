@@ -7,7 +7,8 @@ struct DocumentWithPriceView: View {
     let documentType: String
     let currentIdentityId: String? // Pass from parent to check ownership
 
-    @EnvironmentObject var appState: UnifiedAppState
+    @EnvironmentObject var appState: AppState
+    @EnvironmentObject var transitionState: TransitionState
     @State private var isLoading = false
     @State private var documentPrice: UInt64?
     @State private var documentExists = false
@@ -130,9 +131,9 @@ struct DocumentWithPriceView: View {
         isOwnedByCurrentIdentity = false
 
         // Also reset the app state
-        appState.transitionState.canPurchaseDocument = false
-        appState.transitionState.documentPrice = nil
-        appState.transitionState.documentPurchaseError = nil
+        transitionState.canPurchaseDocument = false
+        transitionState.documentPrice = nil
+        transitionState.documentPurchaseError = nil
 
         // Only proceed if we have all required fields
         guard !newValue.isEmpty,
@@ -148,8 +149,8 @@ struct DocumentWithPriceView: View {
         guard isValidDocumentId(newValue) else {
             errorMessage = "Invalid document ID format"
             // Make sure to reset purchase state for invalid IDs
-            appState.transitionState.canPurchaseDocument = false
-            appState.transitionState.documentPrice = nil
+            transitionState.canPurchaseDocument = false
+            transitionState.documentPrice = nil
             return
         }
 
@@ -265,21 +266,21 @@ struct DocumentWithPriceView: View {
 
             // Update transition state on main thread
             await MainActor.run {
-                appState.transitionState.documentPrice = documentPrice
+                transitionState.documentPrice = documentPrice
 
                 // Determine if document can be purchased
                 if isOwnedByCurrentIdentity {
-                    appState.transitionState.canPurchaseDocument = false
-                    appState.transitionState.documentPurchaseError = "You already own this document"
+                    transitionState.canPurchaseDocument = false
+                    transitionState.documentPurchaseError = "You already own this document"
                     print("DEBUG: Cannot purchase - already owned")
                 } else if documentPrice == nil || documentPrice == 0 {
-                    appState.transitionState.canPurchaseDocument = false
-                    appState.transitionState.documentPurchaseError = "This document is not for sale"
+                    transitionState.canPurchaseDocument = false
+                    transitionState.documentPurchaseError = "This document is not for sale"
                     print("DEBUG: Cannot purchase - no price or price is 0. Price: \(String(describing: documentPrice))")
                 } else {
-                    appState.transitionState.canPurchaseDocument = true
-                    appState.transitionState.documentPurchaseError = nil
-                    print("DEBUG: Can purchase! Price: \(documentPrice!), canPurchase: \(appState.transitionState.canPurchaseDocument)")
+                    transitionState.canPurchaseDocument = true
+                    transitionState.documentPurchaseError = nil
+                    print("DEBUG: Can purchase! Price: \(documentPrice!), canPurchase: \(transitionState.canPurchaseDocument)")
 
                     // Force the TransitionDetailView to update its button state
                     // by triggering an objectWillChange on the main app state
@@ -299,9 +300,9 @@ struct DocumentWithPriceView: View {
             documentPrice = nil
 
             // Clear transition state when document fetch fails
-            appState.transitionState.documentPrice = nil
-            appState.transitionState.canPurchaseDocument = false
-            appState.transitionState.documentPurchaseError = nil
+            transitionState.documentPrice = nil
+            transitionState.canPurchaseDocument = false
+            transitionState.documentPurchaseError = nil
         }
     }
 

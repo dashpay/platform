@@ -35,11 +35,6 @@ pub const ADDRESS_HASH_SIZE: usize = 20;
     PlatformSerialize,
     PlatformDeserialize,
 )]
-#[cfg_attr(
-    feature = "serde-conversion",
-    derive(Serialize, Deserialize),
-    serde(rename_all = "camelCase")
-)]
 #[platform_serialize(unversioned)]
 pub enum PlatformAddress {
     /// Pay to pubkey hash
@@ -50,6 +45,106 @@ pub enum PlatformAddress {
     /// - bech32m encoding type byte: 0x80
     /// - storage key type byte: 0x01
     P2sh([u8; 20]),
+}
+
+// Custom serde impls so JSON / `platform_value` output is the canonical 21-byte
+// address representation (hex string in human-readable formats, raw bytes in
+// binary formats) — matching the wasm wrapper's serde and what consumers expect.
+// The `Encode` / `Decode` derives above are the consensus binary format and are
+// untouched.
+#[cfg(feature = "serde-conversion")]
+impl Serialize for PlatformAddress {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let bytes = self.to_bytes();
+        if serializer.is_human_readable() {
+            serializer.serialize_str(&hex::encode(&bytes))
+        } else {
+            serializer.serialize_bytes(&bytes)
+        }
+    }
+}
+
+#[cfg(feature = "serde-conversion")]
+impl<'de> Deserialize<'de> for PlatformAddress {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::{self, Visitor};
+        use std::fmt;
+
+        /// Maximum on-the-wire byte length for a `PlatformAddress`: 1 type byte + 20 hash bytes.
+        const PLATFORM_ADDRESS_BYTE_LEN: usize = 21;
+
+        struct PlatformAddressVisitor;
+
+        impl<'de> Visitor<'de> for PlatformAddressVisitor {
+            type Value = PlatformAddress;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("PlatformAddress as 21 bytes or hex string")
+            }
+
+            fn visit_str<E: de::Error>(self, value: &str) -> Result<Self::Value, E> {
+                let bytes =
+                    hex::decode(value).map_err(|err| E::custom(format!("invalid hex: {}", err)))?;
+                if bytes.len() != PLATFORM_ADDRESS_BYTE_LEN {
+                    return Err(E::invalid_length(bytes.len(), &self));
+                }
+                PlatformAddress::from_bytes(&bytes).map_err(|err| E::custom(err.to_string()))
+            }
+
+            fn visit_string<E: de::Error>(self, value: String) -> Result<Self::Value, E> {
+                self.visit_str(&value)
+            }
+
+            fn visit_bytes<E: de::Error>(self, value: &[u8]) -> Result<Self::Value, E> {
+                if value.len() != PLATFORM_ADDRESS_BYTE_LEN {
+                    return Err(E::invalid_length(value.len(), &self));
+                }
+                PlatformAddress::from_bytes(value).map_err(|err| E::custom(err.to_string()))
+            }
+
+            fn visit_byte_buf<E: de::Error>(self, value: Vec<u8>) -> Result<Self::Value, E> {
+                self.visit_bytes(&value)
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: de::SeqAccess<'de>,
+            {
+                // Cap at PLATFORM_ADDRESS_BYTE_LEN + 1 so we can detect over-long input
+                // without allocating arbitrary memory from a malicious peer.
+                let mut bytes = Vec::with_capacity(PLATFORM_ADDRESS_BYTE_LEN);
+                while let Some(byte) = seq.next_element::<u8>()? {
+                    if bytes.len() >= PLATFORM_ADDRESS_BYTE_LEN {
+                        return Err(de::Error::invalid_length(
+                            bytes.len() + 1,
+                            &"at most 21 bytes",
+                        ));
+                    }
+                    bytes.push(byte);
+                }
+                if bytes.len() != PLATFORM_ADDRESS_BYTE_LEN {
+                    return Err(de::Error::invalid_length(bytes.len(), &self));
+                }
+                PlatformAddress::from_bytes(&bytes)
+                    .map_err(|err| de::Error::custom(err.to_string()))
+            }
+        }
+
+        // Dispatch on the format's self-description: human-readable formats (JSON, TOML)
+        // get the hex-string path; binary formats get raw bytes. This avoids the
+        // `deserialize_any` pitfall on non-self-describing transports.
+        if deserializer.is_human_readable() {
+            deserializer.deserialize_str(PlatformAddressVisitor)
+        } else {
+            deserializer.deserialize_bytes(PlatformAddressVisitor)
+        }
+    }
 }
 
 impl TryFrom<Address> for PlatformAddress {
@@ -105,8 +200,6 @@ impl PlatformAddress {
         match network {
             Network::Mainnet => PLATFORM_HRP_MAINNET,
             Network::Testnet | Network::Devnet | Network::Regtest => PLATFORM_HRP_TESTNET,
-            // For any other networks, default to testnet HRP
-            _ => PLATFORM_HRP_TESTNET,
         }
     }
 

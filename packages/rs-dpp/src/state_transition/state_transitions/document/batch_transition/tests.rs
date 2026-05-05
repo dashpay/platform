@@ -1009,7 +1009,7 @@ mod batch_transition_tests {
     fn document_batch_iterator_v0_yields_document_refs() {
         use crate::state_transition::batch_transition::accessors::DocumentBatchIterator;
 
-        let transitions = vec![make_delete_transition(1), make_delete_transition(2)];
+        let transitions = [make_delete_transition(1), make_delete_transition(2)];
         let mut iter = DocumentBatchIterator::V0(transitions.iter());
         let first = iter.next().unwrap();
         assert!(matches!(first, BatchedTransitionRef::Document(_)));
@@ -1024,7 +1024,7 @@ mod batch_transition_tests {
             DocumentBatchIterator, DocumentBatchV1Iterator,
         };
 
-        let transitions = vec![
+        let transitions = [
             BatchedTransition::Document(make_delete_transition(1)),
             BatchedTransition::Token(make_token_burn_transition(2, 100)),
         ];

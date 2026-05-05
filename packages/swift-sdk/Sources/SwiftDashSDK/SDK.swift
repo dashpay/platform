@@ -52,13 +52,10 @@ public final class SDK: @unchecked Sendable {
   public private(set) var handle: UnsafeMutablePointer<SDKHandle>?
 
   /// The network this SDK instance is connected to
-  public private(set) var network: Network = DashSDKNetwork(rawValue: 1) // Default to testnet
+  public private(set) var network: Network = .testnet
 
   /// Identities operations
   public lazy var identities = Identities(sdk: self)
-
-  /// Contracts operations
-  public lazy var contracts = Contracts(sdk: self)
 
   /// Address operations (balance, nonce queries)
   public lazy var addresses = Addresses(sdk: self)
@@ -155,7 +152,7 @@ public final class SDK: @unchecked Sendable {
   /// This is suitable for mobile applications where proof verification would be resource-intensive.
   public init(network: Network) throws {
     var config = DashSDKConfig()
-    config.network = network
+    config.network = network.ffiValue
     config.dapi_addresses = nil
     config.skip_asset_lock_proof_verification = false
     config.request_retry_count = 1
@@ -311,21 +308,6 @@ public final class SDK: @unchecked Sendable {
   //     return true
   // }
 
-  /// Get an identity by ID
-  @MainActor
-  public func getIdentity(id: String) async throws -> Identity? {
-    // This would call the C function to get identity
-    // For now, return nil as placeholder
-    return nil
-  }
-
-  /// Get a data contract by ID
-  @MainActor
-  public func getDataContract(id: String) async throws -> DataContract? {
-    // This would call the C function to get data contract
-    // For now, return nil as placeholder
-    return nil
-  }
 }
 
 /// SDK Status information
@@ -416,27 +398,6 @@ public class Identities {
 
   init(sdk: SDK) {
     self.sdk = sdk
-  }
-
-  /// Get an identity by ID
-  public func get(id: String) throws -> Identity? {
-    guard let sdk = sdk, sdk.handle != nil else {
-      throw SDKError.invalidState("SDK not initialized")
-    }
-
-    // TODO: Call C function to get identity
-    // For now, return nil
-    return nil
-  }
-
-  /// Get an identity by ID using Data
-  public func get(id: Data) throws -> Identity? {
-    guard id.count == 32 else {
-      throw SDKError.invalidParameter("Identity ID must be exactly 32 bytes")
-    }
-
-    // Convert Data to hex string for now
-    return try get(id: id.toHexString())
   }
 
   /// Get a single identity balance
@@ -593,25 +554,5 @@ public class Identities {
   // Helper function to convert bytes to hex string
   private func bytesToHex(_ bytes: [UInt8]) -> String {
     return bytes.map { String(format: "%02x", $0) }.joined()
-  }
-}
-
-/// Contracts operations
-public class Contracts {
-  private weak var sdk: SDK?
-
-  init(sdk: SDK) {
-    self.sdk = sdk
-  }
-
-  /// Get a data contract by ID
-  public func get(id: String) throws -> DataContract? {
-    guard let sdk = sdk, sdk.handle != nil else {
-      throw SDKError.invalidState("SDK not initialized")
-    }
-
-    // TODO: Call C function to get data contract
-    // For now, return nil
-    return nil
   }
 }

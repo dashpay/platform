@@ -438,6 +438,7 @@ pub fn get_value_from_json_path<'a>(
 }
 
 #[cfg(test)]
+#[allow(clippy::approx_constant)]
 mod test {
     use serde_json::json;
 

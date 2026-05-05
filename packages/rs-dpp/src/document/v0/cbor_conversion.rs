@@ -498,6 +498,130 @@ mod tests {
     //  Round-trip via from_map: construct map, parse, verify
     // ================================================================
 
+    // ================================================================
+    //  from_map missing $id / $ownerId errors
+    // ================================================================
+
+    #[test]
+    fn from_map_missing_id_fails_when_not_provided() {
+        // Only owner_id in the map, no explicit document_id — from_map should
+        // error on the ID extraction step.
+        let mut map = BTreeMap::new();
+        map.insert(
+            property_names::OWNER_ID.to_string(),
+            Value::Bytes32([4u8; 32]),
+        );
+
+        let result = DocumentV0::from_map(map, None, None);
+        assert!(
+            result.is_err(),
+            "from_map without $id or explicit document_id should fail"
+        );
+    }
+
+    #[test]
+    fn from_map_missing_owner_id_fails_when_not_provided() {
+        let mut map = BTreeMap::new();
+        map.insert(property_names::ID.to_string(), Value::Bytes32([3u8; 32]));
+
+        let result = DocumentV0::from_map(map, None, None);
+        assert!(
+            result.is_err(),
+            "from_map without $ownerId or explicit owner_id should fail"
+        );
+    }
+
+    // ================================================================
+    //  from_map: creator id parsing
+    // ================================================================
+
+    #[test]
+    fn from_map_extracts_creator_id_when_present_as_identifier() {
+        let creator = Identifier::new([0xCD; 32]);
+        let mut map = BTreeMap::new();
+        map.insert(property_names::ID.to_string(), Value::Bytes32([1u8; 32]));
+        map.insert(
+            property_names::OWNER_ID.to_string(),
+            Value::Bytes32([2u8; 32]),
+        );
+        map.insert(
+            property_names::CREATOR_ID.to_string(),
+            Value::Identifier(creator.to_buffer()),
+        );
+
+        let doc = DocumentV0::from_map(map, None, None).expect("from_map should succeed");
+        assert_eq!(doc.creator_id, Some(creator));
+    }
+
+    #[test]
+    fn from_map_creator_id_missing_stays_none() {
+        let mut map = BTreeMap::new();
+        map.insert(property_names::ID.to_string(), Value::Bytes32([1u8; 32]));
+        map.insert(
+            property_names::OWNER_ID.to_string(),
+            Value::Bytes32([2u8; 32]),
+        );
+
+        let doc = DocumentV0::from_map(map, None, None).expect("from_map should succeed");
+        assert_eq!(doc.creator_id, None);
+    }
+
+    // ================================================================
+    //  from_cbor: bytes starting with truncated ciborium data fail
+    // ================================================================
+
+    #[test]
+    fn from_cbor_rejects_empty_buffer() {
+        let platform_version = PlatformVersion::latest();
+        let result = DocumentV0::from_cbor(&[], None, None, platform_version);
+        assert!(
+            result.is_err(),
+            "from_cbor should fail on an empty input buffer"
+        );
+    }
+
+    #[test]
+    fn from_cbor_rejects_truncated_map_bytes() {
+        // A map header byte that claims to be a map but has no content.
+        let platform_version = PlatformVersion::latest();
+        let result = DocumentV0::from_cbor(&[0xA1], None, None, platform_version);
+        assert!(
+            result.is_err(),
+            "from_cbor should fail on a truncated map prefix"
+        );
+    }
+
+    // ================================================================
+    //  to_cbor round-trip preserves owner_id/creator_id etc
+    // ================================================================
+
+    #[test]
+    fn cbor_round_trip_via_to_cbor_and_from_cbor_preserves_fields() {
+        let platform_version = PlatformVersion::latest();
+        let doc = make_document_v0_with_timestamps();
+
+        let bytes = doc.to_cbor().expect("to_cbor succeeds");
+        let recovered = crate::document::Document::from_cbor(&bytes, None, None, platform_version)
+            .expect("from_cbor succeeds");
+        assert_eq!(doc.id, recovered.id());
+        assert_eq!(doc.owner_id, recovered.owner_id());
+        assert_eq!(doc.revision, recovered.revision());
+    }
+
+    // ================================================================
+    //  DocumentForCbor: TryFrom returns a CBOR-ready structure whose
+    //  `properties` map preserves user-defined keys.
+    // ================================================================
+
+    #[test]
+    fn document_for_cbor_preserves_user_properties() {
+        let doc = make_document_v0_with_timestamps();
+        let cbor = DocumentForCbor::try_from(doc.clone()).expect("try_from succeeds");
+        // "name" and "age" are part of the test fixture
+        assert!(cbor.properties.contains_key("name"));
+        assert!(cbor.properties.contains_key("age"));
+    }
+
     #[test]
     fn from_map_with_all_timestamp_variants() {
         let mut map = BTreeMap::new();

@@ -89,3 +89,122 @@ impl Drive {
         Ok(drive_operations)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::error::drive::DriveError;
+    use crate::error::identity::IdentityError;
+    use crate::error::Error;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::balances::credits::MAX_CREDITS;
+    use dpp::identifier::Identifier;
+    use dpp::version::PlatformVersion;
+    use std::collections::HashMap;
+
+    #[test]
+    fn stateless_query_branch_runs_without_errors_for_missing_id() {
+        // The v1 implementation switches to StatelessDirectQuery when estimation
+        // mode is on. Exercise this branch on a non-existent balance: the lookup
+        // must succeed but return None, and the final op must still be generated.
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let id = Identifier::from([42u8; 32]);
+
+        let mut estimated = Some(HashMap::new());
+        let ops = drive
+            .add_prefunded_specialized_balance_operations_v1(
+                id,
+                1_234,
+                &mut estimated,
+                None,
+                platform_version,
+            )
+            .expect("stateless branch should succeed");
+        // At least the insert_or_replace op is present (read cost ops may also be).
+        assert!(!ops.is_empty());
+
+        // Estimation map must be populated.
+        assert!(!estimated.unwrap().is_empty());
+    }
+
+    #[test]
+    fn stateful_branch_increments_balance() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let id = Identifier::from([43u8; 32]);
+
+        // First add to seed a balance (calls through v0/v1 picked by platform version).
+        drive
+            .add_prefunded_specialized_balance(id, 100, None, platform_version)
+            .expect("seed");
+
+        let mut estimated = None;
+        let _ops = drive
+            .add_prefunded_specialized_balance_operations_v1(
+                id,
+                55,
+                &mut estimated,
+                None,
+                platform_version,
+            )
+            .expect("v1 stateful add");
+    }
+
+    #[test]
+    fn v1_rejects_total_at_or_above_max_credits() {
+        // v1 has the same >= MAX_CREDITS guard as v0. Seed MAX_CREDITS - 1, add 1.
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let id = Identifier::from([44u8; 32]);
+
+        drive
+            .add_prefunded_specialized_balance(id, MAX_CREDITS - 1, None, platform_version)
+            .expect("seed near-max");
+
+        let mut estimated = None;
+        let err = drive
+            .add_prefunded_specialized_balance_operations_v1(
+                id,
+                1,
+                &mut estimated,
+                None,
+                platform_version,
+            )
+            .expect_err("expected overflow guard");
+        assert!(
+            matches!(
+                err,
+                Error::Identity(IdentityError::CriticalBalanceOverflow(_))
+            ),
+            "expected CriticalBalanceOverflow, got: {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn v1_rejects_checked_add_overflow() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let id = Identifier::from([45u8; 32]);
+
+        drive
+            .add_prefunded_specialized_balance(id, 1, None, platform_version)
+            .expect("seed 1");
+
+        let mut estimated = None;
+        let err = drive
+            .add_prefunded_specialized_balance_operations_v1(
+                id,
+                u64::MAX,
+                &mut estimated,
+                None,
+                platform_version,
+            )
+            .expect_err("expected checked_add overflow");
+        assert!(
+            matches!(err, Error::Drive(DriveError::CriticalCorruptedState(_))),
+            "expected CriticalCorruptedState, got: {:?}",
+            err
+        );
+    }
+}

@@ -10,4 +10,6 @@ crate-type = ["staticlib", "cdylib"]
 [dependencies]
 dash-spv-ffi = { workspace = true }
 key-wallet-ffi = { workspace = true }
+platform-wallet-ffi = { path = "../rs-platform-wallet-ffi" }
 rs-sdk-ffi = { path = "../rs-sdk-ffi" }
+dash-network = { workspace = true, features = ["ffi"] }

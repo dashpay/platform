@@ -82,6 +82,7 @@ impl<S: Signer<IdentityPublicKey>> PutDocument<S> for Document {
                 sdk.version(),
                 settings.state_transition_creation_options,
             )
+            .await?
         } else {
             let (document, document_state_transition_entropy) = document_state_transition_entropy
                 .map(|entropy| (self.clone(), entropy))
@@ -109,7 +110,8 @@ impl<S: Signer<IdentityPublicKey>> PutDocument<S> for Document {
                 sdk.version(),
                 settings.state_transition_creation_options,
             )
-        }?;
+            .await?
+        };
         ensure_valid_state_transition_structure(&transition, sdk.version())?;
 
         // response is empty for a broadcast, result comes from the stream wait for state transition result

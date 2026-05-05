@@ -11,6 +11,7 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, Plat
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
+#[cfg_attr(feature = "json-conversion", crate::serialization::json_safe_fields)]
 #[derive(
     Debug,
     Clone,
@@ -37,10 +38,6 @@ pub struct ShieldedTransferTransitionV0 {
     /// Halo2 proof bytes
     pub proof: Vec<u8>,
     /// RedPallas binding signature
-    #[cfg_attr(
-        feature = "serde-conversion",
-        serde(with = "crate::serialization::serde_bytes_64")
-    )]
     pub binding_signature: [u8; 64],
 }
 
@@ -79,5 +76,73 @@ mod tests {
         };
 
         test_round_trip(transition);
+    }
+
+    fn make_v0(actions: Vec<SerializedAction>) -> ShieldedTransferTransitionV0 {
+        ShieldedTransferTransitionV0 {
+            actions,
+            value_balance: 1000u64,
+            anchor: [7u8; 32],
+            proof: vec![8u8; 100],
+            binding_signature: [9u8; 64],
+        }
+    }
+
+    fn mk_action(nullifier_byte: u8) -> SerializedAction {
+        SerializedAction {
+            nullifier: [nullifier_byte; 32],
+            rk: [2u8; 32],
+            cmx: [3u8; 32],
+            encrypted_note: vec![4u8; 216],
+            cv_net: [5u8; 32],
+            spend_auth_sig: [6u8; 64],
+        }
+    }
+
+    #[test]
+    fn test_state_transition_type() {
+        use crate::state_transition::{StateTransitionLike, StateTransitionType};
+        let t = make_v0(vec![mk_action(1)]);
+        assert_eq!(
+            t.state_transition_type(),
+            StateTransitionType::ShieldedTransfer
+        );
+    }
+
+    #[test]
+    fn test_state_transition_protocol_version() {
+        use crate::state_transition::StateTransitionLike;
+        let t = make_v0(vec![mk_action(1)]);
+        assert_eq!(t.state_transition_protocol_version(), 0);
+    }
+
+    #[test]
+    fn test_state_transition_modified_data_ids_empty() {
+        use crate::state_transition::StateTransitionLike;
+        let t = make_v0(vec![mk_action(1)]);
+        assert!(t.modified_data_ids().is_empty());
+    }
+
+    #[test]
+    fn test_unique_identifiers_from_nullifiers() {
+        use crate::state_transition::StateTransitionLike;
+        let t = make_v0(vec![mk_action(0xAB), mk_action(0xCD)]);
+        let ids = t.unique_identifiers();
+        assert_eq!(ids.len(), 2);
+        assert_eq!(ids[0], hex::encode([0xABu8; 32]));
+        assert_eq!(ids[1], hex::encode([0xCDu8; 32]));
+    }
+
+    #[test]
+    fn test_unique_identifiers_no_actions() {
+        use crate::state_transition::StateTransitionLike;
+        let t = make_v0(vec![]);
+        assert!(t.unique_identifiers().is_empty());
+    }
+
+    #[test]
+    fn test_feature_versioned() {
+        use crate::state_transition::FeatureVersioned;
+        assert_eq!(make_v0(vec![mk_action(1)]).feature_version(), 0);
     }
 }

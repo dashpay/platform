@@ -29,7 +29,7 @@ use platform_version::version::PlatformVersion;
 
 impl AddressCreditWithdrawalTransitionMethodsV0 for AddressCreditWithdrawalTransition {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_inputs_with_signer<S: Signer<PlatformAddress>>(
+    async fn try_from_inputs_with_signer<S: Signer<PlatformAddress>>(
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         output: Option<(PlatformAddress, Credits)>,
         fee_strategy: AddressFundsFeeStrategy,
@@ -57,7 +57,8 @@ impl AddressCreditWithdrawalTransitionMethodsV0 for AddressCreditWithdrawalTrans
                     signer,
                     user_fee_increase,
                     platform_version,
-                )?,
+                )
+                .await?,
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "AddressCreditWithdrawalTransition::try_from_inputs_with_signer"

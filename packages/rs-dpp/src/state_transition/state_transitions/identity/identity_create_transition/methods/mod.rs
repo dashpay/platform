@@ -24,7 +24,7 @@ use crate::version::PlatformVersion;
 use crate::{BlsModule, ProtocolError};
 impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransition {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_identity_with_signer<S: Signer<IdentityPublicKey>>(
+    async fn try_from_identity_with_signer<S: Signer<IdentityPublicKey>>(
         identity: &Identity,
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &[u8],
@@ -46,7 +46,8 @@ impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransition {
                 bls,
                 user_fee_increase,
                 platform_version,
-            )?),
+            )
+            .await?),
             v => Err(ProtocolError::UnknownVersionError(format!(
                 "Unknown IdentityCreateTransition version for try_from_identity_with_signer {v}"
             ))),

@@ -261,6 +261,10 @@ GPBObjCClassDeclaration(GetIdentityTokenInfosResponse_GetIdentityTokenInfosRespo
 GPBObjCClassDeclaration(GetIdentityTokenInfosResponse_GetIdentityTokenInfosResponseV0_TokenIdentityInfoEntry);
 GPBObjCClassDeclaration(GetIdentityTokenInfosResponse_GetIdentityTokenInfosResponseV0_TokenInfoEntry);
 GPBObjCClassDeclaration(GetIdentityTokenInfosResponse_GetIdentityTokenInfosResponseV0_TokenInfos);
+GPBObjCClassDeclaration(GetMostRecentShieldedAnchorRequest);
+GPBObjCClassDeclaration(GetMostRecentShieldedAnchorRequest_GetMostRecentShieldedAnchorRequestV0);
+GPBObjCClassDeclaration(GetMostRecentShieldedAnchorResponse);
+GPBObjCClassDeclaration(GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0);
 GPBObjCClassDeclaration(GetNullifiersBranchStateRequest);
 GPBObjCClassDeclaration(GetNullifiersBranchStateRequest_GetNullifiersBranchStateRequestV0);
 GPBObjCClassDeclaration(GetNullifiersBranchStateResponse);
@@ -21576,6 +21580,7 @@ void GetRecentAddressBalanceChangesRequest_ClearVersionOneOfCase(GetRecentAddres
 
 @dynamic startHeight;
 @dynamic prove;
+@dynamic startHeightExclusive;
 
 typedef struct GetRecentAddressBalanceChangesRequest_GetRecentAddressBalanceChangesRequestV0__storage_ {
   uint32_t _has_storage_[1];
@@ -21603,6 +21608,15 @@ typedef struct GetRecentAddressBalanceChangesRequest_GetRecentAddressBalanceChan
         .number = GetRecentAddressBalanceChangesRequest_GetRecentAddressBalanceChangesRequestV0_FieldNumber_Prove,
         .hasIndex = 1,
         .offset = 2,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+      {
+        .name = "startHeightExclusive",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetRecentAddressBalanceChangesRequest_GetRecentAddressBalanceChangesRequestV0_FieldNumber_StartHeightExclusive,
+        .hasIndex = 3,
+        .offset = 4,  // Stored in _has_storage_ to save space.
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBool,
       },
@@ -22965,6 +22979,245 @@ typedef struct GetShieldedAnchorsResponse_GetShieldedAnchorsResponseV0_Anchors__
 
 @end
 
+#pragma mark - GetMostRecentShieldedAnchorRequest
+
+@implementation GetMostRecentShieldedAnchorRequest
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetMostRecentShieldedAnchorRequest__storage_ {
+  uint32_t _has_storage_[2];
+  GetMostRecentShieldedAnchorRequest_GetMostRecentShieldedAnchorRequestV0 *v0;
+} GetMostRecentShieldedAnchorRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetMostRecentShieldedAnchorRequest_GetMostRecentShieldedAnchorRequestV0),
+        .number = GetMostRecentShieldedAnchorRequest_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetMostRecentShieldedAnchorRequest__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetMostRecentShieldedAnchorRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetMostRecentShieldedAnchorRequest__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetMostRecentShieldedAnchorRequest_ClearVersionOneOfCase(GetMostRecentShieldedAnchorRequest *message) {
+  GPBDescriptor *descriptor = [GetMostRecentShieldedAnchorRequest descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetMostRecentShieldedAnchorRequest_GetMostRecentShieldedAnchorRequestV0
+
+@implementation GetMostRecentShieldedAnchorRequest_GetMostRecentShieldedAnchorRequestV0
+
+@dynamic prove;
+
+typedef struct GetMostRecentShieldedAnchorRequest_GetMostRecentShieldedAnchorRequestV0__storage_ {
+  uint32_t _has_storage_[1];
+} GetMostRecentShieldedAnchorRequest_GetMostRecentShieldedAnchorRequestV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "prove",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetMostRecentShieldedAnchorRequest_GetMostRecentShieldedAnchorRequestV0_FieldNumber_Prove,
+        .hasIndex = 0,
+        .offset = 1,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetMostRecentShieldedAnchorRequest_GetMostRecentShieldedAnchorRequestV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetMostRecentShieldedAnchorRequest_GetMostRecentShieldedAnchorRequestV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetMostRecentShieldedAnchorRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetMostRecentShieldedAnchorResponse
+
+@implementation GetMostRecentShieldedAnchorResponse
+
+@dynamic versionOneOfCase;
+@dynamic v0;
+
+typedef struct GetMostRecentShieldedAnchorResponse__storage_ {
+  uint32_t _has_storage_[2];
+  GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0 *v0;
+} GetMostRecentShieldedAnchorResponse__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "v0",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0),
+        .number = GetMostRecentShieldedAnchorResponse_FieldNumber_V0,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetMostRecentShieldedAnchorResponse__storage_, v0),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetMostRecentShieldedAnchorResponse class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetMostRecentShieldedAnchorResponse__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "version",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetMostRecentShieldedAnchorResponse_ClearVersionOneOfCase(GetMostRecentShieldedAnchorResponse *message) {
+  GPBDescriptor *descriptor = [GetMostRecentShieldedAnchorResponse descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0
+
+@implementation GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0
+
+@dynamic resultOneOfCase;
+@dynamic anchor;
+@dynamic proof;
+@dynamic hasMetadata, metadata;
+
+typedef struct GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0__storage_ {
+  uint32_t _has_storage_[2];
+  NSData *anchor;
+  Proof *proof;
+  ResponseMetadata *metadata;
+} GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "anchor",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0_FieldNumber_Anchor,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0__storage_, anchor),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "proof",
+        .dataTypeSpecific.clazz = GPBObjCClass(Proof),
+        .number = GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0_FieldNumber_Proof,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0__storage_, proof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "metadata",
+        .dataTypeSpecific.clazz = GPBObjCClass(ResponseMetadata),
+        .number = GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0_FieldNumber_Metadata,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0__storage_, metadata),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0 class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "result",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetMostRecentShieldedAnchorResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0_ClearResultOneOfCase(GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0 *message) {
+  GPBDescriptor *descriptor = [GetMostRecentShieldedAnchorResponse_GetMostRecentShieldedAnchorResponseV0 descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
 #pragma mark - GetShieldedPoolStateRequest
 
 @implementation GetShieldedPoolStateRequest

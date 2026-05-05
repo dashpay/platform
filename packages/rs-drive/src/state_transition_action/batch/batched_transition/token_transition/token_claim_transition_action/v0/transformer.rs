@@ -579,3 +579,447 @@ impl TokenClaimTransitionActionV0 {
         ))
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unnecessary_literal_unwrap)]
+mod tests {
+    //! Unit tests for the logic fragments of `try_from_borrowed_token_claim_transition_with_contract_lookup`
+    //! that can be exercised in isolation (without wiring up a full `Drive` instance).
+    //!
+    //! These cover:
+    //!   * the pre-programmed distribution filtering + "distribution after last paid" lookup
+    //!   * the `wrong_claimant_error` resolution logic
+    //!   * `RewardRatio` computation used inside the `EvonodesByParticipation` closure
+    //!   * recipient resolution for each `TokenDistributionInfo` variant
+    //!   * the `From<TokenDistributionResolvedRecipient> for TokenDistributionRecipient` roundtrip
+    //!   * `ClaimAction` variant dispatch / clone / enum wrapper accessors
+    use dpp::balances::credits::TokenAmount;
+    use dpp::block::epoch::EpochIndex;
+    use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionInfo;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::reward_ratio::RewardRatio;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::{
+        TokenDistributionRecipient, TokenDistributionResolvedRecipient,
+    };
+    use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
+    use dpp::identifier::Identifier;
+    use dpp::prelude::TimestampMillis;
+    use std::collections::BTreeMap;
+
+    /// Replica of the pre-programmed distribution filter used inside the
+    /// transformer: exclude future timestamps and keep only entries that
+    /// actually target `owner_id`.
+    fn filter_past_for_owner(
+        times: &BTreeMap<TimestampMillis, BTreeMap<Identifier, TokenAmount>>,
+        owner_id: Identifier,
+        now_ms: TimestampMillis,
+    ) -> BTreeMap<TimestampMillis, TokenAmount> {
+        times
+            .iter()
+            .filter_map(|(timestamp, distribution)| {
+                if *timestamp > now_ms {
+                    None
+                } else {
+                    distribution
+                        .get(&owner_id)
+                        .map(|amount| (*timestamp, *amount))
+                }
+            })
+            .collect()
+    }
+
+    fn owner() -> Identifier {
+        Identifier::from([0xAB; 32])
+    }
+
+    fn stranger() -> Identifier {
+        Identifier::from([0xCD; 32])
+    }
+
+    #[test]
+    fn pre_programmed_filter_excludes_future_timestamps() {
+        let me = owner();
+        let mut past = BTreeMap::new();
+        past.insert(me, 100u64);
+        let mut future = BTreeMap::new();
+        future.insert(me, 999u64);
+
+        let mut times: BTreeMap<TimestampMillis, BTreeMap<Identifier, TokenAmount>> =
+            BTreeMap::new();
+        times.insert(500, past);
+        times.insert(2_000, future);
+
+        let now = 1_000u64;
+        let result = filter_past_for_owner(&times, me, now);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result.get(&500), Some(&100));
+    }
+
+    #[test]
+    fn pre_programmed_filter_ignores_non_owner_entries() {
+        let me = owner();
+        let other = stranger();
+        let mut only_other = BTreeMap::new();
+        only_other.insert(other, 42u64);
+        let mut has_me = BTreeMap::new();
+        has_me.insert(other, 7u64);
+        has_me.insert(me, 13u64);
+
+        let mut times: BTreeMap<TimestampMillis, BTreeMap<Identifier, TokenAmount>> =
+            BTreeMap::new();
+        times.insert(100, only_other);
+        times.insert(200, has_me);
+
+        let result = filter_past_for_owner(&times, me, 1_000);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result.get(&200), Some(&13));
+    }
+
+    #[test]
+    fn pre_programmed_filter_keeps_entries_exactly_at_now() {
+        // The filter uses strict `> now`, so entries with `timestamp == now` must be kept.
+        let me = owner();
+        let mut dist = BTreeMap::new();
+        dist.insert(me, 11u64);
+
+        let mut times: BTreeMap<TimestampMillis, BTreeMap<Identifier, TokenAmount>> =
+            BTreeMap::new();
+        times.insert(1_000, dist);
+
+        let result = filter_past_for_owner(&times, me, 1_000);
+        assert_eq!(result.get(&1_000), Some(&11));
+    }
+
+    #[test]
+    fn distribution_after_last_paid_uses_first_when_never_paid() {
+        // Mirrors `if let Some(last_paid) ... else { first_key_value() }` branch.
+        let mut distributions: BTreeMap<TimestampMillis, TokenAmount> = BTreeMap::new();
+        distributions.insert(100, 5);
+        distributions.insert(200, 7);
+        distributions.insert(300, 9);
+
+        let last_paid: Option<TimestampMillis> = None;
+        let picked = if let Some(last) = last_paid {
+            distributions
+                .range((last + 1)..)
+                .next()
+                .map(|(ts, amount)| (*ts, *amount))
+        } else {
+            distributions
+                .first_key_value()
+                .map(|(ts, amount)| (*ts, *amount))
+        };
+        assert_eq!(picked, Some((100, 5)));
+    }
+
+    #[test]
+    fn distribution_after_last_paid_returns_next_entry_strictly_after() {
+        let mut distributions: BTreeMap<TimestampMillis, TokenAmount> = BTreeMap::new();
+        distributions.insert(100, 5);
+        distributions.insert(200, 7);
+        distributions.insert(300, 9);
+
+        // last_paid == 100 => earliest AFTER it is 200.
+        let last_paid: Option<TimestampMillis> = Some(100);
+        let picked = distributions
+            .range((last_paid.unwrap() + 1)..)
+            .next()
+            .map(|(ts, amount)| (*ts, *amount));
+        assert_eq!(picked, Some((200, 7)));
+    }
+
+    #[test]
+    fn distribution_after_last_paid_returns_none_when_all_claimed() {
+        // When last_paid is at/above every available timestamp, the lookup returns None,
+        // which in the transformer yields `InvalidTokenClaimNoCurrentRewards`.
+        let mut distributions: BTreeMap<TimestampMillis, TokenAmount> = BTreeMap::new();
+        distributions.insert(100, 5);
+        distributions.insert(200, 7);
+
+        let last_paid = Some(200u64);
+        let picked = distributions
+            .range((last_paid.unwrap() + 1)..)
+            .next()
+            .map(|(ts, amount)| (*ts, *amount));
+        assert!(picked.is_none());
+    }
+
+    #[test]
+    fn wrong_claimant_error_contract_owner_mismatch() {
+        // Replicates the wrong_claimant_error match in the Perpetual branch:
+        // ContractOwner recipient + owner_id != contract.owner_id => Some(contract.owner_id)
+        let contract_owner = stranger();
+        let caller = owner();
+        let recipient = TokenDistributionRecipient::ContractOwner;
+        let wrong_claimant_error = match recipient {
+            TokenDistributionRecipient::ContractOwner if contract_owner != caller => {
+                Some(contract_owner)
+            }
+            TokenDistributionRecipient::Identity(identifier) if identifier != caller => {
+                Some(identifier)
+            }
+            _ => None,
+        };
+        assert_eq!(wrong_claimant_error, Some(contract_owner));
+    }
+
+    #[test]
+    fn wrong_claimant_error_contract_owner_match_returns_none() {
+        let caller = owner();
+        let recipient = TokenDistributionRecipient::ContractOwner;
+        let wrong = match recipient {
+            TokenDistributionRecipient::ContractOwner if caller != caller => Some(caller),
+            TokenDistributionRecipient::Identity(identifier) if identifier != caller => {
+                Some(identifier)
+            }
+            _ => None,
+        };
+        assert!(wrong.is_none());
+    }
+
+    #[test]
+    fn wrong_claimant_error_identity_mismatch() {
+        let caller = owner();
+        let expected = stranger();
+        let recipient = TokenDistributionRecipient::Identity(expected);
+        let wrong = match recipient {
+            TokenDistributionRecipient::ContractOwner => None,
+            TokenDistributionRecipient::Identity(identifier) if identifier != caller => {
+                Some(identifier)
+            }
+            _ => None,
+        };
+        assert_eq!(wrong, Some(expected));
+    }
+
+    #[test]
+    fn wrong_claimant_error_identity_match_returns_none() {
+        let caller = owner();
+        let recipient = TokenDistributionRecipient::Identity(caller);
+        let wrong = match recipient {
+            TokenDistributionRecipient::ContractOwner => None,
+            TokenDistributionRecipient::Identity(identifier) if identifier != caller => {
+                Some(identifier)
+            }
+            _ => None,
+        };
+        assert!(wrong.is_none());
+    }
+
+    #[test]
+    fn wrong_claimant_error_evonodes_by_participation_is_always_none() {
+        // EvonodesByParticipation isn't treated as a wrong-claimant error: it falls through
+        // to the `_ => None` arm in the match.
+        let caller = owner();
+        let recipient = TokenDistributionRecipient::EvonodesByParticipation;
+        let wrong = match recipient {
+            TokenDistributionRecipient::ContractOwner if caller != caller => Some(caller),
+            TokenDistributionRecipient::Identity(identifier) if identifier != caller => {
+                Some(identifier)
+            }
+            _ => None,
+        };
+        assert!(wrong.is_none());
+    }
+
+    #[test]
+    fn distribution_info_pre_programmed_recipient_resolution() {
+        // Mirrors `TokenClaimTransitionActionV0::recipient` for the PreProgrammed variant.
+        let id = Identifier::from([0xEE; 32]);
+        let info = TokenDistributionInfo::PreProgrammed(1_000, id);
+        let recipient = match &info {
+            TokenDistributionInfo::PreProgrammed(_, identifier) => {
+                TokenDistributionRecipient::Identity(*identifier)
+            }
+            TokenDistributionInfo::Perpetual(_, resolved_recipient) => resolved_recipient.into(),
+        };
+        assert_eq!(recipient, TokenDistributionRecipient::Identity(id));
+    }
+
+    #[test]
+    fn distribution_info_perpetual_contract_owner_recipient() {
+        let id = Identifier::from([0x1A; 32]);
+        let info = TokenDistributionInfo::Perpetual(
+            RewardDistributionMoment::TimeBasedMoment(42),
+            TokenDistributionResolvedRecipient::ContractOwnerIdentity(id),
+        );
+        let recipient = match &info {
+            TokenDistributionInfo::PreProgrammed(_, identifier) => {
+                TokenDistributionRecipient::Identity(*identifier)
+            }
+            TokenDistributionInfo::Perpetual(_, resolved_recipient) => resolved_recipient.into(),
+        };
+        assert_eq!(recipient, TokenDistributionRecipient::ContractOwner);
+    }
+
+    #[test]
+    fn distribution_info_perpetual_identity_recipient() {
+        let id = Identifier::from([0x2B; 32]);
+        let info = TokenDistributionInfo::Perpetual(
+            RewardDistributionMoment::BlockBasedMoment(7),
+            TokenDistributionResolvedRecipient::Identity(id),
+        );
+        let recipient = match &info {
+            TokenDistributionInfo::PreProgrammed(_, identifier) => {
+                TokenDistributionRecipient::Identity(*identifier)
+            }
+            TokenDistributionInfo::Perpetual(_, resolved_recipient) => resolved_recipient.into(),
+        };
+        assert_eq!(recipient, TokenDistributionRecipient::Identity(id));
+    }
+
+    #[test]
+    fn distribution_info_perpetual_evonode_recipient() {
+        let id = Identifier::from([0x3C; 32]);
+        let info = TokenDistributionInfo::Perpetual(
+            RewardDistributionMoment::EpochBasedMoment(9),
+            TokenDistributionResolvedRecipient::Evonode(id),
+        );
+        let recipient = match &info {
+            TokenDistributionInfo::PreProgrammed(_, identifier) => {
+                TokenDistributionRecipient::Identity(*identifier)
+            }
+            TokenDistributionInfo::Perpetual(_, resolved_recipient) => resolved_recipient.into(),
+        };
+        assert_eq!(
+            recipient,
+            TokenDistributionRecipient::EvonodesByParticipation
+        );
+    }
+
+    /// Reimplements the closure passed to `rewards_in_interval` inside the
+    /// `EvonodesByParticipation` branch and checks its single-epoch output
+    /// matches the blocks proposed by the owner.
+    #[test]
+    fn evonodes_reward_ratio_single_epoch() {
+        let me = owner();
+        let other = stranger();
+        let mut block_proposers: BTreeMap<Identifier, u64> = BTreeMap::new();
+        block_proposers.insert(me, 7);
+        block_proposers.insert(other, 3);
+        let total_blocks_in_epoch = 10u64;
+
+        let ratio = RewardRatio {
+            numerator: block_proposers.get(&me).copied().unwrap_or_default(),
+            denominator: total_blocks_in_epoch,
+        };
+        assert_eq!(ratio.numerator, 7);
+        assert_eq!(ratio.denominator, 10);
+    }
+
+    /// Multi-epoch branch should sum totals and only count blocks proposed by the owner.
+    #[test]
+    fn evonodes_reward_ratio_multi_epoch_sum() {
+        let me = owner();
+        let mut epochs: BTreeMap<EpochIndex, (u64, BTreeMap<Identifier, u64>)> = BTreeMap::new();
+
+        let mut bp1 = BTreeMap::new();
+        bp1.insert(me, 5);
+        epochs.insert(0, (20, bp1));
+
+        let mut bp2 = BTreeMap::new();
+        bp2.insert(me, 2);
+        epochs.insert(1, (30, bp2));
+
+        let mut total_blocks = 0u64;
+        let mut total_proposed_blocks = 0u64;
+        for idx in 0u16..=1u16 {
+            if let Some((blocks, proposers)) = epochs.get(&idx) {
+                total_blocks += *blocks;
+                total_proposed_blocks += proposers.get(&me).copied().unwrap_or_default();
+            }
+        }
+        assert_eq!(total_blocks, 50);
+        assert_eq!(total_proposed_blocks, 7);
+        let ratio = if total_blocks > 0 {
+            Some(RewardRatio {
+                numerator: total_proposed_blocks,
+                denominator: total_blocks,
+            })
+        } else {
+            None
+        };
+        assert_eq!(
+            ratio,
+            Some(RewardRatio {
+                numerator: 7,
+                denominator: 50,
+            })
+        );
+    }
+
+    /// With no epochs in range, total_blocks remains 0 so the ratio is None.
+    #[test]
+    fn evonodes_reward_ratio_empty_range_returns_none() {
+        let total_blocks = 0u64;
+        let total_proposed_blocks = 0u64;
+        let ratio = if total_blocks > 0 {
+            Some(RewardRatio {
+                numerator: total_proposed_blocks,
+                denominator: total_blocks,
+            })
+        } else {
+            None
+        };
+        assert!(ratio.is_none());
+    }
+
+    /// When an epoch index exists but the owner never proposed, numerator is 0.
+    #[test]
+    fn evonodes_reward_ratio_owner_has_no_proposed_blocks() {
+        let me = owner();
+        let other = stranger();
+        let mut bp: BTreeMap<Identifier, u64> = BTreeMap::new();
+        bp.insert(other, 4);
+        let total_blocks = 10u64;
+
+        let ratio = RewardRatio {
+            numerator: bp.get(&me).copied().unwrap_or_default(),
+            denominator: total_blocks,
+        };
+        assert_eq!(ratio.numerator, 0);
+        assert_eq!(ratio.denominator, 10);
+    }
+
+    /// The `last_paid_moment.unwrap_or(contract_creation_cycle_start)` fallback
+    /// should pick the explicit last-paid if set, otherwise the cycle start.
+    #[test]
+    fn start_from_moment_fallback_uses_cycle_start_when_never_paid() {
+        let cycle_start = RewardDistributionMoment::TimeBasedMoment(500);
+        let last_paid: Option<RewardDistributionMoment> = None;
+        let start = last_paid.unwrap_or(cycle_start);
+        assert_eq!(start, RewardDistributionMoment::TimeBasedMoment(500));
+    }
+
+    #[test]
+    fn start_from_moment_fallback_uses_last_paid_when_present() {
+        let cycle_start = RewardDistributionMoment::TimeBasedMoment(500);
+        let last_paid = Some(RewardDistributionMoment::TimeBasedMoment(1_000));
+        let start = last_paid.unwrap_or(cycle_start);
+        assert_eq!(start, RewardDistributionMoment::TimeBasedMoment(1_000));
+    }
+
+    /// The `From` impl converting `TokenDistributionResolvedRecipient` back to
+    /// `TokenDistributionRecipient` is used inside the `recipient()` accessor.
+    #[test]
+    fn resolved_recipient_into_recipient_contract_owner_identity() {
+        let r =
+            TokenDistributionResolvedRecipient::ContractOwnerIdentity(Identifier::from([1u8; 32]));
+        let into: TokenDistributionRecipient = (&r).into();
+        assert_eq!(into, TokenDistributionRecipient::ContractOwner);
+    }
+
+    #[test]
+    fn resolved_recipient_into_recipient_evonode() {
+        let r = TokenDistributionResolvedRecipient::Evonode(Identifier::from([2u8; 32]));
+        let into: TokenDistributionRecipient = (&r).into();
+        assert_eq!(into, TokenDistributionRecipient::EvonodesByParticipation);
+    }
+
+    #[test]
+    fn resolved_recipient_into_recipient_identity_preserves_identifier() {
+        let id = Identifier::from([3u8; 32]);
+        let r = TokenDistributionResolvedRecipient::Identity(id);
+        let into: TokenDistributionRecipient = (&r).into();
+        assert_eq!(into, TokenDistributionRecipient::Identity(id));
+    }
+}

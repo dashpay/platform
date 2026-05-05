@@ -1440,7 +1440,8 @@ public class Addresses: @unchecked Sendable {
         let signerResult = identityPrivateKey.withUnsafeBytes { keyBytes in
             dash_sdk_signer_create_from_private_key(
                 keyBytes.bindMemory(to: UInt8.self).baseAddress!,
-                UInt(identityPrivateKey.count)
+                UInt(identityPrivateKey.count),
+                sdk.network.ffiValue
             )
         }
 
@@ -1593,7 +1594,8 @@ public class Addresses: @unchecked Sendable {
         let signerResult = identityPrivateKey.withUnsafeBytes { keyBytes in
             dash_sdk_signer_create_from_private_key(
                 keyBytes.bindMemory(to: UInt8.self).baseAddress!,
-                UInt(identityPrivateKey.count)
+                UInt(identityPrivateKey.count),
+                sdk.network.ffiValue
             )
         }
 

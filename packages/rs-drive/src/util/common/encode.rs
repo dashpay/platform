@@ -221,6 +221,7 @@ pub fn encode_u32(val: u32) -> Vec<u8> {
 }
 
 #[cfg(test)]
+#[allow(clippy::approx_constant)]
 mod tests {
     use super::*;
 

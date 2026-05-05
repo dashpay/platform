@@ -94,8 +94,13 @@ impl PlatformAddressSignerWasm {
     }
 }
 
+#[async_trait::async_trait]
 impl Signer<PlatformAddress> for PlatformAddressSignerWasm {
-    fn sign(&self, address: &PlatformAddress, data: &[u8]) -> Result<BinaryData, ProtocolError> {
+    async fn sign(
+        &self,
+        address: &PlatformAddress,
+        data: &[u8],
+    ) -> Result<BinaryData, ProtocolError> {
         let wasm_address = PlatformAddressWasm::from(*address);
 
         let private_key = self.private_keys.get(&wasm_address).ok_or_else(|| {
@@ -110,12 +115,12 @@ impl Signer<PlatformAddress> for PlatformAddressSignerWasm {
         Ok(signature.to_vec().into())
     }
 
-    fn sign_create_witness(
+    async fn sign_create_witness(
         &self,
         address: &PlatformAddress,
         data: &[u8],
     ) -> Result<AddressWitness, ProtocolError> {
-        let signature = self.sign(address, data)?;
+        let signature = self.sign(address, data).await?;
 
         match address {
             PlatformAddress::P2pkh(_) => Ok(AddressWitness::P2pkh { signature }),

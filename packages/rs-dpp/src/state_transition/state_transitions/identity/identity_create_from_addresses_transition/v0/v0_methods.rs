@@ -38,7 +38,10 @@ use crate::{
 
 impl IdentityCreateFromAddressesTransitionMethodsV0 for IdentityCreateFromAddressesTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_inputs_with_signer<S: Signer<IdentityPublicKey>, WS: Signer<PlatformAddress>>(
+    async fn try_from_inputs_with_signer<
+        S: Signer<IdentityPublicKey>,
+        WS: Signer<PlatformAddress>,
+    >(
         identity: &Identity,
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         output: Option<(PlatformAddress, Credits)>,
@@ -72,23 +75,29 @@ impl IdentityCreateFromAddressesTransitionMethodsV0 for IdentityCreateFromAddres
         let signable_bytes = state_transition.signable_bytes()?;
 
         // Sign public keys with the identity public key signer (proof of possession)
-        identity_create_from_addresses_transition
+        for (public_key_with_witness, (_, public_key)) in identity_create_from_addresses_transition
             .public_keys
             .iter_mut()
             .zip(identity.public_keys().iter())
-            .try_for_each(|(public_key_with_witness, (_, public_key))| {
-                if public_key.key_type().is_unique_key_type() {
-                    let signature = identity_public_key_signer.sign(public_key, &signable_bytes)?;
-                    public_key_with_witness.set_signature(signature);
-                }
-                Ok::<(), ProtocolError>(())
-            })?;
+        {
+            if public_key.key_type().is_unique_key_type() {
+                let signature = identity_public_key_signer
+                    .sign(public_key, &signable_bytes)
+                    .await?;
+                public_key_with_witness.set_signature(signature);
+            }
+        }
 
         // Create witnesses for each input address
-        identity_create_from_addresses_transition.input_witnesses = inputs
-            .keys()
-            .map(|address| address_signer.sign_create_witness(address, &signable_bytes))
-            .collect::<Result<Vec<_>, ProtocolError>>()?;
+        let mut input_witnesses = Vec::with_capacity(inputs.len());
+        for address in inputs.keys() {
+            input_witnesses.push(
+                address_signer
+                    .sign_create_witness(address, &signable_bytes)
+                    .await?,
+            );
+        }
+        identity_create_from_addresses_transition.input_witnesses = input_witnesses;
 
         Ok(identity_create_from_addresses_transition.into())
     }

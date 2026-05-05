@@ -1,5 +1,6 @@
 import { expect } from '../helpers/chai.ts';
 import init, * as sdk from '../../../dist/sdk.compressed.js';
+import { prefetchLocalReady } from '../helpers/trustedContext.ts';
 import { wasmFunctionalTestRequirements, createTestSignerAndKey } from '../fixtures/requiredTestData.ts';
 
 /**
@@ -32,7 +33,7 @@ describe('Document State Transitions', function describeDocumentStateTransitions
 
   before(async () => {
     await init();
-    const context = await sdk.WasmTrustedContext.prefetchLocal();
+    const context = await prefetchLocalReady();
     const builder = sdk.WasmSdkBuilder.local().withTrustedContext(context);
     client = await builder.build();
   });
@@ -78,13 +79,15 @@ describe('Document State Transitions', function describeDocumentStateTransitions
       // Contract operations require at least HIGH security level (key index 2)
       const { signer, identityKey } = createTestSignerAndKey(sdk, 1, 2);
 
-      // Create a schema with mutable, deletable, and transferable document types
-      // Position property is required for document types and properties
+      // Create a schema with mutable, deletable, and transferable document types.
+      // `position` is required on each *property* (to order fields in the
+      // document row) — it is NOT a valid key on the document-type root.
+      // Under protocol v12 the document meta-schema is strict
+      // (`additionalProperties: false`) and rejects stray root-level keys.
       const schema = {
         // Mutable document type - can be updated
         mutableNote: {
           type: 'object',
-          position: 0,
           documentsMutable: true,
           canBeDeleted: true,
           properties: {
@@ -101,7 +104,6 @@ describe('Document State Transitions', function describeDocumentStateTransitions
         // transferable: 1 = Always transferable (see Transferable enum in DPP)
         transferableItem: {
           type: 'object',
-          position: 1,
           transferable: 1,
           documentsMutable: false,
           canBeDeleted: false,
