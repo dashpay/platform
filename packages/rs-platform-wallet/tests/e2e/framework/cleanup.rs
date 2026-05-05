@@ -22,7 +22,7 @@ use platform_wallet::{PlatformWallet, PlatformWalletError, PlatformWalletManager
 
 use super::signer::SeedBackedIdentitySigner;
 
-use super::bank::BankWallet;
+use super::bank::{core_send, BankWallet, CORE_TX_FEE_RESERVE};
 use super::bank_identity::BankIdentity;
 use super::registry::{EntryStatus, PersistentTestWalletRegistry, RegistryEntry, WalletSeedHash};
 use super::wallet_factory::TestWallet;
@@ -138,7 +138,7 @@ async fn sweep_one(
         );
     }
     sweep_identities_with_seed(&wallet, &seed_bytes, network, bank_identity).await?;
-    sweep_core_addresses(&wallet).await?;
+    sweep_core_addresses(&wallet, bank).await?;
     sweep_unused_core_asset_locks(&wallet).await?;
     sweep_shielded(&wallet).await?;
 
@@ -191,7 +191,7 @@ pub async fn teardown_one(
         bank_identity,
     )
     .await?;
-    sweep_core_addresses(test_wallet.platform_wallet()).await?;
+    sweep_core_addresses(test_wallet.platform_wallet(), bank).await?;
     sweep_unused_core_asset_locks(test_wallet.platform_wallet()).await?;
     sweep_shielded(test_wallet.platform_wallet()).await?;
 
@@ -530,13 +530,80 @@ const IDENTITY_SWEEP_FLOOR: Credits = 50_000_000;
 /// exceed the chain-time fee. Empirically ~12-15M on testnet.
 const IDENTITY_SWEEP_FEE_RESERVE: Credits = 30_000_000;
 
-/// Drain core (Layer 1) UTXOs to the bank's core address. Noop until
-/// the SPV wallet runtime is back online in this harness.
-// TODO(rs-platform-wallet/e2e #core-sweep): implement once the SPV
-// runtime (Task #15) lets us sign and broadcast core transactions.
-async fn sweep_core_addresses(_wallet: &Arc<PlatformWallet>) -> FrameworkResult<()> {
+/// Drain Core (Layer-1) UTXOs to the bank's primary BIP-44 receive
+/// address. No-op when the wallet's confirmed Core balance is at or
+/// below [`CORE_SWEEP_DUST_FLOOR`] — sweeping below the floor would
+/// either burn the entire balance to the chain fee or fail the
+/// builder's coin-selection step.
+///
+/// Best-effort: failures (no funded address, builder error, broadcast
+/// rejection) are logged at WARN and surfaced as
+/// [`FrameworkError::Wallet`]. The orphan-recovery loop in
+/// [`sweep_orphans`] catches that and keeps the registry entry for a
+/// later retry.
+async fn sweep_core_addresses(
+    wallet: &Arc<PlatformWallet>,
+    bank: &BankWallet,
+) -> FrameworkResult<()> {
+    let confirmed = wallet.balance().confirmed();
+    if confirmed <= CORE_SWEEP_DUST_FLOOR {
+        tracing::debug!(
+            target: "platform_wallet::e2e::cleanup",
+            wallet_id = %hex::encode(wallet.wallet_id()),
+            confirmed,
+            floor = CORE_SWEEP_DUST_FLOOR,
+            "core sweep: balance at or below dust floor; nothing to sweep"
+        );
+        return Ok(());
+    }
+
+    let amount = confirmed.saturating_sub(CORE_TX_FEE_RESERVE);
+    if amount == 0 {
+        tracing::debug!(
+            target: "platform_wallet::e2e::cleanup",
+            wallet_id = %hex::encode(wallet.wallet_id()),
+            confirmed,
+            "core sweep: balance covers fee reserve only; skipping"
+        );
+        return Ok(());
+    }
+
+    // Resolve the bank's primary Core receive address — same address
+    // surfaced in the harness pre-flight log so swept funds land at
+    // the operator-known location.
+    let bank_core_addr = bank.primary_core_receive_address().await?;
+
+    match core_send(wallet, &bank_core_addr, amount).await {
+        Ok(txid) => {
+            tracing::info!(
+                target: "platform_wallet::e2e::cleanup",
+                wallet_id = %hex::encode(wallet.wallet_id()),
+                %txid,
+                amount,
+                bank_core_addr = %bank_core_addr,
+                "core sweep: drained Core duffs to bank"
+            );
+        }
+        Err(err) => {
+            tracing::warn!(
+                target: "platform_wallet::e2e::cleanup",
+                wallet_id = %hex::encode(wallet.wallet_id()),
+                amount,
+                error = %err,
+                "core sweep: broadcast failed; entry retained"
+            );
+            return Err(err);
+        }
+    }
     Ok(())
 }
+
+/// Below this confirmed balance the Core sweep refuses to broadcast.
+/// Sized to comfortably exceed the [`CORE_TX_FEE_RESERVE`] floor so
+/// the post-fee residual is always non-trivial — sweeping a balance
+/// of e.g. 1.5x the fee reserve burns most of the value as fee and
+/// the recovered amount is meaningless.
+const CORE_SWEEP_DUST_FLOOR: u64 = 100_000;
 
 /// Consume unspent asset-lock outputs and refund their credits to the
 /// bank. Noop until the asset-lock harness is wired up.
