@@ -7,7 +7,7 @@ use platform_version::version::PlatformVersion;
 
 mod v0;
 
-pub trait DocumentCreateTransitionStructureValidation {
+pub(crate) trait DocumentCreateTransitionStructureValidation {
     fn validate_structure(
         &self,
         owner_id: Identifier,

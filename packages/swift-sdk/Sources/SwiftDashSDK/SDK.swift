@@ -324,8 +324,16 @@ public struct SDKConsensusError: Equatable, Sendable {
   }
 }
 
-/// Richer FFI-originated error that preserves structured consensus details
-/// after the underlying `DashSDKError` pointer has been freed.
+/// Wrapper error thrown by public Swift SDK helpers when an FFI error carries
+/// structured protocol consensus details.
+///
+/// `SDKError`'s associated `String` values are kept clean — they never embed
+/// private payload markers, so `case .protocolError(let message)` matches
+/// produce the original human-readable message. When the FFI also surfaces
+/// structured `DashSDKConsensusError` entries, `SDKError.consumeDashSDKError`
+/// throws this wrapper instead. Callers that need the structured detail can
+/// pattern-match on `SDKDetailedError`; callers that only need the mapped
+/// `SDKError` should unwrap via `detailed.sdkError`.
 public struct SDKDetailedError: Error, LocalizedError {
   public let sdkError: SDKError
   public let consensusErrors: [SDKConsensusError]
@@ -336,11 +344,28 @@ public struct SDKDetailedError: Error, LocalizedError {
   }
 
   public var errorDescription: String? {
-    sdkError.localizedDescription
+    let summary = sdkError.localizedDescription
+    guard !consensusErrors.isEmpty else {
+      return summary
+    }
+
+    let details = consensusErrors.enumerated().map { index, detail in
+      let kind = detail.kind.isEmpty ? "Consensus" : detail.kind
+      let name = detail.name.isEmpty ? "Unknown" : detail.name
+      return "\(index + 1). [\(kind)] \(name) (\(detail.code)): \(detail.message)"
+    }.joined(separator: "\n")
+
+    return "\(summary)\nConsensus details:\n\(details)"
   }
 }
 
 /// SDK Error handling
+///
+/// Associated `String` values are clean human-readable messages with no
+/// private embedded payload — `case .protocolError(let message)` matches
+/// produce exactly the message returned by the FFI. Structured protocol
+/// consensus details, when present, are surfaced via the
+/// `SDKDetailedError` wrapper thrown by `consumeDashSDKError(_:)`.
 public enum SDKError: Error {
   case invalidParameter(String)
   case invalidState(String)
@@ -354,39 +379,12 @@ public enum SDKError: Error {
   case internalError(String)
   case unknown(String)
 
-  /// Deprecated. **Always returns `nil`.**
-  ///
-  /// The previous implementation routed structured consensus-error details
-  /// through `Thread.current.threadDictionary`, which is fundamentally
-  /// unsafe for this purpose:
-  /// - Swift-raised throws (e.g. `SDKError.invalidState`) bypass the FFI
-  ///   mapper, so a prior protocol error's stash could leak into a later
-  ///   unrelated `catch`.
-  /// - Async/await and Dispatch/`Task` thread-hops mean a `catch` block can
-  ///   read a different thread's stash.
-  /// - The value-typed `fromDashSDKError(_ error: DashSDKError)` overload
-  ///   could clobber a richer stash from a prior pointer-typed call.
-  ///
-  /// The replacement is to read structured details directly from the FFI
-  /// error pointer via `consensusErrors(fromDashSDKError:)` or to use
-  /// `fromDashSDKErrorWithConsensusErrors(_:)` to get both the mapped
-  /// `SDKError` and the details in a single call.
-  @available(
-    *, deprecated,
-    message:
-      "Use consensusErrors(fromDashSDKError:) or fromDashSDKErrorWithConsensusErrors(_:) instead. This thread-local accessor is unsafe and now always returns nil."
-  )
-  public static var lastConsensusErrors: [SDKConsensusError]? {
-    get { nil }
-    set {}
-  }
-
   /// Map a Rust FFI `DashSDKError` into a Swift `SDKError`.
   ///
-  /// Protocol errors always map to `.protocolError(String)`. If callers need
-  /// structured consensus details, use
-  /// `consensusErrors(fromDashSDKError:)` or
-  /// `fromDashSDKErrorWithConsensusErrors(_:)` before freeing the FFI pointer.
+  /// This pointer-typed overload only produces the scalar mapping. To also
+  /// retrieve structured consensus details before the pointer is freed, use
+  /// `fromDashSDKErrorWithConsensusErrors(_:)` or
+  /// `consensusErrors(fromDashSDKError:)`.
   public static func fromDashSDKError(_ error: UnsafePointer<DashSDKError>) -> SDKError {
     let raw = error.pointee
     let message = raw.message != nil ? String(cString: raw.message!) : "Unknown error"
@@ -394,24 +392,25 @@ public enum SDKError: Error {
   }
 
   /// Source-compatibility overload that maps a value-typed `DashSDKError`
-  /// into an `SDKError`. This overload **cannot** resolve the structured
+  /// into an `SDKError`. This overload cannot resolve the structured
   /// consensus-error sidecar (which is keyed on the heap pointer returned by
-  /// the FFI, not the value), so a protocol error always maps to the plain
-  /// `.protocolError(String)` case here. Sidecar-aware code paths must use
-  /// the pointer-typed `fromDashSDKError(_:)` overload before freeing the
-  /// FFI pointer. This overload exists so older callers that pass
-  /// `error.pointee` continue to compile.
+  /// the FFI, not the value); sidecar-aware code paths must use the
+  /// pointer-typed `fromDashSDKError(_:)` overload combined with
+  /// `consensusErrors(fromDashSDKError:)`.
   @available(
     *, deprecated,
     message:
-      "Use the pointer-typed fromDashSDKError(_:) overload before freeing the FFI error so structured consensus details are preserved."
+      "Use the pointer-typed fromDashSDKError(_:) overload before freeing the FFI error so structured consensus details remain accessible."
   )
   public static func fromDashSDKError(_ error: DashSDKError) -> SDKError {
     let message = error.message != nil ? String(cString: error.message!) : "Unknown error"
     return mapScalar(code: error.code, message: message)
   }
 
-  private static func mapScalar(code: DashSDKErrorCode, message: String) -> SDKError {
+  private static func mapScalar(
+    code: DashSDKErrorCode,
+    message: String
+  ) -> SDKError {
     switch code {
     case DashSDKErrorCode(rawValue: 1): // Invalid parameter
       return .invalidParameter(message)
@@ -440,12 +439,6 @@ public enum SDKError: Error {
 
   /// Returns the structured consensus errors carried by `error`, if any.
   ///
-  /// The plain `SDKError.protocolError(String)` case remains available for
-  /// protocol errors that carry no structured sidecar details; this helper
-  /// exposes the additional structured detail surfaced by the Rust FFI sidecar
-  /// (`DashSDKConsensusError`). Returns `nil` if `error` is not a
-  /// `ProtocolError` or has no structured details.
-  ///
   /// Takes the **original** heap pointer that the FFI returned. Sidecar
   /// lookup is keyed on the pointer's identity, so a copied `DashSDKError`
   /// value will not resolve structured details. Must be called before
@@ -472,31 +465,28 @@ public enum SDKError: Error {
     return result.isEmpty ? nil : result
   }
 
-  /// Convenience that returns both the mapped `SDKError` and any structured
-  /// consensus errors carried by `error`. Useful when callers need to display
-  /// the readable message *and* introspect each consensus error individually.
-  ///
-  /// The structured details are read directly from the FFI sidecar; the
-  /// mapped `SDKError` is the same scalar value `fromDashSDKError(_:)`
-  /// would return.
+  /// Convenience that returns the mapped `SDKError` plus any structured
+  /// protocol consensus details still attached to the FFI sidecar.
   public static func fromDashSDKErrorWithConsensusErrors(_ error: UnsafePointer<DashSDKError>)
     -> (SDKError, [SDKConsensusError]?)
   {
-    let mapped = SDKError.fromDashSDKError(error)
+    let mapped = fromDashSDKError(error)
     let details = consensusErrors(fromDashSDKError: error)
     return (mapped, details)
   }
 
-  /// Reads any structured consensus-error sidecar and frees the owned FFI
-  /// error pointer before returning the Swift error to throw.
+  /// Frees the owned FFI error pointer after mapping it to a Swift error.
+  ///
+  /// Returns `SDKDetailedError` when the FFI carries structured consensus
+  /// details, so callers that need the structured surface can downcast to it
+  /// after the FFI pointer is freed. Otherwise returns the bare `SDKError`,
+  /// preserving clean `case .protocolError(let message)` pattern matches.
   static func consumeDashSDKError(_ error: UnsafeMutablePointer<DashSDKError>) -> Error {
     let (mapped, details) = fromDashSDKErrorWithConsensusErrors(UnsafePointer(error))
     dash_sdk_error_free(error)
-
     if let details, !details.isEmpty {
       return SDKDetailedError(sdkError: mapped, consensusErrors: details)
     }
-
     return mapped
   }
 
@@ -521,30 +511,32 @@ public enum SDKError: Error {
 
 extension SDKError: LocalizedError {
   public var errorDescription: String? {
+    let description: String
     switch self {
     case .invalidParameter(let message):
-      return "Invalid Parameter: \(message)"
+      description = "Invalid Parameter: \(message)"
     case .invalidState(let message):
-      return "Invalid State: \(message)"
+      description = "Invalid State: \(message)"
     case .networkError(let message):
-      return "Network Error: \(message)"
+      description = "Network Error: \(message)"
     case .serializationError(let message):
-      return "Serialization Error: \(message)"
-    case .protocolError(let message):
-      return "Protocol Error: \(message)"
+      description = "Serialization Error: \(message)"
+    case .protocolError:
+      description = "Protocol Error: \(message)"
     case .cryptoError(let message):
-      return "Cryptographic Error: \(message)"
+      description = "Cryptographic Error: \(message)"
     case .notFound(let message):
-      return "Not Found: \(message)"
+      description = "Not Found: \(message)"
     case .timeout(let message):
-      return "Operation Timed Out: \(message)"
+      description = "Operation Timed Out: \(message)"
     case .notImplemented(let message):
-      return "Feature Not Implemented: \(message)"
+      description = "Feature Not Implemented: \(message)"
     case .internalError(let message):
-      return "Internal Error: \(message)"
+      description = "Internal Error: \(message)"
     case .unknown(let message):
-      return "Unknown Error: \(message)"
+      description = "Unknown Error: \(message)"
     }
+    return description
   }
 }
 

@@ -176,34 +176,20 @@ struct QueryDetailView: View {
                     isLoading = false
                     print("✅ QueryDetailView: Result displayed, showResult: \(showResult)")
                 }
+            } catch let detailed as SDKDetailedError {
+                print("❌ QueryDetailView: SDK detailed error occurred: \(detailed)")
+                await MainActor.run {
+                    self.error = QueryDetailView.formatSDKError(
+                        detailed.sdkError,
+                        consensusErrors: detailed.consensusErrors
+                    )
+                    isLoading = false
+                    print("❌ QueryDetailView: Error set to: \(self.error)")
+                }
             } catch let sdkError as SDKError {
                 print("❌ QueryDetailView: SDK error occurred: \(sdkError)")
                 await MainActor.run {
-                    // Handle SDK errors with more detail
-                    switch sdkError {
-                    case .invalidParameter(let message):
-                        self.error = "Invalid Parameter: \(message)"
-                    case .invalidState(let message):
-                        self.error = "Invalid State: \(message)"
-                    case .networkError(let message):
-                        self.error = "Network Error: \(message)"
-                    case .serializationError(let message):
-                        self.error = "Serialization Error: \(message)"
-                    case .protocolError(let message):
-                        self.error = "Protocol Error: \(message)"
-                    case .cryptoError(let message):
-                        self.error = "Crypto Error: \(message)"
-                    case .notFound(let message):
-                        self.error = "Not Found: \(message)"
-                    case .timeout(let message):
-                        self.error = "Timeout: \(message)"
-                    case .notImplemented(let message):
-                        self.error = "Not Implemented: \(message)"
-                    case .internalError(let message):
-                        self.error = "Internal Error: \(message)"
-                    case .unknown(let message):
-                        self.error = "Unknown Error: \(message)"
-                    }
+                    self.error = QueryDetailView.formatSDKError(sdkError, consensusErrors: nil)
                     isLoading = false
                     print("❌ QueryDetailView: Error set to: \(self.error)")
                 }
@@ -1142,6 +1128,44 @@ struct QueryDetailView: View {
         default:
             return []
         }
+    }
+
+    static func formatSDKError(
+        _ sdkError: SDKError,
+        consensusErrors: [SDKConsensusError]?
+    ) -> String {
+        let primary: String
+        switch sdkError {
+        case .invalidParameter(let message):
+            primary = "Invalid Parameter: \(message)"
+        case .invalidState(let message):
+            primary = "Invalid State: \(message)"
+        case .networkError(let message):
+            primary = "Network Error: \(message)"
+        case .serializationError(let message):
+            primary = "Serialization Error: \(message)"
+        case .protocolError(let message):
+            primary = "Protocol Error: \(message)"
+        case .cryptoError(let message):
+            primary = "Crypto Error: \(message)"
+        case .notFound(let message):
+            primary = "Not Found: \(message)"
+        case .timeout(let message):
+            primary = "Timeout: \(message)"
+        case .notImplemented(let message):
+            primary = "Not Implemented: \(message)"
+        case .internalError(let message):
+            primary = "Internal Error: \(message)"
+        case .unknown(let message):
+            primary = "Unknown Error: \(message)"
+        }
+        guard let consensusErrors, !consensusErrors.isEmpty else { return primary }
+        let details = consensusErrors.enumerated().map { index, detail in
+            let kind = detail.kind.isEmpty ? "Consensus" : detail.kind
+            let name = detail.name.isEmpty ? "Unknown" : detail.name
+            return "\(index + 1). [\(kind)] \(name) (\(detail.code)): \(detail.message)"
+        }.joined(separator: "\n")
+        return "\(primary)\nConsensus details:\n\(details)"
     }
 }
 

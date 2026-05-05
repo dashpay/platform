@@ -1,7 +1,7 @@
 mod from_document;
 pub mod v0;
 pub mod v0_methods;
-pub mod validate_structure;
+pub(crate) mod validate_structure;
 
 use bincode::{Decode, Encode};
 use derive_more::{Display, From};

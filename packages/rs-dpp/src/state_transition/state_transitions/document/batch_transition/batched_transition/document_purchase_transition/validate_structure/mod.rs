@@ -7,7 +7,7 @@ use platform_version::version::PlatformVersion;
 
 mod v0;
 
-pub trait DocumentPurchaseTransitionStructureValidation {
+pub(crate) trait DocumentPurchaseTransitionStructureValidation {
     fn validate_structure(
         &self,
         document_type: DocumentTypeRef,

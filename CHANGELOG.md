@@ -9,6 +9,15 @@
 * **sdk:** getSignableBytes is not compatible with sign and verify (#3048)
 * **platform:** update PlatformAddress encoding and HRP constants (#3059)
 * **platform:** 3.0 audit report fixes (#3053)
+* **swift-sdk:** `SDKError.protocolError(String)` associated values are
+  clean human-readable messages again (no embedded payload). FFI errors
+  with structured consensus details now throw `SDKDetailedError`, which
+  wraps the mapped `SDKError` plus a `consensusErrors` array; callers
+  that want the details should catch `SDKDetailedError` in addition to
+  `SDKError`. Pointer-based FFI helpers
+  (`SDKError.consensusErrors(fromDashSDKError:)` and
+  `SDKError.fromDashSDKErrorWithConsensusErrors(_:)`) remain available
+  before `dash_sdk_error_free`.
 * **sdk:** comprehensive Evo SDK refactoring (#2999)
 * upgrade bincode to 2.0.1 (#2991)
 
@@ -29,6 +38,7 @@
 * **dapi-grpc:** files generated outside sandbox
 * **dashmate:** differentiate service ports between networks to avoid conflicts ([#3085](https://github.com/dashpay/platform/issues/3085))
 * **platform:** 3.0 audit report fixes ([#3053](https://github.com/dashpay/platform/issues/3053))
+* **swift-sdk:** preserve structured consensus details in Swift state-transition helper errors
 * **sdk:** deserialization error due to outdated contract cache ([#3052](https://github.com/dashpay/platform/issues/3052))
 * **sdk:** getSignableBytes is not compatible with sign and verify ([#3048](https://github.com/dashpay/platform/issues/3048))
 * **sdk:** inconsistent document query operator ([#3039](https://github.com/dashpay/platform/issues/3039))

@@ -38,6 +38,21 @@ cargo build --release
 import SwiftDashSDK
 ```
 
+### Structured Consensus Errors
+
+Public Swift errors keep `SDKError` associated `String` payloads clean and
+human-readable — `case .protocolError(let message)` produces the original FFI
+message. When the FFI layer surfaces structured `DashSDKConsensusError` entries
+alongside an error, throwing wrappers throw an `SDKDetailedError` that carries
+both the mapped `SDKError` and the structured `consensusErrors` array. Callers
+who need the structured details should explicitly catch `SDKDetailedError` (and
+unwrap `detailed.sdkError`) in addition to catching `SDKError`.
+
+If you are working directly with the FFI `DashSDKError` pointer, inspect
+`SDKError.consensusErrors(fromDashSDKError:)` or
+`SDKError.fromDashSDKErrorWithConsensusErrors(_:)` before
+`dash_sdk_error_free`.
+
 ## API Reference
 
 ### Identity Operations

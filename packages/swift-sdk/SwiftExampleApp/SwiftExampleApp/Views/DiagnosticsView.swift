@@ -595,33 +595,51 @@ struct DiagnosticsView: View {
     }
 
     private func formatError(_ error: Error) -> String {
+        if let detailed = error as? SDKDetailedError {
+            return formatSDKError(detailed.sdkError, consensusErrors: detailed.consensusErrors)
+        }
         if let sdkError = error as? SDKError {
-            switch sdkError {
-            case .invalidParameter(let msg):
-                return "Invalid Parameter: \(msg)"
-            case .invalidState(let msg):
-                return "Invalid State: \(msg)"
-            case .networkError(let msg):
-                return "Network Error: \(msg)"
-            case .serializationError(let msg):
-                return "Serialization Error: \(msg)"
-            case .protocolError(let msg):
-                return "Protocol Error: \(msg)"
-            case .cryptoError(let msg):
-                return "Crypto Error: \(msg)"
-            case .notFound(let msg):
-                return "Not Found: \(msg)"
-            case .timeout(let msg):
-                return "Timeout: \(msg)"
-            case .notImplemented(let msg):
-                return "Not Implemented: \(msg)"
-            case .internalError(let msg):
-                return "Internal Error: \(msg)"
-            case .unknown(let msg):
-                return "Unknown Error: \(msg)"
-            }
+            return formatSDKError(sdkError, consensusErrors: nil)
         }
         return error.localizedDescription
+    }
+
+    private func formatSDKError(
+        _ sdkError: SDKError,
+        consensusErrors: [SDKConsensusError]?
+    ) -> String {
+        let primary: String
+        switch sdkError {
+        case .invalidParameter(let msg):
+            primary = "Invalid Parameter: \(msg)"
+        case .invalidState(let msg):
+            primary = "Invalid State: \(msg)"
+        case .networkError(let msg):
+            primary = "Network Error: \(msg)"
+        case .serializationError(let msg):
+            primary = "Serialization Error: \(msg)"
+        case .protocolError(let msg):
+            primary = "Protocol Error: \(msg)"
+        case .cryptoError(let msg):
+            primary = "Crypto Error: \(msg)"
+        case .notFound(let msg):
+            primary = "Not Found: \(msg)"
+        case .timeout(let msg):
+            primary = "Timeout: \(msg)"
+        case .notImplemented(let msg):
+            primary = "Not Implemented: \(msg)"
+        case .internalError(let msg):
+            primary = "Internal Error: \(msg)"
+        case .unknown(let msg):
+            primary = "Unknown Error: \(msg)"
+        }
+        guard let consensusErrors, !consensusErrors.isEmpty else { return primary }
+        let details = consensusErrors.enumerated().map { index, detail in
+            let kind = detail.kind.isEmpty ? "Consensus" : detail.kind
+            let name = detail.name.isEmpty ? "Unknown" : detail.name
+            return "\(index + 1). [\(kind)] \(name) (\(detail.code)): \(detail.message)"
+        }.joined(separator: "\n")
+        return "\(primary)\nConsensus details:\n\(details)"
     }
 
     private func formatTestResult(_ result: Any) -> String {

@@ -17,10 +17,9 @@ extension SDK {
         print("🔵 processJSONResult: Processing result...")
 
         if let error = result.error {
-            let errorMessage = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Unknown error"
-            print("❌ processJSONResult: FFI returned error: \(errorMessage)")
-            dash_sdk_error_free(error)
-            throw SDKError.internalError(errorMessage)
+            let mapped = SDKError.consumeDashSDKError(error)
+            print("❌ processJSONResult: FFI returned error: \(mapped.localizedDescription)")
+            throw mapped
         }
 
         guard let dataPtr = result.data else {
@@ -51,9 +50,7 @@ extension SDK {
     /// Process DashSDKResult and extract JSON array
     private func processJSONArrayResult(_ result: DashSDKResult) throws -> [[String: Any]] {
         if let error = result.error {
-            let errorMessage = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Unknown error"
-            dash_sdk_error_free(error)
-            throw SDKError.internalError(errorMessage)
+            throw SDKError.consumeDashSDKError(error)
         }
 
         guard let dataPtr = result.data else {
@@ -74,9 +71,7 @@ extension SDK {
     /// Process DashSDKResult and extract string
     private func processStringResult(_ result: DashSDKResult) throws -> String {
         if let error = result.error {
-            let errorMessage = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Unknown error"
-            dash_sdk_error_free(error)
-            throw SDKError.internalError(errorMessage)
+            throw SDKError.consumeDashSDKError(error)
         }
 
         guard let dataPtr = result.data else {
