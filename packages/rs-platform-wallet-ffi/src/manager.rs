@@ -101,7 +101,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create_wallet_from_seed(
     };
 
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |manager| {
-        runtime().block_on(manager.create_wallet_from_seed_bytes(network, seed, accounts))
+        runtime().block_on(manager.create_wallet_from_seed_bytes(network, seed, accounts, None))
     });
     let result = unwrap_option_or_return!(option);
     let wallet = unwrap_result_or_return!(result);
@@ -139,7 +139,12 @@ pub unsafe extern "C" fn platform_wallet_manager_create_wallet_from_mnemonic(
     };
 
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |manager| {
-        runtime().block_on(manager.create_wallet_from_mnemonic(mnemonic_str, network, accounts))
+        runtime().block_on(manager.create_wallet_from_mnemonic(
+            mnemonic_str,
+            network,
+            accounts,
+            None,
+        ))
     });
     let result = unwrap_option_or_return!(option);
     let wallet = unwrap_result_or_return!(result);
