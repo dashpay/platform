@@ -205,7 +205,20 @@ struct TokenMintActionView: View {
 
         let recipientId: Data?
         if mintToSelf {
-            recipientId = nil
+            if token.mintingAllowChoosingDestination {
+                // The contract permits a caller-supplied destination,
+                // so be explicit: pass our own identity id. Passing nil
+                // would defer to `newTokensDestinationIdentity`, which
+                // may be unset — the FFI then surfaces "Destination
+                // identity for minting not set" instead of minting to
+                // self.
+                recipientId = identity.identityId
+            } else {
+                // The contract forbids overriding the destination; any
+                // non-nil recipient would be rejected. Defer to the
+                // configured `newTokensDestinationIdentity` via nil.
+                recipientId = nil
+            }
         } else {
             guard let chosen = recipient else {
                 submitError = .init(message: "Pick a recipient or enable mint-to-self.")
