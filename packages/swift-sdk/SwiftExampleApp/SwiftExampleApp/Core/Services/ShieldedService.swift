@@ -117,6 +117,13 @@ class ShieldedService: ObservableObject {
 
     /// Trigger a manual shielded sync pass. No-op if a pass is
     /// already in flight.
+    ///
+    /// Drives `isSyncing` directly around the await so the spinner
+    /// flashes even when the underlying Rust pass completes faster
+    /// than the manager's 1 Hz `isShieldedSyncing` poll cadence —
+    /// the published `$shieldedSyncIsSyncing` stays `false` the
+    /// whole time on a fast (e.g. empty-tree) sync, so we can't
+    /// rely on the subscription alone to flip it back.
     func manualSync() async {
         guard !isSyncing else { return }
         guard let walletManager else {
@@ -126,10 +133,10 @@ class ShieldedService: ObservableObject {
 
         isSyncing = true
         lastError = nil
+        defer { isSyncing = false }
         do {
             try await walletManager.syncShieldedNow()
         } catch {
-            isSyncing = false
             lastError = "Shielded sync error: \(error.localizedDescription)"
             SDKLogger.log(lastError ?? "", minimumLevel: .medium)
         }
