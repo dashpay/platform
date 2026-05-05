@@ -27,6 +27,7 @@ public enum DashModelContainer {
             PersistentCoreAddress.self,
             PersistentTransaction.self,
             PersistentTxo.self,
+            PersistentPendingInput.self,
             PersistentWalletManagerMetadata.self
         ]
     }

@@ -91,6 +91,20 @@ pub struct TransactionRecordFFI {
     pub has_fee: bool,
     pub label: *mut c_char,
     pub first_seen: u64,
+    /// Outpoints of every input in this transaction, in input index
+    /// order. Always populated from `tx.input.iter()` directly so the
+    /// list survives even when the wallet's in-memory `self.utxos`
+    /// map didn't classify the input as "ours" at processing time.
+    /// Required so the Swift persister can reconcile `(spending tx)
+    /// ↔ (spent TXO)` even when the funding tx is processed after
+    /// the spending tx (in-Swift out-of-order arrival), or when the
+    /// funding output was persisted but never re-loaded into
+    /// `self.utxos`. Iterating `input_details` (which only has
+    /// entries for inputs that hit `self.utxos`) was the silent-drop
+    /// path that left `PersistentTxo.isSpent` stuck at false. Empty
+    /// for coinbase transactions.
+    pub input_outpoints: *mut OutPointFFI,
+    pub input_outpoints_count: usize,
 }
 
 // ---------------------------------------------------------------------------
@@ -778,6 +792,38 @@ fn tx_record_to_ffi(
         .unwrap_or_else(|_| CString::new("Unknown").unwrap());
     let label_str = CString::new(tr.label.clone()).unwrap_or_else(|_| CString::new("").unwrap());
 
+    // Build the input-outpoint slice from `tx.input` directly. NOT from
+    // `input_details` — that field only carries entries the wallet
+    // recognized as "ours" at processing time (i.e., entries whose
+    // `previous_output` was already in `self.utxos`), so it silently
+    // drops the spent-outpoint signal whenever the funding tx hadn't
+    // populated the UTXO map yet (in-Swift out-of-order arrival, or
+    // a load_from_persistor that didn't fully repopulate). The Swift
+    // persister reconciles this list against its own `PersistentTxo`
+    // table to mark the spend, so emitting every input — even ones
+    // we don't currently classify as ours — is correct: outpoint is
+    // a globally-unique key and Swift's lookup is a no-op when no
+    // matching row exists. Coinbase inputs are skipped (the previous
+    // output of the synthetic coinbase outpoint is never one of ours).
+    let input_outpoints_vec: Vec<OutPointFFI> = if tr.transaction.is_coin_base() {
+        Vec::new()
+    } else {
+        tr.transaction
+            .input
+            .iter()
+            .map(|input| {
+                let mut prev_txid = [0u8; 32];
+                prev_txid.copy_from_slice(input.previous_output.txid.as_ref());
+                OutPointFFI {
+                    txid: prev_txid,
+                    vout: input.previous_output.vout,
+                }
+            })
+            .collect()
+    };
+    let input_outpoints_count = input_outpoints_vec.len();
+    let input_outpoints = vec_to_ptr(input_outpoints_vec);
+
     TransactionRecordFFI {
         txid,
         tx_data: tx_ptr,
@@ -801,6 +847,8 @@ fn tx_record_to_ffi(
         // refresh from `Date.now()` on insert if it needs a real
         // observation timestamp.
         first_seen: blk_ts as u64,
+        input_outpoints,
+        input_outpoints_count,
     }
 }
 
@@ -890,6 +938,13 @@ pub unsafe fn free_wallet_changeset_ffi(cs: &WalletChangeSetFFI) {
                 }
                 if !tx.label.is_null() {
                     let _ = CString::from_raw(tx.label);
+                }
+                if !tx.input_outpoints.is_null() && tx.input_outpoints_count > 0 {
+                    drop(Vec::from_raw_parts(
+                        tx.input_outpoints,
+                        tx.input_outpoints_count,
+                        tx.input_outpoints_count,
+                    ));
                 }
             }
             drop(Vec::from_raw_parts(

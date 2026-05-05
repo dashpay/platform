@@ -4,6 +4,11 @@ import SwiftData
 /// SwiftData model for persisting documents
 @Model
 public final class PersistentDocument {
+    /// Index `networkRaw` to keep per-network document scans
+    /// index-served. The static `predicate(contractId:network:)` helper
+    /// and every UI list view filter by the active network.
+    #Index<PersistentDocument>([\.networkRaw])
+
     // Primary key
     @Attribute(.unique) public var documentId: String
 

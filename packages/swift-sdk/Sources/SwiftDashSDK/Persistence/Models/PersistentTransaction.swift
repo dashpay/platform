@@ -76,6 +76,18 @@ public final class PersistentTransaction {
     @Relationship(inverse: \PersistentTxo.spendingTransaction)
     public var inputs: [PersistentTxo] = []
 
+    /// Pending input outpoints — entries this transaction's input
+    /// list references but for which no `PersistentTxo` has been
+    /// upserted yet. Filled by `PlatformWalletPersistenceHandler.
+    /// upsertTransaction` via the FFI's `input_outpoints` slice;
+    /// each entry is consumed (deleted) by `upsertUtxo` when the
+    /// matching previous-output finally arrives. See
+    /// `PersistentPendingInput` for the full reconciliation flow.
+    /// Cascade-delete: removing the spending tx drops every pending
+    /// row that hasn't resolved yet.
+    @Relationship(deleteRule: .cascade, inverse: \PersistentPendingInput.spendingTransaction)
+    public var pendingInputs: [PersistentPendingInput] = []
+
     public init(
         txid: Data,
         context: UInt32 = 0,

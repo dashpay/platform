@@ -124,13 +124,24 @@ async fn build_core_changeset(
     event: &WalletEvent,
 ) -> CoreChangeSet {
     match event {
-        WalletEvent::TransactionDetected { record, .. } => {
+        WalletEvent::TransactionDetected {
+            record,
+            addresses_derived,
+            ..
+        } => {
             // Derive UTXO deltas BEFORE moving the record into `records`
             // so we still have the per-record borrows.
             CoreChangeSet {
                 new_utxos: derive_new_utxos(record),
                 spent_utxos: derive_spent_utxos(record),
                 records: vec![(**record).clone()],
+                // Mirror the upstream-emitted derived addresses
+                // through to the persister so newly-extended pool
+                // rows are written transactionally with the tx that
+                // triggered the extension. See
+                // `CoreChangeSet.addresses_derived` for the cascade-
+                // link rationale.
+                addresses_derived: addresses_derived.clone(),
                 ..CoreChangeSet::default()
             }
         }
@@ -156,6 +167,7 @@ async fn build_core_changeset(
             inserted,
             updated,
             matured,
+            addresses_derived,
             ..
         } => {
             let mut cs = CoreChangeSet::default();
@@ -173,6 +185,10 @@ async fn build_core_changeset(
             cs.records.extend(updated.iter().cloned());
             cs.records.extend(matured.iter().cloned());
             cs.last_processed_height = Some(*height);
+            // Pool extensions triggered by any record in this block.
+            // Already deduped upstream by `project_derived_addresses`;
+            // `Merge` re-dedupes if multiple events fold together.
+            cs.addresses_derived = addresses_derived.clone();
             cs
         }
         WalletEvent::SyncHeightAdvanced { height, .. } => CoreChangeSet {
