@@ -169,7 +169,7 @@ Source citations for the "Wallet API exists" column are listed inline per case
 | TK-014 | Group-action gateway: queue a mint, list pending, co-sign | P2 | L |
 | CR-001 | SPV mn-list sync readiness | P1 | M |
 | CR-002 | Core wallet receive address derivation | P1 | M |
-| CR-003 | Asset-lock-funded identity registration (full path) (STUB — needs bank Core funding) | P2 | L |
+| CR-003 | Asset-lock-funded identity registration (full path) | P2 | L |
 | CT-001 | Document put: deploy a fixture data contract | P1 | M |
 | CT-002 | Document put / replace lifecycle | P2 | M |
 | CT-003 | Contract update (add document type) | P2 | M |
@@ -1382,7 +1382,7 @@ so that when SPV lands, the test bodies can be written without further design.
 
 #### CR-003 — Asset-lock-funded identity registration (full path)
 - **Priority**: P2 (post-Task #15)
-- **Status**: STUB — full test body implemented at `tests/e2e/cases/cr_003_asset_lock_funded_registration.rs`, `#[ignore]`-tagged. Framework prerequisites cleared: SPV runtime live (Task #15), `BankWallet::send_core_to` wired (ID-007 / CR-003), and the new `framework::setup_with_core_funded_test_wallet(duffs)` helper lands `TEST_WALLET_CORE_FUNDING` duffs on the test wallet's BIP-44 account 0 before the asset-lock build. End-to-end runs are gated on the bank's Core (Layer-1) primary receive address holding at least `TEST_WALLET_CORE_FUNDING + CORE_TX_FEE_RESERVE` (≈ 200_010_000 duffs ≈ 2.0001 DASH testnet); under-funded surfaces as `FrameworkError::Bank` with the bank's Core address embedded so the operator-actionable "top up at &lt;addr&gt;" message reaches the test log unchanged. The bank Core address is logged once per process at framework init under the `platform_wallet::e2e::bank` target.
+- **Status**: Pass — `tests/e2e/cases/cr_003_asset_lock_funded_registration.rs` (`#[ignore]`-tagged; runs gated on `PLATFORM_WALLET_E2E_BANK_CORE_GATE`). Builds the asset-lock tx via `setup_with_core_funded_test_wallet(TEST_WALLET_CORE_FUNDING)`, waits for the IS-lock, registers the identity, and pins on-chain identity existence + `tracked_asset_locks` recording + Core-balance decrement (lock amount + fee, in duffs). End-to-end runs are gated on the bank's Core (Layer-1) primary receive address holding at least `TEST_WALLET_CORE_FUNDING + CORE_TX_FEE_RESERVE` (≈ 200_010_000 duffs ≈ 2.0001 DASH testnet); under-funded surfaces as `FrameworkError::Bank` with the bank's Core address embedded so the operator-actionable "top up at &lt;addr&gt;" message reaches the test log unchanged. The bank Core address is logged once per process at framework init under the `platform_wallet::e2e::bank` target.
 - **Wallet feature exercised**: `wallet/asset_lock/build.rs:39` (`build_asset_lock_transaction`) + `wallet/asset_lock/build.rs:285` (`create_funded_asset_lock_proof`) + `wallet/identity/network/registration.rs:59` (`register_identity_with_funding_external_signer` driving `IdentityFundingMethod::FundWithWallet`).
 - **DET parallel**: `dash-evo-tool/tests/backend-e2e/core_tasks.rs:132` (`test_tc004_create_registration_asset_lock`).
 - **Preconditions**: CR-001 + a Core-funded test wallet (operator funds via testnet faucet).
