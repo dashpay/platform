@@ -89,13 +89,32 @@ class SendViewModel: ObservableObject {
         self.network = network
     }
 
-    var amount: UInt64? {
+    /// Parsed amount expressed in **L1 duffs** (1 DASH = 1e8). Right
+    /// for Core sends; *wrong* for Platform / shielded sends, which
+    /// use the credits scale (1 DASH = 1e11) instead. Use [`amountCredits`]
+    /// for those paths — picking duffs underpays them by 1000×.
+    var amountDuffs: UInt64? {
         guard let double = Double(amountString), double > 0 else { return nil }
         return UInt64(double * 100_000_000)
     }
 
+    /// Parsed amount expressed in Platform / shielded **credits**
+    /// (1 DASH = 1e11). Used for any flow that touches the credits
+    /// ledger (`platformToShielded`, `shieldedToShielded`,
+    /// `shieldedToPlatform`, `shieldedToCore`).
+    var amountCredits: UInt64? {
+        guard let double = Double(amountString), double > 0 else { return nil }
+        return UInt64(double * 100_000_000_000)
+    }
+
+    /// Backwards-compatibility shim — the original `amount` property
+    /// always returned duffs, so any leftover call site that hasn't
+    /// switched to the unit-explicit pair stays correct for Core
+    /// flows.
+    var amount: UInt64? { amountDuffs }
+
     var canSend: Bool {
-        detectedFlow != nil && amount != nil && !isSending
+        detectedFlow != nil && amountDuffs != nil && !isSending
     }
 
     /// Determine which fund sources are available based on destination and balances.
@@ -165,7 +184,7 @@ class SendViewModel: ObservableObject {
         coreWallet: ManagedCoreWallet?,
         modelContext: ModelContext
     ) async {
-        guard let flow = detectedFlow, let amount = amount else { return }
+        guard let flow = detectedFlow else { return }
 
         isSending = true
         error = nil
@@ -175,23 +194,30 @@ class SendViewModel: ObservableObject {
         do {
             switch flow {
             case .coreToCore:
+                guard let amountDuffs else {
+                    error = "Invalid amount"
+                    return
+                }
                 guard let core = coreWallet else {
                     error = "Core wallet not available"
                     return
                 }
                 let address = recipientAddress.trimmingCharacters(in: .whitespacesAndNewlines)
                 let _ = try core.sendToAddresses(
-                    recipients: [(address: address, amountDuffs: amount)]
+                    recipients: [(address: address, amountDuffs: amountDuffs)]
                 )
                 successMessage = "Payment sent"
 
             case .shieldedToShielded:
                 // Shielded → Shielded: spend notes from this
                 // wallet's shielded balance, create a new note
-                // for the recipient. Recipient bytes come from
-                // the bech32m parser as raw 43-byte Orchard
-                // address; matches what the manager's transfer
-                // FFI expects.
+                // for the recipient. Amount is in **credits**
+                // (1 DASH = 1e11) — the entire shielded ledger
+                // works on the credits scale.
+                guard let amountCredits else {
+                    error = "Invalid amount"
+                    return
+                }
                 let parsed = DashAddress.parse(recipientAddress, network: network)
                 guard case .orchard(let recipientRaw) = parsed.type else {
                     error = "Recipient is not a shielded address"
@@ -200,15 +226,17 @@ class SendViewModel: ObservableObject {
                 try await walletManager.shieldedTransfer(
                     walletId: wallet.walletId,
                     recipientRaw43: recipientRaw,
-                    amount: amount
+                    amount: amountCredits
                 )
                 successMessage = "Shielded transfer complete"
 
             case .shieldedToPlatform:
                 // Shielded → Platform: spend notes, credit the
-                // platform address. `addressBytes` is the 21-byte
-                // bincode-encoded `PlatformAddress` shape (type
-                // byte + 20-byte hash).
+                // platform address (also credits scale).
+                guard let amountCredits else {
+                    error = "Invalid amount"
+                    return
+                }
                 let parsed = DashAddress.parse(recipientAddress, network: network)
                 guard case .platform(let addressBytes) = parsed.type else {
                     error = "Recipient is not a platform address"
@@ -217,20 +245,24 @@ class SendViewModel: ObservableObject {
                 try await walletManager.shieldedUnshield(
                     walletId: wallet.walletId,
                     toPlatformAddress: addressBytes,
-                    amount: amount
+                    amount: amountCredits
                 )
                 successMessage = "Unshield complete"
 
             case .shieldedToCore:
-                // Shielded → Core L1: spend notes, create an L1
-                // withdrawal. The manager parses the Base58Check
-                // address Rust-side; we just hand the trimmed
-                // string through.
+                // Shielded → Core L1: spend notes (credits), create
+                // an L1 withdrawal. The shielded-side amount is in
+                // credits; the network converts to L1 duffs at the
+                // 1000:1 conversion rate.
+                guard let amountCredits else {
+                    error = "Invalid amount"
+                    return
+                }
                 let trimmed = recipientAddress.trimmingCharacters(in: .whitespacesAndNewlines)
                 try await walletManager.shieldedWithdraw(
                     walletId: wallet.walletId,
                     toCoreAddress: trimmed,
-                    amount: amount,
+                    amount: amountCredits,
                     coreFeePerByte: 1
                 )
                 successMessage = "Withdrawal submitted"
@@ -238,11 +270,11 @@ class SendViewModel: ObservableObject {
             case .platformToShielded:
                 // Platform → Shielded (Type 15): spend credits from
                 // the wallet's first Platform Payment account into
-                // the bound shielded pool. The KeychainSigner
-                // pulls the per-address ECDSA keys via the same
-                // mnemonic-resolver path identity-key signing uses;
-                // per-input nonces are fetched server-side from
-                // Platform inside `ShieldedWallet::shield`.
+                // the bound shielded pool. Credits scale.
+                guard let amountCredits else {
+                    error = "Invalid amount"
+                    return
+                }
                 _ = platformState
                 _ = shieldedService
                 _ = sdk
@@ -250,7 +282,7 @@ class SendViewModel: ObservableObject {
                 try await walletManager.shieldedShield(
                     walletId: wallet.walletId,
                     accountIndex: 0,
-                    amount: amount,
+                    amount: amountCredits,
                     addressSigner: signer
                 )
                 successMessage = "Shielding complete"

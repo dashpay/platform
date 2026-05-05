@@ -91,6 +91,33 @@ impl PlatformAddressWallet {
         &self,
         persisted: crate::PlatformAddressSyncStartState,
     ) -> Result<(), PlatformWalletError> {
+        // Push the persisted address balances into the in-memory
+        // `ManagedPlatformAccount.address_balances` map so callers
+        // that read via `addresses_with_balances()` /
+        // `address_credit_balance()` see the same numbers the
+        // BLAST sync saved last session. Without this the
+        // in-memory map starts empty after a restart and stays
+        // that way until the first sync pass repopulates it —
+        // any spend that needs to enumerate funded addresses
+        // (e.g. `shielded_shield_from_account`) sees `available =
+        // 0` even though the wallet detail screen reports a real
+        // balance from SwiftData.
+        {
+            let mut wm = self.wallet_manager.write().await;
+            if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
+                for (account_index, account_state) in &persisted.per_account {
+                    if let Some(account) = info
+                        .core_wallet
+                        .platform_payment_managed_account_at_index_mut(*account_index)
+                    {
+                        for (p2pkh, funds) in account_state.persisted_balances() {
+                            account.set_address_credit_balance(*p2pkh, funds.balance, None);
+                        }
+                    }
+                }
+            }
+        }
+
         let mut per_wallet = std::collections::BTreeMap::new();
         per_wallet.insert(self.wallet_id, persisted.per_account);
         let provider = PlatformPaymentAddressProvider::from_persisted(

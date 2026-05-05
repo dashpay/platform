@@ -115,6 +115,20 @@ impl PerAccountPlatformAddressState {
         self.addresses.insert(address_index, address);
         self.found.insert(address, funds);
     }
+
+    /// Iterate the (address, funds) pairs currently held in `found` —
+    /// the persisted-or-synced address balance snapshot. Used by the
+    /// restore path on
+    /// [`PlatformAddressWallet::initialize_from_persisted`](crate::wallet::platform_addresses::PlatformAddressWallet::initialize_from_persisted)
+    /// to seed the in-memory `ManagedPlatformAccount.address_balances`
+    /// map at startup, so spend paths that enumerate funded
+    /// addresses don't read `0` while waiting for the first BLAST
+    /// sync to repopulate them.
+    pub fn persisted_balances(
+        &self,
+    ) -> impl Iterator<Item = (&PlatformP2PKHAddress, &AddressFunds)> {
+        self.found.iter()
+    }
 }
 
 /// Per-wallet account map — keys are DIP-17 account indexes (hardened
