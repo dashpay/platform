@@ -33,17 +33,16 @@ use crate::framework::prelude::*;
 // the empirical chain-time ceiling sidesteps the bug until #3040
 // lands at the dpp layer.
 
-/// Gross credits the bank submits when funding `addr_1`. The bank
-/// uses `[ReduceOutput(0)]`, so addr_1 actually receives
-/// `FUNDING_CREDITS − bank_fee`. Sized well above the chain-time
-/// fee (~15M empirically) so addr_1 retains enough headroom to
-/// fund the test's own self-transfer (see #3040 comment above).
+/// Credits the bank delivers to `addr_1`. The bank uses
+/// `[DeductFromInput(0)]`, so addr_1 receives this exact amount;
+/// the bank's fee is absorbed by the bank's own input. Sized well
+/// above the chain-time fee (~15M empirically) so addr_1 has
+/// enough headroom for the self-transfer (see #3040 comment above).
 const FUNDING_CREDITS: u64 = 100_000_000;
 
-/// Lower bound on what addr_1 must receive after the bank's fee
-/// deduction before the test proceeds. Pinned well below the raw
-/// gross so the wait isn't sensitive to fee fluctuations across
-/// protocol versions.
+/// Safety floor for the addr_1 wait. Under `[DeductFromInput(0)]`
+/// addr_1 receives FUNDING_CREDITS exactly; the floor is kept as a
+/// guard against an empty/stale observation slipping through.
 const FUNDING_FLOOR: u64 = 70_000_000;
 
 /// Gross credits the test wallet submits in its self-transfer to
@@ -82,14 +81,19 @@ async fn transfer_between_two_platform_addresses() {
         .await
         .expect("derive addr_1");
 
+    // Snapshot bank balance before funding so we can derive the fee
+    // the bank's input actually paid (invisible to the test wallet).
+    let bank_pre = s.ctx.bank().total_credits().await;
+
     s.ctx
         .bank()
         .fund_address(&addr_1, FUNDING_CREDITS)
         .await
         .expect("bank.fund_address");
 
-    // Bank uses `[ReduceOutput(0)]`, so addr_1 receives
-    // `FUNDING_CREDITS − bank_fee`. Wait on the post-fee floor.
+    // Bank uses `[DeductFromInput(0)]`: addr_1 receives FUNDING_CREDITS
+    // exactly. Wait on the safety floor; the exact-amount assertion
+    // follows after the test wallet syncs.
     wait_for_balance(&s.test_wallet, &addr_1, FUNDING_FLOOR, STEP_TIMEOUT)
         .await
         .expect("addr_1 funding never observed");
@@ -116,9 +120,8 @@ async fn transfer_between_two_platform_addresses() {
         .await
         .expect("addr_2 transfer never observed");
 
-    // Re-sync so the cached view reflects post-transfer state across
-    // BOTH addresses, then derive bank- and transfer-fee shares from
-    // observed balances.
+    // Re-sync test wallet so the cached view reflects post-transfer
+    // state across BOTH addresses.
     s.test_wallet
         .sync_balances()
         .await
@@ -126,21 +129,29 @@ async fn transfer_between_two_platform_addresses() {
     let balances = s.test_wallet.balances().await;
     let received = balances.get(&addr_2).copied().unwrap_or(0);
     let remaining = balances.get(&addr_1).copied().unwrap_or(0);
-    let observed_total = received.saturating_add(remaining);
-    // Bank's `ReduceOutput(0)` charged its fee against addr_1's
-    // funding output: the wallet's total post-transfer is
-    // `FUNDING_CREDITS − bank_fee − transfer_fee`. Each fee is the
-    // amount each ReduceOutput step trimmed off its respective
-    // output; together they equal `FUNDING_CREDITS − observed_total`.
-    let total_fees = FUNDING_CREDITS.saturating_sub(observed_total);
     // The transfer fee is the share TRANSFER_CREDITS lost while
-    // crossing addr_1 -> addr_2.
+    // crossing addr_1 -> addr_2 via `[ReduceOutput(0)]`.
     let transfer_fee = TRANSFER_CREDITS.saturating_sub(received);
-    let bank_fee = total_fees.saturating_sub(transfer_fee);
+
+    // Resync the bank to get its post-funding balance, then derive
+    // the fee the bank's input absorbed under `[DeductFromInput(0)]`.
+    s.ctx
+        .bank()
+        .sync_balances()
+        .await
+        .expect("bank post-funding sync");
+    let bank_post = s.ctx.bank().total_credits().await;
+    // bank_pre - bank_post = FUNDING_CREDITS + bank_fee
+    let bank_fee = bank_pre
+        .saturating_sub(bank_post)
+        .saturating_sub(FUNDING_CREDITS);
+
     tracing::info!(
         target: "platform_wallet::e2e::cases::transfer",
         ?addr_1,
         ?addr_2,
+        bank_pre,
+        bank_post,
         funded = FUNDING_CREDITS,
         received,
         remaining,
@@ -149,14 +160,25 @@ async fn transfer_between_two_platform_addresses() {
         "post-transfer balance snapshot"
     );
 
-    assert!(
-        received >= TRANSFER_FLOOR,
-        "addr_2 must hold at least TRANSFER_FLOOR ({TRANSFER_FLOOR}); observed {received}"
+    // Under [ReduceOutput(0)], the protocol deducts the transfer fee
+    // from output[0] — addr_2's received amount — not from addr_1's
+    // residual. So addr_1 retains FUNDING_CREDITS - TRANSFER_CREDITS
+    // and addr_2 receives TRANSFER_CREDITS - transfer_fee.
+    assert_eq!(
+        remaining,
+        FUNDING_CREDITS - TRANSFER_CREDITS,
+        "addr_1 must retain FUNDING_CREDITS - TRANSFER_CREDITS \
+         (transfer_fee is deducted from addr_2's amount, not addr_1's residual). \
+         observed remaining={remaining} expected={}",
+        FUNDING_CREDITS - TRANSFER_CREDITS,
     );
-    assert!(
-        received < TRANSFER_CREDITS,
-        "addr_2 must hold less than TRANSFER_CREDITS ({TRANSFER_CREDITS}) \
-         after `ReduceOutput(0)` fee deduction; observed {received}"
+    assert_eq!(
+        received,
+        TRANSFER_CREDITS - transfer_fee,
+        "addr_2 must receive TRANSFER_CREDITS minus the transfer fee \
+         (ReduceOutput(0) deducts fee from the transferred amount). \
+         observed received={received} expected={}",
+        TRANSFER_CREDITS - transfer_fee,
     );
     assert!(
         transfer_fee > 0,
@@ -168,7 +190,8 @@ async fn transfer_between_two_platform_addresses() {
     );
     assert!(
         bank_fee > 0,
-        "bank funding must charge a non-zero fee (observed_total={observed_total})"
+        "bank funding must charge a non-zero fee to its own input \
+         (bank_pre={bank_pre} bank_post={bank_post} funded={FUNDING_CREDITS})"
     );
 
     s.teardown().await.expect("teardown");
