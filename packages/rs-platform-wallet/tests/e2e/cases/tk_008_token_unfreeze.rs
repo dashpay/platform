@@ -30,7 +30,7 @@ const TRANSFER_TO_PEER: TokenAmount = 200;
 const PEER_RETURN: TokenAmount = 50;
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
-#[tokio_shared_rt::test(shared)]
+#[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 #[ignore = "requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access; run with `cargo test -- --ignored`"]
 async fn tk_008_token_unfreeze() {
     let _ = tracing_subscriber::fmt()
@@ -41,21 +41,22 @@ async fn tk_008_token_unfreeze() {
         .with_test_writer()
         .try_init();
 
-    let s = setup().await.expect("e2e setup failed");
-    let two = setup_with_token_and_two_identities(s.ctx, TK_FUNDING_PER)
+    let ctx = E2eContext::init().await.expect("e2e ctx init");
+    let two = setup_with_token_and_two_identities(ctx, TK_FUNDING_PER)
         .await
         .expect("two-identity token setup");
+    let test_wallet = &two.setup.setup_guard.base.test_wallet;
     let owner = &two.setup.owner;
     let peer = &two.peer;
     let contract_id = two.setup.contract_id;
     let position = two.setup.token_position;
 
     // Mint to owner.
-    crate::framework::tokens::mint_to(s.ctx, contract_id, position, MINT_TO_OWNER, owner, owner)
+    crate::framework::tokens::mint_to(ctx, contract_id, position, MINT_TO_OWNER, owner, owner)
         .await
         .expect("mint to owner");
     wait_for_token_balance(
-        s.ctx,
+        ctx,
         owner.id,
         contract_id,
         position,
@@ -65,14 +66,14 @@ async fn tk_008_token_unfreeze() {
     .await
     .expect("owner mint not observed");
 
-    let data_contract = DataContract::fetch(s.ctx.sdk(), contract_id)
+    let data_contract = DataContract::fetch(ctx.sdk(), contract_id)
         .await
         .expect("fetch contract")
         .expect("contract present");
     let data_contract = std::sync::Arc::new(data_contract);
 
     // Owner -> peer pre-freeze transfer.
-    s.test_wallet
+    test_wallet
         .platform_wallet()
         .identity()
         .token_transfer_with_signer(
@@ -89,7 +90,7 @@ async fn tk_008_token_unfreeze() {
         .await
         .expect("token transfer pre-freeze");
     wait_for_token_balance(
-        s.ctx,
+        ctx,
         peer.id,
         contract_id,
         position,
@@ -100,7 +101,7 @@ async fn tk_008_token_unfreeze() {
     .expect("peer pre-freeze balance not observed");
 
     // Freeze peer (TK-007 precondition replay).
-    s.test_wallet
+    test_wallet
         .platform_wallet()
         .identity()
         .token_freeze_with_signer(
@@ -120,13 +121,13 @@ async fn tk_008_token_unfreeze() {
     // Snapshot owner credits before unfreeze so we can assert it
     // charged a non-zero fee — `UnfreezeResult` carries no
     // `actual_fee` field.
-    let owner_credits_pre = IdentityBalance::fetch(s.ctx.sdk(), owner.id)
+    let owner_credits_pre = IdentityBalance::fetch(ctx.sdk(), owner.id)
         .await
         .expect("fetch owner credits pre-unfreeze")
         .expect("owner identity present");
 
     // Unfreeze.
-    s.test_wallet
+    test_wallet
         .platform_wallet()
         .identity()
         .token_unfreeze_with_signer(
@@ -143,14 +144,14 @@ async fn tk_008_token_unfreeze() {
         .await
         .expect("token unfreeze");
 
-    let owner_credits_post = IdentityBalance::fetch(s.ctx.sdk(), owner.id)
+    let owner_credits_post = IdentityBalance::fetch(ctx.sdk(), owner.id)
         .await
         .expect("fetch owner credits post-unfreeze")
         .expect("owner identity present");
 
     // Frozen-balance helper: returns the identity's full token
     // balance while frozen, `0` once the `frozen` flag is cleared.
-    let frozen_balance = token_frozen_balance_of(s.ctx, contract_id, position, peer.id)
+    let frozen_balance = token_frozen_balance_of(ctx, contract_id, position, peer.id)
         .await
         .expect("frozen balance fetch");
     assert_eq!(
@@ -160,11 +161,11 @@ async fn tk_008_token_unfreeze() {
     );
 
     // Peer retries the transfer that was blocked while frozen.
-    let owner_balance_pre_return = token_balance_of(s.ctx, contract_id, position, owner.id)
+    let owner_balance_pre_return = token_balance_of(ctx, contract_id, position, owner.id)
         .await
         .expect("owner balance pre-return");
 
-    s.test_wallet
+    test_wallet
         .platform_wallet()
         .identity()
         .token_transfer_with_signer(
@@ -183,7 +184,7 @@ async fn tk_008_token_unfreeze() {
 
     let expected_owner_balance = owner_balance_pre_return + PEER_RETURN;
     wait_for_token_balance(
-        s.ctx,
+        ctx,
         owner.id,
         contract_id,
         position,
@@ -193,7 +194,7 @@ async fn tk_008_token_unfreeze() {
     .await
     .expect("owner balance increment not observed");
 
-    let peer_balance = token_balance_of(s.ctx, contract_id, position, peer.id)
+    let peer_balance = token_balance_of(ctx, contract_id, position, peer.id)
         .await
         .expect("peer balance fetch");
     assert_eq!(

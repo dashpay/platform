@@ -29,7 +29,7 @@ const MINT_TO_OWNER: TokenAmount = 1_000;
 const TRANSFER_TO_PEER: TokenAmount = 200;
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
-#[tokio_shared_rt::test(shared)]
+#[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 #[ignore = "requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access; run with `cargo test -- --ignored`"]
 async fn tk_009_token_destroy_frozen() {
     let _ = tracing_subscriber::fmt()
@@ -40,21 +40,22 @@ async fn tk_009_token_destroy_frozen() {
         .with_test_writer()
         .try_init();
 
-    let s = setup().await.expect("e2e setup failed");
-    let two = setup_with_token_and_two_identities(s.ctx, TK_FUNDING_PER)
+    let ctx = E2eContext::init().await.expect("e2e ctx init");
+    let two = setup_with_token_and_two_identities(ctx, TK_FUNDING_PER)
         .await
         .expect("two-identity token setup");
+    let test_wallet = &two.setup.setup_guard.base.test_wallet;
     let owner = &two.setup.owner;
     let peer = &two.peer;
     let contract_id = two.setup.contract_id;
     let position = two.setup.token_position;
 
     // Mint to owner so we have a balance to fund the peer with.
-    crate::framework::tokens::mint_to(s.ctx, contract_id, position, MINT_TO_OWNER, owner, owner)
+    crate::framework::tokens::mint_to(ctx, contract_id, position, MINT_TO_OWNER, owner, owner)
         .await
         .expect("mint to owner");
     wait_for_token_balance(
-        s.ctx,
+        ctx,
         owner.id,
         contract_id,
         position,
@@ -64,14 +65,14 @@ async fn tk_009_token_destroy_frozen() {
     .await
     .expect("owner mint not observed");
 
-    let data_contract = DataContract::fetch(s.ctx.sdk(), contract_id)
+    let data_contract = DataContract::fetch(ctx.sdk(), contract_id)
         .await
         .expect("fetch contract")
         .expect("contract present");
     let data_contract = std::sync::Arc::new(data_contract);
 
     // Owner -> peer pre-freeze transfer.
-    s.test_wallet
+    test_wallet
         .platform_wallet()
         .identity()
         .token_transfer_with_signer(
@@ -88,7 +89,7 @@ async fn tk_009_token_destroy_frozen() {
         .await
         .expect("token transfer pre-freeze");
     wait_for_token_balance(
-        s.ctx,
+        ctx,
         peer.id,
         contract_id,
         position,
@@ -102,12 +103,12 @@ async fn tk_009_token_destroy_frozen() {
     // equals MINT_TO_OWNER; we capture the live value rather than
     // pinning the constant so a future change to the helper's
     // base-supply default doesn't drift this assertion.
-    let supply_pre_destroy = token_supply_of(s.ctx, contract_id, position)
+    let supply_pre_destroy = token_supply_of(ctx, contract_id, position)
         .await
         .expect("supply pre-destroy");
 
     // Freeze peer (TK-007 precondition).
-    s.test_wallet
+    test_wallet
         .platform_wallet()
         .identity()
         .token_freeze_with_signer(
@@ -127,13 +128,13 @@ async fn tk_009_token_destroy_frozen() {
     // Snapshot owner credits before destroy so we can assert it
     // charged a non-zero fee — `DestroyFrozenFundsResult` carries no
     // `actual_fee` field.
-    let owner_credits_pre = IdentityBalance::fetch(s.ctx.sdk(), owner.id)
+    let owner_credits_pre = IdentityBalance::fetch(ctx.sdk(), owner.id)
         .await
         .expect("fetch owner credits pre-destroy")
         .expect("owner identity present");
 
     // Destroy frozen funds (no amount param — always full balance).
-    s.test_wallet
+    test_wallet
         .platform_wallet()
         .identity()
         .token_destroy_frozen_funds_with_signer(
@@ -150,12 +151,12 @@ async fn tk_009_token_destroy_frozen() {
         .await
         .expect("destroy frozen funds");
 
-    let owner_credits_post = IdentityBalance::fetch(s.ctx.sdk(), owner.id)
+    let owner_credits_post = IdentityBalance::fetch(ctx.sdk(), owner.id)
         .await
         .expect("fetch owner credits post-destroy")
         .expect("owner identity present");
 
-    let peer_balance = token_balance_of(s.ctx, contract_id, position, peer.id)
+    let peer_balance = token_balance_of(ctx, contract_id, position, peer.id)
         .await
         .expect("peer balance post-destroy");
     assert_eq!(
@@ -163,7 +164,7 @@ async fn tk_009_token_destroy_frozen() {
         "peer balance must be 0 after destroy_frozen_funds; observed {peer_balance}"
     );
 
-    let supply_post_destroy = token_supply_of(s.ctx, contract_id, position)
+    let supply_post_destroy = token_supply_of(ctx, contract_id, position)
         .await
         .expect("supply post-destroy");
     assert_eq!(
@@ -176,7 +177,7 @@ async fn tk_009_token_destroy_frozen() {
     // Frozen-balance helper: with the peer's balance now zero, the
     // helper returns 0 even though the `IdentityTokenInfo.frozen`
     // flag may still be set (full balance × frozen-flag = 0).
-    let frozen_balance = token_frozen_balance_of(s.ctx, contract_id, position, peer.id)
+    let frozen_balance = token_frozen_balance_of(ctx, contract_id, position, peer.id)
         .await
         .expect("frozen balance fetch post-destroy");
     assert_eq!(

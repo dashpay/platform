@@ -50,7 +50,7 @@ const TRANSFER_TO_PEER: TokenAmount = 200;
 /// Per-step timeout for token-balance polls.
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
-#[tokio_shared_rt::test(shared)]
+#[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 #[ignore = "requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access; run with `cargo test -- --ignored`"]
 async fn tk_007_token_freeze() {
     let _ = tracing_subscriber::fmt()
@@ -61,22 +61,23 @@ async fn tk_007_token_freeze() {
         .with_test_writer()
         .try_init();
 
-    let s = setup().await.expect("e2e setup failed");
-    let two = setup_with_token_and_two_identities(s.ctx, TK_FUNDING_PER)
+    let ctx = E2eContext::init().await.expect("e2e ctx init");
+    let two = setup_with_token_and_two_identities(ctx, TK_FUNDING_PER)
         .await
         .expect("two-identity token setup");
+    let test_wallet = &two.setup.setup_guard.base.test_wallet;
     let owner = &two.setup.owner;
     let peer = &two.peer;
     let contract_id = two.setup.contract_id;
     let position = two.setup.token_position;
 
     // Mint to owner so we have a balance to fund the peer with.
-    crate::framework::tokens::mint_to(s.ctx, contract_id, position, MINT_TO_OWNER, owner, owner)
+    crate::framework::tokens::mint_to(ctx, contract_id, position, MINT_TO_OWNER, owner, owner)
         .await
         .expect("mint to owner");
 
     wait_for_token_balance(
-        s.ctx,
+        ctx,
         owner.id,
         contract_id,
         position,
@@ -87,13 +88,13 @@ async fn tk_007_token_freeze() {
     .expect("owner mint not observed");
 
     // Owner transfers TRANSFER_TO_PEER to peer.
-    let data_contract = DataContract::fetch(s.ctx.sdk(), contract_id)
+    let data_contract = DataContract::fetch(ctx.sdk(), contract_id)
         .await
         .expect("fetch contract")
         .expect("contract present");
     let data_contract = std::sync::Arc::new(data_contract);
 
-    s.test_wallet
+    test_wallet
         .platform_wallet()
         .identity()
         .token_transfer_with_signer(
@@ -111,7 +112,7 @@ async fn tk_007_token_freeze() {
         .expect("token transfer pre-freeze");
 
     wait_for_token_balance(
-        s.ctx,
+        ctx,
         peer.id,
         contract_id,
         position,
@@ -124,13 +125,13 @@ async fn tk_007_token_freeze() {
     // Capture owner's identity-credit balance before the freeze
     // transition so we can assert the freeze charged a non-zero fee
     // — `FreezeResult` itself does not expose `actual_fee`.
-    let owner_credits_pre = IdentityBalance::fetch(s.ctx.sdk(), owner.id)
+    let owner_credits_pre = IdentityBalance::fetch(ctx.sdk(), owner.id)
         .await
         .expect("fetch owner credits pre-freeze")
         .expect("owner identity present");
 
     // Owner freezes peer.
-    s.test_wallet
+    test_wallet
         .platform_wallet()
         .identity()
         .token_freeze_with_signer(
@@ -147,12 +148,12 @@ async fn tk_007_token_freeze() {
         .await
         .expect("token freeze");
 
-    let owner_credits_post = IdentityBalance::fetch(s.ctx.sdk(), owner.id)
+    let owner_credits_post = IdentityBalance::fetch(ctx.sdk(), owner.id)
         .await
         .expect("fetch owner credits post-freeze")
         .expect("owner identity present");
 
-    let frozen_balance = token_frozen_balance_of(s.ctx, contract_id, position, peer.id)
+    let frozen_balance = token_frozen_balance_of(ctx, contract_id, position, peer.id)
         .await
         .expect("frozen balance fetch");
     assert_eq!(
@@ -168,8 +169,7 @@ async fn tk_007_token_freeze() {
     // `IdentityTokenAccountFrozenError`'s formatter contains the
     // word "frozen" (see rs-dpp consensus state-error 40702).
     let half_back = TRANSFER_TO_PEER / 4;
-    let attempt = s
-        .test_wallet
+    let attempt = test_wallet
         .platform_wallet()
         .identity()
         .token_transfer_with_signer(
@@ -195,7 +195,7 @@ async fn tk_007_token_freeze() {
     );
 
     // Peer's token balance unchanged after the failed transfer.
-    let peer_balance = token_balance_of(s.ctx, contract_id, position, peer.id)
+    let peer_balance = token_balance_of(ctx, contract_id, position, peer.id)
         .await
         .expect("peer balance fetch");
     assert_eq!(
