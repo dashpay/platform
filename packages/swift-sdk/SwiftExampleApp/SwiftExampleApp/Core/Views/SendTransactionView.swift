@@ -13,9 +13,34 @@ struct SendTransactionView: View {
 
     @Environment(\.modelContext) private var modelContext
 
+    /// BLAST-synced platform-address balances for this wallet —
+    /// same source `WalletDetailView` reads to populate its
+    /// "Platform Balance" row. Without these the send screen used
+    /// to fall through to `wallet.identities.balance` only, which
+    /// is empty for wallets that hold credits at platform
+    /// addresses (e.g. faucet-funded Platform Payment accounts)
+    /// rather than at registered identities.
+    @Query private var addressBalances: [PersistentPlatformAddress]
+
+    /// Persisted BLAST sync watermarks — used to distinguish
+    /// "BLAST hasn't synced yet, fall back to identities" from
+    /// "BLAST synced and there genuinely are no platform-address
+    /// credits".
+    @Query private var syncStates: [PersistentPlatformAddressesSyncState]
+
     init(wallet: PersistentWallet) {
         self.wallet = wallet
         _viewModel = StateObject(wrappedValue: SendViewModel(network: wallet.network ?? .testnet))
+        let walletId = wallet.walletId
+        let walletNetworkRaw = (wallet.network ?? .testnet).rawValue
+        _addressBalances = Query(
+            filter: #Predicate<PersistentPlatformAddress> { $0.walletId == walletId }
+        )
+        _syncStates = Query(
+            filter: #Predicate<PersistentPlatformAddressesSyncState> {
+                $0.networkRaw == walletNetworkRaw
+            }
+        )
     }
 
     var body: some View {
@@ -185,8 +210,19 @@ struct SendTransactionView: View {
         shieldedService.shieldedBalance
     }
 
+    /// Mirrors `WalletDetailView.platformBalance`: BLAST-synced
+    /// address balances are the canonical source once a sync has
+    /// landed; before that, fall back to summing identity credits
+    /// so a freshly-restored wallet still shows something
+    /// approximate.
     private var platformBalance: UInt64 {
-        wallet.identities.reduce(UInt64(0)) { $0 + UInt64(bitPattern: $1.balance) }
+        let blastBalance = addressBalances.reduce(UInt64(0)) { $0 + $1.balance }
+        let hasSynced = syncStates.first.map { $0.syncHeight > 0 || $0.syncTimestamp > 0 }
+            ?? false
+        if blastBalance > 0 || hasSynced {
+            return blastBalance
+        }
+        return wallet.identities.reduce(UInt64(0)) { $0 + UInt64(bitPattern: $1.balance) }
     }
 
     private func availableSources(coreBalance: UInt64) -> [FundSource] {
