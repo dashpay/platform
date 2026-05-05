@@ -4,15 +4,16 @@
 //! [`TrustedHttpContextProvider`]) → manager → bank → registry →
 //! startup sweep.
 //!
-//! SPV-based context provider currently disabled; re-enable by
-//! uncommenting the SPV blocks in `Self::build` (Task #15).
+//! SPV runtime is started during `Self::build` so monitored-address
+//! / Layer-1 contracts have something live to observe. The SDK keeps
+//! the trusted HTTP context provider for now — tests that need
+//! SPV-backed proof verification can swap to `SpvContextProvider`.
 
 use std::fs::File;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
-// `SpvRuntime` is held in an `Option` for SPV re-enablement
-// (Task #15); the corresponding helpers stay compilable.
 use platform_wallet::wallet::persister::NoPlatformPersistence;
 use platform_wallet::{PlatformEventHandler, PlatformWalletManager, SpvRuntime};
 use tokio::sync::OnceCell;
@@ -24,9 +25,15 @@ use super::cleanup;
 use super::config::Config;
 use super::registry::PersistentTestWalletRegistry;
 use super::sdk;
+use super::spv;
 use super::wait_hub::WaitEventHub;
 use super::workdir;
 use super::FrameworkResult;
+
+/// Deadline for the SPV mn-list to reach `Synced` during framework
+/// init. Internally raised to `COLD_CACHE_TIMEOUT_FLOOR` (600s) by
+/// [`spv::wait_for_mn_list_synced`] so cold testnet caches still fit.
+const SPV_READY_TIMEOUT: Duration = Duration::from_secs(180);
 
 /// Process-shared singleton populated on first
 /// [`E2eContext::init`].
@@ -44,8 +51,11 @@ pub struct E2eContext {
     workdir_lock: File,
     pub sdk: Arc<dash_sdk::Sdk>,
     pub manager: Arc<PlatformWalletManager<NoPlatformPersistence>>,
-    /// `None` while the SPV-based context provider is deferred
-    /// (Task #15); shape kept stable for future re-enablement.
+    /// SPV runtime started by [`Self::build`]. The SDK still uses
+    /// the trusted HTTP context provider; this handle is exposed via
+    /// [`Self::spv`] for tests that need to observe SPV state
+    /// directly. Held as `Option` so individual setups can opt out
+    /// without breaking the type — current default is `Some`.
     pub spv_runtime: Option<Arc<SpvRuntime>>,
     pub bank: BankWallet,
     /// Identity-credit sweep destination — registered or loaded once
@@ -94,8 +104,7 @@ impl E2eContext {
         &self.registry
     }
 
-    /// `None` while the SPV-based context provider is deferred
-    /// (Task #15).
+    /// Live SPV runtime started by [`Self::build`].
     pub fn spv(&self) -> Option<&Arc<SpvRuntime>> {
         self.spv_runtime.as_ref()
     }
@@ -132,29 +141,18 @@ impl E2eContext {
             event_handler,
         ));
 
-        // SPV deferred (Task #15) — `TrustedHttpContextProvider`
-        // is wired at SDK construction in `sdk::build_sdk`. To
-        // re-enable the SPV-backed provider, uncomment below and
-        // restore the `spv` / `context_provider` imports.
-        //
-        // ```rust,ignore
-        // const SPV_READY_TIMEOUT: Duration = Duration::from_secs(180);
-        // use super::context_provider::SpvContextProvider;
-        // use super::spv;
-        // // Start SPV before the bank's sync; SDK proof
-        // // verification needs SpvContextProvider for quorum keys.
-        // // Pass the SDK's live address list so SPV peers stay in
-        // // lock-step with the DAPI endpoints the SDK is actually
-        // // talking to (port-swapped to the effective P2P port).
-        // let spv_runtime = spv::start_spv(&manager, &config, &workdir, sdk.address_list()).await?;
-        // spv::wait_for_mn_list_synced(&spv_runtime, SPV_READY_TIMEOUT).await?;
-        // // `set_context_provider` is `ArcSwap`-backed, safe to
-        // // call after construction.
-        // sdk.set_context_provider(SpvContextProvider::new(
-        //     Arc::clone(&spv_runtime),
-        // ));
-        // ```
-        let spv_runtime: Option<Arc<SpvRuntime>> = None;
+        // Start SPV before the bank loads so any L1 funding /
+        // monitored-address contract assertions have a live mn-list
+        // to observe. SDK keeps `TrustedHttpContextProvider` —
+        // tests that need SPV-quorum-backed proof verification can
+        // switch via `sdk.set_context_provider(SpvContextProvider::new(...))`
+        // (it's `ArcSwap`-backed, safe to call after construction).
+        // Address-list seeding pins SPV peers to the same DAPI hosts
+        // the SDK is talking to (port-swapped to the P2P port), so
+        // tests don't drift between two independent peer pools.
+        let spv_runtime = spv::start_spv(&manager, &config, &workdir, sdk.address_list()).await?;
+        spv::wait_for_mn_list_synced(&spv_runtime, SPV_READY_TIMEOUT).await?;
+        let spv_runtime: Option<Arc<SpvRuntime>> = Some(spv_runtime);
 
         // Panics on under-funded balance — see `BankWallet::load`.
         let bank = BankWallet::load(&manager, &config).await?;
