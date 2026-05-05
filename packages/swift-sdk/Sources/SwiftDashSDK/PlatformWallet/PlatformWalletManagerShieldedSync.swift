@@ -229,6 +229,160 @@ extension PlatformWalletManager {
         return present ? Data(bytes) : nil
     }
 
+    /// Build the Halo 2 proving key on a background thread so the
+    /// first shielded send doesn't pay the ~30 s build cost
+    /// inline. Idempotent and safe to call from any thread; later
+    /// calls return immediately. Independent of any wallet — the
+    /// cache is process-global on the Rust side.
+    public static func warmUpShieldedProver() async {
+        await Task.detached(priority: .background) {
+            platform_wallet_shielded_warm_up_prover()
+        }.value
+    }
+
+    /// Whether the Halo 2 proving key has been built yet. Useful
+    /// for a "preparing prover…" UI affordance — `false` doesn't
+    /// mean shielded sends will fail, just that the next one
+    /// pays the build cost.
+    public static var isShieldedProverReady: Bool {
+        platform_wallet_shielded_prover_is_ready()
+    }
+
+    /// Shielded → Shielded transfer. Spends notes from `walletId`'s
+    /// shielded balance and creates a new note for `recipientRaw43`
+    /// (the recipient's raw 43-byte Orchard payment address). Amount
+    /// is in credits (1 DASH = 1e11). Heavy CPU work runs on a
+    /// detached task so the caller's actor isn't blocked through
+    /// the proof build.
+    public func shieldedTransfer(
+        walletId: Data,
+        recipientRaw43: Data,
+        amount: UInt64
+    ) async throws {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
+        }
+        guard walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "walletId must be exactly 32 bytes"
+            )
+        }
+        guard recipientRaw43.count == 43 else {
+            throw PlatformWalletError.invalidParameter(
+                "recipient must be exactly 43 raw Orchard bytes"
+            )
+        }
+
+        let handle = self.handle
+        try await Task.detached(priority: .userInitiated) {
+            try walletId.withUnsafeBytes { widRaw in
+                guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                else {
+                    throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
+                }
+                try recipientRaw43.withUnsafeBytes { recipientRaw in
+                    guard let recipientPtr = recipientRaw.baseAddress?
+                        .assumingMemoryBound(to: UInt8.self)
+                    else {
+                        throw PlatformWalletError.invalidParameter(
+                            "recipient baseAddress is nil"
+                        )
+                    }
+                    try platform_wallet_manager_shielded_transfer(
+                        handle, widPtr, recipientPtr, amount
+                    ).check()
+                }
+            }
+        }.value
+    }
+
+    /// Shielded → Platform unshield. Spends notes from `walletId`'s
+    /// shielded balance and credits the platform address
+    /// `toPlatformAddress` (bincode-encoded `PlatformAddress` —
+    /// `0x00 ‖ 20-byte hash` for P2PKH).
+    public func shieldedUnshield(
+        walletId: Data,
+        toPlatformAddress: Data,
+        amount: UInt64
+    ) async throws {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
+        }
+        guard walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "walletId must be exactly 32 bytes"
+            )
+        }
+        guard !toPlatformAddress.isEmpty else {
+            throw PlatformWalletError.invalidParameter(
+                "toPlatformAddress is empty"
+            )
+        }
+
+        let handle = self.handle
+        try await Task.detached(priority: .userInitiated) {
+            try walletId.withUnsafeBytes { widRaw in
+                guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                else {
+                    throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
+                }
+                try toPlatformAddress.withUnsafeBytes { addrRaw in
+                    guard let addrPtr = addrRaw.baseAddress?
+                        .assumingMemoryBound(to: UInt8.self)
+                    else {
+                        throw PlatformWalletError.invalidParameter(
+                            "toPlatformAddress baseAddress is nil"
+                        )
+                    }
+                    try platform_wallet_manager_shielded_unshield(
+                        handle, widPtr, addrPtr, UInt(toPlatformAddress.count), amount
+                    ).check()
+                }
+            }
+        }.value
+    }
+
+    /// Shielded → Core L1 withdraw. Spends notes from `walletId`'s
+    /// shielded balance and creates an L1 withdrawal to
+    /// `toCoreAddress` (Base58Check string). `coreFeePerByte` is
+    /// the L1 fee rate in duffs/byte (`1` is the dashmate default).
+    public func shieldedWithdraw(
+        walletId: Data,
+        toCoreAddress: String,
+        amount: UInt64,
+        coreFeePerByte: UInt32 = 1
+    ) async throws {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
+        }
+        guard walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "walletId must be exactly 32 bytes"
+            )
+        }
+
+        let handle = self.handle
+        try await Task.detached(priority: .userInitiated) {
+            try walletId.withUnsafeBytes { widRaw in
+                guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                else {
+                    throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
+                }
+                try toCoreAddress.withCString { addrCStr in
+                    try platform_wallet_manager_shielded_withdraw(
+                        handle, widPtr, addrCStr, amount, coreFeePerByte
+                    ).check()
+                }
+            }
+        }.value
+    }
+
     public func syncShieldedWalletNow(walletId: Data) async throws {
         guard isConfigured, handle != NULL_HANDLE else {
             throw PlatformWalletError.invalidHandle(

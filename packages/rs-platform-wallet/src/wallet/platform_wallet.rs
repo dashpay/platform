@@ -360,6 +360,93 @@ impl PlatformWallet {
             .as_ref()
             .map(|w| w.default_address().to_raw_address_bytes())
     }
+
+    /// Send a private shielded → shielded transfer. Spends notes
+    /// from this wallet's shielded balance and sends `amount`
+    /// credits to `recipient_raw_43` (the recipient's Orchard
+    /// payment address as the 43 raw bytes — same shape
+    /// [`shielded_default_address`](Self::shielded_default_address)
+    /// returns).
+    ///
+    /// The prover is consumed by value rather than borrowed because
+    /// `OrchardProver` is impl'd on `&CachedOrchardProver` (the
+    /// reference type), not on the bare struct. Callers pass
+    /// `&CachedOrchardProver::new()` and we forward it down to the
+    /// underlying `ShieldedWallet::transfer`'s `&P` parameter.
+    #[cfg(feature = "shielded")]
+    pub async fn shielded_transfer_to<P: dpp::shielded::builder::OrchardProver>(
+        &self,
+        recipient_raw_43: &[u8; 43],
+        amount: u64,
+        prover: P,
+    ) -> Result<(), PlatformWalletError> {
+        let guard = self.shielded.read().await;
+        let shielded = guard
+            .as_ref()
+            .ok_or(PlatformWalletError::ShieldedNotBound)?;
+        let recipient = Option::<grovedb_commitment_tree::PaymentAddress>::from(
+            grovedb_commitment_tree::PaymentAddress::from_raw_address_bytes(recipient_raw_43),
+        )
+        .ok_or_else(|| {
+            PlatformWalletError::ShieldedBuildError(
+                "invalid Orchard payment address bytes".to_string(),
+            )
+        })?;
+        shielded.transfer(&recipient, amount, &prover).await
+    }
+
+    /// Unshield: spend shielded notes and send `amount` credits to
+    /// the platform address `to_platform_addr_bytes` (bincode-
+    /// encoded `PlatformAddress` — `0x00 ‖ 20-byte hash` for
+    /// P2PKH, `0x01 ‖ 20-byte hash` for P2SH).
+    #[cfg(feature = "shielded")]
+    pub async fn shielded_unshield_to<P: dpp::shielded::builder::OrchardProver>(
+        &self,
+        to_platform_addr_bytes: &[u8],
+        amount: u64,
+        prover: P,
+    ) -> Result<(), PlatformWalletError> {
+        let guard = self.shielded.read().await;
+        let shielded = guard
+            .as_ref()
+            .ok_or(PlatformWalletError::ShieldedNotBound)?;
+        let to = dpp::address_funds::PlatformAddress::from_bytes(to_platform_addr_bytes).map_err(
+            |e| PlatformWalletError::ShieldedBuildError(format!("invalid platform address: {e}")),
+        )?;
+        shielded.unshield(&to, amount, &prover).await
+    }
+
+    /// Withdraw: spend shielded notes and send `amount` credits to
+    /// the Core L1 address `to_core_address` (Base58Check string).
+    /// `core_fee_per_byte` is the L1 fee rate (duffs/byte).
+    #[cfg(feature = "shielded")]
+    pub async fn shielded_withdraw_to<P: dpp::shielded::builder::OrchardProver>(
+        &self,
+        to_core_address: &str,
+        amount: u64,
+        core_fee_per_byte: u32,
+        prover: P,
+    ) -> Result<(), PlatformWalletError> {
+        let guard = self.shielded.read().await;
+        let shielded = guard
+            .as_ref()
+            .ok_or(PlatformWalletError::ShieldedNotBound)?;
+        let network = self.sdk.network;
+        let parsed = to_core_address
+            .parse::<dashcore::Address<dashcore::address::NetworkUnchecked>>()
+            .map_err(|e| {
+                PlatformWalletError::ShieldedBuildError(format!("invalid core address: {e}"))
+            })?
+            .require_network(network)
+            .map_err(|e| {
+                PlatformWalletError::ShieldedBuildError(format!(
+                    "core address network mismatch: {e}"
+                ))
+            })?;
+        shielded
+            .withdraw(&parsed, amount, core_fee_per_byte, &prover)
+            .await
+    }
 }
 
 impl PlatformWallet {

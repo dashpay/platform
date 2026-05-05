@@ -158,6 +158,7 @@ class SendViewModel: ObservableObject {
 
     func executeSend(
         sdk: SDK,
+        walletManager: PlatformWalletManager,
         shieldedService: ShieldedService,
         platformState: AppState,
         wallet: PersistentWallet,
@@ -184,22 +185,68 @@ class SendViewModel: ObservableObject {
                 )
                 successMessage = "Payment sent"
 
-            case .platformToShielded,
-                 .shieldedToShielded,
-                 .shieldedToPlatform,
-                 .shieldedToCore:
-                // Shielded send paths are being moved to the Rust
-                // platform-wallet shielded coordinator. The previous
-                // SDK-side bundle/build/broadcast surface was deleted
-                // along with the duplicate `ShieldedPoolClient` FFI;
-                // wiring back up against the new manager-driven path
-                // happens in a follow-up PR.
+            case .shieldedToShielded:
+                // Shielded → Shielded: spend notes from this
+                // wallet's shielded balance, create a new note
+                // for the recipient. Recipient bytes come from
+                // the bech32m parser as raw 43-byte Orchard
+                // address; matches what the manager's transfer
+                // FFI expects.
+                let parsed = DashAddress.parse(recipientAddress, network: network)
+                guard case .orchard(let recipientRaw) = parsed.type else {
+                    error = "Recipient is not a shielded address"
+                    return
+                }
+                try await walletManager.shieldedTransfer(
+                    walletId: wallet.walletId,
+                    recipientRaw43: recipientRaw,
+                    amount: amount
+                )
+                successMessage = "Shielded transfer complete"
+
+            case .shieldedToPlatform:
+                // Shielded → Platform: spend notes, credit the
+                // platform address. `addressBytes` is the 21-byte
+                // bincode-encoded `PlatformAddress` shape (type
+                // byte + 20-byte hash).
+                let parsed = DashAddress.parse(recipientAddress, network: network)
+                guard case .platform(let addressBytes) = parsed.type else {
+                    error = "Recipient is not a platform address"
+                    return
+                }
+                try await walletManager.shieldedUnshield(
+                    walletId: wallet.walletId,
+                    toPlatformAddress: addressBytes,
+                    amount: amount
+                )
+                successMessage = "Unshield complete"
+
+            case .shieldedToCore:
+                // Shielded → Core L1: spend notes, create an L1
+                // withdrawal. The manager parses the Base58Check
+                // address Rust-side; we just hand the trimmed
+                // string through.
+                let trimmed = recipientAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+                try await walletManager.shieldedWithdraw(
+                    walletId: wallet.walletId,
+                    toCoreAddress: trimmed,
+                    amount: amount,
+                    coreFeePerByte: 1
+                )
+                successMessage = "Withdrawal submitted"
+
+            case .platformToShielded:
+                // Platform → Shielded (Type 15) needs a
+                // `Signer<PlatformAddress>` adapter and the
+                // per-input nonce fetch — the Rust spend builder
+                // currently stubs the nonce to 0. Tracked for a
+                // follow-up; surface a clear error so the UI
+                // doesn't pretend to handle this yet.
                 _ = platformState
                 _ = shieldedService
-                _ = wallet
                 _ = modelContext
                 _ = sdk
-                error = "Shielded sending is being rebuilt — see follow-up PR"
+                error = "Platform → Shielded is not wired yet — follow-up PR"
                 return
             }
 

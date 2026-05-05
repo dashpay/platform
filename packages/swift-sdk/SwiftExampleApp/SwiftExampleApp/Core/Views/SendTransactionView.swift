@@ -169,6 +169,7 @@ struct SendTransactionView: View {
                                 .coreWallet()
                             await viewModel.executeSend(
                                 sdk: sdk,
+                                walletManager: walletManager,
                                 shieldedService: shieldedService,
                                 platformState: platformState,
                                 wallet: wallet,

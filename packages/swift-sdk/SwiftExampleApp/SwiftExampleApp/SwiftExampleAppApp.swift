@@ -239,6 +239,14 @@ struct SwiftExampleAppApp: App {
         do {
             LoggingPreferences.configure()
 
+            // Kick off Halo 2 proving-key build on a background
+            // thread so the first shielded send doesn't pay the
+            // ~30 s build cost inline. Idempotent — global
+            // OnceLock on the Rust side guards repeat calls.
+            Task.detached(priority: .background) {
+                await PlatformWalletManager.warmUpShieldedProver()
+            }
+
             platformState.initializeSDK(modelContext: modelContainer.mainContext)
 
             // Give the Platform SDK a moment to finish its internal init.
