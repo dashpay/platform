@@ -13,6 +13,8 @@ use key_wallet::WalletCoreBalance;
 use crate::changeset::PlatformWalletPersistence;
 use crate::manager::identity_sync::IdentitySyncManager;
 use crate::manager::platform_address_sync::PlatformAddressSyncManager;
+#[cfg(feature = "shielded")]
+use crate::manager::shielded_sync::ShieldedSyncManager;
 use crate::spv::SpvRuntime;
 use crate::wallet::platform_wallet::WalletId;
 use crate::wallet::PlatformWallet;
@@ -238,6 +240,20 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// `&Arc<Self>`.
     pub fn identity_sync_arc(&self) -> Arc<IdentitySyncManager<P>> {
         Arc::clone(&self.identity_sync_manager)
+    }
+
+    /// Access the shielded sync coordinator.
+    #[cfg(feature = "shielded")]
+    pub fn shielded_sync(&self) -> &ShieldedSyncManager {
+        &self.shielded_sync_manager
+    }
+
+    /// Clone the `Arc<ShieldedSyncManager>` so callers (e.g. FFI)
+    /// can invoke [`ShieldedSyncManager::start`] which takes
+    /// `&Arc<Self>`.
+    #[cfg(feature = "shielded")]
+    pub fn shielded_sync_arc(&self) -> Arc<ShieldedSyncManager> {
+        Arc::clone(&self.shielded_sync_manager)
     }
 
     /// Get a clone of a wallet by its ID.

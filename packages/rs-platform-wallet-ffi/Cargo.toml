@@ -64,3 +64,8 @@ cbindgen = "0.27"
 [features]
 default = []
 mocks = []
+# Opt-in Orchard / shielded support. Pulls in the heavy
+# `grovedb-commitment-tree` + `zip32` dependencies via
+# `platform-wallet/shielded`. Builds that don't enable this feature
+# omit every `shielded_*` FFI symbol cleanly.
+shielded = ["platform-wallet/shielded"]

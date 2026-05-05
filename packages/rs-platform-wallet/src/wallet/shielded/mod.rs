@@ -15,6 +15,7 @@
 //! plug in their own persistence (SQLite, RocksDB, etc.) while tests use the
 //! in-memory implementation.
 
+pub mod file_store;
 pub mod keys;
 pub mod note_selection;
 pub mod operations;
@@ -22,9 +23,11 @@ pub mod prover;
 pub mod store;
 pub mod sync;
 
+pub use file_store::{FileBackedShieldedStore, FileShieldedStoreError};
 pub use keys::OrchardKeySet;
 pub use prover::CachedOrchardProver;
 pub use store::{InMemoryShieldedStore, ShieldedNote, ShieldedStore};
+pub use sync::{ShieldedSyncSummary, SyncNotesResult};
 
 use std::sync::Arc;
 
