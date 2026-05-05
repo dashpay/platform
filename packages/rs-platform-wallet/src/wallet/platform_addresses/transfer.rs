@@ -181,7 +181,16 @@ impl PlatformAddressWallet {
         fee_strategy: &[AddressFundsFeeStrategyStep],
         platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<PlatformAddress, Credits>, PlatformWalletError> {
-        let total_output: Credits = outputs.values().sum();
+        // CMT-002: saturating fold for consistency with the rest of
+        // the selector path (transfer.rs:660, 876, …). Total credit
+        // supply is far below `u64::MAX`, so saturation is unreachable
+        // in practice — but using a saturating op here matches the
+        // file-wide policy and avoids the lone unchecked aggregation
+        // at the public-API boundary.
+        let total_output: Credits = outputs
+            .values()
+            .copied()
+            .fold(0u64, Credits::saturating_add);
 
         let wm = self.wallet_manager.read().await;
         let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
