@@ -36,7 +36,7 @@ use rs_sdk_ffi::{SignerHandle, VTableSigner};
 use crate::check_ptr;
 use crate::error::*;
 use crate::handle::*;
-use crate::runtime::runtime;
+use crate::runtime::{block_on_worker, runtime};
 
 /// Build the Halo 2 proving key now if it hasn't been built yet.
 ///
@@ -95,11 +95,19 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_transfer(
         Ok(w) => w,
         Err(result) => return result,
     };
-    let prover = CachedOrchardProver::new();
-    let prover_ref: &CachedOrchardProver = &prover;
 
-    if let Err(e) = runtime().block_on(wallet.shielded_transfer_to(&recipient, amount, prover_ref))
-    {
+    // Run the proof on a worker thread (8 MB stack). Halo 2 circuit
+    // synthesis recurses past the ~512 KB iOS dispatch-thread stack
+    // and crashes with EXC_BAD_ACCESS at the first
+    // `synthesize(... measure(pass))` call when polled on the
+    // calling thread.
+    let result = block_on_worker(async move {
+        let prover = CachedOrchardProver::new();
+        wallet
+            .shielded_transfer_to(&recipient, amount, &prover)
+            .await
+    });
+    if let Err(e) = result {
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("shielded transfer failed: {e}"),
@@ -145,10 +153,12 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_unshield(
         Ok(w) => w,
         Err(result) => return result,
     };
-    let prover = CachedOrchardProver::new();
-    let prover_ref: &CachedOrchardProver = &prover;
 
-    if let Err(e) = runtime().block_on(wallet.shielded_unshield_to(&to_addr, amount, prover_ref)) {
+    let result = block_on_worker(async move {
+        let prover = CachedOrchardProver::new();
+        wallet.shielded_unshield_to(&to_addr, amount, &prover).await
+    });
+    if let Err(e) = result {
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("shielded unshield failed: {e}"),
@@ -195,15 +205,14 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
         Ok(w) => w,
         Err(result) => return result,
     };
-    let prover = CachedOrchardProver::new();
-    let prover_ref: &CachedOrchardProver = &prover;
 
-    if let Err(e) = runtime().block_on(wallet.shielded_withdraw_to(
-        &to_core,
-        amount,
-        core_fee_per_byte,
-        prover_ref,
-    )) {
+    let result = block_on_worker(async move {
+        let prover = CachedOrchardProver::new();
+        wallet
+            .shielded_withdraw_to(&to_core, amount, core_fee_per_byte, &prover)
+            .await
+    });
+    if let Err(e) = result {
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("shielded withdraw failed: {e}"),
@@ -249,20 +258,30 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield(
         Err(result) => return result,
     };
 
-    // SAFETY: caller guarantees `signer_address_handle` is a
-    // valid, non-destroyed handle that outlives this call. The
-    // `VTableSigner` is `Send + Sync` so dropping it back into a
-    // `block_on` future is safe.
-    let address_signer: &VTableSigner = &*(signer_address_handle as *const VTableSigner);
-    let prover = CachedOrchardProver::new();
-    let prover_ref: &CachedOrchardProver = &prover;
+    // SAFETY: the caller retains ownership of the signer handle
+    // and guarantees it outlives this call. We block until the
+    // worker future completes, so the `'static` lifetime we paint
+    // on the borrow does not actually outlive the host's handle.
+    // `VTableSigner` is `Send + Sync` per its `unsafe impl` in
+    // rs-sdk-ffi, so `&'static VTableSigner` is automatically
+    // `Send + 'static` — exactly what `block_on_worker` needs.
+    let address_signer: &'static VTableSigner =
+        std::mem::transmute::<&VTableSigner, &'static VTableSigner>(
+            &*(signer_address_handle as *const VTableSigner),
+        );
 
-    if let Err(e) = runtime().block_on(wallet.shielded_shield_from_account(
-        account_index,
-        amount,
-        address_signer,
-        prover_ref,
-    )) {
+    // Run the proof on a worker thread (8 MB stack). Halo 2 circuit
+    // synthesis recurses past the ~512 KB iOS dispatch-thread stack
+    // and crashes with EXC_BAD_ACCESS at the first
+    // `synthesize(... measure(pass))` call when polled on the
+    // calling thread.
+    let result = block_on_worker(async move {
+        let prover = CachedOrchardProver::new();
+        wallet
+            .shielded_shield_from_account(account_index, amount, address_signer, &prover)
+            .await
+    });
+    if let Err(e) = result {
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("shielded shield failed: {e}"),
