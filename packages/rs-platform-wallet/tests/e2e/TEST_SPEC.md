@@ -904,10 +904,11 @@ shared across most TK cases via a OnceCell fixture and re-built fresh only
 where a non-default contract config is required (pre-programmed distribution,
 groups, paused-on-create). Every TK entry below is `Status: BLOCKED` until
 both Wave A (Identity signer harness, currently on PR #3578) and Wave G
-(token-contract bootstrap helpers, see §4) land. The six wallet-API surface
-gaps surfaced during the audit (`Gap-T1..Gap-T6`) are documented in §4 Wave G
-as follow-up items; they reduce the per-test boilerplate but are not on the
-critical path — tests can compose SDK-direct fetch wrappers in their place.
+(token-contract bootstrap helpers, see §4) land. What were previously tracked
+as `Gap-T1..Gap-T6` (wallet-API surface gaps) are now resolved: Wave G
+delivers framework-level SDK-wrapper helpers for each, living in
+`packages/rs-platform-wallet/tests/e2e/framework/tokens.rs`. No new wallet
+public API is required; tests compose the SDK directly through those helpers.
 
 #### TK-001 — Token transfer between two identities
 - **Priority**: P1
@@ -983,7 +984,7 @@ critical path — tests can compose SDK-direct fetch wrappers in their place.
 - **Rationale**: Perpetual-distribution bugs are silent — balance just doesn't increase. TK-013 covers the synchronous path; TK-002 keeps the live-time variant in scope behind a `slow-tests` cargo feature (cf. §6 Q3). Without it, a regression that breaks perpetual-distribution event scheduling never surfaces.
 
 #### TK-003 — Register token contract (deploy via `create_data_contract_with_signer`)
-- **Status**: BLOCKED — needs Wave A (Identity signer) + Wave G (token-contract JSON-template helper) **OR** wallet-side Gap-T1 (`register_token_contract` convenience builder). Neither exists today.
+- **Status**: BLOCKED — needs Wave A (Identity signer) + Wave G (token-contract JSON-template helper, i.e. `register_token_contract_via_sdk` / `permissive_owner_token_contract_json`).
 - **Priority**: P0 (gateway for every other TK-NNN entry)
 - **Wallet feature exercised**: `wallet/identity/network/contract.rs:124` (`create_data_contract_with_signer`) with non-empty `tokens_schema_json`.
 - **DET parallel**: `dash-evo-tool/tests/backend-e2e/token_tasks.rs:78` (`tc_045_register_token_contract`); fixture at `tests/backend-e2e/framework/fixtures.rs:111`; helper at `tests/backend-e2e/framework/token_helpers.rs:33`.
@@ -1002,7 +1003,7 @@ critical path — tests can compose SDK-direct fetch wrappers in their place.
   - Token config with `max_supply < base_supply` → typed validation error.
 - **Harness extensions required**: `setup_with_token_contract(...)` helper (§4 Wave G); contract fixture JSON template at `tests/fixtures/contracts/permissive_token.json`. The TK-003 happy path runs against the shared OnceCell-cached contract; the negative variants opt into a fresh deploy.
 - **Estimated complexity**: L (the JSON template assembly is the long pole; per-test harness orchestration is M)
-- **Rationale**: Without an asserted register-side case, every other TK-NNN entry rests on an unasserted assumption. This case also surfaces Gap-T1 to whoever picks it up.
+- **Rationale**: Without an asserted register-side case, every other TK-NNN entry rests on an unasserted assumption. This case exercises the `register_token_contract_via_sdk` helper from Wave G (previously tracked as Gap-T1).
 
 #### TK-004 — Token transfer fee accounting & balance round-trip
 - **Status**: BLOCKED — needs Wave A + TK-003's `setup_with_token` helper.
@@ -1024,12 +1025,12 @@ critical path — tests can compose SDK-direct fetch wrappers in their place.
   - Transfer amount exceeds balance → typed insufficient-tokens error.
   - Transfer to self (A → A) → pin contract: either accepted as a no-op (still pays fee) or rejected as "self-transfer disallowed".
   - Wrong `token_position` (e.g. position 7 on a single-token contract) → typed contract-validation error.
-- **Harness extensions required**: `setup_with_token_and_two_identities`, `token_balance` accessor (Gap-T2 if missing).
+- **Harness extensions required**: `setup_with_token_and_two_identities`, `token_balance_of` helper (Wave G SDK-wrapper).
 - **Estimated complexity**: M
 - **Rationale**: Most-used token op. Pins the credit-fee vs. token-amount accounting separation that any refactor of the fee model would silently break.
 
 #### TK-005 — Token mint + total-supply assertion
-- **Status**: BLOCKED — needs Wave A + TK-003 + Gap-T3 (`token_supply` accessor) **OR** SDK-direct supply fetch wrapper in `token_supply_of`.
+- **Status**: BLOCKED — needs Wave A + TK-003 + Wave G's `token_supply_of` helper (SDK-direct supply fetch wrapper).
 - **Priority**: P1
 - **Wallet feature exercised**: `wallet/identity/network/tokens/mint.rs:19` (`token_mint_with_signer`).
 - **DET parallel**: `token_tasks.rs:305` (`step_mint`).
@@ -1073,7 +1074,7 @@ critical path — tests can compose SDK-direct fetch wrappers in their place.
 - **Rationale**: Pins the cross-identity destination contract (an Option-branch the DET tests don't split).
 
 #### TK-006 — Token burn + total-supply decrement
-- **Status**: BLOCKED — needs TK-003 + Gap-T3 (or SDK-direct supply fetch).
+- **Status**: BLOCKED — needs TK-003 + Wave G's `token_supply_of` helper.
 - **Priority**: P1
 - **Wallet feature exercised**: `wallet/identity/network/tokens/burn.rs:19` (`token_burn_with_signer`).
 - **DET parallel**: `token_tasks.rs:330` (`step_burn`).
@@ -1096,7 +1097,7 @@ critical path — tests can compose SDK-direct fetch wrappers in their place.
 - **Rationale**: Symmetric partner of TK-005. Together they validate supply conservation across mint+burn pairs.
 
 #### TK-007 — Freeze identity for token (admin action)
-- **Status**: BLOCKED — needs Wave A + TK-003 + Gap-T6 (frozen-balance accessor) **OR** indirect detection via post-freeze transfer rejection.
+- **Status**: BLOCKED — needs Wave A + TK-003 + Wave G's `token_frozen_balance_of` helper.
 - **Priority**: P1
 - **Wallet feature exercised**: `wallet/identity/network/tokens/freeze.rs:18` (`token_freeze_with_signer`).
 - **DET parallel**: `token_tasks.rs:389` (`step_freeze`).
@@ -1109,7 +1110,7 @@ critical path — tests can compose SDK-direct fetch wrappers in their place.
 - **Assertions**:
   - Step 4 fails with a typed "frozen balance / cannot transfer" error class.
   - Peer's token balance unchanged after the failed transfer.
-  - If Gap-T6 is closed: `token_frozen_balance(peer, contract, 0) == Some(200)`.
+  - `token_frozen_balance_of(peer, fixture) == Some(200)` (via Wave G helper).
   - `FreezeResult.actual_fee > 0`.
 - **Negative variants**:
   - Non-admin attempts to freeze → typed authorisation error.
@@ -1131,7 +1132,7 @@ critical path — tests can compose SDK-direct fetch wrappers in their place.
 - **Assertions**:
   - Step 3 succeeds; peer balance decremented; owner balance incremented.
   - `UnfreezeResult.actual_fee > 0`.
-  - If Gap-T6: `token_frozen_balance(peer, contract, 0)` is `None` or `0`.
+  - `token_frozen_balance_of(peer, fixture)` is `None` or `0` (via Wave G helper).
 - **Negative variants**:
   - Unfreeze an identity that was never frozen → pin contract (idempotent vs. typed error).
   - Non-admin unfreeze → typed auth error.
@@ -1153,7 +1154,7 @@ critical path — tests can compose SDK-direct fetch wrappers in their place.
   - Peer balance == `0`.
   - Total supply decreased by exactly `200`.
   - `DestroyFrozenFundsResult.actual_fee > 0`.
-  - Subsequent unfreeze would have nothing to unfreeze (Gap-T6 read returns `None`).
+  - Subsequent unfreeze would have nothing to unfreeze (`token_frozen_balance_of` returns `None`).
 - **Negative variants**:
   - Destroy on a not-frozen identity → typed error.
   - Non-admin destroy → typed auth error.
@@ -1162,7 +1163,7 @@ critical path — tests can compose SDK-direct fetch wrappers in their place.
 - **Rationale**: Destroy-frozen-funds is the irreversible "burn the rule-breaker's bag" action — the negative-supply consequence must be pinned.
 
 #### TK-010 — Pause and resume token (emergency action)
-- **Status**: BLOCKED — needs TK-003 + Gap-T4 (`token_is_paused`) **OR** indirect detection via post-pause transfer rejection. The default scenario uses the shared OnceCell-cached contract; a `start_paused = true` variant (TK-paused-on-create, deferred) opts into a fresh deploy.
+- **Status**: BLOCKED — needs TK-003 + Wave G's `token_is_paused_of` helper. The default scenario uses the shared OnceCell-cached contract; a `start_paused = true` variant (TK-paused-on-create, deferred) opts into a fresh deploy.
 - **Priority**: P1
 - **Wallet feature exercised**: `wallet/identity/network/tokens/pause.rs:19`, `wallet/identity/network/tokens/resume.rs:18`.
 - **DET parallel**: `token_tasks.rs:501` (`step_pause`), `token_tasks.rs:529` (`step_resume`).
@@ -1177,7 +1178,7 @@ critical path — tests can compose SDK-direct fetch wrappers in their place.
   - Step 3 fails with typed "token paused" error class.
   - Step 5 succeeds.
   - Both `EmergencyActionResult.actual_fee > 0`.
-  - Gap-T4 (if closed): `token_is_paused(contract, 0) == true` after pause, `false` after resume.
+  - `token_is_paused_of(fixture) == true` after pause, `false` after resume (via Wave G helper).
 - **Negative variants**:
   - Pause an already-paused token → pin contract (idempotent vs. typed error).
   - Non-admin pause → typed auth error.
@@ -1186,7 +1187,7 @@ critical path — tests can compose SDK-direct fetch wrappers in their place.
 - **Rationale**: Pause is the kill switch. Pinning both directions (pause-blocks, resume-restores) catches the "resume forgot to clear the flag" regression class.
 
 #### TK-011 — Set price + direct purchase round-trip
-- **Status**: BLOCKED — needs TK-003 + a buyer identity with credits + Gap-T5 (pricing accessor) **OR** SDK-direct fetch wrapper.
+- **Status**: BLOCKED — needs TK-003 + a buyer identity with credits + Wave G's `token_pricing_of` helper (SDK-direct fetch wrapper).
 - **Priority**: P1
 - **Wallet feature exercised**: `wallet/identity/network/tokens/set_price.rs:26` (`token_set_price_with_signer`); `wallet/identity/network/tokens/purchase.rs:25` (`token_purchase_with_signer`).
 - **DET parallel**: `token_tasks.rs:557` (`step_set_price`); `token_tasks.rs:588` (`step_purchase`).
@@ -1249,7 +1250,7 @@ critical path — tests can compose SDK-direct fetch wrappers in their place.
 - **Negative variants**:
   - Identity with no distribution rights claims → typed error.
   - Claim on a contract with no distribution configured → typed error.
-- **Harness extensions required**: TK-003 helpers extended with a `with_pre_programmed_distribution(epoch_zero_at, payout)` variant; `token_balance` accessor (Gap-T2).
+- **Harness extensions required**: TK-003 helpers extended with a `with_pre_programmed_distribution(epoch_zero_at, payout)` variant; `token_balance_of` helper (Wave G SDK-wrapper).
 - **Estimated complexity**: L (the contract config is the non-trivial part — pre-programmed distribution JSON shape).
 - **Rationale**: Claim is silent on failure — the balance just doesn't move. Pre-programmed-distribution variant dodges the live-time perpetual-distribution wait, putting the test inside CI runtime budget. The live-perpetual sibling (TK-002) stays out of the synchronous tier.
 
@@ -2090,27 +2091,28 @@ order. Each wave unlocks the cases listed.
 ### Wave G — Token harness extensions
 - Replaces Wave D. The wallet's `create_data_contract_with_signer` already accepts a `tokens_schema_json` argument; Wave G assembles the V1 token-config JSON from a structured `TokenContractOpts` struct so test bodies stay terse and the schema-drift surface lives in exactly one place.
 - Default contract is OnceCell-cached and shared across most TK cases (mirrors PA's bank-shared / per-test-wallet split). Tests that need a non-default config (pre-programmed distribution, groups, paused-on-create) opt into a fresh deploy.
-- Harness helpers (13 total — eight of them become trivial delegate-passthroughs once Gaps T2–T6 land):
+- All helpers live in `packages/rs-platform-wallet/tests/e2e/framework/tokens.rs` (new module).
+- Harness helpers (~19 total — helpers 6–10 and 14–19 are SDK-wrapper helpers, replacing what were previously tracked as Gap-T1..Gap-T6 wallet-API gaps; the wallet's public API does not need new methods to support these tests):
   1. `setup_with_token_contract(harness, opts: TokenContractOpts) -> TokenContractFixture` — registers an identity (via Wave A) and deploys a permissive owner-only token contract; default opts mirror DET's `build_register_token_task` (8 decimals, max supply 1e15, owner-only ChangeControlRules, no perpetual, allow-choose-destination).
   2. `setup_with_token_and_two_identities(harness, opts) -> (TokenContractFixture, TestIdentity)` — composes (1) with `register_extra_identity` for the multi-identity TK cases.
   3. `setup_with_token_and_three_identities(harness, opts) -> (TokenContractFixture, [TestIdentity; 2])` — three-identity variant for TK-014 group co-sign.
   4. `setup_with_token_pre_programmed_distribution(harness, payout, epoch_zero_at) -> TokenContractFixture` — TK-013 variant injecting a past-timestamp epoch-zero distribution.
   5. `mint_to(wallet, fixture, recipient, amount) -> MintResult` — one-line mint shortcut for tests that need a balance on a given identity before the operation under test.
-  6. `token_balance_of(wallet, identity, fixture) -> TokenAmount` — read-side accessor; delegates to Gap-T2 once it lands, otherwise wraps SDK-direct fetch.
-  7. `token_supply_of(wallet, fixture) -> TokenAmount` — total-supply accessor; delegates to Gap-T3 if available.
-  8. `token_is_paused_of(wallet, fixture) -> bool` — paused-flag accessor; delegates to Gap-T4 if available, otherwise re-fetches the contract and reads the token-state field.
-  9. `token_pricing_of(wallet, fixture) -> Option<TokenPricingSchedule>` — pricing accessor; delegates to Gap-T5 if available.
-  10. `token_frozen_balance_of(wallet, identity, fixture) -> Option<TokenAmount>` — frozen-balance accessor; delegates to Gap-T6 if available, otherwise SDK-direct fetch on the freeze-state proof endpoint.
-  11. `wait_for_token_balance(wallet, identity, fixture, expected, timeout) -> Result<()>` — polls `token_balance_of` until equal-or-timeout; mirrors the PA `wait_for_balance` shape.
+  6. `token_balance_of(identity, fixture) -> TokenAmount` — read-side accessor; wraps `TokenInfo::fetch_one` (or equivalent SDK query) directly. SDK call site: `packages/rs-sdk/src/platform/fetch_many.rs` token-info variant. (Previously tracked as Gap-T2.)
+  7. `token_supply_of(fixture) -> TokenAmount` — total-supply accessor; queries SDK token-supply endpoint directly. (Previously tracked as Gap-T3.)
+  8. `token_is_paused_of(fixture) -> bool` — paused-flag accessor; re-fetches the data contract via `DataContract::fetch` and reads the token-state field. (Previously tracked as Gap-T4.)
+  9. `token_pricing_of(fixture) -> Option<TokenPricingSchedule>` — pricing accessor; re-fetches the data contract and extracts the pricing schedule. (Previously tracked as Gap-T5.)
+  10. `token_frozen_balance_of(identity, fixture) -> Option<TokenAmount>` — frozen-balance accessor; queries the SDK freeze-state proof endpoint directly. (Previously tracked as Gap-T6.)
+  11. `wait_for_token_balance(identity, fixture, expected, timeout) -> Result<()>` — polls `token_balance_of` until equal-or-timeout; mirrors the PA `wait_for_balance` shape.
   12. `permissive_owner_token_contract_json(owner_id, opts) -> String` — pure helper that assembles the V1 token-contract JSON from the opts struct + owner id; the single source of truth for "what shape DPP wants today" (mirrors DET's `build_register_token_task` payload at `dash-evo-tool/tests/backend-e2e/framework/token_helpers.rs:33-96`).
   13. `register_extra_identity(harness, funding) -> TestIdentity` — registers a fresh identity from a freshly funded test wallet; mirrors DET's `ensure_second_identity()` at `dash-evo-tool/tests/backend-e2e/token_tasks.rs:35`. Likely shared with ID-002 / ID-003 / DP-002.
-- Wallet-API gaps surfaced (follow-up issues, none on the critical path — tests can compose SDK-direct fetch wrappers in their place):
-  - **Gap-T1** — `register_token_contract(...)` convenience builder that asks for `(name, ticker, decimals, max_supply, ChangeControlRules…)` and assembles the V1 schema JSON internally. Lands at `packages/rs-platform-wallet/src/wallet/identity/network/contract.rs:270` (after the existing `create_data_contract_with_signer`) or as a new module `packages/rs-platform-wallet/src/wallet/identity/network/tokens/register.rs` next to the rest of the token modules. Without it, helper (12) carries the JSON-template logic.
-  - **Gap-T2** — `token_balance(identity_id, contract_id, token_position) -> TokenAmount` accessor. Lands at `packages/rs-platform-wallet/src/manager/identity_sync.rs` (sibling of the identity-balance accessors). Without it, helper (6) wraps SDK-direct fetch.
-  - **Gap-T3** — `token_supply(contract_id, token_position) -> TokenAmount` accessor for total-supply assertions on mint/burn. Lands at `packages/rs-platform-wallet/src/wallet/identity/network/tokens/helpers.rs` or a new `tokens/queries.rs`. Without it, helper (7) wraps SDK-direct fetch.
-  - **Gap-T4** — `token_is_paused(contract_id, token_position) -> bool` accessor for asserting post-pause / post-resume state without driving a transfer. Same landing site as Gap-T3.
-  - **Gap-T5** — `token_pricing(contract_id, token_position) -> Option<TokenPricingSchedule>` accessor for pre/post `set_price` assertion. Same landing site as Gap-T3.
-  - **Gap-T6** — `token_frozen_balance(identity_id, contract_id, token_position) -> Option<TokenAmount>` accessor for asserting post-freeze state without indirectly catching it via transfer rejection. Same landing site as Gap-T3.
+  14. `register_token_contract_via_sdk(sdk, owner_key, opts) -> DataContractId` — constructs the V1 token-contract document from `TokenContractOpts` and broadcasts via `Sdk::put_data_contract` (or the equivalent state-transition method). SDK call site: `packages/rs-sdk/src/platform/put.rs`. This is the SDK-direct path that helper (12) + `create_data_contract_with_signer` compose; exposed as a standalone helper for tests that need raw control. (Previously tracked as Gap-T1.)
+  15. `token_balance_raw(sdk, identity_id, contract_id, token_position) -> TokenAmount` — lower-level variant of helper (6) accepting raw ids rather than a fixture; useful for cross-contract assertions.
+  16. `token_supply_raw(sdk, contract_id, token_position) -> TokenAmount` — lower-level variant of helper (7).
+  17. `token_is_paused_raw(sdk, contract_id, token_position) -> bool` — lower-level variant of helper (8).
+  18. `token_pricing_raw(sdk, contract_id, token_position) -> Option<TokenPricingSchedule>` — lower-level variant of helper (9).
+  19. `token_frozen_balance_raw(sdk, identity_id, contract_id, token_position) -> Option<TokenAmount>` — lower-level variant of helper (10).
+- **Note on Gap-T1..Gap-T6**: these were previously listed as wallet-API surface gaps requiring new methods on `PlatformWallet`. That framing is superseded. Helpers 6–10 and 14–19 above implement the same functionality as framework-level SDK wrappers. No wallet public API change is needed; the test framework calls the SDK directly.
 - **Unlocks**: TK-001, TK-001b, TK-001c, TK-002, TK-003, TK-004, TK-005, TK-005b, TK-006, TK-007, TK-008, TK-009, TK-010, TK-011, TK-012, TK-013, TK-014.
 
 ### Wave F — Test-only utility helpers
@@ -2127,7 +2129,7 @@ order. Each wave unlocks the cases listed.
 - **Unlocks**: PA-002 (negative), PA-002b, PA-004 (full assertions), PA-004b, PA-004c, PA-006, PA-006b, PA-008c, PA-009, PA-010, PA-011, PA-012, PA-013, Harness-G1a, Harness-G1b, Harness-G4.
 - **Cost**: ~200-400 LoC across multiple commits; the test-DAPI-proxy and cancellation-hook items are non-trivial and can land late.
 
-**Recommended build order**: Wave A first (highest leverage — unblocks 25+ cases), then Wave F's cheap helpers (estimate-fee, transfer-with-inputs, registry status, FUNDING_MUTEX hook) which unblock most P2 PA cases, then Wave C, then Wave B as ID-003/DP-002 land. Wave G unlocks the entire TK column once Wave A is in place; Gap-T1..T6 are follow-up wallet-API conveniences, none on the critical path. Wave F's expensive items (test DAPI proxy, cancellation hook) and Wave E are independent and can run in parallel with the others once a champion is assigned. Wave D is superseded by Wave G.
+**Recommended build order**: Wave A first (highest leverage — unblocks 25+ cases), then Wave F's cheap helpers (estimate-fee, transfer-with-inputs, registry status, FUNDING_MUTEX hook) which unblock most P2 PA cases, then Wave C, then Wave B as ID-003/DP-002 land. Wave G unlocks the entire TK column once Wave A is in place; the SDK-wrapper helpers in Wave G (helpers 6–10 and 14–19, previously tracked as Gap-T1..T6) land together with Wave G, not as follow-up wallet PRs. Wave F's expensive items (test DAPI proxy, cancellation hook) and Wave E are independent and can run in parallel with the others once a champion is assigned. Wave D is superseded by Wave G.
 
 ### Wallet-API gap notes (follow-up issues)
 
@@ -2137,7 +2139,7 @@ the spec but each would simplify a test if filed as a follow-up issue:
 1. **No `PlatformWallet::fee_paid` accessor** — every PA case derives the fee from `Σ funded - Σ received - Σ remaining`. A first-class `last_transfer_fee()` (or a `fee` field on `PlatformAddressChangeSet`) would let assertions read the fee directly. Currently noted as a comment in `cases/transfer.rs:142-147`.
 2. **No public sync-watermark getter on `PlatformAddressWallet`** — PA-007 needs to read the provider's `last_known_recent_block` to assert monotonicity. The field is internal; exposing a `pub fn sync_watermark() -> Option<RecentBlock>` would unblock cleanly.
 3. **`IdentityManager::known_identities()` shape** — needed by ID-001's "exactly one identity registered" assertion. If the manager exposes only `BTreeMap<u32, ManagedIdentity>` without a length convenience, the test must pull internals; a `.len()` / `.identity_ids()` helper would be cleaner.
-4. **Token-balance accessor by `(identity, contract, position)`** — `wallet/tokens/wallet.rs:248` already has `balance(...)`; confirm signature matches what TK-001 needs (`balance_for(identity_id, contract_id, position)`) and add the convenience if not.
+4. **Token-balance, supply, freeze, and pricing accessors on `PlatformWallet`** — `wallet/tokens/wallet.rs:248` already has `balance(...)`; the remaining read-side accessors (supply, freeze state, pricing, paused flag) are not yet on the wallet's public API. These are now covered by the SDK-wrapper helpers in `framework/tokens.rs` (Wave G helpers 6–10 and 14–19); adding first-class wallet methods remains a desirable but non-blocking follow-up. Previously tracked as Gap-T2..Gap-T6.
 5. **DPNS `register_name_with_external_signer` lacks a "wait for visibility" partner** — Wave A would benefit from a `wait_for_dpns_name_visible(name, timeout)` helper, ideally co-located with `wait_for_balance` in `framework/wait.rs`.
 6. **No protocol-version accessor for `min_input_amount` / `max_outputs`** — PA-009 and PA-014 need to read these from the active `PlatformVersion`; expose a thin test-friendly getter.
 
