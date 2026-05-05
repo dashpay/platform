@@ -234,8 +234,10 @@ impl PlatformAddressWallet {
         // from generic insufficient-balance: when the candidate set is
         // empty, classify why (funded-but-also-output addresses, or
         // addresses with non-zero balance but each below the per-input
-        // minimum) and raise a typed `NoSelectableInputs` error so
-        // callers don't have to parse downstream message strings.
+        // minimum) and raise the matching typed variant
+        // (`OnlyOutputAddressesFunded` / `AllInputsBelowMinimum` /
+        // `NoSelectableInputsBoth`) so callers get a precise diagnostic
+        // without parsing downstream message strings.
         if candidates.is_empty() {
             if let Some(err) = detect_no_selectable_inputs(
                 address_balances.iter().copied(),
@@ -340,18 +342,22 @@ where
 }
 
 /// Detect the "no selectable inputs" failure modes and produce a
-/// typed [`PlatformWalletError::NoSelectableInputs`].
+/// typed error variant describing the specific shape of the failure.
 ///
 /// Caller invokes this only when [`build_auto_select_candidates`]
 /// returned empty. Re-scans `address_balances` and classifies why no
-/// candidate survived:
+/// candidate survived. Each failure shape maps to its own variant so
+/// the rendered message describes only the clauses that actually apply:
 ///
-/// - `funded_outputs`: addresses whose balance reaches
-///   `min_input_amount` but which also appear as destination outputs
-///   (the protocol's input-equals-output filter removed them).
-/// - `sub_min_*`: addresses with non-zero balance but each below
-///   `min_input_amount`, so none can legally appear as an input even
-///   though aggregate funds exist.
+/// - [`PlatformWalletError::OnlyOutputAddressesFunded`][] — every
+///   above-floor balance lives at an address that's also a destination
+///   output, so the protocol's input-equals-output filter removed them.
+/// - [`PlatformWalletError::AllInputsBelowMinimum`][] — addresses with
+///   non-zero balance exist but each one is below `min_input_amount`,
+///   so none can legally appear as an input even though aggregate
+///   funds exist.
+/// - [`PlatformWalletError::NoSelectableInputsBoth`][] — both shapes
+///   apply simultaneously.
 ///
 /// Returns `None` only when neither category applies — i.e. no funded
 /// address exists at all — letting the caller fall through to the
@@ -377,15 +383,20 @@ where
             sub_min_aggregate = sub_min_aggregate.saturating_add(balance);
         }
     }
-    if funded_outputs.is_empty() && sub_min_count == 0 {
-        None
-    } else {
-        Some(PlatformWalletError::NoSelectableInputs {
+    match (funded_outputs.is_empty(), sub_min_count == 0) {
+        (true, true) => None,
+        (false, true) => Some(PlatformWalletError::OnlyOutputAddressesFunded { funded_outputs }),
+        (true, false) => Some(PlatformWalletError::AllInputsBelowMinimum {
+            sub_min_count,
+            sub_min_aggregate,
+            min_input_amount,
+        }),
+        (false, false) => Some(PlatformWalletError::NoSelectableInputsBoth {
             funded_outputs,
             sub_min_count,
             sub_min_aggregate,
             min_input_amount,
-        })
+        }),
     }
 }
 
@@ -1993,9 +2004,12 @@ mod auto_select_tests {
     }
 
     /// CMT-005/014: when every funded address is also an output (the
-    /// input-equals-output failure mode), the detector returns
-    /// `NoSelectableInputs` with the exact set of offending addresses
-    /// in `funded_outputs` and zero sub-minimum entries.
+    /// input-equals-output failure mode), the detector returns the
+    /// dedicated [`PlatformWalletError::OnlyOutputAddressesFunded`]
+    /// variant with the exact set of offending addresses in
+    /// `funded_outputs`. The Display rendering must NOT mention the
+    /// sub-minimum clause (CMT-001): only the active failure shape
+    /// shows up in the message.
     #[test]
     fn detect_no_selectable_inputs_funded_outputs_payload() {
         let pv = LATEST_PLATFORM_VERSION;
@@ -2012,40 +2026,38 @@ mod auto_select_tests {
 
         let err =
             detect_no_selectable_inputs(address_balances.iter().copied(), &outputs, min_input)
-                .expect("expected NoSelectableInputs");
+                .expect("expected OnlyOutputAddressesFunded");
         match &err {
-            PlatformWalletError::NoSelectableInputs {
-                funded_outputs,
-                sub_min_count,
-                sub_min_aggregate,
-                min_input_amount,
-            } => {
+            PlatformWalletError::OnlyOutputAddressesFunded { funded_outputs } => {
                 assert_eq!(
                     funded_outputs.iter().copied().collect::<BTreeSet<_>>(),
                     [addr_a, addr_b].iter().copied().collect::<BTreeSet<_>>(),
                     "funded_outputs must list every funded output address",
                 );
-                assert_eq!(*sub_min_count, 0, "no sub-min addresses in this fixture");
-                assert_eq!(*sub_min_aggregate, 0);
-                assert_eq!(*min_input_amount, min_input);
             }
-            other => panic!("expected NoSelectableInputs, got {other:?}"),
+            other => panic!("expected OnlyOutputAddressesFunded, got {other:?}"),
         }
-        // QA-001: Display interpolates the payload so
+        // QA-001 / CMT-001: Display interpolates the payload so
         // error.to_string() carries it across boundaries that strip
-        // typed error variants (notably FFI).
+        // typed error variants (notably FFI). The inactive sub-min
+        // clause must NOT appear when no sub-min addresses exist.
         let rendered = err.to_string();
         assert!(
             rendered.contains("funded addresses"),
             "Display must explain the funded-outputs case: {rendered}"
         );
+        assert!(
+            !rendered.contains("below the per-input minimum"),
+            "Display must NOT render the sub-min clause when sub_min_count is 0: {rendered}"
+        );
     }
 
-    /// CMT-005: every address holds non-zero balance but each is
-    /// below `min_input_amount` → detector reports the typed
-    /// `NoSelectableInputs` with the sub-min aggregate populated and
-    /// `funded_outputs` empty. Callers see a precise diagnostic
-    /// instead of the generic "available 0 credits" string.
+    /// CMT-005 / CMT-001: every address holds non-zero balance but
+    /// each is below `min_input_amount` → detector reports the typed
+    /// [`PlatformWalletError::AllInputsBelowMinimum`] with the sub-min
+    /// aggregate populated. Callers see a precise diagnostic instead
+    /// of the generic "available 0 credits" string. The Display
+    /// rendering must NOT mention `funded addresses` since none exist.
     #[test]
     fn detect_no_selectable_inputs_all_sub_min_aggregate() {
         let pv = LATEST_PLATFORM_VERSION;
@@ -2060,28 +2072,27 @@ mod auto_select_tests {
 
         let err =
             detect_no_selectable_inputs(address_balances.iter().copied(), &outputs, min_input)
-                .expect("expected NoSelectableInputs for sub-min aggregate");
+                .expect("expected AllInputsBelowMinimum for sub-min aggregate");
         match &err {
-            PlatformWalletError::NoSelectableInputs {
-                funded_outputs,
+            PlatformWalletError::AllInputsBelowMinimum {
                 sub_min_count,
                 sub_min_aggregate,
                 min_input_amount,
             } => {
-                assert!(
-                    funded_outputs.is_empty(),
-                    "funded_outputs must be empty when no address reaches min_input_amount",
-                );
                 assert_eq!(*sub_min_count, 2);
                 assert_eq!(*sub_min_aggregate, min_input / 2 + min_input / 4);
                 assert_eq!(*min_input_amount, min_input);
             }
-            other => panic!("expected NoSelectableInputs, got {other:?}"),
+            other => panic!("expected AllInputsBelowMinimum, got {other:?}"),
         }
         let rendered = err.to_string();
         assert!(
             rendered.contains("below the per-input minimum"),
             "Display must explain the sub-min case: {rendered}"
+        );
+        assert!(
+            !rendered.contains("funded addresses"),
+            "Display must NOT render the funded-outputs clause when none exist: {rendered}"
         );
     }
 
@@ -2109,8 +2120,10 @@ mod auto_select_tests {
     }
 
     /// Both failure modes coexist: one funded-but-also-output address
-    /// AND one sub-min address. Detector must report both — the typed
-    /// error is the union, not a partition.
+    /// AND one sub-min address. Detector must report both via the
+    /// dedicated [`PlatformWalletError::NoSelectableInputsBoth`]
+    /// variant — the typed error is the union, not a partition. The
+    /// Display rendering carries both clauses in this case.
     #[test]
     fn detect_no_selectable_inputs_combines_both_cases() {
         let pv = LATEST_PLATFORM_VERSION;
@@ -2123,20 +2136,29 @@ mod auto_select_tests {
 
         let err =
             detect_no_selectable_inputs(address_balances.iter().copied(), &outputs, min_input)
-                .expect("expected NoSelectableInputs combining both cases");
-        match err {
-            PlatformWalletError::NoSelectableInputs {
+                .expect("expected NoSelectableInputsBoth");
+        match &err {
+            PlatformWalletError::NoSelectableInputsBoth {
                 funded_outputs,
                 sub_min_count,
                 sub_min_aggregate,
                 min_input_amount: _,
             } => {
-                assert_eq!(funded_outputs, vec![addr_out]);
-                assert_eq!(sub_min_count, 1);
-                assert_eq!(sub_min_aggregate, min_input / 3);
+                assert_eq!(funded_outputs, &vec![addr_out]);
+                assert_eq!(*sub_min_count, 1);
+                assert_eq!(*sub_min_aggregate, min_input / 3);
             }
-            other => panic!("expected NoSelectableInputs, got {other:?}"),
+            other => panic!("expected NoSelectableInputsBoth, got {other:?}"),
         }
+        let rendered = err.to_string();
+        assert!(
+            rendered.contains("funded addresses"),
+            "Display must explain the funded-outputs clause: {rendered}"
+        );
+        assert!(
+            rendered.contains("below the per-input minimum"),
+            "Display must explain the sub-min clause: {rendered}"
+        );
     }
 
     /// End-to-end structural validation: feed the selector's output
