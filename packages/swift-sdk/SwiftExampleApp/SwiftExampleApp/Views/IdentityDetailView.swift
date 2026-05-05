@@ -114,9 +114,30 @@ struct IdentityDetailView: View {
                             .foregroundColor(.blue)
                     }
 
-                    Label(identity.identityIdString, systemImage: "number")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "number")
+                            .foregroundColor(.secondary)
+                            .font(.caption)
+                        Text(identity.identityIdString)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .textSelection(.enabled)
+                        Spacer(minLength: 4)
+                        // Explicit, discoverable copy button — `.contextMenu`
+                        // on a `Label` inside a `List` row is unreliable (the
+                        // row's own gesture eats the long-press). A visible
+                        // tap target is also more obvious than long-press.
+                        Button {
+                            UIPasteboard.general.string = identity.identityIdString
+                            UINotificationFeedbackGenerator().notificationOccurred(.success)
+                        } label: {
+                            Image(systemName: "doc.on.doc")
+                                .font(.caption)
+                                .foregroundColor(.blue)
+                        }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel("Copy identity ID")
+                    }
                 }
                 .padding(.vertical, 4)
 
