@@ -28,6 +28,7 @@ pub mod registry;
 pub mod sdk;
 pub mod signer;
 pub mod spv;
+pub mod tokens;
 pub mod wait;
 pub mod wait_hub;
 pub mod wallet_factory;
