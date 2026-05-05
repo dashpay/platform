@@ -3,6 +3,10 @@
 //! process-wide [`super::framework::E2eContext`].
 
 // Token tests (Wave 2 — per TEST_SPEC.md ### Tokens (TK))
+pub mod tk_001_token_transfer;
+pub mod tk_001b_token_transfer_zero;
+pub mod tk_001c_token_transfer_after_reissue;
+pub mod tk_002_token_claim_perpetual;
 pub mod tk_003_register_token_contract;
 pub mod tk_004_token_transfer_round_trip;
 pub mod tk_005_token_mint;
