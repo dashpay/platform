@@ -157,6 +157,29 @@ impl E2eContext {
         // Panics on under-funded balance — see `BankWallet::load`.
         let bank = BankWallet::load(&manager, &config).await?;
 
+        // Surface the bank's Core (Layer-1) balance and primary
+        // receive address at init. Most tests don't need duffs, so a
+        // zero balance is not fatal — the operator only needs to act
+        // when a CR-/ID-007-class case actually calls `send_core_to`.
+        // Logged once per process to make funding the bank a
+        // single-line task. Errors fetching the address are demoted
+        // to a warning so framework init isn't gated on Core paths
+        // that most tests bypass entirely.
+        match bank.primary_core_receive_address().await {
+            Ok(addr) => tracing::info!(
+                target: "platform_wallet::e2e::bank",
+                core_balance_duffs = bank.core_balance_confirmed(),
+                core_address = %addr,
+                "Bank Core (Layer-1) status"
+            ),
+            Err(err) => tracing::warn!(
+                target: "platform_wallet::e2e::bank",
+                error = %err,
+                core_balance_duffs = bank.core_balance_confirmed(),
+                "Bank Core address derivation failed; pre-flight log incomplete"
+            ),
+        }
+
         // Resolve / register the bank identity BEFORE the orphan
         // sweep so [`cleanup::sweep_orphans`] has a valid sweep
         // destination on its very first invocation.
