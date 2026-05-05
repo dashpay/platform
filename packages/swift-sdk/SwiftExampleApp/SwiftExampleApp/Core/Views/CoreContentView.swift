@@ -19,14 +19,38 @@ struct CoreContentView: View {
     /// (which only reflects the currently-configured wallet).
     @Query private var platformAddresses: [PersistentPlatformAddress]
 
-    /// Aggregate platform credit balance across every wallet on disk.
-    private var aggregatePlatformBalance: UInt64 {
-        platformAddresses.reduce(0) { $0 + $1.balance }
+    /// All persisted wallets — used as the network-scoping pivot for
+    /// `platformAddresses`. `PersistentPlatformAddress` doesn't carry
+    /// a `networkRaw` column itself; the canonical join is through
+    /// `walletId` to the parent `PersistentWallet.networkRaw`. We
+    /// build a `Set<Data>` for the active network and filter the
+    /// address aggregate against it so switching to local doesn't
+    /// keep showing testnet sums.
+    @Query private var allWallets: [PersistentWallet]
+
+    private var walletIdsOnNetwork: Set<Data> {
+        let raw = platformState.currentNetwork.rawValue
+        return Set(allWallets.lazy
+            .filter { $0.networkRaw == raw }
+            .map(\.walletId))
     }
 
-    /// Addresses with a non-zero balance across every wallet.
+    /// Platform addresses scoped to the active network.
+    private var scopedPlatformAddresses: [PersistentPlatformAddress] {
+        let ids = walletIdsOnNetwork
+        return platformAddresses.filter { ids.contains($0.walletId) }
+    }
+
+    /// Aggregate platform credit balance across every wallet on the
+    /// active network.
+    private var aggregatePlatformBalance: UInt64 {
+        scopedPlatformAddresses.reduce(0) { $0 + $1.balance }
+    }
+
+    /// Addresses with a non-zero balance across every wallet on the
+    /// active network.
     private var aggregateActiveAddressCount: Int {
-        platformAddresses.reduce(0) { $1.balance > 0 ? $0 + 1 : $0 }
+        scopedPlatformAddresses.reduce(0) { $1.balance > 0 ? $0 + 1 : $0 }
     }
 
     // Display helpers
