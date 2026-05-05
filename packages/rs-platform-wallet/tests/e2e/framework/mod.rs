@@ -205,11 +205,12 @@ pub async fn setup_with_n_identities(
     // `register_from_addresses` finds the credits already
     // committed to platform.
     // After Option C (PR #3579), bank.fund_address delivers exactly
-    // the requested amount. The chain charges identity_create_fee
-    // (~15.5M) from the address residual after registration consumes
-    // `funding_per`. Fund each address with `funding_per + 20_000_000`
-    // so the residual (20M) clears the fee minimum with 5M buffer.
-    const REGISTRATION_HEADROOM: u64 = 20_000_000;
+    // the requested amount. The chain charges the IdentityCreateFromAddresses
+    // dynamic fee (~96M, validate_fees_of_event_v0 PaidFromAddressInputs)
+    // from the address residual after registration consumes `funding_per`.
+    // Fund each address with `funding_per + 100_000_000` so the residual
+    // (100M) covers the dynamic fee with 4M buffer.
+    const REGISTRATION_HEADROOM: u64 = 100_000_000;
 
     for identity_index in 0..n {
         let funding_addr = base.test_wallet.next_unused_address().await?;

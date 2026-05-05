@@ -21,11 +21,11 @@ use crate::framework::wait::wait_for_identity_balance;
 
 /// Bank-funded credits the funding address starts with. Option C
 /// (DeductFromInput) delivers exactly this amount. Sized so the
-/// residual after 90M registration (20M) clears the chain-time
-/// identity_create_fee minimum (~15.5M) with 5M buffer.
-const FUNDING_CREDITS: u64 = 110_000_000;
+/// residual after 90M registration (100M) covers the chain-time
+/// IdentityCreateFromAddresses dynamic fee (~96M) with 4M buffer.
+const FUNDING_CREDITS: u64 = 190_000_000;
 /// Under Option C the address receives exactly FUNDING_CREDITS.
-const FUNDING_FLOOR: u64 = 110_000_000;
+const FUNDING_FLOOR: u64 = 190_000_000;
 
 /// Credits committed to the swept identity. Sized comfortably above
 /// `IDENTITY_SWEEP_FLOOR` (50M, hardcoded in `cleanup.rs`) so the

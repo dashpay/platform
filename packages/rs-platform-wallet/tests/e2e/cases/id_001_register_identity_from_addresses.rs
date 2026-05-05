@@ -20,14 +20,16 @@ use crate::framework::prelude::*;
 
 /// Funds the bank submits to the funding address. Option C
 /// (DeductFromInput) delivers exactly this amount to the address.
-/// Sized so that after the 50M registration, the residual (20M) clears
-/// the chain-time identity_create_fee minimum (~15.5M) with 5M buffer.
-const FUNDING_CREDITS: u64 = 70_000_000;
+/// Sized so that after the 50M registration, the residual (100M)
+/// covers the chain-time IdentityCreateFromAddresses dynamic fee
+/// (~96M, from validate_fees_of_event_v0 PaidFromAddressInputs) with
+/// 4M buffer.
+const FUNDING_CREDITS: u64 = 150_000_000;
 
 /// Floor the wait_for_balance keys on before registration runs.
 /// Under Option C the address receives exactly FUNDING_CREDITS, so
 /// the floor equals the funded amount.
-const FUNDING_FLOOR: u64 = 70_000_000;
+const FUNDING_FLOOR: u64 = 150_000_000;
 
 /// Credits committed to the new identity in the registration
 /// transition. The address loses this exact amount minus the bank's
@@ -118,9 +120,8 @@ async fn id_001_register_identity_from_addresses() {
 
     // Address residual: register_from_addresses consumed the
     // registration funding; the address retains FUNDING_CREDITS -
-    // REGISTRATION_FUNDING = 20M minus the chain-time fee. A
-    // non-zero residual is expected and satisfies the chain's
-    // identity_create_fee minimum (~15.5M).
+    // REGISTRATION_FUNDING = 100M minus the chain-time dynamic fee
+    // (~96M). The non-zero residual satisfies the fee gate.
     s.test_wallet
         .sync_balances()
         .await
