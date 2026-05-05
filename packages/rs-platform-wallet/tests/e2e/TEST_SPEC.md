@@ -927,6 +927,7 @@ Counts by priority: **P0: 10**, **P1: 24** (incl. 2 post-Task #15), **P2: 57** (
 - **Rationale**: Pins the wallet's contract for "which DIP-9 subfeatures get monitored?" The closed PR `dashpay/rust-dashcore#554` user story explicitly called out identity-auth addresses as a scenario it wanted SPV-monitored; the PR is closed without merge or supersede pointer, and the current contract in the pinned `key-wallet` rev silently excludes them. ID-007 makes that exclusion an asserted contract so that:
   1. anyone who flips `WalletAccountCreationOptions::Default` to include `BlockchainIdentities*` accounts (or any equivalent reshape upstream) breaks this test loudly, and the assertion bodies can be flipped in the same PR;
   2. nobody on the platform side accidentally relies on the monitored-addresses set covering identity-auth addresses before the upstream story lands.
+- **Operator notes**: First cold-cache run takes ~15 minutes because SPV walks compact filters from genesis (~1.47M testnet blocks). Subsequent runs reuse the on-disk cache and complete in seconds. The harness gates init on `PLATFORM_WALLET_E2E_BANK_CORE_GATE` (default `0` — skip); set it to at least `110_000` (`100_000` send + `~10_000` fee reserve) before invoking ID-007 so the bank's `core_balance_confirmed` reflects the post-scan total instead of a false-zero mid-scan. Set `RUST_LOG=info,platform_wallet::e2e::wait=info` to see scan-progress lines (`scan_height` vs `scan_tip`) every 30s.
 - **Notes**:
   - Today `derive_ecdsa_identity_auth_keypair_from_master` is the only DIP-9 subfeature `rs-platform-wallet` exposes (subfeature 0, ECDSA). Adding the BLS / Hash160 negative variants is contingent on the upstream `key-wallet` API gaining BLS derivation helpers.
   - This is a **defensive contract pin**, not a feature test. Same shape as `Found-003` / `Found-004` — pin a known-incomplete behaviour as the contract until someone explicitly extends it.
@@ -1360,6 +1361,7 @@ so that when SPV lands, the test bodies can be written without further design.
 - **Harness extensions required**: faucet adapter; Core-funded wallet helper.
 - **Estimated complexity**: L
 - **Rationale**: Mirrors DET's existing canonical Identity-create coverage. Lower priority than ID-001 because address-funded is the path with no other coverage in the workspace.
+- **Operator notes**: First cold-cache run takes ~15 minutes because SPV walks compact filters from genesis (~1.47M testnet blocks). Subsequent runs reuse the on-disk cache and complete in seconds. The harness gates init on `PLATFORM_WALLET_E2E_BANK_CORE_GATE` (default `0` — skip); set it to at least `TEST_WALLET_CORE_FUNDING + CORE_TX_FEE_RESERVE` (≈ `200_010_000` duffs) before invoking CR-003 so the bank's `core_balance_confirmed` reflects the post-scan total instead of a false-zero mid-scan. Set `RUST_LOG=info,platform_wallet::e2e::wait=info` to see scan-progress lines (`scan_height` vs `scan_tip`) every 30s.
 
 ### Contracts (CT)
 
