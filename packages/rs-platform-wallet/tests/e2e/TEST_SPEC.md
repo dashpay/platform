@@ -94,104 +94,106 @@ Source citations for the "Wallet API exists" column are listed inline per case
 
 ### Quick index
 
-| ID | Title | Priority | Complexity |
-|----|-------|----------|------------|
-| PA-001 | Multi-output platform-address transfer | P0 | S |
-| PA-002 | Partial-fund + change handling | P0 | S |
-| PA-004 | Sweep-back: drain test wallet, observe bank credit | P0 | S |
-| PA-003 | Fee scaling: one-output vs. five-output | P1 | M |
-| PA-005 | Address rotation: gap-limit + observed-used cursor | P1 | M |
-| PA-006 | Replay safety: same outputs, second submission rejected | P1 | M |
-| PA-007 | Sync watermark idempotency | P1 | M |
-| PA-008 | Concurrent funding from bank: serialised | P1 | S |
-| PA-002b | Zero-change exact-equality (`Σ outputs + fee == input balance`) | P1 | S |
-| PA-010 | Bank starvation: typed `BankUnderfunded` error | P1 | S |
-| PA-001b | Transfer with `output_change_address: None` vs `Some(addr)` | P2 | S |
-| PA-001c | Zero-credit single-output transfer | P2 | S |
-| PA-004b | Sweep dust threshold boundary triplet | P2 | M |
-| PA-004c | Sweep with exactly zero balance | P2 | S |
-| PA-005b | `DEFAULT_GAP_LIMIT` triplet (19 / 20 / 21 unused) | P2 | M |
-| PA-006b | Two concurrent broadcasts of identical ST bytes | P2 | M |
-| PA-007b | Two concurrent `sync_balances` on one wallet | P2 | M |
-| PA-008b | Two `TestWallet`s × three concurrent funders each | P2 | M |
-| PA-008c | Observable serialisation of `FUNDING_MUTEX` | P2 | M |
-| PA-009 | `min_input_amount` boundary triplet for cleanup | P2 | M |
-| PA-011 | Workdir slot exhaustion at `MAX_SLOTS + 1` | P2 | M |
-| PA-012 | `sync_balances` racing with `transfer` | P2 | M |
-| PA-013 | Broadcast retry under transient DAPI 5xx | P2 | M |
-| PA-014 | Multi-output at protocol-max output count | P2 | M |
-| ID-001 | Register identity funded from platform addresses | P0 | L |
-| ID-002 | Top-up identity from platform addresses | P0 | M |
-| ID-003 | Identity-to-identity credit transfer | P0 | M |
-| ID-004 | Identity update: add and disable a key | P1 | L |
-| ID-005 | Transfer credits from identity to platform addresses | P1 | M |
-| ID-006 | Refresh and load identity by index | P1 | M |
-| ID-001b | `setup_with_n_identities(N)` multi-identity helper | P1 | M |
-| ID-001c | Non-default `StateTransitionSettings` (`wait_for_proof = false`) | P2 | M |
-| ID-003b | Concurrent identity-to-identity transfers serialise on identity nonce | P2 | M |
-| ID-005b | `transfer_credits_to_addresses` with empty outputs | P2 | S |
-| ID-006b | Identity-key derivation index boundary (`0` and `DEFAULT_GAP_LIMIT - 1`) | P2 | M |
-| TK-001 | Token transfer between two identities | P1 | L |
-| TK-001b | Token transfer of amount 0 | P2 | S |
-| TK-001c | Token transfer across re-issued identity (signer rotation) | P2 | M |
-| TK-002 | Token claim (perpetual — long-runtime nightly) | P2 | L |
-| TK-003 | Register token contract (deploy via `create_data_contract_with_signer`) | P0 | L |
-| TK-004 | Token transfer fee accounting & balance round-trip | P0 | M |
-| TK-005 | Token mint + total-supply assertion | P1 | M |
-| TK-005b | Mint with `recipient_id != self` | P2 | S |
-| TK-006 | Token burn + total-supply decrement | P1 | M |
-| TK-007 | Freeze identity for token (admin action) | P1 | M |
-| TK-008 | Unfreeze identity for token | P1 | S |
-| TK-009 | Destroy frozen funds | P1 | M |
-| TK-010 | Pause and resume token (emergency action) | P1 | M |
-| TK-011 | Set price + direct purchase round-trip | P1 | L |
-| TK-012 | Update token config (single ChangeItem mutation) | P2 | M |
-| TK-013 | Token claim from pre-programmed distribution | P2 | L |
-| TK-014 | Group-action gateway: queue a mint, list pending, co-sign | P2 | L |
-| CR-001 | SPV mn-list sync readiness | P1 | M |
-| CR-002 | Core wallet receive address derivation | P1 | M |
-| CR-003 | Asset-lock-funded identity registration (full path) | P2 | L |
-| CT-001 | Document put: deploy a fixture data contract | P1 | M |
-| CT-002 | Document put / replace lifecycle | P2 | M |
-| CT-003 | Contract update (add document type) | P2 | M |
-| DPNS-001 | Register and resolve a `.dash` name | P0 | M |
-| DPNS-001b | Name-length boundary quartet (2 / 3 / 63 / 64 chars) | P2 | M |
-| DPNS-001c | DPNS name with a multibyte character | P2 | S |
-| DPNS-002 | Resolve a known external name (negative-only) | P2 | S |
-| DP-001 | Set DashPay profile | P1 | M |
-| DP-001b | Profile with optional fields `None` vs `Some` | P2 | M |
-| DP-001c | Profile `display_name` containing emoji / RTL text | P2 | S |
-| DP-002 | Send and accept a contact request | P1 | L |
-| DP-003 | Send a DashPay payment | P2 | L |
-| CN-001 | Initiate a contested DPNS name (premium / 3-char) | P2 | L |
-| CN-002 | Cast a masternode vote on a contested name | DEFERRED | — |
-| Harness-G1a | Corrupted registry JSON: refuse to overwrite | P2 | M |
-| Harness-G1b | Registry forward-compatible unknown field | P2 | S |
-| Harness-G4 | Drop `wallet.transfer` future mid-flight, recover on next sync | P2 | L |
-| Harness-ID-1 | `sweep_identities` regression: registered identities surrender credits at teardown | P0 | S |
+Status legend: **green** = test file present, body has real assertions, runnable end-to-end on testnet today (subject to operator env vars). **blocked** = test file or spec entry exists but cannot run end-to-end yet — the body panics on a missing helper / prereq, the `#[ignore]` reason names an unmet prereq, or the spec body marks the entry `STUB` / `BLOCKED`. **red** = test exists and is known to fail (no entries today). **not implemented** = spec entry exists but no `<id>_*.rs` file under `tests/e2e/cases/` yet. The Status column reflects the spec body's `Status:` line where present; otherwise it is derived from the test file.
+
+| ID | Title | Priority | Status | Complexity |
+|----|-------|----------|--------|------------|
+| PA-001 | Multi-output platform-address transfer | P0 | green | S |
+| PA-002 | Partial-fund + change handling | P0 | green | S |
+| PA-004 | Sweep-back: drain test wallet, observe bank credit | P0 | green | S |
+| PA-003 | Fee scaling: one-output vs. five-output | P1 | green | M |
+| PA-005 | Address rotation: gap-limit + observed-used cursor | P1 | green | M |
+| PA-006 | Replay safety: same outputs, second submission rejected | P1 | green | M |
+| PA-007 | Sync watermark idempotency | P1 | green | M |
+| PA-008 | Concurrent funding from bank: serialised | P1 | green | S |
+| PA-002b | Zero-change exact-equality (`Σ outputs + fee == input balance`) | P1 | green | S |
+| PA-010 | Bank starvation: typed `BankUnderfunded` error | P1 | blocked | S |
+| PA-001b | Transfer with `output_change_address: None` vs `Some(addr)` | P2 | blocked | S |
+| PA-001c | Zero-credit single-output transfer | P2 | green | S |
+| PA-004b | Sweep dust threshold boundary triplet | P2 | green | M |
+| PA-004c | Sweep with exactly zero balance | P2 | green | S |
+| PA-005b | `DEFAULT_GAP_LIMIT` triplet (19 / 20 / 21 unused) | P2 | blocked | M |
+| PA-006b | Two concurrent broadcasts of identical ST bytes | P2 | green | M |
+| PA-007b | Two concurrent `sync_balances` on one wallet | P2 | green | M |
+| PA-008b | Two `TestWallet`s × three concurrent funders each | P2 | green | M |
+| PA-008c | Observable serialisation of `FUNDING_MUTEX` | P2 | green | M |
+| PA-009 | `min_input_amount` boundary triplet for cleanup | P2 | green | M |
+| PA-011 | Workdir slot exhaustion at `MAX_SLOTS + 1` | P2 | not implemented | M |
+| PA-012 | `sync_balances` racing with `transfer` | P2 | not implemented | M |
+| PA-013 | Broadcast retry under transient DAPI 5xx | P2 | not implemented | M |
+| PA-014 | Multi-output at protocol-max output count | P2 | not implemented | M |
+| ID-001 | Register identity funded from platform addresses | P0 | green | L |
+| ID-002 | Top-up identity from platform addresses | P0 | green | M |
+| ID-003 | Identity-to-identity credit transfer | P0 | green | M |
+| ID-004 | Identity update: add and disable a key | P1 | not implemented | L |
+| ID-005 | Transfer credits from identity to platform addresses | P1 | green | M |
+| ID-006 | Refresh and load identity by index | P1 | not implemented | M |
+| ID-001b | `setup_with_n_identities(N)` multi-identity helper | P1 | not implemented | M |
+| ID-001c | Non-default `StateTransitionSettings` (`wait_for_proof = false`) | P2 | not implemented | M |
+| ID-003b | Concurrent identity-to-identity transfers serialise on identity nonce | P2 | not implemented | M |
+| ID-005b | `transfer_credits_to_addresses` with empty outputs | P2 | not implemented | S |
+| ID-006b | Identity-key derivation index boundary (`0` and `DEFAULT_GAP_LIMIT - 1`) | P2 | not implemented | M |
+| TK-001 | Token transfer between two identities | P1 | blocked | L |
+| TK-001b | Token transfer of amount 0 | P2 | blocked | S |
+| TK-001c | Token transfer across re-issued identity (signer rotation) | P2 | blocked | M |
+| TK-002 | Token claim (perpetual — long-runtime nightly) | P2 | blocked | L |
+| TK-003 | Register token contract (deploy via `create_data_contract_with_signer`) | P0 | blocked | L |
+| TK-004 | Token transfer fee accounting & balance round-trip | P0 | blocked | M |
+| TK-005 | Token mint + total-supply assertion | P1 | blocked | M |
+| TK-005b | Mint with `recipient_id != self` | P2 | blocked | S |
+| TK-006 | Token burn + total-supply decrement | P1 | blocked | M |
+| TK-007 | Freeze identity for token (admin action) | P1 | blocked | M |
+| TK-008 | Unfreeze identity for token | P1 | blocked | S |
+| TK-009 | Destroy frozen funds | P1 | blocked | M |
+| TK-010 | Pause and resume token (emergency action) | P1 | blocked | M |
+| TK-011 | Set price + direct purchase round-trip | P1 | blocked | L |
+| TK-012 | Update token config (single ChangeItem mutation) | P2 | blocked | M |
+| TK-013 | Token claim from pre-programmed distribution | P2 | blocked | L |
+| TK-014 | Group-action gateway: queue a mint, list pending, co-sign | P2 | blocked | L |
+| CR-001 | SPV mn-list sync readiness | P1 | not implemented | M |
+| CR-002 | Core wallet receive address derivation | P1 | not implemented | M |
+| CR-003 | Asset-lock-funded identity registration (full path) | P2 | not implemented | L |
+| CT-001 | Document put: deploy a fixture data contract | P1 | not implemented | M |
+| CT-002 | Document put / replace lifecycle | P2 | not implemented | M |
+| CT-003 | Contract update (add document type) | P2 | not implemented | M |
+| DPNS-001 | Register and resolve a `.dash` name | P0 | blocked | M |
+| DPNS-001b | Name-length boundary quartet (2 / 3 / 63 / 64 chars) | P2 | not implemented | M |
+| DPNS-001c | DPNS name with a multibyte character | P2 | not implemented | S |
+| DPNS-002 | Resolve a known external name (negative-only) | P2 | not implemented | S |
+| DP-001 | Set DashPay profile | P1 | not implemented | M |
+| DP-001b | Profile with optional fields `None` vs `Some` | P2 | not implemented | M |
+| DP-001c | Profile `display_name` containing emoji / RTL text | P2 | not implemented | S |
+| DP-002 | Send and accept a contact request | P1 | not implemented | L |
+| DP-003 | Send a DashPay payment | P2 | not implemented | L |
+| CN-001 | Initiate a contested DPNS name (premium / 3-char) | P2 | not implemented | L |
+| CN-002 | Cast a masternode vote on a contested name | DEFERRED | not implemented | — |
+| Harness-G1a | Corrupted registry JSON: refuse to overwrite | P2 | not implemented | M |
+| Harness-G1b | Registry forward-compatible unknown field | P2 | not implemented | S |
+| Harness-G4 | Drop `wallet.transfer` future mid-flight, recover on next sync | P2 | not implemented | L |
+| Harness-ID-1 | `sweep_identities` regression: registered identities surrender credits at teardown | P0 | green | S |
 
 #### Found-bug pins
 
-| ID | Title | Priority | Complexity |
-|----|-------|----------|------------|
-| Found-001 | `auto_select_inputs_for_withdrawal` ignores `min_input_amount` floor | P2 | S |
-| Found-002 | `auto_select_inputs_for_withdrawal` skips fee-target headroom check | P2 | M |
-| Found-003 | `addresses_with_balances` and `total_credits` only see the first platform-payment account | P2 | S |
-| Found-004 | `transfer` / `withdraw` / `fund_from_asset_lock` silently fall back to `address_index = 0` on lookup miss | P2 | S |
-| Found-005 | `register_from_addresses` / `top_up_from_addresses` discard SDK-returned address balances and nonces | P2 | M |
-| Found-006 | `top_up_identity_with_funding` ignores caller-supplied `topup_index` | P2 | S |
-| Found-007 | `PlatformAddressSyncManager::start` lacks a generation guard so a fast `start()` → `stop()` → `start()` can spawn parallel sync threads | P2 | M |
-| Found-008 | `LockNotifyHandler` uses `notify_waiters()` so a lock event arriving in the check / wait gap of `wait_for_proof` is dropped | P2 | M |
-| Found-009 | wallet-event adapter swallows `RecvError::Lagged` events without compensating recovery | P2 | M |
-| Found-010 | `PlatformAddressChangeSet::apply` ignores `funds.nonce` so persister-only nonce state can drift behind balance | P2 | S |
-| Found-011 | `IdentityChangeSet::merge` documents commutativity but `insert + tombstone` for the same key resolves to "removed" regardless of submission order | P2 | S |
-| Found-012 | `validate_or_upgrade_proof` and `wait_for_proof` only consult `standard_bip44_accounts`, missing CoinJoin / non-BIP-44 funding accounts | P2 | M |
-| Found-013 | `recover_asset_lock_blocking` swallows every error and returns `()` — silent recovery failure | P2 | S |
-| Found-014 | `transfer_credits_with_external_signer` never updates the receiver's local balance even when the receiver is wallet-owned | P2 | S |
-| Found-015 | `load_from_persistor` leaves a partially registered wallet in `wallet_manager` when `wallet_id` mismatches | P2 | M |
-| Found-016 | `remove_wallet` removes from `self.wallets` then `self.wallet_manager` non-atomically, leaving a window where readers see only one of the two | P2 | M |
-| Found-017 | `register_wallet` registers wallet in memory even when persister `store` returns `Err` — vanishes on next launch | P2 | S |
-| Found-018 | `PlatformAddressChangeSet::merge` documents fee semantics as "fee paid by the transfer that produced this changeset" but actually accumulates fees across merged changesets | P2 | S |
+| ID | Title | Priority | Status | Complexity |
+|----|-------|----------|--------|------------|
+| Found-001 | `auto_select_inputs_for_withdrawal` ignores `min_input_amount` floor | P2 | not implemented | S |
+| Found-002 | `auto_select_inputs_for_withdrawal` skips fee-target headroom check | P2 | not implemented | M |
+| Found-003 | `addresses_with_balances` and `total_credits` only see the first platform-payment account | P2 | not implemented | S |
+| Found-004 | `transfer` / `withdraw` / `fund_from_asset_lock` silently fall back to `address_index = 0` on lookup miss | P2 | not implemented | S |
+| Found-005 | `register_from_addresses` / `top_up_from_addresses` discard SDK-returned address balances and nonces | P2 | not implemented | M |
+| Found-006 | `top_up_identity_with_funding` ignores caller-supplied `topup_index` | P2 | not implemented | S |
+| Found-007 | `PlatformAddressSyncManager::start` lacks a generation guard so a fast `start()` → `stop()` → `start()` can spawn parallel sync threads | P2 | not implemented | M |
+| Found-008 | `LockNotifyHandler` uses `notify_waiters()` so a lock event arriving in the check / wait gap of `wait_for_proof` is dropped | P2 | not implemented | M |
+| Found-009 | wallet-event adapter swallows `RecvError::Lagged` events without compensating recovery | P2 | not implemented | M |
+| Found-010 | `PlatformAddressChangeSet::apply` ignores `funds.nonce` so persister-only nonce state can drift behind balance | P2 | not implemented | S |
+| Found-011 | `IdentityChangeSet::merge` documents commutativity but `insert + tombstone` for the same key resolves to "removed" regardless of submission order | P2 | not implemented | S |
+| Found-012 | `validate_or_upgrade_proof` and `wait_for_proof` only consult `standard_bip44_accounts`, missing CoinJoin / non-BIP-44 funding accounts | P2 | not implemented | M |
+| Found-013 | `recover_asset_lock_blocking` swallows every error and returns `()` — silent recovery failure | P2 | not implemented | S |
+| Found-014 | `transfer_credits_with_external_signer` never updates the receiver's local balance even when the receiver is wallet-owned | P2 | not implemented | S |
+| Found-015 | `load_from_persistor` leaves a partially registered wallet in `wallet_manager` when `wallet_id` mismatches | P2 | not implemented | M |
+| Found-016 | `remove_wallet` removes from `self.wallets` then `self.wallet_manager` non-atomically, leaving a window where readers see only one of the two | P2 | not implemented | M |
+| Found-017 | `register_wallet` registers wallet in memory even when persister `store` returns `Err` — vanishes on next launch | P2 | not implemented | S |
+| Found-018 | `PlatformAddressChangeSet::merge` documents fee semantics as "fee paid by the transfer that produced this changeset" but actually accumulates fees across merged changesets | P2 | not implemented | S |
 
 Counts by priority: **P0: 10**, **P1: 24** (incl. 2 post-Task #15), **P2: 56** (incl. 1 post-Task #15, 1 gated, 18 Found-bug pins), **DEFERRED: 1** (91 total index entries; 72 baseline + 18 Found-bug pins + 1 deferred placeholder).
 
