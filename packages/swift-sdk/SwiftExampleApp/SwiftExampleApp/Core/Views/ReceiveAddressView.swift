@@ -64,21 +64,19 @@ struct ReceiveAddressView: View {
         return best
     }
 
-    /// Primary Standard account (BIP44 or BIP32) for the active wallet,
-    /// or nil if it hasn't been persisted yet. `standardTag` is not
-    /// required to match — a wallet only ever has one `(accountType=0,
-    /// accountIndex=0)` account, so the uniqueness already follows
-    /// from the two upstream fields.
+    /// Primary BIP44 account (standardTag == 0) for the active wallet,
+    /// or nil if it hasn't been persisted yet.
     private var primaryBip44Account: PersistentAccount? {
-        findAccount(accountType: 0, accountIndex: 0)
+        findAccount(accountType: 0, accountIndex: 0, standardTag: 0)
     }
 
-    private func findAccount(accountType: UInt32, accountIndex: UInt32) -> PersistentAccount? {
+    private func findAccount(accountType: UInt32, accountIndex: UInt32, standardTag: UInt8? = nil) -> PersistentAccount? {
         let walletId = wallet.walletId
         for account in allAccounts {
             if account.wallet.walletId != walletId { continue }
             if account.accountType != accountType { continue }
             if account.accountIndex != accountIndex { continue }
+            if let tag = standardTag, account.standardTag != tag { continue }
             return account
         }
         return nil
