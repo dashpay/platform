@@ -16,16 +16,26 @@ struct ReceiveAddressView: View {
     @EnvironmentObject var shieldedService: ShieldedService
     let wallet: PersistentWallet
 
-    /// BIP44 accounts only (accountType == 0, standardTag == 0,
-    /// accountIndex == 0). Scalar-only predicate avoids the
-    /// type-checker budget issue that relationship-based filters hit.
-    /// The wallet-id check is the only remaining Swift-side filter.
-    @Query(filter: #Predicate<PersistentAccount> {
-        $0.accountType == 0 && $0.standardTag == 0 && $0.accountIndex == 0
-    }) private var bip44Accounts: [PersistentAccount]
-    /// All PlatformPayment (DIP-17) addresses. Filtered down to this
-    /// wallet in `nextPlatformReceiveAddress`.
+    /// The single primary BIP44 account for this wallet.
+    /// Predicate uses a single-hop relationship traversal for the
+    /// wallet id; single-hop is well within the type-checker budget
+    /// unlike the multi-condition relationship predicates that
+    /// previously caused compiler timeouts.
+    @Query private var bip44Accounts: [PersistentAccount]
+    /// PlatformPayment (DIP-17) addresses for this wallet.
     @Query private var platformAddresses: [PersistentPlatformAddress]
+
+    init(wallet: PersistentWallet) {
+        self.wallet = wallet
+        let walletId = wallet.walletId
+        _bip44Accounts = Query(filter: #Predicate<PersistentAccount> {
+            $0.wallet.walletId == walletId &&
+            $0.accountType == 0 &&
+            $0.standardTag == 0 &&
+            $0.accountIndex == 0
+        })
+        _platformAddresses = Query(filter: PersistentPlatformAddress.predicate(walletId: walletId))
+    }
 
     @State private var selectedTab: ReceiveAddressTab = .core
     @State private var copiedToClipboard = false
@@ -51,25 +61,15 @@ struct ReceiveAddressView: View {
     /// is unnecessary now that Platform addresses have their own
     /// model.
     private var nextPlatformReceiveAddress: PersistentPlatformAddress? {
-        let walletId = wallet.walletId
-        var best: PersistentPlatformAddress? = nil
-        for addr in platformAddresses {
-            if addr.walletId != walletId { continue }
-            if addr.isUsed { continue }
-            if let current = best, current.addressIndex <= addr.addressIndex {
-                continue
-            }
-            best = addr
-        }
-        return best
+        platformAddresses
+            .filter { !$0.isUsed }
+            .min(by: { $0.addressIndex < $1.addressIndex })
     }
 
-    /// Primary BIP44 account for the active wallet, or nil if not yet
-    /// persisted. Type/tag/index are pre-filtered by the @Query above;
-    /// the only remaining check is wallet identity.
+    /// Primary BIP44 account for this wallet. All filters applied in the
+    /// @Query; this is always at most one element.
     private var primaryBip44Account: PersistentAccount? {
-        let walletId = wallet.walletId
-        return bip44Accounts.first { $0.wallet.walletId == walletId }
+        bip44Accounts.first
     }
 
     /// Lowest-indexed address in the given pool on the given account
