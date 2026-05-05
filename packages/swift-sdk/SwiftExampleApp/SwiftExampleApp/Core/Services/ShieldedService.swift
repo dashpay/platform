@@ -39,6 +39,20 @@ class ShieldedService: ObservableObject {
     /// Local clock timestamp of the last completed sync pass.
     @Published var lastSyncTime: Date?
 
+    /// Number of successful shielded sync passes observed since
+    /// launch (skipped passes don't count).
+    @Published var syncCountSinceLaunch: Int = 0
+
+    /// Cumulative encrypted notes scanned since launch — sum of
+    /// every pass's `total_scanned`.
+    @Published var totalScanned: UInt64 = 0
+
+    /// Cumulative decrypted notes accepted since launch.
+    @Published var totalNewNotes: UInt64 = 0
+
+    /// Cumulative notes newly detected as spent since launch.
+    @Published var totalNewlySpent: UInt64 = 0
+
     /// Last error from a shielded operation. Cleared on a successful
     /// pass.
     @Published var lastError: String?
@@ -159,6 +173,10 @@ class ShieldedService: ObservableObject {
         lastSyncTime = nil
         lastError = nil
         orchardDisplayAddress = nil
+        syncCountSinceLaunch = 0
+        totalScanned = 0
+        totalNewNotes = 0
+        totalNewlySpent = 0
     }
 
     // MARK: - Sync event handling
@@ -175,6 +193,10 @@ class ShieldedService: ObservableObject {
             lastNewNotes = result.newNotes
             lastNewlySpent = result.newlySpent
             lastSyncTime = Date(timeIntervalSince1970: TimeInterval(event.syncUnixSeconds))
+            syncCountSinceLaunch += 1
+            totalScanned += result.totalScanned
+            totalNewNotes += UInt64(result.newNotes)
+            totalNewlySpent += UInt64(result.newlySpent)
         } else if result.skipped {
             // Skipped means the wallet hasn't been bound yet on the
             // Rust side. The UI can prompt the user to retry the
