@@ -32,6 +32,13 @@ public class PlatformWalletManager: ObservableObject {
     /// Last completed platform-address sync event emitted by Rust.
     @Published public internal(set) var lastPlatformAddressSyncEvent: PlatformAddressSyncEvent?
 
+    /// Whether the Rust-owned shielded sync coordinator currently has
+    /// a pass in flight.
+    @Published public private(set) var shieldedSyncIsSyncing: Bool = false
+
+    /// Last completed shielded sync event emitted by Rust.
+    @Published public internal(set) var lastShieldedSyncEvent: ShieldedSyncEvent?
+
     /// All wallets currently held by the Rust-side
     /// `PlatformWalletManager`, keyed by the 32-byte wallet id.
     ///
@@ -76,6 +83,7 @@ public class PlatformWalletManager: ObservableObject {
         progressPollTask?.cancel()
         if handle != NULL_HANDLE {
             platform_wallet_manager_platform_address_sync_stop(handle).discard()
+            platform_wallet_manager_shielded_sync_stop(handle).discard()
             platform_wallet_manager_destroy(handle).discard()
         }
     }
@@ -482,6 +490,10 @@ public class PlatformWalletManager: ObservableObject {
                 if let isSyncing = try? self.isPlatformAddressSyncing(),
                    isSyncing != self.platformAddressSyncIsSyncing {
                     self.platformAddressSyncIsSyncing = isSyncing
+                }
+                if let isSyncing = try? self.isShieldedSyncing(),
+                   isSyncing != self.shieldedSyncIsSyncing {
+                    self.shieldedSyncIsSyncing = isSyncing
                 }
                 try? await Task.sleep(for: .seconds(1))
             }

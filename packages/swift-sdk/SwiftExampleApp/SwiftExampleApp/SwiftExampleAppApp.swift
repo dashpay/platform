@@ -53,6 +53,13 @@ struct SwiftExampleAppApp: App {
     @State private var bootstrapError: Error?
     @State private var bootstrapTask: Task<Void, Never>?
 
+    /// Resolver that backs the platform-wallet-ffi `MnemonicResolverHandle`
+    /// for shielded wallet binding. Reuses the default `WalletStorage`
+    /// keychain access — same shape as the identity-key signing path.
+    /// Held for the lifetime of the App so the underlying handle is
+    /// valid across every `bind_shielded` call.
+    private let shieldedResolver = MnemonicResolver()
+
     init() {
         // Suppress auto layout constraint warnings in debug builds
         // These are typically harmless keyboard-related warnings
@@ -180,12 +187,14 @@ struct SwiftExampleAppApp: App {
         guard let wallet else {
             do {
                 try walletManager.stopPlatformAddressSync()
+                try walletManager.stopShieldedSync()
             } catch {
                 SDKLogger.error(
-                    "Failed to stop platform address sync: \(error.localizedDescription)"
+                    "Failed to stop sync coordinators: \(error.localizedDescription)"
                 )
             }
             platformBalanceSyncService.reset()
+            shieldedService.reset()
             return
         }
         do {
@@ -203,9 +212,24 @@ struct SwiftExampleAppApp: App {
                 "🔗 BLAST sync running; balance-sync UI bound to wallet \(wallet.walletId.prefix(4).map { String(format: "%02x", $0) }.joined())… on \(platformState.currentNetwork.displayName) (of \(walletManager.wallets.count) loaded)",
                 minimumLevel: .medium
             )
+
+            // Bind the shielded service against the same wallet.
+            // The bind is best-effort — failures (no mnemonic in
+            // keychain, biometric prompt declined, etc.) leave the
+            // service in a "not bound" state and the user can
+            // retry from the Sync Status surface.
+            shieldedService.bind(
+                walletManager: walletManager,
+                walletId: wallet.walletId,
+                network: platformState.currentNetwork,
+                resolver: shieldedResolver
+            )
+            if try !walletManager.isShieldedSyncRunning() {
+                try walletManager.startShieldedSync()
+            }
         } catch {
             SDKLogger.error(
-                "Failed to bind platform address wallet: \(error.localizedDescription)"
+                "Failed to bind wallet-scoped services: \(error.localizedDescription)"
             )
         }
     }
@@ -240,8 +264,6 @@ struct SwiftExampleAppApp: App {
                     )
                 }
 
-                // Initialize shielded pool using first available wallet's data.
-                initializeShieldedService()
                 rebindWalletScopedServices()
             }
 
@@ -268,17 +290,5 @@ struct SwiftExampleAppApp: App {
             return csv.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
         }
         return ["127.0.0.1"]
-    }
-
-    /// Initialize the shielded pool client. Best-effort — does nothing if no
-    /// wallet is available yet.
-    private func initializeShieldedService() {
-        // TODO(platform-wallet): Derive a ZIP32 spending key from
-        // the managed wallet. The legacy code path reused the
-        // seed bytes stashed on the (now-deleted) HDWallet row;
-        // the seed now lives only in the keychain, so a fresh
-        // derivation path is needed. For now the shielded
-        // service starts empty; it will be re-initialized once
-        // the user creates/loads a wallet via `createWallet(...)`.
     }
 }

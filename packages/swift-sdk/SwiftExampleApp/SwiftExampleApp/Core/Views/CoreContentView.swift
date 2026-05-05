@@ -415,7 +415,7 @@ var body: some View {
                         Spacer()
 
                         Button {
-                            shieldedService.manualSync()
+                            Task { await shieldedService.manualSync() }
                         } label: {
                             HStack(spacing: 4) {
                                 Image(systemName: "arrow.clockwise")
