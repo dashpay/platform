@@ -16,6 +16,7 @@ use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
 use dpp::prelude::Identifier;
+use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 
 use super::wallet_factory::TestWallet;
 use super::{FrameworkError, FrameworkResult};
@@ -120,6 +121,66 @@ pub async fn wait_for_balance(
         // earlier via the `Notified` future.
         let cap = std::cmp::min(remaining, BACKSTOP_WAKE_INTERVAL);
         let _ = tokio::time::timeout(cap, notified.as_mut()).await;
+    }
+}
+
+/// Wait for the wallet's Layer-1 Core balance (in duffs) to reach at
+/// least `expected_min`.
+///
+/// Polls `test_wallet.platform_wallet().state().await.balance().spendable()`
+/// every [`BACKSTOP_WAKE_INTERVAL`] until the threshold is met. The
+/// SPV bloom-filter feed updates the underlying `WalletCoreBalance`
+/// asynchronously, so a poll-based approach is sufficient — there's
+/// no `Notified` future on the Core side analogous to
+/// [`wait_for_balance`]'s wait hub. Returns
+/// [`FrameworkError::Cleanup`] on `timeout`, the standard "did not
+/// reach target in time" sentinel used by the other waiters.
+///
+/// Used by `ID-007` (pin: identity-auth addresses are NOT in
+/// `monitored_addresses()`, so a Core send to one MUST time out
+/// here at the pinned `key-wallet` revision); generally useful for
+/// any future case asserting positive-balance arrival on a
+/// monitored address.
+pub async fn wait_for_core_balance(
+    test_wallet: &TestWallet,
+    expected_min: u64,
+    timeout: Duration,
+) -> FrameworkResult<u64> {
+    let start = Instant::now();
+    let deadline = Instant::now() + timeout;
+
+    loop {
+        let observed = test_wallet
+            .platform_wallet()
+            .state()
+            .await
+            .balance()
+            .spendable();
+        if observed >= expected_min {
+            tracing::info!(
+                target: "platform_wallet::e2e::wait",
+                observed,
+                expected_min,
+                elapsed = ?start.elapsed(),
+                "core balance reached target"
+            );
+            return Ok(observed);
+        }
+        tracing::debug!(
+            target: "platform_wallet::e2e::wait",
+            observed,
+            expected_min,
+            "core balance below target"
+        );
+
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(FrameworkError::Cleanup(format!(
+                "wait_for_core_balance timed out after {timeout:?} \
+                 (expected_min={expected_min})"
+            )));
+        }
+        tokio::time::sleep(std::cmp::min(remaining, BACKSTOP_WAKE_INTERVAL)).await;
     }
 }
 

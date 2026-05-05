@@ -363,6 +363,33 @@ impl BankWallet {
     pub fn funding_mutex_history(&self) -> Vec<FundingMutexHistoryEntry> {
         drain_funding_mutex_history()
     }
+
+    /// Send `duffs` of Layer-1 Core duffs from the bank to a Core
+    /// `dashcore::Address`. Stubbed `unimplemented!()` — the bank
+    /// today holds Platform credits, not Core coins (see CR-003's
+    /// "Core-funded bank wallet helper" prerequisite). Wired in when
+    /// Task #15 (SPV runtime) lands and the bank gains a Core-funded
+    /// account.
+    ///
+    /// Used by `ID-007` to attempt a Layer-1 send to a DIP-9
+    /// identity-auth address; the assertion side of that test
+    /// pins "the Core balance does NOT increase" against the
+    /// pinned `key-wallet` revision's contract.
+    pub async fn send_core_to(
+        &self,
+        target: &dashcore::Address,
+        duffs: u64,
+    ) -> FrameworkResult<dashcore::Txid> {
+        let _ = (target, duffs);
+        unimplemented!(
+            "BankWallet::send_core_to — CR-003 prerequisite. The bank \
+             today holds Platform credits via DIP-17 platform-payment \
+             accounts, not Core duffs on a DIP-9 / BIP-44 receive \
+             account. Wire through when Task #15 (SPV runtime) lands \
+             and the bank exposes a Core-funded account; see TEST_SPEC.md \
+             § ID-007 / § CR-003 for the gating discussion."
+        );
+    }
 }
 
 fn wallet_err(err: PlatformWalletError) -> FrameworkError {
