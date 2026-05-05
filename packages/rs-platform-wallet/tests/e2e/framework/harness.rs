@@ -26,6 +26,7 @@ use super::config::Config;
 use super::registry::PersistentTestWalletRegistry;
 use super::sdk;
 use super::spv;
+use super::wait;
 use super::wait_hub::WaitEventHub;
 use super::workdir;
 use super::FrameworkResult;
@@ -34,6 +35,15 @@ use super::FrameworkResult;
 /// init. Internally raised to `COLD_CACHE_TIMEOUT_FLOOR` (600s) by
 /// [`spv::wait_for_mn_list_synced`] so cold testnet caches still fit.
 const SPV_READY_TIMEOUT: Duration = Duration::from_secs(180);
+
+/// Deadline for the bank's confirmed Core balance to reach
+/// [`Config::bank_core_gate_duffs`]. Sized to fit a cold-cache compact-
+/// filter scan from genesis on testnet (~1.47M blocks ≈ 15 min);
+/// subsequent runs reuse the on-disk cache and clear the gate in
+/// seconds. Marvin's QA-001 — without this gate, a cold-cache process
+/// samples the balance ~52 s in and reports `confirmed=0` for an
+/// address that's been funded since last week.
+const BANK_CORE_FUNDING_TIMEOUT: Duration = Duration::from_secs(900);
 
 /// Process-shared singleton populated on first
 /// [`E2eContext::init`].
@@ -157,16 +167,63 @@ impl E2eContext {
         // Panics on under-funded balance — see `BankWallet::load`.
         let bank = BankWallet::load(&manager, &config).await?;
 
+        // Bank Core (Layer-1) funding gate. Marvin's QA-001 — first
+        // cold-cache run on testnet walks ~1.47M compact filters from
+        // genesis (~15 min); without the gate, the harness samples
+        // `core_balance_confirmed` while the scan is still ~52 s in
+        // and any CR-* / ID-007 case using `send_core_to` fails on a
+        // false-zero balance. `bank_core_gate_duffs == 0` (default)
+        // skips the gate — most tests don't need duffs and the cold-
+        // cache wait is wasted. Operators raise the floor via
+        // `PLATFORM_WALLET_E2E_BANK_CORE_GATE` when running CR-* /
+        // ID-007 cases.
+        //
+        // Failure is demoted to a warn rather than a hard abort so
+        // tests that don't need bank Core funding still run; the ones
+        // that do panic at `send_core_to` with the operator-actionable
+        // "top up at <addr>" message (see `BankWallet::send_core_to`).
+        if config.bank_core_gate_duffs > 0 {
+            tracing::info!(
+                target: "platform_wallet::e2e::bank",
+                gate_duffs = config.bank_core_gate_duffs,
+                timeout = ?BANK_CORE_FUNDING_TIMEOUT,
+                "waiting for bank Core funding gate (first cold-cache run \
+                 takes ~15 min while SPV walks compact filters from genesis; \
+                 subsequent runs reuse the on-disk cache and complete in seconds)"
+            );
+            match wait::wait_for_bank_funded(
+                &bank,
+                spv_runtime.as_deref(),
+                config.bank_core_gate_duffs,
+                BANK_CORE_FUNDING_TIMEOUT,
+            )
+            .await
+            {
+                Ok(observed) => tracing::info!(
+                    target: "platform_wallet::e2e::bank",
+                    observed,
+                    gate_duffs = config.bank_core_gate_duffs,
+                    "bank Core funding gate cleared"
+                ),
+                Err(err) => tracing::warn!(
+                    target: "platform_wallet::e2e::bank",
+                    error = %err,
+                    "bank Core funding gate timed out; tests requiring \
+                     bank Core funding will surface BankCoreUnderfunded with \
+                     the operator-actionable top-up address"
+                ),
+            }
+        }
+
         // Surface the bank's Core (Layer-1) balance and primary
         // receive address at init with a visual marker so it's easy
-        // to spot in test output. Most tests don't need duffs — a
-        // zero balance is not fatal — but CR-/ID-007-class cases
-        // require the address to be pre-funded with testnet duffs
-        // before they can run end-to-end. Logged once per process so
-        // funding the bank is a single-line copy-paste task. Errors
-        // fetching the address are demoted to a warning so framework
-        // init isn't gated on Core paths that most tests bypass
-        // entirely.
+        // to spot in test output. Logged AFTER the gate above so the
+        // banner reflects the post-scan balance — Marvin's QA-001
+        // (a pre-gate banner shows `core_balance_balance=0` while
+        // SPV is mid-scan, which sends operators chasing a phantom
+        // funding problem). Errors fetching the address are demoted
+        // to a warning so framework init isn't gated on Core paths
+        // that most tests bypass entirely.
         // QA-003: surface the bank's `birth_height` next to the
         // address + balance so operators can tell "wallet starts
         // above your funding tx" from "your tx hasn't confirmed yet".
