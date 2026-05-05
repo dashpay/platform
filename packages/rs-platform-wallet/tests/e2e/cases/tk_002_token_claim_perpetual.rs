@@ -44,7 +44,7 @@ const STEP_TIMEOUT: Duration = Duration::from_secs(120);
 const PERPETUAL_WAIT: Duration = Duration::from_secs(45);
 
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
-#[ignore = "requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access; run with cargo test -- --ignored"]
+#[ignore = "blocked on Wave G perpetual-distribution helper (setup_with_token_contract `distribution_rules` override); also requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access"]
 async fn tk_002_token_claim_perpetual_distribution() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
@@ -54,22 +54,12 @@ async fn tk_002_token_claim_perpetual_distribution() {
         .with_test_writer()
         .try_init();
 
-    let ctx = E2eContext::init().await.expect("init e2e context");
-
-    // Baseline two-identity fixture so the funding + signer plumbing
-    // is identical to TK-001 once the perpetual helper lands. The
-    // contract deployed here uses the permissive owner-only template
-    // with `perpetualDistribution: null` — i.e. NOT yet what TK-002
-    // wants. The panic below blocks before any claim so the placeholder
-    // contract never confuses a future debugger.
-    let two = setup_with_token_and_two_identities(ctx, DEFAULT_TK_FUNDING)
-        .await
-        .expect("setup token + 2 identities");
-    let _contract_id = two.setup.contract_id;
-    let _position = two.setup.token_position;
-    let _owner = &two.setup.owner;
-
-    // ---- perpetual-distribution deploy step: helper missing -------
+    // Panic FIRST — running with `--ignored` against testnet would
+    // otherwise burn a contract-create + 2× identity-register pair on
+    // a contract that doesn't even carry the perpetual rules this
+    // test is meant to exercise. Setup scaffolding is left below
+    // (under `#[allow(unreachable_code)]`) so the eventual
+    // implementor sees the shape the spec asks for.
     //
     // Wave 1's `framework/tokens.rs` does not expose a helper that
     // overrides `distributionRules.perpetualDistribution` on the
@@ -82,11 +72,22 @@ async fn tk_002_token_claim_perpetual_distribution() {
          see TEST_SPEC.md § TK-002"
     );
 
-    // Unreachable until the helper lands; left in place so the
-    // implementor sees the assertion shape spelled out in the module
-    // docs.
     #[allow(unreachable_code)]
     {
+        let ctx = E2eContext::init().await.expect("init e2e context");
+
+        // Baseline two-identity fixture so the funding + signer plumbing
+        // is identical to TK-001 once the perpetual helper lands. The
+        // contract deployed here uses the permissive owner-only template
+        // with `perpetualDistribution: null` — i.e. NOT yet what TK-002
+        // wants.
+        let two = setup_with_token_and_two_identities(ctx, DEFAULT_TK_FUNDING)
+            .await
+            .expect("setup token + 2 identities");
+        let _contract_id = two.setup.contract_id;
+        let _position = two.setup.token_position;
+        let _owner = &two.setup.owner;
+
         two.setup.setup_guard.teardown().await.expect("teardown");
     }
 }

@@ -31,7 +31,7 @@ const MINT_AMOUNT: u64 = 100;
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
-#[ignore = "requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access; run with cargo test -- --ignored"]
+#[ignore = "blocked on ID-004 key-rotation helper (derive_identity_key + signer cache injection); also requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access"]
 async fn tk_001c_token_transfer_after_key_rotation() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
@@ -41,41 +41,11 @@ async fn tk_001c_token_transfer_after_key_rotation() {
         .with_test_writer()
         .try_init();
 
-    let ctx = E2eContext::init().await.expect("init e2e context");
-
-    let two = setup_with_token_and_two_identities(ctx, DEFAULT_TK_FUNDING)
-        .await
-        .expect("setup token + 2 identities");
-    let contract_id = two.setup.contract_id;
-    let position = two.setup.token_position;
-    let owner = &two.setup.owner;
-    let _peer = &two.peer;
-
-    // Mint stock so the post-rotation transfer has something to move.
-    mint_to(ctx, contract_id, position, MINT_AMOUNT, owner, owner)
-        .await
-        .expect("mint to owner");
-    wait_for_token_balance(
-        ctx,
-        owner.id,
-        contract_id,
-        position,
-        MINT_AMOUNT,
-        STEP_TIMEOUT,
-    )
-    .await
-    .expect("mint never observed on owner");
-
-    let owner_tok_pre = token_balance_of(ctx, contract_id, position, owner.id)
-        .await
-        .expect("owner token balance pre");
-    assert_eq!(
-        owner_tok_pre, MINT_AMOUNT,
-        "owner must hold the just-minted balance pre-rotation \
-         (observed={owner_tok_pre} expected={MINT_AMOUNT})"
-    );
-
-    // ---- key rotation step: requires ID-004 helper -----------------
+    // Panic FIRST — running with `--ignored` against testnet would
+    // otherwise burn ~1.5B credits on a contract-create + mint pair
+    // before hitting this todo. The setup scaffolding below is left
+    // as `#[allow(unreachable_code)]` so the eventual implementor
+    // sees the assertion shape the spec asks for.
     //
     // Two pieces are missing:
     //  - a `derive_identity_key(identity_index, key_index, purpose,
@@ -93,10 +63,42 @@ async fn tk_001c_token_transfer_after_key_rotation() {
          (derive_identity_key + signer cache injection) — see TEST_SPEC.md § ID-004"
     );
 
-    // Unreachable until ID-004 lands; left in place so the eventual
-    // implementor sees the assertion shape the spec asks for.
     #[allow(unreachable_code)]
     {
+        let ctx = E2eContext::init().await.expect("init e2e context");
+
+        let two = setup_with_token_and_two_identities(ctx, DEFAULT_TK_FUNDING)
+            .await
+            .expect("setup token + 2 identities");
+        let contract_id = two.setup.contract_id;
+        let position = two.setup.token_position;
+        let owner = &two.setup.owner;
+        let _peer = &two.peer;
+
+        // Mint stock so the post-rotation transfer has something to move.
+        mint_to(ctx, contract_id, position, MINT_AMOUNT, owner, owner)
+            .await
+            .expect("mint to owner");
+        wait_for_token_balance(
+            ctx,
+            owner.id,
+            contract_id,
+            position,
+            MINT_AMOUNT,
+            STEP_TIMEOUT,
+        )
+        .await
+        .expect("mint never observed on owner");
+
+        let owner_tok_pre = token_balance_of(ctx, contract_id, position, owner.id)
+            .await
+            .expect("owner token balance pre");
+        assert_eq!(
+            owner_tok_pre, MINT_AMOUNT,
+            "owner must hold the just-minted balance pre-rotation \
+             (observed={owner_tok_pre} expected={MINT_AMOUNT})"
+        );
+
         two.setup.setup_guard.teardown().await.expect("teardown");
     }
 }
