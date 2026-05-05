@@ -131,6 +131,7 @@ Source citations for the "Wallet API exists" column are listed inline per case
 | ID-003b | Concurrent identity-to-identity transfers serialise on identity nonce | P2 | M |
 | ID-005b | `transfer_credits_to_addresses` with empty outputs | P2 | S |
 | ID-006b | Identity-key derivation index boundary (`0` and `DEFAULT_GAP_LIMIT - 1`) | P2 | M |
+| ID-007 | Identity-auth addresses are visible to SPV monitor (BLOCKED on Task #15) | P2 | M |
 | TK-001 | Token transfer between two identities | P1 | L |
 | TK-001b | Token transfer of amount 0 | P2 | S |
 | TK-001c | Token transfer across re-issued identity (signer rotation) | P2 | M |
@@ -193,7 +194,7 @@ Source citations for the "Wallet API exists" column are listed inline per case
 | Found-017 | `register_wallet` registers wallet in memory even when persister `store` returns `Err` — vanishes on next launch | P2 | S |
 | Found-018 | `PlatformAddressChangeSet::merge` documents fee semantics as "fee paid by the transfer that produced this changeset" but actually accumulates fees across merged changesets | P2 | S |
 
-Counts by priority: **P0: 10**, **P1: 24** (incl. 2 post-Task #15), **P2: 56** (incl. 1 post-Task #15, 1 gated, 18 Found-bug pins), **DEFERRED: 1** (91 total index entries; 72 baseline + 18 Found-bug pins + 1 deferred placeholder).
+Counts by priority: **P0: 10**, **P1: 24** (incl. 2 post-Task #15), **P2: 57** (incl. 2 post-Task #15, 1 gated, 18 Found-bug pins), **DEFERRED: 1** (92 total index entries; 73 baseline + 18 Found-bug pins + 1 deferred placeholder).
 
 ### Platform Addresses (PA)
 
@@ -891,6 +892,44 @@ Counts by priority: **P0: 10**, **P1: 24** (incl. 2 post-Task #15), **P2: 56** (
 - **Harness extensions required**: Wave A's `derive_identity_key` helper exposed for `key_index` (in addition to `identity_index`).
 - **Estimated complexity**: M
 - **Rationale**: ID-006 covers `identity_index` boundaries; `key_index` is the parallel axis and currently uncovered.
+
+#### ID-007 — Identity-auth addresses are visible to SPV monitor (BLOCKED on Task #15)
+- **Priority**: P2
+- **Status**: BLOCKED — full test body implemented, gated behind `#[ignore]`. Will fail loudly the first time it's invoked under `--ignored` until: (1) SPV runtime is re-enabled (Task #15 — same gate as `CR-001`/`CR-002`/`CR-003`), (2) the Core-funded bank wallet helper lands (CR-003 prerequisite — current bank holds Platform credits, not Core duffs), (3) the framework's `bank.send_core_to(..)` helper is wired (currently stubbed with `unimplemented!()`). When all three exist, drop the `#[ignore]` to the standard "needs testnet" form and the test runs end-to-end. Tracks the scenario from closed PR `dashpay/rust-dashcore#554` (the parked attempt to ship `BlockchainIdentities*` AccountType variants and flip `WalletAccountCreationOptions::Default` to monitor those addresses) and DET follow-up issue `dash-evo-tool#692`. The wallet's contract today is "identity-auth addresses are NOT monitored"; this case pins that contract so any reshape upstream surfaces here rather than silently in DET or in user funds.
+- **Wallet feature exercised**: `PlatformWalletInfo::monitored_addresses` (`wallet/platform_wallet_traits.rs:93`) projection for DIP-9 identity-authentication addresses derived via `derive_ecdsa_identity_auth_keypair_from_master` (`wallet/identity/network/identity_handle.rs:143`). Concretely: the `m/9'/coinType'/5'/0'/identity_index'/key_index'` subfeature path, which is not in `WalletAccountCreationOptions::Default` at the pinned `key-wallet` revision.
+- **DET parallel**: `dash-evo-tool#692` (the follow-up issue PR `dashpay/rust-dashcore#554` referenced for the DET-side `spv_account_metadata()` match arm).
+- **Preconditions**:
+  - SPV runtime enabled (Task #15 — gates `CR-001` too).
+  - ID-001 helper landed (Wave A).
+  - Bank wallet that holds **Core coins**, not just credits — same prerequisite as `CR-003`. Test is gated until that Core-funded helper exists.
+- **Scenario**:
+  1. `let id = setup_with_n_identities(1, 30_000_000).await?.identities[0];`
+  2. Compute `auth_addr = P2PKH(derive_ecdsa_identity_auth_keypair_from_master(master, network, identity_index = 0, key_index = 0).public_key)`.
+  3. Snapshot `wallet.monitored_addresses()` *before* sending anything.
+  4. Send `100_000` duffs from the Core-funded bank to `auth_addr` on Layer-1; wait for instant-lock.
+  5. Snapshot `wallet.monitored_addresses()` *after* the broadcast.
+  6. Wait up to `30s` for the wallet's Core balance to reflect the incoming UTXO; record whether it does.
+- **Assertions** (pin the **current** contract, not the aspirational one — flip to the aspirational shape only after the upstream decision lands and the relevant DET issue is closed):
+  - `auth_addr` is **NOT** in `monitored_addresses()` either before or after step 4 (current contract).
+  - The wallet's Core balance does **NOT** increase after step 6 within the timeout (current contract).
+  - The wallet's UTXO set does **NOT** contain the new `100_000`-duff UTXO (current contract).
+  - When the eventual `BlockchainIdentities` support lands upstream and the wallet opts in, **flip** all three assertions and the test starts passing for the right reason.
+- **Negative variants** (covered inline in the same test — registration status is irrelevant, the derivation is pure):
+  - Compute `auth_addr` for `identity_index = 1` (an unregistered slot) — same three current-contract assertions hold.
+  - Repeat for the BLS subfeature path (`m/9'/coinType'/5'/2'/identity_index'/key_index'`) once `derive_*_bls_identity_auth_keypair_from_master` lands; assert the same negative. (Deferred — TODO comment in the test body.)
+- **Harness extensions required**:
+  - SPV runtime re-enabled (Task #15 — same prerequisite as `CR-001`).
+  - Core-funded bank wallet helper (same prerequisite as `CR-003`). Stubbed for now via `Bank::send_core_to(..) -> unimplemented!()`; wire through when CR-003 helpers land.
+  - `wait_for_core_balance(wallet, expected_min, timeout)` — landed in `framework/wait.rs` alongside this case (parallel of `wait_for_balance` for Layer-1 balance instead of credits).
+  - Wave A's `SeedBackedIdentitySigner` (already needed for `ID-001`).
+- **Estimated complexity**: M (test body is short — most of the cost is the prerequisite SPV + Core-faucet bring-up that `CR-001` and `CR-003` already require).
+- **Funding budget**: `100_000` Core duffs (~0.001 DASH) per run for the Layer-1 send; rounding for Core-tx fee. Negligible compared to the credit budget of any P0/P1 case.
+- **Rationale**: Pins the wallet's contract for "which DIP-9 subfeatures get monitored?" The closed PR `dashpay/rust-dashcore#554` user story explicitly called out identity-auth addresses as a scenario it wanted SPV-monitored; the PR is closed without merge or supersede pointer, and the current contract in the pinned `key-wallet` rev silently excludes them. ID-007 makes that exclusion an asserted contract so that:
+  1. anyone who flips `WalletAccountCreationOptions::Default` to include `BlockchainIdentities*` accounts (or any equivalent reshape upstream) breaks this test loudly, and the assertion bodies can be flipped in the same PR;
+  2. nobody on the platform side accidentally relies on the monitored-addresses set covering identity-auth addresses before the upstream story lands.
+- **Notes**:
+  - Today `derive_ecdsa_identity_auth_keypair_from_master` is the only DIP-9 subfeature `rs-platform-wallet` exposes (subfeature 0, ECDSA). Adding the BLS / Hash160 negative variants is contingent on the upstream `key-wallet` API gaining BLS derivation helpers.
+  - This is a **defensive contract pin**, not a feature test. Same shape as `Found-003` / `Found-004` — pin a known-incomplete behaviour as the contract until someone explicitly extends it.
 
 ### Tokens (TK)
 
