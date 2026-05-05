@@ -175,7 +175,23 @@ impl Debug for TenderdashStatus {
     }
 }
 
+/// Hard cap on the length of attacker-influenceable CBOR payloads we accept
+/// before decoding Tenderdash error data.
+///
+/// Tenderdash responses are bounded by the upstream HTTP client, but no
+/// explicit size cap exists at this layer; 64 KiB is comfortably above any
+/// legitimate payload while preventing pathological CBOR from forcing
+/// unbounded recursion on the server side.
+///
+/// TODO(CMT-004): `ciborium` does not yet expose a depth-limited reader; once
+/// upstream offers one, swap the size cap for a structural depth cap.
+const MAX_CBOR_INPUT_SIZE: usize = 65_536;
+
 /// Decode a potentially unpadded base64 string used by Tenderdash error payloads.
+///
+/// This is a pure decoder: callers decide whether and at what level to log a
+/// failure (some treat decode failure as the expected fall-through path, others
+/// want to surface the decoder error).
 pub(crate) fn base64_decode(input: &str) -> Option<Vec<u8>> {
     static BASE64: engine::GeneralPurpose = {
         let b64_config = engine::GeneralPurposeConfig::new()
@@ -185,15 +201,17 @@ pub(crate) fn base64_decode(input: &str) -> Option<Vec<u8>> {
 
         engine::GeneralPurpose::new(&base64::alphabet::STANDARD, b64_config)
     };
-    BASE64
-        .decode(input)
-        .inspect_err(|e| {
-            tracing::debug!("Failed to decode base64: {}", e);
-        })
-        .ok()
+    BASE64.decode(input).ok()
 }
 
 /// Walk a nested CBOR map by following the provided key path.
+///
+/// INTENTIONAL(CMT-007): a single-key form of this walk is duplicated as
+/// `extract_drive_error_message` at packages/rs-sdk/src/error.rs. The two
+/// crates have different dependency surfaces; extracting a shared helper would
+/// require a new shared crate solely for this lookup. If you change the
+/// wire-format expectations here, MIRROR the change at the rs-sdk site so both
+/// sides of the boundary stay in sync.
 fn walk_cbor_for_key<'a>(data: &'a ciborium::Value, keys: &[&str]) -> Option<&'a ciborium::Value> {
     if keys.is_empty() {
         tracing::trace!(?data, "found value, returning");
@@ -226,7 +244,18 @@ pub(super) fn decode_consensus_error(info_base64: String) -> Option<Vec<u8>> {
     use ciborium::value::Value;
 
     tracing::trace!(?info_base64, "decode_consensus_error: received info");
-    let decoded_bytes = base64_decode(&info_base64)?;
+    let decoded_bytes = base64_decode(&info_base64).or_else(|| {
+        tracing::debug!("Failed to base64-decode consensus error info");
+        None
+    })?;
+    if decoded_bytes.len() > MAX_CBOR_INPUT_SIZE {
+        tracing::debug!(
+            len = decoded_bytes.len(),
+            max = MAX_CBOR_INPUT_SIZE,
+            "consensus error info exceeds CBOR size cap; refusing to decode"
+        );
+        return None;
+    }
     tracing::trace!(hex = %hex::encode(&decoded_bytes), len = decoded_bytes.len(), "decode_consensus_error: base64 decoded bytes");
     // CBOR-decode decoded_bytes
     let raw_value: Value = ciborium::de::from_reader(decoded_bytes.as_slice())
@@ -278,22 +307,21 @@ pub(super) fn decode_consensus_error(info_base64: String) -> Option<Vec<u8>> {
 /// base64-encoded CBOR or does not contain a `message` key, allowing the
 /// caller to fall back to the raw string.
 fn decode_data_message(data: &str) -> Option<String> {
-    // Silently try base64 — failure is expected for plain-text data fields,
-    // so we intentionally avoid `base64_decode()` which logs at debug level.
-    let decoded_bytes = engine::GeneralPurpose::new(
-        &base64::alphabet::STANDARD,
-        engine::GeneralPurposeConfig::new()
-            .with_decode_allow_trailing_bits(true)
-            .with_decode_padding_mode(engine::DecodePaddingMode::Indifferent),
-    )
-    .decode(data)
-    .ok()?;
+    // Failure of either step is the expected fall-through for plain-text data
+    // fields, so we deliberately do not log here — `base64_decode` is a pure
+    // decoder and CBOR failure on plain text is normal.
+    let decoded_bytes = base64_decode(data)?;
 
-    let raw_value: ciborium::Value = ciborium::de::from_reader(decoded_bytes.as_slice())
-        .inspect_err(|e| {
-            tracing::trace!("data field is not CBOR: {}", e);
-        })
-        .ok()?;
+    if decoded_bytes.len() > MAX_CBOR_INPUT_SIZE {
+        tracing::debug!(
+            len = decoded_bytes.len(),
+            max = MAX_CBOR_INPUT_SIZE,
+            "data field exceeds CBOR size cap; refusing to decode"
+        );
+        return None;
+    }
+
+    let raw_value: ciborium::Value = ciborium::de::from_reader(decoded_bytes.as_slice()).ok()?;
 
     walk_cbor_for_key(&raw_value, &["message"]).and_then(|v| v.as_text().map(|s| s.to_string()))
 }
@@ -833,7 +861,15 @@ mod tests {
             "expected decoded message, got: {:?}",
             status.message
         );
-        assert!(status.message.as_deref().unwrap().contains("unique set"),);
+        // Use the more specific phrasing so a swapped fixture wouldn't pass —
+        // "unique set" alone also matches "non unique set" from the paired test.
+        assert!(
+            status
+                .message
+                .as_deref()
+                .unwrap()
+                .contains("in the unique set"),
+        );
         assert!(status.consensus_error.is_none());
     }
 
