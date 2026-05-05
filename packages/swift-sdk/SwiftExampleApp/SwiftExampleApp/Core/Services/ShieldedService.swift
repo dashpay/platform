@@ -96,7 +96,27 @@ class ShieldedService: ObservableObject {
         self.walletId = walletId
         self.syncStateCancellable?.cancel()
         self.syncEventCancellable?.cancel()
-        self.isBound = false
+
+        // Clear the previous wallet's snapshot up front. Without
+        // this, switching wallets (or a failed rebind) leaves the
+        // prior wallet's balance / counters / orchard address on
+        // the UI until the new wallet's first sync event lands —
+        // which can be tens of seconds, or never if the new bind
+        // fails. Per-published-field reset rather than `reset()`
+        // because the manager subscriptions get re-attached just
+        // below; we don't want to nil out walletManager/walletId.
+        isBound = false
+        isSyncing = false
+        shieldedBalance = 0
+        lastNewNotes = 0
+        lastNewlySpent = 0
+        lastSyncTime = nil
+        lastError = nil
+        orchardDisplayAddress = nil
+        syncCountSinceLaunch = 0
+        totalScanned = 0
+        totalNewNotes = 0
+        totalNewlySpent = 0
 
         let dbPath = Self.dbPath(for: network)
         do {
