@@ -397,14 +397,6 @@ fn select_inputs_deduct_from_input(
     fee_strategy: &[AddressFundsFeeStrategyStep],
     platform_version: &PlatformVersion,
 ) -> Result<BTreeMap<PlatformAddress, Credits>, PlatformWalletError> {
-    debug_assert!(
-        matches!(
-            fee_strategy,
-            [AddressFundsFeeStrategyStep::DeductFromInput(0)]
-        ),
-        "select_inputs_deduct_from_input requires [DeductFromInput(0)]; \
-         the dispatcher should have routed other shapes elsewhere"
-    );
     if !matches!(
         fee_strategy,
         [AddressFundsFeeStrategyStep::DeductFromInput(0)]
@@ -581,30 +573,43 @@ fn select_inputs_deduct_from_input(
 
     selected.insert(fee_target_addr, fee_target_consumed);
 
-    // Phase 5: defensive invariant checks. Fail loudly here rather
-    // than ship a transition the validator will reject.
+    // Phase 5: explicit runtime invariant checks. Fail loudly here
+    // rather than ship a transition the validator would reject.
+    // Evaluated in release as well as debug — production code must
+    // never silently produce a malformed inputs map.
     let input_sum: Credits = selected.values().sum();
-    debug_assert_eq!(input_sum, total_output, "Σ inputs == Σ outputs invariant");
-    debug_assert_eq!(
-        selected.keys().next().copied(),
-        Some(fee_target_addr),
-        "fee target must be the BTreeMap index-0 (lex-smallest) entry"
-    );
-    // Saturating-sub is fine here: the assert exists to catch a
-    // negative remaining (which saturates to 0 and trips `>= estimated_fee`).
-    debug_assert!(
-        fee_target_balance.saturating_sub(fee_target_consumed) >= estimated_fee,
-        "fee target must retain ≥ estimated_fee remaining balance for DeductFromInput(0)"
-    );
-    debug_assert!(
-        selected.values().all(|amount| *amount >= min_input_amount),
-        "every selected input must satisfy the protocol's per-input minimum"
-    );
-
     if input_sum != total_output {
         return Err(PlatformWalletError::AddressOperation(format!(
             "Internal selection error: Σ inputs ({}) != total_output ({})",
             input_sum, total_output
+        )));
+    }
+    if selected.keys().next().copied() != Some(fee_target_addr) {
+        return Err(PlatformWalletError::AddressOperation(format!(
+            "Internal selection error: fee target {} is not the BTreeMap index-0 \
+             (lex-smallest) entry; first entry is {:?}",
+            format_address(&fee_target_addr),
+            selected.keys().next().map(format_address),
+        )));
+    }
+    if fee_target_balance.saturating_sub(fee_target_consumed) < estimated_fee {
+        return Err(PlatformWalletError::AddressOperation(format!(
+            "Internal selection error: fee target {} retains {} after consumption, \
+             below estimated fee {}",
+            format_address(&fee_target_addr),
+            fee_target_balance.saturating_sub(fee_target_consumed),
+            estimated_fee,
+        )));
+    }
+    if let Some((bad_addr, bad_amount)) = selected
+        .iter()
+        .find(|(_, amount)| **amount < min_input_amount)
+    {
+        return Err(PlatformWalletError::AddressOperation(format!(
+            "Internal selection error: input {} consumes {} below min_input_amount {}",
+            format_address(bad_addr),
+            bad_amount,
+            min_input_amount,
         )));
     }
 
@@ -641,11 +646,13 @@ fn select_inputs_reduce_output(
     fee_strategy: &[AddressFundsFeeStrategyStep],
     platform_version: &PlatformVersion,
 ) -> Result<BTreeMap<PlatformAddress, Credits>, PlatformWalletError> {
-    debug_assert!(
-        matches!(fee_strategy, [AddressFundsFeeStrategyStep::ReduceOutput(0)]),
-        "select_inputs_reduce_output requires [ReduceOutput(0)]; \
-         the dispatcher should have routed other shapes elsewhere"
-    );
+    if !matches!(fee_strategy, [AddressFundsFeeStrategyStep::ReduceOutput(0)]) {
+        return Err(PlatformWalletError::AddressOperation(
+            "select_inputs_reduce_output only supports fee_strategy = \
+             [ReduceOutput(0)]; other shapes must route through the dispatcher"
+                .to_string(),
+        ));
+    }
 
     let output_count = outputs.len();
     let min_input_amount = platform_version
@@ -689,6 +696,27 @@ fn select_inputs_reduce_output(
             "Insufficient balance: available {} credits, required {} \
              (outputs sum; ReduceOutput(0) absorbs the fee from output 0)",
             accumulated, total_output,
+        )));
+    }
+
+    // Phase 1.5: enforce `min_input_amount` on every prefix entry.
+    // Phase 2 below sets `consumed = balance` for every non-last entry,
+    // so a sub-minimum candidate would silently produce an invalid
+    // transition. Production callers filter via
+    // `build_auto_select_candidates`, but this helper is module-scope
+    // and reachable from tests / future callers — fail loudly when the
+    // upstream invariant is bypassed.
+    if let Some((bad_addr, bad_balance)) = prefix
+        .iter()
+        .find(|(_, balance)| *balance < min_input_amount)
+    {
+        return Err(PlatformWalletError::AddressOperation(format!(
+            "Candidate {} has balance {} below min_input_amount {}; \
+             callers must pre-filter via build_auto_select_candidates \
+             before invoking select_inputs_reduce_output",
+            format_address(bad_addr),
+            bad_balance,
+            min_input_amount,
         )));
     }
 
@@ -769,19 +797,25 @@ fn select_inputs_reduce_output(
         )));
     }
 
-    // Phase 5: defensive invariant checks. Fail loudly here rather
-    // than ship a transition the validator will reject.
+    // Phase 5: explicit runtime invariant checks. Fail loudly here
+    // rather than ship a transition the validator would reject.
+    // Evaluated in release as well as debug.
     let input_sum: Credits = selected.values().sum();
-    debug_assert_eq!(input_sum, total_output, "Σ inputs == Σ outputs invariant");
-    debug_assert!(
-        selected.values().all(|amount| *amount >= min_input_amount),
-        "every selected input must satisfy the protocol's per-input minimum"
-    );
-
     if input_sum != total_output {
         return Err(PlatformWalletError::AddressOperation(format!(
             "Internal selection error: Σ inputs ({}) != total_output ({})",
             input_sum, total_output
+        )));
+    }
+    if let Some((bad_addr, bad_amount)) = selected
+        .iter()
+        .find(|(_, amount)| **amount < min_input_amount)
+    {
+        return Err(PlatformWalletError::AddressOperation(format!(
+            "Internal selection error: input {} consumes {} below min_input_amount {}",
+            format_address(bad_addr),
+            bad_amount,
+            min_input_amount,
         )));
     }
 
