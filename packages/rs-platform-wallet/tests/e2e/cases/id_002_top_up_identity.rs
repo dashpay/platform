@@ -21,10 +21,12 @@ use crate::framework::prelude::*;
 // Option C (DeductFromInput) delivers exactly the requested credits
 // to the recipient. Floors equal the funded amount.
 //
-// REGISTER: residual = 150M - 50M = 100M, which covers the chain-time
-// IdentityCreateFromAddresses dynamic fee (~96M) with 4M buffer.
-const REGISTER_FUNDING_CREDITS: u64 = 150_000_000;
-const REGISTER_FUNDING_FLOOR: u64 = 150_000_000;
+// REGISTER: residual = 180M - 50M = 130M, which covers the chain-time
+// IdentityCreateFromAddresses dynamic fee (~110.86M; grew from ~96M
+// after the slot-2 TRANSFER key was added in `173b2e15ce`, +~550 bytes
+// × 27_000 credits/byte ≈ +14.85M) with ~19M buffer.
+const REGISTER_FUNDING_CREDITS: u64 = 180_000_000;
+const REGISTER_FUNDING_FLOOR: u64 = 180_000_000;
 const REGISTRATION_FUNDING: u64 = 50_000_000;
 
 // Top-up funding sized so the address holds enough to cover both
