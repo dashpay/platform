@@ -224,11 +224,40 @@ impl From<DapiClientError> for Error {
     }
 }
 
+/// Hard cap on the length of attacker-influenceable CBOR payloads we accept
+/// before decoding the `drive-error-data-bin` gRPC metadata.
+///
+/// gRPC metadata is conventionally bounded around 8 KiB; 64 KiB is comfortably
+/// above any legitimate payload while preventing pathological inputs (e.g.,
+/// deeply nested CBOR maps `a1 a1 a1 …`) from forcing unbounded recursion.
+///
+/// TODO(CMT-004): `ciborium` does not yet expose a depth-limited reader; once
+/// upstream offers one, swap the size cap for a structural depth cap.
+const MAX_CBOR_INPUT_SIZE: usize = 65_536;
+
 /// Extract the human-readable `message` field from CBOR-encoded `drive-error-data-bin` metadata.
 ///
 /// The metadata contains a CBOR map with optional fields: `code`, `message`, `consensus_error`.
 /// Returns `Some(message)` if the CBOR decodes and contains a non-empty `message` string.
+///
+/// Inputs larger than [`MAX_CBOR_INPUT_SIZE`] are rejected unread to bound the
+/// memory and stack a malicious peer can force on the client.
+///
+/// INTENTIONAL(CMT-007): the CBOR walk is duplicated with `walk_cbor_for_key`
+/// at packages/rs-dapi/src/services/platform_service/error_mapping.rs. Keeping
+/// two implementations avoids introducing a shared crate solely for this
+/// single-key lookup; the two crates have different dependency surfaces. If you
+/// change the wire-format expectations here, MIRROR the change at the rs-dapi
+/// site so both sides of the boundary stay in sync.
 fn extract_drive_error_message(bytes: &[u8]) -> Option<String> {
+    if bytes.len() > MAX_CBOR_INPUT_SIZE {
+        tracing::debug!(
+            len = bytes.len(),
+            max = MAX_CBOR_INPUT_SIZE,
+            "drive-error-data-bin exceeds size cap; refusing to decode"
+        );
+        return None;
+    }
     let value: ciborium::Value = ciborium::from_reader(bytes).ok()?;
     let map = value.as_map()?;
     for (key, val) in map {
