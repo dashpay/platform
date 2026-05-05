@@ -107,10 +107,16 @@ impl From<FFIError> for DashSDKError {
                 // Extract more detailed error information
                 let error_str = sdk_err.to_string();
 
-                // Try to determine error type from the message
-                let (code, detailed_msg) = if error_str.contains("timeout")
-                    || error_str.contains("Timeout")
-                {
+                // Match typed enum variants first — string matching can collide with
+                // substrings inside Drive messages (e.g., "data contract not found"
+                // emitted as a DriveInternalError would otherwise be misclassified
+                // as NotFound).
+                let (code, detailed_msg) = if matches!(
+                    sdk_err,
+                    dash_sdk::Error::DriveInternalError(_)
+                ) {
+                    (DashSDKErrorCode::DriveInternalError, error_str)
+                } else if error_str.contains("timeout") || error_str.contains("Timeout") {
                     (DashSDKErrorCode::Timeout, error_str)
                 } else if error_str.contains("I/O error") || error_str.contains("connection") {
                     (
@@ -134,8 +140,6 @@ impl From<FFIError> for DashSDKError {
                     (DashSDKErrorCode::ProtocolError, error_str)
                 } else if error_str.contains("not found") || error_str.contains("Not found") {
                     (DashSDKErrorCode::NotFound, error_str)
-                } else if error_str.contains("Drive internal error") {
-                    (DashSDKErrorCode::DriveInternalError, error_str)
                 } else {
                     // Default to network error with the original message
                     (
@@ -194,4 +198,42 @@ macro_rules! ffi_result {
             }
         }
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn classify(err: dash_sdk::Error) -> DashSDKErrorCode {
+        let dash_sdk_error: DashSDKError = FFIError::SDKError(err).into();
+        let code = dash_sdk_error.code;
+        // Free the message we allocated via DashSDKError::new.
+        unsafe {
+            if !dash_sdk_error.message.is_null() {
+                let _ = CString::from_raw(dash_sdk_error.message);
+            }
+        }
+        code
+    }
+
+    #[test]
+    fn drive_internal_error_with_not_found_substring_maps_to_drive_internal_error() {
+        // Drive emits messages like "data contract not found"; the Display form is
+        // "Drive internal error: data contract not found …". Typed-variant matching
+        // must take precedence over substring heuristics.
+        let err = dash_sdk::Error::DriveInternalError("data contract not found 0x123".to_string());
+        assert_eq!(classify(err), DashSDKErrorCode::DriveInternalError);
+    }
+
+    #[test]
+    fn drive_internal_error_plain_maps_to_drive_internal_error() {
+        let err = dash_sdk::Error::DriveInternalError("storage layer constraint".to_string());
+        assert_eq!(classify(err), DashSDKErrorCode::DriveInternalError);
+    }
+
+    #[test]
+    fn generic_not_found_still_maps_to_not_found() {
+        let err = dash_sdk::Error::Generic("identity not found".to_string());
+        assert_eq!(classify(err), DashSDKErrorCode::NotFound);
+    }
 }
