@@ -164,7 +164,7 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
     /// Network is only used for `dash_sdk_signer_create_from_private_key`,
     /// which uses it for WIF / address derivation but not for signing
     /// itself. Stored here so the trampoline doesn't have to plumb it.
-    private let network: DashSDKNetwork
+    private let network: Network
     /// Background `ModelContext` pinned to this signer. Created lazily
     /// per-trampoline-call (see `lookupPrivateKey`) — SwiftData
     /// `ModelContext` instances are cheap and let us stay off the
@@ -196,7 +196,7 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
     ///   - keychain: defaults to `KeychainManager.shared`.
     public init(
         modelContainer: ModelContainer,
-        network: DashSDKNetwork = DashSDKNetwork(rawValue: 1),
+        network: Network = .testnet,
         keychain: KeychainManager = .shared
     ) {
         self.modelContainer = modelContainer
@@ -533,7 +533,7 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
                             dataBase,
                             UInt(dataRaw.count),
                             ecdsaSecp256k1KeyType,
-                            self.network,
+                            self.network.ffiValue,
                             bufPtr.baseAddress,
                             UInt(bufPtr.count),
                             &sigLen,
@@ -591,7 +591,7 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
             dash_sdk_signer_create_from_private_key(
                 keyBuf.baseAddress!,
                 UInt(keyBuf.count),
-                self.network
+                self.network.ffiValue
             )
         }
 

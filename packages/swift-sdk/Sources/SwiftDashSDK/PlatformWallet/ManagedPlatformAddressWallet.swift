@@ -1,4 +1,5 @@
 import Foundation
+import DashSDKFFI
 
 /// Platform address wallet for balance queries, transfers, and withdrawals.
 ///
@@ -17,8 +18,7 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
     }
 
     deinit {
-        var error = PlatformWalletFFIError()
-        _ = platform_address_wallet_destroy(handle, &error)
+        platform_address_wallet_destroy(handle).discard()
     }
 
     // MARK: - Balance queries
@@ -36,14 +36,7 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
     /// Get total platform credits across all addresses.
     public func totalCredits() throws -> UInt64 {
         var credits: UInt64 = 0
-        var error = PlatformWalletFFIError()
-
-        let result = platform_address_wallet_total_credits(handle, &credits, &error)
-
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
-        }
-
+        try platform_address_wallet_total_credits(handle, &credits).check()
         return credits
     }
 
@@ -51,15 +44,7 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
     public func addressesWithBalances() throws -> [AddressBalance] {
         var entriesPtr: UnsafeMutablePointer<AddressBalanceEntryFFI>?
         var count: UInt = 0
-        var error = PlatformWalletFFIError()
-
-        let result = platform_address_wallet_addresses_with_balances(
-            handle, &entriesPtr, &count, &error
-        )
-
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
-        }
+        try platform_address_wallet_addresses_with_balances(handle, &entriesPtr, &count).check()
 
         defer {
             platform_address_wallet_free_address_balances(entriesPtr, count)

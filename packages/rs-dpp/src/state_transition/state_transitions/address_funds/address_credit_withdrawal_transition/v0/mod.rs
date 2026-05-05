@@ -27,11 +27,23 @@ use crate::{identity::core_script::CoreScript, withdrawal::Pooling, ProtocolErro
 )]
 #[derive(Default)]
 pub struct AddressCreditWithdrawalTransitionV0 {
+    #[cfg_attr(
+        feature = "json-conversion",
+        serde(with = "crate::address_funds::serde_helpers::address_input_map")
+    )]
     pub inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
     /// Optional output for change
+    #[cfg_attr(
+        feature = "json-conversion",
+        serde(with = "crate::address_funds::serde_helpers::address_output_singular")
+    )]
     pub output: Option<(PlatformAddress, Credits)>,
     pub fee_strategy: AddressFundsFeeStrategy,
     pub core_fee_per_byte: u32,
+    #[cfg_attr(
+        feature = "serde-conversion",
+        serde(with = "crate::withdrawal::pooling_serde")
+    )]
     pub pooling: Pooling,
     pub output_script: CoreScript,
     pub user_fee_increase: UserFeeIncrease,

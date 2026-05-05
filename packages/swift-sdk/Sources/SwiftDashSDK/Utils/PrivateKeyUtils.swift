@@ -181,12 +181,12 @@ public enum KeyValidator {
     /// - Parameters:
     ///   - privateKey: The private key data (32 bytes).
     ///   - publicKeys: List of public keys to match against.
-    ///   - isTestnet: Whether to use testnet parameters.
+    ///   - network: Which network the keys belong to (default: testnet).
     /// - Returns: ValidationResult with the matched key or error.
     public static func validatePrivateKey(
         _ privateKey: Data,
         against publicKeys: [IdentityPublicKey],
-        isTestnet: Bool = true
+        network: Network = .testnet
     ) -> ValidationResult {
         guard privateKey.count == 32 else {
             return .invalid("Private key must be 32 bytes, got \(privateKey.count)")
@@ -199,7 +199,7 @@ public enum KeyValidator {
         if let matchedKey = KeyValidation.matchPrivateKeyToPublicKeys(
             privateKeyData: privateKey,
             publicKeys: publicKeys,
-            isTestnet: isTestnet
+            network: network
         ) {
             return .valid(matchedKey: matchedKey)
         }
@@ -211,12 +211,12 @@ public enum KeyValidator {
     /// - Parameters:
     ///   - privateKeyInput: The private key string (hex or WIF).
     ///   - publicKeys: List of public keys to match against.
-    ///   - isTestnet: Whether to use testnet parameters.
+    ///   - network: Which network the keys belong to (default: testnet).
     /// - Returns: ValidationResult with the matched key or error.
     public static func validatePrivateKeyInput(
         _ privateKeyInput: String,
         against publicKeys: [IdentityPublicKey],
-        isTestnet: Bool = true
+        network: Network = .testnet
     ) -> ValidationResult {
         let parseResult = PrivateKeyParser.parse(privateKeyInput)
 
@@ -224,7 +224,7 @@ public enum KeyValidator {
             return .invalid(parseResult.error ?? "Failed to parse private key")
         }
 
-        return validatePrivateKey(privateKey, against: publicKeys, isTestnet: isTestnet)
+        return validatePrivateKey(privateKey, against: publicKeys, network: network)
     }
 }
 
@@ -276,10 +276,10 @@ public enum KeyFormatter {
     /// Format a private key as WIF string.
     /// - Parameters:
     ///   - privateKey: The private key data.
-    ///   - isTestnet: Whether to encode for testnet.
+    ///   - network: Which network the key belongs to (default: testnet).
     /// - Returns: WIF string or nil if encoding fails.
-    public static func toWIF(_ privateKey: Data, isTestnet: Bool = true) -> String? {
-        WIFParser.encodeToWIF(privateKey, isTestnet: isTestnet)
+    public static func toWIF(_ privateKey: Data, network: Network = .testnet) -> String? {
+        WIFParser.encodeToWIF(privateKey, network: network)
     }
 
     /// Format a public key for display.

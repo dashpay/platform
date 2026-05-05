@@ -3,75 +3,115 @@ import SwiftData
 import SwiftDashSDK
 
 struct StorageExplorerView: View {
+    @EnvironmentObject var appState: AppState
     @Environment(\.modelContext) private var modelContext
     @State private var counts: [String: Int] = [:]
 
+    /// Active network the explorer is filtering by. The storage layer
+    /// keeps every network's rows (so switching back to testnet
+    /// re-surfaces what was synced there), but the UI only shows the
+    /// rows tied to the network currently selected on `AppState`.
+    private var network: Network { appState.currentNetwork }
+
     var body: some View {
         List {
+            Section {
+                HStack {
+                    Label("Network", systemImage: "network")
+                    Spacer()
+                    Text(network.displayName)
+                        .foregroundColor(.secondary)
+                }
+                .font(.callout)
+            }
             modelRow("Identities", icon: "person.crop.circle", type: PersistentIdentity.self) {
-                IdentityStorageListView()
+                IdentityStorageListView(network: network)
+            }
+            // Identity-relationship caches: cascade-owned by
+            // `PersistentIdentity`, surfaced as their own explorer
+            // sections so the row counts and per-row drill-downs
+            // are visible without going through the parent identity.
+            modelRow("DPNS Names", icon: "at", type: PersistentDPNSName.self) {
+                DPNSNameStorageListView(network: network)
+            }
+            modelRow(
+                "DashPay Profiles",
+                icon: "person.text.rectangle",
+                type: PersistentDashpayProfile.self
+            ) {
+                DashpayProfileStorageListView(network: network)
+            }
+            modelRow(
+                "Contact Requests",
+                icon: "person.crop.circle.badge.plus",
+                type: PersistentDashpayContactRequest.self
+            ) {
+                DashpayContactRequestStorageListView(network: network)
             }
             modelRow("Documents", icon: "doc.text", type: PersistentDocument.self) {
-                DocumentStorageListView()
+                DocumentStorageListView(network: network)
             }
             modelRow("Data Contracts", icon: "doc.plaintext", type: PersistentDataContract.self) {
-                DataContractStorageListView()
+                DataContractStorageListView(network: network)
             }
             modelRow("Public Keys", icon: "key", type: PersistentPublicKey.self) {
-                PublicKeyStorageListView()
+                PublicKeyStorageListView(network: network)
             }
             modelRow("Tokens", icon: "circle.hexagongrid", type: PersistentToken.self) {
-                TokenStorageListView()
+                TokenStorageListView(network: network)
             }
             modelRow("Token Balances", icon: "banknote", type: PersistentTokenBalance.self) {
-                TokenBalanceStorageListView()
+                TokenBalanceStorageListView(network: network)
             }
             modelRow("Token History", icon: "clock.arrow.circlepath", type: PersistentTokenHistoryEvent.self) {
-                TokenHistoryStorageListView()
+                TokenHistoryStorageListView(network: network)
             }
             modelRow("Document Types", icon: "list.bullet.rectangle", type: PersistentDocumentType.self) {
-                DocumentTypeStorageListView()
+                DocumentTypeStorageListView(network: network)
             }
             modelRow("Indices", icon: "tablecells", type: PersistentIndex.self) {
-                IndexStorageListView()
+                IndexStorageListView(network: network)
             }
             modelRow("Properties", icon: "slider.horizontal.3", type: PersistentProperty.self) {
-                PropertyStorageListView()
+                PropertyStorageListView(network: network)
             }
             modelRow("Keywords", icon: "tag", type: PersistentKeyword.self) {
-                KeywordStorageListView()
+                KeywordStorageListView(network: network)
             }
             modelCountRow(
                 "Platform Addresses",
                 icon: "creditcard",
                 countKey: platformAddressesCountKey
             ) {
-                PlatformAddressStorageListView()
+                PlatformAddressStorageListView(network: network)
             }
             modelRow("Platform Addresses Sync State", icon: "arrow.triangle.2.circlepath", type: PersistentPlatformAddressesSyncState.self) {
-                PlatformAddressesSyncStateStorageListView()
+                PlatformAddressesSyncStateStorageListView(network: network)
             }
             modelRow("Wallets", icon: "wallet.pass", type: PersistentWallet.self) {
-                WalletStorageListView()
+                WalletStorageListView(network: network)
             }
             modelRow("Accounts", icon: "person.2", type: PersistentAccount.self) {
-                AccountStorageListView()
+                AccountStorageListView(network: network)
             }
             modelCountRow(
                 "Core Addresses",
                 icon: "square.and.pencil",
                 countKey: coreAddressesCountKey
             ) {
-                CoreAddressStorageListView()
+                CoreAddressStorageListView(network: network)
             }
             modelRow("Transactions", icon: "arrow.left.arrow.right.circle", type: PersistentTransaction.self) {
-                TransactionStorageListView()
+                TransactionStorageListView(network: network)
             }
             modelRow("TXOs", icon: "bitcoinsign.circle", type: PersistentTxo.self) {
-                TxoStorageListView()
+                TxoStorageListView(network: network)
+            }
+            modelRow("Pending Inputs", icon: "hourglass", type: PersistentPendingInput.self) {
+                PendingInputStorageListView(network: network)
             }
             modelRow("Manager Metadata", icon: "gearshape.2", type: PersistentWalletManagerMetadata.self) {
-                WalletManagerMetadataStorageListView()
+                WalletManagerMetadataStorageListView(network: network)
             }
         }
         .navigationTitle("Storage Explorer")
@@ -83,6 +123,12 @@ struct StorageExplorerView: View {
             }
         }
         .onAppear { loadCounts() }
+        // Re-count whenever the user flips networks while the
+        // explorer is on screen. Without this the row counts would
+        // stay pinned to the network that was active on `onAppear`.
+        .onChange(of: appState.currentNetwork) { _, _ in
+            loadCounts()
+        }
     }
 
     private func modelRow<T: PersistentModel, D: View>(
@@ -127,33 +173,105 @@ struct StorageExplorerView: View {
     private var coreAddressesCountKey: String { "CoreAddresses" }
 
     private func loadCounts() {
-        func count<T: PersistentModel>(_ type: T.Type) {
+        let raw = network.rawValue
+
+        // Wallet-id set for the active network. Used to count
+        // transaction-side rows that don't carry a `networkRaw` field
+        // and instead trace back to a wallet via the
+        // `walletId`/`account` denorms.
+        let walletsOnNetwork: Set<Data> = {
+            let descriptor = FetchDescriptor<PersistentWallet>(
+                predicate: #Predicate { $0.networkRaw == raw }
+            )
+            let fetched = (try? modelContext.fetch(descriptor)) ?? []
+            return Set(fetched.map(\.walletId))
+        }()
+
+        func directCount<T: PersistentModel>(
+            _ type: T.Type,
+            predicate: Predicate<T>
+        ) {
             let key = String(describing: type)
-            counts[key] = (try? modelContext.fetchCount(FetchDescriptor<T>())) ?? 0
+            counts[key] = (try? modelContext.fetchCount(
+                FetchDescriptor<T>(predicate: predicate)
+            )) ?? 0
         }
-        count(PersistentIdentity.self)
-        count(PersistentDocument.self)
-        count(PersistentDataContract.self)
-        count(PersistentPublicKey.self)
-        count(PersistentToken.self)
-        count(PersistentTokenBalance.self)
-        count(PersistentTokenHistoryEvent.self)
-        count(PersistentDocumentType.self)
-        count(PersistentIndex.self)
-        count(PersistentProperty.self)
-        count(PersistentKeyword.self)
-        count(PersistentPlatformAddressesSyncState.self)
-        count(PersistentWallet.self)
-        count(PersistentAccount.self)
-        count(PersistentTransaction.self)
-        count(PersistentTxo.self)
-        count(PersistentWalletManagerMetadata.self)
-        // Core and Platform address rows live in separate models now
-        // (PersistentCoreAddress vs PersistentPlatformAddress), so
-        // counting them is a plain `fetchCount` per model.
-        counts[platformAddressesCountKey] =
-            (try? modelContext.fetchCount(FetchDescriptor<PersistentPlatformAddress>())) ?? 0
-        counts[coreAddressesCountKey] =
-            (try? modelContext.fetchCount(FetchDescriptor<PersistentCoreAddress>())) ?? 0
+
+        func filteredCount<T: PersistentModel>(
+            _ type: T.Type,
+            matches: (T) -> Bool
+        ) {
+            let key = String(describing: type)
+            let all = (try? modelContext.fetch(FetchDescriptor<T>())) ?? []
+            counts[key] = all.lazy.filter(matches).count
+        }
+
+        // Models with a direct `networkRaw` column — predicate-friendly,
+        // no in-memory pass needed.
+        directCount(PersistentIdentity.self, predicate: #Predicate { $0.networkRaw == raw })
+        directCount(PersistentDPNSName.self, predicate: #Predicate { $0.networkRaw == raw })
+        directCount(PersistentDashpayProfile.self, predicate: #Predicate { $0.networkRaw == raw })
+        directCount(PersistentDashpayContactRequest.self, predicate: #Predicate { $0.networkRaw == raw })
+        directCount(PersistentDocument.self, predicate: #Predicate { $0.networkRaw == raw })
+        directCount(PersistentDataContract.self, predicate: #Predicate { $0.networkRaw == raw })
+        directCount(PersistentTokenBalance.self, predicate: #Predicate { $0.networkRaw == raw })
+        directCount(PersistentPlatformAddressesSyncState.self, predicate: #Predicate { $0.networkRaw == raw })
+        directCount(PersistentWallet.self, predicate: #Predicate { $0.networkRaw == raw })
+        directCount(PersistentWalletManagerMetadata.self, predicate: #Predicate { $0.networkRaw == raw })
+
+        // Models that derive their network through a relationship —
+        // SwiftData's predicate compiler can't follow optional
+        // chains into these without crashing, so we count in memory.
+        filteredCount(PersistentToken.self) { $0.dataContract?.networkRaw == raw }
+        filteredCount(PersistentTokenHistoryEvent.self) {
+            $0.token?.dataContract?.networkRaw == raw
+        }
+        filteredCount(PersistentDocumentType.self) { $0.dataContract?.networkRaw == raw }
+        filteredCount(PersistentIndex.self) {
+            $0.documentType?.dataContract?.networkRaw == raw
+        }
+        filteredCount(PersistentProperty.self) {
+            $0.documentType?.dataContract?.networkRaw == raw
+        }
+        filteredCount(PersistentKeyword.self) { $0.dataContract?.networkRaw == raw }
+        filteredCount(PersistentPublicKey.self) { $0.identity?.networkRaw == raw }
+        filteredCount(PersistentAccount.self) { $0.wallet.networkRaw == raw }
+        filteredCount(PersistentTransaction.self) { tx in
+            for txo in tx.outputs where walletsOnNetwork.contains(txo.walletId) {
+                return true
+            }
+            for txo in tx.inputs where walletsOnNetwork.contains(txo.walletId) {
+                return true
+            }
+            return false
+        }
+        filteredCount(PersistentTxo.self) { walletsOnNetwork.contains($0.walletId) }
+        filteredCount(PersistentPendingInput.self) {
+            walletsOnNetwork.contains($0.walletId)
+        }
+
+        // Core / Platform addresses partition the same family of
+        // tables by account type, so they need their own counts.
+        let coreAddresses = (try? modelContext.fetch(
+            FetchDescriptor<PersistentCoreAddress>()
+        )) ?? []
+        counts[coreAddressesCountKey] = coreAddresses.lazy
+            .filter { $0.account?.wallet.networkRaw == raw }
+            .count
+
+        let platformAddresses = (try? modelContext.fetch(
+            FetchDescriptor<PersistentPlatformAddress>()
+        )) ?? []
+        counts[platformAddressesCountKey] = platformAddresses.lazy
+            .filter { entry in
+                if let raw2 = entry.account?.wallet.networkRaw {
+                    return raw2 == raw
+                }
+                // Fallback: address row was persisted before the
+                // account relationship caught up — match through the
+                // denormalized `walletId`.
+                return walletsOnNetwork.contains(entry.walletId)
+            }
+            .count
     }
 }

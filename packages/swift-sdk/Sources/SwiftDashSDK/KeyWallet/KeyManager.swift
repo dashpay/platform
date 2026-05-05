@@ -292,7 +292,7 @@ public final class KeyManager: Sendable {
   /// - Note: The returned signer must be destroyed with `destroySigner(_:)` when done
   public func createSigner(
     from privateKeyData: Data,
-    network: Network = DashSDKNetwork(rawValue: 1)
+    network: Network = .testnet
   ) throws -> OpaquePointer {
     // Validate private key length
     guard privateKeyData.count == 32 else {
@@ -303,7 +303,7 @@ public final class KeyManager: Sendable {
       dash_sdk_signer_create_from_private_key(
         keyBytes.bindMemory(to: UInt8.self).baseAddress!,
         UInt(privateKeyData.count),
-        network
+        network.ffiValue
       )
     }
 
@@ -337,12 +337,12 @@ public final class KeyManager: Sendable {
   /// - Parameters:
   ///   - privateKeyData: The private key data
   ///   - publicKey: The public key to validate against
-  ///   - isTestnet: Whether this is for testnet (default: true)
+  ///   - network: Which network the keys belong to (default: testnet)
   /// - Returns: True if the private key matches the public key
   public func validatePrivateKey(
     _ privateKeyData: Data,
     matches publicKey: IdentityPublicKey,
-    isTestnet: Bool = true
+    network: Network = .testnet
   ) -> Bool {
     let privateKeyHex = privateKeyData.toHexString()
     let publicKeyHex = publicKey.data.toHexString()
@@ -351,7 +351,7 @@ public final class KeyManager: Sendable {
       privateKeyHex: privateKeyHex,
       publicKeyHex: publicKeyHex,
       keyType: publicKey.keyType,
-      isTestnet: isTestnet
+      network: network
     )
   }
 

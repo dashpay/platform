@@ -3,12 +3,6 @@
 //! Implementors choose their own storage engine (SQLite, file, memory, remote).
 //! The traits guarantee that deltas are persisted atomically.
 
-use key_wallet::account::AccountType;
-use key_wallet::bip32::ExtendedPubKey;
-use key_wallet::managed_account::address_pool::AddressPoolType;
-use key_wallet::AddressInfo;
-use key_wallet::Network;
-
 use crate::changeset::changeset::PlatformWalletChangeSet;
 use crate::changeset::client_start_state::ClientStartState;
 use crate::wallet::platform_wallet::WalletId;
@@ -154,65 +148,4 @@ pub trait PlatformWalletPersistence: Send + Sync {
     /// already keyed by wallet id and the sub-changesets carry their own
     /// wallet attribution where needed.
     fn load(&self) -> Result<ClientStartState, PersistenceError>;
-
-    /// Persist an account entry for `wallet_id`. Called on account
-    /// insertion (initial registration or later `add_account` calls).
-    ///
-    /// This captures enough material to reconstruct every account of a
-    /// wallet as watch-only via `Account::from_xpub` at load time —
-    /// hardened derivation at the account level means the per-account
-    /// xpub is the only way to get it back without the mnemonic. The
-    /// `wallet_id` travels through `store_wallet_metadata`; paired with
-    /// this call, `Wallet::new_watch_only(network, wallet_id, accounts)`
-    /// has everything it needs.
-    ///
-    /// Default implementation is a no-op.
-    fn store_account(
-        &self,
-        wallet_id: WalletId,
-        account_type: &AccountType,
-        account_xpub: &ExtendedPubKey,
-    ) -> Result<(), PersistenceError> {
-        let _ = (wallet_id, account_type, account_xpub);
-        Ok(())
-    }
-
-    /// Persist per-wallet metadata that isn't derivable from the xpub
-    /// alone: the network this wallet is bound to and the birth height
-    /// (best estimate of the chain tip at creation time; 0 means
-    /// "scan from genesis / unknown").
-    ///
-    /// Called once at registration alongside
-    /// [`store_wallet_root_xpub`](Self::store_wallet_root_xpub).
-    ///
-    /// Default implementation is a no-op.
-    fn store_wallet_metadata(
-        &self,
-        wallet_id: WalletId,
-        network: Network,
-        birth_height: u32,
-    ) -> Result<(), PersistenceError> {
-        let _ = (wallet_id, network, birth_height);
-        Ok(())
-    }
-
-    /// Persist every [`AddressInfo`] from one of an account's address
-    /// pools. Called per pool — callers emit external then internal
-    /// (or the single pool for simpler account types) so the entries
-    /// slice is homogeneous with respect to `pool_type`.
-    ///
-    /// Called at wallet create (initial gap-limit population) and on
-    /// any pool extension / "used" flip that happens during sync.
-    ///
-    /// Default implementation is a no-op.
-    fn store_account_addresses(
-        &self,
-        wallet_id: WalletId,
-        account_type: &AccountType,
-        pool_type: AddressPoolType,
-        addresses: &[AddressInfo],
-    ) -> Result<(), PersistenceError> {
-        let _ = (wallet_id, account_type, pool_type, addresses);
-        Ok(())
-    }
 }

@@ -8,10 +8,11 @@ use std::ffi::CString;
 use std::os::raw::c_char;
 use std::ptr;
 
-use crate::error::{PlatformWalletFFIError, PlatformWalletFFIResult};
+use crate::error::{PlatformWalletFFIResult, PlatformWalletFFIResultCode};
+use crate::{check_ptr, unwrap_result_or_return};
 
 /// Decode a bincode-encoded `ExtendedPubKey` (as emitted by
-/// `on_persist_account_fn`) and render it as a BIP32 base58check
+/// `on_persist_account_registrations_fn`) and render it as a BIP32 base58check
 /// string. No network tag is required — the encoded `ExtendedPubKey`
 /// carries its own `network` field so the `xpub…`/`tpub…` prefix is
 /// produced automatically.
@@ -23,43 +24,25 @@ pub unsafe extern "C" fn platform_wallet_account_xpub_to_string(
     bytes: *const u8,
     bytes_len: usize,
     out_string: *mut *mut c_char,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    if bytes.is_null() || out_string.is_null() || bytes_len == 0 {
-        return PlatformWalletFFIResult::ErrorNullPointer;
+    check_ptr!(bytes);
+    check_ptr!(out_string);
+    if bytes_len == 0 {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "bytes_len is zero",
+        );
     }
     *out_string = ptr::null_mut();
 
     let slice = std::slice::from_raw_parts(bytes, bytes_len);
-    let decoded: Result<(ExtendedPubKey, usize), _> =
-        bincode::decode_from_slice(slice, config::standard());
-    let xpub = match decoded {
-        Ok((v, _)) => v,
-        Err(e) => {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidParameter,
-                    format!("Failed to decode account xpub: {}", e),
-                );
-            }
-            return PlatformWalletFFIResult::ErrorInvalidParameter;
-        }
-    };
+    let (xpub, _): (ExtendedPubKey, usize) = unwrap_result_or_return!(
+        bincode::decode_from_slice::<ExtendedPubKey, _>(slice, config::standard())
+    );
 
-    let cstring = match CString::new(xpub.to_string()) {
-        Ok(cs) => cs,
-        Err(e) => {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidParameter,
-                    format!("account xpub string contained a NUL byte: {}", e),
-                );
-            }
-            return PlatformWalletFFIResult::ErrorInvalidParameter;
-        }
-    };
+    let cstring = unwrap_result_or_return!(CString::new(xpub.to_string()));
     *out_string = cstring.into_raw();
-    PlatformWalletFFIResult::Success
+    PlatformWalletFFIResult::ok()
 }
 
 /// Free a C string returned by [`platform_wallet_account_xpub_to_string`].

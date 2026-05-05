@@ -4,6 +4,11 @@ import SwiftData
 /// SwiftData model for persisting data contracts
 @Model
 public final class PersistentDataContract {
+    /// Index `networkRaw` so the static `predicate(networkRaw:)` and
+    /// `tokensPredicate(networkRaw:)` helpers — plus every per-network
+    /// list view — can index-scan instead of table-scan.
+    #Index<PersistentDataContract>([\.networkRaw])
+
     @Attribute(.unique) public var id: Data
     public var name: String
     public var serializedContract: Data
@@ -30,14 +35,14 @@ public final class PersistentDataContract {
     public var groupsData: Data?
 
     // Network
-    /// Stored as the `AppNetwork.rawValue` `Int` so SwiftData
+    /// Stored as the `Network.rawValue` `UInt32` so SwiftData
     /// `#Predicate` expressions can evaluate it directly. See
     /// `PersistentIdentity.networkRaw` for the full rationale.
-    public var networkRaw: Int
+    public var networkRaw: UInt32
 
     /// Type-safe accessor over `networkRaw`. Setter writes through.
-    public var network: AppNetwork {
-        get { AppNetwork(rawValue: networkRaw) ?? .testnet }
+    public var network: Network {
+        get { Network(rawValue: networkRaw) ?? .testnet }
         set { networkRaw = newValue.rawValue }
     }
 
@@ -179,7 +184,7 @@ public final class PersistentDataContract {
         keywords: [String] = [],
         description: String? = nil,
         hasTokens: Bool = false,
-        network: AppNetwork
+        network: Network
     ) {
         self.id = id
         self.name = name
@@ -295,17 +300,17 @@ extension PersistentDataContract {
         }
     }
 
-    public static func predicate(network: AppNetwork) -> Predicate<PersistentDataContract> {
+    public static func predicate(network: Network) -> Predicate<PersistentDataContract> {
         // See `PersistentIdentity.predicate(network:)` — Foundation's
-        // predicate engine can't capture `AppNetwork`, so we filter on
-        // the Int-backed `networkRaw` shadow field.
+        // predicate engine can't capture `Network`, so we filter on
+        // the UInt32-backed `networkRaw` shadow field.
         let target = network.rawValue
         return #Predicate<PersistentDataContract> { contract in
             contract.networkRaw == target
         }
     }
 
-    public static func contractsWithTokensPredicate(network: AppNetwork) -> Predicate<PersistentDataContract> {
+    public static func contractsWithTokensPredicate(network: Network) -> Predicate<PersistentDataContract> {
         let target = network.rawValue
         return #Predicate<PersistentDataContract> { contract in
             contract.hasTokens == true && contract.networkRaw == target

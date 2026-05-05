@@ -18,9 +18,9 @@ import SwiftData
 @MainActor
 public final class DataManager: ObservableObject {
     private let modelContext: ModelContext
-    public var currentNetwork: AppNetwork
+    public var currentNetwork: Network
 
-    public init(modelContext: ModelContext, currentNetwork: AppNetwork = .testnet) {
+    public init(modelContext: ModelContext, currentNetwork: Network = .testnet) {
         self.modelContext = modelContext
         self.currentNetwork = currentNetwork
     }

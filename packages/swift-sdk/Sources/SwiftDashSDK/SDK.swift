@@ -52,7 +52,7 @@ public final class SDK: @unchecked Sendable {
   public private(set) var handle: UnsafeMutablePointer<SDKHandle>?
 
   /// The network this SDK instance is connected to
-  public private(set) var network: Network = DashSDKNetwork(rawValue: 1) // Default to testnet
+  public private(set) var network: Network = .testnet
 
   /// Identities operations
   public lazy var identities = Identities(sdk: self)
@@ -152,7 +152,7 @@ public final class SDK: @unchecked Sendable {
   /// This is suitable for mobile applications where proof verification would be resource-intensive.
   public init(network: Network) throws {
     var config = DashSDKConfig()
-    config.network = network
+    config.network = network.ffiValue
     config.dapi_addresses = nil
     config.skip_asset_lock_proof_verification = false
     config.request_retry_count = 1

@@ -11,6 +11,15 @@ import SwiftData
 /// stays whole.
 @Model
 public final class PersistentTxo {
+    /// Index `walletId` so per-wallet TXO scans — the canonical
+    /// "show every TXO (and, by union of `transaction` +
+    /// `spendingTransaction`, every transaction) that touches wallet
+    /// W" path — hit an index instead of scanning the entire TXO
+    /// table. The denorm is what makes the predicate translatable
+    /// to SQL in the first place; this just makes the resulting
+    /// query fast at scale.
+    #Index<PersistentTxo>([\.walletId])
+
     /// Outpoint: 36 raw bytes (32-byte txid in wire orientation +
     /// 4-byte vout little-endian) — the standard Bitcoin outpoint
     /// serialization. Unique identifier stored explicitly so
@@ -77,6 +86,20 @@ public final class PersistentTxo {
     /// the spending tx must not cascade-delete this row.
     public var spendingTransaction: PersistentTransaction?
 
+    /// Position of this output within `spendingTransaction.input`
+    /// (i.e. the canonical "vin index"). Captured at the moment the
+    /// spend is reconciled — sourced from
+    /// `TransactionRecordFFI.input_outpoints` index, which itself
+    /// comes from `tx.input.iter()` on the Rust side, so the value
+    /// matches the serialized transaction's input ordering exactly.
+    /// `nil` when the TXO is unspent (no spending tx, no vin index)
+    /// or when migrated from an older row that predates the column.
+    /// Surfaced by `TransactionStorageDetailView` so input rows
+    /// render in serialized vin order with their real positions
+    /// rather than being re-sorted by outpoint hex (which loses
+    /// the relationship between row and serialized index).
+    public var spendingInputIndex: UInt32? = nil
+
     /// Parent account. No longer paired with an inverse on the
     /// account side — the canonical account path is
     /// `coreAddress?.account`. This field is the fallback when the
@@ -92,8 +115,8 @@ public final class PersistentTxo {
     /// outgoing recipient). The relationship is the convenient
     /// pointer for navigating to derivation metadata, balance, and
     /// pool tag without a separate fetch. Inverse of
-    /// `PersistentCoreAddress.txos`; `.nullify` on that side so
-    /// pool rebuilds don't cascade-delete TXOs.
+    /// `PersistentCoreAddress.txos`; `.cascade` on that side so
+    /// account / wallet teardown drops TXOs cleanly.
     public var coreAddress: PersistentCoreAddress?
 
     public init(

@@ -1,11 +1,13 @@
 //! C-compatible types for Core (on-chain) address pool persistence.
 //!
-//! `on_persist_account_addresses_fn` fires when a wallet's on-chain
-//! address pool changes — initial population on wallet create, pool
-//! extension after `next_unused`, and per-address `used` flips when
-//! SPV sees activity. Swift persists each entry into SwiftData
-//! (`PersistentCoreAddress`) so the Storage Explorer can render
-//! derivation paths + pubkeys reactively via `@Query`.
+//! `on_persist_account_address_pools_fn` fires when a wallet's
+//! on-chain address pool changes — initial population on wallet
+//! create, pool extension after `next_unused`, and per-address
+//! `used` flips when SPV sees activity. Each
+//! `AccountAddressPoolFFI` entry in the round carries a slice of
+//! these per-address rows. Swift persists each entry into
+//! SwiftData (`PersistentCoreAddress`) so the Storage Explorer
+//! can render derivation paths + pubkeys reactively via `@Query`.
 
 use std::os::raw::c_char;
 
