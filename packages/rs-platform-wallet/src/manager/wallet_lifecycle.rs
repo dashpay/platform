@@ -100,6 +100,21 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ) -> Result<Arc<PlatformWallet>, PlatformWalletError> {
         let wallet_info = ManagedWalletInfo::from_wallet(&wallet, 0);
 
+        // Capture the wallet's intrinsic network before the move into
+        // `insert_wallet` below — the persisted metadata's network
+        // must reflect the wallet itself, not the manager's SDK
+        // reference. The two normally agree, but the manager's SDK
+        // is bound at `configure(...)` time and is not refreshed when
+        // the host app switches networks at runtime, so reading
+        // `self.sdk.network` here would silently misattribute a
+        // wallet created on a freshly-switched-to network (e.g., a
+        // user on Testnet flips to Local and creates a regtest
+        // wallet — the wallet itself derives correctly under
+        // `Network::Regtest`, but the persister callback would
+        // record `Testnet` and the row would never appear under
+        // Local in the host UI).
+        let wallet_network = wallet.network;
+
         let balance = Arc::new(WalletBalance::new());
 
         // Snapshot per-account xpubs and address-pool entries BEFORE
@@ -205,7 +220,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
         let mut registration_changeset = PlatformWalletChangeSet {
             wallet_metadata: Some(WalletMetadataEntry {
-                network: self.sdk.network,
+                network: wallet_network,
                 birth_height,
             }),
             account_registrations: account_specs
