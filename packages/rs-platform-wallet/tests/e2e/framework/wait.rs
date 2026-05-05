@@ -126,21 +126,39 @@ pub async fn wait_for_balance(
     }
 }
 
-/// Wait for the wallet's Layer-1 Core *confirmed* balance (in duffs)
+/// Wait for the wallet's Layer-1 Core "confirmed" balance (in duffs)
 /// to reach at least `expected_min`.
 ///
 /// Polls [`TestWallet::core_balance_confirmed`] — the lock-free atomic
 /// fed by the SPV path's `WalletBalance::confirmed` — every
-/// [`BACKSTOP_WAKE_INTERVAL`] until the threshold is met. Mempool /
-/// instant-locked-but-unconfirmed UTXOs are deliberately NOT counted:
-/// downstream callers (asset-lock construction in CR-003 onwards) need
-/// confirmed UTXOs to reference, and a mempool-eager return would let
-/// `setup_with_core_funded_test_wallet` hand back a wallet whose
-/// `core_balance_confirmed()` is still 0. The SPV bloom-filter feed
-/// updates the atomic asynchronously, so a poll-based approach is
-/// sufficient — there's no `Notified` future on the Core side
-/// analogous to [`wait_for_balance`]'s wait hub. Returns
+/// [`BACKSTOP_WAKE_INTERVAL`] until the threshold is met.
+///
+/// **Caveat on "confirmed":** at the pinned `key-wallet` revision,
+/// `WalletCoreBalance::confirmed` counts mature UTXOs that are *either*
+/// in a block *or* InstantSend-locked (per the upstream rustdoc). It
+/// excludes pure-mempool UTXOs (those land in `unconfirmed`), but it
+/// does NOT distinguish IS-locked-but-unconfirmed from
+/// block-confirmed. Mempool-eager returns are still avoided — that's
+/// enough to gate `setup_with_core_funded_test_wallet` on a
+/// proof-strength UTXO usable for asset-lock construction (CR-003 +).
+/// If a future test needs a strictly block-confirmed UTXO (e.g.
+/// confirmation-count assertions), that will require either an
+/// upstream API change or a sibling helper that consults raw UTXO
+/// metadata directly. The SPV feed updates the atomic asynchronously,
+/// so polling is sufficient — there's no `Notified` future on the
+/// Core side analogous to [`wait_for_balance`]'s wait hub. Returns
 /// [`FrameworkError::Cleanup`] on `timeout`.
+///
+/// On success the success-log line includes a `path` field naming the
+/// branch that satisfied the threshold:
+/// - `confirmed_or_is_locked` — the confirmed atomic reached the
+///   target after at least one poll observed it below. Cannot
+///   distinguish in-block vs IS-lock at this layer; see caveat above.
+/// - `pre_funded_workdir_cache` — the threshold was already met on the
+///   very first poll, before any new SPV activity. Indicates a
+///   pre-existing UTXO from a prior run's persisted workdir; if the
+///   test relies on a *fresh* funding event this is a false-positive
+///   signal and the caller should consider clearing the workdir.
 ///
 /// Used by [`super::setup_with_core_funded_test_wallet`] (positive
 /// arrival on the test wallet's BIP-44 account 0) and by `ID-007`
@@ -154,19 +172,33 @@ pub async fn wait_for_core_balance(
 ) -> FrameworkResult<u64> {
     let start = Instant::now();
     let deadline = Instant::now() + timeout;
+    let mut polls = 0u64;
 
     loop {
         let observed = test_wallet.core_balance_confirmed();
         if observed >= expected_min {
+            // First-poll success means the threshold was already met
+            // before this helper saw any new event — pre-funded
+            // workdir cache, not freshly arriving funds. Surface the
+            // distinction so post-mortems on suspiciously fast returns
+            // (Marvin's QA-002 on CR-003) can tell the two paths apart
+            // at a glance.
+            let path = if polls == 0 {
+                "pre_funded_workdir_cache"
+            } else {
+                "confirmed_or_is_locked"
+            };
             tracing::info!(
                 target: "platform_wallet::e2e::wait",
                 observed,
                 expected_min,
                 elapsed = ?start.elapsed(),
+                path,
                 "core balance reached target"
             );
             return Ok(observed);
         }
+        polls += 1;
         tracing::debug!(
             target: "platform_wallet::e2e::wait",
             observed,
