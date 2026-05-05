@@ -130,6 +130,26 @@ var body: some View {
                         value: filterHeightsDisplay
                     )
 
+                    // Block time of the SPV chain tip — a stale
+                    // value across polls means core stopped
+                    // producing blocks even though our SPV client
+                    // is healthy. Hidden until the first tip
+                    // header is stored.
+                    if let tipTime = walletManager.spvTipBlockTime {
+                        HStack {
+                            Text("Block Time")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text("\(tipTime, style: .relative) ago")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Text(AppDate.formatted(tipTime, dateStyle: .omitted, timeStyle: .shortened))
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
                     // Controls row
                     HStack(spacing: 8) {
                         Spacer()

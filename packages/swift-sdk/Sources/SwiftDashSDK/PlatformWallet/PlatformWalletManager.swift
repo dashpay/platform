@@ -26,6 +26,13 @@ public class PlatformWalletManager: ObservableObject {
     /// started in [`configure`].
     @Published public private(set) var spvProgress: PlatformSpvSyncProgress = .empty
 
+    /// Block time of the SPV header storage's current tip (if any).
+    /// `nil` while SPV isn't running or hasn't stored a header yet.
+    /// Useful as a "is core producing blocks?" indicator — when this
+    /// stamp stops advancing, the chain is stalled even though the
+    /// local SPV client is healthy.
+    @Published public private(set) var spvTipBlockTime: Date?
+
     /// Whether the Rust-owned platform-address sync manager is currently in flight.
     @Published public private(set) var platformAddressSyncIsSyncing: Bool = false
 
@@ -494,6 +501,10 @@ public class PlatformWalletManager: ObservableObject {
                 if let isSyncing = try? self.isShieldedSyncing(),
                    isSyncing != self.shieldedSyncIsSyncing {
                     self.shieldedSyncIsSyncing = isSyncing
+                }
+                let tip = (try? self.currentSpvTipBlockTime()) ?? nil
+                if tip != self.spvTipBlockTime {
+                    self.spvTipBlockTime = tip
                 }
                 try? await Task.sleep(for: .seconds(1))
             }
