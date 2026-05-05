@@ -16,13 +16,13 @@ struct ReceiveAddressView: View {
     @EnvironmentObject var shieldedService: ShieldedService
     let wallet: PersistentWallet
 
-    /// All persisted accounts across wallets. Filtered down to this
-    /// view's wallet + primary BIP44 account inside
-    /// `nextCoreReceiveAddress`. A `Query(filter:)` with the natural
-    /// predicate exceeded Swift's type-checker budget, so filtering in
-    /// Swift keeps compile times reasonable at negligible runtime
-    /// cost (tens of accounts per store, not thousands).
-    @Query private var allAccounts: [PersistentAccount]
+    /// BIP44 accounts only (accountType == 0, standardTag == 0,
+    /// accountIndex == 0). Scalar-only predicate avoids the
+    /// type-checker budget issue that relationship-based filters hit.
+    /// The wallet-id check is the only remaining Swift-side filter.
+    @Query(filter: #Predicate<PersistentAccount> {
+        $0.accountType == 0 && $0.standardTag == 0 && $0.accountIndex == 0
+    }) private var bip44Accounts: [PersistentAccount]
     /// All PlatformPayment (DIP-17) addresses. Filtered down to this
     /// wallet in `nextPlatformReceiveAddress`.
     @Query private var platformAddresses: [PersistentPlatformAddress]
@@ -64,22 +64,12 @@ struct ReceiveAddressView: View {
         return best
     }
 
-    /// Primary BIP44 account (standardTag == 0) for the active wallet,
-    /// or nil if it hasn't been persisted yet.
+    /// Primary BIP44 account for the active wallet, or nil if not yet
+    /// persisted. Type/tag/index are pre-filtered by the @Query above;
+    /// the only remaining check is wallet identity.
     private var primaryBip44Account: PersistentAccount? {
-        findAccount(accountType: 0, accountIndex: 0, standardTag: 0)
-    }
-
-    private func findAccount(accountType: UInt32, accountIndex: UInt32, standardTag: UInt8? = nil) -> PersistentAccount? {
         let walletId = wallet.walletId
-        for account in allAccounts {
-            if account.wallet.walletId != walletId { continue }
-            if account.accountType != accountType { continue }
-            if account.accountIndex != accountIndex { continue }
-            if let tag = standardTag, account.standardTag != tag { continue }
-            return account
-        }
-        return nil
+        return bip44Accounts.first { $0.wallet.walletId == walletId }
     }
 
     /// Lowest-indexed address in the given pool on the given account
