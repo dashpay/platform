@@ -484,24 +484,55 @@ var body: some View {
                 .appendingPathComponent(platformState.currentNetwork.networkName)
             try? FileManager.default.createDirectory(at: dataDirURL, withIntermediateDirectories: true)
 
-            let useLocalCore = UserDefaults.standard.bool(forKey: "useLocalhostCore")
-            let peers: [String] = useLocalCore
-                ? ((UserDefaults.standard.string(forKey: "localCorePeers") ?? "127.0.0.1")
-                    .split(separator: ",")
-                    .map { $0.trimmingCharacters(in: .whitespaces) })
-                : []
+            let peers = spvPeerOverride()
+            let restrictToConfiguredPeers = !peers.isEmpty
 
             let config = PlatformSpvStartConfig(
                 dataDir: dataDirURL.path,
                 network: platformState.currentNetwork,
                 peers: peers,
-                restrictToConfiguredPeers: useLocalCore,
+                restrictToConfiguredPeers: restrictToConfiguredPeers,
                 masternodeSyncEnabled: masternodesEnabled
             )
             try walletManager.startSpv(config: config)
         } catch {
             print("❌ Sync failed: \(error)")
         }
+    }
+
+    /// Resolve the SPV peer override for the current network /
+    /// docker combo.
+    ///
+    /// Three modes coexist on top of the same `useLocalhostCore` /
+    /// `localCorePeers` `UserDefaults` keys, which used to bleed into
+    /// each other when the user reconfigured between sessions:
+    ///
+    ///   1. **regtest + docker** — connect to dashmate's `local_seed`
+    ///      Core P2P port. The default 3-node setup maps the seed to
+    ///      `127.0.0.1:20301` (`getLocalConfigFactory.js` base 20001
+    ///      + `setupLocalPresetTaskFactory.js` `+ i*100` with seed
+    ///      at index = `nodeCount`, typically 3). Anything sitting
+    ///      in `localCorePeers` from a previous testnet / mainnet
+    ///      "custom peers" session is ignored — the UI doesn't show
+    ///      that knob on regtest+docker so a stale value is always
+    ///      bleed-through, never user intent.
+    ///   2. **non-regtest + custom peers** — honor `localCorePeers`
+    ///      verbatim. The OptionsView "Use Custom SPV Peers" toggle
+    ///      seeds and edits this string.
+    ///   3. **everything else** — empty list, FFI uses the network's
+    ///      built-in seed nodes.
+    private func spvPeerOverride() -> [String] {
+        let useDocker = UserDefaults.standard.bool(forKey: "useDockerSetup")
+        if platformState.currentNetwork == .regtest && useDocker {
+            return ["127.0.0.1:20301"]
+        }
+        let useLocalCore = UserDefaults.standard.bool(forKey: "useLocalhostCore")
+        guard useLocalCore else { return [] }
+        let raw = UserDefaults.standard.string(forKey: "localCorePeers") ?? ""
+        return raw
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
     }
 
     private func pauseSync() {
