@@ -62,6 +62,24 @@ BIP-39 mnemonic generator already used by `framework/wallet_factory.rs`. Cases
 that exercise non-ASCII content (e.g. Unicode display names) do so on
 downstream fields, not on the seed.
 
+### 1.3 Known issues / operator notes
+
+**Known issue: dash-spv mn-list QRInfo stall.** When the workdir's
+`masternodestate.json` cache is missing (first run or after wipe), and
+the test starts near a testnet quorum rotation boundary, dash-spv's
+QRInfo retry loop may hard-cap at 3 attempts with the error
+`Required rotated chain lock sig at h - 0 not present`. The engine
+then stops trying to advance mn-list. `wait_for_mn_list_synced` now
+surfaces this immediately as `dash-spv reported ManagerError before
+mn-list synced` (event-driven path) or as a no-forward-progress stall
+after 120 s (heuristic backstop), instead of waiting the full 600 s
+cold-cache floor.
+
+Operator workaround: wait 10–20 min for the next testnet ChainLock
+cycle, then retry. If the issue persists, wipe
+`${TMPDIR}/dash-platform-wallet-e2e/spv-data/` and retry from a clean
+state.
+
 ---
 
 ## 2. Harness capability matrix
