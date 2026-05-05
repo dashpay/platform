@@ -9,6 +9,27 @@ enum ReceiveAddressTab: String, CaseIterable {
     case shielded = "Shielded"
 }
 
+/// Sub-selector for the Core tab: a wallet created with the default
+/// account-creation options carries both a BIP44 and a BIP32
+/// "Standard" account at index 0 (different `standardTag`s — see
+/// `key-wallet` `WalletAccountCreationOptions::Default`). This lets
+/// the user pick which one to derive the receive address from.
+enum CoreReceiveAccountKind: String, CaseIterable {
+    case bip44 = "BIP44"
+    case bip32 = "BIP32"
+
+    /// The `standardTag` value the persistence layer assigns to this
+    /// account kind (0 = BIP44, 1 = BIP32). Used to disambiguate
+    /// rows in `PersistentAccount` — `(accountType=0, accountIndex=0)`
+    /// alone is not unique once both kinds are present.
+    var standardTag: UInt8 {
+        switch self {
+        case .bip44: return 0
+        case .bip32: return 1
+        }
+    }
+}
+
 struct ReceiveAddressView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var walletManager: PlatformWalletManager
@@ -28,18 +49,19 @@ struct ReceiveAddressView: View {
     @Query private var platformAddresses: [PersistentPlatformAddress]
 
     @State private var selectedTab: ReceiveAddressTab = .core
+    @State private var coreAccountKind: CoreReceiveAccountKind = .bip44
     @State private var copiedToClipboard = false
     @State private var faucetStatus: String?
     @State private var isFaucetLoading = false
 
-    /// Lowest-indexed external address on the primary BIP44 account
-    /// that has never received an inbound transaction.
-    /// `PersistentCoreAddress` rows are populated by the Rust
-    /// `on_persist_account_address_pools_fn` callback at wallet creation
-    /// (initial gap-limit fill), so they're available without a
-    /// runtime FFI hop.
+    /// Lowest-indexed external address on the selected Standard
+    /// account (`coreAccountKind` picks BIP44 or BIP32) that has never
+    /// received an inbound transaction. `PersistentCoreAddress` rows
+    /// are populated by the Rust `on_persist_account_address_pools_fn`
+    /// callback at wallet creation (initial gap-limit fill), so
+    /// they're available without a runtime FFI hop.
     private var nextCoreReceiveAddress: PersistentCoreAddress? {
-        guard let account = primaryBip44Account else { return nil }
+        guard let account = primaryStandardAccount else { return nil }
         return firstUnreceivedAddress(in: account, poolTag: 0)
     }
 
@@ -64,20 +86,32 @@ struct ReceiveAddressView: View {
         return best
     }
 
-    /// Primary Standard account (BIP44 or BIP32) for the active wallet,
-    /// or nil if it hasn't been persisted yet. `standardTag` is not
-    /// required to match — a wallet only ever has one `(accountType=0,
-    /// accountIndex=0)` account, so the uniqueness already follows
-    /// from the two upstream fields.
-    private var primaryBip44Account: PersistentAccount? {
-        findAccount(accountType: 0, accountIndex: 0)
+    /// Primary Standard account at index 0 for the active wallet,
+    /// disambiguated by `coreAccountKind` (BIP44 / BIP32). A wallet
+    /// created with `WalletAccountCreationOptions::Default` carries
+    /// both — `(accountType=0, accountIndex=0)` is **not** unique, the
+    /// `standardTag` distinguishes them (0 = BIP44, 1 = BIP32). Earlier
+    /// versions of this view filtered without `standardTag` and
+    /// silently picked whichever the SwiftData iterator returned
+    /// first.
+    private var primaryStandardAccount: PersistentAccount? {
+        findAccount(
+            accountType: 0,
+            standardTag: coreAccountKind.standardTag,
+            accountIndex: 0
+        )
     }
 
-    private func findAccount(accountType: UInt32, accountIndex: UInt32) -> PersistentAccount? {
+    private func findAccount(
+        accountType: UInt32,
+        standardTag: UInt8,
+        accountIndex: UInt32
+    ) -> PersistentAccount? {
         let walletId = wallet.walletId
         for account in allAccounts {
             if account.wallet.walletId != walletId { continue }
             if account.accountType != accountType { continue }
+            if account.standardTag != standardTag { continue }
             if account.accountIndex != accountIndex { continue }
             return account
         }
@@ -166,6 +200,16 @@ struct ReceiveAddressView: View {
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
+
+                if selectedTab == .core {
+                    Picker("Account Kind", selection: $coreAccountKind) {
+                        ForEach(CoreReceiveAccountKind.allCases, id: \.self) { kind in
+                            Text(kind.rawValue).tag(kind)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal)
+                }
 
                 if hasValidAddress {
                     if let qrImage = generateQRCode(from: currentAddress) {
@@ -278,12 +322,15 @@ struct ReceiveAddressView: View {
             .onChange(of: selectedTab) { _, _ in
                 copiedToClipboard = false
             }
+            .onChange(of: coreAccountKind) { _, _ in
+                copiedToClipboard = false
+            }
         }
     }
 
     private var addressLabel: String {
         switch selectedTab {
-        case .core: return "Your Core Address"
+        case .core: return "Your Core \(coreAccountKind.rawValue) Address"
         case .platform: return "Your Platform Address"
         case .shielded: return "Your Shielded Address"
         }
