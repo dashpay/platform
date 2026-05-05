@@ -74,9 +74,24 @@ struct SendTransactionView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 4) {
-                        BalanceInfoRow(label: "Core:", amount: coreBalance, color: .green)
-                        BalanceInfoRow(label: "Shielded:", amount: shieldedBalance, color: .purple)
-                        BalanceInfoRow(label: "Platform:", amount: platformBalance, color: .blue)
+                        BalanceInfoRow(
+                            label: "Core:",
+                            amount: coreBalance,
+                            unit: .duffs,
+                            color: .green
+                        )
+                        BalanceInfoRow(
+                            label: "Shielded:",
+                            amount: shieldedBalance,
+                            unit: .credits,
+                            color: .purple
+                        )
+                        BalanceInfoRow(
+                            label: "Platform:",
+                            amount: platformBalance,
+                            unit: .credits,
+                            color: .blue
+                        )
                     }
                 }
 
@@ -96,7 +111,8 @@ struct SendTransactionView: View {
                                         .foregroundColor(.primary)
                                     Spacer()
                                     Text(formatBalance(
-                                        balance(for: source, coreBalance: coreBalance)
+                                        balance(for: source, coreBalance: coreBalance),
+                                        unit: unit(for: source)
                                     ))
                                         .font(.caption)
                                         .foregroundColor(.secondary)
@@ -264,8 +280,13 @@ struct SendTransactionView: View {
         }
     }
 
-    private func formatBalance(_ amount: UInt64) -> String {
-        let dash = Double(amount) / 100_000_000.0
+    /// Format a `UInt64` balance for display.
+    ///
+    /// `unit` controls the divisor — Core/duffs are 1e8 per DASH,
+    /// Platform/shielded credits are 1e11 per DASH. Mixing the two
+    /// would over-report Platform balances by 1000×.
+    private func formatBalance(_ amount: UInt64, unit: SendBalanceUnit = .duffs) -> String {
+        let dash = Double(amount) / unit.dashDivisor
         let formatter = NumberFormatter()
         formatter.minimumFractionDigits = 0
         formatter.maximumFractionDigits = 8
@@ -276,6 +297,13 @@ struct SendTransactionView: View {
             return "\(formatted) DASH"
         }
         return String(format: "%.8f DASH", dash)
+    }
+
+    private func unit(for source: FundSource) -> SendBalanceUnit {
+        switch source {
+        case .core: return .duffs
+        case .platform, .shielded: return .credits
+        }
     }
 }
 
@@ -314,22 +342,39 @@ private struct AddressTypeBadge: View {
     }
 }
 
+/// Whether a `UInt64` balance reads as L1 duffs (1 DASH = 1e8) or
+/// Platform / shielded credits (1 DASH = 1e11). The two scales
+/// differ by 1000× — formatting Platform credits as duffs over-
+/// reports balances by exactly that factor.
+enum SendBalanceUnit {
+    case duffs
+    case credits
+
+    fileprivate var dashDivisor: Double {
+        switch self {
+        case .duffs: return 100_000_000.0
+        case .credits: return 100_000_000_000.0
+        }
+    }
+}
+
 private struct BalanceInfoRow: View {
     let label: String
     let amount: UInt64
+    var unit: SendBalanceUnit = .duffs
     var color: Color = .primary
 
     var body: some View {
         HStack {
             Text(label).font(.caption).foregroundColor(.secondary)
             Spacer()
-            Text(formatBalance(amount))
+            Text(formatBalance(amount, unit: unit))
                 .font(.caption).foregroundColor(amount > 0 ? color : .secondary)
         }
     }
 
-    private func formatBalance(_ amount: UInt64) -> String {
-        let dash = Double(amount) / 100_000_000.0
+    private func formatBalance(_ amount: UInt64, unit: SendBalanceUnit) -> String {
+        let dash = Double(amount) / unit.dashDivisor
         let formatter = NumberFormatter()
         formatter.minimumFractionDigits = 0
         formatter.maximumFractionDigits = 8
