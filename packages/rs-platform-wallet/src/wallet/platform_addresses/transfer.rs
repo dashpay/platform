@@ -45,16 +45,25 @@ impl PlatformAddressWallet {
 
         let version = platform_version.unwrap_or(LATEST_PLATFORM_VERSION);
 
-        let address_infos = match input_selection {
+        // Capture (input_count, output_count) so we can compute the
+        // fee paid after broadcast for `PlatformAddressChangeSet::fee`.
+        // The output map is consumed by the SDK call below; the
+        // input map is materialized (`Auto`) or is the caller's
+        // (`Explicit*`).
+        let output_count = outputs.len();
+        let (address_infos, input_count) = match input_selection {
             InputSelection::Explicit(inputs) => {
                 if inputs.is_empty() {
                     return Err(PlatformWalletError::AddressOperation(
                         "Transfer requires at least one input address".to_string(),
                     ));
                 }
-                self.sdk
+                let n = inputs.len();
+                let infos = self
+                    .sdk
                     .transfer_address_funds(inputs, outputs, fee_strategy, address_signer, None)
-                    .await?
+                    .await?;
+                (infos, n)
             }
             InputSelection::ExplicitWithNonces(inputs) => {
                 if inputs.is_empty() {
@@ -62,7 +71,9 @@ impl PlatformAddressWallet {
                         "Transfer requires at least one input address".to_string(),
                     ));
                 }
-                self.sdk
+                let n = inputs.len();
+                let infos = self
+                    .sdk
                     .transfer_address_funds_with_nonce(
                         inputs,
                         outputs,
@@ -70,7 +81,8 @@ impl PlatformAddressWallet {
                         address_signer,
                         None,
                     )
-                    .await?
+                    .await?;
+                (infos, n)
             }
             InputSelection::Auto => {
                 // Auto-select supports `[DeductFromInput(0)]` and
@@ -89,11 +101,26 @@ impl PlatformAddressWallet {
                 let inputs = self
                     .auto_select_inputs(account_index, &outputs, &fee_strategy, version)
                     .await?;
-                self.sdk
+                let n = inputs.len();
+                let infos = self
+                    .sdk
                     .transfer_address_funds(inputs, outputs, fee_strategy, address_signer, None)
-                    .await?
+                    .await?;
+                (infos, n)
             }
         };
+
+        // Lower-bound static estimate from `estimate_min_fee` —
+        // captures the `state_transition_min_fees` floor only, with
+        // no adjustment for the chosen `fee_strategy`. This crate
+        // ships transfers under both `[ReduceOutput(0)]` (the
+        // wallet-factory default) and `[DeductFromInput(0)]`; either
+        // way the chain-time fee scales with storage + processing
+        // costs and is typically larger than this value (see
+        // `PlatformAddressChangeSet::estimated_min_fee` for the
+        // honest doc and platform issue #3040).
+        let fee_paid =
+            AddressFundsTransferTransition::estimate_min_fee(input_count, output_count, version);
 
         // Get the cached key source from the unified provider for gap
         // limit maintenance.
@@ -106,7 +133,10 @@ impl PlatformAddressWallet {
 
         // Update balances in the ManagedPlatformAccount.
         let mut wm = self.wallet_manager.write().await;
-        let mut cs = PlatformAddressChangeSet::default();
+        let mut cs = PlatformAddressChangeSet {
+            fee: fee_paid,
+            ..Default::default()
+        };
         if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
             if let Some(account) = info
                 .core_wallet
@@ -225,7 +255,12 @@ impl PlatformAddressWallet {
         // the per-input minimum and is filtered out solely because it
         // overlaps `outputs`, raise a typed
         // `OnlyOutputAddressesFunded` error so callers don't have to
-        // parse downstream message strings.
+        // parse downstream message strings (QA-001 follow-up).
+        //
+        // TODO(QA-002): add an end-to-end integration test driving the
+        // full `auto_select_inputs` path (requires a `WalletManager`
+        // harness with synthetic balances). Pure-helper coverage of
+        // the detection logic lives in `auto_select_tests::detect_*`.
         if candidates.is_empty() {
             if let Some(err) = detect_only_output_addresses_funded(
                 address_balances.iter().copied(),

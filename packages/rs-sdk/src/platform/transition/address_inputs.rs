@@ -9,7 +9,7 @@ use dpp::prelude::AddressNonce;
 use drive_proof_verifier::types::{AddressInfo, AddressInfos};
 use std::collections::{BTreeMap, BTreeSet};
 
-pub(crate) async fn fetch_inputs_with_nonce(
+pub async fn fetch_inputs_with_nonce(
     sdk: &Sdk,
     amounts: &BTreeMap<PlatformAddress, Credits>,
 ) -> Result<BTreeMap<PlatformAddress, (AddressNonce, Credits)>, Error> {
@@ -31,7 +31,7 @@ pub(crate) async fn fetch_inputs_with_nonce(
 }
 
 /// Increments the nonce for each address in the provided map.
-pub(crate) fn nonce_inc(
+pub fn nonce_inc(
     data: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
 ) -> BTreeMap<PlatformAddress, (AddressNonce, Credits)> {
     data.into_iter()

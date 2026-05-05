@@ -76,6 +76,16 @@ pub enum PlatformWalletFFIResultCode {
     ErrorInvalidIdentifier = 10,
     ErrorMemoryAllocation = 11,
     ErrorUtf8Conversion = 12,
+    /// A numeric operation on `Credits` would have overflowed.
+    /// Defensive — unreachable in practice given total Dash supply,
+    /// but surfaced distinctly so downstream telemetry can flag the
+    /// invariant break instead of treating it as a generic unknown.
+    ErrorArithmeticOverflow = 13,
+    /// Auto-select had no candidate inputs because every funded
+    /// address in the account was also a destination output. Caller
+    /// must rotate to a fresh receive address or fall back to
+    /// `InputSelection::Explicit` and split the operation.
+    ErrorOnlyOutputAddressesFunded = 14,
 
     NotFound = 98, // Used exclusively for all the Option that are retuned as errors
     ErrorUnknown = 99,
@@ -156,7 +166,21 @@ impl<T> From<Option<T>> for PlatformWalletFFIResult {
 
 impl From<PlatformWalletError> for PlatformWalletFFIResult {
     fn from(error: PlatformWalletError) -> Self {
-        PlatformWalletFFIResult::err(PlatformWalletFFIResultCode::ErrorUnknown, error.to_string())
+        // Map the typed wallet error variants explicitly so they
+        // don't flatten to ErrorUnknown at the FFI boundary. The
+        // catch-all ErrorUnknown remains for variants the FFI hasn't
+        // assigned a dedicated code yet — those still carry the
+        // typed Display rendering as the message.
+        let code = match &error {
+            PlatformWalletError::ArithmeticOverflow { .. } => {
+                PlatformWalletFFIResultCode::ErrorArithmeticOverflow
+            }
+            PlatformWalletError::OnlyOutputAddressesFunded { .. } => {
+                PlatformWalletFFIResultCode::ErrorOnlyOutputAddressesFunded
+            }
+            _ => PlatformWalletFFIResultCode::ErrorUnknown,
+        };
+        PlatformWalletFFIResult::err(code, error.to_string())
     }
 }
 
@@ -375,5 +399,66 @@ mod tests {
             "before\0after",
         );
         assert!(!r.message.is_null());
+    }
+
+    /// QA-003: `ArithmeticOverflow` must map to its dedicated FFI code,
+    /// not flatten to `ErrorUnknown`. The Display message is preserved
+    /// so downstream observers retain the call-site context.
+    #[test]
+    fn arithmetic_overflow_maps_to_dedicated_code() {
+        let err = PlatformWalletError::ArithmeticOverflow {
+            context: "test-site".to_string(),
+        };
+        let rendered = err.to_string();
+        let result: PlatformWalletFFIResult = err.into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorArithmeticOverflow
+        );
+        assert!(!result.message.is_null());
+        let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(msg, rendered, "FFI message must equal Display");
+        assert!(msg.contains("test-site"), "context must survive: {msg}");
+    }
+
+    /// QA-003: `OnlyOutputAddressesFunded` must map to its dedicated
+    /// FFI code, not flatten to `ErrorUnknown`. The Display
+    /// interpolation of the outputs payload (QA-001) survives across
+    /// the boundary so callers without typed-error access can still
+    /// recover the offending addresses by parsing the message.
+    #[test]
+    fn only_output_addresses_funded_maps_to_dedicated_code() {
+        use dpp::address_funds::PlatformAddress;
+        let err = PlatformWalletError::OnlyOutputAddressesFunded {
+            outputs: vec![PlatformAddress::P2pkh([0xAB; 20])],
+        };
+        let rendered = err.to_string();
+        let result: PlatformWalletFFIResult = err.into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorOnlyOutputAddressesFunded
+        );
+        assert!(!result.message.is_null());
+        let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(msg, rendered);
+        assert!(
+            msg.contains("funded addresses"),
+            "Display payload must survive: {msg}"
+        );
+    }
+
+    /// Other wallet-error variants without a dedicated FFI arm still
+    /// fall through to `ErrorUnknown` while carrying the typed
+    /// Display rendering as the message. Pin this so the catch-all
+    /// stays the only `ErrorUnknown` source.
+    #[test]
+    fn unmapped_variants_fall_through_to_unknown() {
+        let err = PlatformWalletError::AddressOperation("explicit fallthrough".to_string());
+        let result: PlatformWalletFFIResult = err.into();
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorUnknown);
     }
 }
