@@ -348,6 +348,18 @@ impl PlatformWallet {
             None => Ok(None),
         }
     }
+
+    /// The default Orchard payment address for this wallet, as the
+    /// raw 43-byte representation. Returns `None` if the shielded
+    /// sub-wallet hasn't been bound. Hosts apply their own bech32m
+    /// encoding (HRP + 0x10 type byte) on top.
+    #[cfg(feature = "shielded")]
+    pub async fn shielded_default_address(&self) -> Option<[u8; 43]> {
+        let guard = self.shielded.read().await;
+        guard
+            .as_ref()
+            .map(|w| w.default_address().to_raw_address_bytes())
+    }
 }
 
 impl PlatformWallet {

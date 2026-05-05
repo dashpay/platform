@@ -296,6 +296,75 @@ pub unsafe extern "C" fn platform_wallet_manager_bind_shielded(
 }
 
 // ---------------------------------------------------------------------------
+// Default Orchard payment address
+// ---------------------------------------------------------------------------
+
+/// Read the default Orchard payment address for the bound shielded
+/// sub-wallet on `wallet_id`. The host receives the 43 raw bytes
+/// (recipient + diversifier) and applies its own bech32m encoding.
+///
+/// `*out_present` is set to `true` and 43 bytes are written to
+/// `out_bytes_43` when the wallet has been bound via
+/// [`platform_wallet_manager_bind_shielded`]. When the wallet is
+/// known but not bound, `*out_present` is set to `false` and
+/// `out_bytes_43` is left untouched. An unknown wallet returns
+/// `ErrorWalletOperation`.
+///
+/// # Safety
+/// - `wallet_id_bytes` must point at 32 readable bytes.
+/// - `out_bytes_43` must point at 43 writable bytes.
+/// - `out_present` must be writable.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_shielded_default_address(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    out_bytes_43: *mut u8,
+    out_present: *mut bool,
+) -> PlatformWalletFFIResult {
+    check_ptr!(wallet_id_bytes);
+    check_ptr!(out_bytes_43);
+    check_ptr!(out_present);
+
+    let mut wallet_id = [0u8; 32];
+    std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
+
+    enum Outcome {
+        WalletMissing,
+        Unbound,
+        Bound([u8; 43]),
+    }
+
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        runtime().block_on(async {
+            match manager.get_wallet(&wallet_id).await {
+                None => Outcome::WalletMissing,
+                Some(w) => match w.shielded_default_address().await {
+                    Some(bytes) => Outcome::Bound(bytes),
+                    None => Outcome::Unbound,
+                },
+            }
+        })
+    });
+    let outcome = unwrap_option_or_return!(option);
+
+    match outcome {
+        Outcome::WalletMissing => PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            format!("wallet not found: {}", hex::encode(wallet_id)),
+        ),
+        Outcome::Unbound => {
+            *out_present = false;
+            PlatformWalletFFIResult::ok()
+        }
+        Outcome::Bound(bytes) => {
+            std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_bytes_43, 43);
+            *out_present = true;
+            PlatformWalletFFIResult::ok()
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Per-wallet sync_now
 // ---------------------------------------------------------------------------
 

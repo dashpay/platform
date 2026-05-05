@@ -186,6 +186,49 @@ extension PlatformWalletManager {
         }.value
     }
 
+    /// Read the default Orchard payment address for `walletId` as
+    /// the 43 raw bytes. Returns `nil` when the wallet exists on
+    /// the manager but has no bound shielded sub-wallet (i.e.
+    /// [`bindShielded`] hasn't run, or it failed). Throws when the
+    /// wallet id isn't known to the manager.
+    ///
+    /// The host is responsible for bech32m-encoding the result for
+    /// display (HRP `dash` / `tdash` + `0x10` type byte).
+    public func shieldedDefaultAddress(walletId: Data) throws -> Data? {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
+        }
+        guard walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "walletId must be exactly 32 bytes"
+            )
+        }
+
+        var bytes = [UInt8](repeating: 0, count: 43)
+        var present = false
+        try walletId.withUnsafeBytes { raw in
+            guard let ptr = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
+                throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
+            }
+            try bytes.withUnsafeMutableBufferPointer { outBuf in
+                guard let outPtr = outBuf.baseAddress else {
+                    throw PlatformWalletError.invalidParameter(
+                        "shieldedDefaultAddress out buffer baseAddress is nil"
+                    )
+                }
+                try platform_wallet_manager_shielded_default_address(
+                    handle,
+                    ptr,
+                    outPtr,
+                    &present
+                ).check()
+            }
+        }
+        return present ? Data(bytes) : nil
+    }
+
     public func syncShieldedWalletNow(walletId: Data) async throws {
         guard isConfigured, handle != NULL_HANDLE else {
             throw PlatformWalletError.invalidHandle(

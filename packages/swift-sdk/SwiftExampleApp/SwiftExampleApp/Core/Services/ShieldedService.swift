@@ -108,6 +108,18 @@ class ShieldedService: ObservableObject {
             )
             isBound = true
             lastError = nil
+
+            // Pull the default Orchard payment address now that bind
+            // succeeded so the Receive sheet has something to render
+            // before the first sync pass lands. Best-effort —
+            // failures here don't unbind the wallet.
+            if let raw = try? walletManager.shieldedDefaultAddress(walletId: walletId) {
+                orchardDisplayAddress = DashAddress.encodeOrchard(
+                    rawBytes: raw,
+                    network: network
+                )
+            }
+
             SDKLogger.log(
                 "Shielded bound: walletId=\(walletId.prefix(4).map { String(format: "%02x", $0) }.joined())… network=\(network.networkName) tree=\(dbPath)",
                 minimumLevel: .medium
