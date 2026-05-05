@@ -11,4 +11,7 @@ pub mod tk_006_token_burn;
 pub mod tk_007_token_freeze;
 pub mod tk_008_token_unfreeze;
 pub mod tk_009_token_destroy_frozen;
+pub mod tk_010_token_pause_resume;
+pub mod tk_011_token_price_purchase;
+pub mod tk_012_token_update_config;
 pub mod transfer;
