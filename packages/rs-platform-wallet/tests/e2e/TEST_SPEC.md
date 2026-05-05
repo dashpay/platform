@@ -912,7 +912,7 @@ public API is required; tests compose the SDK directly through those helpers.
 
 #### TK-001 — Token transfer between two identities
 - **Priority**: P1
-- **Status**: BLOCKED — needs Wave A + Wave G's `setup_with_token_contract` helper (TK-003). Re-framed: operator-pre-funded testnet contract dropped; this entry now composes with the in-test deployment from TK-003 + an in-test mint via TK-005.
+- **Status**: STUB — `tests/e2e/cases/tk_001_token_transfer.rs` (full body landed Wave 2-α; `#[ignore]`-tagged, runs on demand against testnet).
 - **Wallet feature exercised**: `wallet/identity/network/tokens/transfer.rs:21` (`token_transfer_with_signer`).
 - **DET parallel**: `dash-evo-tool/tests/backend-e2e/token_tasks.rs:359` (`step_transfer`).
 - **Preconditions**: Wave A signer + Wave G token-contract bootstrap (TK-003 helper); two registered identities (`identity_a`, `identity_b`); `identity_a` holds a non-zero token balance from an in-test mint (TK-005 helper).
@@ -934,7 +934,7 @@ public API is required; tests compose the SDK directly through those helpers.
 
 #### TK-001b — Token transfer of amount 0
 - **Priority**: P2
-- **Status**: BLOCKED — needs Wave A + Wave G (TK-003 helper). Re-framed off operator pre-funding onto in-test contract.
+- **Status**: STUB — `tests/e2e/cases/tk_001b_token_transfer_zero.rs` (full body landed Wave 2-α; `#[ignore]`-tagged, runs on demand).
 - **Wallet feature exercised**: `wallet/identity/network/tokens/transfer.rs:21` zero-amount boundary.
 - **DET parallel**: none.
 - **Preconditions**: TK-001 setup (in-test deployed token + two identities with non-zero balance on `identity_a` via in-test mint).
@@ -948,7 +948,7 @@ public API is required; tests compose the SDK directly through those helpers.
 - **Rationale**: Zero-amount transfers may be valid no-ops or invalid per contract. Either contract needs an asserted test.
 
 #### TK-001c — Token transfer across re-issued identity (signer rotation)
-- **Status**: BLOCKED — needs Wave A + ID-004 (key add/disable) helper + Wave G (TK-003 helper).
+- **Status**: STUB — `tests/e2e/cases/tk_001c_token_transfer_after_reissue.rs` (Wave 2-α; `#[ignore]`-tagged. Body panics-with-todo on the key-rotation step until ID-004 signer-cache injection helper lands — Wave 4 will surface this at runtime).
 - **Priority**: P2
 - **Wallet feature exercised**: `wallet/identity/network/tokens/transfer.rs:21` after the sender's signing key has been rotated (add new key, disable old key, transfer with new key).
 - **DET parallel**: none direct.
@@ -967,7 +967,7 @@ public API is required; tests compose the SDK directly through those helpers.
 
 #### TK-002 — Token claim (live perpetual distribution — long-runtime, nightly only)
 - **Priority**: P2
-- **Status**: BLOCKED — needs Wave A + Wave G's `setup_with_token_contract` extended to take a `distribution_rules` override (live perpetual). Demoted to nightly-only because perpetual intervals run on testnet block time (~3 s) and a meaningful claim window is 30–60 s of wall clock; the synchronous CI tier covers the same surface via TK-013's pre-programmed-distribution variant. TK-013 is the default; TK-002 is the live-perpetual long-runtime sibling.
+- **Status**: STUB — `tests/e2e/cases/tk_002_token_claim_perpetual.rs` (Wave 2-α; `#[ignore]`-tagged, nightly only). Body panics-with-todo on the perpetual-distribution helper override in `framework/tokens.rs` until that knob lands — Wave 4 will surface this at runtime. Demoted to nightly because perpetual intervals run on testnet block time (~3 s) and a meaningful claim window is 30–60 s of wall clock; the synchronous CI tier covers the same surface via TK-013's pre-programmed-distribution variant.
 - **Wallet feature exercised**: `wallet/identity/network/tokens/claim.rs:18` (`token_claim_with_signer`).
 - **DET parallel**: `dash-evo-tool/tests/backend-e2e/token_tasks.rs:702` (`tc_064_estimate_perpetual_rewards`) and `step_*` token lifecycle (DET tests only the *estimate* path).
 - **Preconditions**: TK-003 helper extended to deploy a token with live perpetual distribution; identity holding claim rights.
@@ -984,7 +984,7 @@ public API is required; tests compose the SDK directly through those helpers.
 - **Rationale**: Perpetual-distribution bugs are silent — balance just doesn't increase. TK-013 covers the synchronous path; TK-002 keeps the live-time variant in scope behind a `slow-tests` cargo feature (cf. §6 Q3). Without it, a regression that breaks perpetual-distribution event scheduling never surfaces.
 
 #### TK-003 — Register token contract (deploy via `create_data_contract_with_signer`)
-- **Status**: BLOCKED — needs Wave A (Identity signer) + Wave G (token-contract JSON-template helper, i.e. `register_token_contract_via_sdk` / `permissive_owner_token_contract_json`).
+- **Status**: STUB — `tests/e2e/cases/tk_003_register_token_contract.rs` (Wave 2-β; `#[ignore]`-tagged). Body panics-with-todo on the MASTER signing path; a CRITICAL signing-key-class upgrade for `DataContractCreate` may be required — Wave 4 will surface the exact `InvalidSignatureError` rollup at runtime.
 - **Priority**: P0 (gateway for every other TK-NNN entry)
 - **Wallet feature exercised**: `wallet/identity/network/contract.rs:124` (`create_data_contract_with_signer`) with non-empty `tokens_schema_json`.
 - **DET parallel**: `dash-evo-tool/tests/backend-e2e/token_tasks.rs:78` (`tc_045_register_token_contract`); fixture at `tests/backend-e2e/framework/fixtures.rs:111`; helper at `tests/backend-e2e/framework/token_helpers.rs:33`.
@@ -1006,7 +1006,7 @@ public API is required; tests compose the SDK directly through those helpers.
 - **Rationale**: Without an asserted register-side case, every other TK-NNN entry rests on an unasserted assumption. This case exercises the `register_token_contract_via_sdk` helper from Wave G (previously tracked as Gap-T1).
 
 #### TK-004 — Token transfer fee accounting & balance round-trip
-- **Status**: BLOCKED — needs Wave A + TK-003's `setup_with_token` helper.
+- **Status**: STUB — `tests/e2e/cases/tk_004_token_transfer_round_trip.rs` (Wave 2-β; `#[ignore]`-tagged, runs on demand against testnet).
 - **Priority**: P0
 - **Wallet feature exercised**: `wallet/identity/network/tokens/transfer.rs:21` (`token_transfer_with_signer`).
 - **DET parallel**: `token_tasks.rs:359` (`step_transfer`).
@@ -1030,7 +1030,7 @@ public API is required; tests compose the SDK directly through those helpers.
 - **Rationale**: Most-used token op. Pins the credit-fee vs. token-amount accounting separation that any refactor of the fee model would silently break.
 
 #### TK-005 — Token mint + total-supply assertion
-- **Status**: BLOCKED — needs Wave A + TK-003 + Wave G's `token_supply_of` helper (SDK-direct supply fetch wrapper).
+- **Status**: STUB — `tests/e2e/cases/tk_005_token_mint.rs` (Wave 2-γ; `#[ignore]`-tagged, runs on demand).
 - **Priority**: P1
 - **Wallet feature exercised**: `wallet/identity/network/tokens/mint.rs:19` (`token_mint_with_signer`).
 - **DET parallel**: `token_tasks.rs:305` (`step_mint`).
@@ -1055,7 +1055,7 @@ public API is required; tests compose the SDK directly through those helpers.
 - **Rationale**: Pins both the supply bookkeeping and the authorisation gate (TC-065 in DET is one of the few negative tests that already exists; we mirror it).
 
 #### TK-005b — Mint with `recipient_id != self`
-- **Status**: BLOCKED — needs Wave A + Wave G (TK-003 helper) + second identity.
+- **Status**: STUB — `tests/e2e/cases/tk_005b_token_mint_to_other.rs` (Wave 2-γ; `#[ignore]`-tagged, runs on demand).
 - **Priority**: P2
 - **Wallet feature exercised**: `wallet/identity/network/tokens/mint.rs:19` `recipient_id: Some(other)` branch.
 - **DET parallel**: tested implicitly in DET via `mint_to: Some(identity.id)`; the cross-identity case isn't exercised explicitly.
@@ -1074,7 +1074,7 @@ public API is required; tests compose the SDK directly through those helpers.
 - **Rationale**: Pins the cross-identity destination contract (an Option-branch the DET tests don't split).
 
 #### TK-006 — Token burn + total-supply decrement
-- **Status**: BLOCKED — needs TK-003 + Wave G's `token_supply_of` helper.
+- **Status**: STUB — `tests/e2e/cases/tk_006_token_burn.rs` (Wave 2-γ; `#[ignore]`-tagged, runs on demand).
 - **Priority**: P1
 - **Wallet feature exercised**: `wallet/identity/network/tokens/burn.rs:19` (`token_burn_with_signer`).
 - **DET parallel**: `token_tasks.rs:330` (`step_burn`).
@@ -1097,7 +1097,7 @@ public API is required; tests compose the SDK directly through those helpers.
 - **Rationale**: Symmetric partner of TK-005. Together they validate supply conservation across mint+burn pairs.
 
 #### TK-007 — Freeze identity for token (admin action)
-- **Status**: BLOCKED — needs Wave A + TK-003 + Wave G's `token_frozen_balance_of` helper.
+- **Status**: STUB — `tests/e2e/cases/tk_007_token_freeze.rs` (Wave 2-δ; `#[ignore]`-tagged, runs on demand).
 - **Priority**: P1
 - **Wallet feature exercised**: `wallet/identity/network/tokens/freeze.rs:18` (`token_freeze_with_signer`).
 - **DET parallel**: `token_tasks.rs:389` (`step_freeze`).
@@ -1120,7 +1120,7 @@ public API is required; tests compose the SDK directly through those helpers.
 - **Rationale**: Freeze is the canonical regulatory primitive. Without explicit coverage, a regression that turns freeze into a no-op would only surface as "users complain transfers work after we froze them".
 
 #### TK-008 — Unfreeze identity for token
-- **Status**: BLOCKED — depends on TK-007 (freeze must work to test unfreeze).
+- **Status**: STUB — `tests/e2e/cases/tk_008_token_unfreeze.rs` (Wave 2-δ; `#[ignore]`-tagged, composes with TK-007).
 - **Priority**: P1
 - **Wallet feature exercised**: `wallet/identity/network/tokens/unfreeze.rs:18` (`token_unfreeze_with_signer`).
 - **DET parallel**: `token_tasks.rs:419` (`step_unfreeze`).
@@ -1141,7 +1141,7 @@ public API is required; tests compose the SDK directly through those helpers.
 - **Rationale**: Round-trip pin: freeze + unfreeze must restore exactly the pre-freeze state.
 
 #### TK-009 — Destroy frozen funds
-- **Status**: BLOCKED — depends on TK-007.
+- **Status**: STUB — `tests/e2e/cases/tk_009_token_destroy_frozen.rs` (Wave 2-δ; `#[ignore]`-tagged, composes with TK-007).
 - **Priority**: P1
 - **Wallet feature exercised**: `wallet/identity/network/tokens/destroy_frozen_funds.rs:20` (`token_destroy_frozen_funds_with_signer`).
 - **DET parallel**: `token_tasks.rs:452` (`step_destroy_frozen`).
@@ -1163,7 +1163,7 @@ public API is required; tests compose the SDK directly through those helpers.
 - **Rationale**: Destroy-frozen-funds is the irreversible "burn the rule-breaker's bag" action — the negative-supply consequence must be pinned.
 
 #### TK-010 — Pause and resume token (emergency action)
-- **Status**: BLOCKED — needs TK-003 + Wave G's `token_is_paused_of` helper. The default scenario uses the shared OnceCell-cached contract; a `start_paused = true` variant (TK-paused-on-create, deferred) opts into a fresh deploy.
+- **Status**: STUB — `tests/e2e/cases/tk_010_token_pause_resume.rs` (Wave 2-ε; `#[ignore]`-tagged, runs on demand). Uses the shared OnceCell-cached contract; the `start_paused = true` variant (TK-paused-on-create) remains deferred.
 - **Priority**: P1
 - **Wallet feature exercised**: `wallet/identity/network/tokens/pause.rs:19`, `wallet/identity/network/tokens/resume.rs:18`.
 - **DET parallel**: `token_tasks.rs:501` (`step_pause`), `token_tasks.rs:529` (`step_resume`).
@@ -1187,7 +1187,7 @@ public API is required; tests compose the SDK directly through those helpers.
 - **Rationale**: Pause is the kill switch. Pinning both directions (pause-blocks, resume-restores) catches the "resume forgot to clear the flag" regression class.
 
 #### TK-011 — Set price + direct purchase round-trip
-- **Status**: BLOCKED — needs TK-003 + a buyer identity with credits + Wave G's `token_pricing_of` helper (SDK-direct fetch wrapper).
+- **Status**: STUB — `tests/e2e/cases/tk_011_token_price_purchase.rs` (Wave 2-ε; `#[ignore]`-tagged, runs on demand).
 - **Priority**: P1
 - **Wallet feature exercised**: `wallet/identity/network/tokens/set_price.rs:26` (`token_set_price_with_signer`); `wallet/identity/network/tokens/purchase.rs:25` (`token_purchase_with_signer`).
 - **DET parallel**: `token_tasks.rs:557` (`step_set_price`); `token_tasks.rs:588` (`step_purchase`).
@@ -1212,7 +1212,7 @@ public API is required; tests compose the SDK directly through those helpers.
 - **Rationale**: Direct purchase is the only money-flow primitive on the wallet that crosses two identities AND moves both credits and tokens in one transition. Pricing-race protection (`total_agreed_price` mismatch) is the headline correctness property.
 
 #### TK-012 — Update token config (single ChangeItem mutation)
-- **Status**: BLOCKED — needs TK-003 helpers.
+- **Status**: STUB — `tests/e2e/cases/tk_012_token_update_config.rs` (Wave 2-ε; `#[ignore]`-tagged, runs on demand). Single-ChangeItem mutation against a fresh deploy to keep the shared OnceCell fixture immutable.
 - **Priority**: P2
 - **Wallet feature exercised**: `wallet/identity/network/tokens/update_config.rs:20` (`token_update_config_with_signer`).
 - **DET parallel**: `token_tasks.rs:617` (`step_update_config`).
@@ -1234,7 +1234,7 @@ public API is required; tests compose the SDK directly through those helpers.
 - **Rationale**: `TokenConfigurationChangeItem` is open-ended (DPP grows it over time). One pinned variant (`MaxSupply`) catches schema-drift across DPP bumps; specific high-risk variants get their own follow-up cases.
 
 #### TK-013 — Token claim from pre-programmed distribution
-- **Status**: BLOCKED — needs TK-003 with a non-default contract config (pre-programmed distribution with a past-timestamp first epoch). Also needs a `setup_with_token` variant that takes a `distribution_rules` override. Uses a fresh deploy (not the shared OnceCell), since the distribution config is per-test.
+- **Status**: STUB — `tests/e2e/cases/tk_013_token_claim_pre_programmed.rs` (Wave 2-ζ; `#[ignore]`-tagged, runs on demand). Uses a fresh deploy with `distribution_rules` override (not the shared OnceCell), since the distribution config is per-test.
 - **Priority**: P2
 - **Wallet feature exercised**: `wallet/identity/network/tokens/claim.rs:18` (`token_claim_with_signer`).
 - **DET parallel**: `token_tasks.rs:702` (`tc_064_estimate_perpetual_rewards`) — DET only tests the *estimate* path because their `shared_token` has no perpetual; the actual claim flow is uncovered in DET. We propose to cover it.
@@ -1255,7 +1255,7 @@ public API is required; tests compose the SDK directly through those helpers.
 - **Rationale**: Claim is silent on failure — the balance just doesn't move. Pre-programmed-distribution variant dodges the live-time perpetual-distribution wait, putting the test inside CI runtime budget. The live-perpetual sibling (TK-002) stays out of the synchronous tier.
 
 #### TK-014 — Group-action gateway: queue a mint, list pending, co-sign
-- **Status**: BLOCKED — needs TK-003 with a `main_control_group` configured; needs at least three identities (proposer + two co-signers); needs co-sign re-broadcast support on every group-gateable op (the `group_info` enum). Uses a fresh deploy with `groups` populated, since the shared contract has empty `groups`.
+- **Status**: STUB — `tests/e2e/cases/tk_014_token_group_action.rs` (Wave 2-ζ; `#[ignore]`-tagged, runs on demand). Uses a fresh deploy with `main_control_group` and `groups` populated; spins three identities (proposer + two co-signers) and asserts the proposer's mint is non-final, that pending lists it, and that the co-sign produces the synchronous group MintResult.
 - **Priority**: P2
 - **Wallet feature exercised**: `wallet/identity/network/tokens/mint.rs:19` (`token_mint_with_signer`) with `group_info: Some(...)`; read-side `wallet/tokens/group_queries.rs::pending_group_actions_external` and `group_action_signers_external`.
 - **DET parallel**: none direct in `tests/backend-e2e/token_tasks.rs` (DET's contract uses `groups: BTreeMap::new()`); coverage exists in DET production code.
