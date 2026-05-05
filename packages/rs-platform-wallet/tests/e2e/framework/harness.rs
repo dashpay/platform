@@ -19,6 +19,7 @@ use tokio::sync::OnceCell;
 use tokio_util::sync::CancellationToken;
 
 use super::bank::BankWallet;
+use super::bank_identity::{self, BankIdentity};
 use super::cleanup;
 use super::config::Config;
 use super::registry::PersistentTestWalletRegistry;
@@ -47,6 +48,9 @@ pub struct E2eContext {
     /// (Task #15); shape kept stable for future re-enablement.
     pub spv_runtime: Option<Arc<SpvRuntime>>,
     pub bank: BankWallet,
+    /// Identity-credit sweep destination — registered or loaded once
+    /// per process (see [`super::bank_identity`]).
+    pub bank_identity: BankIdentity,
     pub registry: PersistentTestWalletRegistry,
     /// Framework-wide shutdown signal for background tasks. Not
     /// tripped by individual test panics — a single failing test
@@ -77,6 +81,11 @@ impl E2eContext {
     /// Pre-funded bank wallet — the funding source for tests.
     pub fn bank(&self) -> &BankWallet {
         &self.bank
+    }
+
+    /// Bank identity — destination of identity-credit sweeps.
+    pub fn bank_identity(&self) -> &BankIdentity {
+        &self.bank_identity
     }
 
     /// Persistent test-wallet registry — every `setup` registers,
@@ -150,11 +159,23 @@ impl E2eContext {
         // Panics on under-funded balance — see `BankWallet::load`.
         let bank = BankWallet::load(&manager, &config).await?;
 
+        // Resolve / register the bank identity BEFORE the orphan
+        // sweep so [`cleanup::sweep_orphans`] has a valid sweep
+        // destination on its very first invocation.
+        let bank_identity = bank_identity::resolve_bank_identity(
+            &manager,
+            &bank,
+            &workdir,
+            config.bank_identity_id.as_deref(),
+            bank.network(),
+        )
+        .await?;
+
         let registry = PersistentTestWalletRegistry::open(workdir.join("test_wallets.json"))?;
 
         // Best-effort startup sweep; failures don't abort init.
         let network = bank.network();
-        match cleanup::sweep_orphans(&manager, &bank, &registry, network).await {
+        match cleanup::sweep_orphans(&manager, &bank, &bank_identity, &registry, network).await {
             Ok(0) => {}
             Ok(n) => tracing::info!(
                 target: "platform_wallet::e2e::harness",
@@ -176,6 +197,7 @@ impl E2eContext {
             manager,
             spv_runtime,
             bank,
+            bank_identity,
             registry,
             cancel_token,
             wait_hub,

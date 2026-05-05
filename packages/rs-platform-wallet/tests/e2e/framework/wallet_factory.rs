@@ -103,6 +103,22 @@ impl TestWallet {
         // Force the lazy platform-address init now so test code
         // doesn't see a surprise first-use latency hit.
         wallet.platform().initialize().await;
+        // QA-002: pre-consume the slot-0 receive address on the
+        // default DIP-17 (account=0, key_class=0) account so the test
+        // wallet's first `next_unused_address()` returns index 1
+        // instead of index 0. The bank pins
+        // `BankWallet::primary_receive_address` to slot-0 of the same
+        // account/key_class via `derive_platform_address_at_index`,
+        // and (when the test seed shares derivation parameters with
+        // the bank seed) both wallets resolve that slot to the same
+        // P2PKH. When a prior-test cleanup sweep + the current test's
+        // `bank.fund_address` both target that hash in the same
+        // block, drive-abci's recent-zone feed correctly merges them
+        // via `AddToCredits + AddToCredits = saturating_add` —
+        // inflating the BLAST sync surface relative to the value the
+        // registration call attributes to its own input. See
+        // `/tmp/qa002-confirmed.md`.
+        consume_platform_address_index_zero(&wallet).await?;
         let signer = make_platform_signer(&seed_bytes, network)?;
         Ok(Self {
             seed_bytes,
@@ -314,9 +330,14 @@ impl TestWallet {
     ///    under-funded address surfaces as a registration failure
     ///    downstream rather than a clear error here.
     /// 2. Derives MASTER + HIGH ECDSA auth keys at DIP-9 slot
-    ///    `(identity_index, 0)` and `(identity_index, 1)`.
+    ///    `(identity_index, 0)` and `(identity_index, 1)`, plus a
+    ///    TRANSFER + CRITICAL ECDSA key at slot
+    ///    `(identity_index, 2)`. The TRANSFER key is required by DPP
+    ///    (`identity_credit_transfer_transition` v0_methods.rs:63-83)
+    ///    for credit-transfer transitions; without it id_003 / id_005
+    ///    / id-sweep all fail with "no transfer public key".
     /// 3. Builds a placeholder [`Identity`] populated with those
-    ///    two keys.
+    ///    three keys.
     /// 4. Calls
     ///    [`IdentityWallet::register_from_addresses`](platform_wallet::wallet::identity::IdentityWallet::register_from_addresses)
     ///    with the funding map `{addr_1 → funding}`.
@@ -336,9 +357,14 @@ impl TestWallet {
             identity_index,
         )?);
 
-        // Slot 0 → MASTER, slot 1 → HIGH. Match the DET / DPNS
-        // register_name pattern: MASTER is required for identity
-        // mutation, HIGH covers signing for most state transitions.
+        // Slot 0 → MASTER, slot 1 → HIGH, slot 2 → TRANSFER. Match
+        // the DET / DPNS register_name pattern: MASTER is required
+        // for identity mutation, HIGH covers signing for most state
+        // transitions, and TRANSFER is enforced by DPP for credit
+        // transfers (rs-dpp identity_credit_transfer_transition
+        // v0_methods.rs:63-83 calls
+        // `identity.get_first_public_key_matching(Purpose::TRANSFER, ...)`
+        // and rejects if absent).
         let master_key = derive_identity_key(
             &self.seed_bytes,
             network,
@@ -355,6 +381,14 @@ impl TestWallet {
             Purpose::AUTHENTICATION,
             SecurityLevel::HIGH,
         )?;
+        let transfer_key = derive_identity_key(
+            &self.seed_bytes,
+            network,
+            identity_index,
+            2,
+            Purpose::TRANSFER,
+            SecurityLevel::CRITICAL,
+        )?;
 
         // Build the placeholder identity. `id` is recomputed from
         // the input-address map by the SDK at submit time; we set
@@ -363,6 +397,7 @@ impl TestWallet {
         let mut public_keys: BTreeMap<KeyID, IdentityPublicKey> = BTreeMap::new();
         public_keys.insert(master_key.id(), master_key.clone());
         public_keys.insert(high_key.id(), high_key.clone());
+        public_keys.insert(transfer_key.id(), transfer_key.clone());
         let placeholder = Identity::V0(IdentityV0 {
             id: Identifier::default(),
             public_keys,
@@ -406,6 +441,7 @@ impl TestWallet {
             id: registered.id(),
             master_key,
             high_key,
+            transfer_key,
             signer: identity_signer,
             identity_index,
             funding,
@@ -557,6 +593,10 @@ pub struct RegisteredIdentity {
     pub master_key: IdentityPublicKey,
     /// HIGH auth key (DPP `KeyID = 1`).
     pub high_key: IdentityPublicKey,
+    /// TRANSFER + CRITICAL key (DPP `KeyID = 2`). Required by DPP
+    /// for `IdentityCreditTransferTransition` — see rs-dpp
+    /// `identity_credit_transfer_transition/v0/v0_methods.rs:63-83`.
+    pub transfer_key: IdentityPublicKey,
     /// `Arc`-shared signer pre-derived for this identity's DIP-9 slot.
     /// `Arc` lets callers hand the same signer to multiple state-transition
     /// builders without re-creating the key cache.
@@ -626,6 +666,7 @@ impl SetupGuard {
         let result = super::cleanup::teardown_one(
             self.ctx.manager(),
             self.ctx.bank(),
+            self.ctx.bank_identity(),
             self.ctx.registry(),
             &self.test_wallet,
         )
@@ -652,6 +693,48 @@ impl Drop for SetupGuard {
 /// `PlatformWalletError` → framework error envelope.
 fn wallet_err(err: PlatformWalletError) -> FrameworkError {
     FrameworkError::Wallet(err.to_string())
+}
+
+/// Generate the address at DIP-17 slot-0 of (account=0, key_class=0)
+/// and mark it used in the address pool, so the next call to
+/// `next_unused_receive_address` returns slot-1 instead.
+///
+/// QA-002 fix: shifts every test wallet's "first usable address" off
+/// the slot reserved for [`super::bank::BankWallet::primary_receive_address`].
+async fn consume_platform_address_index_zero(wallet: &Arc<PlatformWallet>) -> FrameworkResult<()> {
+    // Generates index 0 with `add_to_state=true`, populating the pool
+    // so `mark_index_used(0)` can find it below.
+    let _index_zero = wallet
+        .platform()
+        .next_unused_receive_address(default_platform_payment_account_key())
+        .await
+        .map_err(wallet_err)?;
+
+    let wallet_id = wallet.wallet_id();
+    let mut wm = wallet.wallet_manager().write().await;
+    let info = wm.get_wallet_info_mut(&wallet_id).ok_or_else(|| {
+        FrameworkError::Wallet(format!(
+            "wallet {} missing from manager during slot-0 consume",
+            hex::encode(wallet_id)
+        ))
+    })?;
+    let account = info
+        .core_wallet
+        .platform_payment_managed_account_at_index_mut(DEFAULT_ACCOUNT_INDEX_PUB)
+        .ok_or_else(|| {
+            FrameworkError::Wallet(format!(
+                "no platform-payment account at index {DEFAULT_ACCOUNT_INDEX_PUB} \
+                 during slot-0 consume"
+            ))
+        })?;
+    if !account.addresses.mark_index_used(0) {
+        return Err(FrameworkError::Wallet(
+            "mark_index_used(0) returned false: slot-0 missing from pool \
+             or already marked used"
+                .into(),
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

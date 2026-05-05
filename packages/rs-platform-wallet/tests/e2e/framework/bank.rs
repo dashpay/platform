@@ -38,6 +38,9 @@ static FUNDING_MUTEX: AsyncMutex<()> = AsyncMutex::const_new(());
 pub struct BankWallet {
     wallet: Arc<PlatformWallet>,
     signer: SimpleSigner,
+    /// 64-byte BIP-39 seed retained so the bank-identity helpers can
+    /// derive identity-side keys without re-parsing the mnemonic.
+    seed_bytes: [u8; 64],
     /// Cached for under-funded panic messages and log breadcrumbs.
     primary_receive_address: PlatformAddress,
 }
@@ -124,12 +127,36 @@ impl BankWallet {
             );
         }
 
+        tracing::info!(
+            address = %primary_receive_address.to_bech32m_string(network),
+            balance = total,
+            network = %network,
+            "Bank wallet ready",
+        );
+
         let signer = make_platform_signer(&seed_bytes, network)?;
         Ok(Self {
             wallet,
             signer,
+            seed_bytes,
             primary_receive_address,
         })
+    }
+
+    /// 64-byte BIP-39 seed used to derive both the bank's address keys
+    /// and (optionally) its identity keys. Tests/sweep helpers reach
+    /// for this when building a `SeedBackedIdentitySigner` over the
+    /// bank identity.
+    pub fn seed_bytes(&self) -> &[u8; 64] {
+        &self.seed_bytes
+    }
+
+    /// Bank's platform-address signer. The same `Signer<PlatformAddress>`
+    /// used by `fund_address`; exposed so the bank-identity bootstrap
+    /// can sign the funding-address inputs of the registration
+    /// transition without rebuilding it.
+    pub fn address_signer(&self) -> &SimpleSigner {
+        &self.signer
     }
 
     /// Borrow the underlying `PlatformWallet`.

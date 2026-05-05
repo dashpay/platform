@@ -89,6 +89,7 @@ cp packages/rs-platform-wallet/tests/.env.example \
 | `PLATFORM_WALLET_E2E_MIN_BANK_CREDITS` | no | `500_000_000` | Minimum credit balance required in the bank wallet before initialization completes. If the bank is below this threshold the process panics with the bank's receive address so you know where to top it up. |
 | `PLATFORM_WALLET_E2E_WORKDIR` | no | `${TMPDIR}/dash-platform-wallet-e2e` | Base path for the slot-locked working directory. SPV block cache, the test-wallet registry, and SDK state are stored here. |
 | `PLATFORM_WALLET_E2E_TRUSTED_CONTEXT_URL` | no | network-builtin | Override URL for the trusted HTTP context provider. Leave unset to use the testnet/mainnet endpoint baked into `rs-sdk-trusted-context-provider`; required for devnet runs and any custom trust anchor. |
+| `PLATFORM_WALLET_E2E_BANK_IDENTITY_ID` | no | auto-bootstrap | 32-byte hex id of a pre-registered bank identity used as the destination of identity-credit sweeps. Leave unset to let the harness register a fresh bank identity from the bank's primary platform address on first run and persist its id under the workdir slot at `<workdir>/bank_identity.json`. Set explicitly when sharing one bank identity across CI environments or workdir slots. |
 | `RUST_LOG` | no | `info,rs_platform_wallet=debug` | Tracing filter passed to `tracing-subscriber`. Increase to `debug` or `trace` for detailed sync output. |
 
 Shell-exported variables take precedence — `dotenvy::from_path` does NOT overwrite
@@ -230,6 +231,27 @@ network error) are marked `Failed` and retried on the following run.
 
 The registry uses atomic writes (write to a temp file, then rename) to avoid
 corruption from mid-write crashes.
+
+### Bank identity
+
+Identity-credit sweeps need an identity to receive the swept funds (the
+`CreditTransfer` state transition is identity → identity, not identity →
+address). The harness keeps one **bank identity** per workdir slot, recorded at
+`<workdir>/bank_identity.json`. Resolution order on every `setup`:
+
+1. If `PLATFORM_WALLET_E2E_BANK_IDENTITY_ID` is set, the harness loads that
+   identity verbatim.
+2. Otherwise, if `<workdir>/bank_identity.json` exists, the harness reuses the
+   recorded identity id (after cross-checking that the persisted `wallet_id`
+   matches the active bank mnemonic — a mismatch surfaces as a clear bank
+   error rather than a silent wrong-bank sweep).
+3. Otherwise, the harness registers a fresh identity at DIP-9 index `0xBA77`
+   from the bank's primary receive address, persists the resulting id to the
+   workdir slot, and reuses it on subsequent runs.
+
+Bootstrap consumes a one-time funding round from the bank's primary platform
+address (~80M credits). After that, swept identity credits accumulate on the
+bank identity instead of leaking on every run.
 
 ---
 

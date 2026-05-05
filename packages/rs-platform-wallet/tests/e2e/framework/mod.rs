@@ -19,6 +19,7 @@
 #![allow(dead_code)]
 
 pub mod bank;
+pub mod bank_identity;
 pub mod cleanup;
 pub mod config;
 pub mod context_provider;
@@ -203,16 +204,25 @@ pub async fn setup_with_n_identities(
     // same destination. We fund + observe before registration so
     // `register_from_addresses` finds the credits already
     // committed to platform.
+    // After Option C (PR #3579), bank.fund_address delivers exactly
+    // the requested amount. The chain charges the IdentityCreateFromAddresses
+    // dynamic fee (~96M, validate_fees_of_event_v0 PaidFromAddressInputs)
+    // from the address residual after registration consumes `funding_per`.
+    // Fund each address with `funding_per + 100_000_000` so the residual
+    // (100M) covers the dynamic fee with 4M buffer.
+    const REGISTRATION_HEADROOM: u64 = 100_000_000;
+
     for identity_index in 0..n {
         let funding_addr = base.test_wallet.next_unused_address().await?;
+        let bank_amount = funding_per + REGISTRATION_HEADROOM;
         base.ctx
             .bank()
-            .fund_address(&funding_addr, funding_per)
+            .fund_address(&funding_addr, bank_amount)
             .await?;
         wait_for_balance(
             &base.test_wallet,
             &funding_addr,
-            funding_per,
+            bank_amount,
             Duration::from_secs(60),
         )
         .await?;
@@ -241,10 +251,12 @@ pub async fn setup_with_n_identities(
 ///
 /// Calling [`MultiIdentitySetupGuard::teardown`] consumes the guard
 /// and forwards to the inner [`SetupGuard::teardown`], which sweeps
-/// platform-address balances. Identity-credit cleanup is deferred to
-/// a follow-up PR — see the `#identity-sweep` TODO in
-/// [`cleanup::sweep_identities`]. Until then, every identity
-/// registered here keeps its post-registration credit balance.
+/// both platform-address balances and identity-credit balances.
+/// Identity sweep drains every identity owned by this wallet whose
+/// balance exceeds the per-identity floor back to the shared bank
+/// identity (see [`cleanup::sweep_identities_with_seed`]); identities
+/// whose balance is below the floor are intentionally left for the
+/// next-run orphan sweep to retry.
 pub struct MultiIdentitySetupGuard {
     /// Inner single-wallet guard. Holds the [`E2eContext`] and the
     /// shared [`wallet_factory::TestWallet`] every identity is
