@@ -421,10 +421,28 @@ macro_rules! call_errorable_method_identity_signed {
     From,
     PartialEq,
 )]
+// `tag = "type"` matches the codebase convention for enums that discriminate
+// between **semantically different variants** of the same kind (rather than
+// **versions** of one logical type, which use `tag = "$formatVersion"`).
+// Existing precedents: `AssetLockProof` (`Instant`/`Chain`),
+// `ContractBoundSpecification`, `ActionEvent`, etc. — all
+// `#[serde(tag = "type", rename_all = "camelCase")]`.
+//
+// Was previously `serde(untagged)`, which made deserialize ambiguous (each
+// variant tried in order until one matched structurally). The new
+// self-describing wire shape is `{"type": "dataContractCreate", ...inner
+// fields...}`. The `type` key doesn't collide with any inner enum's
+// `$formatVersion` tag (different key namespace), nor with inner serde
+// fields that happen to be named `type` because the umbrella's tag is
+// resolved before serde descends into the variant body.
+//
+// The binary wire path (`PlatformSerialize`) is unchanged — only JSON/Value
+// consumers see the new shape, and there are no rs-drive / rs-drive-abci /
+// rs-sdk callers that route the umbrella through to_json/to_object today.
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),
-    serde(untagged)
+    serde(tag = "type", rename_all = "camelCase")
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[platform_serialize(limit = 100000)]
@@ -497,29 +515,47 @@ mod json_convertible_tests {
         assert!(v0.input_witnesses.is_empty(), "input_witnesses");
     }
 
-    // These tests stay `#[ignore]`'d while the umbrella `StateTransition` is
-    // `serde(untagged)`. A full inline wire-shape assertion would just be the
-    // shape of the chosen inner variant (because `untagged` flattens), and
-    // every inner variant already has its own per-type wire-shape test below
-    // its module. Renamed to the new convention so they are picked up
-    // uniformly when (in pass 2) the umbrella switches to a tagged shape.
+    // The umbrella `StateTransition` now uses `tag = "type",
+    // rename_all = "camelCase"` matching the codebase convention for
+    // semantically-different-variant enums (`AssetLockProof`,
+    // `ContractBoundSpecification`, `ActionEvent`). Was `serde(untagged)`,
+    // which made deserialize ambiguous (each variant tried in order until
+    // one matched structurally). Wire shape is now
+    // `{"type": "<variantNameInCamelCase>", ...inner fields...}`.
+
     #[test]
-    #[ignore = "untagged enum — round-trip likely fails per plan §10; pass 2 bug fix needed"]
     fn json_round_trip_with_full_wire_shape() {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
+        // Variant tag is `identityCreateFromAddresses` (camelCase of variant
+        // name). Inner shape — `IdentityCreateFromAddressesTransition`'s own
+        // V0 wire form including its `$formatVersion` tag — is exercised by
+        // that type's dedicated wire-shape test; we only assert the umbrella
+        // tag and structural round-trip here.
+        assert_eq!(json["type"], "identityCreateFromAddresses");
         let recovered = StateTransition::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
         assert_outer_variant(&recovered);
     }
 
     #[test]
-    #[ignore = "untagged enum — round-trip likely fails per plan §10; pass 2 bug fix needed"]
     fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
+        // Same: variant tag is `identityCreateFromAddresses`; inner shape is
+        // covered by the inner type's own value-path test.
+        let map = value.as_map().expect("Value::Map");
+        let tag = map
+            .iter()
+            .find(|(k, _)| k.as_text() == Some("type"))
+            .map(|(_, v)| v)
+            .expect("type present");
+        assert_eq!(
+            *tag,
+            platform_value::Value::Text("identityCreateFromAddresses".to_string())
+        );
         let recovered = StateTransition::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
         assert_outer_variant(&recovered);
