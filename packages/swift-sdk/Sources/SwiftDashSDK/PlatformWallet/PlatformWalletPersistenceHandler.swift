@@ -385,13 +385,13 @@ public class PlatformWalletPersistenceHandler {
     }
 
     private func upsertTransaction(account: PersistentAccount, tx: TransactionRecordFFI) {
-        // `account` is intentionally consumed only by the TXO upsert
-        // pass that follows this method's call site. The transaction
-        // row itself is account-agnostic — a single tx can land in
-        // multiple accounts (or wallets), and per-wallet membership
-        // is recovered through the TXO graph (`outputs` / `inputs`)
-        // rather than a denormalized column on the transaction.
-        _ = account
+        // The `account` parameter scopes the wallet-id used for the
+        // input-reconciliation pass at the bottom of this method.
+        // The transaction row itself stays account-agnostic — a
+        // single tx can land in multiple accounts (or wallets), and
+        // per-wallet membership is recovered through the TXO graph
+        // (`outputs` / `inputs`) rather than a denormalized column.
+        let resolvedWalletId: Data = account.wallet.walletId
         let txidData = hashData(tx.txid)
         let descriptor = FetchDescriptor<PersistentTransaction>(
             predicate: #Predicate { $0.txid == txidData }
@@ -432,6 +432,117 @@ public class PlatformWalletPersistenceHandler {
             record.transactionData = Data(bytes: dataPtr, count: Int(tx.tx_data_len))
         }
         record.lastUpdated = Date()
+
+        // Walk every input in this transaction and reconcile it
+        // against the `PersistentTxo` table. The FFI populates
+        // `input_outpoints` from `tx.input.iter()` directly, so the
+        // list survives even when the wallet's in-memory `self.utxos`
+        // didn't classify the input as ours at processing time —
+        // that gap was the silent-drop path that left
+        // `PersistentTxo.isSpent` stuck at false on out-of-order
+        // arrival. For each input outpoint:
+        //   1. Look up the matching `PersistentTxo`.
+        //   2. If found → set `isSpent` and link `spendingTransaction`.
+        //   3. If not found → write a `PersistentPendingInput` row;
+        //      the matching `upsertUtxo` will pick it up later and
+        //      delete the pending row in the same pass.
+        if let inPtr = tx.input_outpoints, tx.input_outpoints_count > 0 {
+            for i in 0..<Int(tx.input_outpoints_count) {
+                let entry = inPtr[i]
+                let prevTxid = withUnsafeBytes(of: entry.txid) { Data($0) }
+                let outpoint = PersistentTxo.makeOutpoint(txid: prevTxid, vout: entry.vout)
+                resolveInputOutpoint(
+                    outpoint: outpoint,
+                    inputIndex: UInt32(i),
+                    spendingTransaction: record,
+                    spendingTxid: txidData,
+                    walletId: resolvedWalletId
+                )
+            }
+        }
+    }
+
+    /// Mark the `PersistentTxo` whose 36-byte `outpoint` matches the
+    /// given input as spent and link it to `spendingTransaction`.
+    /// If no matching TXO exists yet (in-Swift out-of-order, or
+    /// load_from_persistor missed it), write a
+    /// `PersistentPendingInput` row so the next `upsertUtxo` for
+    /// that outpoint can resolve the linkage.
+    private func resolveInputOutpoint(
+        outpoint: Data,
+        inputIndex: UInt32,
+        spendingTransaction: PersistentTransaction,
+        spendingTxid: Data,
+        walletId: Data
+    ) {
+        let txoDescriptor = FetchDescriptor<PersistentTxo>(
+            predicate: #Predicate { $0.outpoint == outpoint }
+        )
+        if let txo = try? backgroundContext.fetch(txoDescriptor).first {
+            // Only touch the row if the linkage actually changes —
+            // an idempotent re-upsert of the same tx must not
+            // gratuitously bump `lastUpdated` and trigger a follow-on
+            // changeset emit.
+            let linkageChanged =
+                !txo.isSpent
+                || txo.spendingTransaction?.txid != spendingTxid
+                || txo.spendingInputIndex != inputIndex
+            if linkageChanged {
+                txo.isSpent = true
+                if txo.spendingTransaction?.txid != spendingTxid {
+                    txo.spendingTransaction = spendingTransaction
+                }
+                // Capture the canonical vin index so the detail
+                // view can render inputs in serialized order.
+                txo.spendingInputIndex = inputIndex
+                txo.lastUpdated = Date()
+            }
+            // A pending entry from an earlier write is now stale —
+            // resolved by this fetch. Drop it.
+            removePendingInputs(for: outpoint)
+        } else {
+            // Defer: record a pending row so a future `upsertUtxo`
+            // can complete the link. Writing one row per input is
+            // cheap; the cascade-delete relationship + the resolve
+            // path in `upsertUtxo` keep the table from growing
+            // unbounded.
+            //
+            // Skip the write if a pending row for this exact
+            // (outpoint, spending-tx) pair already exists — re-upserts
+            // of the same transaction would otherwise produce
+            // duplicate pending rows that all resolve to the same
+            // TXO, wasting fetch work on the resolve side.
+            let pendingDescriptor = FetchDescriptor<PersistentPendingInput>(
+                predicate: #Predicate { $0.outpoint == outpoint && $0.spendingTxid == spendingTxid }
+            )
+            if (try? backgroundContext.fetch(pendingDescriptor).first) == nil {
+                let pending = PersistentPendingInput(
+                    outpoint: outpoint,
+                    inputIndex: inputIndex,
+                    spendingTxid: spendingTxid,
+                    spendingTransaction: spendingTransaction,
+                    walletId: walletId
+                )
+                backgroundContext.insert(pending)
+            }
+        }
+    }
+
+    /// Drop every `PersistentPendingInput` row keyed on `outpoint`.
+    /// Called after a successful `PersistentTxo` mark-spent so the
+    /// pending entries don't linger as orphans, and from
+    /// `upsertUtxo`'s resolve path so a freshly-arrived TXO doesn't
+    /// keep its corresponding pending row alive.
+    private func removePendingInputs(for outpoint: Data) {
+        let descriptor = FetchDescriptor<PersistentPendingInput>(
+            predicate: #Predicate { $0.outpoint == outpoint }
+        )
+        guard let rows = try? backgroundContext.fetch(descriptor), !rows.isEmpty else {
+            return
+        }
+        for row in rows {
+            backgroundContext.delete(row)
+        }
     }
 
     private func upsertUtxo(account: PersistentAccount, utxo: UtxoEntryFFI) {
@@ -517,6 +628,57 @@ public class PlatformWalletPersistenceHandler {
                 record.coreAddress = coreAddr
             }
         }
+
+        // Resolve any deferred spend signal that landed before this
+        // TXO existed. `upsertTransaction` writes a
+        // `PersistentPendingInput` row for every input outpoint
+        // whose previous-output isn't in SwiftData yet; the matching
+        // upsert here drains those rows and stamps `isSpent` on the
+        // TXO. Symmetric with the resolve path in
+        // `upsertTransaction`, so the spend signal is order-
+        // independent at this layer regardless of which side arrives
+        // first.
+        let outpointKey = record.outpoint
+        let pendingDescriptor = FetchDescriptor<PersistentPendingInput>(
+            predicate: #Predicate { $0.outpoint == outpointKey }
+        )
+        if let pendingRows = try? backgroundContext.fetch(pendingDescriptor),
+           !pendingRows.isEmpty {
+            // Pick the freshest pending entry — under normal sync
+            // there's only one, but a chain reorg or double-spend
+            // observation could leave multiple. Newest wins so the
+            // visible spendingTransaction matches the most recent
+            // observation; the rest are dropped.
+            let chosen = pendingRows.max(by: { $0.createdAt < $1.createdAt }) ?? pendingRows[0]
+            record.isSpent = true
+            // Carry the vin index forward so the spending tx's
+            // detail view can render its inputs in the canonical
+            // serialized order. Same source as the linkage write
+            // in `resolveInputOutpoint` — the only path that creates
+            // pending rows captures the index from FFI's
+            // `input_outpoints` slice, which mirrors `tx.input.iter()`.
+            record.spendingInputIndex = chosen.inputIndex
+            if let spending = chosen.spendingTransaction {
+                if record.spendingTransaction?.txid != spending.txid {
+                    record.spendingTransaction = spending
+                }
+            } else {
+                // Pending row's parent tx wasn't faulted in; fall
+                // back to a txid lookup so the linkage still lands.
+                let spendingTxid = chosen.spendingTxid
+                let txDescriptor = FetchDescriptor<PersistentTransaction>(
+                    predicate: #Predicate { $0.txid == spendingTxid }
+                )
+                if let spending = try? backgroundContext.fetch(txDescriptor).first,
+                   record.spendingTransaction?.txid != spending.txid {
+                    record.spendingTransaction = spending
+                }
+            }
+            record.lastUpdated = Date()
+            for row in pendingRows {
+                backgroundContext.delete(row)
+            }
+        }
     }
 
     private func markUtxoSpent(_ entry: SpentOutPointFFI) {
@@ -552,6 +714,15 @@ public class PlatformWalletPersistenceHandler {
             }
         }
         txo.lastUpdated = Date()
+        // The spend signal landed both via the legacy
+        // `utxos_spent` slice (this path) and — assuming the
+        // spending tx's record was emitted in the same flush —
+        // through `upsertTransaction`'s reconciliation pass. Both
+        // resolve to the same TXO row, but the latter may have
+        // written a `PersistentPendingInput` row when the TXO
+        // didn't yet exist. Drain any leftover pending rows for
+        // this outpoint so they don't linger as orphans.
+        removePendingInputs(for: outpoint)
     }
 
     private func markUtxoInstantLocked(_ op: OutPointFFI) {

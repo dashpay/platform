@@ -92,19 +92,31 @@ struct SwiftExampleAppApp: App {
                 })) { _, _ in
                     rebindWalletScopedServices()
                 }
+                // Rebind on network switch as well — without this,
+                // the balance-sync service stays pinned to whatever
+                // wallet was picked at bootstrap, which leaks the
+                // previous network's Platform Balance / Active
+                // Addresses / Last Sync into the Sync Status tab
+                // for the new network.
+                .onChange(of: platformState.currentNetwork) { _, _ in
+                    rebindWalletScopedServices()
+                }
         }
     }
 
     /// Drive manager-wide BLAST sync state from the set of loaded
-    /// wallets. With no wallets present, sync is stopped and the
-    /// per-wallet `PlatformBalanceSyncService` UI surface is reset.
-    /// Otherwise, we ensure sync is running and bind the balance
-    /// service to `firstWallet` for the single-wallet UI surfaces
-    /// that still expect one focused wallet (detail views reconfigure
-    /// the service per-wallet themselves).
+    /// wallets. With no wallets present *on the active network*,
+    /// sync is stopped and the per-wallet `PlatformBalanceSyncService`
+    /// UI surface is reset — so the Sync Status tab shows zeros for
+    /// a network the user hasn't created a wallet on yet, instead
+    /// of leaking values from a wallet on a different network.
+    /// Otherwise, we bind the balance service to a deterministic
+    /// wallet on that network. (Detail views reconfigure the
+    /// service per-wallet themselves.)
     @MainActor
     private func rebindWalletScopedServices() {
-        guard let wallet = walletManager.firstWallet else {
+        let wallet = firstWalletOnActiveNetwork()
+        guard let wallet else {
             do {
                 try walletManager.stopPlatformAddressSync()
             } catch {
@@ -127,7 +139,7 @@ struct SwiftExampleAppApp: App {
                 try walletManager.startPlatformAddressSync()
             }
             SDKLogger.log(
-                "🔗 BLAST sync running; balance-sync UI bound to wallet \(wallet.walletId.prefix(4).map { String(format: "%02x", $0) }.joined())… (of \(walletManager.wallets.count) loaded)",
+                "🔗 BLAST sync running; balance-sync UI bound to wallet \(wallet.walletId.prefix(4).map { String(format: "%02x", $0) }.joined())… on \(platformState.currentNetwork.displayName) (of \(walletManager.wallets.count) loaded)",
                 minimumLevel: .medium
             )
         } catch {
@@ -135,6 +147,32 @@ struct SwiftExampleAppApp: App {
                 "Failed to bind platform address wallet: \(error.localizedDescription)"
             )
         }
+    }
+
+    /// Lowest-walletId managed wallet that's tagged to
+    /// `platformState.currentNetwork`. The Rust manager doesn't
+    /// track networks per wallet, so the source of truth is the
+    /// SwiftData `PersistentWallet.networkRaw` column — which the
+    /// persister fills in alongside the wallet creation that
+    /// populated `walletManager.wallets`. Returns `nil` when the
+    /// active network has no managed wallet (yet).
+    @MainActor
+    private func firstWalletOnActiveNetwork() -> ManagedPlatformWallet? {
+        let raw = platformState.currentNetwork.rawValue
+        let descriptor = FetchDescriptor<PersistentWallet>(
+            predicate: #Predicate { $0.networkRaw == raw }
+        )
+        let context = modelContainer.mainContext
+        let rows = (try? context.fetch(descriptor)) ?? []
+        // Sort by walletId so the choice is deterministic across
+        // launches — same shape as `PlatformWalletManager.firstWallet`.
+        let sortedIds = rows
+            .map(\.walletId)
+            .sorted { $0.lexicographicallyPrecedes($1) }
+        for id in sortedIds {
+            if let managed = walletManager.wallets[id] { return managed }
+        }
+        return nil
     }
 
     @MainActor
