@@ -426,8 +426,8 @@ impl Sdk {
         // Handle both "alice" and "alice.dash" formats
         let label = if let Some(dot_pos) = name.rfind('.') {
             let (label_part, suffix) = name.split_at(dot_pos);
-            // Only strip the suffix if it's exactly ".dash"
-            if suffix == ".dash" {
+            // Strip ".dash" / ".DASH" / mixed case — DPNS itself is case-insensitive.
+            if suffix.eq_ignore_ascii_case(".dash") {
                 label_part
             } else {
                 // If it's not ".dash", treat the whole thing as the label
