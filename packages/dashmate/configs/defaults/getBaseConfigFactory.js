@@ -155,6 +155,12 @@ export default function getBaseConfigFactory() {
           },
         },
         indexes: [],
+        // BIP158 cfilter index + NODE_COMPACT_FILTERS service bit.
+        // Off by default — mainnet / testnet operators rarely want
+        // the disk + CPU overhead of the cfilter index. The `local`
+        // preset overrides this to `true` so dev SPV clients can
+        // sync filters against dashmate's seed node.
+        compactFilters: false,
       },
       platform: {
         quorumList: {
