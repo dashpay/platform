@@ -790,6 +790,7 @@ impl CloneForTokenSetup for RegisteredIdentity {
             id: self.id,
             master_key: self.master_key.clone(),
             high_key: self.high_key.clone(),
+            transfer_key: self.transfer_key.clone(),
             signer: Arc::clone(&self.signer),
             identity_index: self.identity_index,
             funding: self.funding,
