@@ -363,6 +363,15 @@ where
         state.clone()
     }
 
+    /// Best-effort registry depth for the diagnostic snapshot path.
+    /// Returns the number of identities currently registered, or
+    /// `None` if the registry can't be acquired without parking the
+    /// thread (i.e. another writer is in flight). The diagnostic
+    /// surface treats `None` as "0" so the caller never blocks.
+    pub fn try_queue_depth(&self) -> Option<usize> {
+        self.state.try_read().ok().map(|s| s.len())
+    }
+
     /// Start the background sync loop. Idempotent — calling while
     /// already running is a no-op.
     ///

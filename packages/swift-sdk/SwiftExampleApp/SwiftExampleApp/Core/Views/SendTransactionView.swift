@@ -19,7 +19,14 @@ struct SendTransactionView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        // Snapshot Core balance once per render — `coreBalance` goes
+        // through a blocking FFI call (`accountBalances(for:)`); the
+        // prior shape re-evaluated it for the summary row, the source
+        // list, the per-source balance, and `availableSources`,
+        // hitting the FFI repeatedly on a typing-heavy form.
+        let coreBalance = coreBalanceSnapshot()
+        let sources = availableSources(coreBalance: coreBalance)
+        return NavigationStack {
             Form {
                 // Recipient
                 Section("Recipient") {
@@ -49,9 +56,9 @@ struct SendTransactionView: View {
                 }
 
                 // Fund Source
-                if !availableSources.isEmpty {
+                if !sources.isEmpty {
                     Section("Send From") {
-                        ForEach(availableSources) { source in
+                        ForEach(sources) { source in
                             Button {
                                 viewModel.selectedSource = source
                                 viewModel.updateFlow()
@@ -63,7 +70,9 @@ struct SendTransactionView: View {
                                     Text(source.rawValue)
                                         .foregroundColor(.primary)
                                     Spacer()
-                                    Text(formatBalance(balance(for: source)))
+                                    Text(formatBalance(
+                                        balance(for: source, coreBalance: coreBalance)
+                                    ))
                                         .font(.caption)
                                         .foregroundColor(.secondary)
                                     if viewModel.selectedSource == source {
@@ -161,8 +170,15 @@ struct SendTransactionView: View {
 
     // MARK: - Computed
 
-    private var coreBalance: UInt64 {
-        wallet.balanceConfirmed
+    /// Spendable Core balance, summed from Rust's in-memory per-account
+    /// totals. The persisted `PersistentWallet.balanceConfirmed` field
+    /// was removed; `accountBalances(for:)` is now the canonical
+    /// source (same path `BalanceCardView` uses). Exposed as a
+    /// function rather than a computed property so callers can
+    /// snapshot once per render and thread the value through.
+    private func coreBalanceSnapshot() -> UInt64 {
+        walletManager.accountBalances(for: wallet.walletId)
+            .reduce(0) { $0 + $1.confirmed }
     }
 
     private var shieldedBalance: UInt64 {
@@ -173,7 +189,7 @@ struct SendTransactionView: View {
         wallet.identities.reduce(UInt64(0)) { $0 + UInt64(bitPattern: $1.balance) }
     }
 
-    private var availableSources: [FundSource] {
+    private func availableSources(coreBalance: UInt64) -> [FundSource] {
         viewModel.availableSources(
             coreBalance: coreBalance,
             shieldedBalance: shieldedBalance,
@@ -181,7 +197,7 @@ struct SendTransactionView: View {
         )
     }
 
-    private func balance(for source: FundSource) -> UInt64 {
+    private func balance(for source: FundSource, coreBalance: UInt64) -> UInt64 {
         switch source {
         case .core: return coreBalance
         case .shielded: return shieldedBalance
@@ -190,8 +206,11 @@ struct SendTransactionView: View {
     }
 
     /// Auto-select the first available source when address type changes.
+    /// Snapshots `coreBalance` once for the duration of this call so
+    /// the underlying FFI accessor isn't hit twice.
     private func autoSelectSource() {
-        if let first = availableSources.first {
+        let coreBalance = coreBalanceSnapshot()
+        if let first = availableSources(coreBalance: coreBalance).first {
             viewModel.selectedSource = first
             viewModel.updateFlow()
         }

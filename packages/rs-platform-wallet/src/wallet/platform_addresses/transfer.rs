@@ -228,23 +228,25 @@ impl PlatformAddressWallet {
 
         // Filter to addresses with balance ≥ `min_input_amount` (the
         // protocol's per-input minimum — anything smaller cannot
-        // legally appear as an input) and sort balance-descending so
-        // the helper picks the smallest covering prefix.
-        let mut candidates: Vec<(PlatformAddress, Credits)> = account
+        // legally appear as an input), exclude any address that is
+        // also a destination output (the protocol rejects a transition
+        // where the same address is both input and output), and sort
+        // balance-descending so the helper picks the smallest
+        // covering prefix.
+        let address_balances = account
             .addresses
             .addresses
             .values()
             .filter_map(|addr_info| {
                 let p2pkh = PlatformP2PKHAddress::from_address(&addr_info.address).ok()?;
                 let balance = account.address_credit_balance(&p2pkh);
-                if balance < min_input_amount {
-                    None
-                } else {
-                    Some((PlatformAddress::P2pkh(p2pkh.to_bytes()), balance))
-                }
-            })
-            .collect();
-        candidates.sort_by(|a, b| b.1.cmp(&a.1));
+                Some((PlatformAddress::P2pkh(p2pkh.to_bytes()), balance))
+            });
+        let candidates = build_auto_select_candidates(address_balances, outputs, min_input_amount);
+        // TODO(QA-001-followup): consider a typed
+        // `OutputsCannotFundThemselves` error variant so callers can
+        // distinguish "no funds" from "the only funded address is
+        // also an output" without parsing the downstream message.
 
         match fee_strategy {
             [AddressFundsFeeStrategyStep::DeductFromInput(0)] => select_inputs_deduct_from_input(
@@ -315,6 +317,28 @@ impl PlatformAddressWallet {
         // Whatever fee wasn't covered by reducing outputs must come from inputs.
         remaining_fee
     }
+}
+
+/// Build the auto-selection candidate list: keep only addresses whose
+/// balance reaches `min_input_amount`, drop any address that already
+/// appears as a destination output (the protocol forbids the same
+/// address being both input and output of a single transition), then
+/// sort balance-descending so the selector can pick the smallest
+/// covering prefix.
+fn build_auto_select_candidates<I>(
+    address_balances: I,
+    outputs: &BTreeMap<PlatformAddress, Credits>,
+    min_input_amount: Credits,
+) -> Vec<(PlatformAddress, Credits)>
+where
+    I: IntoIterator<Item = (PlatformAddress, Credits)>,
+{
+    let mut candidates: Vec<(PlatformAddress, Credits)> = address_balances
+        .into_iter()
+        .filter(|(addr, balance)| *balance >= min_input_amount && !outputs.contains_key(addr))
+        .collect();
+    candidates.sort_by(|a, b| b.1.cmp(&a.1));
+    candidates
 }
 
 /// Module-scope view of the per-input fee estimator so [`select_inputs`]
@@ -1393,6 +1417,76 @@ mod auto_select_tests {
             }
             other => panic!("expected AddressOperation, got {other:?}"),
         }
+    }
+
+    /// QA-001: an address that is also a destination output must be
+    /// excluded from auto-selection candidates, even when it is the
+    /// only address with sufficient balance. Otherwise the selector
+    /// would propose the same address as both input and output and
+    /// the protocol would reject the transition with `Output address
+    /// cannot also be an input address`.
+    #[test]
+    fn auto_select_inputs_excludes_output_addresses() {
+        let pv = LATEST_PLATFORM_VERSION;
+        let min_input = pv.dpp.state_transitions.address_funds.min_input_amount;
+
+        let addr_a = p2pkh(0xA1);
+        let addr_b = p2pkh(0xB2);
+        let outputs = outputs_for(addr_a, min_input);
+
+        // addr_a is funded above the floor but is also the only
+        // output; addr_b is below the floor.
+        let address_balances = vec![(addr_a, min_input * 3), (addr_b, min_input / 2)];
+        let candidates =
+            build_auto_select_candidates(address_balances.clone(), &outputs, min_input);
+        assert!(
+            candidates.is_empty(),
+            "addr_a must be excluded as an output and addr_b must be excluded as below the \
+             min-input floor; got {candidates:?}",
+        );
+
+        // Sanity check: without the outputs filter, addr_a would
+        // pass the floor check — proving the exclusion is what
+        // emptied the list.
+        let no_outputs = BTreeMap::new();
+        let with_self_spend =
+            build_auto_select_candidates(address_balances, &no_outputs, min_input);
+        assert_eq!(
+            with_self_spend,
+            vec![(addr_a, min_input * 3)],
+            "without the outputs filter addr_a alone passes",
+        );
+    }
+
+    /// QA-001: a funded non-output address coexisting with a funded
+    /// output address must remain selectable; only the output one
+    /// is dropped. Also confirms balance-descending order survives
+    /// the filter.
+    #[test]
+    fn auto_select_inputs_keeps_non_output_funded_addresses() {
+        let pv = LATEST_PLATFORM_VERSION;
+        let min_input = pv.dpp.state_transitions.address_funds.min_input_amount;
+
+        let addr_out = p2pkh(0xC3);
+        let addr_in_small = p2pkh(0xD4);
+        let addr_in_big = p2pkh(0xE5);
+        let outputs = outputs_for(addr_out, min_input);
+
+        let address_balances = vec![
+            (addr_out, min_input * 5),
+            (addr_in_small, min_input * 2),
+            (addr_in_big, min_input * 10),
+        ];
+        let candidates = build_auto_select_candidates(address_balances, &outputs, min_input);
+
+        assert_eq!(
+            candidates,
+            vec![
+                (addr_in_big, min_input * 10),
+                (addr_in_small, min_input * 2)
+            ],
+            "output address must be dropped; remaining candidates sort balance-descending",
+        );
     }
 
     /// End-to-end structural validation: feed the selector's output
