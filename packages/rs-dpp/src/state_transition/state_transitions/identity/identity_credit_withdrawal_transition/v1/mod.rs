@@ -36,6 +36,10 @@ pub struct IdentityCreditWithdrawalTransitionV1 {
     pub identity_id: Identifier,
     pub amount: u64,
     pub core_fee_per_byte: u32,
+    #[cfg_attr(
+        feature = "serde-conversion",
+        serde(with = "crate::withdrawal::pooling_serde")
+    )]
     pub pooling: Pooling,
     /// If the send to output script is None, then we send the withdrawal to the address set by core
     pub output_script: Option<CoreScript>,

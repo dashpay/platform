@@ -6811,6 +6811,360 @@ mod tests {
         assert_eq!(results, proof_results);
     }
 
+    /// Drive-level mirror of the SDK reproducer in
+    /// `packages/rs-sdk/tests/fetch/withdrawals_orderby.rs` (issue #2409).
+    ///
+    /// Populates **15** withdrawals (each with a unique owner) into a fresh
+    /// in-memory Drive, then runs the same query twice — `orderBy $ownerId asc`
+    /// and `orderBy $ownerId desc` — with `limit = 10` each. Because 15 > 10,
+    /// correct behavior is:
+    ///
+    /// * each direction returns exactly 10 docs,
+    /// * their **union** covers all 15 inserted withdrawals,
+    /// * their **intersection** has exactly `10 + 10 − 15 = 5` docs (the
+    ///   "middle" five by ownerId),
+    /// * `asc` is returned in non-decreasing ownerId order and `desc` in
+    ///   non-increasing ownerId order.
+    ///
+    /// Any deviation — asc and desc returning the same set, empty results,
+    /// wrong ordering — indicates the Drive-level orderBy asymmetry that the
+    /// SDK test reproduces against mainnet.
+    #[cfg(feature = "server")]
+    #[test]
+    fn test_withdrawals_query_orderby_asc_vs_desc_owner_id_limit_10_of_15() {
+        use std::collections::BTreeSet;
+
+        // 15 withdrawals, each with a unique owner (total_owners = None).
+        let (drive, contract) = setup_withdrawal_tests(15, None, 11456);
+
+        let platform_version = PlatformVersion::latest();
+        let db_transaction = drive.grove.start_transaction();
+
+        let withdrawal_document_type = contract
+            .document_type_for_name("withdrawal")
+            .expect("contract should have a withdrawal document type");
+
+        // Runs the orderBy query and returns (ordered doc-ids, ordered owner-ids).
+        let run = |direction: &str, limit: u32| -> (Vec<String>, Vec<Identifier>) {
+            let query_value = json!({
+                "where": [],
+                "limit": limit,
+                "orderBy": [["$ownerId", direction]],
+            });
+            let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+                .expect("expected to serialize to cbor");
+            let query = DriveDocumentQuery::from_cbor(
+                where_cbor.as_slice(),
+                &contract,
+                withdrawal_document_type,
+                &drive.config,
+            )
+            .expect("query should be built");
+            let (results, _, _) = query
+                .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
+                .expect("query should execute");
+            let docs: Vec<Document> = results
+                .iter()
+                .map(|bytes| {
+                    Document::from_bytes(
+                        bytes.as_slice(),
+                        withdrawal_document_type,
+                        platform_version,
+                    )
+                    .expect("should deserialize withdrawal document")
+                })
+                .collect();
+            let ids = docs
+                .iter()
+                .map(|d| d.id().to_string(Encoding::Base58))
+                .collect();
+            let owners = docs.iter().map(|d| d.owner_id()).collect();
+            (ids, owners)
+        };
+
+        // First, fetch all 15 inserted withdrawals sorted ascending by ownerId
+        // so the full dataset is visible before the two limit=10 queries run.
+        let (all_ids, all_owners) = run("asc", 15);
+        let short = |id: &Identifier| hex::encode(&id.as_bytes()[..4]);
+        let all_owner_prefixes: Vec<String> = all_owners.iter().map(short).collect();
+        println!("all (asc, limit=15) count       = {}", all_ids.len());
+        println!("all (asc, limit=15) ids         = {:?}", all_ids);
+        println!("all (asc, limit=15) owner[0..4] = {:?}", all_owner_prefixes);
+
+        let (asc_ids, asc_owners) = run("asc", 10);
+        let (desc_ids, desc_owners) = run("desc", 10);
+
+        // Dump both limit=10 result sets up front so any subsequent assertion
+        // failure includes a side-by-side view of what each direction returned.
+        let asc_owner_prefixes: Vec<String> = asc_owners.iter().map(short).collect();
+        let desc_owner_prefixes: Vec<String> = desc_owners.iter().map(short).collect();
+        println!("asc  ids   = {:?}", asc_ids);
+        println!("desc ids   = {:?}", desc_ids);
+        println!("asc  owner[0..4] = {:?}", asc_owner_prefixes);
+        println!("desc owner[0..4] = {:?}", desc_owner_prefixes);
+
+        assert_eq!(
+            asc_ids.len(),
+            10,
+            "asc should return limit=10 documents, got {} (ids={:?})",
+            asc_ids.len(),
+            asc_ids,
+        );
+        assert_eq!(
+            desc_ids.len(),
+            10,
+            "desc should return limit=10 documents, got {} (ids={:?})",
+            desc_ids.len(),
+            desc_ids,
+        );
+
+        // Monotonicity: asc must be non-decreasing by ownerId,
+        // desc must be non-increasing by ownerId.
+        for window in asc_owners.windows(2) {
+            assert!(
+                window[0] <= window[1],
+                "asc result not sorted ascending by ownerId: {:?} then {:?}\nfull asc owners: {:?}",
+                window[0],
+                window[1],
+                asc_owners,
+            );
+        }
+        for window in desc_owners.windows(2) {
+            assert!(
+                window[0] >= window[1],
+                "desc result not sorted descending by ownerId: {:?} then {:?}\nfull desc owners: {:?}",
+                window[0],
+                window[1],
+                desc_owners,
+            );
+        }
+
+        let asc_set: BTreeSet<_> = asc_ids.iter().cloned().collect();
+        let desc_set: BTreeSet<_> = desc_ids.iter().cloned().collect();
+        let union: BTreeSet<_> = asc_set.union(&desc_set).cloned().collect();
+        let intersection: BTreeSet<_> = asc_set.intersection(&desc_set).cloned().collect();
+        let only_asc: Vec<_> = asc_set.difference(&desc_set).cloned().collect();
+        let only_desc: Vec<_> = desc_set.difference(&asc_set).cloned().collect();
+
+        assert_eq!(
+            union.len(),
+            15,
+            "union(asc, desc) must cover all 15 inserted withdrawals, got {}\n\
+             asc_ids={:?}\ndesc_ids={:?}\nonly_in_asc={:?}\nonly_in_desc={:?}",
+            union.len(),
+            asc_ids,
+            desc_ids,
+            only_asc,
+            only_desc,
+        );
+        assert_eq!(
+            intersection.len(),
+            5,
+            "asc ∩ desc must contain exactly 5 withdrawals (the middle by ownerId), got {}\n\
+             asc_ids={:?}\ndesc_ids={:?}\nonly_in_asc={:?}\nonly_in_desc={:?}",
+            intersection.len(),
+            asc_ids,
+            desc_ids,
+            only_asc,
+            only_desc,
+        );
+
+        // Reversing the desc result should NOT equal the asc result — they are
+        // different halves of the 15-doc set.
+        let mut desc_rev = desc_ids.clone();
+        desc_rev.reverse();
+        assert_ne!(
+            desc_rev, asc_ids,
+            "asc and reverse(desc) should differ when total docs (15) > limit (10);\n\
+             asc_ids={:?}\nreverse(desc_ids)={:?}",
+            asc_ids, desc_rev,
+        );
+    }
+
+    /// Drive-level reproducer for the *range + `in`* half of
+    /// [issue #2409](https://github.com/dashpay/platform/issues/2409):
+    ///
+    /// ```text
+    /// where:   [['transactionIndex', 'in', [0,1,2,3,4,5]], ['status', '>', 0]]
+    /// orderBy: [['status', <dir>], ['transactionIndex', <dir>]]
+    /// ```
+    ///
+    /// On mainnet this query returns `[]` in both directions. This test inserts
+    /// a deterministic 10-withdrawal dataset with a known distribution of
+    /// statuses and transaction indices (seed 11456), then runs the exact query
+    /// twice (asc + desc). Expected matches (status > 0 AND transactionIndex in
+    /// [0..=5]) are, per the existing dataset enumeration:
+    ///
+    /// * status=1, txIndex=2 — `3T4aKmidGKA4ETnWYSedm6ETzrcdkfPL2r3D6eg6CSib`
+    /// * status=1, txIndex=4 — `2kTB6gW4wCCnySj3UFUJQM3aUYBd6qDfLCY74BnWmFKu`
+    /// * status=1, txIndex=5 — `74giZJn9fNczYRsxxh3wVnktJS1vzTiRWYinKK1rRcyj`
+    /// * status=3, txIndex=1 — `5ikeRNwvFekr6ex32B4dLEcCaSsgXXHJBx5rJ2rwuhEV`
+    /// * status=3, txIndex=3 — `CCjaU67Pe79Vt51oXvQ5SkyNiypofNX9DS9PYydN9tpD`
+    ///
+    /// Under correct behavior the query must use the `transaction` secondary
+    /// index ([status asc, transactionIndex asc]) and return all 5 matches in
+    /// `[status, transactionIndex]`-sorted order for asc, and the exact reverse
+    /// for desc. Asserts this.
+    #[cfg(feature = "server")]
+    #[test]
+    fn test_withdrawals_query_range_plus_in_issue_2409() {
+        let (drive, contract) = setup_withdrawal_tests(10, Some(2), 11456);
+
+        let platform_version = PlatformVersion::latest();
+        let db_transaction = drive.grove.start_transaction();
+
+        let withdrawal_document_type = contract
+            .document_type_for_name("withdrawal")
+            .expect("contract should have a withdrawal document type");
+
+        let run = |direction: &str| -> Vec<(String, i64, i64)> {
+            let query_value = json!({
+                "where": [
+                    ["transactionIndex", "in", [0, 1, 2, 3, 4, 5]],
+                    ["status", ">", 0],
+                ],
+                "limit": 100,
+                "orderBy": [
+                    ["status", direction],
+                    ["transactionIndex", direction],
+                ],
+            });
+            let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+                .expect("expected to serialize to cbor");
+            let query = DriveDocumentQuery::from_cbor(
+                where_cbor.as_slice(),
+                &contract,
+                withdrawal_document_type,
+                &drive.config,
+            )
+            .expect("query should be built");
+            let (results, _, _) = query
+                .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
+                .expect("query should execute");
+            results
+                .iter()
+                .map(|bytes| {
+                    let doc = Document::from_bytes(
+                        bytes.as_slice(),
+                        withdrawal_document_type,
+                        platform_version,
+                    )
+                    .expect("should deserialize withdrawal document");
+                    let status = doc
+                        .get("status")
+                        .expect("withdrawal has status")
+                        .to_integer::<i64>()
+                        .expect("status is an integer");
+                    let tx_index = doc
+                        .get("transactionIndex")
+                        .expect("filtered docs have transactionIndex")
+                        .to_integer::<i64>()
+                        .expect("transactionIndex is an integer");
+                    (doc.id().to_string(Encoding::Base58), status, tx_index)
+                })
+                .collect()
+        };
+
+        let asc = run("asc");
+        let desc = run("desc");
+
+        println!("asc  ({} docs) = {:?}", asc.len(), asc);
+        println!("desc ({} docs) = {:?}", desc.len(), desc);
+
+        // 1. Empty-array bug regression: each direction must return the 5
+        //    matching docs.
+        assert!(
+            !asc.is_empty(),
+            "asc returned no documents — reproduces the 'empty array' half of #2409 \
+             (status > 0 AND transactionIndex in [0..5] should match 5 docs)",
+        );
+        assert!(
+            !desc.is_empty(),
+            "desc returned no documents — reproduces the 'empty array' half of #2409 \
+             (status > 0 AND transactionIndex in [0..5] should match 5 docs)",
+        );
+        assert_eq!(asc.len(), 5, "asc should return 5 matches, got {:?}", asc);
+        assert_eq!(
+            desc.len(),
+            5,
+            "desc should return 5 matches, got {:?}",
+            desc
+        );
+
+        // 2. All returned docs must satisfy the filters.
+        for (id, status, tx_index) in asc.iter().chain(desc.iter()) {
+            assert!(
+                *status > 0,
+                "returned doc {} violates status > 0 (status={})",
+                id,
+                status,
+            );
+            assert!(
+                (0..=5).contains(tx_index),
+                "returned doc {} violates transactionIndex in [0..=5] (tx_index={})",
+                id,
+                tx_index,
+            );
+        }
+
+        // 3. Both queries must cover the same set of documents.
+        let asc_ids: Vec<&String> = asc.iter().map(|(id, _, _)| id).collect();
+        let desc_ids: Vec<&String> = desc.iter().map(|(id, _, _)| id).collect();
+        let asc_set: std::collections::BTreeSet<_> = asc_ids.iter().copied().collect();
+        let desc_set: std::collections::BTreeSet<_> = desc_ids.iter().copied().collect();
+        assert_eq!(
+            asc_set, desc_set,
+            "asc and desc returned different document sets — reproduces the \
+             asc/desc asymmetry half of #2409\nasc={:?}\ndesc={:?}",
+            asc_ids, desc_ids,
+        );
+
+        // 4. Sort orders must be respected: asc non-decreasing in (status,
+        //    transactionIndex); desc non-increasing.
+        for w in asc.windows(2) {
+            let a = (w[0].1, w[0].2);
+            let b = (w[1].1, w[1].2);
+            assert!(
+                a <= b,
+                "asc not sorted by (status, transactionIndex) ascending: {:?} then {:?}\nfull asc={:?}",
+                a, b, asc,
+            );
+        }
+        for w in desc.windows(2) {
+            let a = (w[0].1, w[0].2);
+            let b = (w[1].1, w[1].2);
+            assert!(
+                a >= b,
+                "desc not sorted by (status, transactionIndex) descending: {:?} then {:?}\nfull desc={:?}",
+                a, b, desc,
+            );
+        }
+
+        // 5. Perfect mirror: reverse(asc) must equal desc.
+        let mut asc_rev = asc.clone();
+        asc_rev.reverse();
+        assert_eq!(
+            asc_rev, desc,
+            "reverse(asc) must equal desc for this single-index query\nreverse(asc)={:?}\ndesc={:?}",
+            asc_rev, desc,
+        );
+
+        // 6. Exact expected document IDs (pin the dataset so a regression in
+        //    the withdrawal generator or index structure is visible).
+        let expected_asc_ids = [
+            "3T4aKmidGKA4ETnWYSedm6ETzrcdkfPL2r3D6eg6CSib", // status=1 ti=2
+            "2kTB6gW4wCCnySj3UFUJQM3aUYBd6qDfLCY74BnWmFKu", // status=1 ti=4
+            "74giZJn9fNczYRsxxh3wVnktJS1vzTiRWYinKK1rRcyj", // status=1 ti=5
+            "5ikeRNwvFekr6ex32B4dLEcCaSsgXXHJBx5rJ2rwuhEV", // status=3 ti=1
+            "CCjaU67Pe79Vt51oXvQ5SkyNiypofNX9DS9PYydN9tpD", // status=3 ti=3
+        ];
+        assert_eq!(
+            asc_ids.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+            expected_asc_ids,
+            "asc ids must match the deterministic expected order for seed 11456",
+        );
+    }
+
     #[cfg(feature = "server")]
     #[test]
     fn test_query_a_b_c_d_e_contract() {

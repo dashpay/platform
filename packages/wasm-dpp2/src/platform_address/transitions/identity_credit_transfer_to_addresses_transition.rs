@@ -34,7 +34,7 @@ export interface IdentityCreditTransferToAddressesOptions {
  * IdentityCreditTransferToAddresses serialized as a plain object.
  */
 export interface IdentityCreditTransferToAddressesObject {
-    recipientAddresses: Array<{ address: Uint8Array; amount: bigint }>;
+    recipientAddresses: PlatformAddressOutputObject[];
     senderId: Uint8Array;
     nonce: bigint;
     userFeeIncrease: number;
@@ -46,7 +46,7 @@ export interface IdentityCreditTransferToAddressesObject {
  * IdentityCreditTransferToAddresses serialized as JSON.
  */
 export interface IdentityCreditTransferToAddressesJSON {
-    recipientAddresses: Array<{ address: string; amount: string }>;
+    recipientAddresses: PlatformAddressOutputJSON[];
     senderId: string;
     nonce: string;
     userFeeIncrease: number;

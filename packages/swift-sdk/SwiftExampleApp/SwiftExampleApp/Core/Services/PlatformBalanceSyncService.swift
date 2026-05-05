@@ -1,18 +1,20 @@
 // PlatformBalanceSyncService.swift
 // SwiftExampleApp
 //
-// App-level service that performs periodic BLAST address sync to discover
-// platform address balances. Wraps the SDK's syncAddressBalances with
-// flat address arrays (no callback provider needed from the app side).
+// App-level service that reflects Rust-owned BLAST address sync state
+// into SwiftUI. Scheduling, incremental state, and balance tracking
+// are handled on the Rust side.
 
 import Foundation
 import SwiftUI
+import Combine
 import SwiftDashSDK
 
-/// Observable service managing periodic BLAST address balance sync.
+/// Observable service managing BLAST address balance sync UI state.
 ///
-/// Syncs every 15 seconds while the app is active, or on manual pull-to-refresh.
-/// Persists `lastSyncTimestamp` in UserDefaults for incremental sync.
+/// The Rust manager owns the background sync loop; this service loads
+/// cached balances for immediate display, issues manual sync requests,
+/// and applies Rust-emitted completion events to the UI.
 @MainActor
 class PlatformBalanceSyncService: ObservableObject {
     // MARK: - Published State
@@ -23,11 +25,8 @@ class PlatformBalanceSyncService: ObservableObject {
     /// Last successful sync time (local clock).
     @Published var lastSyncTime: Date?
 
-    /// Per-address balances keyed by derivation index.
-    @Published var addressBalances: [UInt32: UInt64] = [:]
-
-    /// Per-address nonces keyed by derivation index.
-    @Published var addressNonces: [UInt32: UInt32] = [:]
+    /// Per-address balances (address hash hex → balance).
+    @Published var addressBalances: [String: UInt64] = [:]
 
     /// Aggregate platform balance across all synced addresses.
     @Published var totalPlatformBalance: UInt64 = 0
@@ -41,7 +40,7 @@ class PlatformBalanceSyncService: ObservableObject {
     /// Chain tip height (highest block seen from incremental catch-up).
     @Published var chainTipHeight: UInt64 = 0
 
-    /// Sync height used for incremental resume (passed back to FFI).
+    /// Last sync height for display.
     @Published var lastSyncHeight: UInt64 = 0
 
     /// Last block height with recent address changes (for compaction detection).
@@ -49,9 +48,6 @@ class PlatformBalanceSyncService: ObservableObject {
 
     /// Platform block time from the most recent sync (Unix seconds).
     @Published var lastSyncBlockTime: Date?
-
-    /// Metrics from the most recent sync.
-    @Published var lastMetrics: AddressSyncMetrics?
 
     /// Total number of successful syncs since launch.
     @Published var syncCountSinceLaunch: Int = 0
@@ -70,104 +66,99 @@ class PlatformBalanceSyncService: ObservableObject {
     /// Last error message, cleared on successful sync.
     @Published var lastError: String?
 
-    /// Found addresses from the last sync — passed back as known balances for incremental mode.
-    private(set) var lastFoundAddresses: [FoundAddress] = []
+    // MARK: - Internal
 
-    // MARK: - Internal State
+    /// The platform address wallet handle used to refresh address
+    /// balances after Rust-owned sync passes complete.
+    private var platformAddressWallet: ManagedPlatformAddressWallet?
 
-    /// Timestamp returned by the last successful sync, passed back for incremental mode.
-    private var lastSyncTimestamp: UInt64 {
-        get { UInt64(UserDefaults.standard.integer(forKey: "\(keyPrefix)_timestamp")) }
-        set { UserDefaults.standard.set(Int(newValue), forKey: "\(keyPrefix)_timestamp") }
-    }
+    /// Wallet manager used to control the Rust-owned background sync loop.
+    private weak var walletManager: PlatformWalletManager?
 
-    /// Persisted sync height (block height for incremental resume).
-    private var persistedSyncHeight: UInt64 {
-        get { UInt64(UserDefaults.standard.integer(forKey: "\(keyPrefix)_height")) }
-        set { UserDefaults.standard.set(Int(newValue), forKey: "\(keyPrefix)_height") }
-    }
+    /// Persistence handler for loading cached balances.
+    private var persistenceHandler: PlatformWalletPersistenceHandler?
 
-    /// Persisted block time (Unix seconds).
-    private var persistedBlockTime: UInt64 {
-        get { UInt64(UserDefaults.standard.integer(forKey: "\(keyPrefix)_blockTime")) }
-        set { UserDefaults.standard.set(Int(newValue), forKey: "\(keyPrefix)_blockTime") }
-    }
+    /// Wallet ID for querying cached balances.
+    private var walletId: Data?
 
-    /// Persisted last known recent block height (for compaction detection).
-    private var persistedLastKnownRecentBlock: UInt64 {
-        get { UInt64(UserDefaults.standard.integer(forKey: "\(keyPrefix)_lastKnownRecent")) }
-        set { UserDefaults.standard.set(Int(newValue), forKey: "\(keyPrefix)_lastKnownRecent") }
-    }
+    /// Observes Rust-side sync completion events.
+    private var syncEventCancellable: AnyCancellable?
 
-    /// Persisted found addresses (JSON-encoded) for balance restoration across launches.
-    private var persistedFoundAddresses: [FoundAddress] {
-        get {
-            guard let data = UserDefaults.standard.data(forKey: "\(keyPrefix)_foundAddresses"),
-                  let addresses = try? JSONDecoder().decode([FoundAddress].self, from: data) else {
-                return []
-            }
-            return addresses
-        }
-        set {
-            if let data = try? JSONEncoder().encode(newValue) {
-                UserDefaults.standard.set(data, forKey: "\(keyPrefix)_foundAddresses")
-            }
-        }
-    }
-
-    /// UserDefaults key prefix scoped to network.
-    private var keyPrefix: String {
-        "platformAddressSync_\(networkName)"
-    }
-
-    private var networkName: String = "testnet"
+    /// Mirrors the Rust manager's current `is_syncing` flag for the UI.
+    private var syncStateCancellable: AnyCancellable?
 
     // MARK: - Lifecycle
 
-    /// Initialize for a network. Restores persisted state.
-    /// The actual periodic loop is managed by UnifiedAppState.
-    func startPeriodicSync(network: AppNetwork) {
-        networkName = network.rawValue
+    /// Configure for a wallet. Call after wallet creation/switch.
+    func configure(
+        platformAddressWallet: ManagedPlatformAddressWallet,
+        walletManager: PlatformWalletManager,
+        persistenceHandler: PlatformWalletPersistenceHandler? = nil,
+        walletId: Data? = nil
+    ) {
+        self.platformAddressWallet = platformAddressWallet
+        self.walletManager = walletManager
+        self.persistenceHandler = persistenceHandler
+        self.walletId = walletId
+        self.syncEventCancellable?.cancel()
+        self.syncStateCancellable?.cancel()
 
-        // Restore persisted state from previous session
-        let height = persistedSyncHeight
-        if height > 0 {
-            lastSyncHeight = height
-        }
-        let blockTs = persistedBlockTime
-        if blockTs > 0 {
-            lastSyncBlockTime = Date(timeIntervalSince1970: TimeInterval(blockTs))
-        }
-        let recentBlock = persistedLastKnownRecentBlock
-        if recentBlock > 0 {
-            lastKnownRecentBlock = recentBlock
-        }
+        // Load cached state from SwiftData for immediate display.
+        if let handler = persistenceHandler, let wid = walletId {
+            // Restore address balances for UI.
+            let cached = handler.loadCachedBalances(walletId: wid)
+            if !cached.isEmpty {
+                var newBalances: [String: UInt64] = [:]
+                var total: UInt64 = 0
+                var nonZero = 0
 
-        // Restore found addresses so balances show immediately on launch
-        let saved = persistedFoundAddresses
-        if !saved.isEmpty {
-            lastFoundAddresses = saved
-            var restoredBalances: [UInt32: UInt64] = [:]
-            var restoredNonces: [UInt32: UInt32] = [:]
-            var total: UInt64 = 0
-            var nonZero = 0
-            for addr in saved {
-                restoredBalances[addr.index] = addr.balance
-                restoredNonces[addr.index] = addr.nonce
-                total += addr.balance
-                if addr.balance > 0 { nonZero += 1 }
+                for (_, hash, balance, _, _, _) in cached {
+                    let key = hash.map { String(format: "%02x", $0) }.joined()
+                    newBalances[key] = balance
+                    total += balance
+                    if balance > 0 { nonZero += 1 }
+                }
+
+                addressBalances = newBalances
+                totalPlatformBalance = total
+                activeAddressCount = nonZero
             }
-            addressBalances = restoredBalances
-            addressNonces = restoredNonces
-            totalPlatformBalance = total
-            activeAddressCount = nonZero
+
+            // Load the last persisted network sync markers for display.
+            if let state = handler.loadCachedSyncState(walletId: wid) {
+                chainTipHeight = state.syncHeight
+                lastSyncHeight = state.syncHeight
+                if state.syncTimestamp > 0 {
+                    lastSyncBlockTime = Date(timeIntervalSince1970: TimeInterval(state.syncTimestamp))
+                }
+                lastKnownRecentBlock = state.lastKnownRecentBlock
+
+                SDKLogger.log(
+                    "Restored network sync state: height=\(state.syncHeight), timestamp=\(state.syncTimestamp)",
+                    minimumLevel: .medium
+                )
+            }
         }
+
+        syncStateCancellable = walletManager.$platformAddressSyncIsSyncing
+            .sink { [weak self] isSyncing in
+                self?.isSyncing = isSyncing
+            }
+
+        syncEventCancellable = walletManager.$lastPlatformAddressSyncEvent
+            .sink { [weak self] event in
+                guard let self, let event else { return }
+                self.handlePlatformAddressSyncEvent(event)
+            }
     }
 
-    /// Reset all state (e.g. on wallet deletion or network switch).
-    func reset() {
+    /// Clear UI display state — balances, metrics, last sync timestamps.
+    ///
+    /// Does NOT nil out the wallet handle, so the user can tap "Sync Now"
+    /// immediately after clearing. Use [`fullReset`] for wallet deletion
+    /// or network switches.
+    func clearDisplay() {
         addressBalances.removeAll()
-        addressNonces.removeAll()
         totalPlatformBalance = 0
         activeAddressCount = 0
         checkpointHeight = 0
@@ -175,9 +166,7 @@ class PlatformBalanceSyncService: ObservableObject {
         lastSyncHeight = 0
         lastKnownRecentBlock = 0
         lastSyncBlockTime = nil
-        lastFoundAddresses = []
         lastRecentProof = Data()
-        lastMetrics = nil
         lastError = nil
         lastSyncTime = nil
         syncCountSinceLaunch = 0
@@ -187,74 +176,68 @@ class PlatformBalanceSyncService: ObservableObject {
         totalRecentQueries = 0
         totalRecentEntries = 0
         totalCompactedEntries = 0
-        // Clear persisted state so next sync does a full tree scan
-        lastSyncTimestamp = 0
-        persistedSyncHeight = 0
-        persistedBlockTime = 0
-        persistedLastKnownRecentBlock = 0
-        persistedFoundAddresses = []
     }
 
-    /// Trigger a manual sync (e.g. pull-to-refresh). No-op if already syncing.
-    func manualSync(sdk: SDK, addresses: [(index: UInt32, key: Data)]) async {
-        await performSync(sdk: sdk, addresses: addresses)
+    /// Full reset — clears display state AND nils out the wallet handle.
+    /// Use for wallet deletion or network switch. Caller must re-configure
+    /// before the next sync.
+    func reset() {
+        clearDisplay()
+        platformAddressWallet = nil
+        walletManager = nil
+        syncEventCancellable?.cancel()
+        syncStateCancellable?.cancel()
     }
 
-    // MARK: - Internal
+    /// Trigger a manual sync. No-op if already syncing.
+    func manualSync() async {
+        await performSync()
+    }
 
-    /// Perform the actual BLAST address sync.
-    ///
-    /// - Parameters:
-    ///   - sdk: The initialized SDK instance.
-    ///   - addresses: Flat array of (derivation index, address key bytes) to sync.
-    func performSync(sdk: SDK, addresses: [(index: UInt32, key: Data)]) async {
-        guard !isSyncing, !addresses.isEmpty else { return }
+    // MARK: - Sync
+
+    /// Perform the actual BLAST address sync via platform-wallet.
+    func performSync() async {
+        guard !isSyncing else { return }
+        guard let walletManager = walletManager else {
+            lastError = "Platform address wallet not configured"
+            return
+        }
 
         isSyncing = true
         lastError = nil
 
         do {
-            let result = try await sdk.syncAddressBalances(
-                addresses: addresses,
-                knownBalances: lastFoundAddresses,
-                lastSyncHeight: lastSyncHeight,
-                lastSyncTimestamp: lastSyncTimestamp,
-                lastKnownRecentBlock: persistedLastKnownRecentBlock
+            try await walletManager.syncPlatformAddressNow()
+        } catch {
+            isSyncing = false
+            lastError = error.localizedDescription
+            SDKLogger.log(
+                "BLAST sync error: \(error.localizedDescription)",
+                minimumLevel: .medium
             )
+        }
+    }
 
-            // Update published state
-            var newBalances: [UInt32: UInt64] = [:]
-            var newNonces: [UInt32: UInt32] = [:]
-            for found in result.found {
-                newBalances[found.index] = found.balance
-                newNonces[found.index] = found.nonce
-            }
+    private func handlePlatformAddressSyncEvent(_ event: PlatformAddressSyncEvent) {
+        guard let walletId, let result = event.result(for: walletId) else {
+            return
+        }
 
-            addressBalances = newBalances
-            addressNonces = newNonces
-            totalPlatformBalance = result.totalBalance
-            lastRecentProof = result.recentProof
-            activeAddressCount = result.nonZeroBalanceCount
-            lastMetrics = result.metrics
-            lastFoundAddresses = result.found
-            lastSyncHeight = result.newSyncHeight
-            persistedSyncHeight = result.newSyncHeight
-            if result.lastKnownRecentBlock > 0 {
-                lastKnownRecentBlock = result.lastKnownRecentBlock
-                persistedLastKnownRecentBlock = result.lastKnownRecentBlock
-            }
+        if result.success {
+            lastError = nil
             if result.checkpointHeight > 0 {
                 checkpointHeight = result.checkpointHeight
             }
             if result.newSyncHeight > chainTipHeight {
                 chainTipHeight = result.newSyncHeight
             }
+            lastSyncHeight = result.newSyncHeight
+            lastKnownRecentBlock = result.lastKnownRecentBlock
             if result.newSyncTimestamp > 0 {
                 lastSyncBlockTime = Date(timeIntervalSince1970: TimeInterval(result.newSyncTimestamp))
-                persistedBlockTime = result.newSyncTimestamp
             }
-            lastSyncTime = Date()
-            syncCountSinceLaunch += 1
+
             totalTrunkQueries += result.metrics.trunkQueries
             totalBranchQueries += result.metrics.branchQueries
             totalCompactedQueries += result.metrics.compactedQueries
@@ -262,29 +245,52 @@ class PlatformBalanceSyncService: ObservableObject {
             totalRecentEntries += result.metrics.recentEntriesReturned
             totalCompactedEntries += result.metrics.compactedEntriesReturned
 
-            // Persist sync checkpoint for incremental mode
-            if result.newSyncTimestamp > 0 {
-                lastSyncTimestamp = result.newSyncTimestamp
+            lastSyncTime = Date(timeIntervalSince1970: TimeInterval(event.syncUnixSeconds))
+            syncCountSinceLaunch += 1
+
+            Task {
+                await refreshBalanceSnapshot()
+            }
+        } else {
+            lastError = result.errorMessage ?? "Platform address sync failed"
+        }
+    }
+
+    private func refreshBalanceSnapshot() async {
+        guard let wallet = platformAddressWallet else { return }
+
+        do {
+            let (balances, credits) = try await Task.detached { [wallet] in
+                let balances = try wallet.addressesWithBalances()
+                let credits = try wallet.totalCredits()
+                return (balances, credits)
+            }.value
+
+            var newBalances: [String: UInt64] = [:]
+            var total: UInt64 = 0
+            var nonZero = 0
+
+            for entry in balances {
+                let key = entry.hash.map { String(format: "%02x", $0) }.joined()
+                newBalances[key] = entry.balance
+                total += entry.balance
+                if entry.balance > 0 { nonZero += 1 }
             }
 
-            // Persist found addresses for balance restoration across launches
-            persistedFoundAddresses = result.found
+            addressBalances = newBalances
+            totalPlatformBalance = credits == total ? total : credits
+            activeAddressCount = nonZero
 
             SDKLogger.log(
-                "BLAST sync complete: \(result.found.count) found, \(result.absent.count) absent, total balance: \(result.totalBalance)",
+                "BLAST sync complete: \(balances.count) addresses, total balance: \(totalPlatformBalance)",
                 minimumLevel: .medium
             )
-
         } catch {
             lastError = error.localizedDescription
             SDKLogger.log(
-                "BLAST sync error: \(error.localizedDescription)",
+                "BLAST sync snapshot refresh error: \(error.localizedDescription)",
                 minimumLevel: .medium
             )
         }
-
-        isSyncing = false
     }
-
 }
-

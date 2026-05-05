@@ -3,133 +3,78 @@ import DashSDKFFI
 
 let NULL_HANDLE: Handle = 0
 
-
-// Friendly aliases for the C enum cases that call sites compare against.
-let Success: PlatformWalletFFIResult              = PLATFORM_WALLET_FFI_RESULT_SUCCESS
-let ErrorInvalidHandle: PlatformWalletFFIResult   = PLATFORM_WALLET_FFI_RESULT_ERROR_INVALID_HANDLE
-let ErrorInvalidParameter: PlatformWalletFFIResult = PLATFORM_WALLET_FFI_RESULT_ERROR_INVALID_PARAMETER
-let ErrorNullPointer: PlatformWalletFFIResult     = PLATFORM_WALLET_FFI_RESULT_ERROR_NULL_POINTER
-let ErrorSerialization: PlatformWalletFFIResult   = PLATFORM_WALLET_FFI_RESULT_ERROR_SERIALIZATION
-let ErrorDeserialization: PlatformWalletFFIResult = PLATFORM_WALLET_FFI_RESULT_ERROR_DESERIALIZATION
-let ErrorWalletOperation: PlatformWalletFFIResult = PLATFORM_WALLET_FFI_RESULT_ERROR_WALLET_OPERATION
-let ErrorIdentityNotFound: PlatformWalletFFIResult = PLATFORM_WALLET_FFI_RESULT_ERROR_IDENTITY_NOT_FOUND
-let ErrorContactNotFound: PlatformWalletFFIResult = PLATFORM_WALLET_FFI_RESULT_ERROR_CONTACT_NOT_FOUND
-let ErrorInvalidNetwork: PlatformWalletFFIResult  = PLATFORM_WALLET_FFI_RESULT_ERROR_INVALID_NETWORK
-let ErrorInvalidIdentifier: PlatformWalletFFIResult = PLATFORM_WALLET_FFI_RESULT_ERROR_INVALID_IDENTIFIER
-let ErrorMemoryAllocation: PlatformWalletFFIResult = PLATFORM_WALLET_FFI_RESULT_ERROR_MEMORY_ALLOCATION
-let ErrorUtf8Conversion: PlatformWalletFFIResult  = PLATFORM_WALLET_FFI_RESULT_ERROR_UTF8_CONVERSION
-let ErrorUnknown: PlatformWalletFFIResult         = PLATFORM_WALLET_FFI_RESULT_ERROR_UNKNOWN
-
-/// Platform Wallet error types
-public enum PlatformWalletError: Error {
-    case nullPointer
-    case invalidHandle
-    case invalidParameter
-    case invalidIdentifier
-    case invalidNetwork
-    case walletOperation(String)
-    case identityNotFound
-    case contactNotFound
-    case utf8Conversion
-    case serialization
-    case deserialization
-    case memoryAllocation
-    case unknown(String)
-
-    init(result: PlatformWalletFFIResult, error: PlatformWalletFFIError) {
-        let message = error.message != nil ? String(cString: error.message!) : "Unknown error"
-
-        switch result {
-        case PLATFORM_WALLET_FFI_RESULT_ERROR_NULL_POINTER:
-            self = .nullPointer
-        case PLATFORM_WALLET_FFI_RESULT_ERROR_INVALID_HANDLE:
-            self = .invalidHandle
-        case PLATFORM_WALLET_FFI_RESULT_ERROR_INVALID_PARAMETER:
-            self = .invalidParameter
-        case PLATFORM_WALLET_FFI_RESULT_ERROR_INVALID_IDENTIFIER:
-            self = .invalidIdentifier
-        case PLATFORM_WALLET_FFI_RESULT_ERROR_INVALID_NETWORK:
-            self = .invalidNetwork
-        case PLATFORM_WALLET_FFI_RESULT_ERROR_WALLET_OPERATION:
-            self = .walletOperation(message)
-        case PLATFORM_WALLET_FFI_RESULT_ERROR_IDENTITY_NOT_FOUND:
-            self = .identityNotFound
-        case PLATFORM_WALLET_FFI_RESULT_ERROR_CONTACT_NOT_FOUND:
-            self = .contactNotFound
-        case PLATFORM_WALLET_FFI_RESULT_ERROR_UTF8_CONVERSION:
-            self = .utf8Conversion
-        case PLATFORM_WALLET_FFI_RESULT_ERROR_SERIALIZATION:
-            self = .serialization
-        case PLATFORM_WALLET_FFI_RESULT_ERROR_DESERIALIZATION:
-            self = .deserialization
-        case PLATFORM_WALLET_FFI_RESULT_ERROR_MEMORY_ALLOCATION:
-            self = .memoryAllocation
-        case PLATFORM_WALLET_FFI_RESULT_ERROR_UNKNOWN:
-            self = .unknown(message)
-        case PLATFORM_WALLET_FFI_RESULT_SUCCESS:
-            assertionFailure("Error initialized from a success result")
-            self = .unknown("Error initialized from a success result")
-        default:
-            self = .unknown(message)
+extension Identifier {
+    /// Run `body` with a `*const u8` to this identifier's 32-byte
+    /// payload.
+    ///
+    /// Preconditions: `count == 32`. Identifiers on Platform are
+    /// always exactly 32 bytes; a precondition here surfaces the
+    /// drift loudly rather than letting Rust read garbage on
+    /// dereference.
+    @inline(__always)
+    func withFFIBytes<R>(_ body: (UnsafePointer<UInt8>) throws -> R) rethrows -> R {
+        precondition(count == 32, "identifier must be 32 bytes, got \(count)")
+        return try withUnsafeBytes { raw in
+            try body(raw.bindMemory(to: UInt8.self).baseAddress!)
         }
     }
 }
 
-/// Network type used by the Swift-facing Platform wallet API.
-/// Raw values match the `FFINetwork` C enum from key-wallet-ffi.
-public enum PlatformNetwork: UInt32 {
-    case mainnet = 0
-    case testnet = 1
-    case regtest = 2
-    case devnet = 3
+/// Identity lifecycle status as carried on the Rust-side
+/// `ManagedIdentity.status`. Mirrors `IdentityStatusFFI` /
+/// `platform_wallet::wallet::identity::state::managed_identity::IdentityStatus`.
+public enum IdentityStatus: UInt8, Sendable {
+    case unknown = 0
+    case pendingCreation = 1
+    case active = 2
+    case failedCreation = 3
+    case notFound = 4
 
-    /// Value to pass to FFI calls that expect `FFINetwork`.
-    var ffiValue: FFINetwork {
-        FFINetwork(rawValue: self.rawValue)
-    }
-}
-
-/// Swift-friendly block time. Wraps the C `BlockTime` struct (fields are
-/// UInt64/UInt32/UInt64 there — we keep the same widths).
-public struct PlatformBlockTime {
-    public let height: UInt64
-    public let coreHeight: UInt32
-    public let timestamp: UInt64
-
-    init(ffi: BlockTime) {
-        self.height = ffi.height
-        self.coreHeight = ffi.core_height
-        self.timestamp = ffi.timestamp
-    }
-
-    var ffiValue: BlockTime {
-        BlockTime(
-            height: self.height,
-            core_height: self.coreHeight,
-            timestamp: self.timestamp
-        )
+    /// Short human-readable label for the explorer UI.
+    public var displayName: String {
+        switch self {
+        case .unknown: return "Unknown"
+        case .pendingCreation: return "Pending Creation"
+        case .active: return "Active"
+        case .failedCreation: return "Failed Creation"
+        case .notFound: return "Not Found"
+        }
     }
 }
 
 // MARK: - Identifier FFI Conversion Helpers
 
-/// Convert Identifier (Data) to FFI IdentifierBytes
-func identifierToFFI(_ identifier: Identifier) -> IdentifierBytes {
-    var ffiBytes = IdentifierBytes(bytes: (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0))
-    identifier.withUnsafeBytes { (ptr: UnsafeRawBufferPointer) in
-        withUnsafeMutableBytes(of: &ffiBytes.bytes) { ffiPtr in
-            for i in 0..<min(32, identifier.count) {
-                ffiPtr[i] = ptr[i]
-            }
-        }
-    }
-    return ffiBytes
+/// Read 32 bytes from `ptr` into an `Identifier` (a `Data` of length 32).
+///
+/// Replaces the old `identifierFromFFI(_: IdentifierBytes)` helper.
+/// `ptr` must point at exactly 32 readable bytes.
+@inline(__always)
+func identifierFromFFI(_ ptr: UnsafePointer<UInt8>) -> Identifier {
+    Data(bytes: ptr, count: 32)
 }
 
-/// Convert FFI IdentifierBytes to Identifier (Data)
-func identifierFromFFI(_ ffiIdentifier: IdentifierBytes) -> Identifier {
-    var bytesArray = ffiIdentifier.bytes
-    return withUnsafeBytes(of: &bytesArray) { Data($0) }
+/// Read a row from an `IdentifierArray` returned by Rust.
+///
+/// `array.items` points at a contiguous `[[u8; 32]; count]` buffer;
+/// take a `Data` snapshot of the i-th 32-byte row. Swift imports
+/// `uint8_t (*)[32]` as a pointer to a 32-tuple, so we rebind to a
+/// flat `UInt8` pointer before indexing.
+@inline(__always)
+func identifierFromFFIArray(_ array: IdentifierArray, at index: Int) -> Identifier {
+    precondition(index >= 0 && index < Int(array.count), "index out of range")
+    let raw = UnsafeRawPointer(array.items!)
+    let base = raw.assumingMemoryBound(to: UInt8.self)
+    let row = base.advanced(by: index * 32)
+    return Data(bytes: row, count: 32)
+}
+
+/// Generate a random identifier via the FFI.
+public func generateRandomIdentifier() throws -> Identifier {
+    var buf = [UInt8](repeating: 0, count: 32)
+    try buf.withUnsafeMutableBufferPointer { bp in
+        try platform_wallet_generate_random_identifier(bp.baseAddress!).check()
+    }
+    return Data(buf)
 }
 
 extension Data {

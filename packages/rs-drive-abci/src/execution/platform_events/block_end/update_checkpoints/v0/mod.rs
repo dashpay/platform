@@ -89,3 +89,116 @@ where
         Ok(true)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0;
+    use crate::execution::types::block_execution_context::BlockExecutionContext;
+    use crate::execution::types::block_state_info::v0::BlockStateInfoV0;
+    use crate::execution::types::block_state_info::BlockStateInfo;
+    use crate::platform_types::epoch_info::v0::EpochInfoV0;
+    use crate::platform_types::epoch_info::EpochInfo;
+    use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
+    use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::version::PlatformVersion;
+    use std::collections::BTreeMap;
+
+    fn make_context(
+        platform: &crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
+    ) -> BlockExecutionContext {
+        let platform_state = platform.state.load();
+        let block_platform_state = platform_state.as_ref().clone();
+
+        BlockExecutionContext::V0(BlockExecutionContextV0 {
+            block_state_info: BlockStateInfo::V0(BlockStateInfoV0 {
+                height: 1,
+                round: 0,
+                block_time_ms: 1_000_000,
+                previous_block_time_ms: None,
+                proposer_pro_tx_hash: [0u8; 32],
+                core_chain_locked_height: 1,
+                block_hash: None,
+                app_hash: None,
+            }),
+            epoch_info: EpochInfo::V0(EpochInfoV0 {
+                current_epoch_index: 0,
+                previous_epoch_index: None,
+                is_epoch_change: false,
+            }),
+            unsigned_withdrawal_transactions: UnsignedWithdrawalTxs::default(),
+            block_address_balance_changes: BTreeMap::new(),
+            block_platform_state,
+            proposer_results: None,
+        })
+    }
+
+    /// With `disable_checkpoints = true` in testing config, `should_checkpoint`
+    /// returns `None`, so `update_checkpoints_v0` must early-return `Ok(false)`
+    /// without creating any checkpoint directory.
+    #[test]
+    fn v0_returns_false_when_checkpoints_disabled_in_test_config() {
+        let platform_version = PlatformVersion::latest();
+        let platform_config = crate::config::PlatformConfig {
+            testing_configs: crate::config::PlatformTestConfig {
+                disable_checkpoints: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let ctx = make_context(&platform);
+        let got = platform
+            .update_checkpoints_v0(&ctx, platform_version)
+            .expect("must succeed when disabled");
+        assert!(!got, "returns false when no checkpoint is needed");
+    }
+
+    /// If the platform version reports `should_checkpoint = None`, no checkpoint
+    /// is ever scheduled — `update_checkpoints_v0` must short-circuit to
+    /// `Ok(false)` without touching the filesystem.
+    #[test]
+    fn v0_returns_false_when_should_checkpoint_version_is_none() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut modified_version = platform_version.clone();
+        modified_version
+            .drive_abci
+            .methods
+            .block_end
+            .should_checkpoint = None;
+
+        let ctx = make_context(&platform);
+        let got = platform
+            .update_checkpoints_v0(&ctx, &modified_version)
+            .expect("must succeed when should_checkpoint is None");
+        assert!(!got);
+    }
+
+    /// Set `frequency_seconds = 0` — `should_checkpoint` returns `None`, so
+    /// `update_checkpoints_v0` returns `Ok(false)`. This exercises the
+    /// misconfiguration-tolerance branch from a higher level than
+    /// `should_checkpoint`'s own tests.
+    #[test]
+    fn v0_returns_false_when_frequency_is_zero() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut modified_version = platform_version.clone();
+        modified_version.drive_abci.checkpoints.frequency_seconds = 0;
+
+        let ctx = make_context(&platform);
+        let got = platform
+            .update_checkpoints_v0(&ctx, &modified_version)
+            .expect("must succeed when frequency is zero");
+        assert!(!got);
+    }
+}

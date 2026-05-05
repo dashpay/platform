@@ -28,8 +28,16 @@ use crate::ProtocolError;
 )]
 #[derive(Default)]
 pub struct IdentityTopUpFromAddressesTransitionV0 {
+    #[cfg_attr(
+        feature = "json-conversion",
+        serde(with = "crate::address_funds::serde_helpers::address_input_map")
+    )]
     pub inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
     /// Optional output to send remaining credits to an address
+    #[cfg_attr(
+        feature = "json-conversion",
+        serde(with = "crate::address_funds::serde_helpers::address_output_singular")
+    )]
     pub output: Option<(PlatformAddress, Credits)>,
     pub identity_id: Identifier,
     pub fee_strategy: AddressFundsFeeStrategy,
@@ -122,7 +130,7 @@ mod tests {
     fn validate_structure_output_is_input_address() {
         let mut t = make_valid_v0();
         let (addr, _) = t.inputs.iter().next().unwrap();
-        t.output = Some((addr.clone(), 500_000));
+        t.output = Some((*addr, 500_000));
         let result = t.validate_structure(pv());
         assert!(matches!(
             result.errors.as_slice(),

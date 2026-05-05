@@ -19,8 +19,8 @@ mod dpns_tests {
     use rand::prelude::StdRng;
     use std::collections::BTreeMap;
 
-    #[test]
-    fn test_dpns_contract_references_with_no_contested_unique_index() {
+    #[tokio::test]
+    async fn test_dpns_contract_references_with_no_contested_unique_index() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -219,6 +219,7 @@ mod dpns_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_preorder_transition_1 =
@@ -239,6 +240,7 @@ mod dpns_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_preorder_transition_2 =
@@ -259,6 +261,7 @@ mod dpns_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_preorder_transition_3 =
@@ -279,6 +282,7 @@ mod dpns_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition_1 = documents_batch_create_transition_1
@@ -298,6 +302,7 @@ mod dpns_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition_2 = documents_batch_create_transition_2
@@ -317,6 +322,7 @@ mod dpns_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition_3 = documents_batch_create_transition_3
@@ -468,8 +474,8 @@ mod dpns_tests {
         assert_eq!(documents.len(), 0);
     }
 
-    #[test]
-    fn test_dpns_contract_references_with_no_contested_unique_index_null_searchable_true() {
+    #[tokio::test]
+    async fn test_dpns_contract_references_with_no_contested_unique_index_null_searchable_true() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -668,6 +674,7 @@ mod dpns_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_preorder_transition_1 =
@@ -688,6 +695,7 @@ mod dpns_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_preorder_transition_2 =
@@ -708,6 +716,7 @@ mod dpns_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_preorder_transition_3 =
@@ -728,6 +737,7 @@ mod dpns_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition_1 = documents_batch_create_transition_1
@@ -747,6 +757,7 @@ mod dpns_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition_2 = documents_batch_create_transition_2
@@ -766,6 +777,7 @@ mod dpns_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition_3 = documents_batch_create_transition_3

@@ -686,11 +686,13 @@ mod tests {
 
     #[test]
     fn test_metrics_total_queries() {
-        let mut metrics = NullifierSyncMetrics::default();
-        metrics.trunk_queries = 1;
-        metrics.branch_queries = 3;
-        metrics.compacted_queries = 2;
-        metrics.recent_queries = 1;
+        let metrics = NullifierSyncMetrics {
+            trunk_queries: 1,
+            branch_queries: 3,
+            compacted_queries: 2,
+            recent_queries: 1,
+            ..NullifierSyncMetrics::default()
+        };
         assert_eq!(metrics.total_queries(), 7);
     }
 }

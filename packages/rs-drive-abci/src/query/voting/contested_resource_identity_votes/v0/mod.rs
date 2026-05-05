@@ -398,4 +398,194 @@ mod tests {
             }) if contested_resource_identity_votes.is_empty() && finished_results
         ));
     }
+
+    #[test]
+    fn test_query_contested_resource_identity_votes_invalid_identity_id_zero_length() {
+        // Zero-length identifier hits the same validation as 8-byte.
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetContestedResourceIdentityVotesRequestV0 {
+            identity_id: vec![],
+            limit: None,
+            offset: None,
+            order_ascending: true,
+            start_at_vote_poll_id_info: None,
+            prove: false,
+        };
+
+        let result = platform
+            .query_contested_resource_identity_votes_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)] if msg.contains("identity_id")
+        ));
+    }
+
+    #[test]
+    fn test_query_contested_resource_identity_votes_offset_at_u16_max_accepted() {
+        // offset == u16::MAX is within u16 range; the size guard rejects only
+        // `> u16::MAX`. This covers the exact boundary.
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetContestedResourceIdentityVotesRequestV0 {
+            identity_id: vec![0; 32],
+            limit: None,
+            offset: Some(u16::MAX as u32),
+            order_ascending: true,
+            start_at_vote_poll_id_info: None,
+            prove: false,
+        };
+
+        let result = platform
+            .query_contested_resource_identity_votes_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        // `u16::MAX` is the exact upper boundary accepted by the offset check
+        // — it must neither surface any validation error nor drop the
+        // response payload. Tightening beyond "no offset error" prevents the
+        // test from silently passing if a different validation error starts
+        // firing at this boundary.
+        assert!(
+            result.errors.is_empty(),
+            "u16::MAX offset must be accepted without validation errors: {:?}",
+            result.errors
+        );
+        assert!(matches!(
+            result.data,
+            Some(GetContestedResourceIdentityVotesResponseV0 {
+                result: Some(get_contested_resource_identity_votes_response_v0::Result::Votes(_)),
+                metadata: Some(_),
+            })
+        ));
+    }
+
+    #[test]
+    fn test_query_contested_resource_identity_votes_start_at_invalid_identifier_errors() {
+        // Invalid bytes for the start_at poll identifier should surface as an
+        // outer Err because the `?` propagates through a platform_value::Error.
+        use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::get_contested_resource_identity_votes_request_v0::StartAtVotePollIdInfo;
+
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetContestedResourceIdentityVotesRequestV0 {
+            identity_id: vec![0; 32],
+            limit: None,
+            offset: None,
+            order_ascending: true,
+            start_at_vote_poll_id_info: Some(StartAtVotePollIdInfo {
+                start_at_poll_identifier: vec![0; 7],
+                start_poll_identifier_included: true,
+            }),
+            prove: false,
+        };
+
+        let err = platform
+            .query_contested_resource_identity_votes_v0(request, &state, version)
+            .expect_err("invalid start_at_poll_identifier should propagate an Err");
+
+        let msg = format!("{:?}", err);
+        assert!(
+            msg.contains("bytes") || msg.to_lowercase().contains("identifier"),
+            "unexpected error: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_query_contested_resource_identity_votes_valid_start_at_empty_state() {
+        // Valid 32-byte start_at poll identifier + empty state → success with
+        // an *empty* result set. Assert the inner fields so the test does not
+        // silently pass if the query started returning entries on empty state.
+        use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::get_contested_resource_identity_votes_request_v0::StartAtVotePollIdInfo;
+
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetContestedResourceIdentityVotesRequestV0 {
+            identity_id: vec![0; 32],
+            limit: None,
+            offset: None,
+            order_ascending: true,
+            start_at_vote_poll_id_info: Some(StartAtVotePollIdInfo {
+                start_at_poll_identifier: vec![0xAB; 32],
+                start_poll_identifier_included: false,
+            }),
+            prove: false,
+        };
+
+        let result = platform
+            .query_contested_resource_identity_votes_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        assert!(matches!(
+            result.data,
+            Some(GetContestedResourceIdentityVotesResponseV0 {
+                result: Some(
+                    get_contested_resource_identity_votes_response_v0::Result::Votes(
+                        get_contested_resource_identity_votes_response_v0::ContestedResourceIdentityVotes {
+                            contested_resource_identity_votes,
+                            finished_results,
+                        },
+                    ),
+                ),
+                metadata: Some(_),
+            }) if contested_resource_identity_votes.is_empty() && finished_results
+        ));
+    }
+
+    #[test]
+    fn test_query_contested_resource_identity_votes_with_offset_and_descending() {
+        // offset + descending should still succeed on empty state.
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetContestedResourceIdentityVotesRequestV0 {
+            identity_id: vec![0; 32],
+            limit: Some(5),
+            offset: Some(10),
+            order_ascending: false,
+            start_at_vote_poll_id_info: None,
+            prove: false,
+        };
+
+        let result = platform
+            .query_contested_resource_identity_votes_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+    }
+
+    #[test]
+    fn test_query_contested_resource_identity_votes_start_at_proof() {
+        // Prove path with a valid start_at identifier exercises
+        // `execute_with_proof`'s happy path on empty state.
+        use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::get_contested_resource_identity_votes_request_v0::StartAtVotePollIdInfo;
+
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetContestedResourceIdentityVotesRequestV0 {
+            identity_id: vec![0; 32],
+            limit: None,
+            offset: None,
+            order_ascending: true,
+            start_at_vote_poll_id_info: Some(StartAtVotePollIdInfo {
+                start_at_poll_identifier: vec![0x55; 32],
+                start_poll_identifier_included: true,
+            }),
+            prove: true,
+        };
+
+        let result = platform
+            .query_contested_resource_identity_votes_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        // An empty vote state can still yield a Proof (absence proof).
+        assert!(matches!(
+            result.data,
+            Some(GetContestedResourceIdentityVotesResponseV0 {
+                result: Some(get_contested_resource_identity_votes_response_v0::Result::Proof(_)),
+                metadata: Some(_),
+            })
+        ));
+    }
 }

@@ -137,13 +137,6 @@ pub struct DashSDKAddressSyncResult {
     /// Number of absent addresses
     pub absent_count: usize,
 
-    /// Highest found index (for HD wallets)
-    /// Only valid if has_highest_found_index is true
-    pub highest_found_index: u32,
-
-    /// Whether highest_found_index is valid
-    pub has_highest_found_index: bool,
-
     /// The checkpoint height from the trunk/branch tree scan.
     /// Only meaningful when a full tree scan was performed (0 otherwise).
     pub checkpoint_height: u64,

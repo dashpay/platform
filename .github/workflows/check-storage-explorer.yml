@@ -1,0 +1,21 @@
+name: Check Storage Explorer Coverage
+
+on:
+  pull_request:
+    paths:
+      - 'packages/swift-sdk/Sources/SwiftDashSDK/Persistence/**'
+      - 'packages/swift-sdk/SwiftExampleApp/**/StorageExplorerView.swift'
+      - 'packages/swift-sdk/SwiftExampleApp/**/StorageModelListViews.swift'
+      - 'packages/swift-sdk/SwiftExampleApp/**/StorageRecordDetailViews.swift'
+      - 'scripts/check-storage-explorer.sh'
+      - '.github/workflows/check-storage-explorer.yml'
+
+jobs:
+  check:
+    name: Verify explorer covers all SwiftData models
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check Storage Explorer coverage
+        run: ./scripts/check-storage-explorer.sh

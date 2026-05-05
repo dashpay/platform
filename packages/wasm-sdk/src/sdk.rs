@@ -1,11 +1,27 @@
 use crate::context_provider::{WasmContext, WasmTrustedContext};
 use crate::error::WasmSdkError;
 use dash_sdk::dpp::version::PlatformVersion;
+use dash_sdk::sdk::Uri;
 use dash_sdk::{Sdk, SdkBuilder};
 use rs_dapi_client::{Address, RequestSettings};
 use std::ops::{Deref, DerefMut};
 use std::time::Duration;
 use wasm_bindgen::prelude::wasm_bindgen;
+
+fn parse_addresses(addresses: &'static [&str]) -> Vec<Address> {
+    addresses
+        .iter()
+        .filter_map(|addr| {
+            Uri::from_maybe_shared(addr)
+                .ok()
+                .and_then(|uri| Address::try_from(uri).ok())
+        })
+        .collect()
+}
+
+fn default_local_addresses() -> Vec<Address> {
+    parse_addresses(&["https://127.0.0.1:2443"])
+}
 
 #[wasm_bindgen]
 pub struct WasmSdk {
@@ -232,7 +248,10 @@ impl WasmSdkBuilder {
     /// Create a new SdkBuilder preconfigured for a local network using default dashmate gateway.
     #[wasm_bindgen(js_name = "local")]
     pub fn new_local() -> Self {
-        let sdk_builder = SdkBuilder::new_local().with_context_provider(WasmContext {});
+        let address_list = dash_sdk::sdk::AddressList::from_iter(default_local_addresses());
+        let sdk_builder = SdkBuilder::new(address_list)
+            .with_network(dash_sdk::dpp::dashcore::Network::Regtest)
+            .with_context_provider(WasmContext {});
 
         Self {
             inner: sdk_builder,

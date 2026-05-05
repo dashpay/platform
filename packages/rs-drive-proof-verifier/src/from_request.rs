@@ -524,7 +524,7 @@ mod tests {
 
     #[test]
     fn test_bincode_decode_invalid() {
-        let garbage = vec![vec![0xFF, 0xFE, 0xFD, 0xFC, 0xFB]];
+        let garbage = [vec![0xFF, 0xFE, 0xFD, 0xFC, 0xFB]];
         let result = bincode_decode_values(garbage.iter());
         assert!(
             result.is_err(),

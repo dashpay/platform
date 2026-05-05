@@ -6,8 +6,8 @@ mod token_burn_tests {
     use dpp::state_transition::batch_transition::TokenBurnTransition;
     use dpp::tokens::MAX_TOKEN_NOTE_LEN;
 
-    #[test]
-    fn test_token_burn() {
+    #[tokio::test]
+    async fn test_token_burn() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -46,6 +46,7 @@ mod token_burn_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -92,8 +93,8 @@ mod token_burn_tests {
         assert_eq!(token_balance, Some(expected_amount));
     }
 
-    #[test]
-    fn test_token_burn_entire_balance() {
+    #[tokio::test]
+    async fn test_token_burn_entire_balance() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -133,6 +134,7 @@ mod token_burn_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let burn_serialized_transition = burn_transition
@@ -178,8 +180,8 @@ mod token_burn_tests {
         assert_eq!(token_balance, Some(0));
     }
 
-    #[test]
-    fn test_token_burn_trying_to_burn_more_than_we_have() {
+    #[tokio::test]
+    async fn test_token_burn_trying_to_burn_more_than_we_have() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -218,6 +220,7 @@ mod token_burn_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -268,8 +271,8 @@ mod token_burn_tests {
         assert_eq!(token_balance, Some(100000)); // nothing was burned
     }
 
-    #[test]
-    fn test_token_burn_gives_error_if_trying_to_burn_from_not_allowed_identity() {
+    #[tokio::test]
+    async fn test_token_burn_gives_error_if_trying_to_burn_from_not_allowed_identity() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -311,6 +314,7 @@ mod token_burn_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -370,8 +374,8 @@ mod token_burn_tests {
         assert_eq!(token_balance, None);
     }
 
-    #[test]
-    fn test_token_burn_group_action_tokens_transferred_before_completion() {
+    #[tokio::test]
+    async fn test_token_burn_group_action_tokens_transferred_before_completion() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -435,6 +439,7 @@ mod token_burn_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected to create burn transition");
 
         let token_burn_serialized_transition = burn_transition
@@ -487,6 +492,7 @@ mod token_burn_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let token_transfer_serialized_transition = token_transfer_transition
@@ -574,6 +580,7 @@ mod token_burn_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected to create confirmation transition");
 
         let token_burn_confirm_serialized_transition = confirm_burn_transition
@@ -632,8 +639,9 @@ mod token_burn_tests {
         assert_eq!(balance2, Some(1337)); // Recipient should not keep transferred tokens if burn was enforced
     }
 
-    #[test]
-    fn test_token_burn_group_action_tokens_transferred_before_completion_not_enough_balance() {
+    #[tokio::test]
+    async fn test_token_burn_group_action_tokens_transferred_before_completion_not_enough_balance()
+    {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -694,6 +702,7 @@ mod token_burn_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected to create burn transition");
 
         let token_burn_serialized_transition = burn_transition
@@ -746,6 +755,7 @@ mod token_burn_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let token_transfer_serialized_transition = token_transfer_transition
@@ -833,6 +843,7 @@ mod token_burn_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected to create confirmation transition");
 
         let token_burn_confirm_serialized_transition = confirm_burn_transition
@@ -900,8 +911,8 @@ mod token_burn_tests {
     // Expanded coverage tests
     // --------------------------------------------------------------
 
-    #[test]
-    fn test_token_burn_updates_total_supply_correctly() {
+    #[tokio::test]
+    async fn test_token_burn_updates_total_supply_correctly() {
         // Burn should decrement the token's total supply by the same amount removed
         // from the identity's balance.
         let platform_version = PlatformVersion::latest();
@@ -948,6 +959,7 @@ mod token_burn_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create burn transition");
 
         let serialized = burn_transition
@@ -999,8 +1011,8 @@ mod token_burn_tests {
         assert_eq!(total_supply_after, Some(75000));
     }
 
-    #[test]
-    fn test_token_burn_with_public_note_succeeds() {
+    #[tokio::test]
+    async fn test_token_burn_with_public_note_succeeds() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -1038,6 +1050,7 @@ mod token_burn_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create burn transition");
 
         let serialized = burn_transition
@@ -1083,8 +1096,8 @@ mod token_burn_tests {
         assert_eq!(balance, Some(99500));
     }
 
-    #[test]
-    fn test_token_burn_with_public_note_too_big_fails() {
+    #[tokio::test]
+    async fn test_token_burn_with_public_note_too_big_fails() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -1123,6 +1136,7 @@ mod token_burn_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create burn transition");
 
         let serialized = burn_transition
@@ -1164,8 +1178,8 @@ mod token_burn_tests {
         assert_eq!(balance, Some(100000));
     }
 
-    #[test]
-    fn test_token_burn_zero_amount_fails() {
+    #[tokio::test]
+    async fn test_token_burn_zero_amount_fails() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -1203,6 +1217,7 @@ mod token_burn_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create burn transition");
 
         let serialized = burn_transition
@@ -1252,8 +1267,8 @@ mod token_burn_tests {
         assert_eq!(total_supply, Some(100000));
     }
 
-    #[test]
-    fn test_token_burn_allowed_when_rule_is_contract_owner_explicit() {
+    #[tokio::test]
+    async fn test_token_burn_allowed_when_rule_is_contract_owner_explicit() {
         // Explicitly set the burning rule to ContractOwner and verify the contract
         // owner can still burn (distinct from the default-rules happy path).
         let platform_version = PlatformVersion::latest();
@@ -1303,6 +1318,7 @@ mod token_burn_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create burn transition");
 
         let serialized = burn_transition
@@ -1354,8 +1370,8 @@ mod token_burn_tests {
         assert_eq!(total_supply, Some(98500));
     }
 
-    #[test]
-    fn test_token_burn_allowed_by_specific_identity_rule() {
+    #[tokio::test]
+    async fn test_token_burn_allowed_by_specific_identity_rule() {
         // Allow burning only by a specific (non-owner) identity.
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
@@ -1410,6 +1426,7 @@ mod token_burn_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create burn transition");
 
         let serialized = burn_transition
@@ -1474,8 +1491,8 @@ mod token_burn_tests {
         assert_eq!(total_supply, Some(125000));
     }
 
-    #[test]
-    fn test_token_burn_specific_identity_rule_rejects_other_identity() {
+    #[tokio::test]
+    async fn test_token_burn_specific_identity_rule_rejects_other_identity() {
         // Burning rule is Identity(burner); owner attempts to burn -> unauthorized.
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
@@ -1526,6 +1543,7 @@ mod token_burn_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create burn transition");
 
         let serialized = burn_transition
@@ -1574,8 +1592,8 @@ mod token_burn_tests {
         assert_eq!(owner_balance, Some(100000));
     }
 
-    #[test]
-    fn test_token_burn_rule_no_one_blocks_even_owner() {
+    #[tokio::test]
+    async fn test_token_burn_rule_no_one_blocks_even_owner() {
         // With NoOne rule, even the contract owner cannot burn.
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
@@ -1624,6 +1642,7 @@ mod token_burn_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create burn transition");
 
         let serialized = burn_transition
@@ -1678,8 +1697,8 @@ mod token_burn_tests {
         assert_eq!(total_supply, Some(100000));
     }
 
-    #[test]
-    fn test_token_burn_from_frozen_account_succeeds() {
+    #[tokio::test]
+    async fn test_token_burn_from_frozen_account_succeeds() {
         // Burn validation does NOT check freeze status (only transfer does),
         // so a frozen account can still have its tokens burned. This test locks
         // in the current behavior and covers the removal path for frozen
@@ -1732,6 +1751,7 @@ mod token_burn_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected to create freeze transition");
 
         let freeze_serialized = freeze_transition
@@ -1778,6 +1798,7 @@ mod token_burn_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected to create burn transition");
 
         let burn_serialized = burn_transition
@@ -1826,8 +1847,8 @@ mod token_burn_tests {
         assert_eq!(total_supply, Some(80000));
     }
 
-    #[test]
-    fn test_token_burn_from_identity_with_no_token_balance_record() {
+    #[tokio::test]
+    async fn test_token_burn_from_identity_with_no_token_balance_record() {
         // Authorized by rule but the burning identity has no token balance record at all.
         // Should yield IdentityDoesNotHaveEnoughTokenBalanceError.
         let platform_version = PlatformVersion::latest();
@@ -1880,6 +1901,7 @@ mod token_burn_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create burn transition");
 
         let serialized = burn_transition
@@ -1938,8 +1960,8 @@ mod token_burn_tests {
         assert_eq!(total_supply, Some(100000));
     }
 
-    #[test]
-    fn test_token_burn_sequential_depletes_balance_and_supply() {
+    #[tokio::test]
+    async fn test_token_burn_sequential_depletes_balance_and_supply() {
         // Two successful burns in sequence should correctly decrement both
         // the identity's balance and the total supply.
         let platform_version = PlatformVersion::latest();
@@ -1983,6 +2005,7 @@ mod token_burn_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create burn transition");
 
             let serialized = burn_transition
@@ -2035,8 +2058,8 @@ mod token_burn_tests {
         }
     }
 
-    #[test]
-    fn test_token_burn_by_group_single_member_sufficient_power() {
+    #[tokio::test]
+    async fn test_token_burn_by_group_single_member_sufficient_power() {
         // Group rule, but the proposer alone has enough power to finalize the
         // action in one shot (mirrors the analogous mint test).
         let platform_version = PlatformVersion::latest();
@@ -2096,6 +2119,7 @@ mod token_burn_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create burn transition");
 
         let serialized = burn_transition
@@ -2147,8 +2171,8 @@ mod token_burn_tests {
         assert_eq!(total_supply, Some(97500));
     }
 
-    #[test]
-    fn test_token_burn_group_action_resubmit_same_signer_fails() {
+    #[tokio::test]
+    async fn test_token_burn_group_action_resubmit_same_signer_fails() {
         // Proposer + confirmer path, then proposer tries to submit the confirmation
         // again -> GroupActionAlreadySignedByIdentityError.
         let platform_version = PlatformVersion::latest();
@@ -2208,6 +2232,7 @@ mod token_burn_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected to create burn transition");
 
         let serialized = burn_transition
@@ -2268,6 +2293,7 @@ mod token_burn_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected to create resubmit transition");
 
         let serialized = resubmit_transition
@@ -2317,8 +2343,8 @@ mod token_burn_tests {
         assert_eq!(balance, Some(100000));
     }
 
-    #[test]
-    fn test_token_burn_group_action_submit_after_completion_fails() {
+    #[tokio::test]
+    async fn test_token_burn_group_action_submit_after_completion_fails() {
         // Three-member group with required power 2: proposer + one confirmer completes
         // the action, then a third member tries to confirm -> AlreadyCompleted.
         let platform_version = PlatformVersion::latest();
@@ -2387,6 +2413,7 @@ mod token_burn_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected to create burn transition");
 
         let serialized = burn_transition
@@ -2447,6 +2474,7 @@ mod token_burn_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected to create confirm transition");
 
         let serialized = confirm_transition
@@ -2512,6 +2540,7 @@ mod token_burn_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected to create late transition");
 
         let serialized = late_transition
@@ -2553,8 +2582,8 @@ mod token_burn_tests {
         assert_eq!(total_supply, Some(99000));
     }
 
-    #[test]
-    fn test_token_burn_group_proposer_not_in_group_fails() {
+    #[tokio::test]
+    async fn test_token_burn_group_proposer_not_in_group_fails() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -2614,6 +2643,7 @@ mod token_burn_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected to create burn transition");
 
         let serialized = burn_transition
@@ -2659,8 +2689,8 @@ mod token_burn_tests {
         assert_eq!(balance, Some(100000));
     }
 
-    #[test]
-    fn test_token_burn_group_other_signer_not_in_group_fails() {
+    #[tokio::test]
+    async fn test_token_burn_group_other_signer_not_in_group_fails() {
         // Proposer succeeds, but a non-member tries to confirm.
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
@@ -2722,6 +2752,7 @@ mod token_burn_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected to create burn transition");
 
         let serialized = burn_transition
@@ -2782,6 +2813,7 @@ mod token_burn_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected to create confirm transition");
 
         let serialized = confirm_transition
@@ -2828,8 +2860,8 @@ mod token_burn_tests {
         assert_eq!(balance, Some(100000));
     }
 
-    #[test]
-    fn test_token_burn_group_confirmer_with_note_fails() {
+    #[tokio::test]
+    async fn test_token_burn_group_confirmer_with_note_fails() {
         // Only the proposer may attach a note. The confirmer attempting to attach
         // a note is rejected with TokenNoteOnlyAllowedWhenProposerError.
         let platform_version = PlatformVersion::latest();
@@ -2891,6 +2923,7 @@ mod token_burn_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected to create burn transition");
 
         let serialized = burn_transition
@@ -2951,6 +2984,7 @@ mod token_burn_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected to create confirm transition");
 
         let serialized = confirm_with_note
@@ -2996,8 +3030,8 @@ mod token_burn_tests {
         assert_eq!(balance, Some(100000));
     }
 
-    #[test]
-    fn test_token_burn_group_confirmer_modifies_amount_fails() {
+    #[tokio::test]
+    async fn test_token_burn_group_confirmer_modifies_amount_fails() {
         // Confirmer attempts to burn a different amount than the proposer -> modification
         // of main parameters is rejected.
         let platform_version = PlatformVersion::latest();
@@ -3059,6 +3093,7 @@ mod token_burn_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected to create burn transition");
 
         let serialized = burn_transition
@@ -3119,6 +3154,7 @@ mod token_burn_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected to create confirm transition");
 
         let serialized = mismatched_confirm
@@ -3167,8 +3203,8 @@ mod token_burn_tests {
         assert_eq!(balance, Some(100000));
     }
 
-    #[test]
-    fn test_token_burn_by_main_group_rule() {
+    #[tokio::test]
+    async fn test_token_burn_by_main_group_rule() {
         // Verify the MainGroup authorization path: the rule says MainGroup, and the
         // main_control_group is set to 0. A member of group 0 proposes the burn.
         let platform_version = PlatformVersion::latest();
@@ -3231,6 +3267,7 @@ mod token_burn_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected to create burn transition");
 
         let serialized = burn_transition
@@ -3291,6 +3328,7 @@ mod token_burn_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected to create confirm transition");
 
         let serialized = confirm_transition
@@ -3338,8 +3376,8 @@ mod token_burn_tests {
         assert_eq!(total_supply, Some(99500));
     }
 
-    #[test]
-    fn test_token_burn_after_full_depletion_fails_with_insufficient_balance() {
+    #[tokio::test]
+    async fn test_token_burn_after_full_depletion_fails_with_insufficient_balance() {
         // Burn entire balance, then try to burn more -> insufficient balance.
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
@@ -3379,6 +3417,7 @@ mod token_burn_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create burn transition");
 
         let serialized = burn_all
@@ -3425,6 +3464,7 @@ mod token_burn_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create burn transition");
 
         let serialized = burn_again
@@ -3479,8 +3519,8 @@ mod token_burn_tests {
         assert_eq!(total_supply, Some(0));
     }
 
-    #[test]
-    fn test_token_burn_by_one_then_by_another_both_independent() {
+    #[tokio::test]
+    async fn test_token_burn_by_one_then_by_another_both_independent() {
         // Two identities both authorized via ContractOwner + Identity rules? The
         // AuthorizedActionTakers enum only has a single variant per rule, so we
         // pick Identity() for a second holder and verify bursts from distinct
@@ -3529,6 +3569,7 @@ mod token_burn_tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create burn transition");
 
         let serialized = burn1.serialize_to_bytes().expect("expected serialized");

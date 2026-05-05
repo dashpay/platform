@@ -87,7 +87,11 @@ pub fn json_to_js_value(value: &JsonValue) -> WasmDppResult<JsValue> {
 /// - Recursively processes nested objects and arrays
 ///
 /// Performance: Uses fast path for primitives, only recursively processes objects/arrays.
-fn normalize_js_value_for_json(value: &JsValue) -> WasmDppResult<JsValue> {
+///
+/// `pub(crate)` so wrappers whose `to_object()` embeds JS `Map`s (e.g.
+/// shielded proof-result wrappers backed by `js_sys::Map`) can call this in
+/// their `to_json()` to get a `JSON.stringify`-friendly form.
+pub(crate) fn normalize_js_value_for_json(value: &JsValue) -> WasmDppResult<JsValue> {
     // Fast path: primitives that can't contain BigInt or need conversion
     if value.is_string()
         || value.as_f64().is_some()

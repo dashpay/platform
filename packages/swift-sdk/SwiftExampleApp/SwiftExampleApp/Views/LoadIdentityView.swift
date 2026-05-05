@@ -1,8 +1,10 @@
 import SwiftUI
+import SwiftData
 import SwiftDashSDK
 
 struct LoadIdentityView: View {
     @EnvironmentObject var appState: AppState
+    @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) var dismiss
 
     // Form inputs
@@ -43,7 +45,7 @@ struct LoadIdentityView: View {
 
     private var formView: some View {
         Form {
-            if appState.sdk?.network.rawValue == 1 && testnetNodes != nil { // testnet
+            if appState.sdk?.network == .testnet && testnetNodes != nil {
                 Section {
                     HStack {
                         Button("Fill Random HPMN") {
@@ -296,19 +298,6 @@ struct LoadIdentityView: View {
                 let ownerKeyData = ownerPrivateKeyInput.isEmpty ? nil : Data(hexString: ownerPrivateKeyInput.trimmingCharacters(in: .whitespacesAndNewlines))
                 let payoutKeyData = payoutPrivateKeyInput.isEmpty ? nil : Data(hexString: payoutPrivateKeyInput.trimmingCharacters(in: .whitespacesAndNewlines))
 
-                // Create the identity model
-                let identity = IdentityModel(
-                    id: validIdData,
-                    balance: 0,
-                    isLocal: true,
-                    alias: aliasInput.isEmpty ? nil : aliasInput,
-                    type: selectedIdentityType,
-                    privateKeys: privateKeyData,
-                    votingPrivateKey: votingKeyData,
-                    ownerPrivateKey: ownerKeyData,
-                    payoutPrivateKey: payoutKeyData
-                )
-
                 // Fetch the identity from the network to verify it exists
                 guard let sdk = appState.sdk else {
                     await MainActor.run {
@@ -326,7 +315,7 @@ struct LoadIdentityView: View {
                 print("🔵 Fetched identity data: \(identityData)")
 
                 // Extract balance
-                var fetchedBalance = identity.balance
+                var fetchedBalance: UInt64 = 0
                 if let balanceValue = identityData["balance"] {
                     if let balanceNum = balanceValue as? NSNumber {
                         fetchedBalance = balanceNum.uint64Value
@@ -410,24 +399,114 @@ struct LoadIdentityView: View {
                     print("❌ Public keys not found in identity data")
                 }
 
-                // Create new identity with fetched data
-                let fetchedIdentity = IdentityModel(
-                    id: validIdData,
-                    balance: fetchedBalance,
-                    isLocal: false,
-                    alias: aliasInput.isEmpty ? nil : aliasInput,
-                    type: selectedIdentityType,
-                    privateKeys: privateKeyData,
-                    votingPrivateKey: votingKeyData,
-                    ownerPrivateKey: ownerKeyData,
-                    payoutPrivateKey: payoutKeyData,
-                    dpnsName: nil,
-                    publicKeys: parsedPublicKeys
-                )
+                // Persist the fetched identity directly via SwiftData.
+                // Private keys are stored in the keychain and linked
+                // to the matching `PersistentPublicKey`s below.
+                let trimmedAlias = aliasInput.isEmpty ? nil : aliasInput
+                let identityType = selectedIdentityType
+                let network = appState.currentNetwork
+                let capturedPublicKeys = parsedPublicKeys
+                let capturedPrivateKeys = privateKeyData
+                let capturedVotingKey = votingKeyData
+                let capturedOwnerKey = ownerKeyData
+                let capturedPayoutKey = payoutKeyData
 
-                // Add to app state
                 await MainActor.run {
-                    appState.addIdentity(fetchedIdentity)
+                    // Upsert the PersistentIdentity row.
+                    let existing = PersistentIdentity.fetch(
+                        in: modelContext,
+                        identityId: validIdData
+                    )
+                    let row: PersistentIdentity
+                    if let existing = existing {
+                        existing.balance = Int64(bitPattern: fetchedBalance)
+                        existing.alias = trimmedAlias
+                        existing.isLocal = false
+                        existing.identityType = identityType.rawValue
+                        existing.network = network
+                        existing.lastUpdated = Date()
+                        // Replace public keys wholesale with the
+                        // freshly fetched set.
+                        existing.publicKeys.removeAll()
+                        row = existing
+                    } else {
+                        row = PersistentIdentity(
+                            identityId: validIdData,
+                            balance: Int64(bitPattern: fetchedBalance),
+                            revision: 0,
+                            isLocal: false,
+                            alias: trimmedAlias,
+                            dpnsName: nil,
+                            mainDpnsName: nil,
+                            identityType: identityType,
+                            network: network
+                        )
+                        modelContext.insert(row)
+                        // Back-fill any locally-cached contracts that
+                        // name this identity as their owner. The
+                        // existing `try? modelContext.save()` later
+                        // in this block persists the link.
+                        ContractIdentityLinker.linkIdentityToOwnedContracts(
+                            identity: row,
+                            modelContext: modelContext
+                        )
+                    }
+
+                    // Insert PersistentPublicKey rows for every key
+                    // the network returned.
+                    for publicKey in capturedPublicKeys {
+                        if let persistentKey = PersistentPublicKey.from(
+                            publicKey,
+                            identityId: validIdData.toHexString()
+                        ) {
+                            row.addPublicKey(persistentKey)
+                        }
+                    }
+
+                    // Match each user-provided private key to its
+                    // public key and stash it in the keychain.
+                    for privateKey in capturedPrivateKeys {
+                        if let matched = KeyValidation.matchPrivateKeyToPublicKeys(
+                            privateKeyData: privateKey,
+                            publicKeys: capturedPublicKeys,
+                            network: network
+                        ), let persistentKey = row.publicKeys.first(
+                            where: { $0.keyId == Int32(matched.id) }
+                        ), let keychainId = KeychainManager.shared.storePrivateKey(
+                            privateKey,
+                            identityId: validIdData,
+                            keyIndex: persistentKey.keyId
+                        ) {
+                            persistentKey.privateKeyKeychainIdentifier = keychainId
+                        }
+                    }
+
+                    // Masternode-/evonode-specific keys go to the
+                    // keychain under their dedicated slots.
+                    if let votingKey = capturedVotingKey {
+                        row.votingPrivateKeyIdentifier = KeychainManager.shared.storeSpecialKey(
+                            votingKey,
+                            identityId: validIdData,
+                            keyType: .voting
+                        )
+                    }
+                    if let ownerKey = capturedOwnerKey {
+                        row.ownerPrivateKeyIdentifier = KeychainManager.shared.storeSpecialKey(
+                            ownerKey,
+                            identityId: validIdData,
+                            keyType: .owner
+                        )
+                    }
+                    if let payoutKey = capturedPayoutKey {
+                        row.payoutPrivateKeyIdentifier = KeychainManager.shared.storeSpecialKey(
+                            payoutKey,
+                            identityId: validIdData,
+                            keyType: .payout
+                        )
+                    }
+
+                    try? modelContext.save()
+
                     showSuccess = true
 
                     // Also fetch DPNS names for the identity
@@ -441,7 +520,12 @@ struct LoadIdentityView: View {
                             if let firstUsername = usernames.first,
                                let label = firstUsername["label"] as? String {
                                 // Update the identity with DPNS name
-                                appState.updateIdentityDPNSName(id: validIdData, dpnsName: label)
+                                PersistentIdentity.updateDpnsName(
+                                    in: modelContext,
+                                    identityId: validIdData,
+                                    dpnsName: label
+                                )
+                                try? modelContext.save()
                             }
                         } catch {
                             // Silently fail - not all identities have DPNS names

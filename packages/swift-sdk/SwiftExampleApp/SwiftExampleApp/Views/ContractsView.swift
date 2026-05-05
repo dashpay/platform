@@ -1,15 +1,19 @@
 import SwiftUI
+import SwiftData
 import SwiftDashSDK
 
 struct ContractsView: View {
     @EnvironmentObject var appState: AppState
+    @Query(sort: \PersistentDataContract.createdAt, order: .reverse)
+    private var contracts: [PersistentDataContract]
+
     @State private var showingFetchContract = false
-    @State private var selectedContract: ContractModel?
+    @State private var selectedContract: PersistentDataContract?
 
     var body: some View {
         NavigationView {
             List {
-                if appState.contracts.isEmpty {
+                if contracts.isEmpty {
                     EmptyStateView(
                         systemImage: "doc.plaintext",
                         title: "No Contracts",
@@ -17,7 +21,7 @@ struct ContractsView: View {
                     )
                     .listRowBackground(Color.clear)
                 } else {
-                    ForEach(appState.contracts) { contract in
+                    ForEach(contracts) { contract in
                         ContractRow(contract: contract) {
                             selectedContract = contract
                         }
@@ -39,72 +43,12 @@ struct ContractsView: View {
             .sheet(item: $selectedContract) { contract in
                 ContractDetailView(contract: contract)
             }
-            .onAppear {
-                if appState.contracts.isEmpty {
-                    loadSampleContracts()
-                }
-            }
         }
-    }
-
-    private func loadSampleContracts() {
-        // Add sample contracts for demonstration
-        appState.contracts = [
-            ContractModel(
-                id: "dpns-contract",
-                name: "DPNS",
-                version: 1,
-                ownerId: Data(repeating: 0, count: 32),
-                documentTypes: ["domain", "preorder"],
-                schema: [
-                    "domain": [
-                        "type": "object",
-                        "properties": [
-                            "label": ["type": "string"],
-                            "normalizedLabel": ["type": "string"],
-                            "normalizedParentDomainName": ["type": "string"]
-                        ]
-                    ]
-                ]
-            ),
-            ContractModel(
-                id: "dashpay-contract",
-                name: "DashPay",
-                version: 1,
-                ownerId: Data(repeating: 0, count: 32),
-                documentTypes: ["profile", "contactRequest"],
-                schema: [
-                    "profile": [
-                        "type": "object",
-                        "properties": [
-                            "displayName": ["type": "string"],
-                            "publicMessage": ["type": "string"]
-                        ]
-                    ]
-                ]
-            ),
-            ContractModel(
-                id: "masternode-reward-shares-contract",
-                name: "Masternode Reward Shares",
-                version: 1,
-                ownerId: Data(repeating: 0, count: 32),
-                documentTypes: ["rewardShare"],
-                schema: [
-                    "rewardShare": [
-                        "type": "object",
-                        "properties": [
-                            "payToId": ["type": "string"],
-                            "percentage": ["type": "number"]
-                        ]
-                    ]
-                ]
-            )
-        ]
     }
 }
 
 struct ContractRow: View {
-    let contract: ContractModel
+    let contract: PersistentDataContract
     let onTap: () -> Void
 
     var body: some View {
@@ -115,16 +59,18 @@ struct ContractRow: View {
                         .font(.headline)
                         .foregroundColor(.primary)
                     Spacer()
-                    Text("v\(contract.version)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 2)
-                        .background(Color.blue.opacity(0.2))
-                        .cornerRadius(4)
+                    if let version = contract.version {
+                        Text("v\(version)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(Color.blue.opacity(0.2))
+                            .cornerRadius(4)
+                    }
                 }
 
-                Text(contract.id)
+                Text(contract.idBase58)
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .lineLimit(1)
@@ -134,7 +80,7 @@ struct ContractRow: View {
                     Image(systemName: "doc.text")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    Text("\(contract.documentTypes.count) document types")
+                    Text("\(contract.documentTypesList.count) document types")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -146,7 +92,7 @@ struct ContractRow: View {
 }
 
 struct ContractDetailView: View {
-    let contract: ContractModel
+    let contract: PersistentDataContract
     @Environment(\.dismiss) var dismiss
     @State private var selectedDocumentType: String?
 
@@ -157,9 +103,13 @@ struct ContractDetailView: View {
                     Section {
                         VStack(alignment: .leading, spacing: 8) {
                             DetailRow(label: "Contract Name", value: contract.name)
-                            DetailRow(label: "Contract ID", value: contract.id)
-                            DetailRow(label: "Version", value: "\(contract.version)")
-                            DetailRow(label: "Owner ID", value: contract.ownerIdString)
+                            DetailRow(label: "Contract ID", value: contract.idBase58)
+                            if let version = contract.version {
+                                DetailRow(label: "Version", value: "\(version)")
+                            }
+                            if let ownerId = contract.ownerIdBase58 {
+                                DetailRow(label: "Owner ID", value: ownerId)
+                            }
                         }
                         .padding()
                         .background(Color.gray.opacity(0.1))
@@ -171,7 +121,7 @@ struct ContractDetailView: View {
                             Text("Document Types")
                                 .font(.headline)
 
-                            ForEach(contract.documentTypes, id: \.self) { docType in
+                            ForEach(contract.documentTypesList, id: \.self) { docType in
                                 Button(action: {
                                     selectedDocumentType = selectedDocumentType == docType ? nil : docType
                                 }) {
@@ -208,7 +158,7 @@ struct ContractDetailView: View {
                             Text("Full Schema")
                                 .font(.headline)
 
-                            Text(contract.formattedSchema)
+                            Text(formattedSchema(contract.schema))
                                 .font(.system(.caption, design: .monospaced))
                                 .padding()
                                 .background(Color.gray.opacity(0.1))
@@ -240,10 +190,19 @@ struct ContractDetailView: View {
         }
         return "Schema not available"
     }
+
+    private func formattedSchema(_ schema: [String: Any]) -> String {
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: schema, options: .prettyPrinted),
+              let jsonString = String(data: jsonData, encoding: .utf8) else {
+            return "Invalid schema"
+        }
+        return jsonString
+    }
 }
 
 struct FetchContractView: View {
     @EnvironmentObject var appState: AppState
+    @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) var dismiss
     @State private var contractIdToFetch = ""
     @State private var isLoading = false
@@ -278,8 +237,8 @@ struct FetchContractView: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Fetch") {
                         Task {
-                            await fetchContract()
-                            if !isLoading {
+                            let didFetch = await fetchContract()
+                            if didFetch {
                                 dismiss()
                             }
                         }
@@ -291,28 +250,129 @@ struct FetchContractView: View {
     }
 
     @MainActor
-    private func fetchContract() async {
+    private func fetchContract() async -> Bool {
         guard let sdk = appState.sdk else {
             appState.showError(message: "SDK not initialized")
-            return
+            return false
         }
 
         do {
             isLoading = true
+            defer { isLoading = false }
 
-            // In a real app, we would use the SDK's contract fetching functionality
-            if (try await sdk.getDataContract(id: contractIdToFetch)) != nil {
-                // Convert SDK contract to our model
-                // For now, we'll show a success message
-                appState.showError(message: "Contract fetched successfully")
-            } else {
-                appState.showError(message: "Contract not found")
-            }
-
-            isLoading = false
+            let trimmedId = contractIdToFetch.trimmingCharacters(in: .whitespacesAndNewlines)
+            let contractData = try await sdk.dataContractGet(id: trimmedId)
+            try persistFetchedContract(contractData, requestedId: trimmedId)
+            return true
         } catch {
             appState.showError(message: "Failed to fetch contract: \(error.localizedDescription)")
-            isLoading = false
+            return false
+        }
+    }
+
+    private func persistFetchedContract(_ contractData: [String: Any], requestedId: String) throws {
+        let serializedContract = try JSONSerialization.data(withJSONObject: contractData, options: [])
+        let contractId = try resolveContractId(from: contractData, fallbackId: requestedId)
+
+        let descriptor = FetchDescriptor<PersistentDataContract>(
+            predicate: #Predicate { $0.id == contractId }
+        )
+        if try modelContext.fetch(descriptor).first != nil {
+            throw FetchContractError.contractAlreadySaved
+        }
+
+        let documents = contractDocuments(from: contractData)
+        let tokens = contractData["tokens"] as? [String: Any] ?? [:]
+        let ownerId = (contractData["ownerId"] as? String).flatMap {
+            Data.identifier(fromBase58: $0) ?? Data(hexString: $0)
+        }
+
+        let persistentContract = PersistentDataContract(
+            id: contractId,
+            name: contractName(from: contractData, documents: documents, tokens: tokens, fallbackId: requestedId),
+            serializedContract: serializedContract,
+            version: contractData["version"] as? Int,
+            ownerId: ownerId,
+            schema: documents,
+            documentTypesList: documents.keys.sorted(),
+            keywords: contractData["keywords"] as? [String] ?? [],
+            description: contractData["description"] as? String,
+            hasTokens: !tokens.isEmpty,
+            network: appState.currentNetwork
+        )
+
+        modelContext.insert(persistentContract)
+        try modelContext.save()
+
+        try DataContractParser.parseDataContract(
+            contractData: contractData,
+            contractId: contractId,
+            modelContext: modelContext
+        )
+        try modelContext.save()
+    }
+
+    private func resolveContractId(from contractData: [String: Any], fallbackId: String) throws -> Data {
+        let idString = (contractData["id"] as? String) ?? fallbackId
+        if let id = Data.identifier(fromBase58: idString) ?? Data(hexString: idString) {
+            return id
+        }
+        throw FetchContractError.invalidContractId
+    }
+
+    private func contractDocuments(from contractData: [String: Any]) -> [String: Any] {
+        contractData["documents"] as? [String: Any]
+            ?? contractData["documentSchemas"] as? [String: Any]
+            ?? [:]
+    }
+
+    private func contractName(
+        from contractData: [String: Any],
+        documents: [String: Any],
+        tokens: [String: Any],
+        fallbackId: String
+    ) -> String {
+        if let name = contractData["name"] as? String,
+           !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return name
+        }
+
+        if documents.isEmpty,
+           tokens.count == 1,
+           let tokenData = tokens.values.first as? [String: Any],
+           let tokenName = tokenName(from: tokenData) {
+            return "\(tokenName) Token Contract"
+        }
+
+        if let documentType = documents.keys.sorted().first {
+            return "Contract with \(documentType)"
+        }
+
+        return "Contract \(fallbackId.prefix(8))..."
+    }
+
+    private func tokenName(from tokenData: [String: Any]) -> String? {
+        if let conventions = tokenData["conventions"] as? [String: Any],
+           let localizations = conventions["localizations"] as? [String: Any],
+           let english = localizations["en"] as? [String: Any],
+           let singularForm = english["singularForm"] as? String {
+            return singularForm
+        }
+
+        return tokenData["description"] as? String ?? tokenData["name"] as? String
+    }
+}
+
+private enum FetchContractError: LocalizedError {
+    case invalidContractId
+    case contractAlreadySaved
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidContractId:
+            return "Could not extract contract ID from response"
+        case .contractAlreadySaved:
+            return "This contract is already saved locally"
         }
     }
 }

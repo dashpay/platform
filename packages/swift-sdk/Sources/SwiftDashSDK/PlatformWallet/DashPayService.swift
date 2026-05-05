@@ -11,7 +11,7 @@ public final class DashPayService: Sendable {
     private let platformWallet: SendableBox<PlatformWallet?>
     private let identityManager: SendableBox<IdentityManager?>
     private let currentIdentity: SendableBox<ManagedIdentity?>
-    private let network: SendableBox<PlatformNetwork>
+    private let network: SendableBox<Network>
 
     public init() {
         self.platformWallet = SendableBox(nil)
@@ -50,7 +50,7 @@ public final class DashPayService: Sendable {
     ///   - mnemonic: BIP39 mnemonic phrase
     ///   - network: Platform network (mainnet, testnet, devnet)
     /// - Throws: Error if wallet creation fails
-    public func initializeWallet(mnemonic: String, network: PlatformNetwork = .testnet) throws {
+    public func initializeWallet(mnemonic: String, network: Network = .testnet) throws {
         // Create platform wallet from mnemonic
         let wallet = try PlatformWallet.fromMnemonic(mnemonic)
 
@@ -91,31 +91,11 @@ public final class DashPayService: Sendable {
         return try manager.getAllIdentityIds()
     }
 
-    /// Set an identity as the primary identity
-    /// - Parameter identityId: The identity ID to set as primary
-    /// - Throws: Error if operation fails
-    public func setPrimaryIdentity(_ identityId: Identifier) throws {
-        guard let manager = identityManager.value else {
-            throw DashPayError.noIdentityManager
-        }
-
-        try manager.setPrimaryIdentity(identityId)
-    }
-
-    /// Get the primary identity
-    /// - Returns: The primary identity, or nil if none set
-    /// - Throws: Error if operation fails
-    public func getPrimaryIdentity() throws -> ManagedIdentity? {
-        guard let manager = identityManager.value else {
-            throw DashPayError.noIdentityManager
-        }
-
-        guard let primaryId = try manager.getPrimaryIdentityId() else {
-            return nil
-        }
-
-        return try manager.getIdentity(primaryId)
-    }
+    // `setPrimaryIdentity` / `getPrimaryIdentity` were dropped along
+    // with the underlying Rust field. Callers that previously relied
+    // on them should track the selection in their own state (UI layer)
+    // and look up the matching `ManagedIdentity` via
+    // `IdentityManager.getIdentity(_:)`.
 
     // MARK: - Contact Requests
 
@@ -158,7 +138,9 @@ public final class DashPayService: Sendable {
     /// - Throws: Error if acceptance fails
     public func acceptContactRequest(identity: ManagedIdentity, from senderId: Identifier) throws {
         guard let request = try identity.getIncomingContactRequest(senderId: senderId) else {
-            throw PlatformWalletError.contactNotFound
+            throw PlatformWalletError.contactNotFound(
+                "no incoming contact request from sender id"
+            )
         }
         try identity.acceptContactRequest(request)
     }

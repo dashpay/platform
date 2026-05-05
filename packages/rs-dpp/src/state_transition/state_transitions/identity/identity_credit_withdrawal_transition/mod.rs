@@ -351,6 +351,7 @@ mod test {
     }
 
     #[test]
+    #[allow(clippy::assertions_on_constants)]
     fn test_min_withdrawal_amount_constant() {
         assert!(MIN_WITHDRAWAL_AMOUNT > 0);
         assert!(MIN_CORE_FEE_PER_BYTE == 1);

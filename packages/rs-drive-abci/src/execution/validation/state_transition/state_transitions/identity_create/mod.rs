@@ -217,8 +217,8 @@ mod tests {
     use std::collections::BTreeMap;
     use std::ops::Div;
 
-    #[test]
-    fn test_identity_create_validation_first_protocol_version() {
+    #[tokio::test]
+    async fn test_identity_create_validation_first_protocol_version() {
         let platform_version = PlatformVersion::first();
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
@@ -290,6 +290,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("expected an identity create transition");
 
         let identity_create_serialized_transition = identity_create_transition
@@ -331,8 +332,8 @@ mod tests {
         assert_eq!(identity_balance, 99913915760);
     }
 
-    #[test]
-    fn test_identity_create_validation_latest_protocol_version() {
+    #[tokio::test]
+    async fn test_identity_create_validation_latest_protocol_version() {
         let platform_version = PlatformVersion::latest();
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
@@ -403,6 +404,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("expected an identity create transition");
 
         let identity_create_serialized_transition = identity_create_transition
@@ -444,8 +446,8 @@ mod tests {
         assert_eq!(identity_balance, 99913867460);
     }
 
-    #[test]
-    fn test_identity_create_asset_lock_reuse_after_issue_first_protocol_version() {
+    #[tokio::test]
+    async fn test_identity_create_asset_lock_reuse_after_issue_first_protocol_version() {
         let platform_version = PlatformVersion::first();
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
@@ -558,6 +560,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("expected an identity create transition");
 
         let identity_create_serialized_transition = identity_create_transition
@@ -622,6 +625,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("expected an identity create transition");
 
         let identity_create_serialized_transition = identity_create_transition
@@ -667,8 +671,8 @@ mod tests {
         assert_eq!(identity_balance, 99909310400); // The identity balance is smaller than if there hadn't been any issue
     }
 
-    #[test]
-    fn test_identity_create_asset_lock_reuse_after_issue_latest_protocol_version() {
+    #[tokio::test]
+    async fn test_identity_create_asset_lock_reuse_after_issue_latest_protocol_version() {
         let platform_version = PlatformVersion::latest();
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
@@ -780,6 +784,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("expected an identity create transition");
 
         let identity_create_serialized_transition = identity_create_transition
@@ -844,6 +849,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("expected an identity create transition");
 
         let identity_create_serialized_transition = identity_create_transition
@@ -889,8 +895,8 @@ mod tests {
         assert_eq!(identity_balance, 99909262100); // The identity balance is smaller than if there hadn't been any issue
     }
 
-    #[test]
-    fn test_identity_create_asset_lock_reuse_after_max_issues() {
+    #[tokio::test]
+    async fn test_identity_create_asset_lock_reuse_after_max_issues() {
         let platform_version = PlatformVersion::latest();
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
@@ -1013,6 +1019,7 @@ mod tests {
                     0,
                     platform_version,
                 )
+                .await
                 .expect("expected an identity create transition");
 
             let identity_create_serialized_transition = identity_create_transition
@@ -1080,6 +1087,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("expected an identity create transition");
 
         let identity_create_serialized_transition = identity_create_transition
@@ -1117,8 +1125,8 @@ mod tests {
             .expect("expected to commit");
     }
 
-    #[test]
-    fn test_identity_create_asset_lock_use_all_funds() {
+    #[tokio::test]
+    async fn test_identity_create_asset_lock_use_all_funds() {
         let platform_version = PlatformVersion::latest();
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
@@ -1247,6 +1255,7 @@ mod tests {
                     0,
                     platform_version,
                 )
+                .await
                 .expect("expected an identity create transition");
 
             let identity_create_serialized_transition = identity_create_transition
@@ -1314,6 +1323,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("expected an identity create transition");
 
         let identity_create_serialized_transition = identity_create_transition
@@ -1351,8 +1361,8 @@ mod tests {
             .expect("expected to commit");
     }
 
-    #[test]
-    fn test_identity_create_asset_lock_replay_attack_first_protocol_version() {
+    #[tokio::test]
+    async fn test_identity_create_asset_lock_replay_attack_first_protocol_version() {
         let platform_version = PlatformVersion::first();
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
@@ -1465,6 +1475,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("expected an identity create transition");
 
         let identity_create_serialized_transition = identity_create_transition
@@ -1554,6 +1565,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("expected an identity create transition");
 
         let identity_create_serialized_transition = identity_create_transition
@@ -1599,8 +1611,8 @@ mod tests {
         assert_eq!(identity_balance, 99909310400); // The identity balance is smaller than if there hadn't been any issue
     }
 
-    #[test]
-    fn test_identity_create_asset_lock_replay_attack_latest_protocol_version() {
+    #[tokio::test]
+    async fn test_identity_create_asset_lock_replay_attack_latest_protocol_version() {
         let platform_version = PlatformVersion::latest();
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
@@ -1712,6 +1724,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("expected an identity create transition");
 
         let identity_create_serialized_transition = identity_create_transition
@@ -1801,6 +1814,7 @@ mod tests {
                 0,
                 platform_version,
             )
+            .await
             .expect("expected an identity create transition");
 
         let identity_create_serialized_transition = identity_create_transition

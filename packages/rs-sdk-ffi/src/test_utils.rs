@@ -2,7 +2,7 @@
 #[allow(clippy::module_inception, dead_code)]
 pub mod test_utils {
     use crate::sdk::SDKWrapper;
-    use crate::signer::VTableSigner;
+    use crate::signer::{SignCompletionCallback, SignerVTable, VTableSigner};
     use crate::types::{DashSDKPutSettings, SDKHandle};
     use dash_sdk::dpp::data_contract::DataContractFactory;
     use dash_sdk::dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -12,6 +12,7 @@ pub mod test_utils {
     use dash_sdk::dpp::prelude::{DataContract, Identifier};
     use dash_sdk::platform::transition::put_settings::PutSettings;
     use std::ffi::CString;
+    use std::os::raw::c_void;
 
     // Helper function to create a mock SDK handle
     pub fn create_mock_sdk_handle() -> *mut SDKHandle {
@@ -45,77 +46,54 @@ pub mod test_utils {
         }))
     }
 
-    // Mock sign callback for testing
-    pub unsafe extern "C" fn mock_sign_callback(
-        _identity_public_key_bytes: *const u8,
-        _identity_public_key_len: usize,
+    // Mock async sign callback for testing. Immediately invokes the
+    // completion callback with a fake 64-byte all-zero signature, which is
+    // enough to drive FFI entry points that only care that "a signer ran".
+    pub unsafe extern "C" fn mock_sign_async_callback(
+        _signer: *const c_void,
+        _pubkey_bytes: *const u8,
+        _pubkey_len: usize,
+        _key_type: u8,
         _data: *const u8,
         _data_len: usize,
-        result_len: *mut usize,
-    ) -> *mut u8 {
+        completion_ctx: *mut c_void,
+        completion: SignCompletionCallback,
+    ) {
         let signature = [0u8; 64];
-        *result_len = signature.len();
-        let ptr = libc::malloc(signature.len()) as *mut u8;
-        if !ptr.is_null() {
-            std::ptr::copy_nonoverlapping(signature.as_ptr(), ptr, signature.len());
-        }
-        ptr
-    }
-
-    // Mock can sign callback for testing
-    pub unsafe extern "C" fn mock_can_sign_callback(
-        _identity_public_key_bytes: *const u8,
-        _identity_public_key_len: usize,
-    ) -> bool {
-        true
-    }
-
-    // Helper function to create a mock signer
-    pub fn create_mock_signer() -> Box<VTableSigner> {
-        // Create a mock signer vtable
-        let vtable = Box::new(crate::signer::SignerVTable {
-            sign: mock_sign_vtable_callback,
-            can_sign_with: mock_can_sign_vtable_callback,
-            destroy: mock_destroy_callback,
-            free_result: None,
-        });
-
-        Box::new(VTableSigner {
-            signer_ptr: std::ptr::null_mut(),
-            vtable: Box::into_raw(vtable),
-        })
-    }
-
-    // Mock sign callback for vtable
-    unsafe extern "C" fn mock_sign_vtable_callback(
-        _signer: *const std::os::raw::c_void,
-        _identity_public_key_bytes: *const u8,
-        _identity_public_key_len: usize,
-        _data: *const u8,
-        _data_len: usize,
-        result_len: *mut usize,
-    ) -> *mut u8 {
-        let signature = [0u8; 64];
-        *result_len = signature.len();
-        let ptr = libc::malloc(signature.len()) as *mut u8;
-        if !ptr.is_null() {
-            std::ptr::copy_nonoverlapping(signature.as_ptr(), ptr, signature.len());
-        }
-        ptr
+        completion(
+            completion_ctx,
+            signature.as_ptr(),
+            signature.len(),
+            std::ptr::null(),
+        );
     }
 
     // Mock can sign callback for vtable
-    unsafe extern "C" fn mock_can_sign_vtable_callback(
-        _signer: *const std::os::raw::c_void,
-        _identity_public_key_bytes: *const u8,
-        _identity_public_key_len: usize,
+    pub unsafe extern "C" fn mock_can_sign_callback(
+        _signer: *const c_void,
+        _pubkey_bytes: *const u8,
+        _pubkey_len: usize,
+        _key_type: u8,
     ) -> bool {
         true
     }
 
-    // Mock destroy callback
-    unsafe extern "C" fn mock_destroy_callback(_signer: *mut std::os::raw::c_void) {
-        // No-op for mock
+    // Mock destroy callback (no-op).
+    pub unsafe extern "C" fn mock_destroy_callback(_signer: *mut c_void) {}
+
+    // Helper function to create a mock signer that exercises the C-callback
+    // path of VTableSigner. The vtable is heap-allocated and owned by the
+    // VTableSigner (it will free itself on drop).
+    pub fn create_mock_signer() -> Box<VTableSigner> {
+        let vtable = Box::new(SignerVTable {
+            sign_async: mock_sign_async_callback,
+            can_sign_with: mock_can_sign_callback,
+            destroy: mock_destroy_callback,
+        });
+        let vtable_ptr = Box::into_raw(vtable);
+        // SAFETY: we just produced the vtable via Box::into_raw and take
+        // ownership of it here (owns_vtable = true).
+        Box::new(unsafe { VTableSigner::from_callback(std::ptr::null_mut(), vtable_ptr, true) })
     }
 
     // Helper function to create a valid transition owner ID

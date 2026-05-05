@@ -197,6 +197,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::clone_on_copy)]
     fn test_clone_and_copy() {
         let original = StateTransitionType::MasternodeVote;
         let cloned = original.clone();

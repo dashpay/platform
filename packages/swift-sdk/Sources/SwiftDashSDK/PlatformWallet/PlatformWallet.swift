@@ -4,39 +4,33 @@ import DashSDKFFI
 /// Platform Wallet for managing identities and DashPay contacts
 public class PlatformWallet {
     private let handle: Handle
-    private var identityManagers: [PlatformNetwork: IdentityManager] = [:]
+    private var identityManagers: [Network: IdentityManager] = [:]
 
     private init(handle: Handle) {
         self.handle = handle
     }
 
     deinit {
-        _ = platform_wallet_info_destroy(handle)
+        platform_wallet_info_destroy(handle).discard()
     }
 
     /// Create a new Platform Wallet from a 64-byte seed
-    public static func fromSeed(_ seed: Data, network: PlatformNetwork = .testnet) throws -> PlatformWallet {
+    public static func fromSeed(_ seed: Data, network: Network = .testnet) throws -> PlatformWallet {
         guard seed.count == 64 else {
-            throw PlatformWalletError.invalidParameter
-        }
-
-        var handle: Handle = NULL_HANDLE
-        var error = PlatformWalletFFIError()
-
-        let result = seed.withUnsafeBytes { seedPtr in
-            platform_wallet_info_create_from_seed(
-                network.ffiValue,
-                seedPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                UInt(seed.count),
-                &handle,
-                &error
+            throw PlatformWalletError.invalidParameter(
+                "seed must be 64 bytes, got \(seed.count)"
             )
         }
 
-        guard result == Success else {
-            throw PlatformWalletError(result: result, error: error)
+        var handle: Handle = NULL_HANDLE
+        try seed.withUnsafeBytes { seedPtr in
+            try platform_wallet_info_create_from_seed(
+                network.ffiValue,
+                seedPtr.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                UInt(seed.count),
+                &handle
+            ).check()
         }
-
         return PlatformWallet(handle: handle)
     }
 
@@ -44,48 +38,32 @@ public class PlatformWallet {
     public static func fromMnemonic(
         _ mnemonic: String,
         passphrase: String? = nil,
-        network: PlatformNetwork = .testnet
+        network: Network = .testnet
     ) throws -> PlatformWallet {
         var handle: Handle = NULL_HANDLE
-        var error = PlatformWalletFFIError()
 
         let mnemonicCStr = (mnemonic as NSString).utf8String
         let passphraseCStr = passphrase != nil ? (passphrase! as NSString).utf8String : nil
 
-        let result = platform_wallet_info_create_from_mnemonic(
+        try platform_wallet_info_create_from_mnemonic(
             network.ffiValue,
             mnemonicCStr,
             passphraseCStr,
-            &handle,
-            &error
-        )
-
-        guard result == Success else {
-            throw PlatformWalletError(result: result, error: error)
-        }
+            &handle
+        ).check()
 
         return PlatformWallet(handle: handle)
     }
 
     /// Get the identity manager for a specific network
-    public func getIdentityManager(for network: PlatformNetwork) throws -> IdentityManager {
+    public func getIdentityManager(for network: Network) throws -> IdentityManager {
         // Check if we already have it cached
         if let manager = identityManagers[network] {
             return manager
         }
 
         var managerHandle: Handle = NULL_HANDLE
-        var error = PlatformWalletFFIError()
-
-        let result = platform_wallet_info_get_identity_manager(
-            handle,
-            &managerHandle,
-            &error
-        )
-
-        guard result == Success else {
-            throw PlatformWalletError(result: result, error: error)
-        }
+        try platform_wallet_info_get_identity_manager(handle, &managerHandle).check()
 
         let manager = IdentityManager(handle: managerHandle)
         identityManagers[network] = manager
@@ -93,19 +71,8 @@ public class PlatformWallet {
     }
 
     /// Set the identity manager for a specific network
-    public func setIdentityManager(_ manager: IdentityManager, for network: PlatformNetwork) throws {
-        var error = PlatformWalletFFIError()
-
-        let result = platform_wallet_info_set_identity_manager(
-            handle,
-            manager.handle,
-            &error
-        )
-
-        guard result == Success else {
-            throw PlatformWalletError(result: result, error: error)
-        }
-
+    public func setIdentityManager(_ manager: IdentityManager, for network: Network) throws {
+        try platform_wallet_info_set_identity_manager(handle, manager.handle).check()
         identityManagers[network] = manager
     }
 }
