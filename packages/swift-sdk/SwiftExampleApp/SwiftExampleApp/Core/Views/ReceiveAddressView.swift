@@ -28,16 +28,19 @@ struct ReceiveAddressView: View {
     init(wallet: PersistentWallet) {
         self.wallet = wallet
         let walletId = wallet.walletId
-        _bip44Accounts = Query(filter: #Predicate<PersistentAccount> {
-            $0.wallet.walletId == walletId &&
-            $0.accountType == 0 &&
-            $0.standardTag == 0 &&
-            $0.accountIndex == 0
-        })
+        _bip44Accounts = Query(
+            filter: #Predicate<PersistentAccount> {
+                $0.wallet.walletId == walletId &&
+                $0.accountType == 0 &&
+                $0.standardTag == 0
+            },
+            sort: \.accountIndex
+        )
         _platformAddresses = Query(filter: PersistentPlatformAddress.predicate(walletId: walletId))
     }
 
     @State private var selectedTab: ReceiveAddressTab = .core
+    @State private var selectedAccountIndex: UInt32 = 0
     @State private var copiedToClipboard = false
     @State private var faucetStatus: String?
     @State private var isFaucetLoading = false
@@ -66,10 +69,9 @@ struct ReceiveAddressView: View {
             .min(by: { $0.addressIndex < $1.addressIndex })
     }
 
-    /// Primary BIP44 account for this wallet. All filters applied in the
-    /// @Query; this is always at most one element.
     private var primaryBip44Account: PersistentAccount? {
-        bip44Accounts.first
+        bip44Accounts.first { $0.accountIndex == selectedAccountIndex }
+            ?? bip44Accounts.first
     }
 
     /// Lowest-indexed address in the given pool on the given account
@@ -154,6 +156,26 @@ struct ReceiveAddressView: View {
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
+
+                if selectedTab == .core && bip44Accounts.count > 1 {
+                    if bip44Accounts.count <= 4 {
+                        Picker("Account", selection: $selectedAccountIndex) {
+                            ForEach(bip44Accounts, id: \.accountIndex) { account in
+                                Text("Account \(account.accountIndex)").tag(account.accountIndex)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .padding(.horizontal)
+                    } else {
+                        Picker("Account", selection: $selectedAccountIndex) {
+                            ForEach(bip44Accounts, id: \.accountIndex) { account in
+                                Text("Account \(account.accountIndex)").tag(account.accountIndex)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .padding(.horizontal)
+                    }
+                }
 
                 if hasValidAddress {
                     if let qrImage = generateQRCode(from: currentAddress) {
@@ -264,6 +286,9 @@ struct ReceiveAddressView: View {
                 }
             }
             .onChange(of: selectedTab) { _, _ in
+                copiedToClipboard = false
+            }
+            .onChange(of: selectedAccountIndex) { _, _ in
                 copiedToClipboard = false
             }
         }
