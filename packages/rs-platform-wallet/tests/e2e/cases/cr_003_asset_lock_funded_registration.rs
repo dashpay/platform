@@ -33,6 +33,7 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use dash_sdk::platform::Fetch;
+use dpp::balances::credits::CREDITS_PER_DUFF;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::{KeyID, Purpose, SecurityLevel};
 use dpp::prelude::Identity;
@@ -193,20 +194,27 @@ async fn cr_003_asset_lock_funded_registration() {
     // threshold is a deterministic, fee-tolerant lower bound — testnet
     // chain-time fees are well below `ASSET_LOCK_AMOUNT / 2`, so this
     // round-trips even across protocol-version fee bumps without
-    // pinning a brittle exact number.
-    let observed_balance = wait_for_identity_balance(
+    // pinning a brittle exact number. Identity balances are denominated
+    // in credits (`dpp::fee::Credits`), the asset-lock amount in duffs;
+    // the per-duff conversion factor is `CREDITS_PER_DUFF` (= 1000) per
+    // dpp's `balances::credits` module.
+    let expected_credits_min = ASSET_LOCK_AMOUNT.saturating_mul(CREDITS_PER_DUFF) / 2;
+    let expected_credits_max = ASSET_LOCK_AMOUNT.saturating_mul(CREDITS_PER_DUFF);
+    let observed_credits = wait_for_identity_balance(
         s.test_wallet.platform_wallet().sdk(),
         identity_id,
-        ASSET_LOCK_AMOUNT / 2,
+        expected_credits_min,
         IDENTITY_VISIBILITY_TIMEOUT,
     )
     .await
-    .expect("identity balance reached half-lock threshold");
+    .expect("identity balance (credits) reached half-lock threshold");
     assert!(
-        observed_balance <= ASSET_LOCK_AMOUNT,
-        "POST-pin violated: observed identity balance {observed_balance} > \
-         ASSET_LOCK_AMOUNT {ASSET_LOCK_AMOUNT}. Registration cannot credit more \
-         than the asset-lock output value (fees are subtracted, not added)."
+        observed_credits <= expected_credits_max,
+        "POST-pin violated: observed identity balance {observed_credits} credits \
+         > full asset-lock {expected_credits_max} credits \
+         (= ASSET_LOCK_AMOUNT {ASSET_LOCK_AMOUNT} duffs * CREDITS_PER_DUFF \
+         {CREDITS_PER_DUFF}). Registration cannot credit more than the \
+         asset-lock output value (fees are subtracted, not added)."
     );
 
     // Step 5: round-trip the identity via the SDK to assert the
