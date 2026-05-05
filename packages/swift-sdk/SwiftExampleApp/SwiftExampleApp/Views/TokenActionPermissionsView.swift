@@ -658,6 +658,13 @@ struct TokenActionPermissionsView: View {
     /// `PersistentTokenBalance` rows aren't reliably populated by the
     /// time this screen opens, so we can't depend on them.
     @State private var fetchedBalance: UInt64?
+    /// Monotonic counter for in-flight balance fetches. The previous
+    /// "compare identityId at start vs at end" guard didn't cover the
+    /// A → B → A case (an older A-fetch passes the equality check and
+    /// overwrites a newer one). Capture this at the top of every
+    /// refresh and reject any late assignment whose generation no
+    /// longer matches.
+    @State private var balanceFetchGeneration: Int = 0
 
     @EnvironmentObject var appState: AppState
     @Query private var localIdentities: [PersistentIdentity]
@@ -809,6 +816,9 @@ struct TokenActionPermissionsView: View {
     }
 
     private func refreshTokenBalance() async {
+        balanceFetchGeneration &+= 1
+        let gen = balanceFetchGeneration
+
         // Drop any stale value first so a slow / failed lookup can't
         // forward the *previous* identity's balance into Transfer or
         // Burn while the new fetch is in flight.
@@ -817,7 +827,6 @@ struct TokenActionPermissionsView: View {
         guard let identity = resolvedIdentity, let sdk = appState.sdk else {
             return
         }
-        let identityIdAtStart = identity.identityId
 
         // `PersistentToken.id` is a SwiftData uniqueness key
         // (`contractId + position.bigEndian`) — *not* the on-chain
@@ -836,18 +845,21 @@ struct TokenActionPermissionsView: View {
                 tokenIds: [canonicalTokenId]
             )
             await MainActor.run {
-                // The user may have switched identity while we were
-                // awaiting; only commit if the resolved identity still
-                // matches the one this fetch was for.
-                guard self.resolvedIdentity?.identityId == identityIdAtStart
-                else { return }
+                // Generation guards against A → B → A: an older
+                // A-fetch resolving after a fresher one would
+                // otherwise pass an identity-equality check and
+                // overwrite the newer value with stale data.
+                guard self.balanceFetchGeneration == gen else { return }
                 // Default missing entries to 0 — the SDK omits tokens
                 // the identity has never held.
                 self.fetchedBalance = balances[canonicalTokenId] ?? 0
             }
         } catch {
-            // `fetchedBalance` already cleared above; per-action views
-            // fall back to the persisted row when this stays nil.
+            // Was previously a silent `catch { }`. Surface as a dev
+            // breadcrumb so failed fetches are at least observable
+            // from the console; per-action views still fall back to
+            // the persisted row when `fetchedBalance` stays nil.
+            print("⚠️ refreshTokenBalance failed for \(identity.identityIdBase58): \(error)")
         }
     }
 

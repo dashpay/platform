@@ -24,6 +24,10 @@ struct TokenPurchaseActionView: View {
     @State private var amountText: String = ""
     @State private var isSubmitting: Bool = false
     @State private var submitError: AlertMessage?
+    /// Generation counter so a late `MainActor.run` from a previous
+    /// `submit()` Task can't write back to a re-entered view instance
+    /// after the user pops + repushes mid-broadcast.
+    @State private var submitGeneration: Int = 0
 
     private struct AlertMessage: Identifiable {
         let id = UUID()
@@ -139,6 +143,8 @@ struct TokenPurchaseActionView: View {
         }
 
         isSubmitting = true
+        submitGeneration &+= 1
+        let gen = submitGeneration
         let signer = KeychainSigner(modelContainer: modelContext.container)
         let identityId = identity.identityId
         let contractId = token.contractId
@@ -158,11 +164,13 @@ struct TokenPurchaseActionView: View {
                     signer: signer
                 )
                 await MainActor.run {
+                    guard self.submitGeneration == gen else { return }
                     self.isSubmitting = false
                     self.dismiss()
                 }
             } catch {
                 await MainActor.run {
+                    guard self.submitGeneration == gen else { return }
                     self.submitError = .init(message: error.localizedDescription)
                     self.isSubmitting = false
                 }
