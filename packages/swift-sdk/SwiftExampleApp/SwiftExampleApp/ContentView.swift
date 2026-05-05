@@ -312,7 +312,13 @@ struct ContentView: View {
                 // wallet — but keep going through the rest.
                 continue
             case .unavailable(let detail):
+                // Same shape as the shared-branch handler: surface
+                // the error AND route into the keep/delete prompt
+                // so the user has a path forward instead of being
+                // left with stale orphans queued internally with
+                // no UI to act on them.
                 recoveryError = "Authentication is unavailable on this device: \(detail)"
+                showDeletePrompt = true
                 return
             case .failed(let detail):
                 recoveryError = "Authorization failed: \(detail)"
@@ -397,9 +403,14 @@ struct ContentView: View {
         // `walletManager.createWallet` API still takes a single
         // network. Multi-network support is a TODO on the Rust side
         // — when it lands, `metadata?.resolvedNetworks` is already
-        // there to feed in directly.
+        // there to feed in directly. Final fallback is the user's
+        // active network rather than a hard-coded testnet — the
+        // only rows that hit the fallback are legacy / corrupted
+        // metadata blobs, and re-deriving them on whatever network
+        // the user is currently looking at matches their context
+        // far better than silently restoring on testnet.
         let restoredNetwork: Network =
-            entry.network ?? metadata?.resolvedNetworks.first ?? .testnet
+            entry.network ?? metadata?.resolvedNetworks.first ?? platformState.currentNetwork
         let restoredBirthHeight = metadata?.birthHeight
 
         do {

@@ -111,16 +111,18 @@ struct PublicKeyStorageListView: View {
     }
 
     /// Keys whose owning identity is on the active network. Orphan
-    /// keys (no parent identity) get pulled in too — they have no
-    /// network discriminant of their own, so the explorer surfaces
-    /// them under the active network rather than hiding them across
-    /// every network. Wipes happen at the keychain layer, not here.
+    /// keys (no parent identity) drop out of the per-network view
+    /// entirely — duplicating them across mainnet / testnet / devnet
+    /// / regtest would re-introduce the cross-network leakage this
+    /// PR removes and would also disagree with
+    /// `StorageExplorerView.loadCounts()` (which evaluates
+    /// `$0.identity?.networkRaw == raw` and excludes nil identities
+    /// the same way). If global orphan-key diagnostics are needed
+    /// later they belong on a separate, network-agnostic surface.
     private var scopedKeys: [PersistentPublicKey] {
         allKeys.filter { key in
-            if let identity = key.identity {
-                return identity.networkRaw == network.rawValue
-            }
-            return true
+            guard let identity = key.identity else { return false }
+            return identity.networkRaw == network.rawValue
         }
     }
 
@@ -216,8 +218,11 @@ struct PublicKeyStorageListView: View {
 
     /// Keys whose `identity` relationship is nil — e.g. rows that
     /// predate the changeset wiring or belong to identities since
-    /// deleted. Orphan rows have no network discriminant; the
-    /// explorer shows them under whatever network is active.
+    /// deleted. `scopedKeys` already strips them from the
+    /// per-network view, so this collection is always empty in the
+    /// current explorer; the section render below short-circuits on
+    /// `isEmpty`. Kept as a one-liner so a future global
+    /// orphan-diagnostics surface can reuse it.
     private var orphanKeys: [PersistentPublicKey] {
         scopedKeys.filter { $0.identity == nil }
     }

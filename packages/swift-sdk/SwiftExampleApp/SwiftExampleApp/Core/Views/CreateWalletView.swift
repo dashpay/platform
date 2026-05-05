@@ -251,7 +251,16 @@ struct CreateWalletView: View {
     }
 
     private var hasNetworkSelected: Bool {
-        createForMainnet || createForTestnet || createForDevnet || createForRegtest
+        // Mirror the same visibility gates used when building
+        // `selectedNetworks` below — without this, a stale
+        // `createForRegtest`/`createForDevnet` flag set by
+        // `setupInitialNetworkSelection()` could leave the Create
+        // button enabled while `selectedNetworks` ends up empty,
+        // surfacing a `"No network selected"` error after the tap.
+        createForMainnet ||
+        createForTestnet ||
+        (createForDevnet && shouldShowDevnet) ||
+        (createForRegtest && shouldShowRegtest)
     }
 
     private func setupInitialNetworkSelection() {
