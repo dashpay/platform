@@ -167,19 +167,42 @@ impl E2eContext {
         // fetching the address are demoted to a warning so framework
         // init isn't gated on Core paths that most tests bypass
         // entirely.
+        // QA-003: surface the bank's `birth_height` next to the
+        // address + balance so operators can tell "wallet starts
+        // above your funding tx" from "your tx hasn't confirmed yet".
+        // When `core_balance == 0` and `birth_height > 0`, SPV's
+        // compact-filter scan window starts past genesis, so any
+        // funding tx confirmed at a lower block is invisible until
+        // re-broadcast at a height ≥ `birth_height`. The bank
+        // currently passes `Some(0)` to bypass this entirely (see
+        // `BankWallet::load`); the warn is defence-in-depth in case
+        // that ever regresses.
+        let bank_birth_height = bank.birth_height().await;
+        let bank_core_balance = bank.core_balance_confirmed();
         match bank.primary_core_receive_address().await {
             Ok(addr) => tracing::info!(
                 target: "platform_wallet::e2e::bank",
                 bank_core_addr = %addr,
-                bank_core_balance = bank.core_balance_confirmed(),
+                bank_core_balance,
+                birth_height = bank_birth_height,
                 "═══ BANK CORE ADDRESS (fund here for CR-* / ID-007 tests) ═══"
             ),
             Err(err) => tracing::warn!(
                 target: "platform_wallet::e2e::bank",
                 error = %err,
-                bank_core_balance = bank.core_balance_confirmed(),
+                bank_core_balance,
+                birth_height = bank_birth_height,
                 "Bank Core address derivation failed; pre-flight log incomplete"
             ),
+        }
+        if bank_core_balance == 0 && bank_birth_height > 0 {
+            tracing::warn!(
+                target: "platform_wallet::e2e::bank",
+                birth_height = bank_birth_height,
+                "Bank Core balance is zero with birth_height > 0 — SPV's filter \
+                 scan starts at this block; any funding tx confirmed below it \
+                 is invisible until re-broadcast at a height ≥ birth_height"
+            );
         }
 
         // Resolve / register the bank identity BEFORE the orphan
