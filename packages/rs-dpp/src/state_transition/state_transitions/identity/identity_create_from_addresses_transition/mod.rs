@@ -99,7 +99,7 @@ impl StateTransitionFieldTypes for IdentityCreateFromAddressesTransition {
 }
 
 #[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
-mod json_convertible_tests {
+pub(crate) mod json_convertible_tests {
     use super::*;
     use crate::address_funds::{
         AddressFundsFeeStrategyStep, AddressWitness, PlatformAddress,
@@ -114,7 +114,7 @@ mod json_convertible_tests {
 
     /// Fixture with NON-DEFAULT values for every field so wire-shape
     /// assertions actually exercise data preservation.
-    fn fixture() -> IdentityCreateFromAddressesTransition {
+    pub(crate) fn fixture() -> IdentityCreateFromAddressesTransition {
         let mut inputs = BTreeMap::new();
         inputs.insert(PlatformAddress::P2pkh([0x11; 20]), (7u32, 1_000_000u64));
         inputs.insert(PlatformAddress::P2sh([0x22; 20]), (3u32, 500_000u64));

@@ -102,7 +102,7 @@ impl StateTransitionFieldTypes for IdentityCreditTransferToAddressesTransition {
 }
 
 #[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
-mod json_convertible_tests {
+pub(crate) mod json_convertible_tests {
     use super::*;
     use crate::address_funds::PlatformAddress;
     use crate::state_transition::identity_credit_transfer_to_addresses_transition::v0::IdentityCreditTransferToAddressesTransitionV0;
@@ -110,7 +110,7 @@ mod json_convertible_tests {
     use serde_json::json;
     use std::collections::BTreeMap;
 
-    fn fixture() -> IdentityCreditTransferToAddressesTransition {
+    pub(crate) fn fixture() -> IdentityCreditTransferToAddressesTransition {
         let mut recipient_addresses = BTreeMap::new();
         recipient_addresses.insert(PlatformAddress::P2pkh([0x88; 20]), 50_000u64);
         recipient_addresses.insert(PlatformAddress::P2sh([0x99; 20]), 25_000u64);

@@ -100,7 +100,7 @@ impl StateTransitionFieldTypes for AddressFundsTransferTransition {
 }
 
 #[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
-mod json_convertible_tests {
+pub(crate) mod json_convertible_tests {
     use super::*;
     use crate::address_funds::{AddressFundsFeeStrategyStep, AddressWitness, PlatformAddress};
     use crate::state_transition::address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0;
@@ -108,7 +108,7 @@ mod json_convertible_tests {
     use serde_json::json;
     use std::collections::BTreeMap;
 
-    fn fixture() -> AddressFundsTransferTransition {
+    pub(crate) fn fixture() -> AddressFundsTransferTransition {
         let mut inputs = BTreeMap::new();
         inputs.insert(PlatformAddress::P2pkh([0xf1; 20]), (10u32, 800_000u64));
 

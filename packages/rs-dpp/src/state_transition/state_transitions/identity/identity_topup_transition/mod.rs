@@ -212,7 +212,7 @@ mod test {
 }
 
 #[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
-mod json_convertible_tests {
+pub(crate) mod json_convertible_tests {
     use super::*;
 
     use crate::tests::fixtures::instant_asset_lock_proof_fixture;
@@ -222,7 +222,7 @@ mod json_convertible_tests {
     // (random transaction / instantLock per run), so wire-shape assertions on the
     // asset_lock_proof field stay envelope-only — the deterministic siblings
     // (identity_id, user_fee_increase, signature) get full literal assertions.
-    fn fixture() -> IdentityTopUpTransition {
+    pub(crate) fn fixture() -> IdentityTopUpTransition {
         IdentityTopUpTransition::V0(IdentityTopUpTransitionV0 {
             asset_lock_proof: instant_asset_lock_proof_fixture(None, None),
             identity_id: Identifier::new([0x44; 32]),

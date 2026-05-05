@@ -73,7 +73,7 @@ impl StateTransitionFieldTypes for ShieldedWithdrawalTransition {
 }
 
 #[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
-mod json_convertible_tests {
+pub(crate) mod json_convertible_tests {
     use super::*;
     use crate::identity::core_script::CoreScript;
     use crate::shielded::SerializedAction;
@@ -82,7 +82,7 @@ mod json_convertible_tests {
     use platform_value::{platform_value, BinaryData, Bytes32};
     use serde_json::json;
 
-    fn fixture() -> ShieldedWithdrawalTransition {
+    pub(crate) fn fixture() -> ShieldedWithdrawalTransition {
         ShieldedWithdrawalTransition::V0(ShieldedWithdrawalTransitionV0 {
             actions: vec![SerializedAction {
                 nullifier: [0x11; 32],

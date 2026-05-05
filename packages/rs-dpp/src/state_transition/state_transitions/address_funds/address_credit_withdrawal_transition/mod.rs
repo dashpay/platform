@@ -107,7 +107,7 @@ impl StateTransitionFieldTypes for AddressCreditWithdrawalTransition {
 }
 
 #[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
-mod json_convertible_tests {
+pub(crate) mod json_convertible_tests {
     use super::*;
     use crate::address_funds::{AddressFundsFeeStrategyStep, AddressWitness, PlatformAddress};
     use crate::identity::core_script::CoreScript;
@@ -117,7 +117,7 @@ mod json_convertible_tests {
     use serde_json::json;
     use std::collections::BTreeMap;
 
-    fn fixture() -> AddressCreditWithdrawalTransition {
+    pub(crate) fn fixture() -> AddressCreditWithdrawalTransition {
         let mut inputs = BTreeMap::new();
         inputs.insert(PlatformAddress::P2pkh([0x01; 20]), (5u32, 900_000u64));
 

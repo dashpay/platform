@@ -72,7 +72,7 @@ impl StateTransitionFieldTypes for ShieldTransition {
 }
 
 #[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
-mod json_convertible_tests {
+pub(crate) mod json_convertible_tests {
     use super::*;
     use crate::address_funds::{AddressFundsFeeStrategyStep, AddressWitness, PlatformAddress};
     use crate::shielded::SerializedAction;
@@ -92,7 +92,7 @@ mod json_convertible_tests {
         }
     }
 
-    fn fixture() -> ShieldTransition {
+    pub(crate) fn fixture() -> ShieldTransition {
         let mut inputs = BTreeMap::new();
         inputs.insert(PlatformAddress::P2pkh([0xa1; 20]), (3u32, 500_000u64));
         ShieldTransition::V0(ShieldTransitionV0 {

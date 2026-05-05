@@ -479,86 +479,254 @@ impl crate::serialization::ValueConvertible for StateTransition {}
 mod json_convertible_tests {
     use super::*;
 
-    /// StateTransition is `serde(untagged)` — round-trip is fragile because
-    /// deserialize tries each variant in order until one matches structurally.
-    /// Using IdentityCreateFromAddresses with default fixture; if this proves
-    /// ambiguous in pass 2 bug-fix work, we'll switch to a manual J impl that
-    /// prefixes a `$type` tag.
-    fn fixture() -> StateTransition {
-        use crate::address_funds::fee_strategy::AddressFundsFeeStrategyStep;
-        use crate::address_funds::PlatformAddress;
-        use crate::state_transition::identity_create_from_addresses_transition::v0::IdentityCreateFromAddressesTransitionV0;
-        use std::collections::BTreeMap;
-        let mut inputs = BTreeMap::new();
-        inputs.insert(PlatformAddress::P2pkh([0xa1; 20]), (1u32, 500_000u64));
-        StateTransition::IdentityCreateFromAddresses(IdentityCreateFromAddressesTransition::V0(
-            IdentityCreateFromAddressesTransitionV0 {
-                public_keys: vec![],
-                inputs,
-                output: None,
-                fee_strategy: vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
-                user_fee_increase: 7,
-                input_witnesses: vec![],
-            },
-        ))
-    }
+    /// Round-trip a StateTransition through both JSON and Value, asserting:
+    /// 1. The wire emits `{"type": "<expected_tag>", ...}` (umbrella's
+    ///    `tag = "type", rename_all = "camelCase"` is correctly applied).
+    /// 2. Round-trip preserves the variant.
+    /// 3. Round-trip preserves structural equality (PartialEq on the inner).
+    ///
+    /// Inner field shapes are covered by each inner type's dedicated
+    /// `*_with_full_wire_shape` test — this helper only exercises the
+    /// umbrella's tag-dispatch boundary. The risk it catches: an inner
+    /// variant whose serde body conflicts with the umbrella's `"type"` key,
+    /// or a serde rename that resolves to something other than the
+    /// expected camelCase form.
+    ///
+    /// `lossy_json_int_variants`: when true, the JSON-side equality assertion
+    /// runs after `normalize_integer_variants_for_json_round_trip` on both
+    /// sides. Required for variants that embed a `DataContract` —
+    /// `document_schemas` carry sized integer variants (`U32`/`I32`) that
+    /// JSON's single Number type cannot preserve. See commit 7397c73f31.
+    fn assert_umbrella_round_trip_inner(
+        original: StateTransition,
+        expected_type_tag: &str,
+        lossy_json_int_variants: bool,
+    ) {
+        use crate::serialization::{JsonConvertible, ValueConvertible};
 
-    fn assert_outer_variant(t: &StateTransition) {
-        let StateTransition::IdentityCreateFromAddresses(inner) = t else {
-            panic!("expected IdentityCreateFromAddresses");
-        };
-        let IdentityCreateFromAddressesTransition::V0(v0) = inner;
-        assert!(v0.public_keys.is_empty(), "public_keys");
-        assert_eq!(v0.inputs.len(), 1, "inputs.len");
-        assert_eq!(v0.output, None, "output");
-        assert_eq!(v0.user_fee_increase, 7, "user_fee_increase");
-        assert!(v0.input_witnesses.is_empty(), "input_witnesses");
-    }
-
-    // The umbrella `StateTransition` now uses `tag = "type",
-    // rename_all = "camelCase"` matching the codebase convention for
-    // semantically-different-variant enums (`AssetLockProof`,
-    // `ContractBoundSpecification`, `ActionEvent`). Was `serde(untagged)`,
-    // which made deserialize ambiguous (each variant tried in order until
-    // one matched structurally). Wire shape is now
-    // `{"type": "<variantNameInCamelCase>", ...inner fields...}`.
-
-    #[test]
-    fn json_round_trip_with_full_wire_shape() {
-        use crate::serialization::JsonConvertible;
-        let original = fixture();
+        // JSON
         let json = original.to_json().expect("to_json");
-        // Variant tag is `identityCreateFromAddresses` (camelCase of variant
-        // name). Inner shape — `IdentityCreateFromAddressesTransition`'s own
-        // V0 wire form including its `$formatVersion` tag — is exercised by
-        // that type's dedicated wire-shape test; we only assert the umbrella
-        // tag and structural round-trip here.
-        assert_eq!(json["type"], "identityCreateFromAddresses");
-        let recovered = StateTransition::from_json(json).expect("from_json");
-        assert_eq!(original, recovered);
-        assert_outer_variant(&recovered);
-    }
+        assert_eq!(
+            json["type"], expected_type_tag,
+            "json type tag for {expected_type_tag}",
+        );
+        let recovered =
+            StateTransition::from_json(json).expect("from_json round-trip");
+        assert_eq!(
+            std::mem::discriminant(&original),
+            std::mem::discriminant(&recovered),
+            "json round-trip variant for {expected_type_tag}",
+        );
+        if lossy_json_int_variants {
+            use crate::tests::utils::normalize_integer_variants_for_json_round_trip;
+            let mut original_canon = original.to_object().expect("to_object");
+            let mut recovered_canon = recovered.to_object().expect("to_object");
+            normalize_integer_variants_for_json_round_trip(&mut original_canon);
+            normalize_integer_variants_for_json_round_trip(&mut recovered_canon);
+            assert_eq!(
+                original_canon, recovered_canon,
+                "json round-trip equality (modulo int-variant) for {expected_type_tag}",
+            );
+        } else {
+            assert_eq!(original, recovered, "json round-trip equality for {expected_type_tag}");
+        }
 
-    #[test]
-    fn value_round_trip_with_full_wire_shape() {
-        use crate::serialization::ValueConvertible;
-        let original = fixture();
+        // Value
         let value = original.to_object().expect("to_object");
-        // Same: variant tag is `identityCreateFromAddresses`; inner shape is
-        // covered by the inner type's own value-path test.
         let map = value.as_map().expect("Value::Map");
         let tag = map
             .iter()
             .find(|(k, _)| k.as_text() == Some("type"))
             .map(|(_, v)| v)
-            .expect("type present");
+            .unwrap_or_else(|| panic!("type tag missing for {expected_type_tag}"));
         assert_eq!(
             *tag,
-            platform_value::Value::Text("identityCreateFromAddresses".to_string())
+            platform_value::Value::Text(expected_type_tag.to_string()),
+            "value type tag for {expected_type_tag}",
         );
-        let recovered = StateTransition::from_object(value).expect("from_object");
-        assert_eq!(original, recovered);
-        assert_outer_variant(&recovered);
+        let recovered =
+            StateTransition::from_object(value).expect("from_object round-trip");
+        assert_eq!(
+            std::mem::discriminant(&original),
+            std::mem::discriminant(&recovered),
+            "value round-trip variant for {expected_type_tag}",
+        );
+        assert_eq!(original, recovered, "value round-trip equality for {expected_type_tag}");
+    }
+
+    fn assert_umbrella_round_trip(original: StateTransition, expected_type_tag: &str) {
+        assert_umbrella_round_trip_inner(original, expected_type_tag, false);
+    }
+
+    /// Variant of `assert_umbrella_round_trip` for transitions that embed a
+    /// `DataContract` (`DataContractCreate`, `DataContractUpdate`). JSON's
+    /// single Number type collapses sized-int variants in the embedded
+    /// `document_schemas` tree, so the JSON-side equality assertion is
+    /// run modulo integer-variant normalization. The Value path keeps its
+    /// strict bit-exact assertion (platform_value preserves sized ints).
+    fn assert_umbrella_round_trip_lossy_json_int_variants(
+        original: StateTransition,
+        expected_type_tag: &str,
+    ) {
+        assert_umbrella_round_trip_inner(original, expected_type_tag, true);
+    }
+
+    // Per-variant umbrella round-trip tests. Inner fixtures are reused from
+    // each transition's own `json_convertible_tests::fixture()` (made
+    // `pub(crate)` for this purpose) — keeps the umbrella tests in sync
+    // with the inner-type tests automatically.
+
+    #[test]
+    fn umbrella_data_contract_create() {
+        let inner = crate::state_transition::data_contract_create_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip_lossy_json_int_variants(
+            StateTransition::DataContractCreate(inner),
+            "dataContractCreate",
+        );
+    }
+
+    #[test]
+    fn umbrella_data_contract_update() {
+        let inner = crate::state_transition::data_contract_update_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip_lossy_json_int_variants(
+            StateTransition::DataContractUpdate(inner),
+            "dataContractUpdate",
+        );
+    }
+
+    #[test]
+    fn umbrella_batch() {
+        let inner = crate::state_transition::batch_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(StateTransition::Batch(inner), "batch");
+    }
+
+    #[test]
+    fn umbrella_identity_create() {
+        let inner = crate::state_transition::identity_create_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(StateTransition::IdentityCreate(inner), "identityCreate");
+    }
+
+    #[test]
+    fn umbrella_identity_top_up() {
+        let inner = crate::state_transition::identity_topup_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(StateTransition::IdentityTopUp(inner), "identityTopUp");
+    }
+
+    #[test]
+    fn umbrella_identity_credit_withdrawal() {
+        let inner = crate::state_transition::identity_credit_withdrawal_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(
+            StateTransition::IdentityCreditWithdrawal(inner),
+            "identityCreditWithdrawal",
+        );
+    }
+
+    #[test]
+    fn umbrella_identity_update() {
+        let inner = crate::state_transition::identity_update_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(StateTransition::IdentityUpdate(inner), "identityUpdate");
+    }
+
+    #[test]
+    fn umbrella_identity_credit_transfer() {
+        let inner = crate::state_transition::identity_credit_transfer_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(
+            StateTransition::IdentityCreditTransfer(inner),
+            "identityCreditTransfer",
+        );
+    }
+
+    #[test]
+    fn umbrella_masternode_vote() {
+        let inner = crate::state_transition::masternode_vote_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(StateTransition::MasternodeVote(inner), "masternodeVote");
+    }
+
+    #[test]
+    fn umbrella_identity_credit_transfer_to_addresses() {
+        let inner = crate::state_transition::identity_credit_transfer_to_addresses_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(
+            StateTransition::IdentityCreditTransferToAddresses(inner),
+            "identityCreditTransferToAddresses",
+        );
+    }
+
+    #[test]
+    fn umbrella_identity_create_from_addresses() {
+        let inner = crate::state_transition::identity_create_from_addresses_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(
+            StateTransition::IdentityCreateFromAddresses(inner),
+            "identityCreateFromAddresses",
+        );
+    }
+
+    #[test]
+    fn umbrella_identity_top_up_from_addresses() {
+        let inner = crate::state_transition::identity_topup_from_addresses_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(
+            StateTransition::IdentityTopUpFromAddresses(inner),
+            "identityTopUpFromAddresses",
+        );
+    }
+
+    #[test]
+    fn umbrella_address_funds_transfer() {
+        let inner = crate::state_transition::address_funds_transfer_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(StateTransition::AddressFundsTransfer(inner), "addressFundsTransfer");
+    }
+
+    #[test]
+    fn umbrella_address_funding_from_asset_lock() {
+        let inner = crate::state_transition::address_funding_from_asset_lock_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(
+            StateTransition::AddressFundingFromAssetLock(inner),
+            "addressFundingFromAssetLock",
+        );
+    }
+
+    #[test]
+    fn umbrella_address_credit_withdrawal() {
+        let inner = crate::state_transition::address_credit_withdrawal_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(
+            StateTransition::AddressCreditWithdrawal(inner),
+            "addressCreditWithdrawal",
+        );
+    }
+
+    #[test]
+    fn umbrella_shield() {
+        let inner = crate::state_transition::shield_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(StateTransition::Shield(inner), "shield");
+    }
+
+    #[test]
+    fn umbrella_shielded_transfer() {
+        let inner = crate::state_transition::shielded_transfer_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(StateTransition::ShieldedTransfer(inner), "shieldedTransfer");
+    }
+
+    #[test]
+    fn umbrella_unshield() {
+        let inner = crate::state_transition::unshield_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(StateTransition::Unshield(inner), "unshield");
+    }
+
+    #[test]
+    fn umbrella_shield_from_asset_lock() {
+        let inner = crate::state_transition::shield_from_asset_lock_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(
+            StateTransition::ShieldFromAssetLock(inner),
+            "shieldFromAssetLock",
+        );
+    }
+
+    #[test]
+    fn umbrella_shielded_withdrawal() {
+        let inner = crate::state_transition::shielded_withdrawal_transition::json_convertible_tests::fixture();
+        assert_umbrella_round_trip(
+            StateTransition::ShieldedWithdrawal(inner),
+            "shieldedWithdrawal",
+        );
     }
 }
 

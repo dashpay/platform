@@ -112,12 +112,12 @@ impl StateTransitionFieldTypes for BatchTransition {
 }
 
 #[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
-mod json_convertible_tests {
+pub(crate) mod json_convertible_tests {
     use super::*;
     use platform_value::{platform_value, BinaryData, Identifier};
     use serde_json::json;
 
-    fn fixture() -> BatchTransition {
+    pub(crate) fn fixture() -> BatchTransition {
         BatchTransition::V0(BatchTransitionV0 {
             owner_id: Identifier::new([0xc0; 32]),
             transitions: vec![], // empty transitions list — sub-types tested separately

@@ -73,7 +73,7 @@ impl StateTransitionFieldTypes for ShieldedTransferTransition {
 }
 
 #[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
-mod json_convertible_tests {
+pub(crate) mod json_convertible_tests {
     use super::*;
     use crate::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0;
     use platform_value::{platform_value, Bytes32};
@@ -90,7 +90,7 @@ mod json_convertible_tests {
         }
     }
 
-    fn fixture() -> ShieldedTransferTransition {
+    pub(crate) fn fixture() -> ShieldedTransferTransition {
         ShieldedTransferTransition::V0(ShieldedTransferTransitionV0 {
             actions: vec![fixture_action()],
             value_balance: 100_000,

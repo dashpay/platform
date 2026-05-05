@@ -72,7 +72,7 @@ impl StateTransitionFieldTypes for ShieldFromAssetLockTransition {
 }
 
 #[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
-mod json_convertible_tests {
+pub(crate) mod json_convertible_tests {
     use super::*;
     use crate::shielded::SerializedAction;
     use crate::state_transition::shield_from_asset_lock_transition::v0::ShieldFromAssetLockTransitionV0;
@@ -84,7 +84,7 @@ mod json_convertible_tests {
     // would change between runs. We assert envelope only on `assetLockProof` and
     // a structural `assert_eq!(original, recovered)` covers that field's
     // round-trip; deterministic siblings get full literal assertions.
-    fn fixture() -> ShieldFromAssetLockTransition {
+    pub(crate) fn fixture() -> ShieldFromAssetLockTransition {
         ShieldFromAssetLockTransition::V0(ShieldFromAssetLockTransitionV0 {
             asset_lock_proof: instant_asset_lock_proof_fixture(None, None),
             actions: vec![SerializedAction {

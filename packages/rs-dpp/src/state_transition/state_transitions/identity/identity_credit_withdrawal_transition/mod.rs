@@ -359,7 +359,7 @@ mod test {
 }
 
 #[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
-mod json_convertible_tests {
+pub(crate) mod json_convertible_tests {
     use super::*;
 
     use crate::identity::core_script::CoreScript;
@@ -367,7 +367,7 @@ mod json_convertible_tests {
     use platform_value::{platform_value, BinaryData, Identifier};
     use serde_json::json;
 
-    fn fixture() -> IdentityCreditWithdrawalTransition {
+    pub(crate) fn fixture() -> IdentityCreditWithdrawalTransition {
         IdentityCreditWithdrawalTransition::V0(IdentityCreditWithdrawalTransitionV0 {
             identity_id: Identifier::new([0x33; 32]),
             amount: 9_876_543,

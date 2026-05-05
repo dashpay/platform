@@ -95,7 +95,7 @@ impl StateTransitionFieldTypes for IdentityTopUpFromAddressesTransition {
 }
 
 #[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
-mod json_convertible_tests {
+pub(crate) mod json_convertible_tests {
     use super::*;
     use crate::address_funds::{AddressFundsFeeStrategyStep, AddressWitness, PlatformAddress};
     use crate::state_transition::identity_topup_from_addresses_transition::v0::IdentityTopUpFromAddressesTransitionV0;
@@ -103,7 +103,7 @@ mod json_convertible_tests {
     use serde_json::json;
     use std::collections::BTreeMap;
 
-    fn fixture() -> IdentityTopUpFromAddressesTransition {
+    pub(crate) fn fixture() -> IdentityTopUpFromAddressesTransition {
         let mut inputs = BTreeMap::new();
         inputs.insert(PlatformAddress::P2pkh([0x44; 20]), (9u32, 750_000u64));
 

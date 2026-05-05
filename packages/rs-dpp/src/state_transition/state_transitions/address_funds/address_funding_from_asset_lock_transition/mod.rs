@@ -98,7 +98,7 @@ impl StateTransitionFieldTypes for AddressFundingFromAssetLockTransition {
 }
 
 #[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
-mod json_convertible_tests {
+pub(crate) mod json_convertible_tests {
     use super::*;
     use crate::address_funds::{AddressFundsFeeStrategyStep, AddressWitness, PlatformAddress};
     use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
@@ -110,7 +110,7 @@ mod json_convertible_tests {
     use std::collections::BTreeMap;
     use std::str::FromStr;
 
-    fn fixture() -> AddressFundingFromAssetLockTransition {
+    pub(crate) fn fixture() -> AddressFundingFromAssetLockTransition {
         let mut inputs = BTreeMap::new();
         inputs.insert(PlatformAddress::P2pkh([0xa1; 20]), (4u32, 600_000u64));
 

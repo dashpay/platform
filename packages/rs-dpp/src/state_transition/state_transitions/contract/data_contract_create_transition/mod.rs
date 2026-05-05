@@ -432,7 +432,7 @@ mod test {
 }
 
 #[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
-mod json_convertible_tests {
+pub(crate) mod json_convertible_tests {
     use super::*;
     use crate::state_transition::data_contract_create_transition::v0::DataContractCreateTransitionV0;
     use crate::tests::fixtures::get_data_contract_fixture;
@@ -440,7 +440,7 @@ mod json_convertible_tests {
     use platform_version::version::PlatformVersion;
     use platform_version::TryFromPlatformVersioned;
 
-    fn fixture() -> DataContractCreateTransition {
+    pub(crate) fn fixture() -> DataContractCreateTransition {
         let pv = PlatformVersion::latest();
         let created = get_data_contract_fixture(None, 0, pv.protocol_version);
         let data_contract = created.data_contract().clone();

@@ -254,7 +254,7 @@ mod test {
 }
 
 #[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
-mod json_convertible_tests {
+pub(crate) mod json_convertible_tests {
     use super::*;
 
     use crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
@@ -280,7 +280,7 @@ mod json_convertible_tests {
         }))
     }
 
-    fn fixture() -> MasternodeVoteTransition {
+    pub(crate) fn fixture() -> MasternodeVoteTransition {
         MasternodeVoteTransition::V0(MasternodeVoteTransitionV0 {
             pro_tx_hash: Identifier::new([0x66; 32]),
             voter_identity_id: Identifier::new([0x77; 32]),

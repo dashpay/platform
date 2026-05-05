@@ -214,7 +214,7 @@ mod test {
 }
 
 #[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
-mod json_convertible_tests {
+pub(crate) mod json_convertible_tests {
     use super::*;
 
     use crate::tests::fixtures::instant_asset_lock_proof_fixture;
@@ -225,7 +225,7 @@ mod json_convertible_tests {
     // wire shape would change between runs, so wire-shape assertions stay envelope-
     // only on the asset_lock_proof field, with deterministic siblings asserted
     // literally.
-    fn fixture() -> IdentityCreateTransition {
+    pub(crate) fn fixture() -> IdentityCreateTransition {
         let asset_lock_proof = instant_asset_lock_proof_fixture(None, None);
         // identity_id is `serde(skip)` and reconstructed from the proof on deserialize
         // (see IdentityCreateTransitionV0::try_from(IdentityCreateTransitionV0Inner)).

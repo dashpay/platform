@@ -73,7 +73,7 @@ impl StateTransitionFieldTypes for UnshieldTransition {
 }
 
 #[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
-mod json_convertible_tests {
+pub(crate) mod json_convertible_tests {
     use super::*;
     use crate::state_transition::unshield_transition::v0::UnshieldTransitionV0;
     use platform_value::{platform_value, Bytes32};
@@ -90,7 +90,7 @@ mod json_convertible_tests {
         }
     }
 
-    fn fixture() -> UnshieldTransition {
+    pub(crate) fn fixture() -> UnshieldTransition {
         UnshieldTransition::V0(UnshieldTransitionV0 {
             output_address: crate::address_funds::PlatformAddress::P2pkh([0xa1; 20]),
             actions: vec![fixture_action()],

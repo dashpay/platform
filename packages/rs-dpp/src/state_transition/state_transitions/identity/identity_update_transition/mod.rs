@@ -285,13 +285,13 @@ mod test {
 }
 
 #[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
-mod json_convertible_tests {
+pub(crate) mod json_convertible_tests {
     use super::*;
 
     use platform_value::{platform_value, BinaryData, Identifier};
     use serde_json::json;
 
-    fn fixture() -> IdentityUpdateTransition {
+    pub(crate) fn fixture() -> IdentityUpdateTransition {
         IdentityUpdateTransition::V0(IdentityUpdateTransitionV0 {
             identity_id: Identifier::new([0x55; 32]),
             revision: 3,
