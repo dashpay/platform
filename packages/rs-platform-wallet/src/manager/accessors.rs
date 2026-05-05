@@ -363,10 +363,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // through a helper on the manager — since the registry itself
         // isn't exposed, fall back to "0" until a sync getter is
         // added. This is intentionally a TODO surface, not a guess.
-        let queue_depth = match self.identity_sync_manager.try_queue_depth() {
-            Some(n) => n,
-            None => 0,
-        };
+        let queue_depth = self
+            .identity_sync_manager
+            .try_queue_depth()
+            .unwrap_or_default();
         IdentitySyncConfigSnapshot {
             interval_seconds: interval.as_secs().max(1),
             queue_depth,
@@ -718,7 +718,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             .map(|(reg_idx, managed)| {
                 use dpp::identity::accessors::IdentityGettersV0;
                 WalletIdentityRowSnapshot {
-                    registration_index: *reg_idx as u32,
+                    registration_index: *reg_idx,
                     identity_id: managed.identity.id().to_buffer(),
                 }
             })
@@ -755,11 +755,7 @@ fn pool_snapshot(pool: &AddressPool) -> AccountAddressPoolSnapshot {
         AddressPoolType::AbsentHardened => 3,
     };
     let last_used_index: i64 = pool.highest_used.map(|i| i as i64).unwrap_or(-1);
-    let addresses = pool
-        .addresses
-        .values()
-        .map(|info| addr_info_snapshot(info))
-        .collect();
+    let addresses = pool.addresses.values().map(addr_info_snapshot).collect();
     AccountAddressPoolSnapshot {
         pool_type,
         gap_limit: pool.gap_limit,
