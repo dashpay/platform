@@ -11,6 +11,15 @@ import SwiftData
 /// stays whole.
 @Model
 public final class PersistentTxo {
+    /// Index `walletId` so per-wallet TXO scans — the canonical
+    /// "show every TXO (and, by union of `transaction` +
+    /// `spendingTransaction`, every transaction) that touches wallet
+    /// W" path — hit an index instead of scanning the entire TXO
+    /// table. The denorm is what makes the predicate translatable
+    /// to SQL in the first place; this just makes the resulting
+    /// query fast at scale.
+    #Index<PersistentTxo>([\.walletId])
+
     /// Outpoint: 36 raw bytes (32-byte txid in wire orientation +
     /// 4-byte vout little-endian) — the standard Bitcoin outpoint
     /// serialization. Unique identifier stored explicitly so

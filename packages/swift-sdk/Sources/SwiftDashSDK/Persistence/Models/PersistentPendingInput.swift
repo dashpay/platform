@@ -39,10 +39,17 @@ import SwiftData
 /// upsert outright.
 @Model
 public final class PersistentPendingInput {
-    /// 36-byte outpoint key (`PersistentTxo.makeOutpoint`). Indexed
-    /// for the per-outpoint reconciliation lookup that runs on every
-    /// `upsertUtxo`.
-    #Index<PersistentPendingInput>([\.outpoint])
+    /// Two single-column indexes:
+    ///   * `outpoint` — the per-outpoint reconciliation lookup that
+    ///     runs on every `upsertUtxo`.
+    ///   * `walletId` — per-wallet pending-input scans (cleanup when
+    ///     a wallet is removed, the storage explorer's network
+    ///     scope, "long-lived non-zero pending count" diagnostics).
+    ///
+    /// SwiftData allows only a single `#Index` macro per model;
+    /// passing multiple key-path arrays declares multiple separate
+    /// indexes from one macro call.
+    #Index<PersistentPendingInput>([\.outpoint], [\.walletId])
     public var outpoint: Data
 
     /// Position of this input in the spending transaction's input

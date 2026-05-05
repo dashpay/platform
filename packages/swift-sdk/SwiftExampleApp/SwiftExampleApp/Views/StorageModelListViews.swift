@@ -5,11 +5,17 @@ import SwiftDashSDK
 // MARK: - PersistentIdentity
 
 struct IdentityStorageListView: View {
+    let network: Network
     @Query(sort: \PersistentIdentity.lastUpdated, order: .reverse)
     private var records: [PersistentIdentity]
 
+    private var filtered: [PersistentIdentity] {
+        records.filter { $0.networkRaw == network.rawValue }
+    }
+
     var body: some View {
-        List(records) { record in
+        let visible = filtered
+        List(visible) { record in
             NavigationLink(destination: IdentityStorageDetailView(record: record)) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(record.dpnsName ?? record.alias ?? record.identityIdBase58)
@@ -19,19 +25,25 @@ struct IdentityStorageListView: View {
                 }
             }
         }
-        .navigationTitle("Identities (\(records.count))")
-        .overlay { if records.isEmpty { ContentUnavailableView("No Records", systemImage: "person.crop.circle") } }
+        .navigationTitle("Identities (\(visible.count))")
+        .overlay { if visible.isEmpty { ContentUnavailableView("No Records", systemImage: "person.crop.circle") } }
     }
 }
 
 // MARK: - PersistentDocument
 
 struct DocumentStorageListView: View {
+    let network: Network
     @Query(sort: \PersistentDocument.localUpdatedAt, order: .reverse)
     private var records: [PersistentDocument]
 
+    private var filtered: [PersistentDocument] {
+        records.filter { $0.networkRaw == network.rawValue }
+    }
+
     var body: some View {
-        List(records) { record in
+        let visible = filtered
+        List(visible) { record in
             NavigationLink(destination: DocumentStorageDetailView(record: record)) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(record.displayTitle).font(.body).lineLimit(1)
@@ -39,19 +51,25 @@ struct DocumentStorageListView: View {
                 }
             }
         }
-        .navigationTitle("Documents (\(records.count))")
-        .overlay { if records.isEmpty { ContentUnavailableView("No Records", systemImage: "doc.text") } }
+        .navigationTitle("Documents (\(visible.count))")
+        .overlay { if visible.isEmpty { ContentUnavailableView("No Records", systemImage: "doc.text") } }
     }
 }
 
 // MARK: - PersistentDataContract
 
 struct DataContractStorageListView: View {
+    let network: Network
     @Query(sort: \PersistentDataContract.lastAccessedAt, order: .reverse)
     private var records: [PersistentDataContract]
 
+    private var filtered: [PersistentDataContract] {
+        records.filter { $0.networkRaw == network.rawValue }
+    }
+
     var body: some View {
-        List(records) { record in
+        let visible = filtered
+        List(visible) { record in
             NavigationLink(destination: DataContractStorageDetailView(record: record)) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(record.name).font(.body).lineLimit(1)
@@ -59,8 +77,8 @@ struct DataContractStorageListView: View {
                 }
             }
         }
-        .navigationTitle("Data Contracts (\(records.count))")
-        .overlay { if records.isEmpty { ContentUnavailableView("No Records", systemImage: "doc.plaintext") } }
+        .navigationTitle("Data Contracts (\(visible.count))")
+        .overlay { if visible.isEmpty { ContentUnavailableView("No Records", systemImage: "doc.plaintext") } }
     }
 }
 
@@ -76,6 +94,7 @@ struct DataContractStorageListView: View {
 /// `(walletId, identityIndex)` — that way identity #0 of wallet A
 /// shows before identity #1, and unnamed wallets stay clustered.
 struct PublicKeyStorageListView: View {
+    let network: Network
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \PersistentIdentity.identityIndex)
     private var identities: [PersistentIdentity]
@@ -85,12 +104,35 @@ struct PublicKeyStorageListView: View {
 
     @Query private var hdWallets: [PersistentWallet]
 
+    /// Identities scoped to the active network. The keys, wallet
+    /// labels, and orphan section all derive from this.
+    private var scopedIdentities: [PersistentIdentity] {
+        identities.filter { $0.networkRaw == network.rawValue }
+    }
+
+    /// Keys whose owning identity is on the active network. Orphan
+    /// keys (no parent identity) drop out of the per-network view
+    /// entirely — duplicating them across mainnet / testnet / devnet
+    /// / regtest would re-introduce the cross-network leakage this
+    /// PR removes and would also disagree with
+    /// `StorageExplorerView.loadCounts()` (which evaluates
+    /// `$0.identity?.networkRaw == raw` and excludes nil identities
+    /// the same way). If global orphan-key diagnostics are needed
+    /// later they belong on a separate, network-agnostic surface.
+    private var scopedKeys: [PersistentPublicKey] {
+        allKeys.filter { key in
+            guard let identity = key.identity else { return false }
+            return identity.networkRaw == network.rawValue
+        }
+    }
+
     /// Key targeted by a pending Remove swipe. Non-nil presents the
     /// confirmation dialog; holding the reference lets the dialog
     /// show `Key N` without re-fetching.
     @State private var keyPendingRemoval: PersistentPublicKey?
 
     var body: some View {
+        let scoped = scopedKeys
         List {
             ForEach(walletGroups, id: \.walletId) { group in
                 walletSection(group)
@@ -105,9 +147,9 @@ struct PublicKeyStorageListView: View {
                 }
             }
         }
-        .navigationTitle("Public Keys (\(allKeys.count))")
+        .navigationTitle("Public Keys (\(scoped.count))")
         .overlay {
-            if allKeys.isEmpty {
+            if scoped.isEmpty {
                 ContentUnavailableView("No Records", systemImage: "key")
             }
         }
@@ -153,7 +195,7 @@ struct PublicKeyStorageListView: View {
     /// label (alphabetical, case-insensitive); no-wallet identities
     /// sort last so user-owned ones dominate the top of the screen.
     private var walletGroups: [WalletGroup] {
-        let grouped = Dictionary(grouping: identities) { $0.wallet?.walletId ?? Data() }
+        let grouped = Dictionary(grouping: scopedIdentities) { $0.wallet?.walletId ?? Data() }
         return grouped
             .map { (walletId, ids) -> WalletGroup in
                 WalletGroup(
@@ -176,9 +218,13 @@ struct PublicKeyStorageListView: View {
 
     /// Keys whose `identity` relationship is nil — e.g. rows that
     /// predate the changeset wiring or belong to identities since
-    /// deleted.
+    /// deleted. `scopedKeys` already strips them from the
+    /// per-network view, so this collection is always empty in the
+    /// current explorer; the section render below short-circuits on
+    /// `isEmpty`. Kept as a one-liner so a future global
+    /// orphan-diagnostics surface can reuse it.
     private var orphanKeys: [PersistentPublicKey] {
-        allKeys.filter { $0.identity == nil }
+        scopedKeys.filter { $0.identity == nil }
     }
 
     private func walletLabel(for walletId: Data) -> String? {
@@ -314,11 +360,17 @@ struct PublicKeyStorageListView: View {
 /// from `DpnsNameInfo.acquired_at` and zero-valued rows (legacy,
 /// un-timestamped) naturally fall to the bottom.
 struct DPNSNameStorageListView: View {
+    let network: Network
     @Query(sort: \PersistentDPNSName.acquiredAt, order: .reverse)
     private var records: [PersistentDPNSName]
 
+    private var filtered: [PersistentDPNSName] {
+        records.filter { $0.networkRaw == network.rawValue }
+    }
+
     var body: some View {
-        List(records) { record in
+        let visible = filtered
+        List(visible) { record in
             NavigationLink(destination: DPNSNameStorageDetailView(record: record)) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("\(record.label).\(record.parentDomainName)")
@@ -331,9 +383,9 @@ struct DPNSNameStorageListView: View {
                 }
             }
         }
-        .navigationTitle("DPNS Names (\(records.count))")
+        .navigationTitle("DPNS Names (\(visible.count))")
         .overlay {
-            if records.isEmpty {
+            if visible.isEmpty {
                 ContentUnavailableView("No Records", systemImage: "at")
             }
         }
@@ -345,11 +397,17 @@ struct DPNSNameStorageListView: View {
 /// Storage-explorer list of every cached DashPay profile. One row
 /// per (network, identity). Newest profile update first.
 struct DashpayProfileStorageListView: View {
+    let network: Network
     @Query(sort: \PersistentDashpayProfile.lastUpdated, order: .reverse)
     private var records: [PersistentDashpayProfile]
 
+    private var filtered: [PersistentDashpayProfile] {
+        records.filter { $0.networkRaw == network.rawValue }
+    }
+
     var body: some View {
-        List(records) { record in
+        let visible = filtered
+        List(visible) { record in
             NavigationLink(destination: DashpayProfileStorageDetailView(record: record)) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(record.displayName ?? "(no display name)")
@@ -362,9 +420,9 @@ struct DashpayProfileStorageListView: View {
                 }
             }
         }
-        .navigationTitle("DashPay Profiles (\(records.count))")
+        .navigationTitle("DashPay Profiles (\(visible.count))")
         .overlay {
-            if records.isEmpty {
+            if visible.isEmpty {
                 ContentUnavailableView("No Records", systemImage: "person.text.rectangle")
             }
         }
@@ -381,19 +439,25 @@ struct DashpayProfileStorageListView: View {
 /// (owner, contact) pair. Within each section, newest request first
 /// (`createdAtMillis` desc; `0` falls to the bottom).
 struct DashpayContactRequestStorageListView: View {
+    let network: Network
     @Query private var records: [PersistentDashpayContactRequest]
 
+    private var scoped: [PersistentDashpayContactRequest] {
+        records.filter { $0.networkRaw == network.rawValue }
+    }
+
     private var outgoing: [PersistentDashpayContactRequest] {
-        records.filter { $0.isOutgoing }
+        scoped.filter { $0.isOutgoing }
             .sorted { $0.createdAtMillis > $1.createdAtMillis }
     }
 
     private var incoming: [PersistentDashpayContactRequest] {
-        records.filter { !$0.isOutgoing }
+        scoped.filter { !$0.isOutgoing }
             .sorted { $0.createdAtMillis > $1.createdAtMillis }
     }
 
     var body: some View {
+        let visible = scoped
         List {
             if !outgoing.isEmpty {
                 Section("Outgoing (\(outgoing.count))") {
@@ -410,9 +474,9 @@ struct DashpayContactRequestStorageListView: View {
                 }
             }
         }
-        .navigationTitle("Contact Requests (\(records.count))")
+        .navigationTitle("Contact Requests (\(visible.count))")
         .overlay {
-            if records.isEmpty {
+            if visible.isEmpty {
                 ContentUnavailableView(
                     "No Records",
                     systemImage: "person.crop.circle.badge.plus"
@@ -456,11 +520,19 @@ struct DashpayContactRequestStorageListView: View {
 // MARK: - PersistentToken
 
 struct TokenStorageListView: View {
+    let network: Network
     @Query(sort: \PersistentToken.name)
     private var records: [PersistentToken]
 
+    /// Tokens trace their network through the parent contract; the
+    /// token row itself doesn't store a `networkRaw` column.
+    private var filtered: [PersistentToken] {
+        records.filter { $0.dataContract?.networkRaw == network.rawValue }
+    }
+
     var body: some View {
-        List(records) { record in
+        let visible = filtered
+        List(visible) { record in
             NavigationLink(destination: TokenStorageDetailView(record: record)) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(record.name).font(.body).lineLimit(1)
@@ -468,19 +540,25 @@ struct TokenStorageListView: View {
                 }
             }
         }
-        .navigationTitle("Tokens (\(records.count))")
-        .overlay { if records.isEmpty { ContentUnavailableView("No Records", systemImage: "circle.hexagongrid") } }
+        .navigationTitle("Tokens (\(visible.count))")
+        .overlay { if visible.isEmpty { ContentUnavailableView("No Records", systemImage: "circle.hexagongrid") } }
     }
 }
 
 // MARK: - PersistentTokenBalance
 
 struct TokenBalanceStorageListView: View {
+    let network: Network
     @Query(sort: \PersistentTokenBalance.lastUpdated, order: .reverse)
     private var records: [PersistentTokenBalance]
 
+    private var filtered: [PersistentTokenBalance] {
+        records.filter { $0.networkRaw == network.rawValue }
+    }
+
     var body: some View {
-        List(records) { record in
+        let visible = filtered
+        List(visible) { record in
             NavigationLink(destination: TokenBalanceStorageDetailView(record: record)) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(record.tokenName ?? record.tokenId).font(.body).lineLimit(1)
@@ -488,19 +566,28 @@ struct TokenBalanceStorageListView: View {
                 }
             }
         }
-        .navigationTitle("Token Balances (\(records.count))")
-        .overlay { if records.isEmpty { ContentUnavailableView("No Records", systemImage: "banknote") } }
+        .navigationTitle("Token Balances (\(visible.count))")
+        .overlay { if visible.isEmpty { ContentUnavailableView("No Records", systemImage: "banknote") } }
     }
 }
 
 // MARK: - PersistentTokenHistoryEvent
 
 struct TokenHistoryStorageListView: View {
+    let network: Network
     @Query(sort: \PersistentTokenHistoryEvent.createdAt, order: .reverse)
     private var records: [PersistentTokenHistoryEvent]
 
+    /// Token-history rows trace their network through `token →
+    /// dataContract.networkRaw`. Both relationships are optional so
+    /// any orphan row drops out of the explorer.
+    private var filtered: [PersistentTokenHistoryEvent] {
+        records.filter { $0.token?.dataContract?.networkRaw == network.rawValue }
+    }
+
     var body: some View {
-        List(records) { record in
+        let visible = filtered
+        List(visible) { record in
             NavigationLink(destination: TokenHistoryStorageDetailView(record: record)) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(record.displayTitle).font(.body).lineLimit(1)
@@ -509,19 +596,25 @@ struct TokenHistoryStorageListView: View {
                 }
             }
         }
-        .navigationTitle("Token History (\(records.count))")
-        .overlay { if records.isEmpty { ContentUnavailableView("No Records", systemImage: "clock.arrow.circlepath") } }
+        .navigationTitle("Token History (\(visible.count))")
+        .overlay { if visible.isEmpty { ContentUnavailableView("No Records", systemImage: "clock.arrow.circlepath") } }
     }
 }
 
 // MARK: - PersistentDocumentType
 
 struct DocumentTypeStorageListView: View {
+    let network: Network
     @Query(sort: \PersistentDocumentType.name)
     private var records: [PersistentDocumentType]
 
+    private var filtered: [PersistentDocumentType] {
+        records.filter { $0.dataContract?.networkRaw == network.rawValue }
+    }
+
     var body: some View {
-        List(records) { record in
+        let visible = filtered
+        List(visible) { record in
             NavigationLink(destination: DocumentTypeStorageDetailView(record: record)) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(record.name).font(.body).lineLimit(1)
@@ -529,19 +622,28 @@ struct DocumentTypeStorageListView: View {
                 }
             }
         }
-        .navigationTitle("Document Types (\(records.count))")
-        .overlay { if records.isEmpty { ContentUnavailableView("No Records", systemImage: "list.bullet.rectangle") } }
+        .navigationTitle("Document Types (\(visible.count))")
+        .overlay { if visible.isEmpty { ContentUnavailableView("No Records", systemImage: "list.bullet.rectangle") } }
     }
 }
 
 // MARK: - PersistentIndex
 
 struct IndexStorageListView: View {
+    let network: Network
     @Query(sort: \PersistentIndex.name)
     private var records: [PersistentIndex]
 
+    /// Indices live two relationships deep: documentType → dataContract.
+    /// Orphan rows (broken chain) drop out — they have no network to
+    /// attribute them to.
+    private var filtered: [PersistentIndex] {
+        records.filter { $0.documentType?.dataContract?.networkRaw == network.rawValue }
+    }
+
     var body: some View {
-        List(records) { record in
+        let visible = filtered
+        List(visible) { record in
             NavigationLink(destination: IndexStorageDetailView(record: record)) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(record.name).font(.body).lineLimit(1)
@@ -549,19 +651,25 @@ struct IndexStorageListView: View {
                 }
             }
         }
-        .navigationTitle("Indices (\(records.count))")
-        .overlay { if records.isEmpty { ContentUnavailableView("No Records", systemImage: "tablecells") } }
+        .navigationTitle("Indices (\(visible.count))")
+        .overlay { if visible.isEmpty { ContentUnavailableView("No Records", systemImage: "tablecells") } }
     }
 }
 
 // MARK: - PersistentProperty
 
 struct PropertyStorageListView: View {
+    let network: Network
     @Query(sort: \PersistentProperty.name)
     private var records: [PersistentProperty]
 
+    private var filtered: [PersistentProperty] {
+        records.filter { $0.documentType?.dataContract?.networkRaw == network.rawValue }
+    }
+
     var body: some View {
-        List(records) { record in
+        let visible = filtered
+        List(visible) { record in
             NavigationLink(destination: PropertyStorageDetailView(record: record)) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(record.name).font(.body).lineLimit(1)
@@ -569,36 +677,48 @@ struct PropertyStorageListView: View {
                 }
             }
         }
-        .navigationTitle("Properties (\(records.count))")
-        .overlay { if records.isEmpty { ContentUnavailableView("No Records", systemImage: "slider.horizontal.3") } }
+        .navigationTitle("Properties (\(visible.count))")
+        .overlay { if visible.isEmpty { ContentUnavailableView("No Records", systemImage: "slider.horizontal.3") } }
     }
 }
 
 // MARK: - PersistentKeyword
 
 struct KeywordStorageListView: View {
+    let network: Network
     @Query(sort: \PersistentKeyword.keyword)
     private var records: [PersistentKeyword]
 
+    private var filtered: [PersistentKeyword] {
+        records.filter { $0.dataContract?.networkRaw == network.rawValue }
+    }
+
     var body: some View {
-        List(records) { record in
+        let visible = filtered
+        List(visible) { record in
             NavigationLink(destination: KeywordStorageDetailView(record: record)) {
                 Text(record.keyword).font(.body)
             }
         }
-        .navigationTitle("Keywords (\(records.count))")
-        .overlay { if records.isEmpty { ContentUnavailableView("No Records", systemImage: "tag") } }
+        .navigationTitle("Keywords (\(visible.count))")
+        .overlay { if visible.isEmpty { ContentUnavailableView("No Records", systemImage: "tag") } }
     }
 }
 
 // MARK: - PersistentPlatformAddressesSyncState
 
 struct PlatformAddressesSyncStateStorageListView: View {
+    let network: Network
     @Query(sort: \PersistentPlatformAddressesSyncState.lastUpdated, order: .reverse)
     private var records: [PersistentPlatformAddressesSyncState]
 
+    private var filtered: [PersistentPlatformAddressesSyncState] {
+        records.filter { $0.networkRaw == network.rawValue }
+    }
+
     var body: some View {
-        List(records) { record in
+        let visible = filtered
+        List(visible) { record in
             NavigationLink(destination: PlatformAddressesSyncStateStorageDetailView(record: record)) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(record.network.displayName)
@@ -612,19 +732,29 @@ struct PlatformAddressesSyncStateStorageListView: View {
                 }
             }
         }
-        .navigationTitle("Platform Addresses Sync State (\(records.count))")
-        .overlay { if records.isEmpty { ContentUnavailableView("No Records", systemImage: "arrow.triangle.2.circlepath") } }
+        .navigationTitle("Platform Addresses Sync State (\(visible.count))")
+        .overlay { if visible.isEmpty { ContentUnavailableView("No Records", systemImage: "arrow.triangle.2.circlepath") } }
     }
 }
 
 // MARK: - PersistentWallet
 
 struct WalletStorageListView: View {
+    let network: Network
     @Query(sort: \PersistentWallet.lastUpdated, order: .reverse)
     private var records: [PersistentWallet]
 
+    /// `networkRaw` is optional on this model: a row can predate the
+    /// persister's network-fill step. Strict filter — `nil` rows
+    /// don't match any active network and are hidden until the
+    /// persister fills them in.
+    private var filtered: [PersistentWallet] {
+        records.filter { $0.networkRaw == network.rawValue }
+    }
+
     var body: some View {
-        List(records) { record in
+        let visible = filtered
+        List(visible) { record in
             NavigationLink(destination: WalletStorageDetailView(record: record)) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(record.name ?? record.walletId.map { String(format: "%02x", $0) }.prefix(16).joined())
@@ -634,27 +764,34 @@ struct WalletStorageListView: View {
                 }
             }
         }
-        .navigationTitle("Wallets (\(records.count))")
-        .overlay { if records.isEmpty { ContentUnavailableView("No Records", systemImage: "wallet.pass") } }
+        .navigationTitle("Wallets (\(visible.count))")
+        .overlay { if visible.isEmpty { ContentUnavailableView("No Records", systemImage: "wallet.pass") } }
     }
 }
 
 // MARK: - PersistentAccount
 
 struct AccountStorageListView: View {
+    let network: Network
     /// Query the wallet side of the `@Relationship` so the list groups
     /// by wallet. Accounts come through `wallet.accounts`, which
     /// updates reactively under SwiftData.
     @Query(sort: \PersistentWallet.createdAt, order: .reverse)
     private var wallets: [PersistentWallet]
 
+    /// Wallets on the active network. Accounts inherit the wallet's
+    /// network — there is no per-account `networkRaw` column.
+    private var scopedWallets: [PersistentWallet] {
+        wallets.filter { $0.networkRaw == network.rawValue }
+    }
+
     private var totalAccountCount: Int {
-        wallets.reduce(0) { $0 + $1.accounts.count }
+        scopedWallets.reduce(0) { $0 + $1.accounts.count }
     }
 
     var body: some View {
         List {
-            ForEach(wallets) { wallet in
+            ForEach(scopedWallets) { wallet in
                 Section(header: Text(walletHeader(for: wallet))) {
                     let sorted = sortedAccounts(wallet.accounts)
                     if sorted.isEmpty {
@@ -734,8 +871,21 @@ struct AccountStorageListView: View {
 // MARK: - PersistentTransaction
 
 struct TransactionStorageListView: View {
+    let network: Network
     @Query(sort: \PersistentTransaction.firstSeen, order: .reverse)
     private var records: [PersistentTransaction]
+
+    /// Wallets on the active network. Transactions don't carry a
+    /// `networkRaw` column; we match a tx to a network by checking
+    /// whether *any* of its TXOs (input or output) carry a
+    /// `walletId` that resolves to a wallet on this network.
+    @Query private var allWallets: [PersistentWallet]
+
+    private var walletIdsOnNetwork: Set<Data> {
+        Set(allWallets.lazy
+            .filter { $0.networkRaw == network.rawValue }
+            .map(\.walletId))
+    }
 
     /// Live-search needle — matches against the canonical block-explorer
     /// `txidHex` (byte-reversed) so a user can paste an explorer link's
@@ -774,10 +924,24 @@ struct TransactionStorageListView: View {
         "Asset Unlock Transaction",
     ]
 
+    /// Records whose at-least-one TXO points at a wallet on the
+    /// active network. The base set the search/direction/type
+    /// filters then narrow further. Counts on the title row are
+    /// against this set, not `records`, so they reflect the
+    /// network-scoped universe rather than the cross-network store.
+    private var networkScopedRecords: [PersistentTransaction] {
+        let ids = walletIdsOnNetwork
+        return records.filter { tx in
+            for txo in tx.outputs where ids.contains(txo.walletId) { return true }
+            for txo in tx.inputs where ids.contains(txo.walletId) { return true }
+            return false
+        }
+    }
+
     private var filteredRecords: [PersistentTransaction] {
         let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         let needle = trimmed.lowercased()
-        return records.filter { record in
+        return networkScopedRecords.filter { record in
             // Direction.
             switch directionFilter {
             case .all: break
@@ -805,6 +969,7 @@ struct TransactionStorageListView: View {
     }
 
     var body: some View {
+        let scoped = networkScopedRecords
         let visible = filteredRecords
         List {
             Section {
@@ -844,7 +1009,7 @@ struct TransactionStorageListView: View {
             // direction / type / search to recover. As inline list
             // content, the message scrolls in below the filter row
             // and leaves the controls fully reachable.
-            if !records.isEmpty && visible.isEmpty {
+            if !scoped.isEmpty && visible.isEmpty {
                 Section {
                     ContentUnavailableView(
                         "No matching transactions",
@@ -888,8 +1053,8 @@ struct TransactionStorageListView: View {
         }
         .navigationTitle(
             (directionFilter == .all && typeFilter == nil && searchText.isEmpty)
-                ? "Transactions (\(records.count))"
-                : "Transactions (\(visible.count) / \(records.count))"
+                ? "Transactions (\(scoped.count))"
+                : "Transactions (\(visible.count) / \(scoped.count))"
         )
         .searchable(
             text: $searchText,
@@ -901,7 +1066,7 @@ struct TransactionStorageListView: View {
         // is fine. The filter-narrowed empty state is rendered as
         // list content above (see the inline Section).
         .overlay {
-            if records.isEmpty {
+            if scoped.isEmpty {
                 ContentUnavailableView(
                     "No Records",
                     systemImage: "arrow.left.arrow.right.circle"
@@ -945,11 +1110,21 @@ struct TransactionStorageListView: View {
 // MARK: - PersistentCoreAddress
 
 struct CoreAddressStorageListView: View {
+    let network: Network
     /// Every Core-chain address record. PlatformPayment (DIP-17)
     /// addresses now live in their own `PersistentPlatformAddress`
     /// store, so no filtering is needed here.
     @Query(sort: [SortDescriptor(\PersistentCoreAddress.addressIndex)])
     private var records: [PersistentCoreAddress]
+
+    /// Network filter. CoreAddress doesn't have a `networkRaw`
+    /// column; the network is owned by the parent wallet via
+    /// `account.wallet.networkRaw`. Rows whose `account` link is
+    /// nil have no resolvable network and drop out — they're
+    /// recovered by the persister on next sync.
+    private var scopedRecords: [PersistentCoreAddress] {
+        records.filter { $0.account?.wallet.networkRaw == network.rawValue }
+    }
 
     /// Live-search query. Matches case-insensitively against the
     /// Base58Check address, derivation path, and address index.
@@ -989,9 +1164,9 @@ struct CoreAddressStorageListView: View {
     /// sections drop out cleanly.
     private var filteredRecords: [PersistentCoreAddress] {
         let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return records }
+        guard !trimmed.isEmpty else { return scopedRecords }
         let needle = trimmed.lowercased()
-        return records.filter { record in
+        return scopedRecords.filter { record in
             if record.address.lowercased().contains(needle) { return true }
             if record.derivationPath.lowercased().contains(needle) { return true }
             if String(record.addressIndex).contains(needle) { return true }
@@ -1045,7 +1220,7 @@ struct CoreAddressStorageListView: View {
         .navigationTitle("Core Addresses (\(filteredRecords.count))")
         .searchable(text: $searchText, prompt: "Search address, path, or index")
         .overlay {
-            if records.isEmpty {
+            if scopedRecords.isEmpty {
                 ContentUnavailableView(
                     "No Records",
                     systemImage: "square.and.pencil"
@@ -1109,8 +1284,30 @@ struct CoreAddressStorageListView: View {
 /// address-emit path for type-14 accounts, refreshed by BLAST
 /// sync).
 struct PlatformAddressStorageListView: View {
+    let network: Network
     @Query(sort: [SortDescriptor(\PersistentPlatformAddress.addressIndex)])
     private var records: [PersistentPlatformAddress]
+
+    /// Wallet-id set used for the fallback path when a row's
+    /// `account` join hasn't been hydrated yet.
+    @Query private var allWallets: [PersistentWallet]
+
+    private var walletIdsOnNetwork: Set<Data> {
+        Set(allWallets.lazy
+            .filter { $0.networkRaw == network.rawValue }
+            .map(\.walletId))
+    }
+
+    private var scopedRecords: [PersistentPlatformAddress] {
+        let raw = network.rawValue
+        let ids = walletIdsOnNetwork
+        return records.filter { entry in
+            if let walletRaw = entry.account?.wallet.networkRaw {
+                return walletRaw == raw
+            }
+            return ids.contains(entry.walletId)
+        }
+    }
 
     private struct GroupKey: Hashable, Comparable {
         let walletId: Data
@@ -1129,7 +1326,7 @@ struct PlatformAddressStorageListView: View {
     }
 
     private var groups: [(GroupKey, [PersistentPlatformAddress])] {
-        let grouped = Dictionary(grouping: records) { record -> GroupKey in
+        let grouped = Dictionary(grouping: scopedRecords) { record -> GroupKey in
             let account = record.account
             let wallet = account?.wallet
             return GroupKey(
@@ -1146,6 +1343,7 @@ struct PlatformAddressStorageListView: View {
     }
 
     var body: some View {
+        let visible = scopedRecords
         List {
             ForEach(Array(groups.enumerated()), id: \.offset) { _, pair in
                 let (key, addresses) = pair
@@ -1158,9 +1356,9 @@ struct PlatformAddressStorageListView: View {
                 }
             }
         }
-        .navigationTitle("Platform Addresses (\(records.count))")
+        .navigationTitle("Platform Addresses (\(visible.count))")
         .overlay {
-            if records.isEmpty {
+            if visible.isEmpty {
                 ContentUnavailableView(
                     "No Records",
                     systemImage: "creditcard"
@@ -1209,6 +1407,7 @@ struct PlatformAddressStorageListView: View {
 // MARK: - PersistentTxo
 
 struct TxoStorageListView: View {
+    let network: Network
     /// Sort by block height descending — newest at the top, mempool
     /// (`height == 0`) ahead of confirmed entries. The previous
     /// `createdAt` sort meant rows were ordered by when they happened
@@ -1216,6 +1415,23 @@ struct TxoStorageListView: View {
     /// the mental model when scanning for a specific block range.
     @Query(sort: [SortDescriptor(\PersistentTxo.height, order: .reverse)])
     private var records: [PersistentTxo]
+
+    /// Wallets on the active network. Used to scope the TXO list by
+    /// the denormalized `walletId` column — every TXO carries one,
+    /// so this is a straight `Set` lookup rather than an optional
+    /// chain through the `account` relationship.
+    @Query private var allWallets: [PersistentWallet]
+
+    private var walletIdsOnNetwork: Set<Data> {
+        Set(allWallets.lazy
+            .filter { $0.networkRaw == network.rawValue }
+            .map(\.walletId))
+    }
+
+    private var scopedRecords: [PersistentTxo] {
+        let ids = walletIdsOnNetwork
+        return records.filter { ids.contains($0.walletId) }
+    }
 
     /// Spent / unspent filter. `.all` shows the full set (matches the
     /// previous behavior); `.unspent` and `.spent` narrow to the
@@ -1225,14 +1441,16 @@ struct TxoStorageListView: View {
     @State private var filter: SpentFilter = .all
 
     private var filteredRecords: [PersistentTxo] {
+        let scoped = scopedRecords
         switch filter {
-        case .all: return records
-        case .unspent: return records.filter { !$0.isSpent }
-        case .spent: return records.filter { $0.isSpent }
+        case .all: return scoped
+        case .unspent: return scoped.filter { !$0.isSpent }
+        case .spent: return scoped.filter { $0.isSpent }
         }
     }
 
     var body: some View {
+        let scoped = scopedRecords
         let visible = filteredRecords
         List {
             Section {
@@ -1248,7 +1466,7 @@ struct TxoStorageListView: View {
             // see the matching note in `TransactionStorageListView`.
             // Overlay would block the segmented Picker above and
             // dead-end the user.
-            if !records.isEmpty && visible.isEmpty {
+            if !scoped.isEmpty && visible.isEmpty {
                 Section {
                     ContentUnavailableView(
                         "No \(filter.title) TXOs",
@@ -1284,13 +1502,13 @@ struct TxoStorageListView: View {
             }
         }
         .navigationTitle(filter == .all
-            ? "TXOs (\(records.count))"
-            : "TXOs (\(visible.count) / \(records.count))")
+            ? "TXOs (\(scoped.count))"
+            : "TXOs (\(visible.count) / \(scoped.count))")
         // Overlay only the no-records-at-all case; the
         // filter-narrowed empty state lives inline above so the
         // Picker stays reachable.
         .overlay {
-            if records.isEmpty {
+            if scoped.isEmpty {
                 ContentUnavailableView("No Records", systemImage: "bitcoinsign.circle")
             }
         }
@@ -1322,11 +1540,26 @@ struct TxoStorageListView: View {
 /// that the wallet never derives, or input outpoints whose previous
 /// output isn't ours and will never resolve.
 struct PendingInputStorageListView: View {
+    let network: Network
     @Query(sort: [SortDescriptor(\PersistentPendingInput.createdAt, order: .reverse)])
     private var records: [PersistentPendingInput]
 
+    @Query private var allWallets: [PersistentWallet]
+
+    private var walletIdsOnNetwork: Set<Data> {
+        Set(allWallets.lazy
+            .filter { $0.networkRaw == network.rawValue }
+            .map(\.walletId))
+    }
+
+    private var scopedRecords: [PersistentPendingInput] {
+        let ids = walletIdsOnNetwork
+        return records.filter { ids.contains($0.walletId) }
+    }
+
     var body: some View {
-        List(records) { record in
+        let visible = scopedRecords
+        List(visible) { record in
             NavigationLink(destination: PendingInputStorageDetailView(record: record)) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(outpointHex(record.outpoint))
@@ -1344,9 +1577,9 @@ struct PendingInputStorageListView: View {
                 }
             }
         }
-        .navigationTitle("Pending Inputs (\(records.count))")
+        .navigationTitle("Pending Inputs (\(visible.count))")
         .overlay {
-            if records.isEmpty {
+            if visible.isEmpty {
                 ContentUnavailableView(
                     "No Pending Inputs",
                     systemImage: "hourglass"
@@ -1375,11 +1608,17 @@ struct PendingInputStorageListView: View {
 // MARK: - PersistentWalletManagerMetadata
 
 struct WalletManagerMetadataStorageListView: View {
+    let network: Network
     @Query(sort: \PersistentWalletManagerMetadata.lastUpdated, order: .reverse)
     private var records: [PersistentWalletManagerMetadata]
 
+    private var filtered: [PersistentWalletManagerMetadata] {
+        records.filter { $0.networkRaw == network.rawValue }
+    }
+
     var body: some View {
-        List(records) { record in
+        let visible = filtered
+        List(visible) { record in
             NavigationLink(destination: WalletManagerMetadataStorageDetailView(record: record)) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(record.network.displayName).font(.body)
@@ -1388,7 +1627,7 @@ struct WalletManagerMetadataStorageListView: View {
                 }
             }
         }
-        .navigationTitle("Manager Metadata (\(records.count))")
-        .overlay { if records.isEmpty { ContentUnavailableView("No Records", systemImage: "gearshape.2") } }
+        .navigationTitle("Manager Metadata (\(visible.count))")
+        .overlay { if visible.isEmpty { ContentUnavailableView("No Records", systemImage: "gearshape.2") } }
     }
 }
