@@ -1,7 +1,7 @@
 //! FFI bindings for the shielded spend pipeline (transitions
-//! 16/17/19 — transfer, unshield, withdraw).
+//! 15/16/17/19 — shield, transfer, unshield, withdraw).
 //!
-//! These three transitions sign with the bound shielded wallet's
+//! Transitions 16/17/19 sign with the bound shielded wallet's
 //! Orchard `SpendAuthorizingKey`, which lives on the
 //! `OrchardKeySet` cached after [`platform_wallet_manager_bind_shielded`].
 //! No host-side `Signer<PlatformAddress>` is required — the host
@@ -9,13 +9,15 @@
 //! withdrawal) and the resulting Halo 2 proof + state transition
 //! is built and broadcast on the Rust side.
 //!
-//! The fourth transition (Type 15 `shield` — Platform→Shielded)
-//! and Type 18 (`shield_from_asset_lock` — Core L1→Shielded) live
-//! elsewhere in `platform-wallet`'s [`ShieldedWallet`] surface but
-//! aren't wired here yet — they need a host-supplied
-//! `Signer<PlatformAddress>` (or asset-lock proof + private key)
-//! plus per-input nonce fetching that the Rust spend builder
-//! today stubs to zero.
+//! Transition 15 (`shield` — Platform→Shielded) additionally
+//! takes a host-supplied `Signer<PlatformAddress>` because the
+//! input addresses' ECDSA signatures live in the host keychain.
+//! Per-input nonces are fetched from Platform inside
+//! [`ShieldedWallet::shield`] before building.
+//!
+//! Type 18 (`shield_from_asset_lock` — Core L1→Shielded) lives on
+//! [`ShieldedWallet`] but isn't wired here yet — it needs the
+//! asset-lock proof + private key threaded through.
 //!
 //! Feature-gated behind `shielded`. The accompanying
 //! [`platform_wallet_shielded_warm_up_prover`] entry-point is
@@ -23,11 +25,13 @@
 //! key on a background thread at app startup.
 //!
 //! [`ShieldedWallet`]: platform_wallet::wallet::shielded::ShieldedWallet
+//! [`ShieldedWallet::shield`]: platform_wallet::wallet::shielded::ShieldedWallet::shield
 
 use std::ffi::CStr;
 use std::os::raw::c_char;
 
 use platform_wallet::wallet::shielded::CachedOrchardProver;
+use rs_sdk_ffi::{SignerHandle, VTableSigner};
 
 use crate::check_ptr;
 use crate::error::*;
@@ -203,6 +207,65 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("shielded withdraw failed: {e}"),
+        );
+    }
+    PlatformWalletFFIResult::ok()
+}
+
+/// Shield: spend credits from a Platform Payment account into
+/// the bound shielded sub-wallet's pool. `account_index` selects
+/// which Platform Payment account to draw from; the wallet
+/// auto-selects input addresses in ascending derivation order
+/// until the cumulative balance covers `amount + fee buffer`.
+///
+/// `signer_address_handle` is a `*mut SignerHandle` produced by
+/// `dash_sdk_signer_create_with_ctx` (typically Swift's
+/// `KeychainSigner.handle`) — same shape
+/// `platform_address_wallet_transfer` expects. The caller retains
+/// ownership; this function does not destroy the handle.
+///
+/// # Safety
+/// - `wallet_id_bytes` must point to 32 readable bytes.
+/// - `signer_address_handle` must be a valid, non-destroyed
+///   `*mut SignerHandle` that outlives this call and points at a
+///   `VTableSigner` with the callback variant (the native variant
+///   doesn't satisfy `Signer<PlatformAddress>`).
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_shielded_shield(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    account_index: u32,
+    amount: u64,
+    signer_address_handle: *mut SignerHandle,
+) -> PlatformWalletFFIResult {
+    check_ptr!(wallet_id_bytes);
+    check_ptr!(signer_address_handle);
+
+    let mut wallet_id = [0u8; 32];
+    std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
+
+    let wallet = match resolve_wallet(handle, &wallet_id) {
+        Ok(w) => w,
+        Err(result) => return result,
+    };
+
+    // SAFETY: caller guarantees `signer_address_handle` is a
+    // valid, non-destroyed handle that outlives this call. The
+    // `VTableSigner` is `Send + Sync` so dropping it back into a
+    // `block_on` future is safe.
+    let address_signer: &VTableSigner = &*(signer_address_handle as *const VTableSigner);
+    let prover = CachedOrchardProver::new();
+    let prover_ref: &CachedOrchardProver = &prover;
+
+    if let Err(e) = runtime().block_on(wallet.shielded_shield_from_account(
+        account_index,
+        amount,
+        address_signer,
+        prover_ref,
+    )) {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            format!("shielded shield failed: {e}"),
         );
     }
     PlatformWalletFFIResult::ok()

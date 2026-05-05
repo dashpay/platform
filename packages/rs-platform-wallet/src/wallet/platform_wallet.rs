@@ -447,6 +447,103 @@ impl PlatformWallet {
             .withdraw(&parsed, amount, core_fee_per_byte, &prover)
             .await
     }
+
+    /// Shield credits from a Platform Payment account into this
+    /// wallet's shielded pool. Auto-selects input addresses from
+    /// the account in ascending derivation-index order until the
+    /// cumulative balance covers `amount` plus a conservative fee
+    /// buffer (the on-chain fee comes off input 0 via
+    /// `DeductFromInput(0)`; the buffer absorbs the discrepancy
+    /// without a more sophisticated estimator).
+    ///
+    /// The host supplies a `Signer<PlatformAddress>` — typically
+    /// `&VTableSigner` from `KeychainSigner.handle` — which signs
+    /// each input's pubkey-hash binding to the Orchard bundle.
+    ///
+    /// Returns `ShieldedNotBound` if no shielded sub-wallet is
+    /// bound, `AddressOperation` if the platform-payment account
+    /// at `account_index` doesn't exist, or
+    /// `ShieldedInsufficientBalance` if the account's total
+    /// credits can't cover `amount + fee_buffer`.
+    #[cfg(feature = "shielded")]
+    pub async fn shielded_shield_from_account<S, P>(
+        &self,
+        account_index: u32,
+        amount: u64,
+        signer: &S,
+        prover: P,
+    ) -> Result<(), PlatformWalletError>
+    where
+        S: dpp::identity::signer::Signer<dpp::address_funds::PlatformAddress> + Send + Sync,
+        P: dpp::shielded::builder::OrchardProver,
+    {
+        // Conservative fee buffer over `amount`. The shield
+        // transition's `DeductFromInput(0)` strategy lets the
+        // network deduct the actual fee from input 0; we just need
+        // to make sure the inputs cumulatively cover `amount + a
+        // bit`. Empty-mempool platform fees are well under
+        // 0.001 DASH (1e8 credits); 0.01 DASH absorbs a 10× spike.
+        const FEE_BUFFER_CREDITS: u64 = 1_000_000_000;
+        let needed = amount.saturating_add(FEE_BUFFER_CREDITS);
+
+        // Build the inputs map under the wallet-manager read lock,
+        // then drop the lock before re-entering shielded so the
+        // guards don't nest unnecessarily.
+        let inputs: std::collections::BTreeMap<
+            dpp::address_funds::PlatformAddress,
+            dpp::fee::Credits,
+        > = {
+            let wm = self.wallet_manager.read().await;
+            let info = wm
+                .get_wallet_info(&self.wallet_id)
+                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+            let account = info
+                .core_wallet
+                .platform_payment_managed_account_at_index(account_index)
+                .ok_or_else(|| {
+                    PlatformWalletError::AddressOperation(format!(
+                        "no platform payment account at index {account_index}"
+                    ))
+                })?;
+
+            let mut chosen: std::collections::BTreeMap<
+                dpp::address_funds::PlatformAddress,
+                dpp::fee::Credits,
+            > = std::collections::BTreeMap::new();
+            let mut accumulated: u64 = 0;
+            for addr_info in account.addresses.addresses.values() {
+                let p2pkh = match key_wallet::PlatformP2PKHAddress::from_address(&addr_info.address)
+                {
+                    Ok(p) => p,
+                    Err(_) => continue,
+                };
+                let balance = account.address_credit_balance(&p2pkh);
+                if balance == 0 {
+                    continue;
+                }
+                let address = dpp::address_funds::PlatformAddress::P2pkh(p2pkh.to_bytes());
+                chosen.insert(address, balance);
+                accumulated = accumulated.saturating_add(balance);
+                if accumulated >= needed {
+                    break;
+                }
+            }
+
+            if accumulated < needed {
+                return Err(PlatformWalletError::ShieldedInsufficientBalance {
+                    available: accumulated,
+                    required: needed,
+                });
+            }
+            chosen
+        };
+
+        let guard = self.shielded.read().await;
+        let shielded = guard
+            .as_ref()
+            .ok_or(PlatformWalletError::ShieldedNotBound)?;
+        shielded.shield(inputs, amount, signer, &prover).await
+    }
 }
 
 impl PlatformWallet {

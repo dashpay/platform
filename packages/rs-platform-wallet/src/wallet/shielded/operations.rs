@@ -70,17 +70,37 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
     ) -> Result<(), PlatformWalletError> {
         let recipient_addr = self.default_orchard_address()?;
 
-        // Build nonce map: The DPP builder takes (AddressNonce, Credits) pairs.
-        // For now we use nonce=0 as a placeholder -- the actual nonce should be
-        // fetched from the platform. In production, callers may use the SDK's
-        // ShieldFunds trait directly which fetches nonces automatically.
-        //
-        // TODO: Add proper nonce fetching, either here or require callers to
-        // provide inputs_with_nonce directly.
-        let inputs_with_nonce: BTreeMap<PlatformAddress, (u32, Credits)> = inputs
-            .into_iter()
-            .map(|(addr, credits)| (addr, (0u32, credits)))
-            .collect();
+        // Fetch the current address nonces from Platform. Each
+        // input address has a per-address nonce that the next
+        // state transition must use as `last_used + 1`.
+        // `AddressInfo::fetch_many` returns the last-used nonce
+        // (and current balance) per address; we increment it.
+        // Without this the broadcast was rejected by drive-abci
+        // because every shield transition tried to use nonce 0.
+        use dash_sdk::platform::FetchMany;
+        use dash_sdk::query_types::AddressInfo;
+        use std::collections::BTreeSet;
+
+        let address_set: BTreeSet<PlatformAddress> = inputs.keys().copied().collect();
+        let infos = AddressInfo::fetch_many(&self.sdk, address_set)
+            .await
+            .map_err(|e| {
+                PlatformWalletError::ShieldedBuildError(format!("fetch input nonces: {e}"))
+            })?;
+
+        let mut inputs_with_nonce: BTreeMap<PlatformAddress, (u32, Credits)> = BTreeMap::new();
+        for (addr, credits) in inputs {
+            let info = infos
+                .get(&addr)
+                .and_then(|opt| opt.as_ref())
+                .ok_or_else(|| {
+                    PlatformWalletError::ShieldedBuildError(format!(
+                        "input address not found on platform: {:?}",
+                        addr
+                    ))
+                })?;
+            inputs_with_nonce.insert(addr, (info.nonce + 1, credits));
+        }
 
         let fee_strategy: AddressFundsFeeStrategy =
             vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];

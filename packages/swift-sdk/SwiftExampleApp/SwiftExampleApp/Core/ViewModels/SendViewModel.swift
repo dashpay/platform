@@ -236,18 +236,24 @@ class SendViewModel: ObservableObject {
                 successMessage = "Withdrawal submitted"
 
             case .platformToShielded:
-                // Platform → Shielded (Type 15) needs a
-                // `Signer<PlatformAddress>` adapter and the
-                // per-input nonce fetch — the Rust spend builder
-                // currently stubs the nonce to 0. Tracked for a
-                // follow-up; surface a clear error so the UI
-                // doesn't pretend to handle this yet.
+                // Platform → Shielded (Type 15): spend credits from
+                // the wallet's first Platform Payment account into
+                // the bound shielded pool. The KeychainSigner
+                // pulls the per-address ECDSA keys via the same
+                // mnemonic-resolver path identity-key signing uses;
+                // per-input nonces are fetched server-side from
+                // Platform inside `ShieldedWallet::shield`.
                 _ = platformState
                 _ = shieldedService
-                _ = modelContext
                 _ = sdk
-                error = "Platform → Shielded is not wired yet — follow-up PR"
-                return
+                let signer = KeychainSigner(modelContainer: modelContext.container)
+                try await walletManager.shieldedShield(
+                    walletId: wallet.walletId,
+                    accountIndex: 0,
+                    amount: amount,
+                    addressSigner: signer
+                )
+                successMessage = "Shielding complete"
             }
 
         } catch {

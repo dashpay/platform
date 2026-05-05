@@ -298,6 +298,60 @@ extension PlatformWalletManager {
         }.value
     }
 
+    /// Platform → Shielded. Spends credits from a Platform Payment
+    /// account on `walletId` into the bound shielded sub-wallet's
+    /// pool. Inputs are auto-selected from the account's addresses
+    /// in ascending derivation order until they cover `amount` plus
+    /// a conservative on-chain fee buffer; the actual fee is
+    /// deducted from input 0 by the network via the shield
+    /// transition's fee strategy.
+    ///
+    /// `addressSigner` is the host-side `KeychainSigner` whose
+    /// `.handle` produces ECDSA signatures over each input's
+    /// pubkey-hash binding to the Orchard bundle. Borrowed for the
+    /// duration of the call.
+    ///
+    /// Heavy CPU work (Halo 2 proof + per-input signing) runs on a
+    /// detached task so the caller's actor isn't blocked.
+    public func shieldedShield(
+        walletId: Data,
+        accountIndex: UInt32 = 0,
+        amount: UInt64,
+        addressSigner: KeychainSigner
+    ) async throws {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
+        }
+        guard walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "walletId must be exactly 32 bytes"
+            )
+        }
+
+        let handle = self.handle
+        let signerHandle = addressSigner.handle
+
+        try await Task.detached(priority: .userInitiated) {
+            // Keepalive — same rationale as `topUpFromAddresses`.
+            // The trampoline ctx pointer inside the signer
+            // dangles unless the Swift owner outlives this
+            // detached work.
+            _ = addressSigner
+
+            try walletId.withUnsafeBytes { widRaw in
+                guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                else {
+                    throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
+                }
+                try platform_wallet_manager_shielded_shield(
+                    handle, widPtr, accountIndex, amount, signerHandle
+                ).check()
+            }
+        }.value
+    }
+
     /// Shielded → Platform unshield. Spends notes from `walletId`'s
     /// shielded balance and credits the platform address
     /// `toPlatformAddress` (bincode-encoded `PlatformAddress` —
