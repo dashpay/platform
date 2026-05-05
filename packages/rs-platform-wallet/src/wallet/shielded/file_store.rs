@@ -89,6 +89,19 @@ impl ShieldedStore for FileBackedShieldedStore {
     type Error = FileShieldedStoreError;
 
     fn save_note(&mut self, note: &ShieldedNote) -> Result<(), Self::Error> {
+        // Re-saving an already-known note (e.g. a re-scan after a
+        // cold start trial-decrypts the same chunk) used to append
+        // a duplicate `ShieldedNote` while overwriting the
+        // nullifier index. The result was a double-counted balance
+        // (`get_unspent_notes` returned both copies) and a stuck
+        // unspent flag (`mark_spent` only marked the second copy).
+        // Orchard nullifiers are globally unique, so an existing
+        // entry for the same nullifier means we already have this
+        // note — overwrite-in-place rather than append.
+        if let Some(&existing_idx) = self.nullifier_index.get(&note.nullifier) {
+            self.notes[existing_idx] = note.clone();
+            return Ok(());
+        }
         let idx = self.notes.len();
         self.nullifier_index.insert(note.nullifier, idx);
         self.notes.push(note.clone());

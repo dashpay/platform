@@ -125,6 +125,14 @@ pub struct ShieldedSyncManager {
     event_manager: Arc<PlatformEventManager>,
     /// Cancel token for the background loop, if running.
     background_cancel: StdMutex<Option<CancellationToken>>,
+    /// Monotonically increasing generation counter. Bumped on every
+    /// `start()` so the exiting thread can tell whether its
+    /// generation is still the active one before clearing
+    /// `background_cancel`. Without this, a `stop()` → `start()`
+    /// overlap lets the prior thread's cleanup strip the new
+    /// generation's token, leaving the new loop running but
+    /// untrackable via `is_running()`.
+    background_generation: AtomicU64,
     interval_secs: AtomicU64,
     is_syncing: AtomicBool,
     /// Unix seconds of the last completed pass. `0` = never.
@@ -140,6 +148,7 @@ impl ShieldedSyncManager {
             wallets,
             event_manager,
             background_cancel: StdMutex::new(None),
+            background_generation: AtomicU64::new(0),
             interval_secs: AtomicU64::new(DEFAULT_SYNC_INTERVAL_SECS),
             is_syncing: AtomicBool::new(false),
             last_sync_unix: AtomicU64::new(0),
@@ -195,6 +204,10 @@ impl ShieldedSyncManager {
         }
         let cancel = CancellationToken::new();
         *guard = Some(cancel.clone());
+        // Bump the generation while we still hold the slot lock so
+        // the load below in any prior thread's cleanup observes
+        // `current_gen != my_gen` ordered against this token swap.
+        let my_gen = self.background_generation.fetch_add(1, Ordering::AcqRel) + 1;
         drop(guard);
 
         let handle = tokio::runtime::Handle::current();
@@ -217,8 +230,16 @@ impl ShieldedSyncManager {
                         }
                     }
 
-                    if let Ok(mut guard) = this.background_cancel.lock() {
-                        *guard = None;
+                    // Only clear `background_cancel` if the active
+                    // generation is still ours. Without this guard a
+                    // tight `stop()` → `start()` reschedule has the
+                    // exiting thread overwrite the *new* generation's
+                    // token, leaving the new loop running but
+                    // unreflectable via `is_running()` / `stop()`.
+                    if this.background_generation.load(Ordering::Acquire) == my_gen {
+                        if let Ok(mut guard) = this.background_cancel.lock() {
+                            *guard = None;
+                        }
                     }
                 });
             })
@@ -285,12 +306,19 @@ impl ShieldedSyncManager {
         summary
     }
 
-    /// Sync a single wallet on demand. Does not set the global
-    /// `is_syncing` flag — callers that care about exclusion should
-    /// gate on [`is_syncing`] themselves.
+    /// Sync a single wallet on demand.
+    ///
+    /// Acquires the manager's `is_syncing` exclusion before
+    /// touching the wallet's shielded sub-wallet, mirroring
+    /// [`sync_now`]. If a pass is already in flight this returns
+    /// `Ok(None)` immediately rather than serializing — the caller
+    /// got told "no" without their request also blocking the
+    /// running periodic pass. Inspect [`is_syncing`] beforehand if
+    /// you need to distinguish "wallet has no shielded sub-wallet"
+    /// from "another pass was running".
     ///
     /// Returns `Ok(None)` if the wallet has no bound shielded
-    /// sub-wallet.
+    /// sub-wallet, or if another sync pass was already in flight.
     pub async fn sync_wallet(
         &self,
         wallet_id: &WalletId,
@@ -303,7 +331,25 @@ impl ShieldedSyncManager {
             crate::error::PlatformWalletError::WalletNotFound(hex::encode(wallet_id))
         })?;
 
-        wallet.shielded_sync().await
+        // Reuse the manager-wide `is_syncing` flag so a per-wallet
+        // sync_wallet() can't race the periodic sync_now() against
+        // the same `ShieldedWallet` / store. PlatformWallet's
+        // `shielded_sync` only takes a read lock on the optional
+        // shielded slot, so without this gate two passes can step
+        // on each other's commitment-tree appends and
+        // last-synced-index updates.
+        if self
+            .is_syncing
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return Ok(None);
+        }
+
+        let result = wallet.shielded_sync().await;
+
+        self.is_syncing.store(false, Ordering::Release);
+        result
     }
 }
 
