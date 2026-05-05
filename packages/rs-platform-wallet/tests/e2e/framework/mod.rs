@@ -250,6 +250,89 @@ pub async fn setup_with_n_identities(
     Ok(MultiIdentitySetupGuard { base, identities })
 }
 
+/// Set up a fresh test wallet pre-funded with Core (Layer-1) duffs
+/// drawn from the bank's BIP-44 account 0.
+///
+/// Companion to [`setup`] / [`setup_with_n_identities`] for cases that
+/// need an asset-lock-buildable balance on the test wallet's own Core
+/// side — `CR-003` is the canonical caller. The flow:
+///
+/// 1. Build a fresh test wallet via [`setup`].
+/// 2. Derive the test wallet's first Core receive address on BIP-44
+///    account 0 via [`platform_wallet::wallet::core::CoreWallet::next_receive_address_for_account`].
+/// 3. Send `duffs` from the bank's Core account to that address using
+///    [`super::bank::BankWallet::send_core_to`] (gated on
+///    `confirmed >= duffs + CORE_TX_FEE_RESERVE`; under-funded errors
+///    surface as [`FrameworkError::Bank`] with the bank's Core receive
+///    address embedded).
+/// 4. Wait up to [`CORE_FUNDING_TIMEOUT`] for the test wallet's
+///    confirmed Core balance (sourced from the SPV-updated atomic via
+///    `WalletBalance::confirmed`) to reach `duffs`.
+///
+/// On success the test wallet's `core_balance_confirmed()` is
+/// guaranteed to be `>= duffs`, so downstream callers (e.g.
+/// `IdentityWallet::register_identity_with_funding_external_signer`
+/// with `IdentityFundingMethod::FundWithWallet { amount_duffs }`) can
+/// build an asset lock without a follow-up Core sync race.
+///
+/// Errors:
+/// - [`FrameworkError::Bank`] when the bank itself is under-funded —
+///   propagated verbatim from [`super::bank::BankWallet::send_core_to`]
+///   so the operator-actionable "top up at &lt;addr&gt;" message reaches
+///   the test log unchanged.
+/// - [`FrameworkError::Wallet`] for any failure deriving the test
+///   wallet's Core address.
+/// - [`FrameworkError::Cleanup`] (via [`wait::wait_for_core_balance`])
+///   when the SPV bloom filter doesn't observe the inbound UTXO
+///   within [`CORE_FUNDING_TIMEOUT`].
+pub async fn setup_with_core_funded_test_wallet(duffs: u64) -> FrameworkResult<SetupGuard> {
+    use std::time::Duration;
+
+    use super::framework::wait::wait_for_core_balance;
+
+    let base = setup().await?;
+
+    let core_recv = base
+        .test_wallet
+        .platform_wallet()
+        .core()
+        .next_receive_address_for_account(0)
+        .await
+        .map_err(|err| {
+            FrameworkError::Wallet(format!(
+                "setup_with_core_funded_test_wallet: derive test-wallet Core receive \
+                 address (account=0): {err}"
+            ))
+        })?;
+
+    let txid = base.ctx.bank().send_core_to(&core_recv, duffs).await?;
+    tracing::info!(
+        target: "platform_wallet::e2e::setup",
+        %txid,
+        target_addr = %core_recv,
+        duffs,
+        "setup_with_core_funded_test_wallet: bank.send_core_to broadcast"
+    );
+
+    // Wait for the SPV bloom filter to observe the inbound UTXO and
+    // raise the test wallet's confirmed Core balance to at least
+    // `duffs`. The bank's send is non-blocking — `send_core_to` does
+    // NOT wait for instant-lock — so `wait_for_core_balance` is what
+    // gives the caller a positive-arrival signal.
+    wait_for_core_balance(&base.test_wallet, duffs, CORE_FUNDING_TIMEOUT).await?;
+
+    Ok(base)
+}
+
+/// Default deadline for the test wallet's confirmed Core balance to
+/// reach the funding amount in [`setup_with_core_funded_test_wallet`].
+/// 5 minutes mirrors the upper bound on testnet's IS-lock window the
+/// asset-lock manager uses internally
+/// (`asset_lock::manager::create_funded_asset_lock_proof` waits up to
+/// 300 s for a proof) — anything longer is symptomatic of a peer-list
+/// or mn-list problem the harness should surface, not paper over.
+pub const CORE_FUNDING_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+
 /// Guard returned by [`setup_with_n_identities`]. Wraps the base
 /// [`SetupGuard`] plus the freshly-registered identities.
 ///
