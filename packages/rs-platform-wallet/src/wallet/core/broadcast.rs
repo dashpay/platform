@@ -46,7 +46,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             ));
         }
 
-        let tx = {
+        let (tx, xpub) = {
             let mut wm = self.wallet_manager.write().await;
             let (wallet, info) = wm.get_wallet_and_info_mut(&self.wallet_id).ok_or_else(|| {
                 crate::error::PlatformWalletError::WalletNotFound(
@@ -154,33 +154,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 return Err(PlatformWalletError::ConcurrentSpendConflict);
             }
 
-            // Revalidation passed; now commit the change-address advance so
-            // the next send picks up the next index. Re-borrow the managed
-            // account because `select_inputs` above borrowed
-            // `info.core_wallet.accounts` and ended the earlier reborrow.
-            let change_account = match account_type {
-                StandardAccountType::BIP44Account => info
-                    .core_wallet
-                    .accounts
-                    .standard_bip44_accounts
-                    .get_mut(&account_index),
-                StandardAccountType::BIP32Account => info
-                    .core_wallet
-                    .accounts
-                    .standard_bip32_accounts
-                    .get_mut(&account_index),
-            }
-            .ok_or_else(|| {
-                PlatformWalletError::TransactionBuild(format!(
-                    "{:?} managed account {} not found",
-                    account_type, account_index
-                ))
-            })?;
-            change_account
-                .next_change_address(Some(&xpub), true)
-                .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
-
-            tx
+            (tx, xpub)
         };
 
         // Broadcast first; if the network rejects we leave wallet state
@@ -230,6 +204,38 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         {
             let mut wm = self.wallet_manager.write().await;
             if let Some((wallet, info)) = wm.get_wallet_mut_and_info_mut(&self.wallet_id) {
+                // Broadcast succeeded — commit the change-address advance now
+                // so a future send picks up a fresh index. Doing this before
+                // the broadcast would burn a derivation index on a network
+                // rejection, widening the gap-limit window on retry.
+                let change_account = match account_type {
+                    StandardAccountType::BIP44Account => info
+                        .core_wallet
+                        .accounts
+                        .standard_bip44_accounts
+                        .get_mut(&account_index),
+                    StandardAccountType::BIP32Account => info
+                        .core_wallet
+                        .accounts
+                        .standard_bip32_accounts
+                        .get_mut(&account_index),
+                };
+                if let Some(change_account) = change_account {
+                    if let Err(e) = change_account.next_change_address(Some(&xpub), true) {
+                        // Broadcast already succeeded; surface as a warning
+                        // rather than an error so the caller still sees the
+                        // tx hash. A later sync reconciles the index.
+                        tracing::warn!(
+                            target: "platform_wallet::broadcast",
+                            event = "post_broadcast_change_index_advance_failed",
+                            txid = %tx.txid(),
+                            wallet_id = %hex::encode(self.wallet_id),
+                            error = %e,
+                            "failed to advance change-address index after successful broadcast"
+                        );
+                    }
+                }
+
                 let check_result = info
                     .check_core_transaction(&tx, TransactionContext::Mempool, wallet, true, true)
                     .await;
