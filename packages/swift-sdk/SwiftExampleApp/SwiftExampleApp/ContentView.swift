@@ -273,6 +273,13 @@ struct ContentView: View {
         let separate = choices.filter { !$0.samePinCode }
         var recovered: Set<Data> = []
 
+        // Both auth failures (per-wallet biometric prompt errors) and
+        // recovery failures (SDK init / manager prep / createWallet
+        // errors returned from `recoverWallet`) accumulate here so the
+        // user sees every problem at the end rather than the last one
+        // overwriting earlier messages.
+        var perWalletFailures: [String] = []
+
         if !shared.isEmpty {
             let reason = shared.count == 1
                 ? "Re-derive your wallet from the stored recovery phrase."
@@ -280,7 +287,9 @@ struct ContentView: View {
             switch await runAuthPrompt(reason: reason) {
             case .authorized:
                 for entry in shared {
-                    if await recoverWallet(entry: entry) {
+                    if let failure = await recoverWallet(entry: entry) {
+                        perWalletFailures.append(failure)
+                    } else {
                         recovered.insert(entry.walletId)
                     }
                 }
@@ -301,17 +310,13 @@ struct ContentView: View {
             }
         }
 
-        // Per-wallet auth failures accumulate so the user sees every
-        // one when the loop ends rather than the last one clobbering
-        // earlier messages. Mirrors the same `[String]` pattern
-        // `deleteStoredMnemonics` uses for cross-wallet error
-        // aggregation.
-        var perWalletFailures: [String] = []
         for entry in separate {
             let reason = "Re-derive \"\(entry.displayName)\" from its stored recovery phrase."
             switch await runAuthPrompt(reason: reason) {
             case .authorized:
-                if await recoverWallet(entry: entry) {
+                if let failure = await recoverWallet(entry: entry) {
+                    perWalletFailures.append(failure)
+                } else {
                     recovered.insert(entry.walletId)
                 }
             case .denied:
@@ -336,8 +341,8 @@ struct ContentView: View {
             // One combined prompt at the end, joining every wallet's
             // failure into one message so none get lost.
             let prefix = perWalletFailures.count == 1
-                ? "Authorization failed: "
-                : "Authorization failed for \(perWalletFailures.count) wallets:\n"
+                ? "Recovery failed: "
+                : "Recovery failed for \(perWalletFailures.count) wallets:\n"
             recoveryError = prefix + perWalletFailures.joined(separator: "\n")
         }
 
@@ -390,17 +395,20 @@ struct ContentView: View {
     }
 
     /// Read the keychain mnemonic + metadata for `entry`, then
-    /// re-create the wallet. Returns `true` on success so the caller
-    /// can drop the entry from the orphan set.
+    /// re-create the wallet. Returns `nil` on success or the
+    /// failure message on failure. The caller aggregates failures
+    /// across multiple recoveries — relying on `recoveryError`
+    /// (a single `String?`) loses every error but the last when a
+    /// multi-wallet recovery has more than one failure.
     @MainActor
-    private func recoverWallet(entry: OrphanWalletEntry) async -> Bool {
+    private func recoverWallet(entry: OrphanWalletEntry) async -> String? {
         let storage = WalletStorage()
         let mnemonic: String
         do {
             mnemonic = try storage.retrieveMnemonic(for: entry.walletId)
         } catch {
-            recoveryError = "Failed to read stored mnemonic: \(error.localizedDescription)"
-            return false
+            return "\"\(entry.displayName)\": failed to read stored mnemonic — "
+                + error.localizedDescription
         }
 
         // Re-fetch metadata at recovery time rather than relying on
@@ -430,28 +438,38 @@ struct ContentView: View {
 
         // Route the create call through the wallet's
         // intended-network manager, NOT the user's currently-active
-        // one. `walletManager` (the env-injected active manager) is
-        // bound to whatever network the user happens to be looking
-        // at; calling `createWallet(network: restoredNetwork)` on it
-        // when those don't match registers the wallet inside the
-        // wrong manager, and the wallet's persister callback fires
-        // through that manager's persistence handler — pinning the
-        // SwiftData row to the active manager's network instead of
-        // the wallet's actual one. Result before this fix: every
-        // recovered wallet landed on whichever network the user
-        // was looking at (typically testnet), regardless of what
-        // the keychain metadata recorded.
+        // one. See the prior fix's commit message for the full
+        // rationale; the short version is that the active manager's
+        // persistence handler pins SwiftData rows to its own
+        // network, so a regtest wallet recovered while the user is
+        // looking at testnet would land on testnet without this.
+        //
+        // SDK init splits out from the manager get-or-create so
+        // local-only networks (regtest / devnet) surface a clear
+        // "is your local stack running?" hint when SDK creation
+        // fails — those networks talk to a local quorum sidecar
+        // (typically `localhost:22444`) and reject SDK creation
+        // when it isn't reachable, while public networks
+        // (testnet / mainnet) hit always-on remote endpoints.
+        let networkSdk: SDK
+        do {
+            networkSdk = try SDK(network: restoredNetwork)
+        } catch {
+            let hint = (restoredNetwork == .regtest || restoredNetwork == .devnet)
+                ? " — is your local \(restoredNetwork.displayName) stack running?"
+                : ""
+            return "\"\(entry.displayName)\" (\(restoredNetwork.displayName)): "
+                + "failed to spin up SDK — \(error.localizedDescription)\(hint)"
+        }
         let recoveryManager: PlatformWalletManager
         do {
-            let networkSdk = try SDK(network: restoredNetwork)
             recoveryManager = try walletManagerStore.getOrCreateManager(
                 network: restoredNetwork,
                 sdk: networkSdk
             )
         } catch {
-            recoveryError = "Failed to prepare \(restoredNetwork.displayName) wallet manager: "
-                + error.localizedDescription
-            return false
+            return "\"\(entry.displayName)\" (\(restoredNetwork.displayName)): "
+                + "failed to prepare wallet manager — \(error.localizedDescription)"
         }
 
         do {
@@ -479,10 +497,10 @@ struct ContentView: View {
                 }
                 try? modelContext.save()
             }
-            return true
+            return nil
         } catch {
-            recoveryError = "Failed to recreate \"\(entry.displayName)\": \(error.localizedDescription)"
-            return false
+            return "\"\(entry.displayName)\" (\(restoredNetwork.displayName)): "
+                + error.localizedDescription
         }
     }
 
