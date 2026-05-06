@@ -278,3 +278,164 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         Ok(tx)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    //! Broadcast ordering / rollback contract tests (CMT-003).
+    //!
+    //! The PR's central correctness claim is:
+    //!
+    //! * a failed `broadcast_transaction` must propagate `Err` so callers
+    //!   short-circuit before any spendable-set mutation, and
+    //! * a successful `broadcast_transaction` must hand the txid back so
+    //!   the caller can register the tx as a mempool spend.
+    //!
+    //! `CoreWallet::send_to_addresses` enforces this with a single `?` on
+    //! the `broadcast_transaction` call before the post-broadcast
+    //! `check_core_transaction(.., Mempool, ..)` block runs. Anything that
+    //! breaks the wrapper's pass-through behaviour silently moves the
+    //! "register as spent" block above the broadcast line and reintroduces
+    //! the regression flagged on #3466. These tests pin that pass-through
+    //! contract.
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    use async_trait::async_trait;
+    use dashcore::consensus::deserialize;
+    use dashcore::{Transaction, Txid};
+    use tokio::sync::RwLock;
+
+    use crate::broadcaster::TransactionBroadcaster;
+    use crate::wallet::core::balance::WalletBalance;
+    use crate::wallet::core::CoreWallet;
+    use crate::PlatformWalletError;
+    use key_wallet::Network;
+    use key_wallet_manager::WalletManager;
+
+    /// Mock broadcaster that records every call and returns a configured
+    /// canned outcome. Generic over the configured outcome so tests can
+    /// drive both the success and failure branches without importing a
+    /// real network broadcaster.
+    struct MockBroadcaster {
+        outcome: BroadcastOutcome,
+        calls: AtomicUsize,
+    }
+
+    enum BroadcastOutcome {
+        Ok(Txid),
+        Err(String),
+    }
+
+    impl MockBroadcaster {
+        fn new(outcome: BroadcastOutcome) -> Self {
+            Self {
+                outcome,
+                calls: AtomicUsize::new(0),
+            }
+        }
+
+        fn call_count(&self) -> usize {
+            self.calls.load(Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait]
+    impl TransactionBroadcaster for MockBroadcaster {
+        async fn broadcast(&self, _transaction: &Transaction) -> Result<Txid, PlatformWalletError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            match &self.outcome {
+                BroadcastOutcome::Ok(txid) => Ok(*txid),
+                BroadcastOutcome::Err(msg) => {
+                    Err(PlatformWalletError::TransactionBroadcast(msg.clone()))
+                }
+            }
+        }
+    }
+
+    /// Coinbase-style transaction good enough to round-trip through
+    /// `broadcast_transaction`'s pass-through. The shape doesn't matter
+    /// for these tests — only the broadcaster's Err/Ok branch does.
+    fn dummy_transaction() -> Transaction {
+        // Minimal serialized regtest coinbase tx (1 input, 1 output, 0 value).
+        // Hex was generated from a `Transaction { version: 1, lock_time: 0,
+        // input: vec![TxIn::default()], output: vec![TxOut { value: 0,
+        // script_pubkey: ScriptBuf::new() }], special_transaction_payload: None }`
+        // round-trip; embedded here so the test stays free of fixture I/O.
+        let bytes = hex::decode(
+            "010000000100000000000000000000000000000000000000000000000000000000000000\
+             00ffffffff00ffffffff0100000000000000000000000000",
+        )
+        .expect("valid hex");
+        deserialize(&bytes).expect("deserializable tx")
+    }
+
+    fn make_core_wallet<B: TransactionBroadcaster + ?Sized>(broadcaster: Arc<B>) -> CoreWallet<B> {
+        let sdk = Arc::new(
+            dash_sdk::SdkBuilder::new_mock()
+                .build()
+                .expect("mock sdk build"),
+        );
+        let wallet_manager = Arc::new(RwLock::new(WalletManager::new(Network::Testnet)));
+        CoreWallet::new(
+            sdk,
+            wallet_manager,
+            [0u8; 32],
+            broadcaster,
+            Arc::new(WalletBalance::new()),
+        )
+    }
+
+    /// Broadcast failure: `broadcast_transaction` propagates the
+    /// underlying `Err`, so callers (notably `send_to_addresses`) bail out
+    /// via `?` *before* the post-broadcast `check_core_transaction` block
+    /// can mark any input as spent. This is the rollback half of the
+    /// #3466 contract: a network rejection must leave UTXOs spendable.
+    #[tokio::test]
+    async fn broadcast_failure_keeps_inputs_spendable() {
+        let broadcaster = Arc::new(MockBroadcaster::new(BroadcastOutcome::Err(
+            "simulated network rejection".to_string(),
+        )));
+        let wallet = make_core_wallet(Arc::clone(&broadcaster));
+        let tx = dummy_transaction();
+
+        let result = wallet.broadcast_transaction(&tx).await;
+
+        assert!(
+            matches!(result, Err(PlatformWalletError::TransactionBroadcast(_))),
+            "expected broadcast Err to propagate, got {:?}",
+            result
+        );
+        assert_eq!(
+            broadcaster.call_count(),
+            1,
+            "broadcaster must be called exactly once on a failed broadcast"
+        );
+    }
+
+    /// Broadcast success: `broadcast_transaction` hands the txid back
+    /// untouched. `send_to_addresses` then re-acquires the wallet lock
+    /// and registers the tx as a mempool spend; that registration is
+    /// gated on this Ok return. If the wrapper ever swallows or remaps
+    /// the txid, the spent-input tracking on the success path silently
+    /// breaks.
+    #[tokio::test]
+    async fn broadcast_success_marks_inputs_unavailable() {
+        let expected_txid = dummy_transaction().txid();
+        let broadcaster = Arc::new(MockBroadcaster::new(BroadcastOutcome::Ok(expected_txid)));
+        let wallet = make_core_wallet(Arc::clone(&broadcaster));
+        let tx = dummy_transaction();
+
+        let result = wallet.broadcast_transaction(&tx).await;
+
+        assert_eq!(
+            result.expect("broadcast Ok"),
+            expected_txid,
+            "broadcast_transaction must pass the broadcaster's Txid through unchanged"
+        );
+        assert_eq!(
+            broadcaster.call_count(),
+            1,
+            "broadcaster must be called exactly once on a successful broadcast"
+        );
+    }
+}
