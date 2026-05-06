@@ -465,16 +465,31 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
         payment_address_to_orchard(&keys.default_address)
     }
 
-    /// Extract `SpendableNote` structs with Merkle witnesses and the
-    /// tree anchor. The tree is shared per-network; only note
-    /// selection is per-subwallet (already done by the caller).
+    /// Extract `SpendableNote` structs with Merkle witnesses and
+    /// the tree anchor.
+    ///
+    /// The anchor is derived from the witness paths themselves
+    /// (via `MerklePath::root(cmx)`) rather than from
+    /// `store.tree_anchor()`. The store's witness call is
+    /// `witness_at_checkpoint_depth(0)` (root of the most recent
+    /// checkpoint) while `tree_anchor()` is
+    /// `root_at_checkpoint_depth(None)` (latest tree state) —
+    /// any commitments appended after the last checkpoint move
+    /// the latter ahead of the former, and the resulting
+    /// `AnchorMismatch` from the Orchard spend builder is what
+    /// you'd see at proof time. Using the witness's own
+    /// computed root keeps the anchor consistent with the
+    /// authentication paths the proof actually verifies.
     async fn extract_spends_and_anchor(
         &self,
         notes: &[ShieldedNote],
     ) -> Result<(Vec<SpendableNote>, Anchor), PlatformWalletError> {
+        use grovedb_commitment_tree::ExtractedNoteCommitment;
+
         let store = self.store.read().await;
 
         let mut spends = Vec::with_capacity(notes.len());
+        let mut anchor: Option<Anchor> = None;
         for note in notes {
             let orchard_note = deserialize_note(&note.note_data).ok_or_else(|| {
                 PlatformWalletError::ShieldedBuildError(format!(
@@ -493,22 +508,44 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
                     ))
                 })?;
 
+            // Compute the anchor this witness was generated
+            // against. All selected notes must share the same
+            // anchor — if not, the store handed us witnesses
+            // from different checkpoints, which the spend
+            // builder would reject downstream with
+            // `AnchorMismatch`. Surface the mismatch here so the
+            // host doesn't pay the ~30 s proof cost first.
+            let cmx = ExtractedNoteCommitment::from_bytes(&note.cmx)
+                .into_option()
+                .ok_or_else(|| {
+                    PlatformWalletError::ShieldedBuildError(format!(
+                        "invalid stored cmx for note at position {}",
+                        note.position
+                    ))
+                })?;
+            let witness_anchor = merkle_path.root(cmx);
+            match &anchor {
+                None => anchor = Some(witness_anchor),
+                Some(prev) if prev.to_bytes() != witness_anchor.to_bytes() => {
+                    return Err(PlatformWalletError::ShieldedBuildError(format!(
+                        "witness anchor mismatch across selected notes (position {})",
+                        note.position
+                    )));
+                }
+                _ => {}
+            }
+
             spends.push(SpendableNote {
                 note: orchard_note,
                 merkle_path,
             });
         }
 
-        let anchor_bytes = store
-            .tree_anchor()
-            .map_err(|e| PlatformWalletError::ShieldedMerkleWitnessUnavailable(e.to_string()))?;
-        let anchor = Anchor::from_bytes(anchor_bytes)
-            .into_option()
-            .ok_or_else(|| {
-                PlatformWalletError::ShieldedBuildError(
-                    "Invalid anchor bytes from commitment tree".to_string(),
-                )
-            })?;
+        let anchor = anchor.ok_or_else(|| {
+            PlatformWalletError::ShieldedBuildError(
+                "no spendable notes selected — anchor undefined".to_string(),
+            )
+        })?;
 
         Ok((spends, anchor))
     }
