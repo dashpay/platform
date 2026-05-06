@@ -115,19 +115,14 @@ impl Drive {
     /// (pool has never recorded an anchor — chain is at genesis or
     /// no shielded ops yet).
     ///
-    /// Single source of truth for "what's the most-recent anchor on
-    /// this chain right now":
-    ///
-    /// - `record_shielded_pool_anchor_if_changed_v0` calls this to
-    ///   decide whether the anchor changed this block.
-    /// - `Platform::query_most_recent_shielded_anchor_v0` builds the
-    ///   same path query against `grove_get_proved_path_query` so
-    ///   the SDK's verifier can replay it byte-for-byte.
-    /// Public so drive-abci's strategy tests + the
-    /// `getMostRecentShieldedAnchor` non-proven query path can reach
-    /// it; both are inside the workspace and would otherwise have to
-    /// duplicate the path-query construction.
-    pub fn read_latest_recorded_shielded_anchor_v0(
+    /// Used by `record_shielded_pool_anchor_if_changed_v0` to decide
+    /// whether the anchor changed this block. The drive-abci handler
+    /// (`Platform::query_most_recent_shielded_anchor_v0`) and SDK
+    /// verifier (`Drive::verify_most_recent_shielded_anchor_v0`)
+    /// share the same `PathQuery` shape via
+    /// `shielded_latest_recorded_anchor_path_query`, but operate on
+    /// proofs rather than this raw helper.
+    pub(in crate::drive) fn read_latest_recorded_shielded_anchor_v0(
         &self,
         transaction: grovedb::TransactionArg,
         drive_version: &dpp::version::drive_versions::DriveVersion,

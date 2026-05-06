@@ -534,20 +534,48 @@ mod tests {
         // 3. Verify the derived "most recent anchor" — i.e. the
         //    highest-block-height entry in the anchors-by-height
         //    index — exists and matches one of the recorded anchors.
-        //    There is no longer a separate "most recent anchor" slot;
-        //    the index is the canonical source.
-        let most_recent_anchor = drive
-            .read_latest_recorded_shielded_anchor_v0(None, &platform_version.drive)
-            .expect("read latest recorded anchor")
+        //    There is no longer a separate "most recent anchor"
+        //    slot; the index is the canonical source.
+        //
+        //    Read directly via the same path query the production
+        //    handler uses, rather than reaching across crates for
+        //    the internal `read_latest_recorded_shielded_anchor_v0`
+        //    helper — its visibility is `pub(in crate::drive)` and
+        //    a strategy test has no reason to push that to the
+        //    public Drive surface.
+        use drive::drive::shielded::paths::shielded_latest_recorded_anchor_path_query;
+        let path_query = shielded_latest_recorded_anchor_path_query();
+        let (results, _) = drive
+            .grove_get_raw_path_query(
+                &path_query,
+                None,
+                QueryResultType::QueryKeyElementPairResultType,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("query latest recorded shielded anchor");
+        let mut entries = results.to_key_elements();
+        let (_, most_recent_element) = entries
+            .pop()
             .expect("most recent anchor must exist after successful shields");
+        let most_recent_anchor = if let Element::Item(bytes, _) = most_recent_element {
+            bytes
+        } else {
+            panic!("expected Item element in anchors-by-height tree");
+        };
+        assert_eq!(
+            most_recent_anchor.len(),
+            32,
+            "most recent anchor must be 32 bytes"
+        );
         assert_ne!(
-            most_recent_anchor.to_vec(),
+            most_recent_anchor,
             vec![0u8; 32],
             "most recent anchor must not be all zeros after successful shields"
         );
         let is_known = anchor_to_height
             .iter()
-            .any(|(a, _)| *a == most_recent_anchor.to_vec());
+            .any(|(a, _)| *a == most_recent_anchor);
         assert!(
             is_known,
             "most recent anchor must match one of the recorded anchors"

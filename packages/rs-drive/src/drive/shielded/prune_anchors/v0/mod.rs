@@ -96,17 +96,19 @@ impl Drive {
             entries_below
         } else {
             // Exclude the entry with the highest block_height key.
-            // Keys are big-endian u64 → lexicographic comparison
-            // matches numeric comparison.
-            let max_key = entries_below
-                .iter()
-                .map(|(k, _)| k.clone())
-                .max()
+            // `entries_below` came from a `Query::new()` (default
+            // `left_to_right = true`) over a `RangeTo` against
+            // `SHIELDED_ANCHORS_BY_HEIGHT_KEY`, whose keys are
+            // big-endian u64 — so GroveDB returns the entries in
+            // ascending numeric order and the live anchor is
+            // always the last element. Pop it off and discard;
+            // the remaining vec is exactly the prunable set, no
+            // extra scan or per-key clone.
+            let mut candidates = entries_below;
+            candidates
+                .pop()
                 .expect("entries_below non-empty (guarded above)");
-            entries_below
-                .into_iter()
-                .filter(|(k, _)| k != &max_key)
-                .collect()
+            candidates
         };
 
         // 3. Delete from both trees. Order doesn't matter for
