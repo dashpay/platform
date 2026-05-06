@@ -15,14 +15,14 @@ use serde::{Deserialize, Serialize};
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),
-    // Adjacently tagged. Convention rule says to flatten to internal tagging
-    // AND that `$`-prefix discriminators are only used when the same wire
-    // level has other `$`-prefixed fields. Inner `TokenEvent` exposes only
-    // `type` / `data` (no `$`-fields), so plain `type` would be the correct
-    // discriminator key — but `type` already belongs to `TokenEvent` and
-    // would collide. Without touching `TokenEvent` (consensus-binary-locked),
-    // adjacent tagging is the only rule-consistent option here.
-    serde(tag = "type", content = "data", rename_all = "camelCase")
+    // Internal tagging with `kind`. Plain (no `$` prefix) per the rule —
+    // the wire-shape level has no other `$`-prefixed fields. Cannot use
+    // `type` because the inner `TokenEvent` already uses `type` as its own
+    // adjacent-tag discriminator (and is consensus-binary-locked, can't
+    // rename). `kind` is distinct, semantically reads naturally ("the kind
+    // is tokenEvent"), and lets us drop the `data` wrapper. Wire shape:
+    //   {"kind": "tokenEvent", "type": "mint", "data": [...]}
+    serde(tag = "kind", rename_all = "camelCase")
 )]
 #[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
@@ -46,11 +46,10 @@ mod json_convertible_tests {
     use platform_value::platform_value;
     use serde_json::json;
 
-    // `GroupActionEvent` uses adjacent tagging (`tag = "type", content = "data"`).
-    // Convention rule says flat with `$`-prefix only when other `$`-fields
-    // exist at the same level — but plain `type` would collide with the
-    // inner `TokenEvent`'s `type`, and we can't touch `TokenEvent`. Adjacent
-    // is the only rule-consistent shape for the wrapper here.
+    // `GroupActionEvent` uses `tag = "kind"` (internal). Plain `kind`
+    // (no `$` prefix) because the wire level has no other `$`-prefixed
+    // fields. Distinct from the inner `TokenEvent`'s `type` discriminator
+    // — both keys coexist at the flattened top level without collision.
 
     #[test]
     fn json_round_trip_token_event_mint() {
@@ -59,20 +58,18 @@ mod json_convertible_tests {
             crate::tokens::token_event::json_convertible_tests::mint_fixture(),
         );
         let json = original.to_json().expect("to_json");
-        // Outer adjacent: `{"type": "tokenEvent", "data": <inner>}`.
-        // Inner `TokenEvent::Mint`: `{"type": "mint", "data": [...]}`.
+        // Outer `kind: "tokenEvent"` from GroupActionEvent. Inner `type:
+        // "mint"` and `data: [...]` from TokenEvent's adjacent tagging.
         assert_eq!(
             json,
             json!({
-                "type": "tokenEvent",
-                "data": {
-                    "type": "mint",
-                    "data": [
-                        5_000,
-                        "Bswb3UyeD1pUTaGiE6WvqwFpJZsQSEY1xhJePCDTHdvp",
-                        "genesis mint"
-                    ]
-                }
+                "kind": "tokenEvent",
+                "type": "mint",
+                "data": [
+                    5_000,
+                    "Bswb3UyeD1pUTaGiE6WvqwFpJZsQSEY1xhJePCDTHdvp",
+                    "genesis mint"
+                ]
             })
         );
         let recovered = GroupActionEvent::from_json(json).expect("from_json");
@@ -89,15 +86,13 @@ mod json_convertible_tests {
         assert_eq!(
             value,
             platform_value!({
-                "type": "tokenEvent",
-                "data": {
-                    "type": "mint",
-                    "data": [
-                        5_000u64,
-                        platform_value::Identifier::new([0xa1; 32]),
-                        "genesis mint"
-                    ]
-                }
+                "kind": "tokenEvent",
+                "type": "mint",
+                "data": [
+                    5_000u64,
+                    platform_value::Identifier::new([0xa1; 32]),
+                    "genesis mint"
+                ]
             })
         );
         let recovered = GroupActionEvent::from_object(value).expect("from_object");
