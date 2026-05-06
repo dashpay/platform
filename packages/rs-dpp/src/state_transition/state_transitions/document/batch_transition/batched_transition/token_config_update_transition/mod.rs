@@ -9,9 +9,14 @@ use serde::{Deserialize, Serialize};
 pub use v0::TokenConfigUpdateTransitionV0;
 
 #[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From)]
-#[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
+#[cfg_attr(
+    feature = "serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(tag = "$formatVersion")
+)]
 pub enum TokenConfigUpdateTransition {
     #[display("V0({})", "_0")]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
     V0(TokenConfigUpdateTransitionV0),
 }
 
@@ -28,8 +33,13 @@ impl Default for TokenConfigUpdateTransition {
     }
 }
 
-#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
-mod json_convertible_tests {
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+pub(crate) mod json_convertible_tests {
     use super::*;
     use crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
     use crate::state_transition::batch_transition::batched_transition::token_base_transition::v0::TokenBaseTransitionV0;
@@ -44,7 +54,7 @@ mod json_convertible_tests {
     /// `TokenConfigurationChangeItem` so the inline wire shape stays small;
     /// the richer variants are covered by `TokenConfigurationChangeItem`'s
     /// own tests.
-    fn fixture() -> TokenConfigUpdateTransition {
+    pub(crate) fn fixture() -> TokenConfigUpdateTransition {
         TokenConfigUpdateTransition::V0(TokenConfigUpdateTransitionV0 {
             base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
                 identity_contract_nonce: 13,
@@ -73,20 +83,18 @@ mod json_convertible_tests {
         assert_eq!(
             json,
             json!({
-                "V0": {
-                    "V0": {
+                "$formatVersion": "0",
+                "$baseFormatVersion": "0",
                         "$identity-contract-nonce": 13,
                         "$tokenContractPosition": 2,
                         "$dataContractId": Identifier::new([0xa1; 32]),
                         "$tokenId": Identifier::new([0xb2; 32]),
-                    },
+
                     "updateTokenConfigurationItem": "tokenConfigurationNoChange",
                     "publicNote": "config update",
-                }
             })
         );
-        let recovered =
-            TokenConfigUpdateTransition::from_json(json).expect("from_json");
+        let recovered = TokenConfigUpdateTransition::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
     }
 
@@ -102,20 +110,18 @@ mod json_convertible_tests {
         assert_eq!(
             value,
             platform_value!({
-                "V0": {
-                    "V0": {
+                "$formatVersion": "0",
+                "$baseFormatVersion": "0",
                         "$identity-contract-nonce": 13u64,
                         "$tokenContractPosition": 2u16,
                         "$dataContractId": Identifier::new([0xa1; 32]),
                         "$tokenId": Identifier::new([0xb2; 32]),
-                    },
+
                     "updateTokenConfigurationItem": "tokenConfigurationNoChange",
                     "publicNote": "config update",
-                }
             })
         );
-        let recovered =
-            TokenConfigUpdateTransition::from_object(value).expect("from_object");
+        let recovered = TokenConfigUpdateTransition::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
     }
 }

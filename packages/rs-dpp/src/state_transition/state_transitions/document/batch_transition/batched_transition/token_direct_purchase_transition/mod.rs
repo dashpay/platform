@@ -17,7 +17,11 @@ pub use v0::TokenDirectPurchaseTransitionV0;
 /// This transition type is used when a user intends to directly purchase tokens
 /// by specifying the desired amount and the maximum total price they are willing to pay.
 #[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From)]
-#[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
+#[cfg_attr(
+    feature = "serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(tag = "$formatVersion")
+)]
 pub enum TokenDirectPurchaseTransition {
     /// Version 0 of the token direct purchase transition.
     ///
@@ -26,6 +30,7 @@ pub enum TokenDirectPurchaseTransition {
     /// If the price in the contract is lower than the agreed price, the lower
     /// price is used.
     #[display("V0({})", "_0")]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
     V0(TokenDirectPurchaseTransitionV0),
 }
 
@@ -42,8 +47,13 @@ impl Default for TokenDirectPurchaseTransition {
     }
 }
 
-#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
-mod json_convertible_tests {
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+pub(crate) mod json_convertible_tests {
     use super::*;
     use crate::state_transition::batch_transition::batched_transition::token_base_transition::v0::TokenBaseTransitionV0;
     use crate::state_transition::batch_transition::batched_transition::token_base_transition::TokenBaseTransition;
@@ -53,7 +63,7 @@ mod json_convertible_tests {
 
     /// Non-default values per field so the wire-shape assertion catches any
     /// silent zero-out / flip on round-trip.
-    fn fixture() -> TokenDirectPurchaseTransition {
+    pub(crate) fn fixture() -> TokenDirectPurchaseTransition {
         TokenDirectPurchaseTransition::V0(TokenDirectPurchaseTransitionV0 {
             base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
                 identity_contract_nonce: 13,
@@ -77,20 +87,18 @@ mod json_convertible_tests {
         assert_eq!(
             json,
             json!({
-                "V0": {
-                    "V0": {
+                "$formatVersion": "0",
+                "$baseFormatVersion": "0",
                         "$identity-contract-nonce": 13,
                         "$tokenContractPosition": 2,
                         "$dataContractId": Identifier::new([0xa1; 32]),
                         "$tokenId": Identifier::new([0xb2; 32]),
-                    },
+
                     "tokenCount": 100,
                     "totalAgreedPrice": 999_000,
-                }
             })
         );
-        let recovered =
-            TokenDirectPurchaseTransition::from_json(json).expect("from_json");
+        let recovered = TokenDirectPurchaseTransition::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
     }
 
@@ -105,20 +113,18 @@ mod json_convertible_tests {
         assert_eq!(
             value,
             platform_value!({
-                "V0": {
-                    "V0": {
+                "$formatVersion": "0",
+                "$baseFormatVersion": "0",
                         "$identity-contract-nonce": 13u64,
                         "$tokenContractPosition": 2u16,
                         "$dataContractId": Identifier::new([0xa1; 32]),
                         "$tokenId": Identifier::new([0xb2; 32]),
-                    },
+
                     "tokenCount": 100u64,
                     "totalAgreedPrice": 999_000u64,
-                }
             })
         );
-        let recovered =
-            TokenDirectPurchaseTransition::from_object(value).expect("from_object");
+        let recovered = TokenDirectPurchaseTransition::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
     }
 }

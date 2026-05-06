@@ -82,6 +82,83 @@ impl Display for TokenPricingSchedule {
     }
 }
 
+#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+mod json_convertible_tests {
+    use super::*;
+    use platform_value::{platform_value, Value};
+    use serde_json::json;
+
+    // Externally tagged enum: `SinglePrice(u64)` → `{"SinglePrice": <n>}`,
+    // `SetPrices(BTreeMap<u64, u64>)` → `{"SetPrices": {<k>: <v>, ...}}`
+    // (JSON forces map keys to strings; platform_value preserves typed keys).
+
+    #[test]
+    fn json_round_trip_single_price() {
+        use crate::serialization::JsonConvertible;
+        let original = TokenPricingSchedule::SinglePrice(1234);
+        let json = original.to_json().expect("to_json");
+        assert_eq!(json, json!({ "SinglePrice": 1234 }));
+        let recovered = TokenPricingSchedule::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn json_round_trip_set_prices() {
+        use crate::serialization::JsonConvertible;
+        let mut prices = BTreeMap::new();
+        prices.insert(5u64, 50u64);
+        prices.insert(10u64, 80u64);
+        let original = TokenPricingSchedule::SetPrices(prices);
+        let json = original.to_json().expect("to_json");
+        // JSON object keys must be strings — `serde_json` stringifies the
+        // u64 amount keys.
+        assert_eq!(
+            json,
+            json!({ "SetPrices": { "5": 50, "10": 80 } })
+        );
+        let recovered = TokenPricingSchedule::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_single_price() {
+        use crate::serialization::ValueConvertible;
+        let original = TokenPricingSchedule::SinglePrice(1234);
+        let value = original.to_object().expect("to_object");
+        // `Credits` is `u64` → `Value::U64`.
+        assert_eq!(
+            value,
+            platform_value!({ "SinglePrice": 1234u64 })
+        );
+        let recovered = TokenPricingSchedule::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_set_prices() {
+        use crate::serialization::ValueConvertible;
+        let mut prices = BTreeMap::new();
+        prices.insert(5u64, 50u64);
+        prices.insert(10u64, 80u64);
+        let original = TokenPricingSchedule::SetPrices(prices);
+        let value = original.to_object().expect("to_object");
+        // platform_value preserves typed map keys: `BTreeMap<u64, u64>` →
+        // map of `(Value::U64, Value::U64)` pairs.
+        assert_eq!(
+            value,
+            Value::Map(vec![(
+                Value::Text("SetPrices".to_string()),
+                Value::Map(vec![
+                    (Value::U64(5), Value::U64(50)),
+                    (Value::U64(10), Value::U64(80)),
+                ]),
+            )])
+        );
+        let recovered = TokenPricingSchedule::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

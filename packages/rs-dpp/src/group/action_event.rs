@@ -28,6 +28,74 @@ pub enum GroupActionEvent {
 #[cfg(feature = "json-conversion")]
 impl JsonConvertible for GroupActionEvent {}
 
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+mod json_convertible_tests {
+    use super::*;
+    use platform_value::platform_value;
+    use serde_json::json;
+
+    // `GroupActionEvent` is `tag = "type", content = "data", rename_all = "camelCase"`.
+    // Single-variant `TokenEvent(TokenEvent)` newtype: the inner TokenEvent's
+    // own `tag = "type", content = "data"` shape ends up nested under `data`.
+
+    #[test]
+    fn json_round_trip_token_event_mint() {
+        use crate::serialization::JsonConvertible;
+        let original = GroupActionEvent::TokenEvent(
+            crate::tokens::token_event::json_convertible_tests::mint_fixture(),
+        );
+        let json = original.to_json().expect("to_json");
+        // Outer: `{"type": "tokenEvent", "data": <inner>}`.
+        // Inner TokenEvent::Mint: `{"type": "mint", "data": [...]}`.
+        assert_eq!(
+            json,
+            json!({
+                "type": "tokenEvent",
+                "data": {
+                    "type": "mint",
+                    "data": [
+                        5_000,
+                        "Bswb3UyeD1pUTaGiE6WvqwFpJZsQSEY1xhJePCDTHdvp",
+                        "genesis mint"
+                    ]
+                }
+            })
+        );
+        let recovered = GroupActionEvent::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_token_event_mint() {
+        use crate::serialization::ValueConvertible;
+        let original = GroupActionEvent::TokenEvent(
+            crate::tokens::token_event::json_convertible_tests::mint_fixture(),
+        );
+        let value = original.to_object().expect("to_object");
+        assert_eq!(
+            value,
+            platform_value!({
+                "type": "tokenEvent",
+                "data": {
+                    "type": "mint",
+                    "data": [
+                        5_000u64,
+                        platform_value::Identifier::new([0xa1; 32]),
+                        "genesis mint"
+                    ]
+                }
+            })
+        );
+        let recovered = GroupActionEvent::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+}
+
 use std::fmt;
 
 impl fmt::Display for GroupActionEvent {

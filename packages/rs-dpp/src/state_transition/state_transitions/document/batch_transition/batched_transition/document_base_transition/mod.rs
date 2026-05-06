@@ -26,12 +26,34 @@ use serde_json::Value as JsonValue;
 #[cfg(feature = "value-conversion")]
 use std::collections::BTreeMap;
 
+// Internal tagging with `$baseFormatVersion`. `DocumentBaseTransition` is
+// `serde(flatten)`'d into every document leaf transition's V0 struct; the
+// leaf wrappers use `tag = "$formatVersion"`, so a distinct key per nesting
+// level prevents collision at the same flattened level. The flat-shape
+// convention is preserved across every document and token transition, so
+// every consumer reads `tx["$id"]`, `tx["$identityContractNonce"]`, etc. at
+// the top level (no `"base"` envelope to traverse).
+//
+// `DocumentCreateTransitionV0` and `DocumentReplaceTransitionV0` have an
+// extra constraint: they combine `serde(flatten) base` with `serde(flatten)
+// data: BTreeMap<String, Value>` (a catchall) — under the auto-derived
+// `Deserialize` the catchall would steal the base's discriminator and
+// fields. Both leaves carry a manual `Deserialize` impl that explicitly
+// routes `$baseFormatVersion` + the known base struct fields to `base`
+// before letting the catchall claim what's left. See comments on
+// those impls for detail.
 #[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From)]
-#[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
+#[cfg_attr(
+    feature = "serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(tag = "$baseFormatVersion")
+)]
 pub enum DocumentBaseTransition {
     #[display("V0({})", "_0")]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
     V0(DocumentBaseTransitionV0),
     #[display("V1({})", "_1")]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "1"))]
     V1(DocumentBaseTransitionV1),
 }
 
@@ -106,7 +128,12 @@ impl DocumentTransitionObjectLike for DocumentBaseTransition {
     }
 }
 
-#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
 mod json_convertible_tests {
     use super::*;
     use crate::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
@@ -137,15 +164,15 @@ mod json_convertible_tests {
         assert_eq!(
             json,
             json!({
-                "V0": {
+                "$baseFormatVersion": "0",
                     "$id": "Bswb3UyeD1pUTaGiE6WvqwFpJZsQSEY1xhJePCDTHdvp",
                     "$identityContractNonce": 7,
                     "$type": "user",
                     "$dataContractId": "D2ZcUbtpG5sKq7XLeB4YnpNnTGSptKCxTddoNeydzJQq",
-                },
             })
         );
-        let recovered = <DocumentBaseTransition as JsonConvertible>::from_json(json).expect("from_json");
+        let recovered =
+            <DocumentBaseTransition as JsonConvertible>::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
     }
 
@@ -161,15 +188,15 @@ mod json_convertible_tests {
         assert_eq!(
             value,
             platform_value!({
-                "V0": {
+                "$baseFormatVersion": "0",
                     "$id": id,
                     "$identityContractNonce": 7u64,
                     "$type": "user",
                     "$dataContractId": data_contract_id,
-                },
             })
         );
-        let recovered = <DocumentBaseTransition as ValueConvertible>::from_object(value).expect("from_object");
+        let recovered =
+            <DocumentBaseTransition as ValueConvertible>::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
     }
 }

@@ -1303,3 +1303,76 @@ impl crate::serialization::JsonConvertible for DistributionFunction {}
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
 impl crate::serialization::ValueConvertible for DistributionFunction {}
 
+#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+mod json_convertible_tests {
+    use super::*;
+    use platform_value::platform_value;
+    use serde_json::json;
+
+    // `DistributionFunction` is externally tagged (no `#[serde(tag = ...)]`).
+    // Round-trip tests cover one variant per shape:
+    //   - struct variant with named fields (`FixedAmount`)
+    //   - struct variant with multiple named fields (`Random`)
+    // The other 6 variants share these two shapes.
+
+    #[test]
+    fn json_round_trip_fixed_amount() {
+        use crate::serialization::JsonConvertible;
+        let original = DistributionFunction::FixedAmount { amount: 1_000 };
+        let json = original.to_json().expect("to_json");
+        // Externally-tagged struct variant → `{"FixedAmount": {<fields>}}`.
+        // `TokenAmount` is `u64`; JSON erases the size.
+        assert_eq!(
+            json,
+            json!({ "FixedAmount": { "amount": 1_000 } })
+        );
+        let recovered = DistributionFunction::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn json_round_trip_random() {
+        use crate::serialization::JsonConvertible;
+        let original = DistributionFunction::Random {
+            min: 10,
+            max: 100,
+        };
+        let json = original.to_json().expect("to_json");
+        assert_eq!(
+            json,
+            json!({ "Random": { "min": 10, "max": 100 } })
+        );
+        let recovered = DistributionFunction::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_fixed_amount() {
+        use crate::serialization::ValueConvertible;
+        let original = DistributionFunction::FixedAmount { amount: 1_000 };
+        let value = original.to_object().expect("to_object");
+        assert_eq!(
+            value,
+            platform_value!({ "FixedAmount": { "amount": 1_000u64 } })
+        );
+        let recovered = DistributionFunction::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_random() {
+        use crate::serialization::ValueConvertible;
+        let original = DistributionFunction::Random {
+            min: 10,
+            max: 100,
+        };
+        let value = original.to_object().expect("to_object");
+        assert_eq!(
+            value,
+            platform_value!({ "Random": { "min": 10u64, "max": 100u64 } })
+        );
+        let recovered = DistributionFunction::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+}
+

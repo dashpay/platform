@@ -9,9 +9,14 @@ use serde::{Deserialize, Serialize};
 pub use v0::TokenClaimTransitionV0;
 
 #[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From)]
-#[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
+#[cfg_attr(
+    feature = "serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(tag = "$formatVersion")
+)]
 pub enum TokenClaimTransition {
     #[display("V0({})", "_0")]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
     V0(TokenClaimTransitionV0),
 }
 
@@ -27,8 +32,13 @@ impl Default for TokenClaimTransition {
     }
 }
 
-#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
-mod json_convertible_tests {
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+pub(crate) mod json_convertible_tests {
     use super::*;
     use crate::data_contract::associated_token::token_distribution_key::TokenDistributionType;
     use crate::state_transition::batch_transition::batched_transition::token_base_transition::v0::TokenBaseTransitionV0;
@@ -39,7 +49,7 @@ mod json_convertible_tests {
 
     /// Non-default values per field so the wire-shape assertion catches any
     /// silent zero-out / flip on round-trip.
-    fn fixture() -> TokenClaimTransition {
+    pub(crate) fn fixture() -> TokenClaimTransition {
         TokenClaimTransition::V0(TokenClaimTransitionV0 {
             base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
                 identity_contract_nonce: 13,
@@ -67,16 +77,15 @@ mod json_convertible_tests {
         assert_eq!(
             json,
             json!({
-                "V0": {
-                    "V0": {
+                "$formatVersion": "0",
+                "$baseFormatVersion": "0",
                         "$identity-contract-nonce": 13,
                         "$tokenContractPosition": 2,
                         "$dataContractId": Identifier::new([0xa1; 32]),
                         "$tokenId": Identifier::new([0xb2; 32]),
-                    },
+
                     "distributionType": "PreProgrammed",
                     "publicNote": "claim",
-                }
             })
         );
         let recovered = TokenClaimTransition::from_json(json).expect("from_json");
@@ -93,16 +102,15 @@ mod json_convertible_tests {
         assert_eq!(
             value,
             platform_value!({
-                "V0": {
-                    "V0": {
+                "$formatVersion": "0",
+                "$baseFormatVersion": "0",
                         "$identity-contract-nonce": 13u64,
                         "$tokenContractPosition": 2u16,
                         "$dataContractId": Identifier::new([0xa1; 32]),
                         "$tokenId": Identifier::new([0xb2; 32]),
-                    },
+
                     "distributionType": "PreProgrammed",
                     "publicNote": "claim",
-                }
             })
         );
         let recovered = TokenClaimTransition::from_object(value).expect("from_object");

@@ -16,9 +16,14 @@ use serde::{Deserialize, Serialize};
 pub use v0::*;
 
 #[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From)]
-#[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
+#[cfg_attr(
+    feature = "serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(tag = "$formatVersion")
+)]
 pub enum DocumentReplaceTransition {
     #[display("V0({})", "_0")]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
     V0(DocumentReplaceTransitionV0),
 }
 
@@ -185,8 +190,13 @@ impl DocumentFromReplaceTransition for Document {
     }
 }
 
-#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
-mod json_convertible_tests {
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+pub(crate) mod json_convertible_tests {
     use super::*;
     use crate::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
     use crate::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
@@ -197,7 +207,7 @@ mod json_convertible_tests {
 
     /// Non-default values per field so the wire-shape assertion catches any
     /// silent zero-out / flip on round-trip.
-    fn fixture() -> DocumentReplaceTransition {
+    pub(crate) fn fixture() -> DocumentReplaceTransition {
         let mut data = BTreeMap::new();
         data.insert("name".to_string(), Value::Text("alice".to_string()));
         DocumentReplaceTransition::V0(DocumentReplaceTransitionV0 {
@@ -224,16 +234,15 @@ mod json_convertible_tests {
         assert_eq!(
             json,
             json!({
-                "V0": {
-                    "V0": {
+                "$formatVersion": "0",
+                "$baseFormatVersion": "0",
                         "$id": Identifier::new([0xc1; 32]),
                         "$identityContractNonce": 11,
                         "$type": "post",
                         "$dataContractId": Identifier::new([0xd2; 32]),
-                    },
+
                     "$revision": 5,
                     "name": "alice",
-                }
             })
         );
         let recovered = DocumentReplaceTransition::from_json(json).expect("from_json");
@@ -249,16 +258,15 @@ mod json_convertible_tests {
         assert_eq!(
             value,
             platform_value!({
-                "V0": {
-                    "V0": {
+                "$formatVersion": "0",
+                "$baseFormatVersion": "0",
                         "$id": Identifier::new([0xc1; 32]),
                         "$identityContractNonce": 11u64,
                         "$type": "post",
                         "$dataContractId": Identifier::new([0xd2; 32]),
-                    },
+
                     "$revision": 5u64,
                     "name": "alice",
-                }
             })
         );
         let recovered = DocumentReplaceTransition::from_object(value).expect("from_object");

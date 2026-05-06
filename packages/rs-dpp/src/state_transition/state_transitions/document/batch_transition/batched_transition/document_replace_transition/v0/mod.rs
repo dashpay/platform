@@ -26,9 +26,11 @@ mod property_names {
 }
 
 #[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display)]
+// `Deserialize` is implemented manually below — see comments. Same
+// catchall-vs-base-flatten conflict as `DocumentCreateTransitionV0`.
 #[cfg_attr(
     feature = "serde-conversion",
-    derive(Serialize, Deserialize),
+    derive(Serialize),
     serde(rename_all = "camelCase")
 )]
 #[display("Base: {}, Revision: {}, Data: {:?}", "base", "revision", "data")]
@@ -39,6 +41,51 @@ pub struct DocumentReplaceTransitionV0 {
     pub revision: Revision,
     #[cfg_attr(feature = "serde-conversion", serde(flatten))]
     pub data: BTreeMap<String, Value>,
+}
+
+// Manual `Deserialize` impl — see the equivalent on
+// `DocumentCreateTransitionV0` for rationale and the `BASE_FIELD_NAMES`
+// maintenance warning.
+#[cfg(feature = "serde-conversion")]
+impl<'de> Deserialize<'de> for DocumentReplaceTransitionV0 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::Error;
+
+        const BASE_FIELD_NAMES: &[&str] = &[
+            "$baseFormatVersion",
+            "$id",
+            "$identityContractNonce",
+            "$type",
+            "$dataContractId",
+            "$tokenPaymentInfo",
+        ];
+
+        let mut map: BTreeMap<String, Value> = BTreeMap::deserialize(deserializer)?;
+
+        let mut base_pairs: Vec<(Value, Value)> = Vec::with_capacity(BASE_FIELD_NAMES.len());
+        for key in BASE_FIELD_NAMES {
+            if let Some(value) = map.remove(*key) {
+                base_pairs.push((Value::Text((*key).to_string()), value));
+            }
+        }
+        let base = platform_value::from_value::<DocumentBaseTransition>(Value::Map(base_pairs))
+            .map_err(D::Error::custom)?;
+
+        let revision_value = map
+            .remove("$revision")
+            .ok_or_else(|| D::Error::missing_field("$revision"))?;
+        let revision: Revision =
+            platform_value::from_value(revision_value).map_err(D::Error::custom)?;
+
+        Ok(DocumentReplaceTransitionV0 {
+            base,
+            revision,
+            data: map,
+        })
+    }
 }
 
 /// document from replace transition v0

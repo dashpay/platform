@@ -22,7 +22,11 @@ pub use v0::TokenSetPriceForDirectPurchaseTransitionV0;
 /// Versioning enables forward compatibility by allowing future enhancements or changes
 /// without breaking existing clients.
 #[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From)]
-#[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
+#[cfg_attr(
+    feature = "serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(tag = "$formatVersion")
+)]
 pub enum TokenSetPriceForDirectPurchaseTransition {
     /// Version 0 of the token set price for direct purchase transition.
     ///
@@ -34,6 +38,7 @@ pub enum TokenSetPriceForDirectPurchaseTransition {
     /// Group actions with multisig are supported in this version,
     /// enabling shared control over token pricing among multiple authorized identities.
     #[display("V0({})", "_0")]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
     V0(TokenSetPriceForDirectPurchaseTransitionV0),
 }
 
@@ -51,8 +56,13 @@ impl Default for TokenSetPriceForDirectPurchaseTransition {
     }
 }
 
-#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
-mod json_convertible_tests {
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+pub(crate) mod json_convertible_tests {
     use super::*;
     use crate::state_transition::batch_transition::batched_transition::token_base_transition::v0::TokenBaseTransitionV0;
     use crate::state_transition::batch_transition::batched_transition::token_base_transition::TokenBaseTransition;
@@ -64,7 +74,7 @@ mod json_convertible_tests {
     /// silent zero-out / flip on round-trip. `price: None` here exercises
     /// the "clear price (no longer purchasable)" wire shape; nested
     /// `TokenPricingSchedule` shapes are covered by that type's own tests.
-    fn fixture() -> TokenSetPriceForDirectPurchaseTransition {
+    pub(crate) fn fixture() -> TokenSetPriceForDirectPurchaseTransition {
         TokenSetPriceForDirectPurchaseTransition::V0(TokenSetPriceForDirectPurchaseTransitionV0 {
             base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
                 identity_contract_nonce: 13,
@@ -92,16 +102,15 @@ mod json_convertible_tests {
         assert_eq!(
             json,
             json!({
-                "V0": {
-                    "V0": {
+                "$formatVersion": "0",
+                "$baseFormatVersion": "0",
                         "$identity-contract-nonce": 13,
                         "$tokenContractPosition": 2,
                         "$dataContractId": Identifier::new([0xa1; 32]),
                         "$tokenId": Identifier::new([0xb2; 32]),
-                    },
+
                     "issuedToIdentityId": serde_json::Value::Null,
                     "publicNote": "clear",
-                }
             })
         );
         let recovered =
@@ -120,20 +129,19 @@ mod json_convertible_tests {
         assert_eq!(
             value,
             platform_value!({
-                "V0": {
-                    "V0": {
+                "$formatVersion": "0",
+                "$baseFormatVersion": "0",
                         "$identity-contract-nonce": 13u64,
                         "$tokenContractPosition": 2u16,
                         "$dataContractId": Identifier::new([0xa1; 32]),
                         "$tokenId": Identifier::new([0xb2; 32]),
-                    },
+
                     "issuedToIdentityId": platform_value::Value::Null,
                     "publicNote": "clear",
-                }
             })
         );
-        let recovered = TokenSetPriceForDirectPurchaseTransition::from_object(value)
-            .expect("from_object");
+        let recovered =
+            TokenSetPriceForDirectPurchaseTransition::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
     }
 }

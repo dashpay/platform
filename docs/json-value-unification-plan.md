@@ -1,23 +1,25 @@
 # JSON / Value Conversion Unification Plan
 
-**Status**: passes 1 + 2 **complete** as of commit `7397c73f31` (May 2026).
+**Status**: passes 1 + 2 **complete** as of commit `7682b34b29` (May 2026).
 **Scope**: `packages/rs-dpp/` (canonical surface) + `packages/wasm-dpp2/` (downstream consumers).
 
-## Progress (2026-05-04)
+## Progress (2026-05-05)
 
 | Pass | Goal | Status |
 |---|---|---|
 | 1 | Add `JsonConvertible` / `ValueConvertible` impls to ~80 types | ✅ done — `cargo check` passes |
-| 2 | Add round-trip tests; fix bugs that surface | ✅ done (197 conversion tests + every §10b bug resolved or correctly classified as fundamental format limitation) |
+| 2 | Add round-trip tests; fix bugs that surface | ✅ done (every §10b bug resolved or correctly classified as fundamental format limitation) |
+| 2.5 | Wire-shape test convention (`json!`/`platform_value!` literals) across all round-trip tests | ✅ done — ~85 tests upgraded |
+| 2.6 | Apply `tag = "$formatVersion"` / `tag = "type"` convention to top-level versioned and discriminated enums | ✅ done locally; gated on 2 open dashcore PRs |
 | 3 | Deprecate non-canonical mechanisms (§3.11 of this doc) | ⬜ not started |
 | 4 | wasm-dpp2 migration `_serde!` → `_inner!` | ⬜ not started |
 | 5 | Delete `wasm-dpp` legacy crate | ⬜ blocked on team decision |
 
 ### Final test count (May 2026)
 
-**3633 dpp lib tests pass, 8 ignored**. Of the 8 ignored:
+**3716 dpp lib tests pass, 8 ignored**. Of the 8 ignored:
 - 6 are pre-existing `recursive_schema_validator` ignores unrelated to the unification work.
-- 2 are the `StateTransition` umbrella untagged-enum tests (separate plan §10 item — wire-format design decision, not a code bug).
+- 2 are the `Validator` / `ValidatorSet` value-side round-trip tests, blocked on dashcore PR #729 merging + a dependency bump (not a code bug — `hashes::serde_macros::SerdeHash` upstream needs a dual-shape visitor; same root cause as the open #708 for `OutPoint`).
 
 **1036 platform-value lib tests pass.**
 
@@ -30,12 +32,34 @@ Pass-2 tests surfaced a small family of bugs all rooted in the same serde quirk:
 | `95554c8a7d` | `ExtendedDocument` (Critical-3) | Replaced broken manual serde (`version` ↔ `$version` mismatch, missing `data_contract` field) with `#[serde(tag = "$extendedFormatVersion")]` derive. Inner `Document`'s own `$formatVersion` coexists at top level via `serde(flatten)`. | +2 |
 | `0273e3e068` | `Bytes32` (platform_value) | Dual-visitor accepting strings + bytes in both HR/non-HR branches. Documents the `ContentDeserializer` quirk in-code. | preventive |
 | `e9efa82a93` | `serde_bytes` / `serde_bytes_var` (rs-dpp) | Same dual-visitor pattern in the auto-injected `[u8;N]` and `Vec<u8>` helpers. Removed redundant `signature_serializer` on `ExtendedBlockInfoV0::signature: [u8;96]`. | +6 (ExtendedBlockInfo + 5 shielded transitions) |
-| `09c0a2b771` | `OutPoint` + `Txid` (rs-dpp local wrapper) | `outpoint_serde` module on `ChainAssetLockProof::out_point` with unified visitor for `"txid:vout"` string + `{txid, vout}` struct + seq. `TxidCompat` newtype handles same bug one level deeper for `Txid`. **Upstream PR pending against `dashcore::serde_struct_human_string_impl!` macro** — once landed, drop the local wrapper. | +2 |
-| `c21a3c0d94` | `BlsPublicKey<Bls12381G2Impl>` (rs-dpp local wrapper) | `bls_pubkey_serde` module on `Validator::public_key` (Option) and `ValidatorSetV0::threshold_public_key`. HR path reads owned `String`, hex-decodes 48 bytes, constructs `G1Affine::from_bytes` → `to_curve` → `PublicKey` directly. Bypasses upstream `<&str>::deserialize(d)?` borrowed-string requirement. **Upstream PR pending against `blstrs_plus::deserialize_affine`** — separate from dashcore (different crate, different bug). | +1 |
+| `09c0a2b771` | `OutPoint` + `Txid` (rs-dpp local wrapper) | `outpoint_serde` module on `ChainAssetLockProof::out_point` with unified visitor for `"txid:vout"` string + `{txid, vout}` struct + seq. `TxidCompat` newtype handles same bug one level deeper for `Txid`. Upstream **dashcore PR #708 open** (against `serde_struct_human_string_impl!`); once merged + dep bump, drop the local wrapper. | +2 |
+| `c21a3c0d94` | `BlsPublicKey<Bls12381G2Impl>` (rs-dpp local wrapper) | `bls_pubkey_serde` module on `Validator::public_key` (Option) and `ValidatorSetV0::threshold_public_key`. HR path reads owned `String`, hex-decodes 48 bytes, constructs `G1Affine::from_bytes` → `to_curve` → `PublicKey` directly. Bypasses upstream `<&str>::deserialize(d)?` borrowed-string requirement. Upstream **`blstrs_plus` PR pending** — separate from dashcore (different crate). | +1 |
 | `ec43a2a4e2` | platform_value typed map keys | Removed `MapKeySerializer` (string-only, HR=true) — `serialize_key` now uses the regular Serializer. Map keys become whatever `Value` variant the type emits (`Bytes32` for hashes, `Text` for strings, etc.) — symmetric with the deserialize side. Unblocks `BTreeMap<ProTxHash, _>` round-trips. `Error::KeyMustBeAString` retained for SemVer; no longer produced. | +1 |
 | `7397c73f31` | DataContract JSON test convention | `DataContractCreate/UpdateTransition::json_round_trip` were asserting integer-variant equality (`U32(63) == U32(63)`) which JSON can't preserve — JSON's grammar has a single number type. Added `tests::utils::normalize_integer_variants_for_json_round_trip` and changed the tests to compare modulo sized-int variant. Not a bug fix — a test-convention fix that documents the actual JSON contract. The Value-round-trip path (sized ints preserved) keeps its strict assertion. | +2 |
 
-**Net**: 3621 → 3633 passing (+12), 20 → 8 ignored (-12).
+### Wire-shape test convention rollout
+
+Three more commits applied the **literal-wire-shape assertion** pattern (using `serde_json::json!` and `platform_value::platform_value!`) across all round-trip tests. Before: tests asserted only structural `assert_eq!(original, recovered)`. After: tests assert the literal JSON / Value bytes the type produces, with explicit sized-int suffixes (`7u16`, `0u8`) in the Value-path expected to lock in the typed variant, and comment-flags on the JSON-path where sized-int info is unavoidably erased.
+
+| Commit | What |
+|---|---|
+| `8b198eb3ce` | First batch — 49 round-trip tests upgraded across 49 files. Surfaced documented surprises (OutPoint dual encoding, externally-tagged Validator pre-fix, custom `BTreeMap<PlatformAddress, _>` shape, `Vec<u8>` as Array vs Bytes). |
+| `1cc8452c1c` | Second batch — 35 more files (block, voting, tokens, identity transitions). Found `BTreeMap<Identifier, u64>` base58-string-key path, `ArrayItemType` untagged variants, `KeyType::ECDSA_HASH160 = 2` / `Purpose::TRANSFER = 3`, dashcore reversed-byte Txid display. |
+| `538dc34e52` | Convention codified — every JSON-side bare integer where the source is `u8`/`u16`/`u32`/`i*` carries a comment pointing at the value-path's typed-suffix lock-in. |
+
+### Convention enforcement: top-level enums
+
+| Commit | Change |
+|---|---|
+| `28c0022c2a` | `AssetLockValue` and `TokenContractInfo` switched to `#[serde(tag = "$formatVersion")]` per wasm-dpp2 CONVENTIONS.md (was untagged externally / `serde(untagged)` respectively). Wire shape changed from `{"V0": {...}}` / `{...flat...}` to canonical `{"$formatVersion": "0", ...}`. |
+| `77956d1427` | `Validator` and `ValidatorSet` switched to `#[serde(tag = "$formatVersion")]`. JSON path passes; value path `#[ignore]`'d pending dashcore PR #729 (`hashes::serde_macros::SerdeHash` companion fix to #708). |
+| `4fcb3d428f` | `StateTransition` umbrella switched from `serde(untagged)` to `#[serde(tag = "type", rename_all = "camelCase")]` — matching the codebase convention for **semantically-different-variant** enums (`AssetLockProof`, `ContractBoundSpecification`, `ActionEvent`). Two previously-`#[ignore]`'d umbrella tests now active. Verified non-breaking for all observed Rust + WASM consumers. |
+| `7682b34b29` | Per-variant umbrella tests for `StateTransition` — exposed each inner transition's `json_convertible_tests::fixture()` as `pub(crate)` and added 20 umbrella round-trip tests (one per variant). 18 use bit-exact equality; 2 (DataContract Create/Update) use `normalize_integer_variants_for_json_round_trip` for the Critical-1 sized-int loss. |
+| _new_ | `DocumentTransition` (6 variants), `TokenTransition` (11 variants), `BatchedTransition` (2 variants) — switched from externally tagged to: DocumentTransition / TokenTransition use `tag = "type", rename_all = "camelCase"`; BatchedTransition uses `tag = "type", content = "data", rename_all = "camelCase"` (adjacent because both inner umbrellas already use `tag = "type"` — internal would collide). All 18 leaf fixtures promoted to `pub(crate)`; +19 per-variant umbrella tests (6 + 11 + 2). Verified no other rs-dpp / wasm-dpp2 / rs-drive code hardcoded the externally-tagged variant strings. |
+| _new_ | All 17 leaf transition wrappers (`DocumentCreateTransition`, ..., `TokenBurnTransition`, ..., `TokenSetPriceForDirectPurchaseTransition`) — switched from externally tagged `{"V0": {...}}` to `tag = "$formatVersion"`. Both `TokenBaseTransition` and `DocumentBaseTransition` switched to `tag = "$baseFormatVersion"` and stay `serde(flatten)`'d into every leaf's V0 struct. Wire shape is **fully flat across the board**: `{"type": "<variant>", "$formatVersion": "0", "$baseFormatVersion": "0", "$id": ..., "$identityContractNonce": ..., ...leaf fields...}`. The auto-derived `Deserialize` works for 15 of 17 leaves; `DocumentCreateTransitionV0` and `DocumentReplaceTransitionV0` carry **manual `Deserialize` impls** because they additionally have `serde(flatten) data: BTreeMap<String, Value>` (catchall) that would otherwise steal the base's discriminator + struct fields. Each manual impl reads the wire into a `BTreeMap<String, platform_value::Value>`, peels off the `BASE_FIELD_NAMES` constant set into a sub-map, reconstructs the base via `platform_value::from_value`, then routes remaining keys (minus the explicit `$entropy` / `$prefundedVotingBalance` / `$revision`) to `data`. **Maintenance trap**: when adding a new field to `DocumentBaseTransitionV0` or `DocumentBaseTransitionV1`, the field's serde rename MUST be added to `BASE_FIELD_NAMES` in both manual impls or it silently routes to the dynamic `data` map at runtime. The auto-derived `Serialize` is kept on both leaves — only deserialize needs the manual logic since serialize-side flatten distributes keys correctly. |
+| _new_ | Filled the test gap surfaced by audit: 9 leaf types had `JsonConvertible`/`ValueConvertible` impls but no round-trip tests (`PlatformAddress`, `DistributionFunction`, `RewardDistributionType`, `GroupActionEvent`, `GroupActionStatus`, `SerializedAction`, `TokenEvent`, `TokenPricingSchedule`, `TokenTransferTransition`) plus `StoredAssetLockInfo`. +38 round-trip tests covering one variant per shape per type. |
+
+**Net**: 3621 → 3716 passing (+95), 20 → 8 ignored (-12).
 
 ### Common pattern surfaced this branch — document it loudly
 
@@ -51,16 +75,26 @@ Every fix above shares one root cause:
 
 When adding a new custom-serde type that may end up inside a tagged enum, follow this template. Three places now document the quirk in-code: `rs-platform-value/src/types/{bytes_32, binary_data, identifier}.rs`.
 
-### Upstream PRs ready to send
+### Tag-key conventions (wasm-dpp2 CONVENTIONS.md)
 
-Both reduce maintenance surface — once landed and the dependency is bumped, drop the corresponding local wrapper.
+| Tag | Use case | Examples |
+|---|---|---|
+| `tag = "$formatVersion"` | **Versioning** — V0/V1/V2 of the same logical type | `Identity`, `IdentityPublicKey`, `DataContractConfig`, `Group`, `Validator`, `ValidatorSet`, `AssetLockValue`, `TokenContractInfo`, ~30 others |
+| `tag = "type"` (with `rename_all = "camelCase"`) | **Discriminating** semantically different variants of the same kind | `AssetLockProof` (Instant/Chain), `ContractBoundSpecification`, `ActionEvent`, `StateTransition` (20 variants), `DocumentTransition` (6), `TokenTransition` (11), `AddressFundsFeeStrategyStep` (manual impl) |
+| `tag = "type", content = "data"` (with `rename_all = "camelCase"`) | Adjacent tagging — used when the inner is itself a tagged enum that would collide on the same tag key | `TokenEvent` (tuple variants), `GroupActionEvent`, `BatchedTransition` (inner umbrellas already use `tag = "type"`) |
+| `tag = "$extendedFormatVersion"` | Outer-envelope version key when the inner is already `tag = "$formatVersion"` (collision avoidance) | `ExtendedDocument` (envelope around flattened `Document`) |
+| `tag = "$baseFormatVersion"` | Inner-flattened version key when the outer parent is already `tag = "$formatVersion"` AND the inner is `serde(flatten)`'d into the parent (collision avoidance, mirror of `$extendedFormatVersion`) | `TokenBaseTransition` (flattened into 11 token leaf V0 structs) + `DocumentBaseTransition` (flattened into 6 document leaf V0 structs). For 2 of the 6 doc leaves (`DocumentCreateTransitionV0` / `DocumentReplaceTransitionV0`) the auto-derive can't disambiguate base from a sibling `serde(flatten) data: BTreeMap<String, Value>` catchall, so those leaves carry a manual `Deserialize` impl that explicitly routes a `BASE_FIELD_NAMES` const set to base. Trade-off: the manual impl must be kept in sync with new base fields — see in-code maintenance warning. |
 
-1. **dashcore `serde_struct_human_string_impl!` macro** (`dash/src/serde_utils.rs:361`) — apply unified-visitor pattern at the macro source. Benefits `OutPoint`, `Txid`, `BlockHash`, every `hash_newtype!`-generated type. Drops `outpoint_serde` and `TxidCompat`. **Repo**: `https://github.com/dashpay/rust-dashcore` (already forked).
-2. **`blstrs_plus`** (`src/serde_impl.rs:119,160`) — replace `<&str>::deserialize(d)?` with `<String>::deserialize(d)?` (or a Visitor with `visit_str`/`visit_string`/`visit_borrowed_str`) so owned-string sources round-trip cleanly. Drops `bls_pubkey_serde`. **Repo**: `https://github.com/mikelodder7/blstrs` (NOT forked into dashpay; would need new fork or upstream PR).
+### Upstream PRs status
+
+| PR | Repo | Status | When merged + dep bumped, drop |
+|---|---|---|---|
+| **dashcore #708** | `dashpay/rust-dashcore` | 🟡 OPEN | Fixes `serde_struct_human_string_impl!` macro — applies the unified-visitor pattern at the macro source. Drops `outpoint_serde` + `TxidCompat` local wrappers in `chain_asset_lock_proof.rs`. |
+| **dashcore #729** | `dashpay/rust-dashcore` | 🟡 OPEN | Companion to #708 — fixes `hashes::serde_macros::SerdeHash` (Txid/BlockHash/ProTxHash/PubkeyHash/QuorumHash). Drops the 2 `#[ignore]`s on `Validator`/`ValidatorSet` value-side tests. |
+| **`blstrs_plus`** | `mikelodder7/blstrs` (NOT dashpay-forked) | ⬜ TBD | `bls_pubkey_serde` local wrapper. Replace `<&str>::deserialize(d)?` with `<String>::deserialize(d)?` or a Visitor accepting `visit_str`/`visit_string`/`visit_borrowed_str`. |
 
 ### Out of scope for this branch
 
-- `StateTransition` umbrella (`#[ignore]` × 2) — untagged enum, deserialize ambiguity. Real fix is to make it `#[serde(tag = "type")]` but that's a wire-format change observable to wasm-dpp / swift-sdk consumers. Needs coordinated migration; tracked in plan §10.
 - `recursive_schema_validator` (× 6 ignored) — unrelated, pre-existing.
 
 **Crate policy** —

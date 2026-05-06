@@ -161,6 +161,140 @@ pub enum TokenEvent {
 #[cfg(feature = "json-conversion")]
 impl JsonConvertible for TokenEvent {}
 
+#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+pub(crate) mod json_convertible_tests {
+    use super::*;
+    use platform_value::platform_value;
+    use serde_json::json;
+
+    // `TokenEvent` is `tag = "type", content = "data", rename_all = "camelCase"`.
+    // Tuple variants serialize their fields as a JSON array under `"data"`.
+    // Round-trip covers a representative sample: `Mint` (3-tuple), `Freeze`
+    // (2-tuple including null note), `DirectPurchase` (2-tuple of u64 aliases).
+
+    pub(crate) fn mint_fixture() -> TokenEvent {
+        TokenEvent::Mint(
+            5_000,
+            Identifier::new([0xa1; 32]),
+            Some("genesis mint".to_string()),
+        )
+    }
+
+    #[test]
+    fn json_round_trip_mint() {
+        use crate::serialization::JsonConvertible;
+        let original = mint_fixture();
+        let json = original.to_json().expect("to_json");
+        // `TokenAmount` (u64), `Identifier` (base58 in HR), `Option<String>`.
+        assert_eq!(
+            json,
+            json!({
+                "type": "mint",
+                "data": [
+                    5_000,
+                    "Bswb3UyeD1pUTaGiE6WvqwFpJZsQSEY1xhJePCDTHdvp",
+                    "genesis mint"
+                ]
+            })
+        );
+        let recovered = TokenEvent::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn json_round_trip_freeze_no_note() {
+        use crate::serialization::JsonConvertible;
+        let original = TokenEvent::Freeze(Identifier::new([0xb2; 32]), None);
+        let json = original.to_json().expect("to_json");
+        assert_eq!(
+            json,
+            json!({
+                "type": "freeze",
+                "data": [
+                    "D2ZcUbtpG5sKq7XLeB4YnpNnTGSptKCxTddoNeydzJQq",
+                    null
+                ]
+            })
+        );
+        let recovered = TokenEvent::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn json_round_trip_direct_purchase() {
+        use crate::serialization::JsonConvertible;
+        let original = TokenEvent::DirectPurchase(100, 5_000);
+        let json = original.to_json().expect("to_json");
+        assert_eq!(
+            json,
+            json!({
+                "type": "directPurchase",
+                "data": [100, 5_000]
+            })
+        );
+        let recovered = TokenEvent::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_mint() {
+        use crate::serialization::ValueConvertible;
+        let original = mint_fixture();
+        let value = original.to_object().expect("to_object");
+        // `TokenAmount` is `u64` → `Value::U64`. Tuple variants serialize as
+        // `Value::Array` under the `data` key.
+        assert_eq!(
+            value,
+            platform_value!({
+                "type": "mint",
+                "data": [
+                    5_000u64,
+                    Identifier::new([0xa1; 32]),
+                    "genesis mint"
+                ]
+            })
+        );
+        let recovered = TokenEvent::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_freeze_no_note() {
+        use crate::serialization::ValueConvertible;
+        let original = TokenEvent::Freeze(Identifier::new([0xb2; 32]), None);
+        let value = original.to_object().expect("to_object");
+        assert_eq!(
+            value,
+            platform_value!({
+                "type": "freeze",
+                "data": [
+                    Identifier::new([0xb2; 32]),
+                    null
+                ]
+            })
+        );
+        let recovered = TokenEvent::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_direct_purchase() {
+        use crate::serialization::ValueConvertible;
+        let original = TokenEvent::DirectPurchase(100, 5_000);
+        let value = original.to_object().expect("to_object");
+        // `TokenAmount` and `Credits` are both `u64`.
+        assert_eq!(
+            value,
+            platform_value!({
+                "type": "directPurchase",
+                "data": [100u64, 5_000u64]
+            })
+        );
+        let recovered = TokenEvent::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+}
+
 impl fmt::Display for TokenEvent {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

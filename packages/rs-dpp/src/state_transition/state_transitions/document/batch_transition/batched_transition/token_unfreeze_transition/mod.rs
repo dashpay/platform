@@ -9,9 +9,14 @@ use serde::{Deserialize, Serialize};
 pub use v0::TokenUnfreezeTransitionV0;
 
 #[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From)]
-#[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
+#[cfg_attr(
+    feature = "serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(tag = "$formatVersion")
+)]
 pub enum TokenUnfreezeTransition {
     #[display("V0({})", "_0")]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
     V0(TokenUnfreezeTransitionV0),
 }
 
@@ -27,8 +32,13 @@ impl Default for TokenUnfreezeTransition {
     }
 }
 
-#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
-mod json_convertible_tests {
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+pub(crate) mod json_convertible_tests {
     use super::*;
     use crate::state_transition::batch_transition::batched_transition::token_base_transition::v0::TokenBaseTransitionV0;
     use crate::state_transition::batch_transition::batched_transition::token_base_transition::TokenBaseTransition;
@@ -38,7 +48,7 @@ mod json_convertible_tests {
 
     /// Non-default values per field so the wire-shape assertion catches any
     /// silent zero-out / flip on round-trip.
-    fn fixture() -> TokenUnfreezeTransition {
+    pub(crate) fn fixture() -> TokenUnfreezeTransition {
         TokenUnfreezeTransition::V0(TokenUnfreezeTransitionV0 {
             base: TokenBaseTransition::V0(TokenBaseTransitionV0 {
                 identity_contract_nonce: 13,
@@ -64,16 +74,15 @@ mod json_convertible_tests {
         assert_eq!(
             json,
             json!({
-                "V0": {
-                    "V0": {
+                "$formatVersion": "0",
+                "$baseFormatVersion": "0",
                         "$identity-contract-nonce": 13,
                         "$tokenContractPosition": 2,
                         "$dataContractId": Identifier::new([0xa1; 32]),
                         "$tokenId": Identifier::new([0xb2; 32]),
-                    },
+
                     "frozenIdentityId": Identifier::new([0xc3; 32]),
                     "publicNote": "unfreeze",
-                }
             })
         );
         let recovered = TokenUnfreezeTransition::from_json(json).expect("from_json");
@@ -90,16 +99,15 @@ mod json_convertible_tests {
         assert_eq!(
             value,
             platform_value!({
-                "V0": {
-                    "V0": {
+                "$formatVersion": "0",
+                "$baseFormatVersion": "0",
                         "$identity-contract-nonce": 13u64,
                         "$tokenContractPosition": 2u16,
                         "$dataContractId": Identifier::new([0xa1; 32]),
                         "$tokenId": Identifier::new([0xb2; 32]),
-                    },
+
                     "frozenIdentityId": Identifier::new([0xc3; 32]),
                     "publicNote": "unfreeze",
-                }
             })
         );
         let recovered = TokenUnfreezeTransition::from_object(value).expect("from_object");

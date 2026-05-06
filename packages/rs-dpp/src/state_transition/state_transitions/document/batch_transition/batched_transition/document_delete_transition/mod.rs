@@ -9,9 +9,14 @@ use serde::{Deserialize, Serialize};
 pub use v0::*;
 
 #[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From)]
-#[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
+#[cfg_attr(
+    feature = "serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(tag = "$formatVersion")
+)]
 pub enum DocumentDeleteTransition {
     #[display("V0({})", "_0")]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
     V0(DocumentDeleteTransitionV0),
 }
 
@@ -21,8 +26,13 @@ impl crate::serialization::JsonConvertible for DocumentDeleteTransition {}
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
 impl crate::serialization::ValueConvertible for DocumentDeleteTransition {}
 
-#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
-mod json_convertible_tests {
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+pub(crate) mod json_convertible_tests {
     use super::*;
     use crate::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
     use crate::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
@@ -32,7 +42,7 @@ mod json_convertible_tests {
 
     /// Non-default values per field so the wire-shape assertion catches any
     /// silent zero-out / flip on round-trip.
-    fn fixture() -> DocumentDeleteTransition {
+    pub(crate) fn fixture() -> DocumentDeleteTransition {
         DocumentDeleteTransition::V0(DocumentDeleteTransitionV0 {
             base: DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
                 id: Identifier::new([0xc1; 32]),
@@ -56,14 +66,13 @@ mod json_convertible_tests {
         assert_eq!(
             json,
             json!({
-                "V0": {
-                    "V0": {
-                        "$id": Identifier::new([0xc1; 32]),
-                        "$identityContractNonce": 9,
-                        "$type": "post",
-                        "$dataContractId": Identifier::new([0xd2; 32]),
-                    }
-                }
+                "$formatVersion": "0",
+                "$baseFormatVersion": "0",
+                    "$id": Identifier::new([0xc1; 32]),
+                    "$identityContractNonce": 9,
+                    "$type": "post",
+                    "$dataContractId": Identifier::new([0xd2; 32]),
+
             })
         );
         let recovered = DocumentDeleteTransition::from_json(json).expect("from_json");
@@ -81,14 +90,13 @@ mod json_convertible_tests {
         assert_eq!(
             value,
             platform_value!({
-                "V0": {
-                    "V0": {
-                        "$id": Identifier::new([0xc1; 32]),
-                        "$identityContractNonce": 9u64,
-                        "$type": "post",
-                        "$dataContractId": Identifier::new([0xd2; 32]),
-                    }
-                }
+                "$formatVersion": "0",
+                "$baseFormatVersion": "0",
+                    "$id": Identifier::new([0xc1; 32]),
+                    "$identityContractNonce": 9u64,
+                    "$type": "post",
+                    "$dataContractId": Identifier::new([0xd2; 32]),
+
             })
         );
         let recovered = DocumentDeleteTransition::from_object(value).expect("from_object");

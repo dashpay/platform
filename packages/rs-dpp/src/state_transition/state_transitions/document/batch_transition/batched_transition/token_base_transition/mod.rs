@@ -21,10 +21,24 @@ use serde_json::Value as JsonValue;
 #[cfg(feature = "value-conversion")]
 use std::collections::BTreeMap;
 
+// Internal tagging with `$baseFormatVersion`. `TokenBaseTransition` is
+// `serde(flatten)`'d into every token leaf transition's V0 struct (e.g.
+// `TokenBurnTransitionV0::base`); the leaf wrappers themselves use
+// `tag = "$formatVersion"`, so a distinct key is required at the same
+// flattened level to avoid colliding with the leaf's discriminator.
+// The pair (`$formatVersion` on the leaf wrapper, `$baseFormatVersion` on
+// the flattened base) keeps the entire transition wire shape flat —
+// matching the convention every consumer reads (`tx["$id"]`,
+// `tx["$identity-contract-nonce"]`, etc.).
 #[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From)]
-#[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
+#[cfg_attr(
+    feature = "serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(tag = "$baseFormatVersion")
+)]
 pub enum TokenBaseTransition {
     #[display("V0({})", "_0")]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
     V0(TokenBaseTransitionV0),
 }
 
@@ -99,7 +113,12 @@ impl DocumentTransitionObjectLike for TokenBaseTransition {
     }
 }
 
-#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
 mod json_convertible_tests {
     use super::*;
     use crate::state_transition::batch_transition::batched_transition::token_base_transition::v0::TokenBaseTransitionV0;
@@ -136,12 +155,11 @@ mod json_convertible_tests {
         assert_eq!(
             json,
             json!({
-                "V0": {
-                    "$identity-contract-nonce": 13,
-                    "$tokenContractPosition": 2,
-                    "$dataContractId": Identifier::new([0xa1; 32]),
-                    "$tokenId": Identifier::new([0xb2; 32]),
-                }
+                "$baseFormatVersion": "0",
+                "$identity-contract-nonce": 13,
+                "$tokenContractPosition": 2,
+                "$dataContractId": Identifier::new([0xa1; 32]),
+                "$tokenId": Identifier::new([0xb2; 32]),
             })
         );
         let recovered =
@@ -164,12 +182,11 @@ mod json_convertible_tests {
         assert_eq!(
             value,
             platform_value!({
-                "V0": {
-                    "$identity-contract-nonce": 13u64,
-                    "$tokenContractPosition": 2u16,
-                    "$dataContractId": Identifier::new([0xa1; 32]),
-                    "$tokenId": Identifier::new([0xb2; 32]),
-                }
+                "$baseFormatVersion": "0",
+                "$identity-contract-nonce": 13u64,
+                "$tokenContractPosition": 2u16,
+                "$dataContractId": Identifier::new([0xa1; 32]),
+                "$tokenId": Identifier::new([0xb2; 32]),
             })
         );
         let recovered =

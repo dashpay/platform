@@ -18,9 +18,14 @@ use serde::{Deserialize, Serialize};
 pub use v0::DocumentCreateTransitionV0;
 
 #[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From)]
-#[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
+#[cfg_attr(
+    feature = "serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(tag = "$formatVersion")
+)]
 pub enum DocumentCreateTransition {
     #[display("V0({})", "_0")]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
     V0(DocumentCreateTransitionV0),
 }
 
@@ -135,8 +140,13 @@ impl DocumentFromCreateTransition for Document {
     }
 }
 
-#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
-mod json_convertible_tests {
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+pub(crate) mod json_convertible_tests {
     use super::*;
     use crate::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
     use crate::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
@@ -147,7 +157,7 @@ mod json_convertible_tests {
 
     /// Non-default values per field so the wire-shape assertion catches any
     /// silent zero-out / flip on round-trip.
-    fn fixture() -> DocumentCreateTransition {
+    pub(crate) fn fixture() -> DocumentCreateTransition {
         let mut data = BTreeMap::new();
         data.insert("name".to_string(), Value::Text("alice".to_string()));
         DocumentCreateTransition::V0(DocumentCreateTransitionV0 {
@@ -169,29 +179,28 @@ mod json_convertible_tests {
         let original = fixture();
         let json = original.to_json().expect("to_json");
         let entropy_vec: Vec<u8> = vec![0xab; 32];
-        // Externally-tagged enum: outer `V0` wraps the variant; the inner
-        // `base` field is itself an enum (`DocumentBaseTransition::V0`),
-        // so it appears as `{"V0": {...base fields...}}` flattened into the
-        // outer map. `$entropy` is a `[u8; 32]` -> JSON renders it as an
-        // array of numbers (no base64 envelope). `$identityContractNonce`
-        // is `u64`; JSON has only one number type, so the size is erased.
-        // `data` is `#[serde(flatten)]` -> the map's keys become top-level.
-        // `$prefundedVotingBalance` is `Option<(String, u64)>` and
+        // Internally tagged outer (`tag = "$formatVersion"`); inner `base`
+        // is a non-flattened nested object (`DocumentBaseTransition`), itself
+        // internally tagged with `$formatVersion`. `$entropy` is a
+        // `[u8; 32]` -> JSON renders it as an array of numbers (no base64
+        // envelope). `$identityContractNonce` is `u64`; JSON has only one
+        // number type, so the size is erased. `data: BTreeMap<String, Value>`
+        // is `#[serde(flatten)]` -> the map's keys become top-level (e.g.
+        // `name`). `$prefundedVotingBalance` is `Option<(String, u64)>` and
         // serializes as a 2-element JSON array.
         assert_eq!(
             json,
             json!({
-                "V0": {
-                    "V0": {
+                "$formatVersion": "0",
+                "$baseFormatVersion": "0",
                         "$id": Identifier::new([0xc1; 32]),
                         "$identityContractNonce": 11,
                         "$type": "post",
                         "$dataContractId": Identifier::new([0xd2; 32]),
-                    },
+
                     "$entropy": entropy_vec,
                     "name": "alice",
                     "$prefundedVotingBalance": ["uniqueName", 50_000],
-                }
             })
         );
         let recovered = DocumentCreateTransition::from_json(json).expect("from_json");
@@ -212,17 +221,16 @@ mod json_convertible_tests {
         assert_eq!(
             value,
             platform_value!({
-                "V0": {
-                    "V0": {
+                "$formatVersion": "0",
+                "$baseFormatVersion": "0",
                         "$id": Identifier::new([0xc1; 32]),
                         "$identityContractNonce": 11u64,
                         "$type": "post",
                         "$dataContractId": Identifier::new([0xd2; 32]),
-                    },
+
                     "$entropy": entropy,
                     "name": "alice",
                     "$prefundedVotingBalance": ["uniqueName", 50_000u64],
-                }
             })
         );
         let recovered = DocumentCreateTransition::from_object(value).expect("from_object");
