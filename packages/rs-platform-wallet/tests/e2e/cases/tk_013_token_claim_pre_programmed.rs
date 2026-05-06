@@ -279,7 +279,7 @@ fn build_pre_programmed_token_json(
         "description": "TK-013 pre-programmed distribution token (rs-platform-wallet e2e).",
         "marketplaceRules": {
             "$formatVersion": "0",
-            "tradeMode": 1,
+            "tradeMode": "NotTradeable",
             "tradeModeChangeRules": owner_only,
         },
     });

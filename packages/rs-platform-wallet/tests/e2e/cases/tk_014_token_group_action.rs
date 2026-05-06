@@ -462,7 +462,7 @@ async fn publish_token_contract_with_groups(
         "description": "TK-014 group-gated mint token (rs-platform-wallet e2e).",
         "marketplaceRules": {
             "$formatVersion": "0",
-            "tradeMode": 1,
+            "tradeMode": "NotTradeable",
             "tradeModeChangeRules": owner_only,
         },
     });
