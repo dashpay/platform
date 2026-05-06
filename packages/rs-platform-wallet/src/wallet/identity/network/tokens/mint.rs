@@ -1,9 +1,17 @@
 //! Token mint — issues `amount` of `(contract, token_position)`.
-//! `recipient_id == None` mints to `identity_id`. Group-gateable.
+//! `recipient_id == None` defers to the contract's
+//! `newTokensDestinationIdentity`. When the contract sets
+//! `minting_allow_choosing_destination = false`, this helper drops any
+//! non-`None` `recipient_id` to keep co-sign replays from tripping the
+//! chain-side `ChoosingTokenMintRecipientNotAllowed` validator.
+//! Group-gateable.
 
 use std::sync::Arc;
 
 use dpp::balances::credits::TokenAmount;
+use dpp::data_contract::accessors::v1::DataContractV1Getters;
+use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use dpp::data_contract::{DataContract, TokenContractPosition};
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
@@ -32,6 +40,32 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         >,
     ) -> Result<dash_sdk::platform::tokens::transitions::MintResult, dash_sdk::Error> {
         use dash_sdk::platform::tokens::builders::mint::TokenMintTransitionBuilder;
+
+        // Contracts with `minting_allow_choosing_destination = false`
+        // reject any mint where `issued_to_identity_id.is_some()` at
+        // execution time (rs-drive's TokenMintTransitionTransformer
+        // rule). The proposer-mode submission is stored as a pending
+        // action and bypasses this check, but the chain stores
+        // `TokenEvent::Mint` with the resolved
+        // `newTokensDestinationIdentity` baked in. The co-sign path
+        // then surfaces that resolved id back to the caller as a
+        // non-optional recipient and replays it, tripping the
+        // validator. Normalize here so neither caller has to think
+        // about it: when the rule forbids choosing, drop the
+        // recipient and let the chain resolve to
+        // `newTokensDestinationIdentity` (or surface
+        // `DestinationIdentityForTokenMintingNotSet` if that's also
+        // unset).
+        let recipient_id = if !data_contract
+            .expected_token_configuration(token_position)
+            .map_err(dash_sdk::Error::Protocol)?
+            .distribution_rules()
+            .minting_allow_choosing_destination()
+        {
+            None
+        } else {
+            recipient_id
+        };
 
         let builder =
             TokenMintTransitionBuilder::new(data_contract, token_position, identity_id, amount);
