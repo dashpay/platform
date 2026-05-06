@@ -421,20 +421,21 @@ macro_rules! call_errorable_method_identity_signed {
     From,
     PartialEq,
 )]
-// `tag = "type"` matches the codebase convention for enums that discriminate
-// between **semantically different variants** of the same kind (rather than
-// **versions** of one logical type, which use `tag = "$formatVersion"`).
-// Existing precedents: `AssetLockProof` (`Instant`/`Chain`),
-// `ContractBoundSpecification`, `ActionEvent`, etc. — all
-// `#[serde(tag = "type", rename_all = "camelCase")]`.
+// `tag = "$type"` matches the system-field convention: every serde-injected
+// discriminator key in this crate carries a `$` prefix so it never collides
+// with user-data field names. Discriminates between **semantically
+// different variants** of the same kind (rather than **versions** of one
+// logical type, which use `tag = "$formatVersion"`).
+//
+// `$type` here is at the OUTERMOST level — there's no flatten path that
+// would put it next to a base's `document_type_name` (renamed to `$type`
+// in the wire). Inner umbrellas (`DocumentTransition`, `TokenTransition`)
+// use `$action` instead because they DO flatten the document base.
 //
 // Was previously `serde(untagged)`, which made deserialize ambiguous (each
 // variant tried in order until one matched structurally). The new
-// self-describing wire shape is `{"type": "dataContractCreate", ...inner
-// fields...}`. The `type` key doesn't collide with any inner enum's
-// `$formatVersion` tag (different key namespace), nor with inner serde
-// fields that happen to be named `type` because the umbrella's tag is
-// resolved before serde descends into the variant body.
+// self-describing wire shape is `{"$type": "dataContractCreate", ...inner
+// fields...}`.
 //
 // The binary wire path (`PlatformSerialize`) is unchanged — only JSON/Value
 // consumers see the new shape, and there are no rs-drive / rs-drive-abci /
@@ -442,7 +443,7 @@ macro_rules! call_errorable_method_identity_signed {
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),
-    serde(tag = "type", rename_all = "camelCase")
+    serde(tag = "$type", rename_all = "camelCase")
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[platform_serialize(limit = 100000)]
@@ -493,7 +494,7 @@ mod json_convertible_tests {
     /// Inner field shapes are covered by each inner type's dedicated
     /// `*_with_full_wire_shape` test — this helper only exercises the
     /// umbrella's tag-dispatch boundary. The risk it catches: an inner
-    /// variant whose serde body conflicts with the umbrella's `"type"` key,
+    /// variant whose serde body conflicts with the umbrella's `"$type"` key,
     /// or a serde rename that resolves to something other than the
     /// expected camelCase form.
     ///
@@ -512,7 +513,7 @@ mod json_convertible_tests {
         // JSON
         let json = original.to_json().expect("to_json");
         assert_eq!(
-            json["type"], expected_type_tag,
+            json["$type"], expected_type_tag,
             "json type tag for {expected_type_tag}",
         );
         let recovered = StateTransition::from_json(json).expect("from_json round-trip");
@@ -543,7 +544,7 @@ mod json_convertible_tests {
         let map = value.as_map().expect("Value::Map");
         let tag = map
             .iter()
-            .find(|(k, _)| k.as_text() == Some("type"))
+            .find(|(k, _)| k.as_text() == Some("$type"))
             .map(|(_, v)| v)
             .unwrap_or_else(|| panic!("type tag missing for {expected_type_tag}"));
         assert_eq!(

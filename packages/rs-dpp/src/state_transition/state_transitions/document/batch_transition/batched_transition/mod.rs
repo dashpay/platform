@@ -49,13 +49,13 @@ pub const PROPERTY_ACTION: &str = "$action";
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),
-    // Adjacently tagged (`type` + `data`) rather than internally tagged because
-    // the inner `DocumentTransition` / `TokenTransition` umbrellas already use
-    // `tag = "type"`. With internal tagging the outer and inner discriminators
-    // would collide on the same key. Adjacent tagging nests the inner umbrella
-    // shape under `data`, sidestepping the collision. Same shape convention as
-    // `TokenEvent` / `GroupActionEvent`.
-    serde(tag = "type", content = "data", rename_all = "camelCase")
+    // Internal tagging with the system-field key `$transition` — distinct
+    // from the inner umbrellas' `$type` discriminator so both flatten into
+    // the same wire shape without collision. Per the wasm-dpp2 convention
+    // (no `data` wrapper), the inner umbrella's fields appear at the top
+    // level alongside `$transition`. Resulting wire shape:
+    //   { "$transition": "document", "$type": "create", "$formatVersion": "0", ... }
+    serde(tag = "$transition", rename_all = "camelCase")
 )]
 pub enum BatchedTransition {
     #[display("DocumentTransition({})", "_0")]
@@ -84,36 +84,36 @@ pub(crate) mod json_convertible_tests {
     use document_transition::DocumentTransition;
     use token_transition::TokenTransition;
 
-    /// Adjacently tagged outer: shape is
-    /// `{"type": "<variant>", "data": {<inner umbrella>}}` where the inner
-    /// itself carries its own `type` discriminator.
-    fn assert_umbrella_round_trip(transition: BatchedTransition, expected_type: &str) {
+    /// Internally tagged with `$transition` — wire shape is
+    /// `{"$transition": "<variant>", "$type": "<inner>", ...inner fields}`.
+    /// Both discriminators sit at the top level (no envelope nesting).
+    fn assert_umbrella_round_trip(transition: BatchedTransition, expected_transition: &str) {
         use crate::serialization::{JsonConvertible, ValueConvertible};
 
         let json = transition.to_json().expect("to_json");
         let json_obj = json.as_object().expect("json object");
         assert_eq!(
-            json_obj.get("type").and_then(|v| v.as_str()),
-            Some(expected_type),
-            "json outer `type` discriminator mismatch"
+            json_obj.get("$transition").and_then(|v| v.as_str()),
+            Some(expected_transition),
+            "json `$transition` discriminator mismatch"
         );
         assert!(
-            json_obj.get("data").and_then(|v| v.as_object()).is_some(),
-            "json `data` payload missing"
+            json_obj.get("$action").and_then(|v| v.as_str()).is_some(),
+            "json inner `$action` discriminator missing"
         );
         let recovered_json = BatchedTransition::from_json(json).expect("from_json");
         assert_eq!(transition, recovered_json);
 
         let value = transition.to_object().expect("to_object");
         let value_map = value.as_map().expect("value map");
-        let type_kv = value_map
+        let kv = value_map
             .iter()
-            .find(|(k, _)| matches!(k, platform_value::Value::Text(s) if s == "type"))
-            .expect("type key present");
+            .find(|(k, _)| matches!(k, platform_value::Value::Text(s) if s == "$transition"))
+            .expect("$transition key present");
         assert_eq!(
-            type_kv.1,
-            platform_value::Value::Text(expected_type.to_string()),
-            "value outer `type` discriminator mismatch"
+            kv.1,
+            platform_value::Value::Text(expected_transition.to_string()),
+            "value `$transition` discriminator mismatch"
         );
         let recovered_value = BatchedTransition::from_object(value).expect("from_object");
         assert_eq!(transition, recovered_value);

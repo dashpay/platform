@@ -49,7 +49,12 @@ pub const TOKEN_HISTORY_ID_BYTES: [u8; 32] = [
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),
-    serde(tag = "type", rename_all = "camelCase")
+    // System-field discriminator `$action` — see note on `DocumentTransition`
+    // for why we don't use `$type` here. Token transitions don't actually
+    // collide on `$type` (their base struct has no `$type` field), but
+    // staying on `$action` keeps both umbrellas symmetric so consumers can
+    // discriminate inner shape with the same key regardless of `$transition`.
+    serde(tag = "$action", rename_all = "camelCase")
 )]
 pub enum TokenTransition {
     #[display("TokenBurnTransition({})", "_0")]
@@ -118,7 +123,7 @@ pub(crate) mod json_convertible_tests {
         let json = transition.to_json().expect("to_json");
         let json_obj = json.as_object().expect("json object");
         assert_eq!(
-            json_obj.get("type").and_then(|v| v.as_str()),
+            json_obj.get("$action").and_then(|v| v.as_str()),
             Some(expected_type),
             "json `type` discriminator mismatch"
         );
@@ -129,7 +134,7 @@ pub(crate) mod json_convertible_tests {
         let value_map = value.as_map().expect("value map");
         let type_kv = value_map
             .iter()
-            .find(|(k, _)| matches!(k, platform_value::Value::Text(s) if s == "type"))
+            .find(|(k, _)| matches!(k, platform_value::Value::Text(s) if s == "$action"))
             .expect("type key present");
         assert_eq!(
             type_kv.1,
