@@ -513,18 +513,28 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
         Ok((spends, anchor))
     }
 
-    /// Mark the selected notes as spent for `id`.
+    /// Mark the selected notes as spent for `id`. Also queues a
+    /// shielded changeset on the persister so the spent flag
+    /// reaches durable storage immediately rather than waiting for
+    /// the next nullifier-sync pass to rediscover the spend.
     async fn mark_notes_spent(
         &self,
         id: SubwalletId,
         notes: &[ShieldedNote],
     ) -> Result<(), PlatformWalletError> {
-        let mut store = self.store.write().await;
-        for note in notes {
-            store
-                .mark_spent(id, &note.nullifier)
-                .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+        let mut changeset = crate::changeset::ShieldedChangeSet::default();
+        {
+            let mut store = self.store.write().await;
+            for note in notes {
+                if store
+                    .mark_spent(id, &note.nullifier)
+                    .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?
+                {
+                    changeset.record_nullifier_spent(id, note.nullifier);
+                }
+            }
         }
+        self.queue_shielded_changeset(changeset);
         Ok(())
     }
 }

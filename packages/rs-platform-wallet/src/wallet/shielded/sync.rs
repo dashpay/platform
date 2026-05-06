@@ -19,6 +19,7 @@ use tracing::{debug, info, warn};
 
 use super::store::{ShieldedStore, SubwalletId};
 use super::ShieldedWallet;
+use crate::changeset::ShieldedChangeSet;
 use crate::error::PlatformWalletError;
 
 /// Server-enforced chunk size — start_index must be a multiple of this.
@@ -204,9 +205,11 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
                 .map_err(|e| PlatformWalletError::ShieldedTreeUpdateFailed(e.to_string()))?;
         }
 
-        // Save decrypted notes scoped per subwallet, and
-        // count new notes per account.
+        // Save decrypted notes scoped per subwallet, count new
+        // notes per account, and accumulate a changeset to hand
+        // to the persister at the end.
         let mut new_notes_per_account: BTreeMap<u32, usize> = BTreeMap::new();
+        let mut changeset = ShieldedChangeSet::default();
         for (account, discovered) in &decrypted_by_account {
             let fvk = &self.keys_for(*account)?.full_viewing_key;
             let id = self.subwallet_id(*account);
@@ -235,6 +238,7 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
                 store
                     .save_note(id, &shielded_note)
                     .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+                changeset.record_note(id, shielded_note);
                 *new_notes_per_account.entry(*account).or_default() += 1;
             }
         }
@@ -247,7 +251,13 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
             store
                 .set_last_synced_note_index(id, new_index)
                 .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+            changeset.record_synced_index(id, new_index);
         }
+        // Drop the write lock before queuing the changeset so
+        // the persister callback (which may take its own
+        // synchronous mutex) doesn't nest under our store lock.
+        drop(store);
+        self.queue_shielded_changeset(changeset);
 
         info!(
             new_notes_total = new_notes_per_account.values().sum::<usize>(),
@@ -303,6 +313,7 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
         };
 
         let mut newly_spent: BTreeMap<u32, usize> = BTreeMap::new();
+        let mut changeset = ShieldedChangeSet::default();
         for (
             account,
             AccountUnspent {
@@ -334,18 +345,25 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
                     .mark_spent(id, nf_bytes)
                     .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?
                 {
+                    changeset.record_nullifier_spent(id, *nf_bytes);
                     spent_count += 1;
                 }
             }
             store
                 .set_nullifier_checkpoint(id, result.new_sync_height, result.new_sync_timestamp)
                 .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+            changeset.record_nullifier_checkpoint(
+                id,
+                result.new_sync_height,
+                result.new_sync_timestamp,
+            );
 
             if spent_count > 0 {
                 newly_spent.insert(account, spent_count);
                 info!(account, spent_count, "Notes newly detected as spent");
             }
         }
+        self.queue_shielded_changeset(changeset);
 
         Ok(newly_spent)
     }

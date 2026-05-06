@@ -324,7 +324,7 @@ impl PlatformWallet {
         let store = FileBackedShieldedStore::open_path(db_path, 100)
             .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
         let network = self.sdk.network;
-        let wallet = ShieldedWallet::from_seed_accounts(
+        let mut wallet = ShieldedWallet::from_seed_accounts(
             Arc::clone(&self.sdk),
             self.wallet_id,
             seed,
@@ -332,6 +332,36 @@ impl PlatformWallet {
             accounts,
             store,
         )?;
+
+        // Attach the persister so future sync passes emit
+        // shielded changesets the host can mirror (SwiftData
+        // on iOS).
+        wallet.set_persister(self.persister.clone());
+
+        // Rehydrate per-subwallet notes / sync watermarks from
+        // the persister's start state if any are present for
+        // this wallet. The lookup is cheap: load() is the
+        // boot-time snapshot, indexed by SubwalletId. Errors are
+        // logged but not fatal — first-launch wallets simply
+        // see no persisted state.
+        match self.persister.load() {
+            Ok(start) => {
+                if let Err(e) = wallet.restore_from_snapshot(&start.shielded).await {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(self.wallet_id),
+                        error = %e,
+                        "Failed to restore shielded snapshot at bind time"
+                    );
+                }
+            }
+            Err(e) => {
+                tracing::warn!(
+                    wallet_id = %hex::encode(self.wallet_id),
+                    error = %e,
+                    "persister.load() failed at shielded bind time"
+                );
+            }
+        }
 
         let mut slot = self.shielded.write().await;
         *slot = Some(wallet);
@@ -809,6 +839,8 @@ impl PlatformWallet {
         let ClientStartState {
             mut platform_addresses,
             wallets: _,
+            #[cfg(feature = "shielded")]
+                shielded: _,
         } = self.load_persisted()?;
 
         if let Some(persisted) = platform_addresses.remove(&self.wallet_id) {

@@ -35,7 +35,10 @@ use std::sync::Arc;
 
 use tokio::sync::RwLock;
 
+use crate::changeset::ShieldedChangeSet;
+use crate::changeset::{PlatformWalletChangeSet, ShieldedSyncStartState};
 use crate::error::PlatformWalletError;
+use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::WalletId;
 
 /// Per-account state held inside a [`ShieldedWallet`].
@@ -70,6 +73,13 @@ pub struct ShieldedWallet<S: ShieldedStore> {
     /// commitment tree inside is global per network; notes are
     /// scoped per-subwallet by the store's `SubwalletId` keying.
     pub(super) store: Arc<RwLock<S>>,
+    /// Optional persister handle. When set, every state-changing
+    /// sync / spend pass emits a [`PlatformWalletChangeSet`] with
+    /// a populated `shielded` field so the host (typically
+    /// SwiftData on iOS) can mirror per-subwallet notes / sync
+    /// watermarks. `None` means in-memory only — useful for
+    /// tests and short-lived wallets.
+    pub(super) persister: Option<WalletPersister>,
 }
 
 impl<S: ShieldedStore> ShieldedWallet<S> {
@@ -97,7 +107,80 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
             wallet_id,
             accounts,
             store: Arc::new(RwLock::new(store)),
+            persister: None,
         })
+    }
+
+    /// Attach a [`WalletPersister`] so future sync / spend passes
+    /// emit shielded changesets to the host.
+    pub fn set_persister(&mut self, persister: WalletPersister) {
+        self.persister = Some(persister);
+    }
+
+    /// Queue a shielded changeset on the persister if one is
+    /// attached. No-op otherwise.
+    pub(super) fn queue_shielded_changeset(&self, cs: ShieldedChangeSet) {
+        if cs.is_empty() {
+            return;
+        }
+        let Some(persister) = &self.persister else {
+            return;
+        };
+        let full = PlatformWalletChangeSet {
+            shielded: Some(cs),
+            ..Default::default()
+        };
+        if let Err(e) = persister.store(full) {
+            tracing::warn!(
+                wallet_id = %hex::encode(self.wallet_id),
+                error = %e,
+                "Failed to queue shielded changeset"
+            );
+        }
+    }
+
+    /// Rehydrate per-subwallet state from a persisted snapshot.
+    /// Should be called after `from_seed_accounts(...)` and before
+    /// the first sync pass so the in-memory store matches what
+    /// the host already has on disk.
+    pub async fn restore_from_snapshot(
+        &self,
+        snapshot: &ShieldedSyncStartState,
+    ) -> Result<(), PlatformWalletError> {
+        if snapshot.is_empty() {
+            return Ok(());
+        }
+        let mut store = self.store.write().await;
+        for (id, sub) in &snapshot.per_subwallet {
+            // Only restore subwallets that belong to this wallet.
+            if id.wallet_id != self.wallet_id {
+                continue;
+            }
+            // Skip accounts that aren't bound on this wallet —
+            // they'd accumulate state we can never spend.
+            if !self.accounts.contains_key(&id.account_index) {
+                continue;
+            }
+            for note in &sub.notes {
+                store
+                    .save_note(*id, note)
+                    .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+                if note.is_spent {
+                    store
+                        .mark_spent(*id, &note.nullifier)
+                        .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+                }
+            }
+            store
+                .set_last_synced_note_index(*id, sub.last_synced_index)
+                .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+            if let Some((h, t)) = sub.nullifier_checkpoint {
+                store
+                    .set_nullifier_checkpoint(*id, h, t)
+                    .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+            }
+        }
+        Ok(())
     }
 
     /// Derive Orchard keys for every listed `account` from a
