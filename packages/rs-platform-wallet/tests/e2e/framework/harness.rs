@@ -22,7 +22,7 @@ use tokio_util::sync::CancellationToken;
 use super::bank::BankWallet;
 use super::bank_identity::{self, BankIdentity};
 use super::cleanup;
-use super::config::Config;
+use super::config::{BankCoreGateSource, Config};
 use super::registry::PersistentTestWalletRegistry;
 use super::sdk;
 use super::spv;
@@ -36,14 +36,14 @@ use super::FrameworkResult;
 /// [`spv::wait_for_mn_list_synced`] so cold testnet caches still fit.
 const SPV_READY_TIMEOUT: Duration = Duration::from_secs(180);
 
-/// Deadline for the bank's confirmed Core balance to reach
-/// [`Config::bank_core_gate_duffs`]. Sized to fit a cold-cache compact-
-/// filter scan from genesis on testnet (~1.47M blocks ≈ 15 min);
-/// subsequent runs reuse the on-disk cache and clear the gate in
-/// seconds. Marvin's QA-001 — without this gate, a cold-cache process
-/// samples the balance ~52 s in and reports `confirmed=0` for an
-/// address that's been funded since last week.
-const BANK_CORE_FUNDING_TIMEOUT: Duration = Duration::from_secs(900);
+/// Threshold (duffs) used by the bank Core funding gate. The gate
+/// waits for the bank's confirmed Core balance to reach at least this
+/// value — any non-zero observation proves the SPV compact-filter scan
+/// has walked far enough to see the bank's pre-funded UTXOs (Marvin's
+/// QA-001). The gate's *timeout* lives on [`Config::bank_core_gate_timeout`]
+/// and defaults to 900s; this constant is just the "any funding visible"
+/// floor.
+const BANK_CORE_GATE_MIN_DUFFS: u64 = 1;
 
 /// Process-shared singleton populated on first
 /// [`E2eContext::init`].
@@ -172,47 +172,66 @@ impl E2eContext {
         // genesis (~15 min); without the gate, the harness samples
         // `core_balance_confirmed` while the scan is still ~52 s in
         // and any CR-* / ID-007 case using `send_core_to` fails on a
-        // false-zero balance. `bank_core_gate_duffs == 0` (default)
-        // skips the gate — most tests don't need duffs and the cold-
-        // cache wait is wasted. Operators raise the floor via
-        // `PLATFORM_WALLET_E2E_BANK_CORE_GATE` when running CR-* /
-        // ID-007 cases.
+        // false-zero balance. The gate is *default-on* (900s timeout)
+        // so fresh-workdir runs don't race the scan; opt out via
+        // `PLATFORM_WALLET_E2E_BANK_CORE_GATE=0` for Platform-only
+        // suites that don't need Core duffs.
         //
         // Failure is demoted to a warn rather than a hard abort so
         // tests that don't need bank Core funding still run; the ones
         // that do panic at `send_core_to` with the operator-actionable
         // "top up at <addr>" message (see `BankWallet::send_core_to`).
-        if config.bank_core_gate_duffs > 0 {
-            tracing::info!(
-                target: "platform_wallet::e2e::bank",
-                gate_duffs = config.bank_core_gate_duffs,
-                timeout = ?BANK_CORE_FUNDING_TIMEOUT,
-                "waiting for bank Core funding gate (first cold-cache run \
-                 takes ~15 min while SPV walks compact filters from genesis; \
-                 subsequent runs reuse the on-disk cache and complete in seconds)"
-            );
-            match wait::wait_for_bank_funded(
-                &bank,
-                spv_runtime.as_deref(),
-                config.bank_core_gate_duffs,
-                BANK_CORE_FUNDING_TIMEOUT,
-            )
-            .await
-            {
-                Ok(observed) => tracing::info!(
+        match config.bank_core_gate_timeout {
+            Some(timeout) => {
+                let source = match config.bank_core_gate_source {
+                    BankCoreGateSource::Default => "default",
+                    BankCoreGateSource::EnvTimeout => "env(PLATFORM_WALLET_E2E_BANK_CORE_GATE)",
+                    BankCoreGateSource::EnvInvalidFallback => "env-invalid-fallback",
+                    // Disabled is unreachable in this arm; kept for exhaustiveness.
+                    BankCoreGateSource::EnvDisabled => "env-disabled",
+                };
+                tracing::info!(
                     target: "platform_wallet::e2e::bank",
-                    observed,
-                    gate_duffs = config.bank_core_gate_duffs,
-                    "bank Core funding gate cleared"
-                ),
-                Err(err) => tracing::warn!(
-                    target: "platform_wallet::e2e::bank",
-                    error = %err,
-                    "bank Core funding gate timed out; tests requiring \
-                     bank Core funding will surface BankCoreUnderfunded with \
-                     the operator-actionable top-up address"
-                ),
+                    timeout_secs = timeout.as_secs(),
+                    min_duffs = BANK_CORE_GATE_MIN_DUFFS,
+                    source = source,
+                    "bank_core_gate active (waits for any non-zero confirmed \
+                     Core balance so tests don't race a cold-cache compact-\
+                     filter scan; first cold-cache run can take ~15 min while \
+                     SPV walks filters from genesis, subsequent runs reuse \
+                     the on-disk cache)"
+                );
+                match wait::wait_for_bank_funded(
+                    &bank,
+                    spv_runtime.as_deref(),
+                    BANK_CORE_GATE_MIN_DUFFS,
+                    timeout,
+                )
+                .await
+                {
+                    Ok(observed) => tracing::info!(
+                        target: "platform_wallet::e2e::bank",
+                        observed,
+                        min_duffs = BANK_CORE_GATE_MIN_DUFFS,
+                        "bank Core funding gate cleared"
+                    ),
+                    Err(err) => tracing::warn!(
+                        target: "platform_wallet::e2e::bank",
+                        error = %err,
+                        "bank Core funding gate timed out; tests requiring \
+                         bank Core funding will surface BankCoreUnderfunded with \
+                         the operator-actionable top-up address"
+                    ),
+                }
             }
+            None => tracing::info!(
+                target: "platform_wallet::e2e::bank",
+                source = "env(PLATFORM_WALLET_E2E_BANK_CORE_GATE)",
+                "bank_core_gate disabled by env opt-out; tests requiring \
+                 bank Core funding will surface BankCoreUnderfunded with \
+                 the operator-actionable top-up address if SPV hasn't \
+                 caught up yet"
+            ),
         }
 
         // Surface the bank's Core (Layer-1) balance and primary
