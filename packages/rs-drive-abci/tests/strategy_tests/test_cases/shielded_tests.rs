@@ -361,7 +361,6 @@ mod tests {
     fn run_chain_verify_anchors_after_shielding() {
         use drive::drive::shielded::paths::{
             shielded_credit_pool_anchors_by_height_path, shielded_credit_pool_anchors_path_vec,
-            shielded_credit_pool_path, SHIELDED_MOST_RECENT_ANCHOR_KEY,
         };
         use drive::grovedb::query_result_type::QueryResultType;
         use drive::grovedb::{Element, PathQuery, Query, SizedQuery};
@@ -532,41 +531,27 @@ mod tests {
             }
         }
 
-        // 3. Verify most recent anchor is set and non-zero
-        let pool_path = shielded_credit_pool_path();
-        let most_recent_element = drive
-            .grove
-            .get(
-                &pool_path,
-                &[SHIELDED_MOST_RECENT_ANCHOR_KEY],
-                None,
-                &platform_version.drive.grove_version,
-            )
-            .unwrap()
-            .expect("most recent anchor element must exist");
-
-        if let Element::Item(most_recent_bytes, _) = most_recent_element {
-            assert_eq!(
-                most_recent_bytes.len(),
-                32,
-                "most recent anchor must be 32 bytes"
-            );
-            assert_ne!(
-                most_recent_bytes,
-                vec![0u8; 32],
-                "most recent anchor must not be all zeros after successful shields"
-            );
-            // Most recent anchor must be one of the recorded anchors
-            let is_known = anchor_to_height
-                .iter()
-                .any(|(a, _)| *a == most_recent_bytes);
-            assert!(
-                is_known,
-                "most recent anchor must match one of the recorded anchors"
-            );
-        } else {
-            panic!("most recent anchor must be an Item element");
-        }
+        // 3. Verify the derived "most recent anchor" — i.e. the
+        //    highest-block-height entry in the anchors-by-height
+        //    index — exists and matches one of the recorded anchors.
+        //    There is no longer a separate "most recent anchor" slot;
+        //    the index is the canonical source.
+        let most_recent_anchor = drive
+            .read_latest_recorded_shielded_anchor_v0(None, &platform_version.drive)
+            .expect("read latest recorded anchor")
+            .expect("most recent anchor must exist after successful shields");
+        assert_ne!(
+            most_recent_anchor.to_vec(),
+            vec![0u8; 32],
+            "most recent anchor must not be all zeros after successful shields"
+        );
+        let is_known = anchor_to_height
+            .iter()
+            .any(|(a, _)| *a == most_recent_anchor.to_vec());
+        assert!(
+            is_known,
+            "most recent anchor must match one of the recorded anchors"
+        );
 
         tracing::info!(
             anchor_count = anchor_entries.len(),
