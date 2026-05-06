@@ -179,6 +179,28 @@ impl SpvRuntime {
         result
     }
 
+    /// Synchronously fire the background `run()` task's cancellation
+    /// token, if any. The actual storage/lockfile teardown still
+    /// happens asynchronously inside the spawned task as it unwinds
+    /// to its `self.stop().await` epilogue — this method just wakes
+    /// it. Idempotent: subsequent calls (and a follow-up [`stop`])
+    /// see `None` and return immediately.
+    ///
+    /// Designed for sync contexts where awaiting [`stop`] isn't
+    /// possible — for example a `std::panic::set_hook` callback that
+    /// needs to release the dash-spv data-dir lock before the next
+    /// init attempt without blocking the panicking thread.
+    pub fn cancel_background(&self) {
+        if let Some(token) = self
+            .background_cancel
+            .lock()
+            .expect("background_cancel poisoned")
+            .take()
+        {
+            token.cancel();
+        }
+    }
+
     /// Stop SPV sync gracefully.
     ///
     /// If a `run()` task was spawned via [`spawn_in_background`], its

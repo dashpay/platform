@@ -11,7 +11,7 @@
 
 use std::fs::File;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex, Once};
 use std::time::Duration;
 
 use platform_wallet::wallet::persister::NoPlatformPersistence;
@@ -48,6 +48,91 @@ const BANK_CORE_GATE_MIN_DUFFS: u64 = 1;
 /// Process-shared singleton populated on first
 /// [`E2eContext::init`].
 static CTX: OnceCell<E2eContext> = OnceCell::const_new();
+
+/// Holds an [`Arc<SpvRuntime>`] for the in-flight `Self::build` call.
+///
+/// `OnceCell::get_or_try_init` discards the partial value when the
+/// init future returns `Err` or panics — but the [`SpvRuntime`]
+/// spawned via [`SpvRuntime::spawn_in_background`] keeps a self-clone
+/// of the `Arc` alive on the tokio runtime, so the dash-spv data-dir
+/// lockfile under `<workdir>/spv-data/.lock` survives the failure.
+/// The next `init()` retry would then spawn a fresh runtime against
+/// the same on-disk path, hit "Data directory locked", and emit a
+/// 600s `wait_for_mn_list_synced` timeout — Marvin's QA-002, "one
+/// panic poisons the whole serial suite".
+///
+/// This stash + the panic hook installed by [`E2eContext::build`] +
+/// the retry-time cancel below break that cascade:
+///
+/// 1. After [`spv::start_spv`] succeeds, `build` writes its
+///    `Arc<SpvRuntime>` here.
+/// 2. If `build` returns `Err` or panics, the value stays put.
+/// 3. The panic hook (sync) calls
+///    [`SpvRuntime::cancel_background`] so the spawned `run()` task
+///    starts its async teardown — drops `DiskStorageManager` →
+///    drops `LockFile` → removes the on-disk lockfile.
+/// 4. The next `init()` retry takes the `Arc` out, calls
+///    `stop().await` (idempotent with the cancel above), and only
+///    then proceeds to spawn a fresh runtime — guaranteeing the
+///    lockfile is released before the new `DiskStorageManager::new`
+///    runs.
+/// 5. On success, `build` clears this slot so subsequent test-body
+///    panics (which never re-enter `build`) don't re-trigger the
+///    hook against a still-running SPV.
+///
+/// Mirrors the `SPV_CANCEL` pattern in DET's `backend-e2e/framework/
+/// harness.rs` (`/home/ubuntu/git/dash-evo-tool/...`).
+static IN_FLIGHT_SPV: StdMutex<Option<Arc<SpvRuntime>>> = StdMutex::new(None);
+
+/// One-shot guard for installing the panic hook described on
+/// [`IN_FLIGHT_SPV`]. The hook stays installed for the lifetime of
+/// the test binary — chaining the previous hook so default panic
+/// printing still fires.
+static PANIC_HOOK_INSTALLED: Once = Once::new();
+
+/// Best-effort post-cancel grace period for the spawned `run()` task
+/// to advance through its async teardown (drop `DiskStorageManager`
+/// → drop `LockFile` → remove `<spv-data>/.lock`) before the retry
+/// proceeds to spawn a fresh runtime against the same path. The
+/// retry already follows up with `stop().await` which serialises on
+/// the runtime's internal client write-lock, so this sleep is purely
+/// a fairness hint — it lets the spawned task be scheduled on the
+/// shared tokio runtime instead of starving it. Matches DET's 500 ms.
+const SPV_CANCEL_GRACE: Duration = Duration::from_millis(500);
+
+/// Install [`PANIC_HOOK_INSTALLED`]'s panic hook. Idempotent.
+///
+/// On any panic, fires every in-flight SPV runtime's
+/// [`SpvRuntime::cancel_background`] so the spawned `run()` task
+/// starts its async teardown immediately. Cleared by `build` on
+/// success so individual *test-body* panics don't disturb the
+/// shared SPV runtime — the hook is only meaningful while
+/// [`IN_FLIGHT_SPV`] is `Some`, which is exactly the window between
+/// "SPV spawned" and "ownership handed to `E2eContext`".
+fn ensure_panic_hook() {
+    PANIC_HOOK_INSTALLED.call_once(|| {
+        let prev_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            if let Some(spv) = IN_FLIGHT_SPV
+                .lock()
+                .inspect_err(|e| {
+                    eprintln!("platform_wallet::e2e: IN_FLIGHT_SPV poisoned in panic hook: {e}");
+                })
+                .ok()
+                .and_then(|g| g.clone())
+            {
+                tracing::warn!(
+                    target: "platform_wallet::e2e::harness",
+                    "panic during E2eContext::build — cancelling in-flight SPV \
+                     runtime to release dash-spv data-dir lock so the next \
+                     init() retry can re-acquire it"
+                );
+                spv.cancel_background();
+            }
+            prev_hook(info);
+        }));
+    });
+}
 
 /// Process-shared context. Tests obtain a `&'static E2eContext`
 /// via [`super::setup`]; lazy init enforces the
@@ -130,6 +215,46 @@ impl E2eContext {
     }
 
     async fn build() -> FrameworkResult<E2eContext> {
+        // Install the panic hook before doing anything that can
+        // panic — it's a no-op on subsequent calls. See
+        // [`IN_FLIGHT_SPV`] for the full lifecycle rationale.
+        ensure_panic_hook();
+
+        // If a previous `build` call returned `Err` (or panicked), an
+        // `Arc<SpvRuntime>` may still be parked in `IN_FLIGHT_SPV`
+        // with the spawned `run()` task holding dash-spv's data-dir
+        // lockfile. Take it out and `stop().await` so the lockfile is
+        // fully released before this attempt's `start_spv` runs —
+        // otherwise the new `DiskStorageManager::new` races the
+        // orphan and surfaces "Data directory locked" warnings. The
+        // panic-hook path also fired `cancel_background()`; calling
+        // `stop()` here is idempotent against that, and additionally
+        // serialises on the runtime's internal client write-lock so
+        // we observe a clean lockfile state before proceeding.
+        let orphan = IN_FLIGHT_SPV.lock().expect("IN_FLIGHT_SPV poisoned").take();
+        if let Some(spv) = orphan {
+            tracing::warn!(
+                target: "platform_wallet::e2e::harness",
+                "previous E2eContext::build left an SPV runtime in flight; \
+                 awaiting graceful stop before retry"
+            );
+            // Give the panic-hook-fired `cancel_background` a moment
+            // to advance the spawned task to its async teardown
+            // before we contend on the same internal write-lock —
+            // strictly a scheduler-fairness hint, the `stop().await`
+            // below provides the actual ordering guarantee.
+            tokio::time::sleep(SPV_CANCEL_GRACE).await;
+            if let Err(e) = spv.stop().await {
+                tracing::warn!(
+                    target: "platform_wallet::e2e::harness",
+                    error = %e,
+                    "orphan SPV stop returned an error; continuing — the \
+                     storage-side lockfile drop happens regardless of this \
+                     result"
+                );
+            }
+        }
+
         let config = Config::from_env()?;
 
         let (workdir, workdir_lock) = workdir::pick_available_workdir(&config.workdir_base)?;
@@ -161,6 +286,13 @@ impl E2eContext {
         // the SDK is talking to (port-swapped to the P2P port), so
         // tests don't drift between two independent peer pools.
         let spv_runtime = spv::start_spv(&manager, &config, &workdir, sdk.address_list()).await?;
+        // Park the runtime in `IN_FLIGHT_SPV` BEFORE the next
+        // fallible step so any panic / Err inside the rest of `build`
+        // hands the runtime to the panic hook + retry path described
+        // on `IN_FLIGHT_SPV`. Cleared on success at the bottom of
+        // `build`. Drops the previous slot value (should be `None`
+        // already because we took it above; defensive).
+        *IN_FLIGHT_SPV.lock().expect("IN_FLIGHT_SPV poisoned") = Some(Arc::clone(&spv_runtime));
         spv::wait_for_mn_list_synced(&spv_runtime, SPV_READY_TIMEOUT).await?;
         let spv_runtime: Option<Arc<SpvRuntime>> = Some(spv_runtime);
 
@@ -310,6 +442,13 @@ impl E2eContext {
                 "startup sweep encountered errors; continuing"
             ),
         }
+
+        // Successful build — ownership of the runtime now lives on
+        // the returned `E2eContext`. Clear `IN_FLIGHT_SPV` so the
+        // panic hook becomes a no-op for individual *test-body*
+        // panics, which must NOT cancel the shared SPV runtime that
+        // surviving tests still depend on.
+        *IN_FLIGHT_SPV.lock().expect("IN_FLIGHT_SPV poisoned") = None;
 
         Ok(E2eContext {
             config,
