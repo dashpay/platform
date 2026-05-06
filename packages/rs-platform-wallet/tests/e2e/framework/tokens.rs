@@ -293,7 +293,7 @@ pub fn permissive_owner_token_contract_json(
         "description": "Permissive owner-only token deployed by rs-platform-wallet e2e (Wave G).",
         "marketplaceRules": {
             "$formatVersion": "0",
-            "tradeMode": 1,
+            "tradeMode": "NotTradeable",
             "tradeModeChangeRules": owner_only,
         },
     });
