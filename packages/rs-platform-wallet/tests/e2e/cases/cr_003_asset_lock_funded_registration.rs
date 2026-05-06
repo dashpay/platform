@@ -41,7 +41,7 @@ use platform_wallet::wallet::identity::types::funding::IdentityFundingMethod;
 
 use crate::framework::prelude::*;
 use crate::framework::signer::{derive_identity_key, SeedBackedIdentitySigner};
-use crate::framework::wait::wait_for_identity_balance;
+use crate::framework::wait::{wait_for_identity_balance, wait_for_identity_visible_to_platform};
 
 /// DIP-9 identity index used for the asset-lock registration. Slot 0
 /// is canonical for "first identity on this wallet" — same convention
@@ -217,9 +217,22 @@ async fn cr_003_asset_lock_funded_registration() {
          asset-lock output value (fees are subtracted, not added)."
     );
 
-    // Step 5: round-trip the identity via the SDK to assert the
-    // returned shape matches the on-chain shape — same MASTER key id,
-    // same balance, same revision = 0 baseline.
+    // Step 5: wait for the identity to be visible across enough DAPI
+    // replicas before the round-trip fetch. The asset-lock-funded path
+    // has different proof convergence than the address-funded path —
+    // `wait_for_identity_balance` above confirms credits landed, but
+    // a subsequent `Identity::fetch` on a still-lagging replica returns
+    // `Ok(None)`. Two consecutive successes bias toward distinct nodes
+    // having replicated the identity (QA-911).
+    wait_for_identity_visible_to_platform(
+        s.test_wallet.platform_wallet().sdk(),
+        identity_id,
+        IDENTITY_VISIBILITY_TIMEOUT,
+        2,
+    )
+    .await
+    .expect("identity propagation gate cleared before round-trip fetch (QA-911)");
+
     let fetched = Identity::fetch(s.test_wallet.platform_wallet().sdk(), identity_id)
         .await
         .expect("Identity::fetch round-trip after registration")
