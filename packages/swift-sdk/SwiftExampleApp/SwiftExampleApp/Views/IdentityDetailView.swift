@@ -114,6 +114,9 @@ struct IdentityDetailView: View {
                             .foregroundColor(.blue)
                     }
 
+                    // Hex row: row icon mirrors the format (the `#`
+                    // numeric glyph). Hex is the raw byte form most users
+                    // see when an identity id surfaces in logs / errors.
                     HStack(alignment: .top, spacing: 6) {
                         Image(systemName: "number")
                             .foregroundColor(.secondary)
@@ -136,7 +139,32 @@ struct IdentityDetailView: View {
                                 .foregroundColor(.blue)
                         }
                         .buttonStyle(.borderless)
-                        .accessibilityLabel("Copy identity ID")
+                        .accessibilityLabel("Copy identity ID (hex)")
+                    }
+
+                    // Base58 row. Most platform tooling (contract JSON
+                    // group members, FFI args, dashmate) consumes the
+                    // base58 form, so it deserves equal visibility next
+                    // to hex rather than being hidden behind a menu.
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "textformat.abc")
+                            .foregroundColor(.secondary)
+                            .font(.caption)
+                        Text(identity.identityIdBase58)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .textSelection(.enabled)
+                        Spacer(minLength: 4)
+                        Button {
+                            UIPasteboard.general.string = identity.identityIdBase58
+                            UINotificationFeedbackGenerator().notificationOccurred(.success)
+                        } label: {
+                            Image(systemName: "doc.on.doc")
+                                .font(.caption)
+                                .foregroundColor(.blue)
+                        }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel("Copy identity ID (base58)")
                     }
                 }
                 .padding(.vertical, 4)
