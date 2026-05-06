@@ -68,7 +68,8 @@ pub mod prelude {
     pub use super::config::Config;
     pub use super::harness::E2eContext;
     pub use super::wait::{
-        wait_for, wait_for_balance, wait_for_bank_funded, wait_for_core_balance,
+        wait_for, wait_for_address_balance_chain_confirmed, wait_for_balance, wait_for_bank_funded,
+        wait_for_core_balance,
     };
     pub use super::wait_hub::WaitEventHub;
     pub use super::{setup, FrameworkError, FrameworkResult, SetupGuard};

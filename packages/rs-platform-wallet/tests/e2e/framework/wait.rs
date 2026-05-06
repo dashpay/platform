@@ -10,6 +10,7 @@ use std::future::Future;
 use std::time::{Duration, Instant};
 
 use dash_sdk::platform::Fetch;
+use dash_sdk::query_types::AddressInfo;
 use dash_sdk::Sdk;
 use dash_spv::sync::ProgressPercentage;
 use dpp::address_funds::PlatformAddress;
@@ -58,15 +59,35 @@ where
 }
 
 /// Wait for `addr`'s balance on `test_wallet` to reach at least
-/// `expected`, syncing on every wake.
+/// `expected`, syncing on every wake AND independently verifying the
+/// chain-confirmed view via a proof-verified `AddressInfo::fetch`.
 ///
 /// Event-driven on [`TestWallet::wait_hub`]; a
 /// [`BACKSTOP_WAKE_INTERVAL`] cap keeps idle-chain / no-peer
 /// scenarios making progress. Sync errors are logged at `debug` and
 /// treated as transient — the next event (or backstop wake) retries.
 /// The `Notified` future is captured BEFORE the sync to avoid
-/// dropping a notification that fires mid-sync. Returns
-/// [`FrameworkError::Cleanup`] on `timeout`.
+/// dropping a notification that fires mid-sync.
+///
+/// **Chain-confirmed gate (Marvin QA — three-tests sync race):**
+/// once the wallet's local-view balance reaches `expected`, the
+/// helper does NOT return immediately. It then polls
+/// [`wait_for_address_balance_chain_confirmed`] within the same
+/// overall budget so the address is also visible at `>= expected`
+/// from the SDK's proof-verified view. The local view's `sync_balances`
+/// can return early when one DAPI node has applied the funding block
+/// while a sibling node serving the next request hasn't; without the
+/// proof-verified gate, the immediately-following
+/// `register_identity_from_addresses` lands on the lagging node and
+/// the chain returns "Address does not exist" (ID-007 / TK-007) or
+/// "Insufficient combined address balances" (DPNS-001) despite the
+/// observed local balance. The chain-confirmed gate retries across
+/// nodes until a fresh proof actually shows the funded balance,
+/// which empirically tracks block replication closely enough that
+/// the follow-up state transition's nonce/balance fetch lands on a
+/// caught-up node.
+///
+/// Returns [`FrameworkError::Cleanup`] on `timeout`.
 pub async fn wait_for_balance(
     test_wallet: &TestWallet,
     addr: &PlatformAddress,
@@ -93,9 +114,22 @@ pub async fn wait_for_balance(
                         addr = ?addr,
                         observed = current,
                         elapsed = ?start.elapsed(),
-                        "balance reached target"
+                        "balance reached target (local view); confirming on chain"
                     );
-                    return Ok(());
+                    // Hand off the remaining budget to the
+                    // proof-verified gate. If the cross-node
+                    // replication lag is real, this is where it
+                    // surfaces; if both views already agree, this
+                    // returns on the very first poll.
+                    let remaining = deadline.saturating_duration_since(Instant::now());
+                    return wait_for_address_balance_chain_confirmed(
+                        test_wallet.platform_wallet().sdk(),
+                        addr,
+                        expected,
+                        remaining,
+                    )
+                    .await
+                    .map(|_| ());
                 }
                 tracing::debug!(
                     target: "platform_wallet::e2e::wait",
@@ -123,6 +157,83 @@ pub async fn wait_for_balance(
         // earlier via the `Notified` future.
         let cap = std::cmp::min(remaining, BACKSTOP_WAKE_INTERVAL);
         let _ = tokio::time::timeout(cap, notified.as_mut()).await;
+    }
+}
+
+/// Wait for `addr`'s chain-confirmed balance (queried via the SDK's
+/// proof-verified [`AddressInfo::fetch`] path) to reach at least
+/// `expected`.
+///
+/// Mirrors [`wait_for_core_balance`]'s "wait on chain-confirmed
+/// state" precedent on the Platform side. Where `wait_for_balance`
+/// polls the wallet's local cache (which reflects whichever DAPI
+/// node `sync_balances` happened to talk to), this helper independently
+/// verifies the address's balance via a proof-verified Fetch — the
+/// same path the chain itself walks when validating a state
+/// transition's input balances. Polls every
+/// [`BACKSTOP_WAKE_INTERVAL`] until the threshold is met or `timeout`
+/// elapses.
+///
+/// Returns the observed proof-verified balance on success,
+/// [`FrameworkError::Cleanup`] on timeout. Network / proof errors
+/// during polling are treated as transient (logged at `debug`); a
+/// missing address (Fetch returns `None`) is treated as
+/// "not yet visible" and re-polled.
+pub async fn wait_for_address_balance_chain_confirmed(
+    sdk: &Sdk,
+    addr: &PlatformAddress,
+    expected: Credits,
+    timeout: Duration,
+) -> FrameworkResult<Credits> {
+    let start = Instant::now();
+    let deadline = Instant::now() + timeout;
+
+    loop {
+        match AddressInfo::fetch(sdk, *addr).await {
+            Ok(Some(info)) => {
+                if info.balance >= expected {
+                    tracing::info!(
+                        target: "platform_wallet::e2e::wait",
+                        addr = ?addr,
+                        observed = info.balance,
+                        expected,
+                        elapsed = ?start.elapsed(),
+                        "address balance chain-confirmed"
+                    );
+                    return Ok(info.balance);
+                }
+                tracing::debug!(
+                    target: "platform_wallet::e2e::wait",
+                    addr = ?addr,
+                    current = info.balance,
+                    expected,
+                    "chain-confirmed balance below target"
+                );
+            }
+            Ok(None) => tracing::debug!(
+                target: "platform_wallet::e2e::wait",
+                addr = ?addr,
+                "address not yet visible on chain"
+            ),
+            Err(err) => tracing::debug!(
+                target: "platform_wallet::e2e::wait",
+                error = %err,
+                addr = ?addr,
+                "AddressInfo::fetch failed during \
+                 wait_for_address_balance_chain_confirmed"
+            ),
+        }
+
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(FrameworkError::Cleanup(format!(
+                "wait_for_address_balance_chain_confirmed timed out \
+                 after {timeout:?} (addr={addr:?} expected={expected})"
+            )));
+        }
+        // Cap the sleep against the remaining budget so a sub-2s
+        // `timeout` doesn't overshoot by up to `BACKSTOP_WAKE_INTERVAL`.
+        tokio::time::sleep(std::cmp::min(remaining, BACKSTOP_WAKE_INTERVAL)).await;
     }
 }
 
