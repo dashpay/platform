@@ -241,12 +241,32 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                     .check_core_transaction(&tx, TransactionContext::Mempool, wallet, true, true)
                     .await;
                 if !check_result.is_relevant {
-                    tracing::warn!(
+                    // CMT-004: The wallet just built and signed this
+                    // transaction from its own spendable inputs, so a
+                    // `!is_relevant` post-broadcast check is an
+                    // internal-invariant violation, not a transient. Emit a
+                    // structured `error!` event with stable field names so
+                    // operators can alert on it independent of the message
+                    // text. We still return `Ok(tx)`: broadcast already
+                    // succeeded, and rolling back here would mislead the
+                    // caller into thinking the network rejected the tx.
+                    tracing::error!(
+                        target: "platform_wallet::broadcast",
+                        event = "post_broadcast_unrelated_to_own_wallet",
                         txid = %tx.txid(),
-                        "broadcast transaction was not relevant during post-broadcast wallet registration"
+                        wallet_id = %hex::encode(self.wallet_id),
+                        "Internal invariant violation: own-built broadcast not recognized by post-broadcast check"
                     );
                 }
             } else {
+                // INTENTIONAL(CMT-005): The wallet-missing branch indicates
+                // the wallet entry was removed from the manager between the
+                // lock drop and re-acquisition. Broadcast already succeeded,
+                // so converting to `Err` would be wrong (caller would think
+                // the tx failed). Observability via a single structured log
+                // line is acceptable for current operator workflows —
+                // promote to a metric only when monitoring infrastructure is
+                // in place to consume one.
                 tracing::warn!(
                     wallet_id = %hex::encode(self.wallet_id),
                     txid = %tx.txid(),
