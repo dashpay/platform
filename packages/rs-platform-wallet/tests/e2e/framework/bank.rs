@@ -29,7 +29,7 @@ use tokio::sync::Mutex as AsyncMutex;
 
 use simple_signer::signer::SimpleSigner;
 
-use super::config::Config;
+use super::config::{Config, EXPECTED_TOKEN_SUITE_FLOOR};
 use super::wallet_factory::{bank_fee_strategy, DEFAULT_ACCOUNT_INDEX_PUB, DEFAULT_KEY_CLASS_PUB};
 use super::{make_platform_signer, FrameworkError, FrameworkResult};
 
@@ -213,11 +213,22 @@ impl BankWallet {
             // wasting setup time (QA-910b).
             let address_bech32m = primary_receive_address.to_bech32m_string(network);
             panic!(
-                "Bank Core under-funded: have {balance:.2}B credits, suite needs ~{required:.2}B per token-test setup.\n  \
-                 Token suite (12+ tests with 1-3 identities each) needs ~600B+ total.\n  \
-                 Top up Core address: {address_bech32m}",
-                balance = total as f64 / 1_000_000_000.0,
-                required = config.min_bank_credits as f64 / 1_000_000_000.0,
+                "Bank under-funded: have {balance}M credits, need at least {required}M.\n  \
+                 Top up Platform address: {address_bech32m}",
+                balance = total / 1_000_000,
+                required = config.min_bank_credits / 1_000_000,
+            );
+        }
+        if total < EXPECTED_TOKEN_SUITE_FLOOR {
+            let address_bech32m = primary_receive_address.to_bech32m_string(network);
+            tracing::warn!(
+                target: "platform_wallet::e2e::bank",
+                balance = total,
+                floor = EXPECTED_TOKEN_SUITE_FLOOR,
+                address = %address_bech32m,
+                "Bank balance is below the token-suite floor (~50B credits); \
+                 token tests may exhaust funds mid-run. \
+                 Top up the Platform address to continue token testing."
             );
         }
 

@@ -13,6 +13,7 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use dashcore::Network;
+use dpp::fee::Credits;
 
 use super::{FrameworkError, FrameworkResult};
 
@@ -60,13 +61,20 @@ pub mod vars {
 /// cache and clear the gate in seconds.
 pub const DEFAULT_BANK_CORE_GATE_TIMEOUT: Duration = Duration::from_secs(900);
 
-/// Default minimum bank balance in credits.
+/// Default minimum bank balance in credits required to start the suite.
 ///
-/// Token tests (12+ cases, 1-3 identities each) cost ~35B credits per setup;
-/// 50B provides headroom for a full token suite run plus several non-token
-/// identity tests. Operators who observe the "Bank under-funded" panic should
-/// top up the Platform address shown in the message to at least this value.
-pub const DEFAULT_MIN_BANK_CREDITS: u64 = 50_000_000_000;
+/// 500M is sufficient for non-token identity tests (ID-*, CR-*, PA-*).
+/// Operators who observe the "Bank under-funded" panic should top up the
+/// Platform address shown in the message to at least this value.
+pub const DEFAULT_MIN_BANK_CREDITS: u64 = 500_000_000;
+
+/// Informational floor for the token test suite.
+///
+/// Token tests (12+ cases, 1-3 identities each) cost ~35B credits per setup.
+/// When the bank balance is below this value the harness emits a `warn!` so
+/// operators know a token-suite run may exhaust funds mid-way, but this
+/// threshold is NOT enforced as a panic — non-token tests are unaffected.
+pub const EXPECTED_TOKEN_SUITE_FLOOR: Credits = 50_000_000_000;
 
 /// E2E framework configuration — fully resolved.
 ///
