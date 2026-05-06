@@ -81,11 +81,15 @@ where
 /// `register_identity_from_addresses` lands on the lagging node and
 /// the chain returns "Address does not exist" (ID-007 / TK-007) or
 /// "Insufficient combined address balances" (DPNS-001) despite the
-/// observed local balance. The chain-confirmed gate retries across
-/// nodes until a fresh proof actually shows the funded balance,
-/// which empirically tracks block replication closely enough that
-/// the follow-up state transition's nonce/balance fetch lands on a
-/// caught-up node.
+/// observed local balance. A single proof-verified observation only
+/// proves the address is visible on whichever DAPI node the SDK
+/// happened to talk to — the very next call may round-robin onto a
+/// still-lagging sibling. The integration here therefore demands
+/// [`CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES`] back-to-back successes
+/// across separate fetches, so the gate clears only after multiple
+/// likely-distinct nodes have independently surfaced the funded
+/// balance and the follow-up state transition's nonce/balance fetch
+/// is far less likely to land on a still-lagging node.
 ///
 /// Returns [`FrameworkError::Cleanup`] on `timeout`.
 pub async fn wait_for_balance(
@@ -119,13 +123,15 @@ pub async fn wait_for_balance(
                     // Hand off the remaining budget to the
                     // proof-verified gate. If the cross-node
                     // replication lag is real, this is where it
-                    // surfaces; if both views already agree, this
-                    // returns on the very first poll.
+                    // surfaces; if all sampled nodes already agree,
+                    // the gate clears after the configured run of
+                    // consecutive successes.
                     let remaining = deadline.saturating_duration_since(Instant::now());
-                    return wait_for_address_balance_chain_confirmed(
+                    return wait_for_address_balance_chain_confirmed_n(
                         test_wallet.platform_wallet().sdk(),
                         addr,
                         expected,
+                        CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
                         remaining,
                     )
                     .await
@@ -160,80 +166,170 @@ pub async fn wait_for_balance(
     }
 }
 
+/// Default required run-length of back-to-back proof-verified
+/// observations [`wait_for_balance`] hands off to. One success only
+/// proves the address is visible on whichever DAPI node the SDK
+/// happened to round-robin onto for that single fetch; demanding two
+/// consecutive successes across separate fetches biases the gate toward
+/// having sampled at least two likely-distinct nodes. The follow-up
+/// state transition's nonce/balance fetch is far less likely to land
+/// on a still-lagging node once two distinct samples both agree.
+///
+/// This is the floor for the multi-identity race surfaced by TK-014's
+/// "Address does not exist" failure on the third identity registration
+/// — the integrated `wait_for_balance` cleared on a single success but
+/// the very next `register_identity_from_addresses` round-robined onto
+/// a still-lagging sibling node. Tests that need a stronger guarantee
+/// can call [`wait_for_address_balance_chain_confirmed_n`] directly
+/// with a higher count; tests that intentionally want the single-shot
+/// semantics keep the existing
+/// [`wait_for_address_balance_chain_confirmed`] entry-point.
+pub const CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES: u32 = 2;
+
+/// Spacing between consecutive proof-verified fetches inside
+/// [`wait_for_address_balance_chain_confirmed_n`]. Short enough that
+/// requiring N successes adds at most `(N-1) * GAP` to a successful
+/// path, long enough that successive fetches are likely to land on
+/// distinct DAPI nodes via round-robin rather than re-hitting the
+/// same socket the SDK just used.
+const CHAIN_CONFIRMED_SUCCESS_GAP: Duration = Duration::from_millis(250);
+
 /// Wait for `addr`'s chain-confirmed balance (queried via the SDK's
 /// proof-verified [`AddressInfo::fetch`] path) to reach at least
-/// `expected`.
+/// `expected` on a single successful observation.
 ///
-/// Mirrors [`wait_for_core_balance`]'s "wait on chain-confirmed
-/// state" precedent on the Platform side. Where `wait_for_balance`
-/// polls the wallet's local cache (which reflects whichever DAPI
-/// node `sync_balances` happened to talk to), this helper independently
-/// verifies the address's balance via a proof-verified Fetch — the
-/// same path the chain itself walks when validating a state
-/// transition's input balances. Polls every
-/// [`BACKSTOP_WAKE_INTERVAL`] until the threshold is met or `timeout`
-/// elapses.
-///
-/// Returns the observed proof-verified balance on success,
-/// [`FrameworkError::Cleanup`] on timeout. Network / proof errors
-/// during polling are treated as transient (logged at `debug`); a
-/// missing address (Fetch returns `None`) is treated as
-/// "not yet visible" and re-polled.
+/// Single-success variant — kept for callers that want the original
+/// "first proof-verified hit returns" shape. The
+/// [`wait_for_balance`] integration uses
+/// [`wait_for_address_balance_chain_confirmed_n`] with
+/// [`CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES`] instead so a single
+/// already-replicated DAPI node can't satisfy the gate while a sibling
+/// is still catching up.
 pub async fn wait_for_address_balance_chain_confirmed(
     sdk: &Sdk,
     addr: &PlatformAddress,
     expected: Credits,
     timeout: Duration,
 ) -> FrameworkResult<Credits> {
+    wait_for_address_balance_chain_confirmed_n(sdk, addr, expected, 1, timeout).await
+}
+
+/// Wait for `addr`'s chain-confirmed balance to reach at least
+/// `expected` on `consecutive_successes` back-to-back proof-verified
+/// observations, separated by [`CHAIN_CONFIRMED_SUCCESS_GAP`].
+///
+/// Mirrors [`wait_for_core_balance`]'s "wait on chain-confirmed
+/// state" precedent on the Platform side. Where `wait_for_balance`
+/// polls the wallet's local cache (which reflects whichever DAPI
+/// node `sync_balances` happened to talk to), this helper independently
+/// verifies the address's balance via proof-verified Fetches — the
+/// same path the chain itself walks when validating a state
+/// transition's input balances. Polls every
+/// [`BACKSTOP_WAKE_INTERVAL`] when the address isn't yet visible /
+/// is below target, and every [`CHAIN_CONFIRMED_SUCCESS_GAP`] between
+/// consecutive successes inside the same gate window.
+///
+/// `consecutive_successes` is the run-length of back-to-back observations
+/// at-or-above `expected` required to clear the gate. Any below-target
+/// observation, missing address, or fetch error resets the run to zero
+/// — the gate only declares success on an unbroken streak. Setting
+/// `consecutive_successes = 0` is treated as `1` (a single-shot gate
+/// is still a meaningful return). Returns the most recent
+/// proof-verified balance on success, [`FrameworkError::Cleanup`] on
+/// timeout.
+pub async fn wait_for_address_balance_chain_confirmed_n(
+    sdk: &Sdk,
+    addr: &PlatformAddress,
+    expected: Credits,
+    consecutive_successes: u32,
+    timeout: Duration,
+) -> FrameworkResult<Credits> {
+    let required = consecutive_successes.max(1);
     let start = Instant::now();
     let deadline = Instant::now() + timeout;
+    let mut streak: u32 = 0;
+    let mut last_observed: Credits = 0;
 
     loop {
+        let mut hit = false;
         match AddressInfo::fetch(sdk, *addr).await {
             Ok(Some(info)) => {
                 if info.balance >= expected {
-                    tracing::info!(
+                    hit = true;
+                    last_observed = info.balance;
+                    streak = streak.saturating_add(1);
+                    tracing::debug!(
                         target: "platform_wallet::e2e::wait",
                         addr = ?addr,
                         observed = info.balance,
                         expected,
-                        elapsed = ?start.elapsed(),
-                        "address balance chain-confirmed"
+                        streak,
+                        required,
+                        "chain-confirmed observation at-or-above target"
                     );
-                    return Ok(info.balance);
+                    if streak >= required {
+                        tracing::info!(
+                            target: "platform_wallet::e2e::wait",
+                            addr = ?addr,
+                            observed = info.balance,
+                            expected,
+                            streak,
+                            required,
+                            elapsed = ?start.elapsed(),
+                            "address balance chain-confirmed"
+                        );
+                        return Ok(info.balance);
+                    }
+                } else {
+                    streak = 0;
+                    tracing::debug!(
+                        target: "platform_wallet::e2e::wait",
+                        addr = ?addr,
+                        current = info.balance,
+                        expected,
+                        "chain-confirmed balance below target; resetting streak"
+                    );
                 }
+            }
+            Ok(None) => {
+                streak = 0;
                 tracing::debug!(
                     target: "platform_wallet::e2e::wait",
                     addr = ?addr,
-                    current = info.balance,
-                    expected,
-                    "chain-confirmed balance below target"
+                    "address not yet visible on chain; resetting streak"
                 );
             }
-            Ok(None) => tracing::debug!(
-                target: "platform_wallet::e2e::wait",
-                addr = ?addr,
-                "address not yet visible on chain"
-            ),
-            Err(err) => tracing::debug!(
-                target: "platform_wallet::e2e::wait",
-                error = %err,
-                addr = ?addr,
-                "AddressInfo::fetch failed during \
-                 wait_for_address_balance_chain_confirmed"
-            ),
+            Err(err) => {
+                streak = 0;
+                tracing::debug!(
+                    target: "platform_wallet::e2e::wait",
+                    error = %err,
+                    addr = ?addr,
+                    "AddressInfo::fetch failed during \
+                     wait_for_address_balance_chain_confirmed; resetting streak"
+                );
+            }
         }
 
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
             return Err(FrameworkError::Cleanup(format!(
                 "wait_for_address_balance_chain_confirmed timed out \
-                 after {timeout:?} (addr={addr:?} expected={expected})"
+                 after {timeout:?} \
+                 (addr={addr:?} expected={expected} required={required} \
+                  streak_at_timeout={streak} last_observed={last_observed})"
             )));
         }
-        // Cap the sleep against the remaining budget so a sub-2s
-        // `timeout` doesn't overshoot by up to `BACKSTOP_WAKE_INTERVAL`.
-        tokio::time::sleep(std::cmp::min(remaining, BACKSTOP_WAKE_INTERVAL)).await;
+
+        // Successful in-streak observations re-fetch quickly so distinct
+        // nodes are likely sampled within the same gate window;
+        // otherwise back off to the standard backstop interval.
+        let next_sleep = if hit && streak < required {
+            CHAIN_CONFIRMED_SUCCESS_GAP
+        } else {
+            BACKSTOP_WAKE_INTERVAL
+        };
+        tokio::time::sleep(std::cmp::min(remaining, next_sleep)).await;
     }
 }
 
