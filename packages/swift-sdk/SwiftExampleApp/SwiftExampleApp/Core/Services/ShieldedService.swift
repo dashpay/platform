@@ -70,6 +70,16 @@ class ShieldedService: ObservableObject {
     /// Wallet id we filter sync results by.
     private var walletId: Data?
 
+    /// Network of the currently-bound wallet. Stashed so
+    /// `switchTo(walletId:)` can reach the right per-network
+    /// dbPath without re-plumbing it from the call site.
+    private var network: Network?
+
+    /// Mnemonic resolver stashed from the first `bind`. Reused by
+    /// `switchTo(walletId:)` so detail views can rebind without
+    /// pulling a fresh resolver out of the SwiftUI environment.
+    private var resolver: MnemonicResolver?
+
     /// Subscription to `walletManager.$shieldedSyncIsSyncing`.
     private var syncStateCancellable: AnyCancellable?
 
@@ -94,6 +104,8 @@ class ShieldedService: ObservableObject {
     ) {
         self.walletManager = walletManager
         self.walletId = walletId
+        self.network = network
+        self.resolver = resolver
         self.syncStateCancellable?.cancel()
         self.syncEventCancellable?.cancel()
 
@@ -159,6 +171,40 @@ class ShieldedService: ObservableObject {
                 guard let self, let event else { return }
                 self.handleShieldedSyncEvent(event)
             }
+    }
+
+    /// Re-bind the singleton service to a different wallet using the
+    /// `walletManager` / `resolver` / `network` stashed by the first
+    /// `bind(...)`. Per-detail-view code paths call this when the
+    /// user navigates into a wallet other than the one
+    /// `rebindWalletScopedServices()` initially selected — without
+    /// it, the published `shieldedBalance` stays pinned to the
+    /// first-bound wallet and every detail screen shows that
+    /// wallet's balance.
+    ///
+    /// No-op if the requested wallet is already bound. Logs and
+    /// returns early if `bind(...)` was never called yet.
+    func switchTo(walletId: Data) {
+        if self.walletId == walletId, isBound {
+            return
+        }
+        guard
+            let walletManager,
+            let resolver,
+            let network
+        else {
+            SDKLogger.log(
+                "ShieldedService.switchTo called before initial bind — ignoring",
+                minimumLevel: .medium
+            )
+            return
+        }
+        bind(
+            walletManager: walletManager,
+            walletId: walletId,
+            network: network,
+            resolver: resolver
+        )
     }
 
     /// Trigger a manual shielded sync pass. No-op if a pass is
