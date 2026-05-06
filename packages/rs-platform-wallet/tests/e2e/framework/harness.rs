@@ -23,7 +23,7 @@ use tokio_util::sync::CancellationToken;
 use super::bank::BankWallet;
 use super::bank_identity::{self, BankIdentity};
 use super::cleanup;
-use super::config::{BankCoreGateSource, Config};
+use super::config::{self, BankCoreGateSource, Config};
 use super::registry::PersistentTestWalletRegistry;
 use super::sdk;
 use super::spv;
@@ -305,16 +305,36 @@ impl E2eContext {
         // Address-list seeding pins SPV peers to the same DAPI hosts
         // the SDK is talking to (port-swapped to the P2P port), so
         // tests don't drift between two independent peer pools.
-        let spv_runtime = spv::start_spv(&manager, &config, &workdir, sdk.address_list()).await?;
-        // Park the runtime in `IN_FLIGHT_SPV` BEFORE the next
-        // fallible step so any panic / Err inside the rest of `build`
-        // hands the runtime to the panic hook + retry path described
-        // on `IN_FLIGHT_SPV`. Cleared on success at the bottom of
-        // `build`. Drops the previous slot value (should be `None`
-        // already because we took it above; defensive).
-        *IN_FLIGHT_SPV.lock().expect("IN_FLIGHT_SPV poisoned") = Some(Arc::clone(&spv_runtime));
-        spv::wait_for_mn_list_synced(&spv_runtime, SPV_READY_TIMEOUT).await?;
-        let spv_runtime: Option<Arc<SpvRuntime>> = Some(spv_runtime);
+        //
+        // Operator escape hatch: `PLATFORM_WALLET_E2E_DISABLE_SPV=1`
+        // skips the spawn entirely so testnet ChainLock-cycle windows
+        // (rust-dashcore #470) don't block the whole suite. Core-
+        // dependent tests fail under this flag — see the warn below.
+        let spv_runtime: Option<Arc<SpvRuntime>> = if config.disable_spv {
+            tracing::warn!(
+                target: "platform_wallet::e2e::harness",
+                var = config::vars::DISABLE_SPV,
+                "PLATFORM_WALLET_E2E_DISABLE_SPV is set: skipping SPV runtime \
+                 spawn and mn-list-sync gate. Core-dependent tests (CR-003 \
+                 funded-asset-lock path, ID-007 Core-balance gates, anything \
+                 that walks Core blocks) WILL fail; Platform-only flows still \
+                 run. Use this only when testnet ChainLock cycles are blocking \
+                 progress."
+            );
+            None
+        } else {
+            let spv_runtime =
+                spv::start_spv(&manager, &config, &workdir, sdk.address_list()).await?;
+            // Park the runtime in `IN_FLIGHT_SPV` BEFORE the next
+            // fallible step so any panic / Err inside the rest of `build`
+            // hands the runtime to the panic hook + retry path described
+            // on `IN_FLIGHT_SPV`. Cleared on success at the bottom of
+            // `build`. Drops the previous slot value (should be `None`
+            // already because we took it above; defensive).
+            *IN_FLIGHT_SPV.lock().expect("IN_FLIGHT_SPV poisoned") = Some(Arc::clone(&spv_runtime));
+            spv::wait_for_mn_list_synced(&spv_runtime, SPV_READY_TIMEOUT).await?;
+            Some(spv_runtime)
+        };
 
         // Panics on under-funded balance — see `BankWallet::load`.
         let bank = BankWallet::load(&manager, &config).await?;
@@ -333,7 +353,26 @@ impl E2eContext {
         // tests that don't need bank Core funding still run; the ones
         // that do panic at `send_core_to` with the operator-actionable
         // "top up at <addr>" message (see `BankWallet::send_core_to`).
-        match config.bank_core_gate_timeout {
+        //
+        // When `DISABLE_SPV` is set the gate is auto-skipped: it polls
+        // the SPV-fed `core_balance_confirmed`, which would never
+        // advance without a running SPV runtime — letting the gate run
+        // would just burn the full timeout for nothing.
+        let effective_gate_timeout = if config.disable_spv {
+            if config.bank_core_gate_timeout.is_some() {
+                tracing::warn!(
+                    target: "platform_wallet::e2e::bank",
+                    var = config::vars::DISABLE_SPV,
+                    "auto-disabling bank_core_gate because SPV is disabled (gate \
+                     polls SPV-fed Core balance and would burn its full timeout \
+                     for nothing)"
+                );
+            }
+            None
+        } else {
+            config.bank_core_gate_timeout
+        };
+        match effective_gate_timeout {
             Some(timeout) => {
                 let source = match config.bank_core_gate_source {
                     BankCoreGateSource::Default => "default",

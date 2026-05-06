@@ -53,6 +53,15 @@ pub mod vars {
     /// that don't need Core duffs; any positive integer overrides the
     /// timeout (in seconds).
     pub const BANK_CORE_GATE: &str = "PLATFORM_WALLET_E2E_BANK_CORE_GATE";
+    /// Operator escape hatch: skip starting the SPV runtime and the
+    /// `wait_for_mn_list_synced` gate. Truthy values (`1` / `true` /
+    /// `yes` / `on`, case-insensitive) opt in. When set, Core-dependent
+    /// tests (CR-003 funded-asset-lock path, ID-007 Core-balance gates,
+    /// any helper that walks Core blocks) WILL fail; Platform-only
+    /// flows still run. Use this to keep the suite making progress when
+    /// testnet is in a ChainLock-cycle window that prevents mn-list
+    /// from advancing (rust-dashcore #470).
+    pub const DISABLE_SPV: &str = "PLATFORM_WALLET_E2E_DISABLE_SPV";
 }
 
 /// Default deadline for the bank Core funding gate when the env var is
@@ -126,6 +135,13 @@ pub struct Config {
     /// Source of [`bank_core_gate_timeout`]'s value, kept for the init
     /// log line so operators can tell defaulted-on from env-set.
     pub bank_core_gate_source: BankCoreGateSource,
+    /// Operator escape hatch: when `true`, the harness skips the SPV
+    /// runtime spawn and the `wait_for_mn_list_synced` gate. The bank-
+    /// Core gate is auto-disabled in tandem (it polls the SPV-fed
+    /// confirmed-Core balance, which would never advance). Tests that
+    /// rely on Core observation will fail; Platform-only flows still
+    /// run. Set via [`vars::DISABLE_SPV`].
+    pub disable_spv: bool,
 }
 
 /// Provenance of the resolved bank-Core-gate timeout — surfaced in the
@@ -160,6 +176,7 @@ impl std::fmt::Debug for Config {
             .field("bank_identity_id", &self.bank_identity_id)
             .field("bank_core_gate_timeout", &self.bank_core_gate_timeout)
             .field("bank_core_gate_source", &self.bank_core_gate_source)
+            .field("disable_spv", &self.disable_spv)
             .finish()
     }
 }
@@ -178,6 +195,7 @@ impl Default for Config {
             bank_identity_id: None,
             bank_core_gate_timeout: Some(DEFAULT_BANK_CORE_GATE_TIMEOUT),
             bank_core_gate_source: BankCoreGateSource::Default,
+            disable_spv: false,
         }
     }
 }
@@ -268,6 +286,8 @@ impl Config {
         let (bank_core_gate_timeout, bank_core_gate_source) =
             parse_bank_core_gate(std::env::var(vars::BANK_CORE_GATE).ok().as_deref());
 
+        let disable_spv = parse_truthy(std::env::var(vars::DISABLE_SPV).ok().as_deref());
+
         Ok(Self {
             bank_mnemonic,
             network,
@@ -279,6 +299,7 @@ impl Config {
             bank_identity_id,
             bank_core_gate_timeout,
             bank_core_gate_source,
+            disable_spv,
         })
     }
 
@@ -367,6 +388,20 @@ pub(crate) fn parse_bank_core_gate(raw: Option<&str>) -> (Option<Duration>, Bank
     }
 }
 
+/// Parse a boolean opt-in flag from a raw env-var value (`None` = unset).
+///
+/// Truthy: `1`, `true`, `yes`, `on` (case-insensitive, trimmed).
+/// Everything else — including empty / unset / unparseable — is `false`.
+/// Used by [`vars::DISABLE_SPV`].
+pub(crate) fn parse_truthy(raw: Option<&str>) -> bool {
+    let Some(raw) = raw else { return false };
+    let trimmed = raw.trim();
+    trimmed == "1"
+        || trimmed.eq_ignore_ascii_case("true")
+        || trimmed.eq_ignore_ascii_case("yes")
+        || trimmed.eq_ignore_ascii_case("on")
+}
+
 /// Parse a network string supporting the canonical dashcore names
 /// plus the test-harness `local` alias for regtest and an empty
 /// shorthand for testnet. Used only at [`Config`] construction;
@@ -430,6 +465,27 @@ mod tests {
         let (timeout, src) = parse_bank_core_gate(Some("  120  "));
         assert_eq!(timeout, Some(Duration::from_secs(120)));
         assert_eq!(src, BankCoreGateSource::EnvTimeout);
+    }
+
+    #[test]
+    fn disable_spv_unset_is_false() {
+        assert!(!parse_truthy(None));
+    }
+
+    #[test]
+    fn disable_spv_truthy_aliases() {
+        for raw in [
+            "1", "true", "TRUE", "True", "yes", "YES", "on", "ON", "  true  ",
+        ] {
+            assert!(parse_truthy(Some(raw)), "{raw}");
+        }
+    }
+
+    #[test]
+    fn disable_spv_falsy_or_unparseable_is_false() {
+        for raw in ["", "  ", "0", "false", "no", "off", "disabled", "abc"] {
+            assert!(!parse_truthy(Some(raw)), "{raw}");
+        }
     }
 
     #[test]
