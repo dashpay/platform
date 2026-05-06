@@ -269,12 +269,12 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
 
 #[cfg(test)]
 mod tests {
-    //! Broadcast ordering / rollback contract tests (CMT-003).
+    //! `broadcast_transaction` pass-through contract.
     //!
-    //! Pin `broadcast_transaction`'s pass-through behaviour: `Err` propagates
-    //! so `send_to_addresses` short-circuits before any spendable-set
-    //! mutation, and `Ok(txid)` is forwarded unchanged so the post-broadcast
-    //! mempool registration runs on a confirmed-success signal. See #3466.
+    //! Pins that the wrapper does not transform `Err` or modify the success
+    //! result — the `Txid` returned by the broadcaster is forwarded unchanged.
+    //! The higher-level `send_to_addresses` rollback contract (#3466) is not
+    //! covered here; pinning it would require live wallet fixtures.
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
@@ -354,10 +354,10 @@ mod tests {
         )
     }
 
-    /// Rollback half of the #3466 contract: a broadcast `Err` propagates so
-    /// callers `?`-out before any spendable-set mutation.
+    /// `broadcast_transaction` forwards a broadcaster `Err` to the caller
+    /// without transformation.
     #[tokio::test]
-    async fn broadcast_failure_keeps_inputs_spendable() {
+    async fn broadcast_transaction_passes_through_err_unchanged() {
         let broadcaster = Arc::new(MockBroadcaster::new(BroadcastOutcome::Err(
             "simulated network rejection".to_string(),
         )));
@@ -378,10 +378,10 @@ mod tests {
         );
     }
 
-    /// Success half of the #3466 contract: the broadcaster's `Txid` is
-    /// passed through unchanged so the mempool-registration block fires.
+    /// `broadcast_transaction` forwards the broadcaster's `Txid` to the
+    /// caller without transformation.
     #[tokio::test]
-    async fn broadcast_success_marks_inputs_unavailable() {
+    async fn broadcast_transaction_passes_through_ok_unchanged() {
         let expected_txid = dummy_transaction().txid();
         let broadcaster = Arc::new(MockBroadcaster::new(BroadcastOutcome::Ok(expected_txid)));
         let wallet = make_core_wallet(Arc::clone(&broadcaster));
