@@ -148,9 +148,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             let spendable_outpoints: BTreeSet<OutPoint> =
                 spendable.iter().map(|utxo| utxo.outpoint).collect();
             if !selected.is_subset(&spendable_outpoints) {
-                return Err(PlatformWalletError::TransactionBuild(
-                    "Transaction builder selected an unavailable UTXO. Please retry.".to_string(),
-                ));
+                return Err(PlatformWalletError::ConcurrentSpendConflict);
             }
 
             // Revalidation passed; now commit the change-address advance so

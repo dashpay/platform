@@ -60,6 +60,9 @@ pub enum PlatformWalletError {
     #[error("Transaction building failed: {0}")]
     TransactionBuild(String),
 
+    #[error("Transaction builder selected an unavailable UTXO (concurrent spend); retry")]
+    ConcurrentSpendConflict,
+
     #[error("Asset lock proof waiting failed: {0}")]
     AssetLockProofWait(String),
 
