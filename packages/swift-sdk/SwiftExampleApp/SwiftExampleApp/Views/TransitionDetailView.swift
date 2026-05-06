@@ -1651,14 +1651,29 @@ struct TransitionDetailView: View {
       tokenSchemas = parsed
     }
 
-    // Parse groups if provided
-    var groups: [[String: Any]]? = nil
+    // Parse groups if provided. `RegisterContractSourceView` flattens
+    // the chain-shape `{ "<position>": { ... } }` map into an array
+    // with an injected `id`, so the form carries an array. The Rust
+    // V1 contract format wants a `BTreeMap<GroupContractPosition,
+    // Group>` though, so re-key the array back into a position-keyed
+    // map before crossing the FFI — otherwise the assembler rejects
+    // it with "expected a map, got sequence".
+    var groups: [String: Any]? = nil
     if let groupsJson = formInputs["groups"], !groupsJson.isEmpty {
       guard let data = groupsJson.data(using: .utf8),
             let parsed = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
         throw SDKError.serializationError("Invalid groups JSON")
       }
-      groups = parsed
+      var byPosition: [String: Any] = [:]
+      for var entry in parsed {
+        guard let rawId = entry.removeValue(forKey: "id") else { continue }
+        let key: String
+        if let intId = rawId as? Int { key = String(intId) }
+        else if let strId = rawId as? String { key = strId }
+        else { continue }
+        byPosition[key] = entry
+      }
+      groups = byPosition
     }
 
     // Build contract configuration
