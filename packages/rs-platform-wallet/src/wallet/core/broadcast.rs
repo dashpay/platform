@@ -106,8 +106,12 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 ))
             })?;
 
+            // Peek at the next change address without advancing the derivation
+            // index. We commit the advance only after post-build revalidation
+            // succeeds, so a revalidation failure does not burn an index and
+            // widen the gap-limit window on retry.
             let change_addr = change_account
-                .next_change_address(Some(&xpub), true)
+                .next_change_address(Some(&xpub), false)
                 .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
 
             builder = builder.set_change_address(change_addr);
@@ -148,6 +152,32 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                     "Transaction builder selected an unavailable UTXO. Please retry.".to_string(),
                 ));
             }
+
+            // Revalidation passed; now commit the change-address advance so
+            // the next send picks up the next index. Re-borrow the managed
+            // account because `select_inputs` above borrowed
+            // `info.core_wallet.accounts` and ended the earlier reborrow.
+            let change_account = match account_type {
+                StandardAccountType::BIP44Account => info
+                    .core_wallet
+                    .accounts
+                    .standard_bip44_accounts
+                    .get_mut(&account_index),
+                StandardAccountType::BIP32Account => info
+                    .core_wallet
+                    .accounts
+                    .standard_bip32_accounts
+                    .get_mut(&account_index),
+            }
+            .ok_or_else(|| {
+                PlatformWalletError::TransactionBuild(format!(
+                    "{:?} managed account {} not found",
+                    account_type, account_index
+                ))
+            })?;
+            change_account
+                .next_change_address(Some(&xpub), true)
+                .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
 
             tx
         };
