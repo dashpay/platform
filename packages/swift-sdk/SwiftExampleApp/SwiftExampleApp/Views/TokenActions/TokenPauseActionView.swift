@@ -170,6 +170,17 @@ struct TokenPauseActionView: View {
                 await MainActor.run {
                     guard self.submitGeneration == gen else { return }
                     self.isSubmitting = false
+                    // Single-signer submissions execute on this call;
+                    // the chain is now paused, so flip the local flag
+                    // so TokenActionPermissionsView's Resume gate
+                    // unlocks immediately. Propose-mode just stores a
+                    // pending group action — the pause takes effect
+                    // when the threshold-crossing co-signer submits,
+                    // so leave isPaused alone in that branch.
+                    if case .none = groupAction {
+                        token.isPaused = true
+                        try? modelContext.save()
+                    }
                     self.dismiss()
                 }
             } catch {

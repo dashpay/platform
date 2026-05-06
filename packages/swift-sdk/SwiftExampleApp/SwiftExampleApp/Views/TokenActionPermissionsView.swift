@@ -667,6 +667,7 @@ struct TokenActionPermissionsView: View {
     @State private var balanceFetchGeneration: Int = 0
 
     @EnvironmentObject var appState: AppState
+    @Environment(\.modelContext) private var modelContext
     @Query private var localIdentities: [PersistentIdentity]
 
     init(
@@ -813,6 +814,18 @@ struct TokenActionPermissionsView: View {
         .task(id: resolvedIdentity?.identityId) {
             await refreshTokenBalance()
         }
+        // Refresh the on-chain pause flag every time this screen
+        // appears. `PersistentToken.isPaused` is otherwise only
+        // populated from `startAsPaused` at initial contract parse and
+        // by the in-app pause/resume action success branches — it
+        // doesn't reflect a token paused in another session, on
+        // another device, or before this fix shipped. The
+        // Resume/Pause row gates depend on it, so without this fetch
+        // the user can land on this screen and see "Token is not
+        // paused" when the chain knows otherwise.
+        .task {
+            await refreshTokenStatus()
+        }
     }
 
     private func refreshTokenBalance() async {
@@ -860,6 +873,44 @@ struct TokenActionPermissionsView: View {
             // from the console; per-action views still fall back to
             // the persisted row when `fetchedBalance` stays nil.
             print("⚠️ refreshTokenBalance failed for \(identity.identityIdBase58): \(error)")
+        }
+    }
+
+    /// Pull the token's pause flag from chain and reconcile it onto
+    /// the local `PersistentToken`. The action-row gates in this view
+    /// (Pause / Resume) read `token.isPaused` directly, so a stale
+    /// flag locks the user out of a legitimate next step. Cheap one-
+    /// shot query — `getTokenStatuses` returns just `{ paused: Bool }`
+    /// per token id — and idempotent (only writes when the value
+    /// actually changed). Failures fall back to the existing local
+    /// flag rather than wiping it.
+    private func refreshTokenStatus() async {
+        guard let sdk = appState.sdk else { return }
+        guard let position = UInt16(exactly: token.position) else { return }
+        let contractIdString = token.contractId.toBase58String()
+        do {
+            let canonicalTokenId = try sdk.calculateTokenId(
+                contractId: contractIdString,
+                position: position
+            )
+            let statuses = try await sdk.getTokenStatuses(tokenIds: [canonicalTokenId])
+            // Shape: `{ "<base58_token_id>": { "paused": Bool } | null }`.
+            // A `null` status means the chain has no pause record for
+            // this token yet (never paused) — treat as not-paused.
+            let chainPaused: Bool
+            if let entry = statuses[canonicalTokenId] as? [String: Any],
+               let paused = entry["paused"] as? Bool {
+                chainPaused = paused
+            } else {
+                chainPaused = false
+            }
+            await MainActor.run {
+                guard token.isPaused != chainPaused else { return }
+                token.isPaused = chainPaused
+                try? modelContext.save()
+            }
+        } catch {
+            print("⚠️ refreshTokenStatus failed for token at \(contractIdString):\(token.position): \(error)")
         }
     }
 
