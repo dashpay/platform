@@ -107,19 +107,16 @@ impl Drive {
             Element::empty_tree(),
         );
 
-        // 5b. Anchors-by-height tree (NormalTree): block_height_be → anchor_bytes
-        // Reverse index for pruning old anchors by height range.
+        // 5b. Anchors-by-height tree (NormalTree): block_height_be → anchor_bytes.
+        // Reverse index for pruning old anchors by height range. Also the
+        // canonical source of the most-recent anchor (read via `limit 1`
+        // reverse query) — there is no separate "most recent" slot; key 7
+        // was retired because the duplicate state could desync from the
+        // anchors tree under prune.
         batch.add_insert(
             shielded_credit_pool_path_vec(),
             vec![SHIELDED_ANCHORS_BY_HEIGHT_KEY],
             Element::empty_tree(),
-        );
-
-        // 5c. Most recent anchor item (empty initially, set on first block with notes)
-        batch.add_insert(
-            shielded_credit_pool_path_vec(),
-            vec![SHIELDED_MOST_RECENT_ANCHOR_KEY],
-            Element::new_item(vec![0u8; 32]),
         );
 
         // 6. Per-block nullifiers CountSumTree under shielded credit pool.

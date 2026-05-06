@@ -1,4 +1,5 @@
 use crate::drive::RootTree;
+use grovedb::{PathQuery, Query, SizedQuery};
 
 /// The subtree key for the shielded credit pool under AddressBalances
 pub const SHIELDED_CREDIT_POOL_KEY: &[u8; 1] = b"s";
@@ -15,14 +16,22 @@ pub const SHIELDED_NULLIFIERS_KEY: u8 = 2;
 /// Key for the total balance sum item inside a shielded pool
 pub const SHIELDED_TOTAL_BALANCE_KEY: u8 = 5;
 
-/// Key for the anchors tree inside a shielded pool (anchor_bytes → block_height_be)
+/// Key for the anchors tree inside a shielded pool (anchor_bytes → block_height_be).
+/// Used by `validate_anchor_exists` for O(1) membership checks at spend time.
 pub const SHIELDED_ANCHORS_IN_POOL_KEY: u8 = 6;
 
-/// Key for the most recent anchor item inside a shielded pool
-pub const SHIELDED_MOST_RECENT_ANCHOR_KEY: u8 = 7;
+// Key 7 was previously `SHIELDED_MOST_RECENT_ANCHOR_KEY`, a redundant
+// `Item([u8;32])` slot mirroring the latest entry in
+// `SHIELDED_ANCHORS_BY_HEIGHT_KEY`. It was removed because the duplicated
+// state could (and did) drift out of sync with the anchors tree under prune,
+// leaving the validator's lookup table empty while the pool was still live.
+// The most-recent anchor is now derived from `[8]` via a `limit 1` reverse
+// query — see `Drive::query_most_recent_shielded_anchor`.
 
-/// Key for the anchors-by-height tree inside a shielded pool (block_height_be → anchor_bytes)
-/// Reverse index of SHIELDED_ANCHORS_IN_POOL_KEY, used for pruning old anchors by height range.
+/// Key for the anchors-by-height tree inside a shielded pool (block_height_be → anchor_bytes).
+/// Reverse index of `SHIELDED_ANCHORS_IN_POOL_KEY`, used both for pruning old
+/// anchors by height range and as the canonical source of the most-recent
+/// anchor (read via `limit 1` reverse query).
 pub const SHIELDED_ANCHORS_BY_HEIGHT_KEY: u8 = 8;
 
 /// Chunk power for the notes CommitmentTree (2^11 = 2048 items per chunk)
@@ -114,6 +123,38 @@ pub fn shielded_credit_pool_anchors_by_height_path_vec() -> Vec<Vec<u8>> {
         SHIELDED_CREDIT_POOL_KEY.to_vec(),
         vec![SHIELDED_ANCHORS_BY_HEIGHT_KEY],
     ]
+}
+
+/// Canonical `PathQuery` used to read the most-recent recorded
+/// shielded-pool anchor: a `limit 1` reverse scan over
+/// `SHIELDED_ANCHORS_BY_HEIGHT_KEY`, returning the entry with the
+/// highest `block_height_be` key.
+///
+/// Shared between three call sites that must agree byte-for-byte:
+/// - `Drive::read_latest_recorded_shielded_anchor_v0` (raw read used
+///   by `record_shielded_pool_anchor_if_changed_v0` to decide whether
+///   the anchor changed this block);
+/// - `Platform::query_most_recent_shielded_anchor_v0` (proven RPC
+///   handler);
+/// - `Drive::verify_most_recent_shielded_anchor_v0` (SDK-side proof
+///   verifier — replays the same `PathQuery`).
+///
+/// Keep these three in sync via this helper rather than open-coding
+/// the `PathQuery` at each site; subtle differences (e.g. swapping
+/// `left_to_right` or the `limit`) would silently produce
+/// non-matching proofs.
+pub fn shielded_latest_recorded_anchor_path_query() -> PathQuery {
+    let mut query = Query::new();
+    query.insert_all();
+    query.left_to_right = false;
+    PathQuery {
+        path: shielded_credit_pool_anchors_by_height_path_vec(),
+        query: SizedQuery {
+            query,
+            limit: Some(1),
+            offset: None,
+        },
+    }
 }
 
 /// Resolves the nullifiers path based on pool type.
