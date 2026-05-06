@@ -72,10 +72,11 @@ mod json_convertible_tests_resource_vote {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
-        // `VotePoll` and `ResourceVoteChoice` use adjacent tagging
-        // (`tag = "type", content = "data"`), so each variant serializes as
-        // `{ "type": "...", "data": <payload> }`. Identifiers render as base58
-        // strings in JSON.
+        // `VotePoll` uses internal tagging (`tag = "type"`), so its variant
+        // body fields are flattened next to the `type` discriminator.
+        // `ResourceVoteChoice` uses a custom Serialize/Deserialize that
+        // emits `{"type": "towardsIdentity", "identity": <id>}` for the
+        // newtype variant. Identifiers render as base58 strings in JSON.
         assert_eq!(
             json,
             json!({
