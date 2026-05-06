@@ -58,18 +58,16 @@ mod json_convertible_tests {
             crate::tokens::token_event::json_convertible_tests::mint_fixture(),
         );
         let json = original.to_json().expect("to_json");
-        // Outer `kind: "tokenEvent"` from GroupActionEvent. Inner `type:
-        // "mint"` and `data: [...]` from TokenEvent's adjacent tagging.
+        // Outer `kind: "tokenEvent"` from GroupActionEvent. Inner TokenEvent
+        // (custom serde) flattens its named fields at the same level.
         assert_eq!(
             json,
             json!({
                 "kind": "tokenEvent",
                 "type": "mint",
-                "data": [
-                    5_000,
-                    "Bswb3UyeD1pUTaGiE6WvqwFpJZsQSEY1xhJePCDTHdvp",
-                    "genesis mint"
-                ]
+                "amount": 5_000,
+                "recipient": "Bswb3UyeD1pUTaGiE6WvqwFpJZsQSEY1xhJePCDTHdvp",
+                "publicNote": "genesis mint",
             })
         );
         let recovered = GroupActionEvent::from_json(json).expect("from_json");
@@ -88,11 +86,9 @@ mod json_convertible_tests {
             platform_value!({
                 "kind": "tokenEvent",
                 "type": "mint",
-                "data": [
-                    5_000u64,
-                    platform_value::Identifier::new([0xa1; 32]),
-                    "genesis mint"
-                ]
+                "amount": 5_000u64,
+                "recipient": platform_value::Identifier::new([0xa1; 32]),
+                "publicNote": "genesis mint",
             })
         );
         let recovered = GroupActionEvent::from_object(value).expect("from_object");
