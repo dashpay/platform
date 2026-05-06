@@ -16,15 +16,14 @@
 //! test cases that exercise these. Runtime correctness is verified
 //! in Wave 4 against a live testnet.
 //!
-//! Editorial notes (vs. Diziet's investigation sketch):
+//! Editorial notes:
 //! - `register_token_contract_via_sdk` signs with the
-//!   [`RegisteredIdentity::master_key`] (MASTER, KeyID 0). The
-//!   wallet's `create_data_contract_with_signer` filters for
-//!   CRITICAL keys (see `wallet/identity/network/contract.rs:158`),
-//!   but the SDK-direct path does not — so MASTER is accepted at
-//!   build-time and the chain-side security-level decision is
-//!   exercised in Wave 4. If testnet rejects MASTER on
-//!   `DataContractCreate`, swap to the wallet helper.
+//!   [`RegisteredIdentity::high_key`] (HIGH, KeyID 1).
+//!   `DataContractCreateTransitionV0::security_level_requirement`
+//!   accepts only CRITICAL or HIGH (see
+//!   `rs-dpp/.../data_contract_create_transition/v0/identity_signed.rs`),
+//!   so signing with MASTER triggers
+//!   `InvalidSignaturePublicKeySecurityLevelError` at chain validation.
 //! - `token_frozen_balance_of` returns a [`TokenAmount`] (the
 //!   identity's full token balance when `IdentityTokenInfo.frozen`
 //!   is `true`, else `0`). DPP only stores a `frozen: bool`; the
@@ -158,10 +157,8 @@ pub struct TokenThreeIdentitiesSetup {
 /// `create_data_contract_with_signer` path so the schema-drift
 /// surface stays in one shape.
 ///
-/// Signs with [`RegisteredIdentity::master_key`] (MASTER). On chain
-/// the contract-create transition validates the signing key against
-/// the contract's CRITICAL requirement — Wave 4 confirms
-/// real-world fitness.
+/// Signs with [`RegisteredIdentity::high_key`] (HIGH) — the chain
+/// rejects MASTER on `DataContractCreate` (CRITICAL or HIGH only).
 pub async fn register_token_contract_via_sdk(
     ctx: &E2eContext,
     owner: &RegisteredIdentity,
@@ -201,7 +198,7 @@ pub async fn register_token_contract_via_sdk(
     let confirmed = data_contract
         .put_to_platform_and_wait_for_response(
             ctx.sdk(),
-            owner.master_key.clone(),
+            owner.high_key.clone(),
             owner.signer.as_ref(),
             None,
         )
