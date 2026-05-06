@@ -130,6 +130,26 @@ var body: some View {
                         value: filterHeightsDisplay
                     )
 
+                    // Block time of the SPV chain tip — a stale
+                    // value across polls means core stopped
+                    // producing blocks even though our SPV client
+                    // is healthy. Hidden until the first tip
+                    // header is stored.
+                    if let tipTime = walletManager.spvTipBlockTime {
+                        HStack {
+                            Text("Block Time")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text("\(tipTime, style: .relative) ago")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Text(AppDate.formatted(tipTime, dateStyle: .omitted, timeStyle: .shortened))
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
                     // Controls row
                     HStack(spacing: 8) {
                         Spacer()
@@ -360,11 +380,25 @@ var body: some View {
                             Text("Syncing...")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
-                        } else {
-                            Image(systemName: "shield.checkered")
-                                .foregroundColor(.purple)
+                        } else if let lastSync = shieldedService.lastSyncTime {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
                                 .font(.caption)
-                            Text("Ready")
+                            Text("Last sync: \(lastSync, style: .relative)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        } else if !shieldedService.isBound {
+                            Image(systemName: "shield.slash")
+                                .foregroundColor(.secondary)
+                                .font(.caption)
+                            Text("Not bound")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        } else {
+                            Image(systemName: "circle.dashed")
+                                .foregroundColor(.secondary)
+                                .font(.caption)
+                            Text("Not synced yet")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                         }
@@ -402,6 +436,42 @@ var body: some View {
                         }
                     }
 
+                    // Sync counters since launch — `total_scanned`
+                    // is the wire-level encrypted-note count (every
+                    // pass), while new + spent are the wallet-side
+                    // outcomes (only ours).
+                    if shieldedService.syncCountSinceLaunch > 0 {
+                        let svc = shieldedService
+                        VStack(spacing: 4) {
+                            HStack {
+                                Text("Queries Since Launch")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Text("\(svc.syncCountSinceLaunch) syncs")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            HStack(spacing: 12) {
+                                QueryCountBadge(
+                                    label: "Scanned",
+                                    count: UInt32(min(svc.totalScanned, UInt64(UInt32.max))),
+                                    color: .blue
+                                )
+                                QueryCountBadge(
+                                    label: "New",
+                                    count: UInt32(min(svc.totalNewNotes, UInt64(UInt32.max))),
+                                    color: .purple
+                                )
+                                QueryCountBadge(
+                                    label: "Spent",
+                                    count: UInt32(min(svc.totalNewlySpent, UInt64(UInt32.max))),
+                                    color: .orange
+                                )
+                            }
+                        }
+                    }
+
                     // Error display
                     if let error = shieldedService.lastError {
                         Text(error)
@@ -415,11 +485,7 @@ var body: some View {
                         Spacer()
 
                         Button {
-                            Task {
-                                if let sdk = platformState.sdk {
-                                    await shieldedService.fullSync(sdk: sdk)
-                                }
-                            }
+                            Task { await shieldedService.manualSync() }
                         } label: {
                             HStack(spacing: 4) {
                                 Image(systemName: "arrow.clockwise")
@@ -484,24 +550,55 @@ var body: some View {
                 .appendingPathComponent(platformState.currentNetwork.networkName)
             try? FileManager.default.createDirectory(at: dataDirURL, withIntermediateDirectories: true)
 
-            let useLocalCore = UserDefaults.standard.bool(forKey: "useLocalhostCore")
-            let peers: [String] = useLocalCore
-                ? ((UserDefaults.standard.string(forKey: "localCorePeers") ?? "127.0.0.1")
-                    .split(separator: ",")
-                    .map { $0.trimmingCharacters(in: .whitespaces) })
-                : []
+            let peers = spvPeerOverride()
+            let restrictToConfiguredPeers = !peers.isEmpty
 
             let config = PlatformSpvStartConfig(
                 dataDir: dataDirURL.path,
                 network: platformState.currentNetwork,
                 peers: peers,
-                restrictToConfiguredPeers: useLocalCore,
+                restrictToConfiguredPeers: restrictToConfiguredPeers,
                 masternodeSyncEnabled: masternodesEnabled
             )
             try walletManager.startSpv(config: config)
         } catch {
             print("❌ Sync failed: \(error)")
         }
+    }
+
+    /// Resolve the SPV peer override for the current network /
+    /// docker combo.
+    ///
+    /// Three modes coexist on top of the same `useLocalhostCore` /
+    /// `localCorePeers` `UserDefaults` keys, which used to bleed into
+    /// each other when the user reconfigured between sessions:
+    ///
+    ///   1. **regtest + docker** — connect to dashmate's `local_seed`
+    ///      Core P2P port. The default 3-node setup maps the seed to
+    ///      `127.0.0.1:20301` (`getLocalConfigFactory.js` base 20001
+    ///      + `setupLocalPresetTaskFactory.js` `+ i*100` with seed
+    ///      at index = `nodeCount`, typically 3). Anything sitting
+    ///      in `localCorePeers` from a previous testnet / mainnet
+    ///      "custom peers" session is ignored — the UI doesn't show
+    ///      that knob on regtest+docker so a stale value is always
+    ///      bleed-through, never user intent.
+    ///   2. **non-regtest + custom peers** — honor `localCorePeers`
+    ///      verbatim. The OptionsView "Use Custom SPV Peers" toggle
+    ///      seeds and edits this string.
+    ///   3. **everything else** — empty list, FFI uses the network's
+    ///      built-in seed nodes.
+    private func spvPeerOverride() -> [String] {
+        let useDocker = UserDefaults.standard.bool(forKey: "useDockerSetup")
+        if platformState.currentNetwork == .regtest && useDocker {
+            return ["127.0.0.1:20301"]
+        }
+        let useLocalCore = UserDefaults.standard.bool(forKey: "useLocalhostCore")
+        guard useLocalCore else { return [] }
+        let raw = UserDefaults.standard.string(forKey: "localCorePeers") ?? ""
+        return raw
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
     }
 
     private func pauseSync() {

@@ -162,6 +162,31 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_is_running(
     PlatformWalletFFIResult::ok()
 }
 
+/// Read the unix-seconds block time of the SPV header storage's
+/// current tip. Useful as a "is core producing blocks?" indicator —
+/// a stale value across multiple polls means the chain has stalled.
+///
+/// `*out_unix_seconds` is set to `0` when the SPV client isn't
+/// running, no headers have been stored yet, or the tip header
+/// can't be read for any reason. The function still returns
+/// success in those cases — `0` is the in-band sentinel.
+///
+/// # Safety
+/// - `out_unix_seconds` must be writable for one `u64` value.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_spv_tip_unix_seconds(
+    handle: Handle,
+    out_unix_seconds: *mut u64,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_unix_seconds);
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        runtime().block_on(manager.spv().tip_block_time())
+    });
+    let tip = unwrap_option_or_return!(option);
+    *out_unix_seconds = tip.map(|t| t as u64).unwrap_or(0);
+    PlatformWalletFFIResult::ok()
+}
+
 /// Start SPV sync in the background.
 #[no_mangle]
 #[allow(clippy::field_reassign_with_default)]

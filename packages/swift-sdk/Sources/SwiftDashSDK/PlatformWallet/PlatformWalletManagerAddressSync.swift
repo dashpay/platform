@@ -48,6 +48,7 @@ final class PlatformWalletEventHandler {
         var callbacks = EventHandlerCallbacks()
         callbacks.context = Unmanaged.passUnretained(self).toOpaque()
         callbacks.on_platform_address_sync_completed_fn = platformAddressSyncCompletedCallback
+        callbacks.on_shielded_sync_completed_fn = shieldedSyncCompletedCallback
         return callbacks
     }
 }
