@@ -273,6 +273,12 @@ struct ContentView: View {
         let separate = choices.filter { !$0.samePinCode }
         var recovered: Set<Data> = []
 
+        SDKLogger.log(
+            "Recovery: authorize+recover — \(choices.count) wallet(s) "
+                + "(\(shared.count) shared-prompt, \(separate.count) per-wallet)",
+            minimumLevel: .low
+        )
+
         // Both auth failures (per-wallet biometric prompt errors) and
         // recovery failures (SDK init / manager prep / createWallet
         // errors returned from `recoverWallet`) accumulate here so the
@@ -300,11 +306,15 @@ struct ContentView: View {
                 showDeletePrompt = true
                 return
             case .unavailable(let detail):
-                recoveryError = "Authentication is unavailable on this device: \(detail)"
+                let message = "Authentication is unavailable on this device: \(detail)"
+                SDKLogger.error("Recovery: \(message)")
+                recoveryError = message
                 showDeletePrompt = true
                 return
             case .failed(let detail):
-                recoveryError = "Authorization failed: \(detail)"
+                let message = "Authorization failed: \(detail)"
+                SDKLogger.error("Recovery: \(message)")
+                recoveryError = message
                 showDeletePrompt = true
                 return
             }
@@ -322,6 +332,10 @@ struct ContentView: View {
             case .denied:
                 // Skip this one — user said no to this specific
                 // wallet — but keep going through the rest.
+                SDKLogger.log(
+                    "Recovery: user denied auth for \"\(entry.displayName)\"; skipping",
+                    minimumLevel: .medium
+                )
                 continue
             case .unavailable(let detail):
                 // Same shape as the shared-branch handler: surface
@@ -329,11 +343,15 @@ struct ContentView: View {
                 // so the user has a path forward instead of being
                 // left with stale orphans queued internally with
                 // no UI to act on them.
-                recoveryError = "Authentication is unavailable on this device: \(detail)"
+                let message = "Authentication is unavailable on this device: \(detail)"
+                SDKLogger.error("Recovery: \(message)")
+                recoveryError = message
                 showDeletePrompt = true
                 return
             case .failed(let detail):
-                perWalletFailures.append("\(entry.displayName): \(detail)")
+                let entryFailure = "\(entry.displayName): \(detail)"
+                SDKLogger.error("Recovery: auth failed — \(entryFailure)")
+                perWalletFailures.append(entryFailure)
                 continue
             }
         }
@@ -343,7 +361,9 @@ struct ContentView: View {
             let prefix = perWalletFailures.count == 1
                 ? "Recovery failed: "
                 : "Recovery failed for \(perWalletFailures.count) wallets:\n"
-            recoveryError = prefix + perWalletFailures.joined(separator: "\n")
+            let combined = prefix + perWalletFailures.joined(separator: "\n")
+            SDKLogger.error("Recovery: aggregated failures — \(combined)")
+            recoveryError = combined
         }
 
         // Drop the entries we just recreated. If the user skipped
