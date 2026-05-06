@@ -138,16 +138,26 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 .build()
                 .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
 
-            // Sanity-check that the builder only selected outpoints from
-            // the same height-aware spendable set we handed to input
-            // selection. We deliberately do NOT mark the inputs as spent here
-            // — that happens after a successful broadcast (see #3466 review).
-            // A failed broadcast must not leave UTXOs falsely marked spent.
+            // `select_inputs` is the only source of UTXOs for this builder,
+            // so `tx.input` outpoints must be a subset of the height-aware
+            // `spendable` set by the builder's contract. The check below is
+            // a defense-in-depth runtime guard for builder regressions;
+            // under normal operation this branch is unreachable. Inputs are
+            // not marked spent here either way — that happens after a
+            // successful broadcast (see #3466 review): a failed broadcast
+            // must not leave UTXOs falsely marked spent.
             let selected: BTreeSet<OutPoint> =
                 tx.input.iter().map(|txin| txin.previous_output).collect();
             let spendable_outpoints: BTreeSet<OutPoint> =
                 spendable.iter().map(|utxo| utxo.outpoint).collect();
             if !selected.is_subset(&spendable_outpoints) {
+                // INTENTIONAL(CMT-002): The `ConcurrentSpendConflict` variant
+                // is named and framed as user-retryable for forward
+                // compatibility. The current code path is only reachable on
+                // a builder-internal regression, but the typed variant is
+                // preserved so future work that surfaces real concurrent-spend
+                // conflicts (e.g. from cross-process wallets) can route
+                // through the same handler without an API churn.
                 return Err(PlatformWalletError::ConcurrentSpendConflict);
             }
 
