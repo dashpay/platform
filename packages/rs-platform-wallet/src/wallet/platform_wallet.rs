@@ -396,13 +396,14 @@ impl PlatformWallet {
     }
 
     /// Unshield: spend shielded notes and send `amount` credits to
-    /// the platform address `to_platform_addr_bytes` (bincode-
-    /// encoded `PlatformAddress` — `0x00 ‖ 20-byte hash` for
-    /// P2PKH, `0x01 ‖ 20-byte hash` for P2SH).
+    /// the platform address `to_platform_addr_bech32m` (a bech32m
+    /// string like `"dash1…"` / `"tdash1…"`). Parsed via
+    /// `PlatformAddress::from_bech32m_string` and verified against
+    /// the wallet's network.
     #[cfg(feature = "shielded")]
     pub async fn shielded_unshield_to<P: dpp::shielded::builder::OrchardProver>(
         &self,
-        to_platform_addr_bytes: &[u8],
+        to_platform_addr_bech32m: &str,
         amount: u64,
         prover: P,
     ) -> Result<(), PlatformWalletError> {
@@ -410,9 +411,19 @@ impl PlatformWallet {
         let shielded = guard
             .as_ref()
             .ok_or(PlatformWalletError::ShieldedNotBound)?;
-        let to = dpp::address_funds::PlatformAddress::from_bytes(to_platform_addr_bytes).map_err(
-            |e| PlatformWalletError::ShieldedBuildError(format!("invalid platform address: {e}")),
-        )?;
+        let (to, addr_network) =
+            dpp::address_funds::PlatformAddress::from_bech32m_string(to_platform_addr_bech32m)
+                .map_err(|e| {
+                    PlatformWalletError::ShieldedBuildError(format!(
+                        "invalid platform address: {e}"
+                    ))
+                })?;
+        if addr_network != self.sdk.network {
+            return Err(PlatformWalletError::ShieldedBuildError(format!(
+                "platform address network mismatch: address {addr_network:?}, wallet {:?}",
+                self.sdk.network
+            )));
+        }
         shielded.unshield(&to, amount, &prover).await
     }
 
@@ -545,15 +556,21 @@ impl PlatformWallet {
             // have balance > FEE_RESERVE so we can claim at least 1
             // credit while leaving the reserve untouched. Skip any
             // leading dust address that can't satisfy that — the
-            // next address up will become input 0 instead. (If
-            // every funded address is below the reserve, fall back
-            // to the smallest one so we still produce a valid
-            // builder input map; the network will reject it cleanly
-            // if the fee can't be covered.)
-            let viable_input_0 = candidates
+            // next address up will become input 0 instead. If
+            // every funded address is below the reserve, fail fast:
+            // the network would reject the broadcast on the
+            // boundary anyway, only after we've spent ~30 s
+            // building the Halo 2 proof.
+            let Some(viable_input_0) = candidates
                 .iter()
                 .position(|(_, balance)| *balance > FEE_RESERVE_CREDITS)
-                .unwrap_or(0);
+            else {
+                let total: u64 = candidates.iter().map(|(_, b)| b).sum();
+                return Err(PlatformWalletError::ShieldedInsufficientBalance {
+                    available: total,
+                    required: amount.saturating_add(FEE_RESERVE_CREDITS),
+                });
+            };
             let usable: &[(dpp::address_funds::PlatformAddress, u64)] =
                 &candidates[viable_input_0..];
 

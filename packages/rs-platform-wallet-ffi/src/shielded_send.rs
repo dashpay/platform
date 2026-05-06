@@ -38,18 +38,20 @@ use crate::error::*;
 use crate::handle::*;
 use crate::runtime::{block_on_worker, runtime};
 
-/// Build the Halo 2 proving key now if it hasn't been built yet.
-///
-/// First-call latency is ~30 seconds; subsequent calls return
-/// immediately. Hosts should fire this on a background thread at
-/// app startup so the first shielded send doesn't block the user.
-/// Safe to call repeatedly and from any thread.
+/// Kick off the Halo 2 proving-key build on a background tokio
+/// worker if it hasn't been built yet. Returns immediately —
+/// hosts can call this at app startup without blocking the UI
+/// thread. Subsequent calls are cheap no-ops once the key is
+/// cached. The first shielded send still pays the ~30 s build
+/// cost only if it fires before the warm-up worker finishes;
+/// `platform_wallet_shielded_prover_is_ready` reports whether
+/// that's the case.
 ///
 /// Independent of any manager — the cache is a process-global
 /// `OnceLock`.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_shielded_warm_up_prover() {
-    CachedOrchardProver::new().warm_up();
+    runtime().spawn_blocking(|| CachedOrchardProver::new().warm_up());
 }
 
 /// Whether the Halo 2 proving key has already been built.
@@ -119,35 +121,39 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_transfer(
 /// Unshield: spend shielded notes and send `amount` credits to a
 /// platform address.
 ///
-/// `to_platform_addr_bytes` is the bincode-encoded
-/// `PlatformAddress` — `0x00 ‖ 20-byte hash` for P2PKH,
-/// `0x01 ‖ 20-byte hash` for P2SH. `to_platform_addr_len` is
-/// typically 21.
+/// `to_platform_addr_cstr` is the recipient as a NUL-terminated
+/// UTF-8 bech32m string (e.g. `"dash1..."` on mainnet,
+/// `"tdash1..."` on testnet). The Rust side parses it via
+/// `PlatformAddress::from_bech32m_string` so hosts don't have to
+/// hand-roll the bincode storage variant tag (`0x00`/`0x01`),
+/// which differs from the bech32m payload's type byte
+/// (`0xb0`/`0x80`).
 ///
 /// # Safety
 /// - `wallet_id_bytes` must point to 32 readable bytes.
-/// - `to_platform_addr_bytes` must point to `to_platform_addr_len`
-///   readable bytes.
+/// - `to_platform_addr_cstr` must be a valid NUL-terminated UTF-8
+///   C string for the duration of the call.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_shielded_unshield(
     handle: Handle,
     wallet_id_bytes: *const u8,
-    to_platform_addr_bytes: *const u8,
-    to_platform_addr_len: usize,
+    to_platform_addr_cstr: *const c_char,
     amount: u64,
 ) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id_bytes);
-    check_ptr!(to_platform_addr_bytes);
-    if to_platform_addr_len == 0 {
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorInvalidParameter,
-            "to_platform_addr_len must be > 0",
-        );
-    }
+    check_ptr!(to_platform_addr_cstr);
 
     let mut wallet_id = [0u8; 32];
     std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
-    let to_addr = std::slice::from_raw_parts(to_platform_addr_bytes, to_platform_addr_len).to_vec();
+    let to_addr_str = match CStr::from_ptr(to_platform_addr_cstr).to_str() {
+        Ok(s) => s.to_string(),
+        Err(e) => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorUtf8Conversion,
+                format!("to_platform_addr is not valid UTF-8: {e}"),
+            );
+        }
+    };
 
     let wallet = match resolve_wallet(handle, &wallet_id) {
         Ok(w) => w,
@@ -156,7 +162,9 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_unshield(
 
     let result = block_on_worker(async move {
         let prover = CachedOrchardProver::new();
-        wallet.shielded_unshield_to(&to_addr, amount, &prover).await
+        wallet
+            .shielded_unshield_to(&to_addr_str, amount, &prover)
+            .await
     });
     if let Err(e) = result {
         return PlatformWalletFFIResult::err(

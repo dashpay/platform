@@ -218,7 +218,8 @@ class SendViewModel: ObservableObject {
                     error = "Invalid amount"
                     return
                 }
-                let parsed = DashAddress.parse(recipientAddress, network: network)
+                let trimmed = recipientAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+                let parsed = DashAddress.parse(trimmed, network: network)
                 guard case .orchard(let recipientRaw) = parsed.type else {
                     error = "Recipient is not a shielded address"
                     return
@@ -232,19 +233,18 @@ class SendViewModel: ObservableObject {
 
             case .shieldedToPlatform:
                 // Shielded → Platform: spend notes, credit the
-                // platform address (also credits scale).
+                // platform address (also credits scale). The
+                // bech32m string is forwarded as-is — Rust parses
+                // it via `PlatformAddress::from_bech32m_string`
+                // and verifies the network.
                 guard let amountCredits else {
                     error = "Invalid amount"
                     return
                 }
-                let parsed = DashAddress.parse(recipientAddress, network: network)
-                guard case .platform(let addressBytes) = parsed.type else {
-                    error = "Recipient is not a platform address"
-                    return
-                }
+                let trimmed = recipientAddress.trimmingCharacters(in: .whitespacesAndNewlines)
                 try await walletManager.shieldedUnshield(
                     walletId: wallet.walletId,
-                    toPlatformAddress: addressBytes,
+                    toPlatformAddress: trimmed,
                     amount: amountCredits
                 )
                 successMessage = "Unshield complete"

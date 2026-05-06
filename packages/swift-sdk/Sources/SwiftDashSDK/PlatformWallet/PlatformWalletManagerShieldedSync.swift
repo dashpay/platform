@@ -353,12 +353,13 @@ extension PlatformWalletManager {
     }
 
     /// Shielded → Platform unshield. Spends notes from `walletId`'s
-    /// shielded balance and credits the platform address
-    /// `toPlatformAddress` (bincode-encoded `PlatformAddress` —
-    /// `0x00 ‖ 20-byte hash` for P2PKH).
+    /// shielded balance and credits `toPlatformAddress`, a bech32m
+    /// string (`"dash1…"` on mainnet, `"tdash1…"` on testnet). Rust
+    /// parses and network-checks the address; hosts don't have to
+    /// hand-roll the bincode storage variant tag.
     public func shieldedUnshield(
         walletId: Data,
-        toPlatformAddress: Data,
+        toPlatformAddress: String,
         amount: UInt64
     ) async throws {
         guard isConfigured, handle != NULL_HANDLE else {
@@ -384,16 +385,9 @@ extension PlatformWalletManager {
                 else {
                     throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
                 }
-                try toPlatformAddress.withUnsafeBytes { addrRaw in
-                    guard let addrPtr = addrRaw.baseAddress?
-                        .assumingMemoryBound(to: UInt8.self)
-                    else {
-                        throw PlatformWalletError.invalidParameter(
-                            "toPlatformAddress baseAddress is nil"
-                        )
-                    }
+                try toPlatformAddress.withCString { addrCStr in
                     try platform_wallet_manager_shielded_unshield(
-                        handle, widPtr, addrPtr, UInt(toPlatformAddress.count), amount
+                        handle, widPtr, addrCStr, amount
                     ).check()
                 }
             }

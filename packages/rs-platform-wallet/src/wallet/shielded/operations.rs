@@ -67,22 +67,22 @@ fn addresses_not_enough_funds(
 }
 
 /// Format a one-line `addresses_with_info` summary for diagnostics —
-/// each entry rendered as `<base58_addr>=(nonce <n>, <c> credits)`.
+/// each entry rendered as `<bech32m_addr>=(nonce <n>, <c> credits)`,
+/// matching what the wallet UI shows so the same string can be used
+/// to grep logs for a specific address.
 fn format_addresses_with_info(
     map: &std::collections::BTreeMap<
         dpp::address_funds::PlatformAddress,
         (dpp::prelude::AddressNonce, dpp::fee::Credits),
     >,
+    network: key_wallet::Network,
 ) -> String {
     map.iter()
         .map(|(addr, (nonce, credits))| {
-            let hex_hash = match addr {
-                dpp::address_funds::PlatformAddress::P2pkh(h) => {
-                    format!("p2pkh:{}", hex::encode(h))
-                }
-                dpp::address_funds::PlatformAddress::P2sh(h) => format!("p2sh:{}", hex::encode(h)),
-            };
-            format!("{hex_hash}=(nonce {nonce}, {credits} credits)")
+            format!(
+                "{}=(nonce {nonce}, {credits} credits)",
+                addr.to_bech32m_string(network)
+            )
         })
         .collect::<Vec<_>>()
         .join(", ")
@@ -164,7 +164,19 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
                     "Shield input"
                 );
             }
-            inputs_with_nonce.insert(addr, (info.nonce + 1, credits));
+            // `AddressNonce` is `u32`; `info.nonce + 1` would panic in
+            // debug and wrap in release once an address reaches the
+            // ceiling. drive-abci treats `u32::MAX` as exhausted, so a
+            // wrap submits nonce 0 and gets rejected as a replay
+            // *after* the wallet has already spent ~30 s building the
+            // Halo 2 proof. Bail loudly here instead.
+            let next_nonce = info.nonce.checked_add(1).ok_or_else(|| {
+                PlatformWalletError::ShieldedBuildError(format!(
+                    "input address nonce exhausted on platform: {:?}",
+                    addr
+                ))
+            })?;
+            inputs_with_nonce.insert(addr, (next_nonce, credits));
         }
 
         let fee_strategy: AddressFundsFeeStrategy =
@@ -198,6 +210,7 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
 
         // Broadcast
         trace!("Shield credits: state transition built, broadcasting...");
+        let network = self.sdk.network;
         state_transition
             .broadcast(&self.sdk, None)
             .await
@@ -206,11 +219,10 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
                     let claimed = claimed_inputs
                         .iter()
                         .map(|(addr, (nonce, credits))| {
-                            let h = match addr {
-                                PlatformAddress::P2pkh(h) => format!("p2pkh:{}", hex::encode(h)),
-                                PlatformAddress::P2sh(h) => format!("p2sh:{}", hex::encode(h)),
-                            };
-                            format!("{h}=(nonce {nonce}, {credits} credits)")
+                            format!(
+                                "{}=(nonce {nonce}, {credits} credits)",
+                                addr.to_bech32m_string(network)
+                            )
                         })
                         .collect::<Vec<_>>()
                         .join(", ");
@@ -219,7 +231,7 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
                          claimed inputs [{}]; platform sees [{}]",
                         rich.required_balance(),
                         claimed,
-                        format_addresses_with_info(rich.addresses_with_info()),
+                        format_addresses_with_info(rich.addresses_with_info(), network),
                     ))
                 } else {
                     PlatformWalletError::ShieldedBroadcastFailed(e.to_string())
