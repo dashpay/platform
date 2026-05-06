@@ -72,9 +72,14 @@ pub const DEFAULT_MAX_SUPPLY: TokenAmount = 1_000_000_000_000_000;
 /// Default TK-NNN decimals (8, mirrors DET).
 pub const DEFAULT_DECIMALS: u8 = 8;
 
-/// Default per-identity funding for TK setup helpers — covers
-/// contract-create + a few state transitions with headroom.
-pub const DEFAULT_TK_FUNDING: dpp::fee::Credits = 1_000_000_000;
+/// Default per-identity funding for TK setup helpers — covers the
+/// token contract-create fee floor (~20 B credits for permissive
+/// owner-only contracts, ~30 B for the pre-programmed-distribution
+/// path) plus a few follow-up state transitions with headroom. The
+/// previous 1 B value undershot the chain-side floor and made every
+/// TK case fail at setup with `Insufficient identity ... balance
+/// 1000000000 required 20000100000`.
+pub const DEFAULT_TK_FUNDING: dpp::fee::Credits = 35_000_100_000;
 
 /// Pre-programmed distribution rule passed to
 /// [`setup_with_token_pre_programmed_distribution`].
