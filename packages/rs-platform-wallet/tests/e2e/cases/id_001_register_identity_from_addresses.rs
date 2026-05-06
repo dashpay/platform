@@ -104,8 +104,8 @@ async fn id_001_register_identity_from_addresses() {
     );
     assert_eq!(
         on_chain.public_keys().len(),
-        3,
-        "registered identity must carry exactly three keys (MASTER + HIGH + TRANSFER)"
+        4,
+        "registered identity must carry exactly four keys (MASTER + HIGH + TRANSFER + CRITICAL)"
     );
     assert!(
         on_chain.balance() >= IDENTITY_BALANCE_FLOOR,
