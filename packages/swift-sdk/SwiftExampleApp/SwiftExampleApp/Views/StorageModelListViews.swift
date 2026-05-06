@@ -1631,3 +1631,182 @@ struct WalletManagerMetadataStorageListView: View {
         .overlay { if visible.isEmpty { ContentUnavailableView("No Records", systemImage: "gearshape.2") } }
     }
 }
+
+// MARK: - PersistentShieldedNote
+
+/// Filter enum local to this view — mirrors the private one
+/// inside `TxoStorageListView`. Both views need the same
+/// "all / unspent / spent" segmented control; duplicating two
+/// lines beats hoisting the private type to file scope and
+/// touching the existing TXO view.
+private enum ShieldedSpentFilter: CaseIterable, Hashable {
+    case all, unspent, spent
+
+    var title: String {
+        switch self {
+        case .all: return "All"
+        case .unspent: return "Unspent"
+        case .spent: return "Spent"
+        }
+    }
+}
+
+/// Read-only browser for the per-(wallet, account) decrypted
+/// shielded notes the persister mirrors out of
+/// `ShieldedChangeSet`. Scoped by the active network via the
+/// denormalized `walletId` column on each row — same trick
+/// `TxoStorageListView` uses.
+struct ShieldedNoteStorageListView: View {
+    let network: Network
+
+    /// Sort by block height (newest first), then position so
+    /// rows from the same block stay deterministic.
+    @Query(
+        sort: [
+            SortDescriptor(\PersistentShieldedNote.blockHeight, order: .reverse),
+            SortDescriptor(\PersistentShieldedNote.position),
+        ]
+    )
+    private var records: [PersistentShieldedNote]
+
+    @Query private var allWallets: [PersistentWallet]
+
+    private var walletIdsOnNetwork: Set<Data> {
+        Set(allWallets.lazy
+            .filter { $0.networkRaw == network.rawValue }
+            .map(\.walletId))
+    }
+
+    private var scopedRecords: [PersistentShieldedNote] {
+        let ids = walletIdsOnNetwork
+        return records.filter { ids.contains($0.walletId) }
+    }
+
+    @State private var filter: ShieldedSpentFilter = .all
+
+    private var filteredRecords: [PersistentShieldedNote] {
+        let scoped = scopedRecords
+        switch filter {
+        case .all: return scoped
+        case .unspent: return scoped.filter { !$0.isSpent }
+        case .spent: return scoped.filter { $0.isSpent }
+        }
+    }
+
+    var body: some View {
+        let scoped = scopedRecords
+        let visible = filteredRecords
+        List {
+            Section {
+                Picker("Filter", selection: $filter) {
+                    ForEach(ShieldedSpentFilter.allCases, id: \.self) { f in
+                        Text(f.title).tag(f)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+            if !scoped.isEmpty && visible.isEmpty {
+                Section {
+                    ContentUnavailableView(
+                        "No \(filter.title) Notes",
+                        systemImage: "lock.shield"
+                    )
+                }
+            }
+            ForEach(visible) { record in
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Text("acct \(record.accountIndex)")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Text("pos \(record.position)")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        if record.blockHeight > 0 {
+                            Text("h \(record.blockHeight)")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        if record.isSpent {
+                            Text("spent")
+                                .font(.caption2)
+                                .foregroundColor(.red)
+                        }
+                    }
+                    Text("\(record.value) credits")
+                        .font(.caption)
+                    Text(record.nullifier.prefix(8).map { String(format: "%02x", $0) }.joined())
+                        .font(.system(.caption2, design: .monospaced))
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+        .navigationTitle("Shielded Notes (\(visible.count))")
+        .overlay {
+            if visible.isEmpty {
+                ContentUnavailableView("No Notes", systemImage: "lock.shield")
+            }
+        }
+    }
+}
+
+// MARK: - PersistentShieldedSyncState
+
+struct ShieldedSyncStateStorageListView: View {
+    let network: Network
+
+    // SwiftData's `SortDescriptor` doesn't accept `Data` fields
+    // (Data isn't Comparable), so sort only by `accountIndex`
+    // and let the wallet-id grouping fall out of insertion
+    // order — there are at most a handful of rows per device.
+    @Query(sort: [SortDescriptor(\PersistentShieldedSyncState.accountIndex)])
+    private var records: [PersistentShieldedSyncState]
+
+    @Query private var allWallets: [PersistentWallet]
+
+    private var walletIdsOnNetwork: Set<Data> {
+        Set(allWallets.lazy
+            .filter { $0.networkRaw == network.rawValue }
+            .map(\.walletId))
+    }
+
+    private var scopedRecords: [PersistentShieldedSyncState] {
+        let ids = walletIdsOnNetwork
+        return records.filter { ids.contains($0.walletId) }
+    }
+
+    var body: some View {
+        let visible = scopedRecords
+        List {
+            ForEach(visible) { record in
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text(
+                            record.walletId.prefix(4)
+                                .map { String(format: "%02x", $0) }.joined()
+                        )
+                        .font(.system(.caption2, design: .monospaced))
+                        Text("acct \(record.accountIndex)")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                    }
+                    Text("synced index: \(record.lastSyncedIndex)")
+                        .font(.caption)
+                    if record.hasNullifierCheckpoint {
+                        Text("nf: h \(record.nullifierCheckpointHeight) · ts \(record.nullifierCheckpointTimestamp)")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+        }
+        .navigationTitle("Shielded Sync State (\(visible.count))")
+        .overlay {
+            if visible.isEmpty {
+                ContentUnavailableView("No Sync States", systemImage: "arrow.triangle.2.circlepath")
+            }
+        }
+    }
+}
