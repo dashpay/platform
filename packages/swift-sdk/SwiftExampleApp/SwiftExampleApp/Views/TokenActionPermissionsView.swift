@@ -665,6 +665,16 @@ struct TokenActionPermissionsView: View {
     /// refresh and reject any late assignment whose generation no
     /// longer matches.
     @State private var balanceFetchGeneration: Int = 0
+    /// Tracks which identity the current `fetchedBalance` belongs
+    /// to. The previous unconditional `fetchedBalance = nil` at the
+    /// top of every refresh wiped the parent-supplied
+    /// `initialBalance` before the async fetch returned and lost it
+    /// permanently on a failed fetch. Comparing against this marker
+    /// lets us only clear when the user has *actually* switched
+    /// identities — the case the clear was originally meant to guard
+    /// against. The `balanceFetchGeneration` counter still handles
+    /// the A→B→A overwrite race independently.
+    @State private var lastFetchedBalanceIdentityId: Data?
     /// Mirrors `balanceFetchGeneration` for the on-chain pause-flag
     /// reconciliation. Today the status `.task` only runs once per
     /// view appearance, so a slow response can't be raced by a
@@ -687,6 +697,12 @@ struct TokenActionPermissionsView: View {
         self.initialIdentity = identity
         self._pickedIdentity = State(initialValue: identity)
         self._fetchedBalance = State(initialValue: initialBalance)
+        // Seed the identity marker only when the parent gave us an
+        // `initialBalance` to seed from — otherwise the first refresh
+        // has nothing worth preserving and should clear normally.
+        self._lastFetchedBalanceIdentityId = State(
+            initialValue: initialBalance != nil ? identity?.identityId : nil
+        )
         // Filter to wallet-owned identities on the same network as
         // this token's parent contract; falls back to "any
         // wallet-owned" if the contract isn't loaded.
@@ -840,10 +856,18 @@ struct TokenActionPermissionsView: View {
         balanceFetchGeneration &+= 1
         let gen = balanceFetchGeneration
 
-        // Drop any stale value first so a slow / failed lookup can't
-        // forward the *previous* identity's balance into Transfer or
-        // Burn while the new fetch is in flight.
-        await MainActor.run { self.fetchedBalance = nil }
+        let currentIdentityId = resolvedIdentity?.identityId
+
+        // Only drop the seeded/previous balance when the active
+        // identity actually changed. The previous unconditional
+        // clear wiped the parent-supplied `initialBalance` before
+        // the async fetch returned and lost it permanently on a
+        // failed fetch. The `balanceFetchGeneration` counter below
+        // still guards the A→B→A overwrite race that motivated the
+        // original clear.
+        if currentIdentityId != lastFetchedBalanceIdentityId {
+            await MainActor.run { self.fetchedBalance = nil }
+        }
 
         guard let identity = resolvedIdentity, let sdk = appState.sdk else {
             return
@@ -874,6 +898,9 @@ struct TokenActionPermissionsView: View {
                 // Default missing entries to 0 — the SDK omits tokens
                 // the identity has never held.
                 self.fetchedBalance = balances[canonicalTokenId] ?? 0
+                // Stamp the marker so the next refresh on the same
+                // identity skips the clear-on-entry branch.
+                self.lastFetchedBalanceIdentityId = currentIdentityId
             }
         } catch {
             // Was previously a silent `catch { }`. Surface as a dev
