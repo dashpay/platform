@@ -35,7 +35,12 @@ impl Default for ResourceVote {
     }
 }
 
-#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
 mod json_convertible_tests_resource_vote {
     use super::*;
     use crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;

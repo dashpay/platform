@@ -100,10 +100,7 @@ mod outpoint_serde {
                     self.visit_bytes(&v)
                 }
 
-                fn visit_seq<A: SeqAccess<'de>>(
-                    self,
-                    mut seq: A,
-                ) -> Result<Self::Value, A::Error> {
+                fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
                     let mut arr = [0u8; 32];
                     for (i, slot) in arr.iter_mut().enumerate() {
                         *slot = seq
@@ -122,7 +119,9 @@ mod outpoint_serde {
             if deserializer.is_human_readable() {
                 deserializer.deserialize_any(TxidVisitor).map(TxidCompat)
             } else {
-                deserializer.deserialize_byte_buf(TxidVisitor).map(TxidCompat)
+                deserializer
+                    .deserialize_byte_buf(TxidVisitor)
+                    .map(TxidCompat)
             }
         }
     }
@@ -178,11 +177,7 @@ mod outpoint_serde {
             deserializer.deserialize_any(OutPointVisitor)
         } else {
             // Non-HR (bincode): the wire shape is `{txid, vout}` struct.
-            deserializer.deserialize_struct(
-                "OutPoint",
-                &["txid", "vout"],
-                OutPointVisitor,
-            )
+            deserializer.deserialize_struct("OutPoint", &["txid", "vout"], OutPointVisitor)
         }
     }
 }
@@ -268,7 +263,12 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
 mod json_convertible_tests {
     use super::*;
     use dashcore::hashes::Hash;
@@ -345,10 +345,9 @@ mod json_convertible_tests {
 
         // Sanity check that the byte-array matches the real Txid bytes (so
         // any future flip in dashcore's byte-order convention fails loud).
-        let txid_from_str = Txid::from_str(
-            "0000000000000000000000000000000000000000000000000000000000000001",
-        )
-        .unwrap();
+        let txid_from_str =
+            Txid::from_str("0000000000000000000000000000000000000000000000000000000000000001")
+                .unwrap();
         assert_eq!(txid_from_str.as_byte_array(), &raw);
     }
 }

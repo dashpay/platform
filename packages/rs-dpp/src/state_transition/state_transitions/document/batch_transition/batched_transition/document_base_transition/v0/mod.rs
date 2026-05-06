@@ -26,6 +26,10 @@ use crate::state_transition::batch_transition::document_base_transition::propert
 use crate::{data_contract::DataContract, errors::ProtocolError};
 
 #[derive(Debug, Clone, Encode, Decode, Default, PartialEq, Display)]
+// `json_safe_fields` auto-injects `crate::serialization::json_safe_u64` on
+// `identity_contract_nonce: IdentityNonce` (= u64). Large nonces serialize
+// as JSON strings to avoid JS Number precision loss; native u64 in non-HR.
+#[cfg_attr(feature = "json-conversion", crate::serialization::json_safe_fields)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

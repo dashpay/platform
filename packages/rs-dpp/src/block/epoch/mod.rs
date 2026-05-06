@@ -121,8 +121,12 @@ impl crate::serialization::JsonConvertible for Epoch {}
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
 impl crate::serialization::ValueConvertible for Epoch {}
 
-
-#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
 mod json_convertible_tests_epoch {
     use super::*;
     use platform_value::platform_value;

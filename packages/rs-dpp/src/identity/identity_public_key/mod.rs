@@ -62,7 +62,12 @@ pub enum IdentityPublicKey {
 #[cfg(feature = "json-conversion")]
 impl JsonConvertible for IdentityPublicKey {}
 
-#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
 mod json_convertible_tests {
     use super::*;
     use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -642,4 +647,3 @@ mod random_tests {
         assert_eq!(k.contract_bounds(), Some(&bounds));
     }
 }
-

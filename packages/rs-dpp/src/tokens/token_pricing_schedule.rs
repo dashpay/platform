@@ -82,7 +82,12 @@ impl Display for TokenPricingSchedule {
     }
 }
 
-#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
 mod json_convertible_tests {
     use super::*;
     use platform_value::{platform_value, Value};
@@ -112,10 +117,7 @@ mod json_convertible_tests {
         let json = original.to_json().expect("to_json");
         // JSON object keys must be strings — `serde_json` stringifies the
         // u64 amount keys.
-        assert_eq!(
-            json,
-            json!({ "SetPrices": { "5": 50, "10": 80 } })
-        );
+        assert_eq!(json, json!({ "SetPrices": { "5": 50, "10": 80 } }));
         let recovered = TokenPricingSchedule::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
     }
@@ -126,10 +128,7 @@ mod json_convertible_tests {
         let original = TokenPricingSchedule::SinglePrice(1234);
         let value = original.to_object().expect("to_object");
         // `Credits` is `u64` → `Value::U64`.
-        assert_eq!(
-            value,
-            platform_value!({ "SinglePrice": 1234u64 })
-        );
+        assert_eq!(value, platform_value!({ "SinglePrice": 1234u64 }));
         let recovered = TokenPricingSchedule::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
     }

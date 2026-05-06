@@ -76,7 +76,12 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
 mod json_convertible_tests_tokenstatus {
     use super::*;
     use crate::tokens::status::v0::TokenStatusV0;
@@ -105,7 +110,10 @@ mod json_convertible_tests_tokenstatus {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
-        assert_eq!(value, platform_value!({"$formatVersion": "0", "paused": true}));
+        assert_eq!(
+            value,
+            platform_value!({"$formatVersion": "0", "paused": true})
+        );
         let recovered = TokenStatus::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
     }

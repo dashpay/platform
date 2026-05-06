@@ -70,7 +70,12 @@ impl crate::serialization::JsonConvertible for BatchedTransition {}
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
 impl crate::serialization::ValueConvertible for BatchedTransition {}
 
-#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
 pub(crate) mod json_convertible_tests {
     use super::*;
     use crate::state_transition::batch_transition::batched_transition::{
@@ -103,9 +108,7 @@ pub(crate) mod json_convertible_tests {
         let value_map = value.as_map().expect("value map");
         let type_kv = value_map
             .iter()
-            .find(|(k, _)| {
-                matches!(k, platform_value::Value::Text(s) if s == "type")
-            })
+            .find(|(k, _)| matches!(k, platform_value::Value::Text(s) if s == "type"))
             .expect("type key present");
         assert_eq!(
             type_kv.1,
@@ -126,8 +129,7 @@ pub(crate) mod json_convertible_tests {
 
     #[test]
     fn umbrella_token() {
-        let inner =
-            TokenTransition::Burn(token_burn_transition::json_convertible_tests::fixture());
+        let inner = TokenTransition::Burn(token_burn_transition::json_convertible_tests::fixture());
         assert_umbrella_round_trip(BatchedTransition::Token(inner), "token");
     }
 }

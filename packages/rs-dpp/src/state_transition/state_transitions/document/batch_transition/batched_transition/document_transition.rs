@@ -49,7 +49,12 @@ impl crate::serialization::JsonConvertible for DocumentTransition {}
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
 impl crate::serialization::ValueConvertible for DocumentTransition {}
 
-#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
 pub(crate) mod json_convertible_tests {
     use super::*;
     use crate::state_transition::batch_transition::batched_transition::{
@@ -81,9 +86,7 @@ pub(crate) mod json_convertible_tests {
         let value_map = value.as_map().expect("value map");
         let type_kv = value_map
             .iter()
-            .find(|(k, _)| {
-                matches!(k, platform_value::Value::Text(s) if s == "type")
-            })
+            .find(|(k, _)| matches!(k, platform_value::Value::Text(s) if s == "type"))
             .expect("type key present");
         assert_eq!(
             type_kv.1,
@@ -97,7 +100,9 @@ pub(crate) mod json_convertible_tests {
     #[test]
     fn umbrella_create() {
         assert_umbrella_round_trip(
-            DocumentTransition::Create(document_create_transition::json_convertible_tests::fixture()),
+            DocumentTransition::Create(
+                document_create_transition::json_convertible_tests::fixture(),
+            ),
             "create",
         );
     }
@@ -115,7 +120,9 @@ pub(crate) mod json_convertible_tests {
     #[test]
     fn umbrella_delete() {
         assert_umbrella_round_trip(
-            DocumentTransition::Delete(document_delete_transition::json_convertible_tests::fixture()),
+            DocumentTransition::Delete(
+                document_delete_transition::json_convertible_tests::fixture(),
+            ),
             "delete",
         );
     }

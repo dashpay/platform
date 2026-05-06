@@ -431,7 +431,12 @@ mod test {
     }
 }
 
-#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
 pub(crate) mod json_convertible_tests {
     use super::*;
     use crate::state_transition::data_contract_create_transition::v0::DataContractCreateTransitionV0;
@@ -536,8 +541,8 @@ pub(crate) mod json_convertible_tests {
             )
         );
         assert!(has_data_contract, "dataContract slot must be a Value::Map");
-        let recovered =
-            <DataContractCreateTransition as ValueConvertible>::from_object(value).expect("from_object");
+        let recovered = <DataContractCreateTransition as ValueConvertible>::from_object(value)
+            .expect("from_object");
         assert_eq!(original, recovered);
     }
 }

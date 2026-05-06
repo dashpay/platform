@@ -31,7 +31,12 @@ impl fmt::Display for TokenMarketplaceRules {
     }
 }
 
-#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
 mod json_convertible_tests {
     use super::*;
     use crate::data_contract::associated_token::token_marketplace_rules::v0::{

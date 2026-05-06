@@ -215,6 +215,103 @@ pub mod json_safe_option_i64 {
     }
 }
 
+/// Serde `with` module for `Option<(String, u64)>` fields.
+///
+/// Used by `DocumentCreateTransitionV0::prefunded_voting_balance`. The
+/// `json_safe_fields` macro can't auto-inject on tuple-inside-Option fields,
+/// so this is added explicitly via `serde(with = ...)`. JS-safety semantics
+/// match `json_safe_u64`: large u64 values become strings in HR; non-HR
+/// keeps native u64.
+pub mod json_safe_option_string_u64_tuple {
+    use serde::de::{self, Deserializer, SeqAccess, Visitor};
+    use serde::ser::{SerializeTuple, Serializer};
+
+    pub fn serialize<S: Serializer>(
+        value: &Option<(String, u64)>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        match value {
+            Some((s, n)) => {
+                let stringify = serializer.is_human_readable() && *n > super::JS_MAX_SAFE_INTEGER;
+                let mut tup = serializer.serialize_tuple(2)?;
+                tup.serialize_element(s)?;
+                if stringify {
+                    tup.serialize_element(&n.to_string())?;
+                } else {
+                    tup.serialize_element(n)?;
+                }
+                tup.end()
+            }
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<(String, u64)>, D::Error> {
+        deserializer.deserialize_option(OptStringU64TupleVisitor)
+    }
+
+    struct OptStringU64TupleVisitor;
+
+    impl<'de> Visitor<'de> for OptStringU64TupleVisitor {
+        type Value = Option<(String, u64)>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("null or a 2-tuple [String, u64-or-string]")
+        }
+
+        fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_some<D: Deserializer<'de>>(
+            self,
+            deserializer: D,
+        ) -> Result<Self::Value, D::Error> {
+            deserializer
+                .deserialize_tuple(2, StringU64TupleVisitor)
+                .map(Some)
+        }
+
+        // Some self-describing formats (serde_json with deserialize_any) call
+        // visit_seq directly when the wire shape is an array — accept that too.
+        fn visit_seq<A: SeqAccess<'de>>(self, seq: A) -> Result<Self::Value, A::Error> {
+            StringU64TupleVisitor.visit_seq(seq).map(Some)
+        }
+    }
+
+    /// Newtype wrapper that delegates u64 deserialization to `json_safe_u64`,
+    /// accepting both numbers and strings in HR.
+    #[derive(serde::Deserialize)]
+    #[serde(transparent)]
+    struct SafeU64(#[serde(with = "super::json_safe_u64")] u64);
+
+    struct StringU64TupleVisitor;
+
+    impl<'de> Visitor<'de> for StringU64TupleVisitor {
+        type Value = (String, u64);
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a 2-tuple [String, u64-or-string]")
+        }
+
+        fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+            let s: String = seq
+                .next_element()?
+                .ok_or_else(|| de::Error::invalid_length(0, &"a 2-tuple"))?;
+            let n: SafeU64 = seq
+                .next_element()?
+                .ok_or_else(|| de::Error::invalid_length(1, &"a 2-tuple"))?;
+            Ok((s, n.0))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

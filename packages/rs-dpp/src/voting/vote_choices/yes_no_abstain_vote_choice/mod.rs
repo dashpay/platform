@@ -22,8 +22,12 @@ impl crate::serialization::JsonConvertible for YesNoAbstainVoteChoice {}
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
 impl crate::serialization::ValueConvertible for YesNoAbstainVoteChoice {}
 
-
-#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
 mod json_convertible_tests_yesnoabstainvotechoice {
     use super::*;
     use platform_value::platform_value;

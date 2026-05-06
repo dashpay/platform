@@ -178,29 +178,33 @@ pub(crate) mod json_convertible_tests {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
-        let entropy_vec: Vec<u8> = vec![0xab; 32];
-        // Internally tagged outer (`tag = "$formatVersion"`); inner `base`
-        // is a non-flattened nested object (`DocumentBaseTransition`), itself
-        // internally tagged with `$formatVersion`. `$entropy` is a
-        // `[u8; 32]` -> JSON renders it as an array of numbers (no base64
-        // envelope). `$identityContractNonce` is `u64`; JSON has only one
-        // number type, so the size is erased. `data: BTreeMap<String, Value>`
-        // is `#[serde(flatten)]` -> the map's keys become top-level (e.g.
-        // `name`). `$prefundedVotingBalance` is `Option<(String, u64)>` and
-        // serializes as a 2-element JSON array.
+        // Outer leaf wrapper: `tag = "$formatVersion"`. Flattened
+        // `DocumentBaseTransition`: `tag = "$baseFormatVersion"`. Both
+        // discriminators sit at the top level (no envelope nesting).
+        // `$entropy: [u8; 32]` is auto-injected with `serde_bytes` by
+        // `#[json_safe_fields]` on the V0 struct -> base64 string in JSON
+        // (matches shielded transitions' byte-field convention, NOT a JSON
+        // array of numbers as before). `$identityContractNonce: u64` (=
+        // IdentityNonce) goes through `json_safe_u64`: small values stay
+        // as numbers; values above `MAX_SAFE_INTEGER` (2^53 - 1) become
+        // strings to avoid JS Number precision loss. The `data:
+        // BTreeMap<String, Value>` flatten promotes its keys to the top
+        // level (`name`). `$prefundedVotingBalance: Option<(String, u64)>`
+        // uses the explicit `json_safe_option_string_u64_tuple` helper —
+        // 2-element JSON array, with the u64 stringified when above the
+        // safe-integer threshold.
         assert_eq!(
             json,
             json!({
                 "$formatVersion": "0",
                 "$baseFormatVersion": "0",
-                        "$id": Identifier::new([0xc1; 32]),
-                        "$identityContractNonce": 11,
-                        "$type": "post",
-                        "$dataContractId": Identifier::new([0xd2; 32]),
-
-                    "$entropy": entropy_vec,
-                    "name": "alice",
-                    "$prefundedVotingBalance": ["uniqueName", 50_000],
+                "$id": Identifier::new([0xc1; 32]),
+                "$identityContractNonce": 11,
+                "$type": "post",
+                "$dataContractId": Identifier::new([0xd2; 32]),
+                "$entropy": "q6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6s=",
+                "name": "alice",
+                "$prefundedVotingBalance": ["uniqueName", 50_000],
             })
         );
         let recovered = DocumentCreateTransition::from_json(json).expect("from_json");
@@ -212,25 +216,23 @@ pub(crate) mod json_convertible_tests {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
-        let entropy: [u8; 32] = [0xab; 32];
         // `11u64`: `IdentityNonce` is a `u64` alias; explicit suffix locks in
-        // the sized `Value::U64`. `[u8; 32]`: each element preserved as
-        // `Value::U8` via the platform_value! array path. `50_000u64`:
-        // `Credits` is a `u64` alias. `Identifier`s interpolate via
-        // `Serialize` -> `Value::Identifier`.
+        // the sized `Value::U64`. `[u8; 32]` via `serde_bytes` (auto-injected
+        // by `json_safe_fields`) → `Value::Bytes32` in non-HR (NOT
+        // `Array<U8>`). `50_000u64`: `Credits` is a `u64` alias.
+        // `Identifier`s interpolate via `Serialize` → `Value::Identifier`.
         assert_eq!(
             value,
             platform_value!({
                 "$formatVersion": "0",
                 "$baseFormatVersion": "0",
-                        "$id": Identifier::new([0xc1; 32]),
-                        "$identityContractNonce": 11u64,
-                        "$type": "post",
-                        "$dataContractId": Identifier::new([0xd2; 32]),
-
-                    "$entropy": entropy,
-                    "name": "alice",
-                    "$prefundedVotingBalance": ["uniqueName", 50_000u64],
+                "$id": Identifier::new([0xc1; 32]),
+                "$identityContractNonce": 11u64,
+                "$type": "post",
+                "$dataContractId": Identifier::new([0xd2; 32]),
+                "$entropy": platform_value::Value::Bytes32([0xab; 32]),
+                "name": "alice",
+                "$prefundedVotingBalance": ["uniqueName", 50_000u64],
             })
         );
         let recovered = DocumentCreateTransition::from_object(value).expect("from_object");

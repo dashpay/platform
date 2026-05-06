@@ -108,7 +108,12 @@ impl GroupMethodsV0 for Group {
     }
 }
 
-#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
 mod json_convertible_tests {
     use super::*;
     use crate::data_contract::group::v0::GroupV0;
@@ -166,7 +171,10 @@ mod json_convertible_tests {
         // string-keyed Maps.
         use platform_value::Value;
         let expected = Value::Map(vec![
-            (Value::Text("$formatVersion".to_string()), Value::Text("0".to_string())),
+            (
+                Value::Text("$formatVersion".to_string()),
+                Value::Text("0".to_string()),
+            ),
             (
                 Value::Text("members".to_string()),
                 Value::Map(vec![

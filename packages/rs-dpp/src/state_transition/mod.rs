@@ -475,7 +475,12 @@ impl crate::serialization::JsonConvertible for StateTransition {}
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
 impl crate::serialization::ValueConvertible for StateTransition {}
 
-#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
 mod json_convertible_tests {
     use super::*;
 
@@ -510,8 +515,7 @@ mod json_convertible_tests {
             json["type"], expected_type_tag,
             "json type tag for {expected_type_tag}",
         );
-        let recovered =
-            StateTransition::from_json(json).expect("from_json round-trip");
+        let recovered = StateTransition::from_json(json).expect("from_json round-trip");
         assert_eq!(
             std::mem::discriminant(&original),
             std::mem::discriminant(&recovered),
@@ -528,7 +532,10 @@ mod json_convertible_tests {
                 "json round-trip equality (modulo int-variant) for {expected_type_tag}",
             );
         } else {
-            assert_eq!(original, recovered, "json round-trip equality for {expected_type_tag}");
+            assert_eq!(
+                original, recovered,
+                "json round-trip equality for {expected_type_tag}"
+            );
         }
 
         // Value
@@ -544,14 +551,16 @@ mod json_convertible_tests {
             platform_value::Value::Text(expected_type_tag.to_string()),
             "value type tag for {expected_type_tag}",
         );
-        let recovered =
-            StateTransition::from_object(value).expect("from_object round-trip");
+        let recovered = StateTransition::from_object(value).expect("from_object round-trip");
         assert_eq!(
             std::mem::discriminant(&original),
             std::mem::discriminant(&recovered),
             "value round-trip variant for {expected_type_tag}",
         );
-        assert_eq!(original, recovered, "value round-trip equality for {expected_type_tag}");
+        assert_eq!(
+            original, recovered,
+            "value round-trip equality for {expected_type_tag}"
+        );
     }
 
     fn assert_umbrella_round_trip(original: StateTransition, expected_type_tag: &str) {
@@ -602,13 +611,15 @@ mod json_convertible_tests {
 
     #[test]
     fn umbrella_identity_create() {
-        let inner = crate::state_transition::identity_create_transition::json_convertible_tests::fixture();
+        let inner =
+            crate::state_transition::identity_create_transition::json_convertible_tests::fixture();
         assert_umbrella_round_trip(StateTransition::IdentityCreate(inner), "identityCreate");
     }
 
     #[test]
     fn umbrella_identity_top_up() {
-        let inner = crate::state_transition::identity_topup_transition::json_convertible_tests::fixture();
+        let inner =
+            crate::state_transition::identity_topup_transition::json_convertible_tests::fixture();
         assert_umbrella_round_trip(StateTransition::IdentityTopUp(inner), "identityTopUp");
     }
 
@@ -623,7 +634,8 @@ mod json_convertible_tests {
 
     #[test]
     fn umbrella_identity_update() {
-        let inner = crate::state_transition::identity_update_transition::json_convertible_tests::fixture();
+        let inner =
+            crate::state_transition::identity_update_transition::json_convertible_tests::fixture();
         assert_umbrella_round_trip(StateTransition::IdentityUpdate(inner), "identityUpdate");
     }
 
@@ -638,7 +650,8 @@ mod json_convertible_tests {
 
     #[test]
     fn umbrella_masternode_vote() {
-        let inner = crate::state_transition::masternode_vote_transition::json_convertible_tests::fixture();
+        let inner =
+            crate::state_transition::masternode_vote_transition::json_convertible_tests::fixture();
         assert_umbrella_round_trip(StateTransition::MasternodeVote(inner), "masternodeVote");
     }
 
@@ -672,7 +685,10 @@ mod json_convertible_tests {
     #[test]
     fn umbrella_address_funds_transfer() {
         let inner = crate::state_transition::address_funds_transfer_transition::json_convertible_tests::fixture();
-        assert_umbrella_round_trip(StateTransition::AddressFundsTransfer(inner), "addressFundsTransfer");
+        assert_umbrella_round_trip(
+            StateTransition::AddressFundsTransfer(inner),
+            "addressFundsTransfer",
+        );
     }
 
     #[test]
@@ -701,7 +717,9 @@ mod json_convertible_tests {
 
     #[test]
     fn umbrella_shielded_transfer() {
-        let inner = crate::state_transition::shielded_transfer_transition::json_convertible_tests::fixture();
+        let inner =
+            crate::state_transition::shielded_transfer_transition::json_convertible_tests::fixture(
+            );
         assert_umbrella_round_trip(StateTransition::ShieldedTransfer(inner), "shieldedTransfer");
     }
 

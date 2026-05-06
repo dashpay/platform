@@ -127,7 +127,12 @@ impl ValidatorSetV0Setters for ValidatorSet {
     }
 }
 
-#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
 mod json_convertible_tests {
     use super::*;
     use crate::core_types::validator::v0::ValidatorV0;
@@ -260,10 +265,8 @@ mod json_convertible_tests {
         // takes literal/parenthesized-expression keys that implement
         // `Into<Value>` from a string-like form), so we build the inner
         // members map by hand for the typed-bytes key.
-        let validator_pk_value =
-            platform_value::to_value(&validator_pubkey).expect("pk to value");
-        let threshold_pk_value =
-            platform_value::to_value(&threshold_pubkey).expect("pk to value");
+        let validator_pk_value = platform_value::to_value(&validator_pubkey).expect("pk to value");
+        let threshold_pk_value = platform_value::to_value(&threshold_pubkey).expect("pk to value");
         // Note: members are typed `BTreeMap<ProTxHash, ValidatorV0>` (not
         // `BTreeMap<ProTxHash, Validator>`), so the inner is the bare V0
         // struct without its enum's `$formatVersion` tag.

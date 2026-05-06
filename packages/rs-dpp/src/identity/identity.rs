@@ -59,7 +59,12 @@ impl JsonConvertible for PartialIdentity {}
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
 impl ValueConvertible for PartialIdentity {}
 
-#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
 mod json_convertible_tests {
     use super::*;
     use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -483,4 +488,3 @@ mod tests {
         assert!(result.is_err());
     }
 }
-

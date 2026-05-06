@@ -41,7 +41,12 @@ impl crate::serialization::JsonConvertible for ExtendedDocument {}
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
 impl crate::serialization::ValueConvertible for ExtendedDocument {}
 
-#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
 mod json_convertible_tests {
     use super::*;
     use crate::data_contract::accessors::v0::DataContractV0Getters;
@@ -105,7 +110,10 @@ mod json_convertible_tests {
         // We only lock down the wrapper-specific keys and trust that
         // Document and DataContract have their own per-type round-trip tests.
         let obj = json.as_object().expect("json is an object");
-        assert_eq!(obj.get("$extendedFormatVersion"), Some(&serde_json::json!("0")));
+        assert_eq!(
+            obj.get("$extendedFormatVersion"),
+            Some(&serde_json::json!("0"))
+        );
         assert_eq!(obj.get("$type"), Some(&serde_json::json!("niceDocument")));
         // entropy is `Bytes32` → base64 in JSON
         assert_eq!(
@@ -124,10 +132,19 @@ mod json_convertible_tests {
         // ExtendedDocument lacks PartialEq — match variant + assert key fields.
         let ExtendedDocument::V0(orig_v0) = original;
         let ExtendedDocument::V0(rec_v0) = recovered;
-        assert_eq!(orig_v0.document_type_name, rec_v0.document_type_name, "document_type_name");
-        assert_eq!(orig_v0.data_contract_id, rec_v0.data_contract_id, "data_contract_id");
+        assert_eq!(
+            orig_v0.document_type_name, rec_v0.document_type_name,
+            "document_type_name"
+        );
+        assert_eq!(
+            orig_v0.data_contract_id, rec_v0.data_contract_id,
+            "data_contract_id"
+        );
         assert_eq!(orig_v0.entropy, rec_v0.entropy, "entropy");
-        assert_eq!(orig_v0.token_payment_info, rec_v0.token_payment_info, "token_payment_info");
+        assert_eq!(
+            orig_v0.token_payment_info, rec_v0.token_payment_info,
+            "token_payment_info"
+        );
     }
 
     #[test]
@@ -157,18 +174,26 @@ mod json_convertible_tests {
         );
         assert_eq!(get("$tokenPaymentInfo"), Some(&platform_value::Value::Null));
         assert_eq!(get("$metadata"), Some(&platform_value::Value::Null));
-        assert!(get("$dataContractId").is_some_and(|v| matches!(v, platform_value::Value::Identifier(_))));
+        assert!(get("$dataContractId")
+            .is_some_and(|v| matches!(v, platform_value::Value::Identifier(_))));
         assert!(get("$dataContract").is_some_and(|v| v.is_map()));
         // Document is flattened into the root.
         assert_eq!(
             get("$formatVersion"),
             Some(&platform_value::Value::Text("0".to_string()))
         );
-        let recovered = <ExtendedDocument as ValueConvertible>::from_object(value).expect("from_object");
+        let recovered =
+            <ExtendedDocument as ValueConvertible>::from_object(value).expect("from_object");
         let ExtendedDocument::V0(orig_v0) = original;
         let ExtendedDocument::V0(rec_v0) = recovered;
-        assert_eq!(orig_v0.document_type_name, rec_v0.document_type_name, "document_type_name");
-        assert_eq!(orig_v0.data_contract_id, rec_v0.data_contract_id, "data_contract_id");
+        assert_eq!(
+            orig_v0.document_type_name, rec_v0.document_type_name,
+            "document_type_name"
+        );
+        assert_eq!(
+            orig_v0.data_contract_id, rec_v0.data_contract_id,
+            "data_contract_id"
+        );
         assert_eq!(orig_v0.entropy, rec_v0.entropy, "entropy");
     }
 }

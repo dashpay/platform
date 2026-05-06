@@ -65,7 +65,12 @@ pub struct GroupStateTransitionResolvedInfo {
     pub signer_power: GroupMemberPower,
 }
 
-#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
 mod json_convertible_tests_groupstatetransitioninfo {
     use super::*;
     use platform_value::platform_value;

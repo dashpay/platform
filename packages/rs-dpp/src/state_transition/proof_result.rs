@@ -75,8 +75,12 @@ impl crate::serialization::JsonConvertible for StateTransitionProofResult {}
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
 impl crate::serialization::ValueConvertible for StateTransitionProofResult {}
 
-
-#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
 mod json_convertible_tests {
     use super::*;
     use platform_value::{Identifier, Value};
@@ -128,10 +132,7 @@ mod json_convertible_tests {
         // the literal Map.
         let expected = Value::Map(vec![(
             Value::Text("VerifiedTokenBalance".to_string()),
-            Value::Array(vec![
-                Value::Identifier([0xab; 32]),
-                Value::U64(123_456_789),
-            ]),
+            Value::Array(vec![Value::Identifier([0xab; 32]), Value::U64(123_456_789)]),
         )]);
         assert_eq!(value, expected);
         let recovered = StateTransitionProofResult::from_object(value).expect("from_object");

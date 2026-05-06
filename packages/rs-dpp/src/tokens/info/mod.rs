@@ -109,7 +109,12 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
 mod json_convertible_tests_identitytokeninfo {
     use super::*;
     use crate::tokens::info::v0::IdentityTokenInfoV0;
@@ -137,7 +142,10 @@ mod json_convertible_tests_identitytokeninfo {
         use crate::serialization::ValueConvertible;
         let original = fixture();
         let value = original.to_object().expect("to_object");
-        assert_eq!(value, platform_value!({"$formatVersion": "0", "frozen": true}));
+        assert_eq!(
+            value,
+            platform_value!({"$formatVersion": "0", "frozen": true})
+        );
         let recovered = IdentityTokenInfo::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
     }

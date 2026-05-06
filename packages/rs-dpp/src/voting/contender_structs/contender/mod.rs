@@ -457,7 +457,12 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
 mod json_convertible_tests_contender_with_serialized_document {
     use super::*;
     use platform_value::{platform_value, Identifier, Value};

@@ -48,6 +48,16 @@ pub const BINARY_FIELDS: [&str; 1] = ["$entropy"];
 pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
 
 #[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display)]
+// `json_safe_fields`:
+// - Auto-injects `crate::serialization::serde_bytes` on `entropy: [u8; 32]`
+//   → base64 string in JSON HR, raw bytes in non-HR.
+// - The `data: BTreeMap<String, Value>` flatten catchall and `base:
+//   DocumentBaseTransition` flatten are skipped (serde(flatten) override).
+// - `prefunded_voting_balance: Option<(String, Credits)>` carries an explicit
+//   `serde(with = json_safe_option_string_u64_tuple)` annotation below — the
+//   macro can't auto-route tuple-inside-Option fields, so the helper enforces
+//   JS-safe u64 stringification on the second tuple element manually.
+#[cfg_attr(feature = "json-conversion", crate::serialization::json_safe_fields)]
 // `Deserialize` is implemented manually below — see comments on the impl.
 // Auto-derived `Serialize` produces the desired flat shape correctly; only
 // the deserialize side needs the manual key-routing logic.
@@ -63,6 +73,10 @@ pub struct DocumentCreateTransitionV0 {
     pub base: DocumentBaseTransition,
 
     /// Entropy used to create a Document ID.
+    // `[u8; 32]` is auto-annotated by `#[json_safe_fields]` on this struct
+    // with `crate::serialization::serde_bytes` — base64 string in JSON HR,
+    // raw bytes in non-HR. Same convention as shielded transition byte
+    // fields (`anchor`, `binding_signature`, etc.).
     #[cfg_attr(feature = "serde-conversion", serde(rename = "$entropy"))]
     pub entropy: [u8; 32],
 
@@ -71,7 +85,11 @@ pub struct DocumentCreateTransitionV0 {
 
     #[cfg_attr(
         feature = "serde-conversion",
-        serde(rename = "$prefundedVotingBalance")
+        serde(
+            default,
+            rename = "$prefundedVotingBalance",
+            with = "crate::serialization::json::safe_integer::json_safe_option_string_u64_tuple"
+        )
     )]
     /// Pre funded balance (for unique index conflict resolution voting - the identity will put money
     /// aside that will be used by voters to vote)
@@ -128,8 +146,28 @@ impl<'de> Deserialize<'de> for DocumentCreateTransitionV0 {
         let entropy_value = map
             .remove("$entropy")
             .ok_or_else(|| D::Error::missing_field("$entropy"))?;
-        let entropy: [u8; 32] =
-            platform_value::from_value(entropy_value).map_err(D::Error::custom)?;
+        // `serde_bytes` (auto-injected by `json_safe_fields`) wants a base64
+        // string in HR and raw bytes in non-HR. After collecting through
+        // `BTreeMap<String, Value>` the `Value` variant tells us which form
+        // we got: `Text` from JSON, `Bytes32` / `Bytes` from platform_value
+        // / bincode. The default `[u8; 32]::deserialize` only accepts an
+        // array shape, so we route the byte variants explicitly.
+        let entropy: [u8; 32] = match entropy_value {
+            Value::Text(s) => {
+                use base64::Engine;
+                let bytes = base64::engine::general_purpose::STANDARD
+                    .decode(s.as_bytes())
+                    .map_err(|e| D::Error::custom(format!("invalid base64 in $entropy: {e}")))?;
+                bytes.try_into().map_err(|v: Vec<u8>| {
+                    D::Error::custom(format!("$entropy: expected 32 bytes, got {}", v.len()))
+                })?
+            }
+            Value::Bytes32(arr) => arr,
+            Value::Bytes(b) => b.try_into().map_err(|v: Vec<u8>| {
+                D::Error::custom(format!("$entropy: expected 32 bytes, got {}", v.len()))
+            })?,
+            other => platform_value::from_value(other).map_err(D::Error::custom)?,
+        };
 
         let prefunded_voting_balance: Option<(String, Credits)> =
             match map.remove("$prefundedVotingBalance") {

@@ -43,7 +43,12 @@ impl fmt::Display for TokenConfigurationLocalization {
     }
 }
 
-#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
 mod json_convertible_tests {
     use super::*;
     use crate::data_contract::associated_token::token_configuration_localization::v0::TokenConfigurationLocalizationV0;

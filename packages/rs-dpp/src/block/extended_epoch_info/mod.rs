@@ -124,7 +124,12 @@ mod tests {
 
 // (TODO replaced) extendedepochinfo — needs explicit fixture (no Default).
 
-#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
 mod json_convertible_tests_extendedepochinfo {
     use super::*;
     use crate::block::extended_epoch_info::v0::ExtendedEpochInfoV0;

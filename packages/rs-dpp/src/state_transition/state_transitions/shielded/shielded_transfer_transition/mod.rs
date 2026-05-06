@@ -72,7 +72,12 @@ impl StateTransitionFieldTypes for ShieldedTransferTransition {
     }
 }
 
-#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
 pub(crate) mod json_convertible_tests {
     use super::*;
     use crate::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0;

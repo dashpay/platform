@@ -63,7 +63,12 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
 mod json_convertible_tests {
     use super::*;
     use crate::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
@@ -88,7 +93,10 @@ mod json_convertible_tests {
         let original = fixture();
         let json = original.to_json().expect("to_json");
         // Envelope check: format version + top-level keys present.
-        assert_eq!(json.get("$formatVersion").and_then(|v| v.as_str()), Some("0"));
+        assert_eq!(
+            json.get("$formatVersion").and_then(|v| v.as_str()),
+            Some("0")
+        );
         for key in [
             "conventions",
             "conventionsChangeRules",
@@ -153,7 +161,11 @@ mod json_convertible_tests {
             "mainControlGroupCanBeModified",
             "description",
         ] {
-            assert!(has_key(key), "expected top-level key {:?} in Value envelope", key);
+            assert!(
+                has_key(key),
+                "expected top-level key {:?} in Value envelope",
+                key
+            );
         }
         let recovered = TokenConfiguration::from_object(value).expect("from_object");
         assert_eq!(original, recovered);

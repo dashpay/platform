@@ -179,7 +179,12 @@ mod tests {
 
 // (TODO replaced) extendedblockinfo — needs explicit fixture (no Default).
 
-#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
 mod json_convertible_tests_extendedblockinfo {
     use super::*;
     use crate::block::block_info::BlockInfo;

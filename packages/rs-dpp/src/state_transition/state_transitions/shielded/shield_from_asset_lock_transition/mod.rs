@@ -71,7 +71,12 @@ impl StateTransitionFieldTypes for ShieldFromAssetLockTransition {
     }
 }
 
-#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
 pub(crate) mod json_convertible_tests {
     use super::*;
     use crate::shielded::SerializedAction;
@@ -113,15 +118,33 @@ pub(crate) mod json_convertible_tests {
         let obj = json.as_object().expect("json is an object");
         assert_eq!(obj.get("$formatVersion"), Some(&serde_json::json!("0")));
         // Single action with deterministic byte fields → base64 strings.
-        let actions = obj.get("actions").and_then(|v| v.as_array()).expect("actions array");
+        let actions = obj
+            .get("actions")
+            .and_then(|v| v.as_array())
+            .expect("actions array");
         assert_eq!(actions.len(), 1);
         let act0 = actions[0].as_object().expect("action[0]");
-        assert_eq!(act0.get("nullifier"), Some(&serde_json::json!("ERERERERERERERERERERERERERERERERERERERERERE=")));
-        assert_eq!(act0.get("rk"), Some(&serde_json::json!("IiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiI=")));
+        assert_eq!(
+            act0.get("nullifier"),
+            Some(&serde_json::json!(
+                "ERERERERERERERERERERERERERERERERERERERERERE="
+            ))
+        );
+        assert_eq!(
+            act0.get("rk"),
+            Some(&serde_json::json!(
+                "IiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiI="
+            ))
+        );
         // `valueBalance` is `u64` in source. JSON erases the size on the wire —
         // value-path uses `1_000_000u64` to lock the variant.
         assert_eq!(obj.get("valueBalance"), Some(&serde_json::json!(1_000_000)));
-        assert_eq!(obj.get("anchor"), Some(&serde_json::json!("d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3c=")));
+        assert_eq!(
+            obj.get("anchor"),
+            Some(&serde_json::json!(
+                "d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3c="
+            ))
+        );
         assert_eq!(
             obj.get("signature"),
             Some(&serde_json::json!(
@@ -158,7 +181,10 @@ pub(crate) mod json_convertible_tests {
             get("$formatVersion"),
             Some(&platform_value::Value::Text("0".to_string()))
         );
-        assert_eq!(get("valueBalance"), Some(&platform_value::Value::U64(1_000_000)));
+        assert_eq!(
+            get("valueBalance"),
+            Some(&platform_value::Value::U64(1_000_000))
+        );
         assert_eq!(
             get("anchor"),
             Some(&platform_value::Value::Bytes32([0x77; 32]))

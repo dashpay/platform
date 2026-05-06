@@ -183,7 +183,12 @@ impl crate::serialization::JsonConvertible for AddressFundsFeeStrategyStep {}
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
 impl crate::serialization::ValueConvertible for AddressFundsFeeStrategyStep {}
 
-#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
 mod json_convertible_tests_address_funds_fee_strategy_step {
     use super::*;
 
@@ -211,7 +216,10 @@ mod json_convertible_tests_address_funds_fee_strategy_step {
         // `index` is a `u16`; JSON erases the size — see the deduct test above.
         assert_eq!(json, json!({"type": "reduceOutput", "index": u16::MAX}));
         let recovered = AddressFundsFeeStrategyStep::from_json(json).expect("from_json");
-        assert_eq!(recovered, AddressFundsFeeStrategyStep::ReduceOutput(u16::MAX));
+        assert_eq!(
+            recovered,
+            AddressFundsFeeStrategyStep::ReduceOutput(u16::MAX)
+        );
     }
 
     #[test]
@@ -224,7 +232,10 @@ mod json_convertible_tests_address_funds_fee_strategy_step {
         // `to_value(&7i32)` and produce `Value::I32`, which would fail — that
         // distinction is exactly what JSON can't preserve but `platform_value`
         // does, and what we want this test to lock in.
-        assert_eq!(value, platform_value!({"type": "deductFromInput", "index": 7u16}));
+        assert_eq!(
+            value,
+            platform_value!({"type": "deductFromInput", "index": 7u16})
+        );
         let recovered = AddressFundsFeeStrategyStep::from_object(value).expect("from_object");
         assert_eq!(recovered, AddressFundsFeeStrategyStep::DeductFromInput(7));
     }
@@ -234,8 +245,14 @@ mod json_convertible_tests_address_funds_fee_strategy_step {
         use crate::serialization::ValueConvertible;
         let original = AddressFundsFeeStrategyStep::ReduceOutput(u16::MAX);
         let value = original.to_object().expect("to_object");
-        assert_eq!(value, platform_value!({"type": "reduceOutput", "index": u16::MAX}));
+        assert_eq!(
+            value,
+            platform_value!({"type": "reduceOutput", "index": u16::MAX})
+        );
         let recovered = AddressFundsFeeStrategyStep::from_object(value).expect("from_object");
-        assert_eq!(recovered, AddressFundsFeeStrategyStep::ReduceOutput(u16::MAX));
+        assert_eq!(
+            recovered,
+            AddressFundsFeeStrategyStep::ReduceOutput(u16::MAX)
+        );
     }
 }

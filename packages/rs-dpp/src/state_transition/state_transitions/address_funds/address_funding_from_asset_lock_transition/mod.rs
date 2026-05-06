@@ -97,7 +97,12 @@ impl StateTransitionFieldTypes for AddressFundingFromAssetLockTransition {
     }
 }
 
-#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
 pub(crate) mod json_convertible_tests {
     use super::*;
     use crate::address_funds::{AddressFundsFeeStrategyStep, AddressWitness, PlatformAddress};
@@ -190,8 +195,7 @@ pub(crate) mod json_convertible_tests {
                 ],
             })
         );
-        let recovered =
-            AddressFundingFromAssetLockTransition::from_json(json).expect("from_json");
+        let recovered = AddressFundingFromAssetLockTransition::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
     }
 

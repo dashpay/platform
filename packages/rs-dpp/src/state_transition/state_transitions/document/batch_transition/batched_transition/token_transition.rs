@@ -92,7 +92,12 @@ impl crate::serialization::JsonConvertible for TokenTransition {}
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
 impl crate::serialization::ValueConvertible for TokenTransition {}
 
-#[cfg(all(test, feature = "json-conversion", feature = "value-conversion", feature = "serde-conversion"))]
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
 pub(crate) mod json_convertible_tests {
     use super::*;
     use crate::state_transition::batch_transition::batched_transition::{
@@ -124,9 +129,7 @@ pub(crate) mod json_convertible_tests {
         let value_map = value.as_map().expect("value map");
         let type_kv = value_map
             .iter()
-            .find(|(k, _)| {
-                matches!(k, platform_value::Value::Text(s) if s == "type")
-            })
+            .find(|(k, _)| matches!(k, platform_value::Value::Text(s) if s == "type"))
             .expect("type key present");
         assert_eq!(
             type_kv.1,

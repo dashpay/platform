@@ -131,4 +131,3 @@ impl ExtendedBlockInfoV0Setters for ExtendedBlockInfoV0 {
         self.round = round;
     }
 }
-
