@@ -321,6 +321,9 @@ fn annotate_fields(fields: &mut syn::FieldsNamed, base_path: &str) -> Vec<Type> 
 /// - `[u8; N]` for any `N` → `serde_bytes` (const-generic; raw bytes in binary,
 ///   base64 string in JSON)
 /// - `Vec<u8>` → `serde_bytes_var` (variable-length variant of the above)
+/// - `Option<SharedEncryptedNote>` / `Option<PrivateEncryptedNote>` (both
+///   `(u32, u32, Vec<u8>)` aliases) → `json::safe_integer::json_safe_option_encrypted_note`
+///   (3-tuple where the inner `Vec<u8>` is base64 in JSON HR)
 ///
 /// When adding a new `type X = u64` alias in rs-dpp, add it to the appropriate list below.
 fn serde_with_suffix_for_type(ty: &Type) -> Option<&'static str> {
@@ -363,6 +366,11 @@ fn serde_with_suffix_for_type(ty: &Type) -> Option<&'static str> {
                                 if is_i64_type(&inner_last.ident) {
                                     return Some("json_safe_option_i64");
                                 }
+                                if is_encrypted_note_alias(&inner_last.ident) {
+                                    return Some(
+                                        "json::safe_integer::json_safe_option_encrypted_note",
+                                    );
+                                }
                             }
                         }
                     }
@@ -395,6 +403,16 @@ const U64_ALIASES: &[&str] = &[
 
 /// Known type aliases that resolve to i64.
 const I64_ALIASES: &[&str] = &["SignedCredits", "SignedTokenAmount"];
+
+/// Known type aliases that resolve to `(u32, u32, Vec<u8>)` (encrypted-note
+/// shape on token transitions). Routed to
+/// `json_safe_option_encrypted_note` so the inner `Vec<u8>` is base64 in
+/// JSON HR. Add new aliases of the same shape here.
+const ENCRYPTED_NOTE_ALIASES: &[&str] = &["SharedEncryptedNote", "PrivateEncryptedNote"];
+
+fn is_encrypted_note_alias(ident: &Ident) -> bool {
+    ENCRYPTED_NOTE_ALIASES.iter().any(|alias| ident == alias)
+}
 
 /// Check if the struct has serde derives (Serialize or Deserialize) in its attributes.
 ///

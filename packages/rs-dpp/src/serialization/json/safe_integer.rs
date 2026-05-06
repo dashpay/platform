@@ -312,6 +312,158 @@ pub mod json_safe_option_string_u64_tuple {
     }
 }
 
+/// Serde `with` module for `Option<(u32, u32, Vec<u8>)>` fields used by the
+/// `SharedEncryptedNote` / `PrivateEncryptedNote` type aliases on token
+/// transitions.
+///
+/// In HR (JSON) the inner `Vec<u8>` is base64-encoded so the wire shape is
+/// `[u32, u32, "<base64>"]` instead of an array-of-numbers. In non-HR
+/// (platform_value, bincode) the bytes stay as raw bytes (`Value::Bytes`).
+/// The two `u32` indices are always JS-safe (well below `MAX_SAFE_INTEGER`)
+/// so they don't need special protection.
+pub mod json_safe_option_encrypted_note {
+    use serde::de::{self, Deserializer, SeqAccess, Visitor};
+    use serde::ser::{SerializeTuple, Serializer};
+
+    /// Wrapper that emits its byte payload via `serialize_bytes` (raw bytes)
+    /// rather than the default `Vec<u8>` Serialize (sequence of u8). Used in
+    /// the non-HR path so platform_value receives `Value::Bytes` and bincode
+    /// emits a length-prefixed byte buffer.
+    struct BytesAsBytes<'a>(&'a [u8]);
+
+    impl<'a> serde::Serialize for BytesAsBytes<'a> {
+        fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+            s.serialize_bytes(self.0)
+        }
+    }
+
+    pub fn serialize<S: Serializer>(
+        value: &Option<(u32, u32, Vec<u8>)>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        match value {
+            Some((a, b, bytes)) => {
+                let is_hr = serializer.is_human_readable();
+                let mut tup = serializer.serialize_tuple(3)?;
+                tup.serialize_element(a)?;
+                tup.serialize_element(b)?;
+                if is_hr {
+                    use base64::Engine;
+                    let s = base64::engine::general_purpose::STANDARD.encode(bytes);
+                    tup.serialize_element(&s)?;
+                } else {
+                    tup.serialize_element(&BytesAsBytes(bytes))?;
+                }
+                tup.end()
+            }
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<(u32, u32, Vec<u8>)>, D::Error> {
+        deserializer.deserialize_option(OptEncryptedNoteVisitor)
+    }
+
+    struct OptEncryptedNoteVisitor;
+
+    impl<'de> Visitor<'de> for OptEncryptedNoteVisitor {
+        type Value = Option<(u32, u32, Vec<u8>)>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("null or a 3-tuple [u32, u32, base64-string-or-bytes]")
+        }
+
+        fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_some<D: Deserializer<'de>>(
+            self,
+            deserializer: D,
+        ) -> Result<Self::Value, D::Error> {
+            deserializer
+                .deserialize_tuple(3, EncryptedNoteVisitor)
+                .map(Some)
+        }
+
+        fn visit_seq<A: SeqAccess<'de>>(self, seq: A) -> Result<Self::Value, A::Error> {
+            EncryptedNoteVisitor.visit_seq(seq).map(Some)
+        }
+    }
+
+    /// Newtype wrapper that accepts either a base64 string (HR) or a byte
+    /// sequence (non-HR) and produces a `Vec<u8>`.
+    struct BytesField(Vec<u8>);
+
+    impl<'de> serde::Deserialize<'de> for BytesField {
+        fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+            struct V;
+            impl<'de> Visitor<'de> for V {
+                type Value = Vec<u8>;
+
+                fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                    f.write_str("base64 string or byte sequence")
+                }
+
+                fn visit_str<E: de::Error>(self, s: &str) -> Result<Vec<u8>, E> {
+                    use base64::Engine;
+                    base64::engine::general_purpose::STANDARD
+                        .decode(s)
+                        .map_err(|e| E::custom(format!("invalid base64: {e}")))
+                }
+
+                fn visit_bytes<E: de::Error>(self, b: &[u8]) -> Result<Vec<u8>, E> {
+                    Ok(b.to_vec())
+                }
+
+                fn visit_byte_buf<E: de::Error>(self, b: Vec<u8>) -> Result<Vec<u8>, E> {
+                    Ok(b)
+                }
+
+                fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Vec<u8>, A::Error> {
+                    let mut out = Vec::new();
+                    while let Some(b) = seq.next_element::<u8>()? {
+                        out.push(b);
+                    }
+                    Ok(out)
+                }
+            }
+            // Use `deserialize_any` so we accept whichever path the deserializer
+            // takes (string for JSON, bytes for bincode/platform_value).
+            d.deserialize_any(V).map(BytesField)
+        }
+    }
+
+    struct EncryptedNoteVisitor;
+
+    impl<'de> Visitor<'de> for EncryptedNoteVisitor {
+        type Value = (u32, u32, Vec<u8>);
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a 3-tuple [u32, u32, base64-string-or-bytes]")
+        }
+
+        fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+            let a: u32 = seq
+                .next_element()?
+                .ok_or_else(|| de::Error::invalid_length(0, &"a 3-tuple"))?;
+            let b: u32 = seq
+                .next_element()?
+                .ok_or_else(|| de::Error::invalid_length(1, &"a 3-tuple"))?;
+            let bytes: BytesField = seq
+                .next_element()?
+                .ok_or_else(|| de::Error::invalid_length(2, &"a 3-tuple"))?;
+            Ok((a, b, bytes.0))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
