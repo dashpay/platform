@@ -15,6 +15,13 @@ use serde::{Deserialize, Serialize};
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),
+    // Adjacently tagged. Convention rule says to flatten to internal tagging
+    // AND that `$`-prefix discriminators are only used when the same wire
+    // level has other `$`-prefixed fields. Inner `TokenEvent` exposes only
+    // `type` / `data` (no `$`-fields), so plain `type` would be the correct
+    // discriminator key — but `type` already belongs to `TokenEvent` and
+    // would collide. Without touching `TokenEvent` (consensus-binary-locked),
+    // adjacent tagging is the only rule-consistent option here.
     serde(tag = "type", content = "data", rename_all = "camelCase")
 )]
 #[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
@@ -39,9 +46,11 @@ mod json_convertible_tests {
     use platform_value::platform_value;
     use serde_json::json;
 
-    // `GroupActionEvent` is `tag = "type", content = "data", rename_all = "camelCase"`.
-    // Single-variant `TokenEvent(TokenEvent)` newtype: the inner TokenEvent's
-    // own `tag = "type", content = "data"` shape ends up nested under `data`.
+    // `GroupActionEvent` uses adjacent tagging (`tag = "type", content = "data"`).
+    // Convention rule says flat with `$`-prefix only when other `$`-fields
+    // exist at the same level — but plain `type` would collide with the
+    // inner `TokenEvent`'s `type`, and we can't touch `TokenEvent`. Adjacent
+    // is the only rule-consistent shape for the wrapper here.
 
     #[test]
     fn json_round_trip_token_event_mint() {
@@ -50,8 +59,8 @@ mod json_convertible_tests {
             crate::tokens::token_event::json_convertible_tests::mint_fixture(),
         );
         let json = original.to_json().expect("to_json");
-        // Outer: `{"type": "tokenEvent", "data": <inner>}`.
-        // Inner TokenEvent::Mint: `{"type": "mint", "data": [...]}`.
+        // Outer adjacent: `{"type": "tokenEvent", "data": <inner>}`.
+        // Inner `TokenEvent::Mint`: `{"type": "mint", "data": [...]}`.
         assert_eq!(
             json,
             json!({

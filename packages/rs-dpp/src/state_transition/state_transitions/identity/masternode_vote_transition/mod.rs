@@ -313,22 +313,18 @@ pub(crate) mod json_convertible_tests {
                 "proTxHash": Identifier::new([0x66; 32]),
                 "voterIdentityId": Identifier::new([0x77; 32]),
                 "vote": {
-                    "type": "resourceVote",
-                    "data": {
-                        "$formatVersion": "0",
-                        "votePoll": {
-                            "type": "contestedDocumentResourceVotePoll",
-                            "data": {
-                                "contractId": Identifier::new([0x12; 32]),
-                                "documentTypeName": "domain",
-                                "indexName": "parentNameAndLabel",
-                                "indexValues": ["dash"],
-                            },
-                        },
-                        "resourceVoteChoice": {
-                            "type": "towardsIdentity",
-                            "data": Identifier::new([0x34; 32]),
-                        },
+                    "$type": "resourceVote",
+                    "$formatVersion": "0",
+                    "votePoll": {
+                        "type": "contestedDocumentResourceVotePoll",
+                        "contractId": Identifier::new([0x12; 32]),
+                        "documentTypeName": "domain",
+                        "indexName": "parentNameAndLabel",
+                        "indexValues": ["dash"],
+                    },
+                    "resourceVoteChoice": {
+                        "type": "towardsIdentity",
+                        "data": Identifier::new([0x34; 32]),
                     },
                 },
                 "nonce": 99,
@@ -354,22 +350,18 @@ pub(crate) mod json_convertible_tests {
                 "proTxHash": Identifier::new([0x66; 32]),
                 "voterIdentityId": Identifier::new([0x77; 32]),
                 "vote": {
-                    "type": "resourceVote",
-                    "data": {
-                        "$formatVersion": "0",
-                        "votePoll": {
-                            "type": "contestedDocumentResourceVotePoll",
-                            "data": {
-                                "contractId": Identifier::new([0x12; 32]),
-                                "documentTypeName": "domain",
-                                "indexName": "parentNameAndLabel",
-                                "indexValues": ["dash"],
-                            },
-                        },
-                        "resourceVoteChoice": {
-                            "type": "towardsIdentity",
-                            "data": Identifier::new([0x34; 32]),
-                        },
+                    "$type": "resourceVote",
+                    "$formatVersion": "0",
+                    "votePoll": {
+                        "type": "contestedDocumentResourceVotePoll",
+                        "contractId": Identifier::new([0x12; 32]),
+                        "documentTypeName": "domain",
+                        "indexName": "parentNameAndLabel",
+                        "indexValues": ["dash"],
+                    },
+                    "resourceVoteChoice": {
+                        "type": "towardsIdentity",
+                        "data": Identifier::new([0x34; 32]),
                     },
                 },
                 "nonce": 99u64,

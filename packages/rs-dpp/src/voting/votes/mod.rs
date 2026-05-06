@@ -18,7 +18,10 @@ use serde::{Deserialize, Serialize};
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),
-    serde(tag = "type", content = "data", rename_all = "camelCase")
+    // Internal tagging with `$type` — system-field convention. Drops the
+    // `data` wrapper. Inner `ResourceVote` is `tag = "$formatVersion"`
+    // (different key, no collision).
+    serde(tag = "$type", rename_all = "camelCase")
 )]
 #[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 #[platform_serialize(limit = 15000, unversioned)]

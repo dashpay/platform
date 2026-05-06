@@ -82,12 +82,10 @@ mod json_convertible_tests_resource_vote {
                 "$formatVersion": "0",
                 "votePoll": {
                     "type": "contestedDocumentResourceVotePoll",
-                    "data": {
-                        "contractId": "E3M3d7sy8ZKivUGxBexL9wxE7ebqzGWFqkdeFMedCJFS",
-                        "documentTypeName": "preorder",
-                        "indexName": "parentNameAndLabel",
-                        "indexValues": ["dash"],
-                    },
+                    "contractId": "E3M3d7sy8ZKivUGxBexL9wxE7ebqzGWFqkdeFMedCJFS",
+                    "documentTypeName": "preorder",
+                    "indexName": "parentNameAndLabel",
+                    "indexValues": ["dash"],
                 },
                 "resourceVoteChoice": {
                     "type": "towardsIdentity",
@@ -114,12 +112,10 @@ mod json_convertible_tests_resource_vote {
                 "$formatVersion": "0",
                 "votePoll": {
                     "type": "contestedDocumentResourceVotePoll",
-                    "data": {
-                        "contractId": contract_id,
-                        "documentTypeName": "preorder",
-                        "indexName": "parentNameAndLabel",
-                        "indexValues": ["dash"],
-                    },
+                    "contractId": contract_id,
+                    "documentTypeName": "preorder",
+                    "indexName": "parentNameAndLabel",
+                    "indexValues": ["dash"],
                 },
                 "resourceVoteChoice": {
                     "type": "towardsIdentity",
