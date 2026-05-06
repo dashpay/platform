@@ -35,7 +35,7 @@ const FUNDING_CREDITS: u64 = 200_000_000;
 /// Pre-fee credits committed to the new identity by
 /// `IdentityCreateFromAddresses`. The identity arrives on chain with
 /// exactly this balance — DPNS register fees draw against it.
-const REGISTRATION_FUNDING: u64 = 100_000_000;
+const REGISTRATION_FUNDING: u64 = 130_000_000;
 
 /// Floor `wait_for_balance` keys on before registration runs. Under
 /// Option C (DeductFromInput) the address receives exactly
