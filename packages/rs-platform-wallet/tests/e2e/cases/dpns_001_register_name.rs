@@ -24,18 +24,32 @@ use rand::RngCore;
 use crate::framework::prelude::*;
 use crate::framework::wait::wait_for_dpns_name_visible;
 
-/// Bank → funding-address gross. Sized to cover the registration
-/// transition (`REGISTRATION_FUNDING`) plus the chain-time
-/// `IdentityCreateFromAddresses` dynamic fee paid from the address
-/// residual (~96M observed at ID-001 calibration), with comfortable
-/// headroom for DPNS-register-side fees that come out of the
-/// identity's credit balance afterwards.
-const FUNDING_CREDITS: u64 = 200_000_000;
-
 /// Pre-fee credits committed to the new identity by
 /// `IdentityCreateFromAddresses`. The identity arrives on chain with
 /// exactly this balance — DPNS register fees draw against it.
 const REGISTRATION_FUNDING: u64 = 130_000_000;
+
+/// Headroom carried on the funding address residual so the chain-time
+/// `IdentityCreateFromAddresses` dynamic fee (~110.86M observed on
+/// testnet — `validate_fees_of_event_v0 PaidFromAddressInputs`
+/// baseline plus the slot-2 TRANSFER key's storage cost) clears with
+/// buffer for protocol-version drift. Mirrors the
+/// `setup_with_n_identities` `REGISTRATION_HEADROOM` constant in
+/// `framework/mod.rs` — the residual must absorb the dynamic fee
+/// after registration consumes `REGISTRATION_FUNDING`, otherwise the
+/// chain returns
+/// `AddressesNotEnoughFundsError(required=110_862_220)` (QA-701-B).
+const REGISTRATION_HEADROOM: u64 = 150_000_000;
+
+/// Bank → funding-address gross. Funds the registration transition
+/// (`REGISTRATION_FUNDING`) plus the dynamic-fee residual headroom
+/// (`REGISTRATION_HEADROOM`). Earlier sizings (~200M) left only ~70M
+/// after the registration consumed `REGISTRATION_FUNDING`, which fell
+/// short of the ~110.86M dynamic fee — DPNS-001 then panicked with
+/// "Insufficient combined address balances: total available is less
+/// than required 110862220". Reuses the same arithmetic as
+/// `setup_with_n_identities`'s funding policy.
+const FUNDING_CREDITS: u64 = REGISTRATION_FUNDING + REGISTRATION_HEADROOM;
 
 /// Floor `wait_for_balance` keys on before registration runs. Under
 /// Option C (DeductFromInput) the address receives exactly
