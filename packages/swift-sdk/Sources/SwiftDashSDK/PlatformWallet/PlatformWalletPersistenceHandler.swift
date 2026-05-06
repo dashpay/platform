@@ -10,6 +10,15 @@ import DashSDKFFI
 public class PlatformWalletPersistenceHandler {
     let modelContainer: ModelContainer
 
+    /// Network this handler's owning `PlatformWalletManager` is bound
+    /// to. When set, `loadWalletList` filters out persisted wallets
+    /// from other networks so a per-network manager only restores its
+    /// own wallets. `nil` keeps the legacy "load every wallet"
+    /// behavior for callers that don't yet thread network through —
+    /// once the example app's `WalletManagerStore` is the only
+    /// caller, the `nil` path can be retired.
+    let network: Network?
+
     /// Background context for writing from callback threads.
     ///
     /// `ModelContext` is not thread-safe — touching it from the
@@ -37,8 +46,9 @@ public class PlatformWalletPersistenceHandler {
     /// atomically.
     private var inChangeset = false
 
-    public init(modelContainer: ModelContainer) {
+    public init(modelContainer: ModelContainer, network: Network? = nil) {
         self.modelContainer = modelContainer
+        self.network = network
         self.backgroundContext = ModelContext(modelContainer)
         self.backgroundContext.autosaveEnabled = true
     }
@@ -2120,7 +2130,22 @@ public class PlatformWalletPersistenceHandler {
     /// Returns `(nil, 0)` if nothing is restorable.
     func loadWalletList() -> (entries: UnsafePointer<WalletRestoreEntryFFI>?, count: Int, errored: Bool) {
         onQueue {
-        let walletDescriptor = FetchDescriptor<PersistentWallet>()
+        // Scope the fetch to the handler's bound network so a
+        // per-network manager only sees its own wallets. If
+        // `network` is `nil` (legacy callers that haven't threaded
+        // network through yet) we fall back to the cross-network
+        // fetch — those callers were already fragile against
+        // cross-network data and the new path keeps them on the
+        // pre-refactor behavior until they migrate.
+        let walletDescriptor: FetchDescriptor<PersistentWallet>
+        if let network = self.network {
+            let raw = network.rawValue
+            walletDescriptor = FetchDescriptor<PersistentWallet>(
+                predicate: #Predicate { $0.networkRaw == raw }
+            )
+        } else {
+            walletDescriptor = FetchDescriptor<PersistentWallet>()
+        }
         let wallets: [PersistentWallet]
         do {
             wallets = try backgroundContext.fetch(walletDescriptor)
