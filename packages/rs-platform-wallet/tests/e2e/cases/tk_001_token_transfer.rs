@@ -115,7 +115,7 @@ async fn tk_001_token_transfer_between_identities() {
             owner.id,
             peer.id,
             TRANSFER_AMOUNT,
-            &owner.high_key,
+            &owner.critical_key,
             owner.signer.as_ref(),
             None,
             None,

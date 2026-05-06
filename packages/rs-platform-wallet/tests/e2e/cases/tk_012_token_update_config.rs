@@ -80,7 +80,11 @@ async fn tk_012_update_token_config_max_supply() {
         TokenConfigUpdateTransitionBuilder::new(pre_contract_arc, position, owner.id, change_item);
 
     ctx.sdk()
-        .token_update_contract_token_configuration(builder, &owner.high_key, owner.signer.as_ref())
+        .token_update_contract_token_configuration(
+            builder,
+            &owner.critical_key,
+            owner.signer.as_ref(),
+        )
         .await
         .expect("config update transition");
 

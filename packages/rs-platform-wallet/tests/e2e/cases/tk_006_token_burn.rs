@@ -110,7 +110,11 @@ async fn tk_006_token_burn() {
 
     let _burn_result = ctx
         .sdk()
-        .token_burn(builder, &setup.owner.high_key, setup.owner.signer.as_ref())
+        .token_burn(
+            builder,
+            &setup.owner.critical_key,
+            setup.owner.signer.as_ref(),
+        )
         .await
         .expect("token_burn");
 

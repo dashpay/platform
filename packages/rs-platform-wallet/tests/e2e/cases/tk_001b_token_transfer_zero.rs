@@ -102,7 +102,7 @@ async fn tk_001b_token_transfer_zero_rejected() {
             owner.id,
             peer.id,
             0,
-            &owner.high_key,
+            &owner.critical_key,
             owner.signer.as_ref(),
             None,
             None,

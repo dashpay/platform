@@ -24,6 +24,13 @@
 //!   `rs-dpp/.../data_contract_create_transition/v0/identity_signed.rs`),
 //!   so signing with MASTER triggers
 //!   `InvalidSignaturePublicKeySecurityLevelError` at chain validation.
+//! - All token-batch state transitions (`mint_to` and the per-case
+//!   `token_*` calls in TK-NNN) MUST sign with
+//!   [`RegisteredIdentity::critical_key`] (AUTHENTICATION + CRITICAL,
+//!   KeyID 3). `TokenBaseTransition`'s
+//!   `IdentitySignedV0::security_level_requirement` returns only
+//!   `vec![SecurityLevel::CRITICAL]`; HIGH or MASTER yields
+//!   `InvalidSignaturePublicKeySecurityLevelError` at chain validation.
 //! - `token_frozen_balance_of` returns a [`TokenAmount`] (the
 //!   identity's full token balance when `IdentityTokenInfo.frozen`
 //!   is `true`, else `0`). DPP only stores a `frozen: bool`; the
@@ -469,9 +476,10 @@ pub async fn setup_with_token_pre_programmed_distribution(
 /// [`Sdk::token_mint`]. Resolves only after the proof confirms the
 /// new balance.
 ///
-/// The owner signs with [`RegisteredIdentity::high_key`] (HIGH) —
-/// mint is a token-action transition, not a contract-mutate one,
-/// so HIGH is the canonical signing level.
+/// The owner signs with [`RegisteredIdentity::critical_key`]
+/// (AUTHENTICATION + CRITICAL). `TokenBaseTransition` accepts only
+/// `SecurityLevel::CRITICAL`; HIGH yields
+/// `InvalidSignaturePublicKeySecurityLevelError`.
 pub async fn mint_to(
     ctx: &E2eContext,
     contract_id: Identifier,
@@ -492,7 +500,7 @@ pub async fn mint_to(
     ctx.sdk()
         .token_mint(
             builder,
-            &owner_signer.high_key,
+            &owner_signer.critical_key,
             owner_signer.signer.as_ref(),
         )
         .await
@@ -801,6 +809,7 @@ impl CloneForTokenSetup for RegisteredIdentity {
             master_key: self.master_key.clone(),
             high_key: self.high_key.clone(),
             transfer_key: self.transfer_key.clone(),
+            critical_key: self.critical_key.clone(),
             signer: Arc::clone(&self.signer),
             identity_index: self.identity_index,
             funding: self.funding,

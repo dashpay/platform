@@ -103,7 +103,7 @@ async fn tk_010_token_pause_blocks_transfers_then_resume_restores() {
     let pause_builder =
         TokenEmergencyActionTransitionBuilder::pause(data_contract.clone(), position, owner.id);
     ctx.sdk()
-        .token_emergency_action(pause_builder, &owner.high_key, owner.signer.as_ref())
+        .token_emergency_action(pause_builder, &owner.critical_key, owner.signer.as_ref())
         .await
         .expect("pause emergency action");
 
@@ -125,7 +125,7 @@ async fn tk_010_token_pause_blocks_transfers_then_resume_restores() {
     );
     let result = ctx
         .sdk()
-        .token_transfer(transfer_builder, &owner.high_key, owner.signer.as_ref())
+        .token_transfer(transfer_builder, &owner.critical_key, owner.signer.as_ref())
         .await;
     // `TransferResult` doesn't impl `Debug`, so unpack with `match` rather than
     // `expect_err`.
@@ -142,7 +142,7 @@ async fn tk_010_token_pause_blocks_transfers_then_resume_restores() {
     let resume_builder =
         TokenEmergencyActionTransitionBuilder::resume(data_contract.clone(), position, owner.id);
     ctx.sdk()
-        .token_emergency_action(resume_builder, &owner.high_key, owner.signer.as_ref())
+        .token_emergency_action(resume_builder, &owner.critical_key, owner.signer.as_ref())
         .await
         .expect("resume emergency action");
 
@@ -163,7 +163,7 @@ async fn tk_010_token_pause_blocks_transfers_then_resume_restores() {
         POST_RESUME_TRANSFER,
     );
     ctx.sdk()
-        .token_transfer(retry_builder, &owner.high_key, owner.signer.as_ref())
+        .token_transfer(retry_builder, &owner.critical_key, owner.signer.as_ref())
         .await
         .expect("post-resume transfer");
 

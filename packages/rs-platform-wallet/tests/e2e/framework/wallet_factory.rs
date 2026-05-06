@@ -396,14 +396,21 @@ impl TestWallet {
     ///    under-funded address surfaces as a registration failure
     ///    downstream rather than a clear error here.
     /// 2. Derives MASTER + HIGH ECDSA auth keys at DIP-9 slot
-    ///    `(identity_index, 0)` and `(identity_index, 1)`, plus a
-    ///    TRANSFER + CRITICAL ECDSA key at slot
-    ///    `(identity_index, 2)`. The TRANSFER key is required by DPP
+    ///    `(identity_index, 0)` and `(identity_index, 1)`, a
+    ///    TRANSFER + CRITICAL ECDSA key at slot `(identity_index, 2)`,
+    ///    and an AUTHENTICATION + CRITICAL ECDSA key at slot
+    ///    `(identity_index, 3)`. The TRANSFER key is required by DPP
     ///    (`identity_credit_transfer_transition` v0_methods.rs:63-83)
     ///    for credit-transfer transitions; without it id_003 / id_005
-    ///    / id-sweep all fail with "no transfer public key".
+    ///    / id-sweep all fail with "no transfer public key". The
+    ///    CRITICAL auth key is required for token-batch state
+    ///    transitions (mint, burn, transfer, freeze, unfreeze,
+    ///    destroy_frozen, pause/resume, set_price, purchase,
+    ///    update_config) — DPP's `TokenBaseTransition` accepts ONLY
+    ///    `SecurityLevel::CRITICAL` and rejects HIGH with
+    ///    `InvalidSignaturePublicKeySecurityLevelError`.
     /// 3. Builds a placeholder [`Identity`] populated with those
-    ///    three keys.
+    ///    four keys.
     /// 4. Calls
     ///    [`IdentityWallet::register_from_addresses`](platform_wallet::wallet::identity::IdentityWallet::register_from_addresses)
     ///    with the funding map `{addr_1 → funding}`.
@@ -423,14 +430,18 @@ impl TestWallet {
             identity_index,
         )?);
 
-        // Slot 0 → MASTER, slot 1 → HIGH, slot 2 → TRANSFER. Match
-        // the DET / DPNS register_name pattern: MASTER is required
-        // for identity mutation, HIGH covers signing for most state
-        // transitions, and TRANSFER is enforced by DPP for credit
-        // transfers (rs-dpp identity_credit_transfer_transition
-        // v0_methods.rs:63-83 calls
-        // `identity.get_first_public_key_matching(Purpose::TRANSFER, ...)`
-        // and rejects if absent).
+        // Slot 0 → MASTER, slot 1 → HIGH, slot 2 → TRANSFER, slot 3 →
+        // CRITICAL auth. MASTER is required for identity mutation,
+        // HIGH covers `DataContractCreate` (which accepts HIGH or
+        // CRITICAL) and most credit-balance state transitions,
+        // TRANSFER is enforced by DPP for credit transfers (rs-dpp
+        // `identity_credit_transfer_transition/v0/v0_methods.rs:63-83`
+        // calls `identity.get_first_public_key_matching(Purpose::TRANSFER, ...)`
+        // and rejects if absent), and CRITICAL is required for every
+        // token-batch transition (`TokenBaseTransition`'s
+        // `IdentitySignedV0::security_level_requirement` returns only
+        // `SecurityLevel::CRITICAL` — see rs-dpp
+        // `state_transition/batch_transition/batched_transition/token_base_transition/identity_signed/v0/`).
         let master_key = derive_identity_key(
             &self.seed_bytes,
             network,
@@ -455,6 +466,14 @@ impl TestWallet {
             Purpose::TRANSFER,
             SecurityLevel::CRITICAL,
         )?;
+        let critical_key = derive_identity_key(
+            &self.seed_bytes,
+            network,
+            identity_index,
+            3,
+            Purpose::AUTHENTICATION,
+            SecurityLevel::CRITICAL,
+        )?;
 
         // Build the placeholder identity. `id` is recomputed from
         // the input-address map by the SDK at submit time; we set
@@ -464,6 +483,7 @@ impl TestWallet {
         public_keys.insert(master_key.id(), master_key.clone());
         public_keys.insert(high_key.id(), high_key.clone());
         public_keys.insert(transfer_key.id(), transfer_key.clone());
+        public_keys.insert(critical_key.id(), critical_key.clone());
         let placeholder = Identity::V0(IdentityV0 {
             id: Identifier::default(),
             public_keys,
@@ -508,6 +528,7 @@ impl TestWallet {
             master_key,
             high_key,
             transfer_key,
+            critical_key,
             signer: identity_signer,
             identity_index,
             funding,
@@ -648,21 +669,34 @@ const DEFAULT_IDENTITY_VISIBILITY_TIMEOUT: Duration = Duration::from_secs(30);
 /// A registered identity returned by
 /// [`TestWallet::register_identity_from_addresses`].
 ///
-/// Bundles the on-chain identifier with the two placeholder keys
-/// (MASTER + HIGH) and the seed-backed identity signer so callers
-/// can drive identity-side state transitions (top-up, transfer,
-/// DPNS register, ...) without re-deriving anything.
+/// Bundles the on-chain identifier with the four placeholder keys
+/// (MASTER + HIGH + TRANSFER + CRITICAL auth) and the seed-backed
+/// identity signer so callers can drive identity-side state
+/// transitions (top-up, transfer, DPNS register, token mint/burn/...)
+/// without re-deriving anything.
 pub struct RegisteredIdentity {
     /// On-chain identity identifier.
     pub id: Identifier,
-    /// MASTER auth key (DPP `KeyID = 0`).
+    /// MASTER auth key (DPP `KeyID = 0`). Required for
+    /// identity-mutation transitions (e.g. `IdentityUpdate`).
     pub master_key: IdentityPublicKey,
-    /// HIGH auth key (DPP `KeyID = 1`).
+    /// HIGH auth key (DPP `KeyID = 1`). Used for `DataContractCreate`
+    /// (CRITICAL or HIGH accepted) and most credit-balance state
+    /// transitions.
     pub high_key: IdentityPublicKey,
     /// TRANSFER + CRITICAL key (DPP `KeyID = 2`). Required by DPP
     /// for `IdentityCreditTransferTransition` — see rs-dpp
     /// `identity_credit_transfer_transition/v0/v0_methods.rs:63-83`.
     pub transfer_key: IdentityPublicKey,
+    /// AUTHENTICATION + CRITICAL key (DPP `KeyID = 3`). Required for
+    /// every token-batch state transition (mint, burn, transfer,
+    /// freeze, unfreeze, destroy_frozen, pause, resume, set_price,
+    /// purchase, update_config). DPP's `TokenBaseTransition`
+    /// `security_level_requirement` returns only
+    /// `SecurityLevel::CRITICAL`; signing with HIGH yields
+    /// `InvalidSignaturePublicKeySecurityLevelError` at chain
+    /// validation.
+    pub critical_key: IdentityPublicKey,
     /// `Arc`-shared signer pre-derived for this identity's DIP-9 slot.
     /// `Arc` lets callers hand the same signer to multiple state-transition
     /// builders without re-creating the key cache.

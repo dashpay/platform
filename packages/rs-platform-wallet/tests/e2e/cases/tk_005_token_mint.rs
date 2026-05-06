@@ -94,7 +94,7 @@ async fn tk_005_token_mint() {
     ctx.sdk()
         .token_mint(
             builder_implicit,
-            &setup.owner.high_key,
+            &setup.owner.critical_key,
             setup.owner.signer.as_ref(),
         )
         .await

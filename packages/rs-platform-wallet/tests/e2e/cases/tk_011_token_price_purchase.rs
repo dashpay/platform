@@ -102,7 +102,7 @@ async fn tk_011_set_price_and_direct_purchase_round_trip() {
     ctx.sdk()
         .token_set_price_for_direct_purchase(
             set_price_builder,
-            &owner.high_key,
+            &owner.critical_key,
             owner.signer.as_ref(),
         )
         .await
@@ -139,7 +139,7 @@ async fn tk_011_set_price_and_direct_purchase_round_trip() {
         TOTAL_AGREED_PRICE,
     );
     ctx.sdk()
-        .token_purchase(purchase_builder, &buyer.high_key, buyer.signer.as_ref())
+        .token_purchase(purchase_builder, &buyer.critical_key, buyer.signer.as_ref())
         .await
         .expect("purchase transition");
 
