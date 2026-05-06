@@ -57,10 +57,21 @@ class ShieldedService: ObservableObject {
     /// pass.
     @Published var lastError: String?
 
-    /// Bech32m-encoded Orchard payment address. Currently a
-    /// placeholder — the manager doesn't expose the per-wallet
-    /// address yet (defer until bundle building lands).
+    /// Bech32m-encoded Orchard payment address for account 0.
+    /// Kept for the existing Receive sheet which is still
+    /// single-account; multi-account-aware UI uses
+    /// `addressesByAccount` instead.
     @Published var orchardDisplayAddress: String?
+
+    /// Bound shielded ZIP-32 accounts, in ascending order. Driven
+    /// by `bind` — every entry of `accounts:` becomes a row here.
+    @Published var boundAccounts: [UInt32] = []
+
+    /// Bech32m-encoded Orchard payment address per bound account.
+    /// Populated alongside `boundAccounts` from per-account
+    /// `shieldedDefaultAddress` calls. Empty for accounts that
+    /// failed to bind.
+    @Published var addressesByAccount: [UInt32: String] = [:]
 
     // MARK: - Internals
 
@@ -90,8 +101,15 @@ class ShieldedService: ObservableObject {
 
     /// Bind the service to a wallet. Drives `bindShielded` on the
     /// Rust side first (resolver-driven mnemonic lookup, ZIP-32
-    /// derivation, per-network commitment tree open) and then
-    /// subscribes to shielded sync events for `walletId`.
+    /// derivation per `accounts`, per-network commitment tree
+    /// open) and then subscribes to shielded sync events for
+    /// `walletId`.
+    ///
+    /// `accounts` is the list of ZIP-32 account indices to bind.
+    /// Defaults to `[0]` for the single-account default; pass
+    /// `[0, 1, …]` to bind multiple accounts up front. Each
+    /// gets its own subwallet bookkeeping inside the store; the
+    /// commitment tree is shared per network.
     ///
     /// Failure during the Rust-side bind sets `lastError`; the
     /// service continues to subscribe to events so a successful
@@ -100,7 +118,8 @@ class ShieldedService: ObservableObject {
         walletManager: PlatformWalletManager,
         walletId: Data,
         network: Network,
-        resolver: MnemonicResolver
+        resolver: MnemonicResolver,
+        accounts: [UInt32] = [0]
     ) {
         self.walletManager = walletManager
         self.walletId = walletId
@@ -125,38 +144,50 @@ class ShieldedService: ObservableObject {
         lastSyncTime = nil
         lastError = nil
         orchardDisplayAddress = nil
+        boundAccounts = []
+        addressesByAccount = [:]
         syncCountSinceLaunch = 0
         totalScanned = 0
         totalNewNotes = 0
         totalNewlySpent = 0
 
         let dbPath = Self.dbPath(for: network)
+        let sortedAccounts = Array(Set(accounts)).sorted()
         do {
             try walletManager.bindShielded(
                 walletId: walletId,
                 resolver: resolver,
-                accounts: [0],
+                accounts: sortedAccounts,
                 dbPath: dbPath
             )
             isBound = true
             lastError = nil
+            boundAccounts = sortedAccounts
 
-            // Pull the default Orchard payment address now that bind
-            // succeeded so the Receive sheet has something to render
-            // before the first sync pass lands. Best-effort —
-            // failures here don't unbind the wallet.
-            if let raw = try? walletManager.shieldedDefaultAddress(
-                walletId: walletId,
-                account: 0
-            ) {
-                orchardDisplayAddress = DashAddress.encodeOrchard(
-                    rawBytes: raw,
-                    network: network
-                )
+            // Populate per-account default addresses. Best-effort —
+            // a failure on any one account leaves that entry
+            // missing from `addressesByAccount` (the row in the UI
+            // shows blank) but doesn't unbind the wallet.
+            for account in sortedAccounts {
+                if let raw = try? walletManager.shieldedDefaultAddress(
+                    walletId: walletId,
+                    account: account
+                ) {
+                    addressesByAccount[account] = DashAddress.encodeOrchard(
+                        rawBytes: raw,
+                        network: network
+                    )
+                }
             }
+            // Backwards-compat: `orchardDisplayAddress` still drives
+            // the existing Receive sheet which only renders one
+            // address. Use account 0 if bound, else the lowest
+            // bound account.
+            let primary = sortedAccounts.contains(0) ? 0 : (sortedAccounts.first ?? 0)
+            orchardDisplayAddress = addressesByAccount[primary]
 
             SDKLogger.log(
-                "Shielded bound: walletId=\(walletId.prefix(4).map { String(format: "%02x", $0) }.joined())… network=\(network.networkName) tree=\(dbPath)",
+                "Shielded bound: walletId=\(walletId.prefix(4).map { String(format: "%02x", $0) }.joined())… network=\(network.networkName) accounts=\(sortedAccounts) tree=\(dbPath)",
                 minimumLevel: .medium
             )
         } catch {
@@ -254,6 +285,8 @@ class ShieldedService: ObservableObject {
         lastSyncTime = nil
         lastError = nil
         orchardDisplayAddress = nil
+        boundAccounts = []
+        addressesByAccount = [:]
         syncCountSinceLaunch = 0
         totalScanned = 0
         totalNewNotes = 0

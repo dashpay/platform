@@ -6,6 +6,7 @@ import SwiftData
 struct AccountListView: View {
     let wallet: PersistentWallet
     @EnvironmentObject var walletManager: PlatformWalletManager
+    @EnvironmentObject var shieldedService: ShieldedService
 
     @Query private var accounts: [PersistentAccount]
 
@@ -53,9 +54,21 @@ struct AccountListView: View {
         return (group, account.accountType, account.standardTag, account.accountIndex)
     }
 
+    /// Bound shielded accounts to render in their own section
+    /// below the Core / Platform accounts. Empty until
+    /// `ShieldedService.bind` has populated the list — which
+    /// happens once per wallet detail open.
+    private var shieldedAccountsForThisWallet: [UInt32] {
+        // Filter by wallet id so navigating between wallet
+        // details doesn't briefly show the previous wallet's
+        // accounts before the singleton service rebinds.
+        guard shieldedService.boundAccounts.isEmpty == false else { return [] }
+        return shieldedService.boundAccounts
+    }
+
     var body: some View {
         ZStack {
-            if accounts.isEmpty {
+            if accounts.isEmpty && shieldedAccountsForThisWallet.isEmpty {
                 ContentUnavailableView(
                     "No Accounts",
                     systemImage: "folder",
@@ -63,21 +76,76 @@ struct AccountListView: View {
                 )
             } else {
                 let balances = walletManager.accountBalances(for: wallet.walletId)
-                List(orderedAccounts) { account in
-                    NavigationLink(destination: AccountDetailView(wallet: wallet, account: account)) {
-                        let match = balances.first { b in
-                            UInt32(b.typeTag) == account.accountType &&
-                            b.standardTag == account.standardTag &&
-                            b.index == account.accountIndex
+                List {
+                    if !accounts.isEmpty {
+                        Section {
+                            ForEach(orderedAccounts) { account in
+                                NavigationLink(
+                                    destination: AccountDetailView(wallet: wallet, account: account)
+                                ) {
+                                    let match = balances.first { b in
+                                        UInt32(b.typeTag) == account.accountType &&
+                                        b.standardTag == account.standardTag &&
+                                        b.index == account.accountIndex
+                                    }
+                                    AccountRowView(
+                                        account: account,
+                                        coreConfirmedBalance: match?.confirmed ?? 0,
+                                        coreUnconfirmedBalance: match?.unconfirmed ?? 0
+                                    )
+                                }
+                            }
                         }
-                        AccountRowView(
-                            account: account,
-                            coreConfirmedBalance: match?.confirmed ?? 0,
-                            coreUnconfirmedBalance: match?.unconfirmed ?? 0
-                        )
+                    }
+                    if !shieldedAccountsForThisWallet.isEmpty {
+                        Section("Shielded") {
+                            ForEach(shieldedAccountsForThisWallet, id: \.self) { account in
+                                ShieldedAccountRowView(
+                                    accountIndex: account,
+                                    address: shieldedService.addressesByAccount[account]
+                                )
+                            }
+                        }
                     }
                 }
                 .listStyle(.plain)
+            }
+        }
+    }
+}
+
+// MARK: - Shielded Account Row
+
+/// Compact row that mirrors `AccountRowView` for shielded ZIP-32
+/// accounts. There's no `PersistentShieldedAccount` SwiftData
+/// model — bound accounts live on `ShieldedService.boundAccounts`
+/// — so the row is purely a display projection of `(index,
+/// address)`.
+private struct ShieldedAccountRowView: View {
+    let accountIndex: UInt32
+    let address: String?
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "lock.shield.fill")
+                .foregroundColor(.purple)
+                .font(.title3)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Shielded #\(accountIndex)")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                if let address {
+                    Text(address)
+                        .font(.system(.caption2, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                } else {
+                    Text("address not available")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .italic()
+                }
             }
         }
     }
