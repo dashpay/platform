@@ -50,10 +50,9 @@ use crate::framework::tokens::{
 };
 use crate::framework::wallet_factory::RegisteredIdentity;
 
-/// Per-identity bank funding. Three identities each broadcast at
-/// least one state transition; the floor leaves headroom for the
-/// extra contract-create + mint propose / co-sign legs.
-const FUNDING: dpp::fee::Credits = 1_500_000_000;
+/// Per-identity bank funding. Mirrors `DEFAULT_TK_FUNDING` — sized to
+/// cover the contract-deploy fee floor (~30 B credits) across all three identities.
+const FUNDING: dpp::fee::Credits = 35_000_100_000;
 
 /// Tokens minted via the group-gated proposal. Small enough that any
 /// arithmetic regression (extra credit, dropped co-sign) surfaces as

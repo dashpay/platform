@@ -41,10 +41,9 @@ use crate::framework::tokens::{
 /// surfaces as an unmistakable balance mismatch.
 const PAYOUT: TokenAmount = 100;
 
-/// Per-identity bank funding for the setup helper. Covers contract
-/// create + a couple of state transitions with headroom — sized in
-/// line with the rest of the TK fixtures.
-const FUNDING: dpp::fee::Credits = 1_000_000_000;
+/// Per-identity bank funding for the setup helper. Mirrors `DEFAULT_TK_FUNDING`
+/// — sized to cover the contract-deploy fee floor (~30 B credits).
+const FUNDING: dpp::fee::Credits = 35_000_100_000;
 
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 #[ignore = "requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access; run with `cargo test -- --ignored`"]
