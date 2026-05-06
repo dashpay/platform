@@ -215,6 +215,14 @@ struct TokenUpdateMaxSupplyActionView: View {
         let contractId = token.contractId
         let note = publicNote.trimmingCharacters(in: .whitespacesAndNewlines)
         let publicNoteOrNil: String? = note.isEmpty ? nil : note
+        // `PersistentToken.maxSupply` is a string-encoded raw u64 (see
+        // `currentMaxSupplyDisplay` — it parses via `UInt64(raw)`),
+        // with `nil` representing "no cap" / Unlimited. Materialize the
+        // post-success target value here so the Task closure can write
+        // it back without re-touching @State from a non-main context.
+        let newMaxSupplyValue: String? = removeCap
+            ? nil
+            : parsedNewMaxSupply.map(String.init)
 
         Task {
             do {
@@ -230,6 +238,18 @@ struct TokenUpdateMaxSupplyActionView: View {
                 await MainActor.run {
                     guard self.submitGeneration == gen else { return }
                     self.isSubmitting = false
+                    // Single-signer submissions execute on this call —
+                    // flip the local maxSupply so the view (and any
+                    // surfaces reading `token.maxSupply`) reflects the
+                    // new cap without waiting for a manual contract
+                    // refetch. Propose-mode just stores a pending
+                    // group action; the chain config doesn't change
+                    // until the threshold-crossing co-signer submits,
+                    // so leave the field alone in that branch.
+                    if case .none = groupAction {
+                        token.maxSupply = newMaxSupplyValue
+                        try? modelContext.save()
+                    }
                     self.dismiss()
                 }
             } catch {
