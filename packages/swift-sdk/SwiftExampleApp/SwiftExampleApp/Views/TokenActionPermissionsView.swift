@@ -904,15 +904,19 @@ struct TokenActionPermissionsView: View {
                 position: position
             )
             let statuses = try await sdk.getTokenStatuses(tokenIds: [canonicalTokenId])
-            // Shape: `{ "<base58_token_id>": { "paused": Bool } | null }`.
-            // A `null` status means the chain has no pause record for
-            // this token yet (never paused) — treat as not-paused.
-            let chainPaused: Bool
-            if let entry = statuses[canonicalTokenId] as? [String: Any],
-               let paused = entry["paused"] as? Bool {
-                chainPaused = paused
-            } else {
-                chainPaused = false
+            // Shape: `{ "<base58_token_id>": { "paused": Bool } }`.
+            // rs-drive writes a `TokenStatus` row at token creation
+            // (including for `start_as_paused = true`), so a missing
+            // or shape-mismatched entry is *not* "this token is
+            // unpaused" — it's a transient parse edge, an FFI shape
+            // change, or a partial response. Treat that the same way
+            // the surrounding `catch` treats a transport error:
+            // preserve the existing local flag rather than silently
+            // relaxing the Pause / Resume gate.
+            guard let entry = statuses[canonicalTokenId] as? [String: Any],
+                  let chainPaused = entry["paused"] as? Bool else {
+                print("⚠️ refreshTokenStatus: missing/malformed status entry for \(canonicalTokenId) — preserving local isPaused=\(token.isPaused)")
+                return
             }
             await MainActor.run {
                 // Late-arriving status responses are dropped if a fresher

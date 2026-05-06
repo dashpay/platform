@@ -62,6 +62,19 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             .distribution_rules()
             .minting_allow_choosing_destination()
         {
+            // Surface the silent override in logs so downstream
+            // debugging doesn't have to reverse-engineer "the helper
+            // ignored my recipient" from a successful mint to
+            // `newTokensDestinationIdentity`. Only emit when we
+            // actually changed something — a pre-existing `None`
+            // is a no-op.
+            if let Some(supplied) = recipient_id.as_ref() {
+                tracing::debug!(
+                    supplied = %bs58::encode(supplied.to_buffer()).into_string(),
+                    token_position,
+                    "token_mint normalizing caller-supplied recipient_id to None: contract forbids choosing destination"
+                );
+            }
             None
         } else {
             recipient_id

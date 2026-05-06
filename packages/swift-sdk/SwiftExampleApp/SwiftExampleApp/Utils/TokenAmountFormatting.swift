@@ -39,9 +39,12 @@ func parseTokenAmount(_ text: String, decimals: Int) -> UInt64? {
     // ".5" is what `.decimalPad` actually emits in some locales).
     guard isWellFormedDecimal(normalized) else { return nil }
 
-    guard let entered = Decimal(string: normalized), entered >= 0 else {
-        return nil
-    }
+    guard let entered = Decimal(string: normalized) else { return nil }
+    // `isWellFormedDecimal` accepts only digits + a single `.`, so
+    // `Decimal(string:)` cannot return a negative value here. The
+    // previous `entered >= 0` and `rounded < 0` guards next to this
+    // site were dead code; only the `> UInt64.max` overflow check is
+    // reachable (large valid-shape input scaled by `10^decimals`).
 
     let dec = max(0, decimals)
     let multiplier = pow(Decimal(10), dec)
@@ -49,7 +52,7 @@ func parseTokenAmount(_ text: String, decimals: Int) -> UInt64? {
     var rounded = Decimal()
     NSDecimalRound(&rounded, &scaled, 0, .down)
 
-    if rounded < 0 || rounded > Decimal(UInt64.max) { return nil }
+    if rounded > Decimal(UInt64.max) { return nil }
     return (rounded as NSDecimalNumber).uint64Value
 }
 
@@ -69,11 +72,16 @@ private func isWellFormedDecimal(_ s: String) -> Bool {
     return sawDigit
 }
 
-/// Format a raw u64 token amount with the given decimals. Uses the
-/// current locale's grouping/decimal separators (so European users
-/// see `4,44667781` and US users see `4.44667781`). Mirrors the
-/// formatter used by `IdentityTokenRow.formattedBalance` in
-/// `IdentityDetailView`.
+/// Format a raw u64 token amount with the given decimals. Honors the
+/// current locale's *decimal* separator (European users see
+/// `1234,56`, US users see `1234.56`) but **does not** insert a
+/// thousands grouping separator. Round-trip safety: `parseTokenAmount`
+/// strict grammar + `,→.` normalization happily parses `"1,234"` as
+/// `1.234` (a thousand times smaller than the user thought), so a user
+/// copying any portion of a grouped display value into a Mint / Burn /
+/// Transfer amount field could silently lose three orders of
+/// magnitude. Disabling grouping in this formatter makes every value
+/// it produces a valid input for the parser.
 func formatTokenAmount(_ raw: UInt64, decimals: Int) -> String {
     let dec = max(0, decimals)
     let rawDecimal = Decimal(raw)
@@ -86,6 +94,7 @@ func formatTokenAmount(_ raw: UInt64, decimals: Int) -> String {
     formatter.numberStyle = .decimal
     formatter.maximumFractionDigits = dec
     formatter.minimumFractionDigits = 0
-    formatter.usesGroupingSeparator = true
+    // Intentionally off — see the function-level doc comment.
+    formatter.usesGroupingSeparator = false
     return formatter.string(from: scaled as NSNumber) ?? "\(raw)"
 }
