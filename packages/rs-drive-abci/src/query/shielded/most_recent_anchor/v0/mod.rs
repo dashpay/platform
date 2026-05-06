@@ -11,6 +11,7 @@ use dpp::check_validation_result_with_data;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::drive::shielded::paths::shielded_latest_recorded_anchor_path_query;
+use drive::error::drive::DriveError;
 use drive::grovedb::query_result_type::QueryResultType;
 use drive::grovedb::Element;
 use drive::util::grove_operations::GroveDBToUse;
@@ -81,9 +82,23 @@ impl<C> Platform<C> {
             // with an explicit absent variant, drop the
             // `vec![0u8; 32]` sentinel here in lock-step with both
             // the verifier and the SDK decoder.
+            // Split the three states explicitly. A non-`Item`
+            // element under `SHIELDED_ANCHORS_BY_HEIGHT_KEY` is a
+            // state-corruption signal — the prove-mode verifier
+            // (`verify_most_recent_shielded_anchor_v0`) and the
+            // raw-read helper
+            // (`Drive::read_latest_recorded_shielded_anchor_v0`)
+            // both surface this as `CorruptedProof` /
+            // `CorruptedElementType`, so the non-prove path must
+            // not silently fold it into the empty-index sentinel.
             let anchor_bytes = match entries.into_iter().next() {
                 Some((_height_key, Element::Item(bytes, _))) => bytes,
-                _ => vec![0u8; 32],
+                Some(_) => {
+                    return Err(Error::Drive(drive::error::Error::Drive(
+                        DriveError::CorruptedElementType("anchors-by-height entry is not an Item"),
+                    )));
+                }
+                None => vec![0u8; 32],
             };
 
             GetMostRecentShieldedAnchorResponseV0 {
