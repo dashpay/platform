@@ -199,7 +199,21 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
         }
 
         if appended > 0 {
-            let checkpoint_id = result.next_start_index as u32;
+            // Use the high-water position (`aligned_start +
+            // total_notes_scanned` — i.e. one past the last
+            // appended position) as the checkpoint id rather than
+            // `result.next_start_index`, which rewinds to the last
+            // partial chunk's start and can therefore be the same
+            // value across consecutive syncs. shardtree's
+            // `checkpoint(id)` silently dedups duplicate ids, so
+            // a non-monotonic id leaves depth-0 pinned at the
+            // first checkpoint while later appends extend the
+            // tree past it. The witness at depth 0 then reflects
+            // an old state whose root Platform never recorded,
+            // and the bundle's anchor fails the
+            // `validate_anchor_exists` check on broadcast.
+            let new_index = aligned_start + result.total_notes_scanned;
+            let checkpoint_id: u32 = new_index.try_into().unwrap_or(u32::MAX);
             store
                 .checkpoint_tree(checkpoint_id)
                 .map_err(|e| PlatformWalletError::ShieldedTreeUpdateFailed(e.to_string()))?;
