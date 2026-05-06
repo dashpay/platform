@@ -5,9 +5,11 @@
 //! SQLite-backed for production) while tests can use `InMemoryShieldedStore`.
 //!
 //! Note data is stored as raw bytes (`note_data: Vec<u8>`) — a serialized
-//! `orchard::Note` — so the trait itself does not depend on `orchard` types.
-//! The serialization format is documented in
-//! [`crate::wallet::shielded::keys`] (115 bytes: recipient || value || rho || rseed).
+//! `orchard::Note`. The witness path, however, is returned as a typed
+//! `grovedb_commitment_tree::MerklePath`: that type doesn't implement
+//! serde, so a bytes contract would force every caller through a
+//! serializer that doesn't exist. Anything spending a note already
+//! depends on these types via the DPP shielded builder.
 
 use std::collections::BTreeMap;
 use std::error::Error as StdError;
@@ -85,11 +87,21 @@ pub trait ShieldedStore: Send + Sync {
     fn tree_anchor(&self) -> Result<[u8; 32], Self::Error>;
 
     /// Generate a Merkle authentication path (witness) for the note at the
-    /// given global position. Returns the path as raw bytes.
+    /// given global position, against the current tree state.
+    ///
+    /// Returns `Ok(None)` if no witness is available (e.g. the position is
+    /// not marked or the tree state has been pruned past it). Returns the
+    /// typed `MerklePath` so callers can hand it directly to the Orchard
+    /// spend builder; `MerklePath` doesn't implement serde, so a bytes
+    /// variant would force every caller to round-trip through a
+    /// non-existent serializer.
     ///
     /// This is needed when spending a note — the ZK proof must demonstrate
     /// that the note commitment exists in the tree at `anchor`.
-    fn witness(&self, position: u64) -> Result<Vec<u8>, Self::Error>;
+    fn witness(
+        &self,
+        position: u64,
+    ) -> Result<Option<grovedb_commitment_tree::MerklePath>, Self::Error>;
 
     // ── Sync state ─────────────────────────────────────────────────────
 
@@ -217,7 +229,10 @@ impl ShieldedStore for InMemoryShieldedStore {
         Ok(self.anchor)
     }
 
-    fn witness(&self, _position: u64) -> Result<Vec<u8>, Self::Error> {
+    fn witness(
+        &self,
+        _position: u64,
+    ) -> Result<Option<grovedb_commitment_tree::MerklePath>, Self::Error> {
         // In-memory store does not support real Merkle witness generation.
         // Production implementations use ClientPersistentCommitmentTree.
         Err(InMemoryStoreError(

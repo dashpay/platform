@@ -160,14 +160,19 @@ impl ShieldedStore for FileBackedShieldedStore {
             .map_err(|e| FileShieldedStoreError(format!("read tree anchor: {e}")))
     }
 
-    fn witness(&self, _position: u64) -> Result<Vec<u8>, Self::Error> {
-        // Witness path serialization lives with the spend signer; the
-        // sync path doesn't call this, and spend ops haven't been
-        // routed back through `ShieldedStore` yet.
-        let _ = Position::from(_position); // keep the import alive
-        Err(FileShieldedStoreError(
-            "witness generation deferred until spend signer lands".into(),
-        ))
+    fn witness(
+        &self,
+        position: u64,
+    ) -> Result<Option<grovedb_commitment_tree::MerklePath>, Self::Error> {
+        let tree = self
+            .tree
+            .lock()
+            .map_err(|e| FileShieldedStoreError(format!("tree mutex poisoned: {e}")))?;
+        // `checkpoint_depth = 0` = current tree state. The Halo 2
+        // proof we're about to build uses `tree_anchor()` — also
+        // depth 0 — so the witness root must agree.
+        tree.witness(Position::from(position), 0)
+            .map_err(|e| FileShieldedStoreError(format!("witness({position}): {e}")))
     }
 
     fn last_synced_note_index(&self) -> Result<u64, Self::Error> {

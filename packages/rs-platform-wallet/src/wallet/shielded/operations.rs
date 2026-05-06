@@ -542,7 +542,6 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
 
         let mut spends = Vec::with_capacity(notes.len());
         for note in notes {
-            // Deserialize the stored note back to an Orchard Note
             let orchard_note = deserialize_note(&note.note_data).ok_or_else(|| {
                 PlatformWalletError::ShieldedBuildError(format!(
                     "Failed to deserialize note at position {}",
@@ -550,29 +549,25 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
                 ))
             })?;
 
-            // Get Merkle witness for this note position.
-            // The ShieldedStore trait returns Vec<u8> to avoid coupling the trait
-            // to the MerklePath type. Production implementations should store the
-            // witness bytes from ClientPersistentCommitmentTree::witness().
-            //
-            // TODO: MerklePath doesn't implement serde traits, so we can't
-            // deserialize from bytes generically. The real fix is to either:
-            // (a) Make ShieldedStore return MerklePath directly (couples to orchard), or
-            // (b) Add a witness_for_spend() method that returns SpendableNote directly.
-            // For now, spending operations require a store that provides valid witnesses.
-            let _witness_bytes = store.witness(note.position).map_err(|e| {
-                PlatformWalletError::ShieldedMerkleWitnessUnavailable(e.to_string())
-            })?;
+            // The store returns the typed `MerklePath` (option (a) from
+            // the previous TODO — coupling the trait to the orchard
+            // types is the only sound path: `MerklePath` doesn't
+            // implement serde, so a bytes contract would force every
+            // caller through a serializer that doesn't exist).
+            let merkle_path = store
+                .witness(note.position)
+                .map_err(|e| PlatformWalletError::ShieldedMerkleWitnessUnavailable(e.to_string()))?
+                .ok_or_else(|| {
+                    PlatformWalletError::ShieldedMerkleWitnessUnavailable(format!(
+                        "no witness available for note at position {} (not marked, or pruned past this position)",
+                        note.position
+                    ))
+                })?;
 
-            // TODO: Convert witness bytes to MerklePath and build SpendableNote.
-            // MerklePath doesn't implement serde, so this requires either:
-            // (a) coupling ShieldedStore to MerklePath type, or
-            // (b) a higher-level method that returns SpendableNote directly.
-            // For now, spending operations are not yet functional.
-            let _note = orchard_note;
-            return Err(PlatformWalletError::ShieldedBuildError(
-                "Spending operations require a ShieldedStore that provides MerklePath witnesses. Not yet implemented.".to_string(),
-            ));
+            spends.push(SpendableNote {
+                note: orchard_note,
+                merkle_path,
+            });
         }
 
         let anchor_bytes = store
