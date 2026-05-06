@@ -16,6 +16,7 @@ use std::time::Duration;
 
 use platform_wallet::wallet::persister::NoPlatformPersistence;
 use platform_wallet::{PlatformEventHandler, PlatformWalletManager, SpvRuntime};
+use rs_sdk_trusted_context_provider::TrustedHttpContextProvider;
 use tokio::sync::OnceCell;
 use tokio_util::sync::CancellationToken;
 
@@ -145,6 +146,16 @@ pub struct E2eContext {
     /// releases the lock.
     workdir_lock: File,
     pub sdk: Arc<dash_sdk::Sdk>,
+    /// Shared handle to the SDK's [`TrustedHttpContextProvider`].
+    /// Tests that deploy contracts at runtime must call
+    /// [`TrustedHttpContextProvider::add_known_contract`] (and
+    /// `add_known_token_configuration` for token slots) on this
+    /// handle so the SDK's proof verifier can resolve the contract
+    /// — otherwise the next state transition referencing the new
+    /// contract surfaces `DriveProofError(UnknownContract)`. The
+    /// inner caches are `Arc<Mutex<...>>`, so the SDK's clone of
+    /// the provider sees mutations made through this handle. (QA-900)
+    pub context_provider: Arc<TrustedHttpContextProvider>,
     pub manager: Arc<PlatformWalletManager<NoPlatformPersistence>>,
     /// SPV runtime started by [`Self::build`]. The SDK still uses
     /// the trusted HTTP context provider; this handle is exposed via
@@ -181,6 +192,15 @@ impl E2eContext {
 
     pub fn manager(&self) -> &Arc<PlatformWalletManager<NoPlatformPersistence>> {
         &self.manager
+    }
+
+    /// Shared `Arc` over the SDK's [`TrustedHttpContextProvider`].
+    /// Use [`TrustedHttpContextProvider::add_known_contract`] to
+    /// register a freshly-deployed contract before any state
+    /// transition that references it; see the field-level docs on
+    /// [`Self::context_provider`]. (QA-900)
+    pub fn context_provider(&self) -> &Arc<TrustedHttpContextProvider> {
+        &self.context_provider
     }
 
     /// Pre-funded bank wallet — the funding source for tests.
@@ -261,7 +281,7 @@ impl E2eContext {
 
         let cancel_token = CancellationToken::new();
 
-        let sdk = sdk::build_sdk(&config)?;
+        let (sdk, context_provider) = sdk::build_sdk(&config)?;
 
         // Persister discards changesets (testnet re-sync is fast).
         // Event handler is the shared [`WaitEventHub`] so test
@@ -455,6 +475,7 @@ impl E2eContext {
             workdir,
             workdir_lock,
             sdk,
+            context_provider,
             manager,
             spv_runtime,
             bank,

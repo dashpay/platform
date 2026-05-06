@@ -514,5 +514,13 @@ async fn publish_token_contract_with_groups(
     )
     .await?;
 
+    // QA-900 — same register-with-trusted-context dance as
+    // `register_token_contract_via_sdk`. TK-014 publishes its
+    // group-gated contract inline (the framework helper doesn't
+    // surface a `groups` injection point), so the registration has
+    // to happen here too — otherwise `mint_with_group_info` lands on
+    // `DriveProofError(UnknownContract)`.
+    crate::framework::tokens::register_contract_with_context_provider(ctx, &confirmed);
+
     Ok(contract_id)
 }

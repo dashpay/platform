@@ -47,6 +47,7 @@ use dash_sdk::Sdk;
 use dpp::balances::credits::TokenAmount;
 use dpp::balances::total_single_token_balance::TotalSingleTokenBalance;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::data_contract::{DataContract, TokenContractPosition};
 use dpp::identity::accessors::IdentityGettersV0;
@@ -230,7 +231,48 @@ pub async fn register_token_contract_via_sdk(
     )
     .await?;
 
+    // QA-900 — register the just-deployed contract (and any token
+    // configurations it carries) with the SDK's
+    // `TrustedHttpContextProvider`. Without this, the next proof
+    // verification that resolves the contract id (e.g. the chain
+    // round-trip on `Sdk::token_mint`) walks the static system-contract
+    // map, misses, and surfaces
+    // `DriveProofError(UnknownContract("... in token verification"))`.
+    register_contract_with_context_provider(ctx, &confirmed);
+
     Ok(contract_id)
+}
+
+/// Register a freshly-deployed [`DataContract`] (plus all of its V1
+/// token slots) with the harness's shared
+/// [`TrustedHttpContextProvider`]. Idempotent — repeated calls just
+/// re-insert the same entries. Lifts the post-deploy registration step
+/// that otherwise needs to be repeated at every contract-creating
+/// site. (QA-900)
+pub fn register_contract_with_context_provider(ctx: &E2eContext, contract: &DataContract) {
+    let contract_id = contract.id();
+    ctx.context_provider().add_known_contract(contract.clone());
+
+    // Token-slot configurations let the proof verifier resolve
+    // per-token settings (decimals, freeze rules, etc.) without a
+    // round-trip through the (still-unfetched) contract. Mirrors the
+    // same canonical token-id derivation used by the read accessors
+    // below — `calculate_token_id(contract_id, position)`.
+    let positions: Vec<TokenContractPosition> = contract.tokens().keys().copied().collect();
+    for position in positions {
+        let token_id = Identifier::from(calculate_token_id(contract_id.as_bytes(), position));
+        if let Some(config) = contract.tokens().get(&position).cloned() {
+            ctx.context_provider()
+                .add_known_token_configuration(token_id, config);
+        }
+    }
+
+    tracing::debug!(
+        target: "platform_wallet::e2e::tokens",
+        ?contract_id,
+        token_positions = ?contract.tokens().keys().copied().collect::<Vec<_>>(),
+        "registered freshly-deployed contract with TrustedHttpContextProvider (QA-900)"
+    );
 }
 
 // ---------------------------------------------------------------------------
