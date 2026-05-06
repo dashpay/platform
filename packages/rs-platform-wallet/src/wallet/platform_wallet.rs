@@ -293,24 +293,29 @@ impl PlatformWallet {
 
     /// Bind a shielded (Orchard) sub-wallet to this `PlatformWallet`.
     ///
-    /// Derives ZIP-32 Orchard keys from `seed` (a 32-252 byte BIP-39
-    /// seed; see [`SpendingKey::from_zip32_seed`]), opens or creates
-    /// the per-network commitment tree at `db_path`, and stores the
-    /// resulting [`ShieldedWallet`] on this handle. The caller is
-    /// responsible for sourcing the seed (e.g. via the host
-    /// `MnemonicResolverHandle`) and for zeroizing it once this call
-    /// returns. The seed is not retained — only the FVK / IVK / OVK
-    /// / default address derived from it survive on the wallet.
+    /// Derives ZIP-32 Orchard keys for every entry of `accounts`
+    /// from `seed` (a 32-252 byte BIP-39 seed; see
+    /// [`SpendingKey::from_zip32_seed`]), opens or creates the
+    /// per-network commitment tree at `db_path`, and stores the
+    /// resulting multi-account [`ShieldedWallet`] on this handle.
+    /// The caller is responsible for sourcing the seed (e.g. via
+    /// the host `MnemonicResolverHandle`) and for zeroizing it
+    /// once this call returns. The seed is not retained — only
+    /// the per-account FVK / IVK / OVK / default address derived
+    /// from it survive on the wallet.
     ///
     /// Idempotent: a second call replaces the previously-bound
     /// shielded wallet (e.g. after a network switch).
+    ///
+    /// `accounts` must be non-empty; pass `&[0]` for the
+    /// single-account default.
     ///
     /// [`SpendingKey::from_zip32_seed`]: grovedb_commitment_tree::SpendingKey::from_zip32_seed
     #[cfg(feature = "shielded")]
     pub async fn bind_shielded(
         &self,
         seed: &[u8],
-        account: u32,
+        accounts: &[u32],
         db_path: impl AsRef<Path>,
     ) -> Result<(), PlatformWalletError> {
         // Open / create the SQLite-backed commitment tree first so
@@ -319,12 +324,39 @@ impl PlatformWallet {
         let store = FileBackedShieldedStore::open_path(db_path, 100)
             .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
         let network = self.sdk.network;
-        let wallet =
-            ShieldedWallet::from_seed(Arc::clone(&self.sdk), seed, network, account, store)?;
+        let wallet = ShieldedWallet::from_seed_accounts(
+            Arc::clone(&self.sdk),
+            self.wallet_id,
+            seed,
+            network,
+            accounts,
+            store,
+        )?;
 
         let mut slot = self.shielded.write().await;
         *slot = Some(wallet);
         Ok(())
+    }
+
+    /// Add another ZIP-32 account to the already-bound shielded
+    /// sub-wallet. Returns `ShieldedNotBound` if `bind_shielded`
+    /// hasn't run yet.
+    ///
+    /// **Caveat**: notes belonging to `account` that already
+    /// landed on-chain before the bind call only become spendable
+    /// after a tree wipe + re-sync. Hosts that need to discover
+    /// historical funds for a freshly-added account should drop
+    /// the commitment-tree DB and call [`bind_shielded`] again
+    /// with the full account list.
+    #[cfg(feature = "shielded")]
+    pub async fn shielded_add_account(
+        &self,
+        seed: &[u8],
+        account: u32,
+    ) -> Result<(), PlatformWalletError> {
+        let mut slot = self.shielded.write().await;
+        let wallet = slot.as_mut().ok_or(PlatformWalletError::ShieldedNotBound)?;
+        wallet.add_account_from_seed(seed, self.sdk.network, account)
     }
 
     /// Whether the shielded sub-wallet has been bound via
@@ -334,7 +366,20 @@ impl PlatformWallet {
         self.shielded.read().await.is_some()
     }
 
-    /// Run one shielded sync pass on this wallet.
+    /// Bound ZIP-32 account indices on the shielded sub-wallet,
+    /// in ascending order. Empty if not bound.
+    #[cfg(feature = "shielded")]
+    pub async fn shielded_account_indices(&self) -> Vec<u32> {
+        self.shielded
+            .read()
+            .await
+            .as_ref()
+            .map(|w| w.account_indices())
+            .unwrap_or_default()
+    }
+
+    /// Run one shielded sync pass on this wallet (covers every
+    /// bound account in a single chain walk).
     ///
     /// Returns `Ok(None)` if the shielded sub-wallet hasn't been
     /// bound (the sync coordinator skips unbound wallets without
@@ -349,24 +394,54 @@ impl PlatformWallet {
         }
     }
 
-    /// The default Orchard payment address for this wallet, as the
-    /// raw 43-byte representation. Returns `None` if the shielded
-    /// sub-wallet hasn't been bound. Hosts apply their own bech32m
-    /// encoding (HRP + 0x10 type byte) on top.
+    /// The default Orchard payment address for `account` on this
+    /// wallet, as the raw 43-byte representation. Returns `None`
+    /// if the shielded sub-wallet hasn't been bound or `account`
+    /// isn't bound on it. Hosts apply their own bech32m encoding
+    /// (HRP + 0x10 type byte) on top.
     #[cfg(feature = "shielded")]
-    pub async fn shielded_default_address(&self) -> Option<[u8; 43]> {
+    pub async fn shielded_default_address(&self, account: u32) -> Option<[u8; 43]> {
         let guard = self.shielded.read().await;
         guard
             .as_ref()
-            .map(|w| w.default_address().to_raw_address_bytes())
+            .and_then(|w| w.default_address(account).ok())
+            .map(|addr| addr.to_raw_address_bytes())
     }
 
-    /// Send a private shielded → shielded transfer. Spends notes
-    /// from this wallet's shielded balance and sends `amount`
-    /// credits to `recipient_raw_43` (the recipient's Orchard
-    /// payment address as the 43 raw bytes — same shape
-    /// [`shielded_default_address`](Self::shielded_default_address)
-    /// returns).
+    /// Per-account default Orchard payment addresses (raw 43 bytes).
+    #[cfg(feature = "shielded")]
+    pub async fn shielded_default_addresses(&self) -> std::collections::BTreeMap<u32, [u8; 43]> {
+        let guard = self.shielded.read().await;
+        let Some(wallet) = guard.as_ref() else {
+            return std::collections::BTreeMap::new();
+        };
+        wallet
+            .account_indices()
+            .into_iter()
+            .filter_map(|account| {
+                wallet
+                    .default_address(account)
+                    .ok()
+                    .map(|addr| (account, addr.to_raw_address_bytes()))
+            })
+            .collect()
+    }
+
+    /// Per-account unspent shielded balance.
+    #[cfg(feature = "shielded")]
+    pub async fn shielded_balances(
+        &self,
+    ) -> Result<std::collections::BTreeMap<u32, u64>, PlatformWalletError> {
+        let guard = self.shielded.read().await;
+        match guard.as_ref() {
+            Some(wallet) => wallet.balances().await,
+            None => Ok(std::collections::BTreeMap::new()),
+        }
+    }
+
+    /// Send a private shielded → shielded transfer from `account`'s
+    /// notes to `recipient_raw_43` (the recipient's Orchard payment
+    /// address as the 43 raw bytes).
     ///
     /// The prover is consumed by value rather than borrowed because
     /// `OrchardProver` is impl'd on `&CachedOrchardProver` (the
@@ -376,6 +451,7 @@ impl PlatformWallet {
     #[cfg(feature = "shielded")]
     pub async fn shielded_transfer_to<P: dpp::shielded::builder::OrchardProver>(
         &self,
+        account: u32,
         recipient_raw_43: &[u8; 43],
         amount: u64,
         prover: P,
@@ -392,17 +468,19 @@ impl PlatformWallet {
                 "invalid Orchard payment address bytes".to_string(),
             )
         })?;
-        shielded.transfer(&recipient, amount, &prover).await
+        shielded
+            .transfer(account, &recipient, amount, &prover)
+            .await
     }
 
-    /// Unshield: spend shielded notes and send `amount` credits to
-    /// the platform address `to_platform_addr_bech32m` (a bech32m
-    /// string like `"dash1…"` / `"tdash1…"`). Parsed via
+    /// Unshield from `account`'s notes to a transparent platform
+    /// address (`"dash1…"` / `"tdash1…"`). Parsed via
     /// `PlatformAddress::from_bech32m_string` and verified against
     /// the wallet's network.
     #[cfg(feature = "shielded")]
     pub async fn shielded_unshield_to<P: dpp::shielded::builder::OrchardProver>(
         &self,
+        account: u32,
         to_platform_addr_bech32m: &str,
         amount: u64,
         prover: P,
@@ -424,15 +502,16 @@ impl PlatformWallet {
                 self.sdk.network
             )));
         }
-        shielded.unshield(&to, amount, &prover).await
+        shielded.unshield(account, &to, amount, &prover).await
     }
 
-    /// Withdraw: spend shielded notes and send `amount` credits to
-    /// the Core L1 address `to_core_address` (Base58Check string).
-    /// `core_fee_per_byte` is the L1 fee rate (duffs/byte).
+    /// Withdraw from `account`'s notes to a Core L1 address
+    /// (Base58Check string). `core_fee_per_byte` is the L1 fee
+    /// rate (duffs/byte).
     #[cfg(feature = "shielded")]
     pub async fn shielded_withdraw_to<P: dpp::shielded::builder::OrchardProver>(
         &self,
+        account: u32,
         to_core_address: &str,
         amount: u64,
         core_fee_per_byte: u32,
@@ -455,17 +534,23 @@ impl PlatformWallet {
                 ))
             })?;
         shielded
-            .withdraw(&parsed, amount, core_fee_per_byte, &prover)
+            .withdraw(account, &parsed, amount, core_fee_per_byte, &prover)
             .await
     }
 
-    /// Shield credits from a Platform Payment account into this
-    /// wallet's shielded pool. Auto-selects input addresses from
-    /// the account in ascending derivation-index order until the
-    /// cumulative balance covers `amount` plus a conservative fee
-    /// buffer (the on-chain fee comes off input 0 via
-    /// `DeductFromInput(0)`; the buffer absorbs the discrepancy
-    /// without a more sophisticated estimator).
+    /// Shield credits from a Platform Payment account into the
+    /// wallet's shielded pool, with the resulting note assigned
+    /// to `shielded_account`'s default Orchard address.
+    ///
+    /// `payment_account` selects the source Platform Payment
+    /// account (different concept from `shielded_account` — this
+    /// is the BIP-44-style funding account on the transparent
+    /// side, not the ZIP-32 Orchard account). Auto-selects input
+    /// addresses from that account in ascending derivation-index
+    /// order until the cumulative balance covers `amount` plus a
+    /// conservative fee buffer (the on-chain fee comes off input
+    /// 0 via `DeductFromInput(0)`; the buffer absorbs the
+    /// discrepancy without a more sophisticated estimator).
     ///
     /// The host supplies a `Signer<PlatformAddress>` — typically
     /// `&VTableSigner` from `KeychainSigner.handle` — which signs
@@ -473,13 +558,14 @@ impl PlatformWallet {
     ///
     /// Returns `ShieldedNotBound` if no shielded sub-wallet is
     /// bound, `AddressOperation` if the platform-payment account
-    /// at `account_index` doesn't exist, or
+    /// at `payment_account` doesn't exist, or
     /// `ShieldedInsufficientBalance` if the account's total
     /// credits can't cover `amount + fee_buffer`.
     #[cfg(feature = "shielded")]
     pub async fn shielded_shield_from_account<S, P>(
         &self,
-        account_index: u32,
+        shielded_account: u32,
+        payment_account: u32,
         amount: u64,
         signer: &S,
         prover: P,
@@ -521,10 +607,10 @@ impl PlatformWallet {
                 .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
             let account = info
                 .core_wallet
-                .platform_payment_managed_account_at_index(account_index)
+                .platform_payment_managed_account_at_index(payment_account)
                 .ok_or_else(|| {
                     PlatformWalletError::AddressOperation(format!(
-                        "no platform payment account at index {account_index}"
+                        "no platform payment account at index {payment_account}"
                     ))
                 })?;
 
@@ -623,7 +709,9 @@ impl PlatformWallet {
         let shielded = guard
             .as_ref()
             .ok_or(PlatformWalletError::ShieldedNotBound)?;
-        shielded.shield(inputs, amount, signer, &prover).await
+        shielded
+            .shield(shielded_account, inputs, amount, signer, &prover)
+            .await
     }
 }
 

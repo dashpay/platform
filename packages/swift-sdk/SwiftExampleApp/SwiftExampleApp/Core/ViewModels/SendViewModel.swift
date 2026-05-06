@@ -226,6 +226,7 @@ class SendViewModel: ObservableObject {
                 }
                 try await walletManager.shieldedTransfer(
                     walletId: wallet.walletId,
+                    account: 0,
                     recipientRaw43: recipientRaw,
                     amount: amountCredits
                 )
@@ -244,6 +245,7 @@ class SendViewModel: ObservableObject {
                 let trimmed = recipientAddress.trimmingCharacters(in: .whitespacesAndNewlines)
                 try await walletManager.shieldedUnshield(
                     walletId: wallet.walletId,
+                    account: 0,
                     toPlatformAddress: trimmed,
                     amount: amountCredits
                 )
@@ -261,6 +263,7 @@ class SendViewModel: ObservableObject {
                 let trimmed = recipientAddress.trimmingCharacters(in: .whitespacesAndNewlines)
                 try await walletManager.shieldedWithdraw(
                     walletId: wallet.walletId,
+                    account: 0,
                     toCoreAddress: trimmed,
                     amount: amountCredits,
                     coreFeePerByte: 1
@@ -281,7 +284,8 @@ class SendViewModel: ObservableObject {
                 let signer = KeychainSigner(modelContainer: modelContext.container)
                 try await walletManager.shieldedShield(
                     walletId: wallet.walletId,
-                    accountIndex: 0,
+                    shieldedAccount: 0,
+                    paymentAccount: 0,
                     amount: amountCredits,
                     addressSigner: signer
                 )

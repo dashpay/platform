@@ -1,18 +1,15 @@
 //! File-backed `ShieldedStore` impl.
 //!
-//! The Orchard commitment tree is shared across every wallet that
-//! decrypts notes against the same network — there is one global
-//! tree of commitments and each wallet keeps its own decrypted-note
-//! subset. This store therefore persists the tree to a SQLite file
-//! (via [`ClientPersistentCommitmentTree`]) while keeping the
-//! per-wallet decrypted notes and nullifier bookkeeping in memory.
-//! Notes are rediscovered on cold start by re-running
-//! [`ShieldedWallet::sync_notes`](super::ShieldedWallet::sync_notes)
-//! against the cached tree.
-//!
-//! Witness generation (needed for spends) is intentionally not
-//! implemented yet — the spend signer pipeline that drives it lands
-//! in a follow-up.
+//! The Orchard commitment tree is shared across every subwallet
+//! that decrypts notes against the same network — the on-chain
+//! commitment stream is identical for every consumer. This store
+//! therefore persists the tree to a SQLite file (via
+//! [`ClientPersistentCommitmentTree`]) and keeps per-subwallet
+//! decrypted notes / nullifier bookkeeping in memory, scoped by
+//! [`SubwalletId`]. Notes are rediscovered on cold start by
+//! re-running [`ShieldedWallet::sync_notes`] against the cached
+//! tree (or, when the host persister is wired up, restored from
+//! SwiftData before sync runs).
 
 use std::collections::BTreeMap;
 use std::error::Error as StdError;
@@ -22,7 +19,7 @@ use std::sync::Mutex;
 
 use grovedb_commitment_tree::{ClientPersistentCommitmentTree, Position, Retention};
 
-use super::store::{ShieldedNote, ShieldedStore};
+use super::store::{ShieldedNote, ShieldedStore, SubwalletId, SubwalletState};
 
 /// Error type for [`FileBackedShieldedStore`].
 #[derive(Debug)]
@@ -36,39 +33,24 @@ impl fmt::Display for FileShieldedStoreError {
 
 impl StdError for FileShieldedStoreError {}
 
-/// File-backed shielded store: SQLite-persisted commitment tree plus
-/// in-memory decrypted notes / nullifier bookkeeping.
-///
-/// The commitment tree is keyed per-network at the call site (the
-/// path is supplied by [`Self::open_path`]). Decrypted notes are
-/// kept in memory and rediscovered via trial decryption on every
-/// cold start — same shape the previous `ShieldedPoolClient` had,
-/// suitable for the MVP shielded sync path. Persisting notes via
-/// the host's data store is a follow-up.
+/// File-backed shielded store: SQLite-persisted commitment tree
+/// plus in-memory per-subwallet decrypted notes / nullifier
+/// bookkeeping.
 pub struct FileBackedShieldedStore {
-    /// SQLite-backed commitment tree. Wrapped in a `Mutex` rather than
-    /// relying on `&mut self` because the underlying SQLite store is
-    /// not `Sync` on its own and the [`ShieldedStore`] trait requires
-    /// `Send + Sync`. Outer concurrency is still serialized through
-    /// `ShieldedWallet`'s `RwLock<S>`; this inner mutex is just a
-    /// `Sync`-restoring shim and is uncontended in practice.
+    /// SQLite-backed commitment tree. Wrapped in a `Mutex` because
+    /// the underlying SQLite store is not `Sync`; the
+    /// [`ShieldedStore`] trait requires `Send + Sync`. Outer
+    /// concurrency is still serialized through `ShieldedWallet`'s
+    /// `RwLock<S>`; this inner mutex is just a `Sync`-restoring
+    /// shim and is uncontended in practice.
     tree: Mutex<ClientPersistentCommitmentTree>,
-    notes: Vec<ShieldedNote>,
-    /// Nullifier → index into `notes`, for `mark_spent` lookups.
-    nullifier_index: BTreeMap<[u8; 32], usize>,
-    /// Last global note index synced from Platform.
-    last_synced_index: u64,
-    /// `(height, timestamp)` from the most recent nullifier sync.
-    nullifier_checkpoint: Option<(u64, u64)>,
+    /// Per-subwallet notes + sync state, keyed by `(wallet_id,
+    /// account_index)`. Lazily populated on first use of an id.
+    subwallets: BTreeMap<SubwalletId, SubwalletState>,
 }
 
 impl FileBackedShieldedStore {
     /// Open or create a shielded store at `path`.
-    ///
-    /// `max_checkpoints` controls how many tree checkpoints the
-    /// underlying [`ClientPersistentCommitmentTree`] retains for
-    /// witness generation. A value of `100` matches what the previous
-    /// SDK-side client used.
     pub fn open_path(
         path: impl AsRef<Path>,
         max_checkpoints: usize,
@@ -77,10 +59,7 @@ impl FileBackedShieldedStore {
             .map_err(|e| FileShieldedStoreError(format!("open commitment tree: {e}")))?;
         Ok(Self {
             tree: Mutex::new(tree),
-            notes: Vec::new(),
-            nullifier_index: BTreeMap::new(),
-            last_synced_index: 0,
-            nullifier_checkpoint: None,
+            subwallets: BTreeMap::new(),
         })
     }
 }
@@ -88,42 +67,33 @@ impl FileBackedShieldedStore {
 impl ShieldedStore for FileBackedShieldedStore {
     type Error = FileShieldedStoreError;
 
-    fn save_note(&mut self, note: &ShieldedNote) -> Result<(), Self::Error> {
-        // Re-saving an already-known note (e.g. a re-scan after a
-        // cold start trial-decrypts the same chunk) used to append
-        // a duplicate `ShieldedNote` while overwriting the
-        // nullifier index. The result was a double-counted balance
-        // (`get_unspent_notes` returned both copies) and a stuck
-        // unspent flag (`mark_spent` only marked the second copy).
-        // Orchard nullifiers are globally unique, so an existing
-        // entry for the same nullifier means we already have this
-        // note — overwrite-in-place rather than append.
-        if let Some(&existing_idx) = self.nullifier_index.get(&note.nullifier) {
-            self.notes[existing_idx] = note.clone();
-            return Ok(());
-        }
-        let idx = self.notes.len();
-        self.nullifier_index.insert(note.nullifier, idx);
-        self.notes.push(note.clone());
+    fn save_note(&mut self, id: SubwalletId, note: &ShieldedNote) -> Result<(), Self::Error> {
+        self.subwallets.entry(id).or_default().save_note(note);
         Ok(())
     }
 
-    fn get_unspent_notes(&self) -> Result<Vec<ShieldedNote>, Self::Error> {
-        Ok(self.notes.iter().filter(|n| !n.is_spent).cloned().collect())
+    fn get_unspent_notes(&self, id: SubwalletId) -> Result<Vec<ShieldedNote>, Self::Error> {
+        Ok(self
+            .subwallets
+            .get(&id)
+            .map(SubwalletState::unspent_notes)
+            .unwrap_or_default())
     }
 
-    fn get_all_notes(&self) -> Result<Vec<ShieldedNote>, Self::Error> {
-        Ok(self.notes.clone())
+    fn get_all_notes(&self, id: SubwalletId) -> Result<Vec<ShieldedNote>, Self::Error> {
+        Ok(self
+            .subwallets
+            .get(&id)
+            .map(SubwalletState::all_notes)
+            .unwrap_or_default())
     }
 
-    fn mark_spent(&mut self, nullifier: &[u8; 32]) -> Result<bool, Self::Error> {
-        if let Some(&idx) = self.nullifier_index.get(nullifier) {
-            if !self.notes[idx].is_spent {
-                self.notes[idx].is_spent = true;
-                return Ok(true);
-            }
-        }
-        Ok(false)
+    fn mark_spent(&mut self, id: SubwalletId, nullifier: &[u8; 32]) -> Result<bool, Self::Error> {
+        Ok(self
+            .subwallets
+            .get_mut(&id)
+            .map(|sw| sw.mark_spent(nullifier))
+            .unwrap_or(false))
     }
 
     fn append_commitment(&mut self, cmx: &[u8; 32], marked: bool) -> Result<(), Self::Error> {
@@ -175,21 +145,37 @@ impl ShieldedStore for FileBackedShieldedStore {
             .map_err(|e| FileShieldedStoreError(format!("witness({position}): {e}")))
     }
 
-    fn last_synced_note_index(&self) -> Result<u64, Self::Error> {
-        Ok(self.last_synced_index)
+    fn last_synced_note_index(&self, id: SubwalletId) -> Result<u64, Self::Error> {
+        Ok(self
+            .subwallets
+            .get(&id)
+            .map(|sw| sw.last_synced_index)
+            .unwrap_or(0))
     }
 
-    fn set_last_synced_note_index(&mut self, index: u64) -> Result<(), Self::Error> {
-        self.last_synced_index = index;
+    fn set_last_synced_note_index(
+        &mut self,
+        id: SubwalletId,
+        index: u64,
+    ) -> Result<(), Self::Error> {
+        self.subwallets.entry(id).or_default().last_synced_index = index;
         Ok(())
     }
 
-    fn nullifier_checkpoint(&self) -> Result<Option<(u64, u64)>, Self::Error> {
-        Ok(self.nullifier_checkpoint)
+    fn nullifier_checkpoint(&self, id: SubwalletId) -> Result<Option<(u64, u64)>, Self::Error> {
+        Ok(self
+            .subwallets
+            .get(&id)
+            .and_then(|sw| sw.nullifier_checkpoint))
     }
 
-    fn set_nullifier_checkpoint(&mut self, height: u64, timestamp: u64) -> Result<(), Self::Error> {
-        self.nullifier_checkpoint = Some((height, timestamp));
+    fn set_nullifier_checkpoint(
+        &mut self,
+        id: SubwalletId,
+        height: u64,
+        timestamp: u64,
+    ) -> Result<(), Self::Error> {
+        self.subwallets.entry(id).or_default().nullifier_checkpoint = Some((height, timestamp));
         Ok(())
     }
 }

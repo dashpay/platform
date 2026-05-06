@@ -82,6 +82,7 @@ pub unsafe extern "C" fn platform_wallet_shielded_prover_is_ready() -> bool {
 pub unsafe extern "C" fn platform_wallet_manager_shielded_transfer(
     handle: Handle,
     wallet_id_bytes: *const u8,
+    account: u32,
     recipient_raw_43: *const u8,
     amount: u64,
 ) -> PlatformWalletFFIResult {
@@ -106,7 +107,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_transfer(
     let result = block_on_worker(async move {
         let prover = CachedOrchardProver::new();
         wallet
-            .shielded_transfer_to(&recipient, amount, &prover)
+            .shielded_transfer_to(account, &recipient, amount, &prover)
             .await
     });
     if let Err(e) = result {
@@ -137,6 +138,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_transfer(
 pub unsafe extern "C" fn platform_wallet_manager_shielded_unshield(
     handle: Handle,
     wallet_id_bytes: *const u8,
+    account: u32,
     to_platform_addr_cstr: *const c_char,
     amount: u64,
 ) -> PlatformWalletFFIResult {
@@ -163,7 +165,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_unshield(
     let result = block_on_worker(async move {
         let prover = CachedOrchardProver::new();
         wallet
-            .shielded_unshield_to(&to_addr_str, amount, &prover)
+            .shielded_unshield_to(account, &to_addr_str, amount, &prover)
             .await
     });
     if let Err(e) = result {
@@ -190,6 +192,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_unshield(
 pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
     handle: Handle,
     wallet_id_bytes: *const u8,
+    account: u32,
     to_core_address_cstr: *const c_char,
     amount: u64,
     core_fee_per_byte: u32,
@@ -217,7 +220,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
     let result = block_on_worker(async move {
         let prover = CachedOrchardProver::new();
         wallet
-            .shielded_withdraw_to(&to_core, amount, core_fee_per_byte, &prover)
+            .shielded_withdraw_to(account, &to_core, amount, core_fee_per_byte, &prover)
             .await
     });
     if let Err(e) = result {
@@ -230,16 +233,19 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
 }
 
 /// Shield: spend credits from a Platform Payment account into
-/// the bound shielded sub-wallet's pool. `account_index` selects
-/// which Platform Payment account to draw from; the wallet
-/// auto-selects input addresses in ascending derivation order
-/// until the cumulative balance covers `amount + fee buffer`.
+/// the bound shielded sub-wallet's pool.
+///
+/// `shielded_account` selects which ZIP-32 Orchard account on
+/// the bound shielded sub-wallet receives the new note.
+/// `payment_account` selects which Platform Payment account on
+/// the transparent side funds the shield (auto-selects input
+/// addresses in ascending derivation order until the cumulative
+/// balance covers `amount + fee buffer`).
 ///
 /// `signer_address_handle` is a `*mut SignerHandle` produced by
 /// `dash_sdk_signer_create_with_ctx` (typically Swift's
-/// `KeychainSigner.handle`) — same shape
-/// `platform_address_wallet_transfer` expects. The caller retains
-/// ownership; this function does not destroy the handle.
+/// `KeychainSigner.handle`). The caller retains ownership; this
+/// function does not destroy the handle.
 ///
 /// # Safety
 /// - `wallet_id_bytes` must point to 32 readable bytes.
@@ -251,7 +257,8 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
 pub unsafe extern "C" fn platform_wallet_manager_shielded_shield(
     handle: Handle,
     wallet_id_bytes: *const u8,
-    account_index: u32,
+    shielded_account: u32,
+    payment_account: u32,
     amount: u64,
     signer_address_handle: *mut SignerHandle,
 ) -> PlatformWalletFFIResult {
@@ -286,7 +293,13 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield(
     let result = block_on_worker(async move {
         let prover = CachedOrchardProver::new();
         wallet
-            .shielded_shield_from_account(account_index, amount, address_signer, &prover)
+            .shielded_shield_from_account(
+                shielded_account,
+                payment_account,
+                amount,
+                address_signer,
+                &prover,
+            )
             .await
     });
     if let Err(e) = result {

@@ -130,12 +130,12 @@ class ShieldedService: ObservableObject {
         totalNewNotes = 0
         totalNewlySpent = 0
 
-        let dbPath = Self.dbPath(for: network, walletId: walletId)
+        let dbPath = Self.dbPath(for: network)
         do {
             try walletManager.bindShielded(
                 walletId: walletId,
                 resolver: resolver,
-                account: 0,
+                accounts: [0],
                 dbPath: dbPath
             )
             isBound = true
@@ -145,7 +145,10 @@ class ShieldedService: ObservableObject {
             // succeeded so the Receive sheet has something to render
             // before the first sync pass lands. Best-effort —
             // failures here don't unbind the wallet.
-            if let raw = try? walletManager.shieldedDefaultAddress(walletId: walletId) {
+            if let raw = try? walletManager.shieldedDefaultAddress(
+                walletId: walletId,
+                account: 0
+            ) {
                 orchardDisplayAddress = DashAddress.encodeOrchard(
                     rawBytes: raw,
                     network: network
@@ -287,23 +290,22 @@ class ShieldedService: ObservableObject {
 
     // MARK: - Private
 
-    /// Per-(network, wallet) commitment-tree DB. Conceptually the
-    /// Orchard tree is shared across wallets on the same network (the
-    /// tree itself is anchor-equivalent for everyone), but
-    /// `FileBackedShieldedStore` keeps decrypted notes in the same
-    /// SQLite file without a `wallet_id` column — so a single
-    /// per-network file would let wallet B read wallet A's notes
-    /// (and report A's balance under B's name). Until the store is
-    /// extended to scope notes by wallet, each wallet gets its own
-    /// file. Cost: re-syncing the tree from genesis per wallet on
-    /// first bind. Acceptable for now.
-    private static func dbPath(for network: Network, walletId: Data) -> String {
+    /// Per-network commitment-tree DB.
+    ///
+    /// The Orchard tree is a chain-wide structure: every wallet
+    /// and every account on the same network sees the same `cmx`
+    /// stream in the same order, so they all back the same
+    /// frontier and share anchors. `FileBackedShieldedStore` now
+    /// scopes per-`(walletId, accountIndex)` notes inside the
+    /// store via `SubwalletId`, so multiple wallets cohabiting
+    /// the same SQLite file no longer leak notes across each
+    /// other. (See `wallet/shielded/store.rs` for the trait.)
+    private static func dbPath(for network: Network) -> String {
         let docs = FileManager.default
             .urls(for: .documentDirectory, in: .userDomainMask)
             .first!
-        let walletHex = walletId.map { String(format: "%02x", $0) }.joined()
         return docs
-            .appendingPathComponent("shielded_tree_\(network.networkName)_\(walletHex).sqlite")
+            .appendingPathComponent("shielded_tree_\(network.networkName).sqlite")
             .path
     }
 }

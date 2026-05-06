@@ -54,20 +54,26 @@ extension PlatformWalletManager {
 
     /// Derive Orchard keys for `walletId` from the host-side mnemonic
     /// resolver, open or create the per-network commitment tree at
-    /// `dbPath`, and bind the resulting shielded sub-wallet to the
-    /// `PlatformWallet`.
+    /// `dbPath`, and bind the resulting multi-account shielded
+    /// sub-wallet to the `PlatformWallet`.
+    ///
+    /// `accounts` is the list of ZIP-32 account indices to derive.
+    /// Pass `[0]` for the single-account default; pass
+    /// `[0, 1, …]` to bind multiple accounts up front. Each entry
+    /// produces an independent FVK / IVK / OVK / default address;
+    /// notes are scoped per-`(walletId, accountIndex)` inside the
+    /// store. Must be non-empty and at most 64 entries.
     ///
     /// The resolver is fired exactly once. The mnemonic and the
     /// derived seed live in zeroized buffers on the Rust side and
-    /// are scrubbed before this call returns; only the FVK / IVK /
-    /// OVK / default address survive on the wallet handle.
+    /// are scrubbed before this call returns.
     ///
-    /// Idempotent: calling again with a different account or
-    /// `dbPath` replaces the previously-bound shielded wallet.
+    /// Idempotent: calling again replaces the previously-bound
+    /// shielded wallet.
     public func bindShielded(
         walletId: Data,
         resolver: MnemonicResolver,
-        account: UInt32 = 0,
+        accounts: [UInt32] = [0],
         dbPath: String
     ) throws {
         guard isConfigured, handle != NULL_HANDLE else {
@@ -78,6 +84,11 @@ extension PlatformWalletManager {
         guard walletId.count == 32 else {
             throw PlatformWalletError.invalidParameter(
                 "walletId must be exactly 32 bytes"
+            )
+        }
+        guard !accounts.isEmpty else {
+            throw PlatformWalletError.invalidParameter(
+                "accounts must be non-empty"
             )
         }
         guard let resolverHandle = resolver.handle else {
@@ -92,14 +103,22 @@ extension PlatformWalletManager {
             else {
                 throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
             }
-            try dbPath.withCString { dbPathPtr in
-                try platform_wallet_manager_bind_shielded(
-                    handle,
-                    walletIdPtr,
-                    resolverHandle,
-                    account,
-                    dbPathPtr
-                ).check()
+            try accounts.withUnsafeBufferPointer { accountsBuf in
+                guard let accountsPtr = accountsBuf.baseAddress else {
+                    throw PlatformWalletError.invalidParameter(
+                        "accounts baseAddress is nil"
+                    )
+                }
+                try dbPath.withCString { dbPathPtr in
+                    try platform_wallet_manager_bind_shielded(
+                        handle,
+                        walletIdPtr,
+                        resolverHandle,
+                        accountsPtr,
+                        UInt(accountsBuf.count),
+                        dbPathPtr
+                    ).check()
+                }
             }
         }
     }
@@ -186,15 +205,18 @@ extension PlatformWalletManager {
         }.value
     }
 
-    /// Read the default Orchard payment address for `walletId` as
-    /// the 43 raw bytes. Returns `nil` when the wallet exists on
-    /// the manager but has no bound shielded sub-wallet (i.e.
-    /// [`bindShielded`] hasn't run, or it failed). Throws when the
-    /// wallet id isn't known to the manager.
+    /// Read the default Orchard payment address for `account` on
+    /// `walletId` as the 43 raw bytes. Returns `nil` when the
+    /// wallet exists on the manager but has no bound shielded
+    /// sub-wallet, or `account` isn't bound on it. Throws when
+    /// the wallet id isn't known to the manager.
     ///
-    /// The host is responsible for bech32m-encoding the result for
-    /// display (HRP `dash` / `tdash` + `0x10` type byte).
-    public func shieldedDefaultAddress(walletId: Data) throws -> Data? {
+    /// The host is responsible for bech32m-encoding the result
+    /// for display (HRP `dash` / `tdash` + `0x10` type byte).
+    public func shieldedDefaultAddress(
+        walletId: Data,
+        account: UInt32 = 0
+    ) throws -> Data? {
         guard isConfigured, handle != NULL_HANDLE else {
             throw PlatformWalletError.invalidHandle(
                 "PlatformWalletManager not configured"
@@ -221,6 +243,7 @@ extension PlatformWalletManager {
                 try platform_wallet_manager_shielded_default_address(
                     handle,
                     ptr,
+                    account,
                     outPtr,
                     &present
                 ).check()
@@ -248,14 +271,15 @@ extension PlatformWalletManager {
         platform_wallet_shielded_prover_is_ready()
     }
 
-    /// Shielded → Shielded transfer. Spends notes from `walletId`'s
-    /// shielded balance and creates a new note for `recipientRaw43`
-    /// (the recipient's raw 43-byte Orchard payment address). Amount
-    /// is in credits (1 DASH = 1e11). Heavy CPU work runs on a
-    /// detached task so the caller's actor isn't blocked through
-    /// the proof build.
+    /// Shielded → Shielded transfer. Spends notes from `account`
+    /// on `walletId` and creates a new note for `recipientRaw43`
+    /// (the recipient's raw 43-byte Orchard payment address).
+    /// Amount is in credits (1 DASH = 1e11). Heavy CPU work runs
+    /// on a detached task so the caller's actor isn't blocked
+    /// through the proof build.
     public func shieldedTransfer(
         walletId: Data,
+        account: UInt32 = 0,
         recipientRaw43: Data,
         amount: UInt64
     ) async throws {
@@ -291,7 +315,7 @@ extension PlatformWalletManager {
                         )
                     }
                     try platform_wallet_manager_shielded_transfer(
-                        handle, widPtr, recipientPtr, amount
+                        handle, widPtr, account, recipientPtr, amount
                     ).check()
                 }
             }
@@ -315,7 +339,8 @@ extension PlatformWalletManager {
     /// detached task so the caller's actor isn't blocked.
     public func shieldedShield(
         walletId: Data,
-        accountIndex: UInt32 = 0,
+        shieldedAccount: UInt32 = 0,
+        paymentAccount: UInt32 = 0,
         amount: UInt64,
         addressSigner: KeychainSigner
     ) async throws {
@@ -346,7 +371,7 @@ extension PlatformWalletManager {
                     throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
                 }
                 try platform_wallet_manager_shielded_shield(
-                    handle, widPtr, accountIndex, amount, signerHandle
+                    handle, widPtr, shieldedAccount, paymentAccount, amount, signerHandle
                 ).check()
             }
         }.value
@@ -359,6 +384,7 @@ extension PlatformWalletManager {
     /// hand-roll the bincode storage variant tag.
     public func shieldedUnshield(
         walletId: Data,
+        account: UInt32 = 0,
         toPlatformAddress: String,
         amount: UInt64
     ) async throws {
@@ -387,7 +413,7 @@ extension PlatformWalletManager {
                 }
                 try toPlatformAddress.withCString { addrCStr in
                     try platform_wallet_manager_shielded_unshield(
-                        handle, widPtr, addrCStr, amount
+                        handle, widPtr, account, addrCStr, amount
                     ).check()
                 }
             }
@@ -400,6 +426,7 @@ extension PlatformWalletManager {
     /// the L1 fee rate in duffs/byte (`1` is the dashmate default).
     public func shieldedWithdraw(
         walletId: Data,
+        account: UInt32 = 0,
         toCoreAddress: String,
         amount: UInt64,
         coreFeePerByte: UInt32 = 1
@@ -424,7 +451,7 @@ extension PlatformWalletManager {
                 }
                 try toCoreAddress.withCString { addrCStr in
                     try platform_wallet_manager_shielded_withdraw(
-                        handle, widPtr, addrCStr, amount, coreFeePerByte
+                        handle, widPtr, account, addrCStr, amount, coreFeePerByte
                     ).check()
                 }
             }

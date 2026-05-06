@@ -29,8 +29,11 @@ use crate::{check_ptr, unwrap_option_or_return};
 
 impl ShieldedSyncWalletResultFFI {
     pub(crate) fn ok(wallet_id: [u8; 32], summary: &ShieldedSyncSummary) -> Self {
-        let new_notes = u32::try_from(summary.notes_result.new_notes).unwrap_or(u32::MAX);
-        let newly_spent = u32::try_from(summary.newly_spent).unwrap_or(u32::MAX);
+        // Multi-account on the Rust side; flattened to wallet-level
+        // sums here. Hosts that want per-account detail call
+        // `platform_wallet_manager_shielded_balance(account)`.
+        let new_notes = u32::try_from(summary.notes_result.total_new_notes()).unwrap_or(u32::MAX);
+        let newly_spent = u32::try_from(summary.total_newly_spent()).unwrap_or(u32::MAX);
         Self {
             wallet_id,
             success: true,
@@ -38,7 +41,7 @@ impl ShieldedSyncWalletResultFFI {
             new_notes,
             total_scanned: summary.notes_result.total_scanned,
             newly_spent,
-            balance: summary.balance,
+            balance: summary.balance_total(),
             error_message: std::ptr::null(),
         }
     }
@@ -156,38 +159,57 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_sync_now(
 /// `db_path`, and bind the resulting [`ShieldedWallet`] to the
 /// `PlatformWallet`.
 ///
+/// `accounts_ptr` / `accounts_len` describe the ZIP-32 account
+/// indices to derive. The slice must be non-empty and at most
+/// `64` entries; pass a one-element `[0]` array for the
+/// single-account default. Each entry produces an independent
+/// [`OrchardKeySet`] and bookkeeping `SubwalletId` inside the
+/// store; the same commitment tree backs every account on the
+/// network.
+///
 /// The resolver fires exactly once per call. The mnemonic and the
-/// derived seed live in `Zeroizing` buffers and are scrubbed before
-/// this function returns; only the FVK / IVK / OVK / default
-/// payment address survive on the wallet.
+/// derived seed live in `Zeroizing` buffers and are scrubbed
+/// before this function returns; only the per-account FVK / IVK /
+/// OVK / default payment addresses survive on the wallet.
 ///
 /// `db_path` is owned by the host (typically
-/// `<docs>/shielded_tree_<network>.sqlite`). The same path is fine
-/// to share across wallets on the same network — the commitment
-/// tree is global per network and per-wallet decrypted notes live
-/// in memory.
+/// `<docs>/shielded_tree_<network>.sqlite`). The same path is
+/// fine to share across wallets on the same network — the
+/// commitment tree is global per network; decrypted notes are
+/// scoped per `(wallet_id, account_index)` inside the store.
 ///
-/// Idempotent: a second call with a different db path / account
-/// replaces the previously-bound shielded wallet.
+/// Idempotent: a second call replaces the previously-bound
+/// shielded wallet.
 ///
 /// # Safety
 /// - `wallet_id_bytes` must point at 32 readable bytes.
+/// - `accounts_ptr` must point at `accounts_len` readable `u32`s.
 /// - `mnemonic_resolver_handle` must come from
 ///   [`crate::dash_sdk_mnemonic_resolver_create`].
 /// - `db_path_cstr` must be a valid NUL-terminated UTF-8 C string.
 ///
 /// [`ShieldedWallet`]: platform_wallet::wallet::shielded::ShieldedWallet
+/// [`OrchardKeySet`]: platform_wallet::wallet::shielded::OrchardKeySet
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_bind_shielded(
     handle: Handle,
     wallet_id_bytes: *const u8,
     mnemonic_resolver_handle: *mut MnemonicResolverHandle,
-    account: u32,
+    accounts_ptr: *const u32,
+    accounts_len: usize,
     db_path_cstr: *const c_char,
 ) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id_bytes);
     check_ptr!(mnemonic_resolver_handle);
     check_ptr!(db_path_cstr);
+    check_ptr!(accounts_ptr);
+    if accounts_len == 0 || accounts_len > 64 {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            format!("accounts_len must be in 1..=64, got {accounts_len}"),
+        );
+    }
+    let accounts: Vec<u32> = std::slice::from_raw_parts(accounts_ptr, accounts_len).to_vec();
 
     let mut wallet_id = [0u8; 32];
     std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
@@ -285,7 +307,9 @@ pub unsafe extern "C" fn platform_wallet_manager_bind_shielded(
         }
     };
 
-    if let Err(e) = runtime().block_on(wallet_arc.bind_shielded(seed.as_ref(), account, &db_path)) {
+    if let Err(e) =
+        runtime().block_on(wallet_arc.bind_shielded(seed.as_ref(), accounts.as_slice(), &db_path))
+    {
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("bind_shielded failed: {e}"),
@@ -299,16 +323,16 @@ pub unsafe extern "C" fn platform_wallet_manager_bind_shielded(
 // Default Orchard payment address
 // ---------------------------------------------------------------------------
 
-/// Read the default Orchard payment address for the bound shielded
-/// sub-wallet on `wallet_id`. The host receives the 43 raw bytes
-/// (recipient + diversifier) and applies its own bech32m encoding.
+/// Read the default Orchard payment address for `account` on the
+/// bound shielded sub-wallet of `wallet_id`. The host receives 43
+/// raw bytes (recipient + diversifier) and applies its own
+/// bech32m encoding.
 ///
 /// `*out_present` is set to `true` and 43 bytes are written to
-/// `out_bytes_43` when the wallet has been bound via
-/// [`platform_wallet_manager_bind_shielded`]. When the wallet is
-/// known but not bound, `*out_present` is set to `false` and
-/// `out_bytes_43` is left untouched. An unknown wallet returns
-/// `ErrorWalletOperation`.
+/// `out_bytes_43` when `account` is bound. `*out_present` is set
+/// to `false` when the wallet is known but the shielded
+/// sub-wallet hasn't been bound, or `account` isn't bound on it.
+/// An unknown wallet returns `ErrorWalletOperation`.
 ///
 /// # Safety
 /// - `wallet_id_bytes` must point at 32 readable bytes.
@@ -318,6 +342,7 @@ pub unsafe extern "C" fn platform_wallet_manager_bind_shielded(
 pub unsafe extern "C" fn platform_wallet_manager_shielded_default_address(
     handle: Handle,
     wallet_id_bytes: *const u8,
+    account: u32,
     out_bytes_43: *mut u8,
     out_present: *mut bool,
 ) -> PlatformWalletFFIResult {
@@ -338,7 +363,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_default_address(
         runtime().block_on(async {
             match manager.get_wallet(&wallet_id).await {
                 None => Outcome::WalletMissing,
-                Some(w) => match w.shielded_default_address().await {
+                Some(w) => match w.shielded_default_address(account).await {
                     Some(bytes) => Outcome::Bound(bytes),
                     None => Outcome::Unbound,
                 },
