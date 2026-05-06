@@ -235,8 +235,9 @@ impl AssetLockProofWasm {
 impl_try_from_js_value!(AssetLockProofWasm, "AssetLockProof");
 impl_try_from_options!(AssetLockProofWasm);
 impl_wasm_type_info!(AssetLockProofWasm, AssetLockProof);
-crate::impl_wasm_conversions_serde!(
+crate::impl_wasm_conversions_inner!(
     AssetLockProofWasm,
+    AssetLockProof,
     AssetLockProof,
     AssetLockProofObjectJs,
     AssetLockProofJSONJs

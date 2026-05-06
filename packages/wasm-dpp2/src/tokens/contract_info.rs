@@ -1,5 +1,5 @@
 use crate::identifier::IdentifierWasm;
-use crate::{impl_wasm_conversions_serde, impl_wasm_type_info};
+use crate::{impl_wasm_conversions_inner, impl_wasm_type_info};
 use dpp::data_contract::TokenContractPosition;
 use dpp::tokens::contract_info::TokenContractInfo;
 use dpp::tokens::contract_info::v0::TokenContractInfoV0Accessors;
@@ -67,8 +67,9 @@ impl TokenContractInfoWasm {
     }
 }
 
-impl_wasm_conversions_serde!(
+impl_wasm_conversions_inner!(
     TokenContractInfoWasm,
+    TokenContractInfo,
     TokenContractInfo,
     TokenContractInfoObjectJs,
     TokenContractInfoJSONJs

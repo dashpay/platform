@@ -278,7 +278,7 @@ impl serde::Serialize for TokenEvent {
 #[cfg(feature = "serde-conversion")]
 impl<'de> serde::Deserialize<'de> for TokenEvent {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        use serde::de::{self, Error, IgnoredAny, MapAccess, Visitor};
+        use serde::de::{Error, IgnoredAny, MapAccess, Visitor};
 
         // Newtype wrappers that route u64 / encrypted-note deserialization
         // through the json_safe helpers (accept both numeric and string forms
