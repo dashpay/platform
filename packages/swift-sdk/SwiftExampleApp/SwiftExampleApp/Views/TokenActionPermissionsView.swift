@@ -665,6 +665,14 @@ struct TokenActionPermissionsView: View {
     /// refresh and reject any late assignment whose generation no
     /// longer matches.
     @State private var balanceFetchGeneration: Int = 0
+    /// Mirrors `balanceFetchGeneration` for the on-chain pause-flag
+    /// reconciliation. Today the status `.task` only runs once per
+    /// view appearance, so a slow response can't be raced by a
+    /// fresher one — but adding a future trigger (pull-to-refresh,
+    /// post-action poll, etc.) without this guard would silently
+    /// reintroduce the same A→B→A overwrite bug the balance counter
+    /// exists to prevent.
+    @State private var tokenStatusGeneration: Int = 0
 
     @EnvironmentObject var appState: AppState
     @Environment(\.modelContext) private var modelContext
@@ -885,6 +893,8 @@ struct TokenActionPermissionsView: View {
     /// actually changed). Failures fall back to the existing local
     /// flag rather than wiping it.
     private func refreshTokenStatus() async {
+        tokenStatusGeneration &+= 1
+        let gen = tokenStatusGeneration
         guard let sdk = appState.sdk else { return }
         guard let position = UInt16(exactly: token.position) else { return }
         let contractIdString = token.contractId.toBase58String()
@@ -905,9 +915,17 @@ struct TokenActionPermissionsView: View {
                 chainPaused = false
             }
             await MainActor.run {
+                // Late-arriving status responses are dropped if a fresher
+                // refresh has already started — same shape as the balance
+                // path's generation guard.
+                guard self.tokenStatusGeneration == gen else { return }
                 guard token.isPaused != chainPaused else { return }
                 token.isPaused = chainPaused
-                try? modelContext.save()
+                do {
+                    try modelContext.save()
+                } catch {
+                    print("⚠️ refreshTokenStatus: failed to persist isPaused flip for \(contractIdString):\(token.position): \(error)")
+                }
             }
         } catch {
             print("⚠️ refreshTokenStatus failed for token at \(contractIdString):\(token.position): \(error)")

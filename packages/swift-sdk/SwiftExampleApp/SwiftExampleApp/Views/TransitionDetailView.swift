@@ -1664,13 +1664,30 @@ struct TransitionDetailView: View {
             let parsed = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
         throw SDKError.serializationError("Invalid groups JSON")
       }
+      // `RegisterContractSourceView` injects an `id` for every entry
+      // (Int when the source map's key parsed as integer, String
+      // otherwise) and entries derive from a map so keys are unique
+      // by construction. The three failure modes below are therefore
+      // unreachable today — but silently dropping or overwriting
+      // entries here would corrupt the contract submission and
+      // surface as a confusing chain rejection rather than a clear
+      // registration error, so trip loudly with `SDKError` on each.
       var byPosition: [String: Any] = [:]
       for var entry in parsed {
-        guard let rawId = entry.removeValue(forKey: "id") else { continue }
+        guard let rawId = entry.removeValue(forKey: "id") else {
+          throw SDKError.serializationError("Group entry is missing an `id` field")
+        }
         let key: String
-        if let intId = rawId as? Int { key = String(intId) }
-        else if let strId = rawId as? String { key = strId }
-        else { continue }
+        if let intId = rawId as? Int {
+          key = String(intId)
+        } else if let strId = rawId as? String {
+          key = strId
+        } else {
+          throw SDKError.serializationError("Group entry has unsupported `id` type — expected Int or String")
+        }
+        guard byPosition[key] == nil else {
+          throw SDKError.serializationError("Duplicate group position `\(key)` in groups payload")
+        }
         byPosition[key] = entry
       }
       groups = byPosition

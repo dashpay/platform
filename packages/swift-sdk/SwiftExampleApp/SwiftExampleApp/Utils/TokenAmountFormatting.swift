@@ -77,8 +77,11 @@ private func isWellFormedDecimal(_ s: String) -> Bool {
 func formatTokenAmount(_ raw: UInt64, decimals: Int) -> String {
     let dec = max(0, decimals)
     let rawDecimal = Decimal(raw)
+    // `dec` is clamped to `>= 0` above, so `pow(Decimal(10), dec)` is
+    // always >= 1 — the previous `divisor == 0 ? rawDecimal : …` guard
+    // was unreachable and only obscured the scaling intent.
     let divisor = pow(Decimal(10), dec)
-    let scaled = divisor == 0 ? rawDecimal : (rawDecimal / divisor)
+    let scaled = rawDecimal / divisor
     let formatter = NumberFormatter()
     formatter.numberStyle = .decimal
     formatter.maximumFractionDigits = dec

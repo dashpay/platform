@@ -248,7 +248,16 @@ struct TokenUpdateMaxSupplyActionView: View {
                     // so leave the field alone in that branch.
                     if case .none = groupAction {
                         token.maxSupply = newMaxSupplyValue
-                        try? modelContext.save()
+                        // The chain action has already succeeded, so a
+                        // SwiftData persistence hiccup isn't user-facing
+                        // (worst case the in-memory write survives until
+                        // the next contract re-parse reconciles). Log
+                        // for diagnosability instead of swallowing.
+                        do {
+                            try modelContext.save()
+                        } catch {
+                            print("⚠️ TokenUpdateMaxSupplyActionView: failed to persist maxSupply: \(error)")
+                        }
                     }
                     self.dismiss()
                 }

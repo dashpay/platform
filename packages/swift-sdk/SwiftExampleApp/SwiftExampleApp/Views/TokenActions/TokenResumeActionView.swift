@@ -175,7 +175,16 @@ struct TokenResumeActionView: View {
                     // so leave isPaused alone in that branch.
                     if case .none = groupAction {
                         token.isPaused = false
-                        try? modelContext.save()
+                        // The chain action has already succeeded, so a
+                        // SwiftData persistence hiccup isn't user-facing
+                        // (worst case the in-memory flip survives until
+                        // the next contract re-parse reconciles). Log
+                        // for diagnosability instead of swallowing.
+                        do {
+                            try modelContext.save()
+                        } catch {
+                            print("⚠️ TokenResumeActionView: failed to persist isPaused flip: \(error)")
+                        }
                     }
                     self.dismiss()
                 }

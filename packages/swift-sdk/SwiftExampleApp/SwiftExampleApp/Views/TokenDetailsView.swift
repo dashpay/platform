@@ -147,7 +147,14 @@ struct TokenDetailsView: View {
                 InfoRow(label: "Max Supply:", value: "Unlimited")
             }
 
-            InfoRow(label: "Max Supply Changeable:", value: token.maxSupplyChangeRules != nil ? "Yes" : "No")
+            // `nil` rules and rules whose `authorizedToMakeChange` is
+            // `NoOne` are both effectively "not changeable" — the
+            // bartek05053-style permanently-locked rule (NoOne admin,
+            // NoOne taker, no escape clauses) shipped a non-nil rules
+            // object that the chain still rejects every change for.
+            // Use the same `hasAuthorizedTakers` predicate the
+            // features section already uses for truth-in-UI.
+            InfoRow(label: "Max Supply Changeable:", value: token.maxSupplyChangeRules?.hasAuthorizedTakers == true ? "Yes" : "No")
         }
         .padding()
         .background(Color(UIColor.secondarySystemBackground))
@@ -173,7 +180,12 @@ struct TokenDetailsView: View {
                 TokenFeatureRow(label: "Transfer to frozen allowed", isEnabled: token.allowTransferToFrozenBalance)
                 TokenFeatureRow(label: "Emergency action available",
                                 isEnabled: token.emergencyActionRules?.hasAuthorizedTakers ?? false)
-                TokenFeatureRow(label: "Started as paused", isEnabled: token.isPaused)
+                // `token.isPaused` reflects live chain state (reconciled
+                // via `TokenActionPermissionsView.refreshTokenStatus` and
+                // flipped on successful pause/resume), not the immutable
+                // `startAsPaused` config flag — present-tense label
+                // matches what's actually being read.
+                TokenFeatureRow(label: "Currently paused", isEnabled: token.isPaused)
             }
         }
         .padding()
