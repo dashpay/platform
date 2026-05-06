@@ -493,7 +493,7 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
         notes: &[ShieldedNote],
     ) -> Result<(Vec<SpendableNote>, Anchor), PlatformWalletError> {
         use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
-        use dash_sdk::query_types::ShieldedAnchors;
+        use dash_sdk::query_types::{MostRecentShieldedAnchor, ShieldedAnchors};
         use grovedb_commitment_tree::ExtractedNoteCommitment;
         use std::collections::HashSet;
 
@@ -506,19 +506,56 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
         // Pull Platform's current set of valid anchors.
         // Retention is 1000 blocks per the drive-abci method,
         // so this comfortably covers any recently-synced state.
-        let valid_anchors_vec = ShieldedAnchors::fetch_current(&self.sdk)
-            .await
-            .map_err(|e| {
-                PlatformWalletError::ShieldedBuildError(format!(
-                    "fetch shielded anchors from Platform: {e}"
-                ))
-            })?
-            .0;
-        let valid_anchors: HashSet<[u8; 32]> = valid_anchors_vec.iter().copied().collect();
+        //
+        // The proof verifier's `FromProof` impl maps an empty
+        // anchors result to `None` (rather than `Some(vec![])`)
+        // and `fetch_current_with_metadata` then turns that
+        // into a `Generic("shielded anchors not found")` error.
+        // That error is indistinguishable from a transport
+        // failure, so we treat it as a non-fatal "set is
+        // empty" signal here and fall through to the
+        // most-recent fallback below.
+        let mut valid_anchors: HashSet<[u8; 32]> = HashSet::new();
+        match ShieldedAnchors::fetch_current(&self.sdk).await {
+            Ok(set) => {
+                for a in set.0 {
+                    valid_anchors.insert(a);
+                }
+            }
+            Err(e) => {
+                trace!("fetch shielded anchors returned no result (treated as empty set): {e}");
+            }
+        }
+
+        // Always fold in `MostRecentShieldedAnchor` too. It's
+        // the canonical "live" anchor — Platform updates it on
+        // every block where the commitment tree changes — and
+        // it's the single anchor that's most likely to match a
+        // freshly-synced wallet's depth-0 root. On a regtest
+        // where the recorded-anchors tree was never populated
+        // (e.g. the chain was running on an older platform
+        // version when the notes were added, and the
+        // `record_shielded_pool_anchor_if_changed` upgrade
+        // hasn't backfilled), this is the only valid anchor we
+        // can spend against.
+        match MostRecentShieldedAnchor::fetch_current(&self.sdk).await {
+            Ok(latest) => {
+                valid_anchors.insert(latest.0);
+            }
+            Err(e) => {
+                trace!(
+                    "fetch most-recent shielded anchor returned no result \
+                     (treated as none): {e}"
+                );
+            }
+        }
+
         let tried_anchors = valid_anchors.len();
         if tried_anchors == 0 {
             return Err(PlatformWalletError::ShieldedBuildError(
-                "Platform returned an empty shielded-anchor set; pool may be empty or pruned"
+                "Platform returned no shielded anchors (neither the recorded set \
+                 nor the most-recent slot is populated); the pool may be empty \
+                 or the anchor-recording upgrade hasn't run yet on this network"
                     .into(),
             ));
         }
@@ -571,10 +608,35 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
             }
         }
 
-        let depth = chosen_depth.ok_or(PlatformWalletError::ShieldedTreeDiverged {
-            tried: tried_anchors,
-            depths_walked,
-        })?;
+        let depth = match chosen_depth {
+            Some(d) => d,
+            None => {
+                // Best-effort diagnostics: log our local depth-0
+                // root + a few Platform anchors so a divergence
+                // is debuggable from the trace alone.
+                let local_root = store
+                    .witness(probe.position, 0)
+                    .ok()
+                    .flatten()
+                    .map(|p| hex::encode(p.root(probe_cmx).to_bytes()))
+                    .unwrap_or_else(|| "<no depth-0 witness>".to_string());
+                let mut sample: Vec<String> =
+                    valid_anchors.iter().take(4).map(hex::encode).collect();
+                if valid_anchors.len() > sample.len() {
+                    sample.push(format!("…({} total)", valid_anchors.len()));
+                }
+                warn!(
+                    local_depth_0_root = %local_root,
+                    platform_anchors = %sample.join(","),
+                    depths_walked,
+                    "No local checkpoint matches any Platform anchor — tree diverged"
+                );
+                return Err(PlatformWalletError::ShieldedTreeDiverged {
+                    tried: tried_anchors,
+                    depths_walked,
+                });
+            }
+        };
 
         info!(
             depth,
