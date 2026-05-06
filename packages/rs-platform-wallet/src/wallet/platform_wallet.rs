@@ -477,14 +477,25 @@ impl PlatformWallet {
         S: dpp::identity::signer::Signer<dpp::address_funds::PlatformAddress> + Send + Sync,
         P: dpp::shielded::builder::OrchardProver,
     {
-        // Conservative fee buffer over `amount`. The shield
-        // transition's `DeductFromInput(0)` strategy lets the
-        // network deduct the actual fee from input 0; we just need
-        // to make sure the inputs cumulatively cover `amount + a
-        // bit`. Empty-mempool platform fees are well under
-        // 0.001 DASH (1e8 credits); 0.01 DASH absorbs a 10× spike.
-        const FEE_BUFFER_CREDITS: u64 = 1_000_000_000;
-        let needed = amount.saturating_add(FEE_BUFFER_CREDITS);
+        // The shield transition uses `DeductFromInput(0)` as its fee
+        // strategy. drive-abci interprets that as "after each input
+        // address has had its `claim` deducted, take the fee out of
+        // input 0's *remaining* balance" (see
+        // `deduct_fee_from_outputs_or_remaining_balance_of_inputs_v0`
+        // in rs-dpp). "Input 0" is the smallest-key entry of the
+        // BTreeMap we hand to the builder. Therefore:
+        //
+        //   * we must NOT claim each input's full balance — claiming
+        //     `balance` leaves `remaining = 0`, and the fee
+        //     deduction has nothing to bite into.
+        //   * we must reserve at least `FEE_RESERVE_CREDITS` of
+        //     unclaimed balance specifically on input 0 (the
+        //     BTreeMap-smallest address).
+        //
+        // Empty-mempool fees on Type 15 transitions land at ~20M
+        // credits (~0.0002 DASH). Reserve 1e9 credits (0.01 DASH) —
+        // 50× headroom, still trivial relative to typical balances.
+        const FEE_RESERVE_CREDITS: u64 = 1_000_000_000;
 
         // Build the inputs map under the wallet-manager read lock,
         // then drop the lock before re-entering shielded so the
@@ -506,33 +517,86 @@ impl PlatformWallet {
                     ))
                 })?;
 
+            // Collect (address, balance) for every funded address,
+            // sorted by address bytes — that determines BTreeMap
+            // key order downstream and therefore which input ends
+            // up at index 0.
+            let mut candidates: Vec<(dpp::address_funds::PlatformAddress, u64)> = account
+                .addresses
+                .addresses
+                .values()
+                .filter_map(|addr_info| {
+                    let p2pkh =
+                        key_wallet::PlatformP2PKHAddress::from_address(&addr_info.address).ok()?;
+                    let balance = account.address_credit_balance(&p2pkh);
+                    if balance == 0 {
+                        None
+                    } else {
+                        Some((
+                            dpp::address_funds::PlatformAddress::P2pkh(p2pkh.to_bytes()),
+                            balance,
+                        ))
+                    }
+                })
+                .collect();
+            candidates.sort_by_key(|(addr, _)| *addr);
+
+            // The address that will be the bundle's `input_0` must
+            // have balance > FEE_RESERVE so we can claim at least 1
+            // credit while leaving the reserve untouched. Skip any
+            // leading dust address that can't satisfy that — the
+            // next address up will become input 0 instead. (If
+            // every funded address is below the reserve, fall back
+            // to the smallest one so we still produce a valid
+            // builder input map; the network will reject it cleanly
+            // if the fee can't be covered.)
+            let viable_input_0 = candidates
+                .iter()
+                .position(|(_, balance)| *balance > FEE_RESERVE_CREDITS)
+                .unwrap_or(0);
+            let usable: &[(dpp::address_funds::PlatformAddress, u64)] =
+                &candidates[viable_input_0..];
+
+            let total_usable: u64 = usable.iter().map(|(_, b)| b).sum();
+            let needed = amount.saturating_add(FEE_RESERVE_CREDITS);
+            if total_usable < needed {
+                return Err(PlatformWalletError::ShieldedInsufficientBalance {
+                    available: total_usable,
+                    required: needed,
+                });
+            }
+
+            // Walk usable inputs in BTreeMap order, claiming only
+            // what's needed to cover `amount`. The fee reserve is
+            // taken off input 0's max claim so its post-claim
+            // remaining stays ≥ FEE_RESERVE_CREDITS for the
+            // network's `DeductFromInput(0)` step.
             let mut chosen: std::collections::BTreeMap<
                 dpp::address_funds::PlatformAddress,
                 dpp::fee::Credits,
             > = std::collections::BTreeMap::new();
-            let mut accumulated: u64 = 0;
-            for addr_info in account.addresses.addresses.values() {
-                let p2pkh = match key_wallet::PlatformP2PKHAddress::from_address(&addr_info.address)
-                {
-                    Ok(p) => p,
-                    Err(_) => continue,
-                };
-                let balance = account.address_credit_balance(&p2pkh);
-                if balance == 0 {
-                    continue;
-                }
-                let address = dpp::address_funds::PlatformAddress::P2pkh(p2pkh.to_bytes());
-                chosen.insert(address, balance);
-                accumulated = accumulated.saturating_add(balance);
-                if accumulated >= needed {
+            let mut accumulated_claim: u64 = 0;
+            for (i, (addr, balance)) in usable.iter().enumerate() {
+                if accumulated_claim >= amount {
                     break;
+                }
+                let max_claim = if i == 0 {
+                    balance.saturating_sub(FEE_RESERVE_CREDITS)
+                } else {
+                    *balance
+                };
+                let still_need = amount - accumulated_claim;
+                let claim = max_claim.min(still_need);
+                if claim > 0 {
+                    chosen.insert(*addr, claim);
+                    accumulated_claim = accumulated_claim.saturating_add(claim);
                 }
             }
 
-            if accumulated < needed {
+            if accumulated_claim < amount {
                 return Err(PlatformWalletError::ShieldedInsufficientBalance {
-                    available: accumulated,
-                    required: needed,
+                    available: accumulated_claim,
+                    required: amount,
                 });
             }
             chosen
