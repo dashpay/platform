@@ -26,6 +26,8 @@ mod property_names {
 }
 
 #[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display)]
+// Auto-injects `json_safe_u64` on `revision: Revision` (= u64).
+#[cfg_attr(feature = "json-conversion", crate::serialization::json_safe_fields)]
 // `Deserialize` is implemented manually below — see comments. Same
 // catchall-vs-base-flatten conflict as `DocumentCreateTransitionV0`.
 #[cfg_attr(
@@ -77,8 +79,15 @@ impl<'de> Deserialize<'de> for DocumentReplaceTransitionV0 {
         let revision_value = map
             .remove("$revision")
             .ok_or_else(|| D::Error::missing_field("$revision"))?;
-        let revision: Revision =
-            platform_value::from_value(revision_value).map_err(D::Error::custom)?;
+        // `json_safe_u64` stringifies u64 values above `MAX_SAFE_INTEGER` in
+        // JSON HR — accept both numeric and string forms here so the manual
+        // Deserialize doesn't reject large revisions.
+        let revision: Revision = match revision_value {
+            Value::Text(s) => s.parse().map_err(|e| {
+                D::Error::custom(format!("invalid u64 string in $revision: {e}"))
+            })?,
+            other => platform_value::from_value(other).map_err(D::Error::custom)?,
+        };
 
         Ok(DocumentReplaceTransitionV0 {
             base,

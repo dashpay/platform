@@ -5,6 +5,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 /// Documents contain the data that goes into data contracts.
+// Auto-injects `json_safe_option_u64` on `revision: Option<Revision>` and
+// `updated_at: Option<TimestampMillis>` (both Option<u64>). The `properties:
+// BTreeMap<String, Value>` flatten catchall is skipped by the macro.
+#[cfg_attr(feature = "json-conversion", crate::serialization::json_safe_fields)]
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
 pub struct DocumentPatch {
     /// The unique document ID.
