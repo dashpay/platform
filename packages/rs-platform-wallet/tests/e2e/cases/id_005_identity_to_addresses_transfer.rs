@@ -67,11 +67,25 @@ async fn id_005_identity_to_addresses_transfer() {
         .await
         .expect("funding never observed");
 
+    // QA-802 — bias the funding-address gate toward more distinct DAPI
+    // replicas before handing the address to the registration broadcast.
+    wait_for_address_known_to_platform(s.ctx.sdk(), &funding_addr, FUNDING_FLOOR, STEP_TIMEOUT)
+        .await
+        .expect("funding address never reached strong-gate visibility");
+
     let registered = s
         .test_wallet
         .register_identity_from_addresses(funding_addr, REGISTRATION_FUNDING, 0)
         .await
         .expect("register_identity_from_addresses");
+
+    // QA-805 — the transfer below resolves the source identity through the
+    // SDK's round-robin DAPI handle; without this gate the transfer can land
+    // on a sibling replica that hasn't replicated the new identity yet and
+    // panic with `Identity ... not found`.
+    wait_for_identity_visible_to_platform(s.ctx.sdk(), registered.id, STEP_TIMEOUT, 2)
+        .await
+        .expect("identity never reached cross-replica visibility");
 
     let pre_balance = Identity::fetch(s.ctx.sdk(), registered.id)
         .await

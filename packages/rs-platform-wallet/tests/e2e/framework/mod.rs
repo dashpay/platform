@@ -68,8 +68,10 @@ pub mod prelude {
     pub use super::config::Config;
     pub use super::harness::E2eContext;
     pub use super::wait::{
-        wait_for, wait_for_address_balance_chain_confirmed, wait_for_balance, wait_for_bank_funded,
-        wait_for_core_balance,
+        wait_for, wait_for_address_balance_chain_confirmed,
+        wait_for_address_balance_chain_confirmed_strong, wait_for_address_known_to_platform,
+        wait_for_balance, wait_for_bank_funded, wait_for_core_balance,
+        wait_for_identity_visible_to_platform,
     };
     pub use super::wait_hub::WaitEventHub;
     pub use super::{setup, FrameworkError, FrameworkResult, SetupGuard};
@@ -198,7 +200,9 @@ pub async fn setup_with_n_identities(
 ) -> FrameworkResult<MultiIdentitySetupGuard> {
     use std::time::Duration;
 
-    use super::framework::wait::wait_for_balance;
+    use super::framework::wait::{
+        wait_for_address_known_to_platform, wait_for_balance, wait_for_identity_visible_to_platform,
+    };
 
     let base = setup().await?;
     let mut identities = Vec::with_capacity(n as usize);
@@ -234,10 +238,40 @@ pub async fn setup_with_n_identities(
         )
         .await?;
 
+        // QA-802 — `wait_for_balance` already runs a 2-success chain-confirmed
+        // gate, but Marvin's TK-007 / ID-007 timeline shows the streak
+        // clearing while a third Platform replica is still lagging — the
+        // immediately-following `register_identity_from_addresses` lands on
+        // that lagging node and panics with `AddressDoesNotExistError`.
+        // The strong gate (4 successes × 1 s gap) samples more distinct
+        // sockets before we hand the address to the registration broadcast.
+        wait_for_address_known_to_platform(
+            base.ctx.sdk(),
+            &funding_addr,
+            bank_amount,
+            Duration::from_secs(60),
+        )
+        .await?;
+
         let registered = base
             .test_wallet
             .register_identity_from_addresses(funding_addr, funding_per, identity_index)
             .await?;
+
+        // QA-805 — registration returned `Ok` on whichever DAPI node served
+        // the broadcast, but the next state transition referencing this
+        // identity (transfer, top-up, contract update) may round-robin onto
+        // a sibling that hasn't replicated the new identity yet. A
+        // 2-success visibility gate on `Identity::fetch` mirrors the
+        // existing `wait_for_data_contract_visible` pattern from QA-802.
+        wait_for_identity_visible_to_platform(
+            base.ctx.sdk(),
+            registered.id,
+            Duration::from_secs(60),
+            2,
+        )
+        .await?;
+
         identities.push(registered);
     }
 
