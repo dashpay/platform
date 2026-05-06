@@ -159,6 +159,25 @@ extension PlatformWalletManager {
         return running
     }
 
+    /// Read the unix-seconds block time of the SPV header storage's
+    /// current tip. Returns `nil` when no tip is available — i.e.
+    /// the SPV client isn't running, no headers have been stored
+    /// yet, or the tip header isn't readable.
+    ///
+    /// Distinct from the `@Published var spvTipBlockTime` mirror on
+    /// the manager: this is a one-shot FFI query, the published
+    /// property is the cached value the 1 Hz progress poll feeds.
+    ///
+    /// Useful as a "is core producing blocks?" indicator: a stale
+    /// stamp across multiple polls means the chain has stalled
+    /// even though the local SPV client is healthy.
+    public func currentSpvTipBlockTime() throws -> Date? {
+        var unixSeconds: UInt64 = 0
+        try platform_wallet_manager_spv_tip_unix_seconds(handle, &unixSeconds).check()
+        guard unixSeconds > 0 else { return nil }
+        return Date(timeIntervalSince1970: TimeInterval(unixSeconds))
+    }
+
     /// Start the SPV client in the background.
     ///
     /// Spawns the sync loop on the shared tokio runtime and returns

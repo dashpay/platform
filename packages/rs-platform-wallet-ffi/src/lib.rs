@@ -51,6 +51,9 @@ pub mod platform_address_types;
 pub mod platform_addresses;
 pub mod platform_wallet_info;
 mod runtime;
+#[cfg(feature = "shielded")]
+pub mod shielded_sync;
+pub mod shielded_types;
 pub mod sign_with_mnemonic_resolver;
 pub mod spv;
 pub mod token_persistence;
@@ -103,6 +106,9 @@ pub use platform_address_sync::*;
 pub use platform_address_types::*;
 pub use platform_addresses::*;
 pub use platform_wallet_info::*;
+#[cfg(feature = "shielded")]
+pub use shielded_sync::*;
+pub use shielded_types::*;
 pub use sign_with_mnemonic_resolver::*;
 pub use spv::*;
 pub use token_persistence::*;
