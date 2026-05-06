@@ -455,10 +455,8 @@ impl Sdk {
 
         let normalized_label = normalize_dpns_label(name);
 
-        // An empty normalized label (e.g. `""`, `".dash"`, `".DASH"`) cannot
-        // resolve to a registered identity. Skip the contract fetch and
-        // return early so the API mirrors `is_dpns_name_available` and
-        // doesn't perform a wasted RPC round-trip on malformed input.
+        // Empty normalized label (e.g. `""`, `".dash"`) can't resolve to an
+        // identity; bail before the contract fetch. Mirrors `is_dpns_name_available`.
         if normalized_label.is_empty() {
             return Ok(None);
         }

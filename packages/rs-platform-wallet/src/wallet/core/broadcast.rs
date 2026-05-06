@@ -138,26 +138,19 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 .build()
                 .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
 
-            // `select_inputs` is the only source of UTXOs for this builder,
-            // so `tx.input` outpoints must be a subset of the height-aware
-            // `spendable` set by the builder's contract. The check below is
-            // a defense-in-depth runtime guard for builder regressions;
-            // under normal operation this branch is unreachable. Inputs are
-            // not marked spent here either way — that happens after a
-            // successful broadcast (see #3466 review): a failed broadcast
-            // must not leave UTXOs falsely marked spent.
+            // Defense-in-depth: by builder contract `tx.input` outpoints are
+            // a subset of the height-aware `spendable` set we passed to
+            // `select_inputs`, so this branch is unreachable in normal
+            // operation. Marking inputs spent is deferred to after broadcast
+            // (see #3466) regardless.
             let selected: BTreeSet<OutPoint> =
                 tx.input.iter().map(|txin| txin.previous_output).collect();
             let spendable_outpoints: BTreeSet<OutPoint> =
                 spendable.iter().map(|utxo| utxo.outpoint).collect();
             if !selected.is_subset(&spendable_outpoints) {
-                // INTENTIONAL(CMT-002): The `ConcurrentSpendConflict` variant
-                // is named and framed as user-retryable for forward
-                // compatibility. The current code path is only reachable on
-                // a builder-internal regression, but the typed variant is
-                // preserved so future work that surfaces real concurrent-spend
-                // conflicts (e.g. from cross-process wallets) can route
-                // through the same handler without an API churn.
+                // INTENTIONAL(CMT-002): typed variant kept user-retryable for
+                // forward compatibility with cross-process concurrent-spend
+                // surfacing — even though today only builder regression hits.
                 return Err(PlatformWalletError::ConcurrentSpendConflict);
             }
 
@@ -241,15 +234,10 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                     .check_core_transaction(&tx, TransactionContext::Mempool, wallet, true, true)
                     .await;
                 if !check_result.is_relevant {
-                    // CMT-004: The wallet just built and signed this
-                    // transaction from its own spendable inputs, so a
-                    // `!is_relevant` post-broadcast check is an
-                    // internal-invariant violation, not a transient. Emit a
-                    // structured `error!` event with stable field names so
-                    // operators can alert on it independent of the message
-                    // text. We still return `Ok(tx)`: broadcast already
-                    // succeeded, and rolling back here would mislead the
-                    // caller into thinking the network rejected the tx.
+                    // CMT-004: own-built tx unrecognised by our own checker
+                    // is an internal-invariant violation, not a transient.
+                    // Structured `error!` with stable fields so operators can
+                    // alert independent of message text.
                     tracing::error!(
                         target: "platform_wallet::broadcast",
                         event = "post_broadcast_unrelated_to_own_wallet",
@@ -259,14 +247,8 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                     );
                 }
             } else {
-                // INTENTIONAL(CMT-005): The wallet-missing branch indicates
-                // the wallet entry was removed from the manager between the
-                // lock drop and re-acquisition. Broadcast already succeeded,
-                // so converting to `Err` would be wrong (caller would think
-                // the tx failed). Observability via a single structured log
-                // line is acceptable for current operator workflows —
-                // promote to a metric only when monitoring infrastructure is
-                // in place to consume one.
+                // INTENTIONAL(CMT-005): log-only is sufficient until metrics
+                // infrastructure exists; see broadcast-first rationale above.
                 tracing::warn!(
                     wallet_id = %hex::encode(self.wallet_id),
                     txid = %tx.txid(),
@@ -283,20 +265,10 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
 mod tests {
     //! Broadcast ordering / rollback contract tests (CMT-003).
     //!
-    //! The PR's central correctness claim is:
-    //!
-    //! * a failed `broadcast_transaction` must propagate `Err` so callers
-    //!   short-circuit before any spendable-set mutation, and
-    //! * a successful `broadcast_transaction` must hand the txid back so
-    //!   the caller can register the tx as a mempool spend.
-    //!
-    //! `CoreWallet::send_to_addresses` enforces this with a single `?` on
-    //! the `broadcast_transaction` call before the post-broadcast
-    //! `check_core_transaction(.., Mempool, ..)` block runs. Anything that
-    //! breaks the wrapper's pass-through behaviour silently moves the
-    //! "register as spent" block above the broadcast line and reintroduces
-    //! the regression flagged on #3466. These tests pin that pass-through
-    //! contract.
+    //! Pin `broadcast_transaction`'s pass-through behaviour: `Err` propagates
+    //! so `send_to_addresses` short-circuits before any spendable-set
+    //! mutation, and `Ok(txid)` is forwarded unchanged so the post-broadcast
+    //! mempool registration runs on a confirmed-success signal. See #3466.
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
@@ -312,10 +284,7 @@ mod tests {
     use key_wallet::Network;
     use key_wallet_manager::WalletManager;
 
-    /// Mock broadcaster that records every call and returns a configured
-    /// canned outcome. Generic over the configured outcome so tests can
-    /// drive both the success and failure branches without importing a
-    /// real network broadcaster.
+    /// Records every call and returns a canned outcome.
     struct MockBroadcaster {
         outcome: BroadcastOutcome,
         calls: AtomicUsize,
@@ -352,15 +321,9 @@ mod tests {
         }
     }
 
-    /// Coinbase-style transaction good enough to round-trip through
-    /// `broadcast_transaction`'s pass-through. The shape doesn't matter
-    /// for these tests — only the broadcaster's Err/Ok branch does.
+    /// Minimal serialized tx (1 input, 1 output, 0 value) — only the
+    /// broadcaster's Err/Ok branch matters here, not the shape.
     fn dummy_transaction() -> Transaction {
-        // Minimal serialized regtest coinbase tx (1 input, 1 output, 0 value).
-        // Hex was generated from a `Transaction { version: 1, lock_time: 0,
-        // input: vec![TxIn::default()], output: vec![TxOut { value: 0,
-        // script_pubkey: ScriptBuf::new() }], special_transaction_payload: None }`
-        // round-trip; embedded here so the test stays free of fixture I/O.
         let bytes = hex::decode(
             "010000000100000000000000000000000000000000000000000000000000000000000000\
              00ffffffff00ffffffff0100000000000000000000000000",
@@ -385,11 +348,8 @@ mod tests {
         )
     }
 
-    /// Broadcast failure: `broadcast_transaction` propagates the
-    /// underlying `Err`, so callers (notably `send_to_addresses`) bail out
-    /// via `?` *before* the post-broadcast `check_core_transaction` block
-    /// can mark any input as spent. This is the rollback half of the
-    /// #3466 contract: a network rejection must leave UTXOs spendable.
+    /// Rollback half of the #3466 contract: a broadcast `Err` propagates so
+    /// callers `?`-out before any spendable-set mutation.
     #[tokio::test]
     async fn broadcast_failure_keeps_inputs_spendable() {
         let broadcaster = Arc::new(MockBroadcaster::new(BroadcastOutcome::Err(
@@ -412,12 +372,8 @@ mod tests {
         );
     }
 
-    /// Broadcast success: `broadcast_transaction` hands the txid back
-    /// untouched. `send_to_addresses` then re-acquires the wallet lock
-    /// and registers the tx as a mempool spend; that registration is
-    /// gated on this Ok return. If the wrapper ever swallows or remaps
-    /// the txid, the spent-input tracking on the success path silently
-    /// breaks.
+    /// Success half of the #3466 contract: the broadcaster's `Txid` is
+    /// passed through unchanged so the mempool-registration block fires.
     #[tokio::test]
     async fn broadcast_success_marks_inputs_unavailable() {
         let expected_txid = dummy_transaction().txid();
