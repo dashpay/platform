@@ -19,7 +19,7 @@ impl Drive {
     /// window), the entry with the highest block_height is preserved.
     ///
     /// Why: `validate_anchor_exists` reads the primary anchors tree
-    /// (`[..., "s", [6]]`) when checking spend bundles. The
+    /// (`[..., "s", [192]]`) when checking spend bundles. The
     /// most-recent anchor — exposed via
     /// `query_most_recent_shielded_anchor` — is derived from the
     /// highest entry in the anchors-by-height index, so any chain

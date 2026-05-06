@@ -10,7 +10,7 @@ use platform_version::version::PlatformVersion;
 impl Drive {
     /// Verify a `getMostRecentShieldedAnchor` proof.
     ///
-    /// Replays the canonical "latest entry in `[..., "s", [8]]`,
+    /// Replays the canonical "latest entry in `[..., "s", [96]]`,
     /// `limit 1` reverse" path query that the drive-abci handler
     /// runs (see `shielded_latest_recorded_anchor_path_query`) and
     /// extracts the anchor bytes from the highest-block-height entry.

@@ -18,7 +18,7 @@ use drive::util::grove_operations::GroveDBToUse;
 impl<C> Platform<C> {
     /// Answer `getMostRecentShieldedAnchor` by reading the latest
     /// entry from the anchors-by-height index
-    /// (`[..., "s", [8]]`) — a `limit 1` reverse query. The anchor
+    /// (`[..., "s", [96]]`) — a `limit 1` reverse query. The anchor
     /// is the value at the highest block-height key.
     ///
     /// Returns `[0; 32]` (mapped to `None` by the response decoder

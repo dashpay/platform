@@ -105,7 +105,7 @@ impl Drive {
             },
         );
 
-        // Notes tree: [AddressBalances, "s", 1]
+        // Notes tree: [AddressBalances, "s", 128]
         // CommitmentTree - stores notes (cmx||encrypted_note items + Sinsemilla frontier)
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path(shielded_credit_pool_notes_path()),
@@ -116,7 +116,7 @@ impl Drive {
             },
         );
 
-        // Nullifiers tree: [AddressBalances, "s", 2]
+        // Nullifiers tree: [AddressBalances, "s", 64]
         // ProvableCountTree - stores spent nullifiers (32-byte key -> empty item)
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path(shielded_credit_pool_nullifiers_path()),
@@ -127,7 +127,7 @@ impl Drive {
             },
         );
 
-        // Anchors tree: [AddressBalances, "s", 6]
+        // Anchors tree: [AddressBalances, "s", 192]
         // NormalTree - stores anchor_bytes -> block_height_be
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path(shielded_credit_pool_anchors_path()),
@@ -138,7 +138,7 @@ impl Drive {
             },
         );
 
-        // Anchors-by-height tree: [AddressBalances, "s", 8]
+        // Anchors-by-height tree: [AddressBalances, "s", 96]
         // NormalTree - stores block_height_be -> anchor_bytes (reverse index for pruning)
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path(shielded_credit_pool_anchors_by_height_path()),

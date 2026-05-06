@@ -7,32 +7,64 @@ pub const SHIELDED_CREDIT_POOL_KEY: &[u8; 1] = b"s";
 /// The subtree key for the shielded credit pool as a u8
 pub const SHIELDED_CREDIT_POOL_KEY_U8: u8 = b's';
 
-/// Key for the notes tree (CommitmentTree) inside a shielded pool
-pub const SHIELDED_NOTES_KEY: u8 = 1;
+// The eight subtree keys of the shielded credit pool are placed at evenly-spaced
+// byte positions across [0, 255] so that GroveDB's AVL-balanced parent tree
+// puts the highest-traffic subtree (`SHIELDED_NOTES_KEY`) at the root, with the
+// next-most-queried subtrees one hop below it, and the cold ones at the leaves:
+//
+//                              [128] NOTES                  ← root, every wallet sync
+//                              /          \
+//                  [64] NULLIFIERS         [192] ANCHORS_IN_POOL
+//                   /        \              /          \
+//          [32] TOTAL    [96] BY_HEIGHT  [160] RECENT  [224] COMPACTED
+//                                                              \
+//                                                            [240] EXPIRATION
+//
+// Within a depth tier (children of a given internal node), placement is by
+// access frequency: the spend-path subtrees (`NULLIFIERS`, `ANCHORS_IN_POOL`)
+// are at depth 1; periodic-write subtrees (`COMPACTED_NULLIFIERS`,
+// `EXPIRATION_TIME`) sit at the leaves. Key 7 is the historical
+// `SHIELDED_MOST_RECENT_ANCHOR_KEY` slot — see retired-key note below.
 
-/// Key for the nullifiers tree inside a shielded pool
-pub const SHIELDED_NULLIFIERS_KEY: u8 = 2;
+/// Key for the total balance sum item inside a shielded pool.
+///
+/// Depth 2 in the parent tree (left subtree of `SHIELDED_NULLIFIERS_KEY`).
+pub const SHIELDED_TOTAL_BALANCE_KEY: u8 = 32;
 
-/// Key for the total balance sum item inside a shielded pool
-pub const SHIELDED_TOTAL_BALANCE_KEY: u8 = 5;
-
-/// Key for the anchors tree inside a shielded pool (anchor_bytes → block_height_be).
-/// Used by `validate_anchor_exists` for O(1) membership checks at spend time.
-pub const SHIELDED_ANCHORS_IN_POOL_KEY: u8 = 6;
+/// Key for the nullifiers tree inside a shielded pool.
+///
+/// Depth 1 in the parent tree — checked on every spend for membership.
+pub const SHIELDED_NULLIFIERS_KEY: u8 = 64;
 
 // Key 7 was previously `SHIELDED_MOST_RECENT_ANCHOR_KEY`, a redundant
 // `Item([u8;32])` slot mirroring the latest entry in
 // `SHIELDED_ANCHORS_BY_HEIGHT_KEY`. It was removed because the duplicated
 // state could (and did) drift out of sync with the anchors tree under prune,
 // leaving the validator's lookup table empty while the pool was still live.
-// The most-recent anchor is now derived from `[8]` via a `limit 1` reverse
-// query — see `Drive::query_most_recent_shielded_anchor`.
+// The most-recent anchor is now derived from `SHIELDED_ANCHORS_BY_HEIGHT_KEY`
+// (`[96]`) via a `limit 1` reverse query — see
+// `Drive::query_most_recent_shielded_anchor`.
 
 /// Key for the anchors-by-height tree inside a shielded pool (block_height_be → anchor_bytes).
 /// Reverse index of `SHIELDED_ANCHORS_IN_POOL_KEY`, used both for pruning old
 /// anchors by height range and as the canonical source of the most-recent
 /// anchor (read via `limit 1` reverse query).
-pub const SHIELDED_ANCHORS_BY_HEIGHT_KEY: u8 = 8;
+///
+/// Depth 2 in the parent tree.
+pub const SHIELDED_ANCHORS_BY_HEIGHT_KEY: u8 = 96;
+
+/// Key for the notes tree (CommitmentTree) inside a shielded pool.
+///
+/// Placed at byte 128 — the median of the eight pool subtrees, putting it at
+/// the root of the parent Merk tree because every wallet sync and every
+/// shield/transfer/spend touches this subtree.
+pub const SHIELDED_NOTES_KEY: u8 = 128;
+
+/// Key for the anchors tree inside a shielded pool (anchor_bytes → block_height_be).
+/// Used by `validate_anchor_exists` for O(1) membership checks at spend time.
+///
+/// Depth 1 in the parent tree — checked on every spend.
+pub const SHIELDED_ANCHORS_IN_POOL_KEY: u8 = 192;
 
 /// Chunk power for the notes CommitmentTree (2^11 = 2048 items per chunk)
 pub const SHIELDED_NOTES_CHUNK_POWER: u8 = 11;
@@ -53,7 +85,7 @@ pub fn shielded_credit_pool_path_vec() -> Vec<Vec<u8>> {
     ]
 }
 
-/// Path to the notes tree: [AddressBalances, "s", [1]]
+/// Path to the notes tree: [AddressBalances, "s", [128]]
 pub fn shielded_credit_pool_notes_path() -> [&'static [u8]; 3] {
     [
         Into::<&[u8; 1]>::into(RootTree::AddressBalances),
@@ -62,7 +94,7 @@ pub fn shielded_credit_pool_notes_path() -> [&'static [u8]; 3] {
     ]
 }
 
-/// Path to the notes tree as a vec: [AddressBalances, "s", [1]]
+/// Path to the notes tree as a vec: [AddressBalances, "s", [128]]
 pub fn shielded_credit_pool_notes_path_vec() -> Vec<Vec<u8>> {
     vec![
         vec![RootTree::AddressBalances as u8],
@@ -71,7 +103,7 @@ pub fn shielded_credit_pool_notes_path_vec() -> Vec<Vec<u8>> {
     ]
 }
 
-/// Path to the nullifiers tree: [AddressBalances, "s", [2]]
+/// Path to the nullifiers tree: [AddressBalances, "s", [64]]
 pub fn shielded_credit_pool_nullifiers_path() -> [&'static [u8]; 3] {
     [
         Into::<&[u8; 1]>::into(RootTree::AddressBalances),
@@ -80,7 +112,7 @@ pub fn shielded_credit_pool_nullifiers_path() -> [&'static [u8]; 3] {
     ]
 }
 
-/// Path to the nullifiers tree as a vec: [AddressBalances, "s", [2]]
+/// Path to the nullifiers tree as a vec: [AddressBalances, "s", [64]]
 pub fn shielded_credit_pool_nullifiers_path_vec() -> Vec<Vec<u8>> {
     vec![
         vec![RootTree::AddressBalances as u8],
@@ -89,7 +121,7 @@ pub fn shielded_credit_pool_nullifiers_path_vec() -> Vec<Vec<u8>> {
     ]
 }
 
-/// Path to the anchors tree: [AddressBalances, "s", [6]]
+/// Path to the anchors tree: [AddressBalances, "s", [192]]
 pub fn shielded_credit_pool_anchors_path() -> [&'static [u8]; 3] {
     [
         Into::<&[u8; 1]>::into(RootTree::AddressBalances),
@@ -98,7 +130,7 @@ pub fn shielded_credit_pool_anchors_path() -> [&'static [u8]; 3] {
     ]
 }
 
-/// Path to the anchors tree as a vec: [AddressBalances, "s", [6]]
+/// Path to the anchors tree as a vec: [AddressBalances, "s", [192]]
 pub fn shielded_credit_pool_anchors_path_vec() -> Vec<Vec<u8>> {
     vec![
         vec![RootTree::AddressBalances as u8],
@@ -107,7 +139,7 @@ pub fn shielded_credit_pool_anchors_path_vec() -> Vec<Vec<u8>> {
     ]
 }
 
-/// Path to the anchors-by-height tree: [AddressBalances, "s", [8]]
+/// Path to the anchors-by-height tree: [AddressBalances, "s", [96]]
 pub fn shielded_credit_pool_anchors_by_height_path() -> [&'static [u8]; 3] {
     [
         Into::<&[u8; 1]>::into(RootTree::AddressBalances),
@@ -116,7 +148,7 @@ pub fn shielded_credit_pool_anchors_by_height_path() -> [&'static [u8]; 3] {
     ]
 }
 
-/// Path to the anchors-by-height tree as a vec: [AddressBalances, "s", [8]]
+/// Path to the anchors-by-height tree as a vec: [AddressBalances, "s", [96]]
 pub fn shielded_credit_pool_anchors_by_height_path_vec() -> Vec<Vec<u8>> {
     vec![
         vec![RootTree::AddressBalances as u8],
@@ -160,7 +192,7 @@ pub fn shielded_latest_recorded_anchor_path_query() -> PathQuery {
 /// Resolves the nullifiers path based on pool type.
 ///
 /// Pool types:
-/// - 0: Main credit shielded pool → `[AddressBalances, "s", [2]]`
+/// - 0: Main credit shielded pool → `[AddressBalances, "s", [64]]`
 /// - 1: Main token shielded pool (not yet implemented)
 /// - 2: Individual token shielded pool (not yet implemented, requires pool_identifier)
 pub fn nullifiers_path_for_pool(

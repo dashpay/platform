@@ -626,7 +626,7 @@ impl<C> Platform<C> {
         )?;
 
         // Notes tree (CommitmentTree = CountTree items + Sinsemilla Frontier):
-        // [AddressBalances, "s"] / [1]
+        // [AddressBalances, "s"] / [128]
         let shielded_pool_path = shielded_credit_pool_path();
         self.drive.grove_insert_if_not_exists(
             (&shielded_pool_path).into(),
@@ -637,7 +637,7 @@ impl<C> Platform<C> {
             &platform_version.drive,
         )?;
 
-        // Nullifiers tree (ProvableCountTree): [AddressBalances, "s"] / [2]
+        // Nullifiers tree (ProvableCountTree): [AddressBalances, "s"] / [64]
         self.drive.grove_insert_if_not_exists(
             (&shielded_pool_path).into(),
             &[SHIELDED_NULLIFIERS_KEY],
@@ -647,7 +647,7 @@ impl<C> Platform<C> {
             &platform_version.drive,
         )?;
 
-        // Total balance SumItem(0): [AddressBalances, "s"] / [5]
+        // Total balance SumItem(0): [AddressBalances, "s"] / [32]
         self.drive.grove_insert_if_not_exists(
             (&shielded_pool_path).into(),
             &[SHIELDED_TOTAL_BALANCE_KEY],
@@ -657,7 +657,7 @@ impl<C> Platform<C> {
             &platform_version.drive,
         )?;
 
-        // Anchors tree (NormalTree) inside pool: [AddressBalances, "s"] / [6]
+        // Anchors tree (NormalTree) inside pool: [AddressBalances, "s"] / [192]
         // Stores block_height_be → anchor_bytes
         self.drive.grove_insert_if_not_exists(
             (&shielded_pool_path).into(),
