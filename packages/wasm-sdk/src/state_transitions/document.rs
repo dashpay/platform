@@ -3,7 +3,6 @@
 //! This module provides WASM bindings for document operations like create, replace, delete, etc.
 
 use crate::error::WasmSdkError;
-use crate::queries::utils::deserialize_required_query;
 use crate::sdk::WasmSdk;
 use crate::settings::PutSettingsInput;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -12,20 +11,21 @@ use dash_sdk::dpp::document::{Document, DocumentV0Getters};
 use dash_sdk::dpp::fee::Credits;
 use dash_sdk::dpp::identity::IdentityPublicKey;
 use dash_sdk::dpp::platform_value::Identifier;
-use dash_sdk::dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
-use dash_sdk::dpp::tokens::token_payment_info::{v0::TokenPaymentInfoV0, TokenPaymentInfo};
+use dash_sdk::dpp::tokens::token_payment_info::TokenPaymentInfo;
 use dash_sdk::platform::documents::transitions::DocumentDeleteTransitionBuilder;
 use dash_sdk::platform::transition::purchase_document::PurchaseDocument;
 use dash_sdk::platform::transition::put_document::PutDocument;
 use dash_sdk::platform::transition::transfer_document::TransferDocument;
 use dash_sdk::platform::transition::update_price_of_document::UpdatePriceOfDocument;
 use js_sys::Reflect;
-use serde::Deserialize;
 use std::sync::Arc;
-use wasm_bindgen::prelude::*;
+use wasm_bindgen::{prelude::*, JsCast};
 use wasm_dpp2::data_contract::document::DocumentWasm;
 use wasm_dpp2::identifier::IdentifierWasm;
 use wasm_dpp2::identity::IdentityPublicKeyWasm;
+use wasm_dpp2::state_transitions::batch::token_payment_info::{
+    TokenPaymentInfoOptionsJs, TokenPaymentInfoWasm,
+};
 use wasm_dpp2::utils::{
     get_class_type, try_from_options_optional, try_from_options_with, try_to_string, try_to_u64,
     IntoWasm,
@@ -62,18 +62,9 @@ export interface DocumentTokenPaymentInfo {
   /**
    * Which party covers gas fees for the document action.
    */
-  gasFeesPaidBy?: 'DocumentOwner' | 'ContractOwner' | 'PreferContractOwner';
+  gasFeesPaidBy?: GasFeesPaidByLike;
 }
 "#;
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct TokenPaymentInfoInput {
-    token_contract_position: u16,
-    minimum_token_cost: Option<u64>,
-    maximum_token_cost: Option<u64>,
-    gas_fees_paid_by: Option<String>,
-}
 
 fn try_from_options_optional_token_payment_info(
     options: &JsValue,
@@ -90,37 +81,12 @@ fn try_from_options_optional_token_payment_info(
         return Ok(None);
     }
 
-    let payment_token_contract_id = try_from_options_optional::<IdentifierWasm>(
-        &token_payment_info_value,
-        "paymentTokenContractId",
-    )?
-    .map(Into::into);
+    let token_payment_info = TokenPaymentInfoWasm::constructor(
+        token_payment_info_value.unchecked_into::<TokenPaymentInfoOptionsJs>(),
+    )
+    .map_err(|err| WasmSdkError::invalid_argument(err.to_string()))?;
 
-    let parsed: TokenPaymentInfoInput = deserialize_required_query(
-        token_payment_info_value,
-        "tokenPaymentInfo is required",
-        "token payment info",
-    )?;
-
-    let gas_fees_paid_by = match parsed.gas_fees_paid_by.as_deref() {
-        None | Some("DocumentOwner") => GasFeesPaidBy::DocumentOwner,
-        Some("ContractOwner") => GasFeesPaidBy::ContractOwner,
-        Some("PreferContractOwner") => GasFeesPaidBy::PreferContractOwner,
-        Some(other) => {
-            return Err(WasmSdkError::invalid_argument(format!(
-                "Invalid tokenPaymentInfo.gasFeesPaidBy value '{}'",
-                other
-            )))
-        }
-    };
-
-    Ok(Some(TokenPaymentInfo::V0(TokenPaymentInfoV0 {
-        payment_token_contract_id,
-        token_contract_position: parsed.token_contract_position,
-        minimum_token_cost: parsed.minimum_token_cost,
-        maximum_token_cost: parsed.maximum_token_cost,
-        gas_fees_paid_by,
-    })))
+    Ok(Some(token_payment_info.into()))
 }
 
 // ============================================================================
