@@ -453,14 +453,17 @@ impl Sdk {
         use drive::query::WhereClause;
         use drive::query::WhereOperator;
 
-        let dpns_contract = self.fetch_dpns_contract().await?;
-
         let normalized_label = normalize_dpns_label(name);
 
-        // Validate the normalized label before proceeding
+        // An empty normalized label (e.g. `""`, `".dash"`, `".DASH"`) cannot
+        // resolve to a registered identity. Skip the contract fetch and
+        // return early so the API mirrors `is_dpns_name_available` and
+        // doesn't perform a wasted RPC round-trip on malformed input.
         if normalized_label.is_empty() {
             return Ok(None);
         }
+
+        let dpns_contract = self.fetch_dpns_contract().await?;
 
         // Query for domain with this label
         let query = DocumentQuery {
