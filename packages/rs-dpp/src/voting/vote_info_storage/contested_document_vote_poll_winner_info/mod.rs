@@ -7,14 +7,101 @@ use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Default, Encode, Decode, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Default, Encode, Decode)]
+// Custom `Serialize` / `Deserialize` below — same pattern as
+// `ResourceVoteChoice`. The `WonByIdentity` variant wraps `Identifier`
+// (a tuple struct that serializes as a base58 string, not a map), so
+// internal tagging doesn't apply natively. The custom impl emits a flat
+// `{"type": ..., "identity": ...}` shape with a synthesized `identity`
+// field name. Bincode `Encode` / `Decode` derives are untouched.
 #[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
-#[serde(tag = "type", content = "data", rename_all = "camelCase")]
 pub enum ContestedDocumentVotePollWinnerInfo {
     #[default]
     NoWinner,
     WonByIdentity(Identifier),
     Locked,
+}
+
+impl Serialize for ContestedDocumentVotePollWinnerInfo {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        match self {
+            ContestedDocumentVotePollWinnerInfo::NoWinner => {
+                let mut m = serializer.serialize_map(Some(1))?;
+                m.serialize_entry("type", "noWinner")?;
+                m.end()
+            }
+            ContestedDocumentVotePollWinnerInfo::WonByIdentity(id) => {
+                let mut m = serializer.serialize_map(Some(2))?;
+                m.serialize_entry("type", "wonByIdentity")?;
+                m.serialize_entry("identity", id)?;
+                m.end()
+            }
+            ContestedDocumentVotePollWinnerInfo::Locked => {
+                let mut m = serializer.serialize_map(Some(1))?;
+                m.serialize_entry("type", "locked")?;
+                m.end()
+            }
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ContestedDocumentVotePollWinnerInfo {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de::{self, MapAccess, Visitor};
+
+        struct V;
+
+        impl<'de> Visitor<'de> for V {
+            type Value = ContestedDocumentVotePollWinnerInfo;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("ContestedDocumentVotePollWinnerInfo as a map with `type` discriminator")
+            }
+
+            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+                let mut variant: Option<String> = None;
+                let mut identity: Option<Identifier> = None;
+
+                while let Some(key) = map.next_key::<String>()? {
+                    match key.as_str() {
+                        "type" => {
+                            if variant.is_some() {
+                                return Err(de::Error::duplicate_field("type"));
+                            }
+                            variant = Some(map.next_value()?);
+                        }
+                        "identity" => {
+                            if identity.is_some() {
+                                return Err(de::Error::duplicate_field("identity"));
+                            }
+                            identity = Some(map.next_value()?);
+                        }
+                        _ => {
+                            let _: serde::de::IgnoredAny = map.next_value()?;
+                        }
+                    }
+                }
+
+                let variant = variant.ok_or_else(|| de::Error::missing_field("type"))?;
+                match variant.as_str() {
+                    "noWinner" => Ok(ContestedDocumentVotePollWinnerInfo::NoWinner),
+                    "wonByIdentity" => {
+                        let id = identity
+                            .ok_or_else(|| de::Error::missing_field("identity"))?;
+                        Ok(ContestedDocumentVotePollWinnerInfo::WonByIdentity(id))
+                    }
+                    "locked" => Ok(ContestedDocumentVotePollWinnerInfo::Locked),
+                    other => Err(de::Error::unknown_variant(
+                        other,
+                        &["noWinner", "wonByIdentity", "locked"],
+                    )),
+                }
+            }
+        }
+
+        deserializer.deserialize_map(V)
+    }
 }
 
 impl fmt::Display for ContestedDocumentVotePollWinnerInfo {
@@ -133,15 +220,14 @@ mod json_convertible_tests {
         use crate::serialization::JsonConvertible;
         let original = fixture();
         let json = original.to_json().expect("to_json");
-        // `ContestedDocumentVotePollWinnerInfo` uses adjacent tagging
-        // (`tag = "type", content = "data"`, `rename_all = "camelCase"`), so
-        // newtype variants serialize as `{ "type": "wonByIdentity", "data": <id> }`.
-        // `Identifier` -> base58 string in JSON.
+        // `ContestedDocumentVotePollWinnerInfo` has a custom Serialize/
+        // Deserialize that emits a flat shape with a synthesized `identity`
+        // field. `Identifier` -> base58 string in JSON.
         assert_eq!(
             json,
             json!({
                 "type": "wonByIdentity",
-                "data": "CZ8YUVdk7znjrUmnb5n7kgySk9yRAsQDYmyCxzfSky9t",
+                "identity": "CZ8YUVdk7znjrUmnb5n7kgySk9yRAsQDYmyCxzfSky9t",
             })
         );
         let recovered = ContestedDocumentVotePollWinnerInfo::from_json(json).expect("from_json");
@@ -160,7 +246,7 @@ mod json_convertible_tests {
             value,
             platform_value!({
                 "type": "wonByIdentity",
-                "data": id,
+                "identity": id,
             })
         );
         let recovered =

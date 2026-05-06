@@ -89,7 +89,7 @@ mod json_convertible_tests_resource_vote {
                 },
                 "resourceVoteChoice": {
                     "type": "towardsIdentity",
-                    "data": "CZ8YUVdk7znjrUmnb5n7kgySk9yRAsQDYmyCxzfSky9t",
+                    "identity": "CZ8YUVdk7znjrUmnb5n7kgySk9yRAsQDYmyCxzfSky9t",
                 },
             })
         );
@@ -119,7 +119,7 @@ mod json_convertible_tests_resource_vote {
                 },
                 "resourceVoteChoice": {
                     "type": "towardsIdentity",
-                    "data": voter_id,
+                    "identity": voter_id,
                 },
             })
         );

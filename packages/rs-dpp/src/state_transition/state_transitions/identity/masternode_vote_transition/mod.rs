@@ -324,7 +324,7 @@ pub(crate) mod json_convertible_tests {
                     },
                     "resourceVoteChoice": {
                         "type": "towardsIdentity",
-                        "data": Identifier::new([0x34; 32]),
+                        "identity": Identifier::new([0x34; 32]),
                     },
                 },
                 "nonce": 99,
@@ -361,7 +361,7 @@ pub(crate) mod json_convertible_tests {
                     },
                     "resourceVoteChoice": {
                         "type": "towardsIdentity",
-                        "data": Identifier::new([0x34; 32]),
+                        "identity": Identifier::new([0x34; 32]),
                     },
                 },
                 "nonce": 99u64,
