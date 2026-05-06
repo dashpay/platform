@@ -13,11 +13,11 @@ impl Drive {
     /// Version 0 implementation of recording the shielded pool anchor.
     ///
     /// Reads the current Sinsemilla anchor from the CommitmentTree at
-    /// `[AddressBalances, "s", [1]]`. If it differs from the most-recent
+    /// `[AddressBalances, "s", [128]]`. If it differs from the most-recent
     /// anchor — derived as the latest entry in the anchors-by-height
-    /// index `[..., "s", [8]]` (a `limit 1` reverse query) — inserts:
-    /// - `anchor_bytes → block_height_be` into the anchors tree `[..., [6]]`
-    /// - `block_height_be → anchor_bytes` into the anchors-by-height tree `[..., [8]]`
+    /// index `[..., "s", [96]]` (a `limit 1` reverse query) — inserts:
+    /// - `anchor_bytes → block_height_be` into the anchors tree `[..., [192]]`
+    /// - `block_height_be → anchor_bytes` into the anchors-by-height tree `[..., [96]]`
     ///
     /// There is intentionally no separate "most recent anchor" item:
     /// the anchors-by-height index is the canonical log, and the
@@ -110,7 +110,7 @@ impl Drive {
     }
 
     /// Read the latest recorded shielded-pool anchor from
-    /// `SHIELDED_ANCHORS_BY_HEIGHT_KEY` (`[..., "s", [8]]`) via a
+    /// `SHIELDED_ANCHORS_BY_HEIGHT_KEY` (`[..., "s", [96]]`) via a
     /// `limit 1` reverse query. Returns `None` if the index is empty
     /// (pool has never recorded an anchor — chain is at genesis or
     /// no shielded ops yet).

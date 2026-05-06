@@ -10,7 +10,7 @@ use grovedb::TransactionArg;
 impl Drive {
     /// Version 0 implementation of reading the shielded pool total balance.
     ///
-    /// Reads the total balance from `[AddressBalances, "s", [5]]`.
+    /// Reads the total balance from `[AddressBalances, "s", [32]]`.
     /// Returns 0 if the key does not exist yet.
     pub(in crate::drive) fn read_shielded_pool_total_balance_v0(
         &self,
