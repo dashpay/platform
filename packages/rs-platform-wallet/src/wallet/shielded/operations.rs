@@ -42,7 +42,51 @@ use dpp::shielded::builder::{
 };
 use dpp::withdrawal::Pooling;
 use grovedb_commitment_tree::{Anchor, PaymentAddress};
-use tracing::{info, trace};
+use tracing::{info, trace, warn};
+
+/// Try to extract a structured `AddressesNotEnoughFundsError` from a
+/// broadcast error so the shield path can format a diagnostic that
+/// includes Platform's actual per-input view (nonce + balance) rather
+/// than just the stringified message.
+fn addresses_not_enough_funds(
+    e: &dash_sdk::Error,
+) -> Option<&dpp::consensus::state::address_funds::AddressesNotEnoughFundsError> {
+    use dpp::consensus::state::state_error::StateError;
+    use dpp::consensus::ConsensusError;
+    use dpp::ProtocolError;
+
+    let consensus: &ConsensusError = match e {
+        dash_sdk::Error::Protocol(ProtocolError::ConsensusError(boxed)) => boxed.as_ref(),
+        dash_sdk::Error::StateTransitionBroadcastError(s) => s.cause.as_ref()?,
+        _ => return None,
+    };
+    match consensus {
+        ConsensusError::StateError(StateError::AddressesNotEnoughFundsError(err)) => Some(err),
+        _ => None,
+    }
+}
+
+/// Format a one-line `addresses_with_info` summary for diagnostics —
+/// each entry rendered as `<base58_addr>=(nonce <n>, <c> credits)`.
+fn format_addresses_with_info(
+    map: &std::collections::BTreeMap<
+        dpp::address_funds::PlatformAddress,
+        (dpp::prelude::AddressNonce, dpp::fee::Credits),
+    >,
+) -> String {
+    map.iter()
+        .map(|(addr, (nonce, credits))| {
+            let hex_hash = match addr {
+                dpp::address_funds::PlatformAddress::P2pkh(h) => {
+                    format!("p2pkh:{}", hex::encode(h))
+                }
+                dpp::address_funds::PlatformAddress::P2sh(h) => format!("p2sh:{}", hex::encode(h)),
+            };
+            format!("{hex_hash}=(nonce {nonce}, {credits} credits)")
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
 
 impl<S: ShieldedStore> ShieldedWallet<S> {
     // -------------------------------------------------------------------------
@@ -99,6 +143,27 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
                         addr
                     ))
                 })?;
+            // Surface a per-input diagnostic so the host can see what
+            // we're claiming vs what Platform actually reports —
+            // mismatches are the typical root cause of
+            // `AddressesNotEnoughFundsError` on shield broadcast.
+            if info.balance < credits {
+                warn!(
+                    address = ?addr,
+                    claimed_credits = credits,
+                    platform_balance = info.balance,
+                    platform_nonce = info.nonce,
+                    "Shield input claims more credits than Platform reports — broadcast will likely fail"
+                );
+            } else {
+                info!(
+                    address = ?addr,
+                    claimed_credits = credits,
+                    platform_balance = info.balance,
+                    platform_nonce = info.nonce,
+                    "Shield input"
+                );
+            }
             inputs_with_nonce.insert(addr, (info.nonce + 1, credits));
         }
 
@@ -106,6 +171,12 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
             vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
 
         info!("Shield credits: {} credits, building proof...", amount,);
+
+        // Snapshot what we're claiming so the diagnostic can show
+        // local-claim vs platform-view side by side when broadcast
+        // fails with `AddressesNotEnoughFundsError`. The map is
+        // moved into the builder below so we have to clone here.
+        let claimed_inputs = inputs_with_nonce.clone();
 
         // Build the state transition using the DPP builder.
         // `build_shield_transition` is async (cascade from the dpp
@@ -130,7 +201,30 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
         state_transition
             .broadcast(&self.sdk, None)
             .await
-            .map_err(|e| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))?;
+            .map_err(|e| {
+                if let Some(rich) = addresses_not_enough_funds(&e) {
+                    let claimed = claimed_inputs
+                        .iter()
+                        .map(|(addr, (nonce, credits))| {
+                            let h = match addr {
+                                PlatformAddress::P2pkh(h) => format!("p2pkh:{}", hex::encode(h)),
+                                PlatformAddress::P2sh(h) => format!("p2sh:{}", hex::encode(h)),
+                            };
+                            format!("{h}=(nonce {nonce}, {credits} credits)")
+                        })
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    PlatformWalletError::ShieldedBroadcastFailed(format!(
+                        "addresses not enough funds: required {} credits; \
+                         claimed inputs [{}]; platform sees [{}]",
+                        rich.required_balance(),
+                        claimed,
+                        format_addresses_with_info(rich.addresses_with_info()),
+                    ))
+                } else {
+                    PlatformWalletError::ShieldedBroadcastFailed(e.to_string())
+                }
+            })?;
 
         info!("Shield credits broadcast succeeded: {} credits", amount);
         Ok(())
