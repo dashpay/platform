@@ -52,6 +52,8 @@ pub mod platform_addresses;
 pub mod platform_wallet_info;
 mod runtime;
 #[cfg(feature = "shielded")]
+pub mod shielded_persistence;
+#[cfg(feature = "shielded")]
 pub mod shielded_send;
 #[cfg(feature = "shielded")]
 pub mod shielded_sync;
