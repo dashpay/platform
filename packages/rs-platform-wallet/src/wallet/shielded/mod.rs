@@ -15,6 +15,7 @@
 //! plug in their own persistence (SQLite, RocksDB, etc.) while tests use the
 //! in-memory implementation.
 
+pub mod file_store;
 pub mod keys;
 pub mod note_selection;
 pub mod operations;
@@ -22,13 +23,14 @@ pub mod prover;
 pub mod store;
 pub mod sync;
 
+pub use file_store::{FileBackedShieldedStore, FileShieldedStoreError};
 pub use keys::OrchardKeySet;
 pub use prover::CachedOrchardProver;
 pub use store::{InMemoryShieldedStore, ShieldedNote, ShieldedStore};
+pub use sync::{ShieldedSyncSummary, SyncNotesResult};
 
 use std::sync::Arc;
 
-use dashcore::Network;
 use tokio::sync::RwLock;
 
 use crate::error::PlatformWalletError;
@@ -46,8 +48,6 @@ use crate::error::PlatformWalletError;
 /// The store is wrapped in `Arc<RwLock<S>>` so the wallet can be shared
 /// across async tasks. Read operations (balance, address queries) take a
 /// read lock; mutating operations (sync, spend) take a write lock.
-// Fields and accessors used by sync/operations modules (not yet implemented).
-#[allow(dead_code)]
 pub struct ShieldedWallet<S: ShieldedStore> {
     /// Dash Platform SDK handle for network operations.
     sdk: Arc<dash_sdk::Sdk>,
@@ -55,25 +55,24 @@ pub struct ShieldedWallet<S: ShieldedStore> {
     keys: OrchardKeySet,
     /// Pluggable storage backend behind a shared async lock.
     store: Arc<RwLock<S>>,
-    /// Network (mainnet / testnet / devnet / regtest).
-    network: Network,
 }
 
 impl<S: ShieldedStore> ShieldedWallet<S> {
     /// Create a shielded wallet from pre-derived keys and a store.
-    pub fn new(sdk: Arc<dash_sdk::Sdk>, keys: OrchardKeySet, store: S, network: Network) -> Self {
+    pub fn new(sdk: Arc<dash_sdk::Sdk>, keys: OrchardKeySet, store: S) -> Self {
         Self {
             sdk,
             keys,
             store: Arc::new(RwLock::new(store)),
-            network,
         }
     }
 
     /// Derive Orchard keys from a wallet seed and create a shielded wallet.
     ///
     /// This is the primary constructor for production use. The `seed` should
-    /// be the BIP-39 seed bytes (typically 64 bytes).
+    /// be the BIP-39 seed bytes (typically 64 bytes). `network` selects the
+    /// ZIP-32 coin type used during key derivation; once derivation is done
+    /// the network is captured implicitly in the SDK handle.
     ///
     /// # Errors
     ///
@@ -81,12 +80,12 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
     pub fn from_seed(
         sdk: Arc<dash_sdk::Sdk>,
         seed: &[u8],
-        network: Network,
+        network: dashcore::Network,
         account: u32,
         store: S,
     ) -> Result<Self, PlatformWalletError> {
         let keys = OrchardKeySet::from_seed(seed, network, account)?;
-        Ok(Self::new(sdk, keys, store, network))
+        Ok(Self::new(sdk, keys, store))
     }
 
     /// Total unspent shielded balance in credits.
@@ -109,30 +108,5 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
     /// Derive a payment address at the given diversifier index.
     pub fn address_at(&self, index: u32) -> grovedb_commitment_tree::PaymentAddress {
         self.keys.address_at(index)
-    }
-
-    // Accessors used by sync and operations modules (not yet implemented).
-    #[allow(dead_code)]
-    /// Access the SDK handle (for sync and operations modules).
-    pub(crate) fn sdk(&self) -> &dash_sdk::Sdk {
-        &self.sdk
-    }
-
-    #[allow(dead_code)]
-    /// Access the key set (for sync and operations modules).
-    pub(crate) fn keys(&self) -> &OrchardKeySet {
-        &self.keys
-    }
-
-    #[allow(dead_code)]
-    /// Access the store (for sync and operations modules).
-    pub(crate) fn store(&self) -> &Arc<RwLock<S>> {
-        &self.store
-    }
-
-    #[allow(dead_code)]
-    /// Access the network (for sync and operations modules).
-    pub(crate) fn network(&self) -> Network {
-        self.network
     }
 }
