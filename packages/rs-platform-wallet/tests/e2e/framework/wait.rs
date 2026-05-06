@@ -14,6 +14,7 @@ use dash_sdk::query_types::AddressInfo;
 use dash_sdk::Sdk;
 use dash_spv::sync::ProgressPercentage;
 use dpp::address_funds::PlatformAddress;
+use dpp::data_contract::DataContract;
 use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
@@ -943,5 +944,96 @@ pub async fn wait_for_dpns_name_visible(
         // Cap the sleep against the remaining budget so a sub-2s
         // `timeout` doesn't overshoot by up to `BACKSTOP_WAKE_INTERVAL`.
         tokio::time::sleep(std::cmp::min(remaining, BACKSTOP_WAKE_INTERVAL)).await;
+    }
+}
+
+/// Polls `DataContract::fetch` until the contract is visible on at least N
+/// successive DAPI fetches with a small gap between them, biasing toward
+/// sampling distinct nodes. Use after a contract-deploy state transition
+/// before the first follow-up state transition that references the contract.
+///
+/// Call this immediately after the `PutContract` broadcast returns `Ok`.
+/// The deploy state transition is committed on whichever DAPI node the
+/// SDK was round-robined to; a sibling node may not have replicated the
+/// new contract by the time `token_mint` (or any other state transition
+/// that references `contract_id`) is submitted. Without this gate, that
+/// follow-up submission panics with
+/// `Sdk("contract <id> not found on chain")`.
+///
+/// - `consecutive_successes` — number of back-to-back `Ok(Some(_))`
+///   fetches required to clear the gate. Values below 1 are treated as
+///   1. Default: 2.
+pub async fn wait_for_data_contract_visible(
+    sdk: &Sdk,
+    contract_id: Identifier,
+    timeout: Duration,
+    consecutive_successes: u32,
+) -> FrameworkResult<DataContract> {
+    let required = consecutive_successes.max(1);
+    let start = Instant::now();
+    let deadline = start + timeout;
+    let mut streak: u32 = 0;
+
+    loop {
+        let mut hit = false;
+        match DataContract::fetch(sdk, contract_id).await {
+            Ok(Some(contract)) => {
+                streak = streak.saturating_add(1);
+                hit = true;
+                tracing::debug!(
+                    target: "platform_wallet::e2e::wait",
+                    ?contract_id,
+                    streak,
+                    required,
+                    "data contract visible on DAPI node"
+                );
+                if streak >= required {
+                    tracing::info!(
+                        target: "platform_wallet::e2e::wait",
+                        ?contract_id,
+                        streak,
+                        required,
+                        elapsed = ?start.elapsed(),
+                        "data contract propagation gate cleared"
+                    );
+                    return Ok(contract);
+                }
+            }
+            Ok(None) => {
+                streak = 0;
+                tracing::debug!(
+                    target: "platform_wallet::e2e::wait",
+                    ?contract_id,
+                    "data contract not yet visible; resetting streak"
+                );
+            }
+            Err(err) => {
+                streak = 0;
+                tracing::debug!(
+                    target: "platform_wallet::e2e::wait",
+                    error = %err,
+                    ?contract_id,
+                    "DataContract::fetch failed during wait_for_data_contract_visible; resetting streak"
+                );
+            }
+        }
+
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(FrameworkError::Cleanup(format!(
+                "wait_for_data_contract_visible timed out after {timeout:?} \
+                 (contract_id={contract_id:?} required={required} \
+                  streak_at_timeout={streak})"
+            )));
+        }
+
+        // Between consecutive successes use the short gap so we sample
+        // distinct nodes quickly; otherwise back off to the backstop interval.
+        let next_sleep = if hit && streak < required {
+            CHAIN_CONFIRMED_SUCCESS_GAP
+        } else {
+            BACKSTOP_WAKE_INTERVAL
+        };
+        tokio::time::sleep(std::cmp::min(remaining, next_sleep)).await;
     }
 }

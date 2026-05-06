@@ -217,7 +217,20 @@ pub async fn register_token_contract_via_sdk(
         .await
         .map_err(|err| FrameworkError::Sdk(format!("put_to_platform: {err}")))?;
 
-    Ok(confirmed.id())
+    let contract_id = confirmed.id();
+
+    // Gate against DAPI propagation lag: a follow-up state transition
+    // (e.g. token_mint) may land on a replica that hasn't replicated
+    // the new contract yet. Wait until 2 consecutive fetches succeed.
+    crate::framework::wait::wait_for_data_contract_visible(
+        ctx.sdk(),
+        contract_id,
+        Duration::from_secs(60),
+        2,
+    )
+    .await?;
+
+    Ok(contract_id)
 }
 
 // ---------------------------------------------------------------------------

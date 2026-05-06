@@ -497,12 +497,22 @@ async fn publish_token_contract_with_groups(
     let confirmed = data_contract
         .put_to_platform_and_wait_for_response(
             ctx.sdk(),
-            owner.master_key.clone(),
+            owner.high_key.clone(),
             owner.signer.as_ref(),
             None,
         )
         .await
         .map_err(|err| FrameworkError::Sdk(format!("put_to_platform: {err}")))?;
 
-    Ok(confirmed.id())
+    let contract_id = confirmed.id();
+
+    crate::framework::wait::wait_for_data_contract_visible(
+        ctx.sdk(),
+        contract_id,
+        std::time::Duration::from_secs(60),
+        2,
+    )
+    .await?;
+
+    Ok(contract_id)
 }
