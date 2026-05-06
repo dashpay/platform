@@ -97,6 +97,7 @@ impl TestWallet {
                 network,
                 seed_bytes,
                 WalletAccountCreationOptions::Default,
+                None,
             )
             .await
             .map_err(wallet_err)?;
@@ -197,6 +198,32 @@ impl TestWallet {
     /// Total credits across every tracked address.
     pub async fn total_credits(&self) -> Credits {
         self.wallet.platform().total_credits().await
+    }
+
+    /// Lock-free Core (Layer-1) confirmed balance in duffs, sourced
+    /// from the atomic updated by SPV. Test helper — not
+    /// transactionally consistent with the wallet's UTXO set.
+    pub fn core_balance_confirmed(&self) -> u64 {
+        self.wallet.balance().confirmed()
+    }
+
+    /// Sweep `amount` Core duffs from this wallet's BIP-44 account 0
+    /// to `target`. Thin wrapper over [`super::bank::core_send`] —
+    /// builds, signs, and broadcasts via [`SpvBroadcaster`]. Returns
+    /// the broadcast `Txid`.
+    ///
+    /// Test-only helper: the framework's
+    /// [`super::cleanup::teardown_one`] / `sweep_orphans` paths
+    /// already drain Core funds through the same `core_send` free
+    /// function, so individual tests rarely need this directly. Add
+    /// it for cases that explicitly want to broadcast a Core send
+    /// from a test wallet without going through teardown.
+    pub async fn sweep_core_to(
+        &self,
+        target: &dashcore::Address,
+        amount: u64,
+    ) -> FrameworkResult<dashcore::Txid> {
+        super::bank::core_send(&self.wallet, target, amount).await
     }
 
     /// Transfer credits to one or more outputs. Auto-selects inputs

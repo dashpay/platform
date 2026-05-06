@@ -69,6 +69,17 @@ spentindex=1
 {{~}}
 {{?}}
 
+# BIP157/158 compact block filters. Building the cfilter index plus
+# advertising NODE_COMPACT_FILTERS lets BIP157 SPV clients sync
+# headers + filters from this node. Off by default (mainnet/testnet
+# usage doesn't justify the disk + CPU overhead); enabled on the
+# `local` preset where the chain is tiny and the iOS dev flow needs
+# filter sync against dashmate's `local_seed` to test the wallet.
+{{? it.core.compactFilters }}
+blockfilterindex=basic
+peerblockfilters=1
+{{?}}
+
 # ZeroMQ notifications
 zmqpubrawtx=tcp://0.0.0.0:{{=it.core.zmq.port}}
 zmqpubrawtxlock=tcp://0.0.0.0:{{=it.core.zmq.port}}

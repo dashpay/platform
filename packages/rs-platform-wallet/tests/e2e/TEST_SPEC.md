@@ -62,6 +62,24 @@ BIP-39 mnemonic generator already used by `framework/wallet_factory.rs`. Cases
 that exercise non-ASCII content (e.g. Unicode display names) do so on
 downstream fields, not on the seed.
 
+### 1.3 Known issues / operator notes
+
+**Known issue: dash-spv mn-list QRInfo stall.** When the workdir's
+`masternodestate.json` cache is missing (first run or after wipe), and
+the test starts near a testnet quorum rotation boundary, dash-spv's
+QRInfo retry loop may hard-cap at 3 attempts with the error
+`Required rotated chain lock sig at h - 0 not present`. The engine
+then stops trying to advance mn-list. `wait_for_mn_list_synced` now
+surfaces this immediately as `dash-spv reported ManagerError before
+mn-list synced` (event-driven path) or as a no-forward-progress stall
+after 120 s (heuristic backstop), instead of waiting the full 600 s
+cold-cache floor.
+
+Operator workaround: wait 10–20 min for the next testnet ChainLock
+cycle, then retry. If the issue persists, wipe
+`${TMPDIR}/dash-platform-wallet-e2e/spv-data/` and retry from a clean
+state.
+
 ---
 
 ## 2. Harness capability matrix
@@ -133,6 +151,7 @@ Status legend: **green** = test file present, body has real assertions, runnable
 | ID-003b | Concurrent identity-to-identity transfers serialise on identity nonce | P2 | not implemented | M |
 | ID-005b | `transfer_credits_to_addresses` with empty outputs | P2 | not implemented | S |
 | ID-006b | Identity-key derivation index boundary (`0` and `DEFAULT_GAP_LIMIT - 1`) | P2 | not implemented | M |
+| ID-007 | Identity-auth addresses are intentionally NOT monitored (pins intended architecture) | P2 | green | M |
 | TK-001 | Token transfer between two identities | P1 | blocked | L |
 | TK-001b | Token transfer of amount 0 | P2 | blocked | S |
 | TK-001c | Token transfer across re-issued identity (signer rotation) | P2 | blocked | M |
@@ -195,7 +214,7 @@ Status legend: **green** = test file present, body has real assertions, runnable
 | Found-017 | `register_wallet` registers wallet in memory even when persister `store` returns `Err` — vanishes on next launch | P2 | not implemented | S |
 | Found-018 | `PlatformAddressChangeSet::merge` documents fee semantics as "fee paid by the transfer that produced this changeset" but actually accumulates fees across merged changesets | P2 | not implemented | S |
 
-Counts by priority: **P0: 10**, **P1: 24** (incl. 2 post-Task #15), **P2: 56** (incl. 1 post-Task #15, 1 gated, 18 Found-bug pins), **DEFERRED: 1** (91 total index entries; 72 baseline + 18 Found-bug pins + 1 deferred placeholder).
+Counts by priority: **P0: 10**, **P1: 24** (incl. 2 post-Task #15), **P2: 58** (incl. 2 post-Task #15, 1 gated, 18 Found-bug pins), **DEFERRED: 1** (93 total index entries; 74 baseline + 18 Found-bug pins + 1 deferred placeholder).
 
 ### Platform Addresses (PA)
 
@@ -894,6 +913,58 @@ Counts by priority: **P0: 10**, **P1: 24** (incl. 2 post-Task #15), **P2: 56** (
 - **Estimated complexity**: M
 - **Rationale**: ID-006 covers `identity_index` boundaries; `key_index` is the parallel axis and currently uncovered.
 
+#### ID-007 — Identity-auth addresses are intentionally NOT monitored
+- **Priority**: P2
+- **Status**: Pass — `tests/e2e/cases/id_007_identity_auth_addresses_not_monitored.rs`
+  pins the intentional architecture that DIP-9 identity-authentication
+  subfeature paths (subfeature `0..3`,
+  `m/9'/coinType'/5'/{0,1,2,3}'/identity_index'/key_index'`) are NOT in
+  `WalletAccountCreationOptions::Default` and therefore NOT in
+  `PlatformWalletInfo::monitored_addresses()`. Sending Core duffs to
+  one of those addresses does NOT increase the wallet's Core balance,
+  and the UTXO set never observes such a send. `#[ignore]`-tagged so a
+  default `cargo test` stays green; `cargo test -- --ignored` runs it
+  end-to-end and is expected to PASS. Documents the intended
+  architecture; closed PR `dashpay/rust-dashcore#554` was a speculative
+  attempt to change this and was correctly rejected. End-to-end runs
+  are gated on **operator pre-funding the bank's Core (Layer-1) receive
+  address** with at least `100_000 + fee` duffs of testnet DASH (the
+  address is logged at framework init under target
+  `platform_wallet::e2e::bank`).
+- **Wallet feature exercised**: `PlatformWalletInfo::monitored_addresses` (`wallet/platform_wallet_traits.rs:93`) projection for DIP-9 identity-authentication addresses derived via `derive_ecdsa_identity_auth_keypair_from_master` (`wallet/identity/network/identity_handle.rs:143`). Concretely: the `m/9'/coinType'/5'/0'/identity_index'/key_index'` subfeature path, which is intentionally excluded from `WalletAccountCreationOptions::Default` because identity-auth keys are pure key material, not funds-bearing addresses.
+- **DET parallel**: `dash-evo-tool/src/backend_task/account_summary.rs:226-229` — explicitly states identity-auth addresses "usually hold zero balance"; `receive_address()` returns BIP-44 paths only and DET's UI hides them outside developer-mode "Identity System" view.
+- **Preconditions**:
+  - SPV runtime enabled (Task #15 — gates `CR-001` too).
+  - ID-001 helper landed (Wave A).
+  - Bank wallet that holds **Core coins**, not just credits — same prerequisite as `CR-003`.
+- **Scenario**:
+  1. `let id = setup_with_n_identities(1, 30_000_000).await?.identities[0];`
+  2. Compute `auth_addr = P2PKH(derive_ecdsa_identity_auth_keypair_from_master(master, network, identity_index = 0, key_index = 0).public_key)`.
+  3. Snapshot `wallet.monitored_addresses()` *before* sending anything.
+  4. Send `100_000` duffs from the Core-funded bank to `auth_addr` on Layer-1.
+  5. Snapshot `wallet.monitored_addresses()` *after* the broadcast.
+  6. Wait up to `30s` for the wallet's Core balance to reflect the incoming UTXO; expect it does NOT.
+- **Assertions** (pin the **intended** contract — green when the architecture is intact):
+  - `auth_addr` is **NOT** in `monitored_addresses()` both before and after step 4.
+  - The wallet's Core balance does **NOT** increase to `pre_balance + 1` within the negative window after step 6 (the `wait_for_core_balance` call is expected to time out).
+  - The wallet's UTXO set does **NOT** contain a `100_000`-duff UTXO at `auth_addr`.
+  - When this test starts FAILING, a regression has happened: either `WalletAccountCreationOptions::Default` started including `BlockchainIdentities*` `AccountType`s, or some other code path has begun monitoring these addresses without architecture review. Investigate before flipping.
+- **Variants** (covered inline in the same test — registration status is irrelevant, the derivation is pure; same architecture applies):
+  - Compute `auth_addr` for `identity_index = 1` (an unregistered slot) — the address must remain unmonitored regardless of registration state.
+  - Repeat for the BLS subfeature path (`m/9'/coinType'/5'/2'/identity_index'/key_index'`) once `derive_*_bls_identity_auth_keypair_from_master` lands; same intended-contract assertions apply. (Deferred — TODO comment in the test body.)
+- **Harness extensions required**:
+  - SPV runtime re-enabled (Task #15 — same prerequisite as `CR-001`).
+  - Core-funded bank wallet helper (same prerequisite as `CR-003`).
+  - `wait_for_core_balance(wallet, expected_min, timeout)` — landed in `framework/wait.rs` alongside this case (parallel of `wait_for_balance` for Layer-1 balance instead of credits).
+  - Wave A's `SeedBackedIdentitySigner` (already needed for `ID-001`).
+- **Estimated complexity**: M (test body is short — most of the cost is the prerequisite SPV + Core-faucet bring-up that `CR-001` and `CR-003` already require).
+- **Funding budget**: `100_000` Core duffs (~0.001 DASH) per run for the Layer-1 send; rounding for Core-tx fee. Negligible compared to the credit budget of any P0/P1 case.
+- **Rationale**: Pins the **intentional** architecture for "which DIP-9 subfeatures get monitored?" Identity-auth addresses are pure key material — they sign identity state transitions, they don't receive Layer-1 Dash. dash-evo-tool (the canonical Platform client) treats them this way: `account_summary.rs:226-229` explicitly notes they "usually hold zero balance"; `receive_address()` returns BIP-44 paths only; the UI hides them outside developer-mode "Identity System" view. No standard flow sends Layer-1 Dash to these addresses. The closed PR `dashpay/rust-dashcore#554` was a speculative attempt to change this for a hypothetical use case, not a fix for any active bug — its rejection was correct. ID-007 pins the not-monitored contract so any accidental regression — or any deliberate architecture shift — surfaces loudly.
+- **Operator notes**: First cold-cache run takes ~15 minutes because SPV walks compact filters from genesis (~1.47M testnet blocks). Subsequent runs reuse the on-disk cache and complete in seconds. The harness gates init on `PLATFORM_WALLET_E2E_BANK_CORE_GATE` (default `0` — skip); set it to at least `110_000` (`100_000` send + `~10_000` fee reserve) before invoking ID-007 so the bank's `core_balance_confirmed` reflects the post-scan total instead of a false-zero mid-scan. Set `RUST_LOG=info,platform_wallet::e2e::wait=info` to see scan-progress lines (`scan_height` vs `scan_tip`) every 30s.
+- **Notes**:
+  - Today `derive_ecdsa_identity_auth_keypair_from_master` is the only DIP-9 subfeature `rs-platform-wallet` exposes (subfeature 0, ECDSA). Adding the BLS / Hash160 variants is contingent on the upstream `key-wallet` API gaining BLS derivation helpers.
+  - This is a **defensive pin of intentional behavior**, in the same family as `Found-003` / `Found-004`: green = architecture intact, red = something changed and needs review. The change might be a real architecture shift (in which case flip the assertions in the same PR that wires the change) or an accident (in which case revert the breakage).
+
 ### Tokens (TK)
 
 The wallet has token operations on the API surface
@@ -1313,8 +1384,8 @@ so that when SPV lands, the test bodies can be written without further design.
 
 #### CR-003 — Asset-lock-funded identity registration (full path)
 - **Priority**: P2 (post-Task #15)
-- **Status**: BLOCKED — needs harness refactor: SPV runtime + Core-UTXO funded test wallet (Task #15). Bank wallet today holds platform credits, not Core coins.
-- **Wallet feature exercised**: `wallet/asset_lock/build.rs:39` + `wallet/identity/network/registration.rs:240` (`register_identity_with_signer`).
+- **Status**: Pass — `tests/e2e/cases/cr_003_asset_lock_funded_registration.rs` (`#[ignore]`-tagged; runs gated on `PLATFORM_WALLET_E2E_BANK_CORE_GATE`). Builds the asset-lock tx via `setup_with_core_funded_test_wallet(TEST_WALLET_CORE_FUNDING)`, waits for the IS-lock, registers the identity, and pins on-chain identity existence + `tracked_asset_locks` recording + Core-balance decrement (lock amount + fee, in duffs). End-to-end runs are gated on the bank's Core (Layer-1) primary receive address holding at least `TEST_WALLET_CORE_FUNDING + CORE_TX_FEE_RESERVE` (≈ 200_010_000 duffs ≈ 2.0001 DASH testnet); under-funded surfaces as `FrameworkError::Bank` with the bank's Core address embedded so the operator-actionable "top up at &lt;addr&gt;" message reaches the test log unchanged. The bank Core address is logged once per process at framework init under the `platform_wallet::e2e::bank` target.
+- **Wallet feature exercised**: `wallet/asset_lock/build.rs:39` (`build_asset_lock_transaction`) + `wallet/asset_lock/build.rs:285` (`create_funded_asset_lock_proof`) + `wallet/identity/network/registration.rs:59` (`register_identity_with_funding_external_signer` driving `IdentityFundingMethod::FundWithWallet`).
 - **DET parallel**: `dash-evo-tool/tests/backend-e2e/core_tasks.rs:132` (`test_tc004_create_registration_asset_lock`).
 - **Preconditions**: CR-001 + a Core-funded test wallet (operator funds via testnet faucet).
 - **Scenario**: build asset-lock tx; wait for instant-lock; register identity.
@@ -1323,6 +1394,7 @@ so that when SPV lands, the test bodies can be written without further design.
 - **Harness extensions required**: faucet adapter; Core-funded wallet helper.
 - **Estimated complexity**: L
 - **Rationale**: Mirrors DET's existing canonical Identity-create coverage. Lower priority than ID-001 because address-funded is the path with no other coverage in the workspace.
+- **Operator notes**: First cold-cache run takes ~15 minutes because SPV walks compact filters from genesis (~1.47M testnet blocks). Subsequent runs reuse the on-disk cache and complete in seconds. The harness gates init on `PLATFORM_WALLET_E2E_BANK_CORE_GATE` (default `0` — skip); set it to at least `TEST_WALLET_CORE_FUNDING + CORE_TX_FEE_RESERVE` (≈ `200_010_000` duffs) before invoking CR-003 so the bank's `core_balance_confirmed` reflects the post-scan total instead of a false-zero mid-scan. Set `RUST_LOG=info,platform_wallet::e2e::wait=info` to see scan-progress lines (`scan_height` vs `scan_tip`) every 30s.
 
 ### Contracts (CT)
 

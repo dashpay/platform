@@ -17,6 +17,7 @@ use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 use dpp::util::hash::ripemd160_sha256;
 use dpp::version::PlatformVersion;
+use key_wallet::account::account_type::StandardAccountType;
 use key_wallet::{AccountType, ChildNumber, Network};
 use parking_lot::Mutex as SyncMutex;
 use platform_wallet::wallet::persister::NoPlatformPersistence;
@@ -165,11 +166,19 @@ impl BankWallet {
         let seed_bytes = validated.to_seed("");
 
         let network = config.network;
+        // `Some(0)` requests a full historical compact-filter scan
+        // from genesis. The bank is a long-lived testnet address
+        // that may receive Layer-1 funding before any test run
+        // starts; without this, SPV's default "scan from current
+        // tip" window would miss those UTXOs and report
+        // `core_balance=0` even when funded (QA-001 / QA-002 /
+        // QA-003 in `/tmp/bank-core-balance-diagnosis.md`).
         let wallet = manager
             .create_wallet_from_mnemonic(
                 &config.bank_mnemonic,
                 network,
                 key_wallet::wallet::initialization::WalletAccountCreationOptions::Default,
+                Some(0),
             )
             .await
             .map_err(wallet_err)?;
@@ -363,10 +372,141 @@ impl BankWallet {
     pub fn funding_mutex_history(&self) -> Vec<FundingMutexHistoryEntry> {
         drain_funding_mutex_history()
     }
+
+    /// Bank's confirmed Core (Layer-1) balance in duffs, sourced from
+    /// the lock-free atomic updated by SPV. Used for pre-flight under-
+    /// funded checks in [`Self::send_core_to`] and the harness init
+    /// log; not transactionally consistent with the wallet's UTXO set.
+    pub fn core_balance_confirmed(&self) -> u64 {
+        self.wallet.balance().confirmed()
+    }
+
+    /// Bank wallet's SPV birth height — the earliest block SPV's
+    /// compact-filter scan will inspect for this wallet. Surfaced in
+    /// the harness init log so operators can correlate `core_balance=0`
+    /// with the scan window: if the funding tx confirmed below
+    /// `birth_height`, SPV won't see it.
+    pub async fn birth_height(&self) -> u32 {
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+        self.wallet.state().await.birth_height()
+    }
+
+    /// First BIP-44 (Core) receive address. Stable across process
+    /// runs while the address remains unused — once a UTXO lands on
+    /// it the pool advances and a subsequent call returns the next
+    /// index. Surfaced in the harness init log so the operator can
+    /// see where to send Layer-1 duffs to fund the bank.
+    pub async fn primary_core_receive_address(&self) -> FrameworkResult<dashcore::Address> {
+        self.wallet
+            .core()
+            .next_receive_address_for_account(0)
+            .await
+            .map_err(wallet_err)
+    }
+
+    /// Send `duffs` of Layer-1 Core duffs from the bank's BIP-44
+    /// account 0 to a Core `dashcore::Address`.
+    ///
+    /// Thin wrapper over [`core_send`]: serialises on
+    /// [`FUNDING_MUTEX`] so concurrent Core / Platform funding flows
+    /// don't race UTXO selection, runs an under-funded pre-check
+    /// against the bank's confirmed Core balance, and adds the bank's
+    /// primary receive address to the error message so operators
+    /// know where to top up testnet duffs. Returns the broadcast
+    /// `Txid` on success; does NOT wait for instant-lock or chain
+    /// confirmation — callers follow up with
+    /// [`super::wait::wait_for_core_balance`] when they need
+    /// positive-balance arrival.
+    ///
+    /// Errors:
+    /// - [`FrameworkError::Bank`] when the bank's confirmed Core
+    ///   balance is below `duffs + CORE_TX_FEE_RESERVE`. The error
+    ///   message names the bank's primary receive address so the
+    ///   operator knows where to top up testnet duffs.
+    /// - [`FrameworkError::Wallet`] for build/sign/broadcast failures
+    ///   surfaced from the underlying `CoreWallet`.
+    ///
+    /// Used by `ID-007` (negative contract: identity-auth addresses
+    /// are NOT in `monitored_addresses()`, so the wallet's Core
+    /// balance must NOT observe this send within the test's window).
+    pub async fn send_core_to(
+        &self,
+        target: &dashcore::Address,
+        duffs: u64,
+    ) -> FrameworkResult<dashcore::Txid> {
+        let _guard = FUNDING_MUTEX.lock().await;
+
+        let confirmed = self.wallet.balance().confirmed();
+        let required = duffs.saturating_add(CORE_TX_FEE_RESERVE);
+        if confirmed < required {
+            // Surface the operator-actionable pointer same shape as
+            // the `BankWallet::load` under-funded panic so operators
+            // hit the same documented format whether the bank is
+            // Platform-credit or Core-duff under-funded.
+            let receive_addr = self
+                .wallet
+                .core()
+                .next_receive_address_for_account(0)
+                .await
+                .map_err(wallet_err)?;
+            return Err(FrameworkError::Bank(format!(
+                "Bank Core under-funded.\n  \
+                 confirmed: {confirmed} duffs\n  \
+                 required : {required} duffs (send {duffs} + ~{CORE_TX_FEE_RESERVE} fee reserve)\n  \
+                 short by : {short} duffs\n  \
+                 top up at: {receive_addr}\n\
+                 \n\
+                 Send testnet Core duffs to the address above, then re-run the test.",
+                short = required - confirmed,
+            )));
+        }
+
+        let txid = core_send(&self.wallet, target, duffs).await?;
+        tracing::info!(
+            target: "platform_wallet::e2e::bank",
+            %txid,
+            target = %target,
+            duffs,
+            "bank.send_core_to broadcast"
+        );
+        Ok(txid)
+    }
 }
 
 fn wallet_err(err: PlatformWalletError) -> FrameworkError {
     FrameworkError::Wallet(err.to_string())
+}
+
+/// Generous standard-tx fee reserve (~0.0001 DASH at 1 sat/B for a
+/// typical 1-input-2-output tx). The wallet's coin selector picks the
+/// actual fee from its config; this floor only gates the "is there
+/// enough to even try" pre-check on `BankWallet::send_core_to` and
+/// the dust-floor on the test-wallet Core sweep.
+pub const CORE_TX_FEE_RESERVE: u64 = 10_000;
+
+/// Build, sign, and broadcast a Core (Layer-1) transaction sending
+/// `duffs` from `wallet`'s BIP-44 account 0 to `target`.
+///
+/// Free function so both [`BankWallet::send_core_to`] and the
+/// `cleanup::sweep_core_addresses` test-wallet sweep can share the
+/// actual broadcast path. Callers are responsible for their own
+/// pre-flight checks (under-funded balance, lock serialisation) and
+/// for selecting the appropriate `duffs` amount — this helper does
+/// nothing more than translate the inputs into a
+/// [`CoreWallet::send_to_addresses`] call and surface the resulting
+/// `Txid`.
+pub(super) async fn core_send(
+    wallet: &Arc<PlatformWallet>,
+    target: &dashcore::Address,
+    duffs: u64,
+) -> FrameworkResult<dashcore::Txid> {
+    let outputs = vec![(target.clone(), duffs)];
+    let tx = wallet
+        .core()
+        .send_to_addresses(StandardAccountType::BIP44Account, 0, outputs)
+        .await
+        .map_err(wallet_err)?;
+    Ok(tx.txid())
 }
 
 /// Derive the DIP-17 platform-payment address at `index` from the

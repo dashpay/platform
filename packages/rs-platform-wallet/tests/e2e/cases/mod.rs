@@ -6,11 +6,13 @@
 //! TEST_SPEC.md priorities (P1, P2, ID-, DP-, DPNS-, TK-, …) follow
 //! in subsequent PRs.
 
+pub mod cr_003_asset_lock_funded_registration;
 pub mod dpns_001_register_name;
 pub mod id_001_register_identity_from_addresses;
 pub mod id_002_top_up_identity;
 pub mod id_003_identity_to_identity_transfer;
 pub mod id_005_identity_to_addresses_transfer;
+pub mod id_007_identity_auth_addresses_not_monitored;
 pub mod id_sweep_recovers_identity_credits;
 pub mod pa_001_multi_output;
 pub mod pa_001b_change_address_branch;

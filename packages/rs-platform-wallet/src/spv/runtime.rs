@@ -233,6 +233,17 @@ impl SpvRuntime {
         Some(client.sync_progress().await)
     }
 
+    /// The [`PlatformEventManager`] this runtime dispatches SPV events
+    /// through. Exposed so consumers (e.g. the e2e framework) can
+    /// register additional [`crate::events::PlatformEventHandler`]s
+    /// after construction — for example, to observe
+    /// `SyncEvent::ManagerError` while waiting for mn-list sync so
+    /// hard-stalls surface immediately instead of burning the full
+    /// timeout.
+    pub fn event_manager(&self) -> &Arc<PlatformEventManager> {
+        &self.event_manager
+    }
+
     /// Clear all persisted SPV storage (headers, filters, state).
     ///
     /// The SPV client must be running to perform this operation.

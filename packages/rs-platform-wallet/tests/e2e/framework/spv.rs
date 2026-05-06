@@ -18,11 +18,14 @@ use std::time::{Duration, Instant};
 
 use dash_sdk::dapi_client::AddressList;
 use dash_spv::client::config::MempoolStrategy;
-use dash_spv::sync::{ProgressPercentage, SyncState};
+use dash_spv::network::NetworkEvent;
+use dash_spv::sync::{ManagerIdentifier, ProgressPercentage, SyncEvent, SyncState};
 use dash_spv::types::ValidationMode;
 use dash_spv::ClientConfig;
 use dashcore::Network;
+use platform_wallet::events::{EventHandler, PlatformEventHandler, WalletEvent};
 use platform_wallet::{changeset::PlatformWalletPersistence, PlatformWalletManager, SpvRuntime};
+use tokio::sync::mpsc;
 
 use super::config::Config;
 use super::{FrameworkError, FrameworkResult};
@@ -37,6 +40,17 @@ const COLD_CACHE_TIMEOUT_FLOOR: Duration = Duration::from_secs(600);
 
 /// Period for "still waiting" progress logs.
 const PROGRESS_LOG_INTERVAL: Duration = Duration::from_secs(30);
+
+/// Mn-list-stall heuristic: if the mn-list snapshot does not change
+/// (state + current_height + target_height all identical) for this
+/// long while we're still waiting, dash-spv has almost certainly
+/// given up internally — fail fast instead of burning the cold-cache
+/// floor. Backstop for the event-driven `ManagerError` path: if
+/// dash-spv ever stops emitting that event for the same root cause,
+/// we still bail in well under the 600s floor. 120s ≈ 2 min ≈
+/// roughly the testnet block interval, so a single missed block tick
+/// won't trip it.
+const MN_LIST_STALL_THRESHOLD: Duration = Duration::from_secs(120);
 
 /// Spawn the SPV client backing the harness's
 /// [`PlatformWalletManager`]. Storage is anchored under
@@ -74,11 +88,26 @@ where
     Ok(spv)
 }
 
-/// Block until the SPV mn-list manager reports `Synced`, or the
-/// effective timeout (`timeout.max(COLD_CACHE_TIMEOUT_FLOOR)`)
-/// elapses. Polls every [`READINESS_POLL_INTERVAL`] and emits an
-/// info-level pipeline snapshot every [`PROGRESS_LOG_INTERVAL`] so
-/// cold-cache hangs are debuggable from default-level logs.
+/// Block until the SPV mn-list manager reports `Synced`, or one of
+/// three failure conditions trips:
+///
+/// 1. **Engine event** — dash-spv emits a
+///    [`SyncEvent::ManagerError`] for the masternode manager. The
+///    classic example is the QRInfo retry loop hard-capping at 3
+///    attempts (`Required rotated chain lock sig at h - 0 not
+///    present`); the engine then stops trying to advance mn-list. We
+///    bail with a sharply-targeted error message rather than burn
+///    the full cold-cache floor.
+/// 2. **Stall heuristic** — the mn-list snapshot has not advanced
+///    (same state + current_height + target_height) for
+///    [`MN_LIST_STALL_THRESHOLD`]. Backstop for cases where the
+///    engine never emits a `ManagerError` (e.g. silent retry loop).
+/// 3. **Hard timeout** — the effective timeout
+///    (`timeout.max(COLD_CACHE_TIMEOUT_FLOOR)`) elapses.
+///
+/// Polls every [`READINESS_POLL_INTERVAL`] and emits an info-level
+/// pipeline snapshot every [`PROGRESS_LOG_INTERVAL`] so cold-cache
+/// hangs are debuggable from default-level logs.
 pub async fn wait_for_mn_list_synced(spv: &SpvRuntime, timeout: Duration) -> FrameworkResult<()> {
     let effective_timeout = timeout.max(COLD_CACHE_TIMEOUT_FLOOR);
     if effective_timeout != timeout {
@@ -90,13 +119,59 @@ pub async fn wait_for_mn_list_synced(spv: &SpvRuntime, timeout: Duration) -> Fra
         );
     }
 
+    // Subscribe to dash-spv's `SyncEvent::ManagerError` stream by
+    // registering a single-purpose [`PlatformEventHandler`] on the
+    // runtime's event manager. The handler forwards Masternode-scoped
+    // errors into an mpsc channel that the wait loop selects on, so
+    // hard-stalls (QRInfo retry exhaustion, etc.) surface in O(ms)
+    // instead of waiting for the heuristic or the hard timeout.
+    //
+    // The handler stays registered for the lifetime of the
+    // `PlatformEventManager` (it has no `remove_handler`); after we
+    // return, sends on the channel become best-effort no-ops because
+    // the Receiver is dropped. That's a few harmless `Result::Err`s
+    // at most — never on the SPV hot path because Masternode errors
+    // are rare by design.
+    let (err_tx, mut err_rx) = mpsc::unbounded_channel::<String>();
+    let handler: Arc<dyn PlatformEventHandler> = Arc::new(MnListErrorListener::new(err_tx)) as _;
+    spv.event_manager().add_handler(handler);
+
     let start = Instant::now();
     let deadline = start + effective_timeout;
     let mut last_height: Option<u32> = None;
     let mut last_state: Option<SyncState> = None;
+    let mut last_target: Option<u32> = None;
+    let mut last_progress_at = start;
     let mut next_progress_log = start + PROGRESS_LOG_INTERVAL;
 
     loop {
+        // Race the engine error stream against the next poll tick.
+        // `biased` so a queued error wins over a coincident sleep
+        // expiry — surfaces the engine signal at the earliest tick.
+        tokio::select! {
+            biased;
+            maybe_err = err_rx.recv() => {
+                if let Some(err) = maybe_err {
+                    tracing::error!(
+                        target: "platform_wallet::e2e::spv",
+                        error = %err,
+                        elapsed = ?start.elapsed(),
+                        "dash-spv reported ManagerError before mn-list synced"
+                    );
+                    return Err(FrameworkError::Spv(format!(
+                        "dash-spv reported ManagerError before mn-list synced: {err}. \
+                         Likely a stale workdir / testnet ChainLock cycle issue. \
+                         Try wiping spv-data/ and retry, or wait 10-20 min for the \
+                         next testnet ChainLock cycle."
+                    )));
+                }
+                // Sender dropped (shouldn't happen — we hold it via
+                // the registered handler). Fall through to a poll so
+                // the heuristic / hard timeout still applies.
+            }
+            _ = tokio::time::sleep(READINESS_POLL_INTERVAL) => {}
+        }
+
         let progress = spv.sync_progress().await;
         let mn_snapshot = progress
             .as_ref()
@@ -105,17 +180,23 @@ pub async fn wait_for_mn_list_synced(spv: &SpvRuntime, timeout: Duration) -> Fra
         if let Some(mn) = mn_snapshot.as_ref() {
             let height = mn.current_height();
             let state = mn.state();
-            if Some(height) != last_height || Some(state) != last_state {
+            let target = mn.target_height();
+            let advanced = Some(height) != last_height
+                || Some(state) != last_state
+                || Some(target) != last_target;
+            if advanced {
                 tracing::debug!(
                     target: "platform_wallet::e2e::spv",
                     state = ?state,
                     current_height = height,
-                    target_height = mn.target_height(),
+                    target_height = target,
                     elapsed = ?start.elapsed(),
                     "mn-list sync progress"
                 );
                 last_height = Some(height);
                 last_state = Some(state);
+                last_target = Some(target);
+                last_progress_at = Instant::now();
             }
             if matches!(state, SyncState::Synced) {
                 tracing::info!(
@@ -134,6 +215,33 @@ pub async fn wait_for_mn_list_synced(spv: &SpvRuntime, timeout: Duration) -> Fra
                 return Err(FrameworkError::Spv(
                     "wait_for_mn_list_synced: mn-list entered Error state".to_string(),
                 ));
+            }
+
+            // Heuristic: no forward progress for
+            // `MN_LIST_STALL_THRESHOLD` while still in a non-terminal
+            // state ⇒ engine is stuck. Bail with the same operator
+            // hint as the event path so the user sees one consistent
+            // remediation.
+            let stalled_for = last_progress_at.elapsed();
+            if stalled_for >= MN_LIST_STALL_THRESHOLD {
+                log_pipeline_snapshot(progress.as_ref(), start.elapsed(), effective_timeout);
+                tracing::error!(
+                    target: "platform_wallet::e2e::spv",
+                    state = ?state,
+                    current_height = height,
+                    target_height = target,
+                    stalled_for = ?stalled_for,
+                    "mn-list sync made no forward progress for stall threshold; \
+                     engine has likely given up internally"
+                );
+                return Err(FrameworkError::Spv(format!(
+                    "wait_for_mn_list_synced: mn-list made no forward progress for \
+                     {stalled_for:?} (state={state:?}, current_height={height}, \
+                     target_height={target}). dash-spv has likely given up \
+                     internally without surfacing a ManagerError. \
+                     Try wiping spv-data/ and retry, or wait 10-20 min for the \
+                     next testnet ChainLock cycle."
+                )));
             }
         }
 
@@ -155,10 +263,46 @@ pub async fn wait_for_mn_list_synced(spv: &SpvRuntime, timeout: Duration) -> Fra
                 "wait_for_mn_list_synced: timed out after {effective_timeout:?}"
             )));
         }
-
-        tokio::time::sleep(READINESS_POLL_INTERVAL).await;
     }
 }
+
+/// Single-purpose [`PlatformEventHandler`] that forwards
+/// [`SyncEvent::ManagerError`] events scoped to
+/// [`ManagerIdentifier::Masternode`] into an mpsc channel. Used by
+/// [`wait_for_mn_list_synced`] to escape the cold-cache floor as
+/// soon as dash-spv signals a fatal manager error.
+///
+/// All other event variants are ignored — this is *not* a substitute
+/// for [`super::wait_hub::WaitEventHub`].
+struct MnListErrorListener {
+    tx: mpsc::UnboundedSender<String>,
+}
+
+impl MnListErrorListener {
+    fn new(tx: mpsc::UnboundedSender<String>) -> Self {
+        Self { tx }
+    }
+}
+
+impl EventHandler for MnListErrorListener {
+    fn on_sync_event(&self, event: &SyncEvent) {
+        if let SyncEvent::ManagerError { manager, error } = event {
+            if matches!(manager, ManagerIdentifier::Masternode) {
+                // Best-effort: receiver dropped after wait returned
+                // is fine, just means the event arrived too late to
+                // matter.
+                let _ = self.tx.send(format!("Masternode manager error: {error}"));
+            }
+        }
+    }
+
+    fn on_network_event(&self, _event: &NetworkEvent) {}
+    fn on_progress(&self, _progress: &dash_spv::sync::SyncProgress) {}
+    fn on_wallet_event(&self, _event: &WalletEvent) {}
+    fn on_error(&self, _error: &str) {}
+}
+
+impl PlatformEventHandler for MnListErrorListener {}
 
 /// One-line info-level pipeline-snapshot log used by
 /// [`wait_for_mn_list_synced`].
