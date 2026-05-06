@@ -118,7 +118,7 @@ class ShieldedService: ObservableObject {
         totalNewNotes = 0
         totalNewlySpent = 0
 
-        let dbPath = Self.dbPath(for: network)
+        let dbPath = Self.dbPath(for: network, walletId: walletId)
         do {
             try walletManager.bindShielded(
                 walletId: walletId,
@@ -241,14 +241,23 @@ class ShieldedService: ObservableObject {
 
     // MARK: - Private
 
-    /// One commitment tree per network (the Orchard tree is global per
-    /// network; only the per-wallet decrypted notes are wallet-scoped).
-    private static func dbPath(for network: Network) -> String {
+    /// Per-(network, wallet) commitment-tree DB. Conceptually the
+    /// Orchard tree is shared across wallets on the same network (the
+    /// tree itself is anchor-equivalent for everyone), but
+    /// `FileBackedShieldedStore` keeps decrypted notes in the same
+    /// SQLite file without a `wallet_id` column — so a single
+    /// per-network file would let wallet B read wallet A's notes
+    /// (and report A's balance under B's name). Until the store is
+    /// extended to scope notes by wallet, each wallet gets its own
+    /// file. Cost: re-syncing the tree from genesis per wallet on
+    /// first bind. Acceptable for now.
+    private static func dbPath(for network: Network, walletId: Data) -> String {
         let docs = FileManager.default
             .urls(for: .documentDirectory, in: .userDomainMask)
             .first!
+        let walletHex = walletId.map { String(format: "%02x", $0) }.joined()
         return docs
-            .appendingPathComponent("shielded_tree_\(network.networkName).sqlite")
+            .appendingPathComponent("shielded_tree_\(network.networkName)_\(walletHex).sqlite")
             .path
     }
 }
