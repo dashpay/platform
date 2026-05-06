@@ -407,8 +407,10 @@ struct ContentView: View {
         do {
             mnemonic = try storage.retrieveMnemonic(for: entry.walletId)
         } catch {
-            return "\"\(entry.displayName)\": failed to read stored mnemonic — "
+            let message = "\"\(entry.displayName)\": failed to read stored mnemonic — "
                 + error.localizedDescription
+            SDKLogger.error("Recovery: \(message)")
+            return message
         }
 
         // Re-fetch metadata at recovery time rather than relying on
@@ -458,8 +460,10 @@ struct ContentView: View {
             let hint = (restoredNetwork == .regtest || restoredNetwork == .devnet)
                 ? " — is your local \(restoredNetwork.displayName) stack running?"
                 : ""
-            return "\"\(entry.displayName)\" (\(restoredNetwork.displayName)): "
+            let message = "\"\(entry.displayName)\" (\(restoredNetwork.displayName)): "
                 + "failed to spin up SDK — \(error.localizedDescription)\(hint)"
+            SDKLogger.error("Recovery: \(message) (raw: \(error))")
+            return message
         }
         let recoveryManager: PlatformWalletManager
         do {
@@ -468,8 +472,10 @@ struct ContentView: View {
                 sdk: networkSdk
             )
         } catch {
-            return "\"\(entry.displayName)\" (\(restoredNetwork.displayName)): "
+            let message = "\"\(entry.displayName)\" (\(restoredNetwork.displayName)): "
                 + "failed to prepare wallet manager — \(error.localizedDescription)"
+            SDKLogger.error("Recovery: \(message) (raw: \(error))")
+            return message
         }
 
         do {
@@ -499,8 +505,10 @@ struct ContentView: View {
             }
             return nil
         } catch {
-            return "\"\(entry.displayName)\" (\(restoredNetwork.displayName)): "
+            let message = "\"\(entry.displayName)\" (\(restoredNetwork.displayName)): "
                 + error.localizedDescription
+            SDKLogger.error("Recovery: createWallet failed — \(message) (raw: \(error))")
+            return message
         }
     }
 
