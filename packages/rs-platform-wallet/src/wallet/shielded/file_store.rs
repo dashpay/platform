@@ -133,16 +133,22 @@ impl ShieldedStore for FileBackedShieldedStore {
     fn witness(
         &self,
         position: u64,
+        checkpoint_depth: usize,
     ) -> Result<Option<grovedb_commitment_tree::MerklePath>, Self::Error> {
         let tree = self
             .tree
             .lock()
             .map_err(|e| FileShieldedStoreError(format!("tree mutex poisoned: {e}")))?;
-        // `checkpoint_depth = 0` = current tree state. The Halo 2
-        // proof we're about to build uses `tree_anchor()` — also
-        // depth 0 — so the witness root must agree.
-        tree.witness(Position::from(position), 0)
-            .map_err(|e| FileShieldedStoreError(format!("witness({position}): {e}")))
+        // `checkpoint_depth` indexes our local checkpoints (0 =
+        // most recent, 1 = one back, ...). The spend path walks
+        // depths to find one whose root matches a Platform-recorded
+        // anchor — see `ShieldedWallet::find_anchor_depth`.
+        tree.witness(Position::from(position), checkpoint_depth)
+            .map_err(|e| {
+                FileShieldedStoreError(format!(
+                    "witness(position={position}, depth={checkpoint_depth}): {e}"
+                ))
+            })
     }
 
     fn last_synced_note_index(&self, id: SubwalletId) -> Result<u64, Self::Error> {

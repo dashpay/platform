@@ -465,29 +465,129 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
         payment_address_to_orchard(&keys.default_address)
     }
 
-    /// Extract `SpendableNote` structs with Merkle witnesses and
-    /// the tree anchor.
+    /// Build witnesses + anchor for `notes`, validated against
+    /// Platform's `recorded_anchors` set so the resulting bundle
+    /// is guaranteed to pass the broadcast-time
+    /// `validate_anchor_exists` check.
     ///
-    /// The anchor is derived from the witness paths themselves
-    /// (via `MerklePath::root(cmx)`) rather than from
-    /// `store.tree_anchor()`. The store's witness call is
-    /// `witness_at_checkpoint_depth(0)` (root of the most recent
-    /// checkpoint) while `tree_anchor()` is
-    /// `root_at_checkpoint_depth(None)` (latest tree state) —
-    /// any commitments appended after the last checkpoint move
-    /// the latter ahead of the former, and the resulting
-    /// `AnchorMismatch` from the Orchard spend builder is what
-    /// you'd see at proof time. Using the witness's own
-    /// computed root keeps the anchor consistent with the
-    /// authentication paths the proof actually verifies.
+    /// Why this isn't just "use depth 0":
+    ///
+    /// Platform records anchors only at block boundaries
+    /// ([`record_shielded_pool_anchor_if_changed`]) — the
+    /// depth-0 root of our local tree may reflect a mid-block /
+    /// partial-sync state that no Platform-side anchor matches.
+    /// Walking depths catches the common case of "synced one
+    /// block past where the anchor was last recorded" for free,
+    /// and surfaces a clean `ShieldedTreeDiverged` error if
+    /// every local checkpoint disagrees with every Platform
+    /// anchor (= our tree has fundamentally drifted and needs a
+    /// re-sync).
+    ///
+    /// The probe path: every note's witness at a given depth
+    /// derives the same root, so we walk depths using a single
+    /// note's `(position, cmx)` pair until the derived root is
+    /// in Platform's anchor set. Then we re-witness every
+    /// selected note at that depth and return the bundle.
     async fn extract_spends_and_anchor(
         &self,
         notes: &[ShieldedNote],
     ) -> Result<(Vec<SpendableNote>, Anchor), PlatformWalletError> {
+        use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
+        use dash_sdk::query_types::ShieldedAnchors;
         use grovedb_commitment_tree::ExtractedNoteCommitment;
+        use std::collections::HashSet;
 
+        if notes.is_empty() {
+            return Err(PlatformWalletError::ShieldedBuildError(
+                "no spendable notes selected — anchor undefined".into(),
+            ));
+        }
+
+        // Pull Platform's current set of valid anchors.
+        // Retention is 1000 blocks per the drive-abci method,
+        // so this comfortably covers any recently-synced state.
+        let valid_anchors_vec = ShieldedAnchors::fetch_current(&self.sdk)
+            .await
+            .map_err(|e| {
+                PlatformWalletError::ShieldedBuildError(format!(
+                    "fetch shielded anchors from Platform: {e}"
+                ))
+            })?
+            .0;
+        let valid_anchors: HashSet<[u8; 32]> = valid_anchors_vec.iter().copied().collect();
+        let tried_anchors = valid_anchors.len();
+        if tried_anchors == 0 {
+            return Err(PlatformWalletError::ShieldedBuildError(
+                "Platform returned an empty shielded-anchor set; pool may be empty or pruned"
+                    .into(),
+            ));
+        }
+
+        let probe = &notes[0];
+        let probe_cmx = ExtractedNoteCommitment::from_bytes(&probe.cmx)
+            .into_option()
+            .ok_or_else(|| {
+                PlatformWalletError::ShieldedBuildError(format!(
+                    "invalid stored cmx for note at position {}",
+                    probe.position
+                ))
+            })?;
+
+        // shardtree returns `Ok(None)` once we walk past the
+        // last available checkpoint, which terminates the loop
+        // cleanly. The `MAX_CHECKPOINT_DEPTHS` bound is
+        // intentionally generous — `FileBackedShieldedStore`
+        // pins `max_checkpoints = 100` today.
+        const MAX_CHECKPOINT_DEPTHS: usize = 128;
         let store = self.store.read().await;
+        let mut chosen_depth: Option<usize> = None;
+        let mut depths_walked = 0usize;
+        for depth in 0..MAX_CHECKPOINT_DEPTHS {
+            let probe_path = match store.witness(probe.position, depth) {
+                Ok(Some(path)) => path,
+                // No checkpoint at this depth — no point
+                // walking further; older depths can't exist.
+                Ok(None) => break,
+                Err(e) => {
+                    // Position not contained at this depth
+                    // (note appended after the older
+                    // checkpoint) — keep walking to deeper
+                    // checkpoints, but record the error so we
+                    // can surface useful diagnostics.
+                    trace!(
+                        depth,
+                        position = probe.position,
+                        "witness unavailable at depth: {e}"
+                    );
+                    depths_walked += 1;
+                    continue;
+                }
+            };
+            depths_walked += 1;
+            let root = probe_path.root(probe_cmx).to_bytes();
+            if valid_anchors.contains(&root) {
+                chosen_depth = Some(depth);
+                break;
+            }
+        }
 
+        let depth = chosen_depth.ok_or(PlatformWalletError::ShieldedTreeDiverged {
+            tried: tried_anchors,
+            depths_walked,
+        })?;
+
+        info!(
+            depth,
+            platform_anchor_count = tried_anchors,
+            notes = notes.len(),
+            "Selected anchor depth for shielded spend"
+        );
+
+        // Re-witness every selected note at the chosen depth.
+        // The probe-path's root above already proved one note
+        // works; the remaining notes must witness at the same
+        // depth (same checkpoint state) for the spend bundle's
+        // single-anchor invariant to hold.
         let mut spends = Vec::with_capacity(notes.len());
         let mut anchor: Option<Anchor> = None;
         for note in notes {
@@ -497,24 +597,15 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
                     note.position
                 ))
             })?;
-
             let merkle_path = store
-                .witness(note.position)
+                .witness(note.position, depth)
                 .map_err(|e| PlatformWalletError::ShieldedMerkleWitnessUnavailable(e.to_string()))?
                 .ok_or_else(|| {
                     PlatformWalletError::ShieldedMerkleWitnessUnavailable(format!(
-                        "no witness available for note at position {} (not marked, or pruned past this position)",
+                        "no witness at depth {depth} for note at position {}",
                         note.position
                     ))
                 })?;
-
-            // Compute the anchor this witness was generated
-            // against. All selected notes must share the same
-            // anchor — if not, the store handed us witnesses
-            // from different checkpoints, which the spend
-            // builder would reject downstream with
-            // `AnchorMismatch`. Surface the mismatch here so the
-            // host doesn't pay the ~30 s proof cost first.
             let cmx = ExtractedNoteCommitment::from_bytes(&note.cmx)
                 .into_option()
                 .ok_or_else(|| {
@@ -528,25 +619,19 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
                 None => anchor = Some(witness_anchor),
                 Some(prev) if prev.to_bytes() != witness_anchor.to_bytes() => {
                     return Err(PlatformWalletError::ShieldedBuildError(format!(
-                        "witness anchor mismatch across selected notes (position {})",
+                        "witness anchor mismatch across selected notes at depth {depth} (position {})",
                         note.position
                     )));
                 }
                 _ => {}
             }
-
             spends.push(SpendableNote {
                 note: orchard_note,
                 merkle_path,
             });
         }
 
-        let anchor = anchor.ok_or_else(|| {
-            PlatformWalletError::ShieldedBuildError(
-                "no spendable notes selected — anchor undefined".to_string(),
-            )
-        })?;
-
+        let anchor = anchor.expect("anchor set after non-empty loop");
         Ok((spends, anchor))
     }
 
