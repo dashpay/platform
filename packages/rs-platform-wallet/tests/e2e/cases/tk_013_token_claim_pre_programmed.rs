@@ -1,17 +1,18 @@
 //! TK-013 — Token claim from pre-programmed distribution.
 //!
 //! Owner deploys a token with a pre-programmed distribution whose
-//! epoch zero is parked at a past timestamp, then calls `token_claim`
-//! with `TokenDistributionType::PreProgrammed`. Asserts the owner's
-//! balance increases by exactly the configured payout. Mirrors the
-//! wallet's `token_claim_with_signer` chain path — the wallet helper
-//! just forwards to `Sdk::token_claim`, which is what this test
-//! drives directly to keep the framework surface flat (cf. `mint_to`
-//! in `framework/tokens.rs`).
+//! epoch zero is scheduled 5 minutes ahead of wall time, then calls
+//! `token_claim` with `TokenDistributionType::PreProgrammed`. Asserts
+//! the owner's balance increases by exactly the configured payout.
+//! Mirrors the wallet's `token_claim_with_signer` chain path — the
+//! wallet helper just forwards to `Sdk::token_claim`, which is what
+//! this test drives directly to keep the framework surface flat (cf.
+//! `mint_to` in `framework/tokens.rs`).
 //!
 //! Pre-programmed (not perpetual). Perpetual is TK-002, gated behind
 //! `slow-tests` because it needs live block-time. The pre-programmed
-//! variant short-circuits that wait via a past-timestamp epoch zero.
+//! variant uses a near-future epoch so contract registration clears
+//! block-time validation; the claim is issued after the epoch elapses.
 //!
 //! Gated behind `#[ignore]` — same operator-env reasoning as the
 //! transfer case (`PLATFORM_WALLET_E2E_BANK_MNEMONIC` + live testnet
@@ -70,15 +71,17 @@ async fn tk_013_token_claim_from_pre_programmed_distribution() {
     let owner = &setup_guard.identities[0];
     let owner_id = owner.id;
 
-    // Park epoch zero one hour in the past so the chain treats the
-    // payout as already eligible the moment the contract lands —
-    // dodges the live-time wait that gates the perpetual variant
-    // (TK-002).
+    // Park epoch zero 5 minutes in the future so the contract
+    // registration passes block-time validation (the platform rejects
+    // any pre-programmed distribution whose epoch is already in the
+    // past at broadcast time). 300 s gives enough runway to clear
+    // the broadcast-plus-block-inclusion window on testnet without
+    // turning the test into a 10-minute wait.
     let now_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system clock is past UNIX_EPOCH")
         .as_millis() as TimestampMillis;
-    let epoch_zero_at = now_ms.saturating_sub(Duration::from_secs(3600).as_millis() as u64);
+    let epoch_zero_at = now_ms + Duration::from_secs(300).as_millis() as u64;
 
     let contract_json = build_pre_programmed_token_json(owner_id, epoch_zero_at, PAYOUT);
     let contract_id = register_token_contract_via_sdk(ctx, owner, contract_json)
