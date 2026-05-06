@@ -62,11 +62,11 @@ pub const DEFAULT_BANK_CORE_GATE_TIMEOUT: Duration = Duration::from_secs(900);
 
 /// Default minimum bank balance in credits.
 ///
-/// Set at 5x the largest single-run cost (FUNDING_CREDITS=100M + ~15M chain-time
-/// fee ≈ 115M per run) following DET's safety-factor pattern (dash-evo-tool#513).
-/// Keeps the bank covering several consecutive runs even with the fee underestimate
-/// from platform #3040 in play.
-pub const DEFAULT_MIN_BANK_CREDITS: u64 = 500_000_000;
+/// Token tests (12+ cases, 1-3 identities each) cost ~35B credits per setup;
+/// 50B provides headroom for a full token suite run plus several non-token
+/// identity tests. Operators who observe the "Bank under-funded" panic should
+/// top up the Platform address shown in the message to at least this value.
+pub const DEFAULT_MIN_BANK_CREDITS: u64 = 50_000_000_000;
 
 /// E2E framework configuration — fully resolved.
 ///

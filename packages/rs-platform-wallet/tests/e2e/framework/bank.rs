@@ -206,19 +206,18 @@ impl BankWallet {
 
         let total = wallet.platform().total_credits().await;
         if total < config.min_bank_credits {
-            // Under-funded bank is a hard operator error; panic with
-            // the README's bank-pre-funding format so operators hit
-            // the same actionable pointer in CI as in the docs.
+            // Under-funded bank is a hard operator error — panic here
+            // with the actionable top-up pointer so every test in the
+            // suite fails with the same clear message instead of each
+            // one independently surfacing "insufficient balance" after
+            // wasting setup time (QA-910b).
             let address_bech32m = primary_receive_address.to_bech32m_string(network);
             panic!(
-                "Bank wallet under-funded.\n  \
-                 balance : {balance} credits\n  \
-                 required: {required} credits\n  \
-                 top up at: {address_bech32m}\n\
-                 \n\
-                 Send testnet platform credits to the address above, then re-run the tests.",
-                balance = total,
-                required = config.min_bank_credits,
+                "Bank Core under-funded: have {balance:.2}B credits, suite needs ~{required:.2}B per token-test setup.\n  \
+                 Token suite (12+ tests with 1-3 identities each) needs ~600B+ total.\n  \
+                 Top up Core address: {address_bech32m}",
+                balance = total as f64 / 1_000_000_000.0,
+                required = config.min_bank_credits as f64 / 1_000_000_000.0,
             );
         }
 
