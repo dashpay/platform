@@ -112,4 +112,35 @@ final class WalletManagerStore: ObservableObject {
     func manager(for network: Network) -> PlatformWalletManager? {
         managers[network]
     }
+
+    /// Get or create the manager for `network` **without** changing
+    /// `activeManager`. Used by flows that need to operate on a
+    /// specific network's manager outside the user's current view —
+    /// e.g. orphan-mnemonic recovery, where wallets restored from
+    /// keychain metadata may belong to networks the user isn't
+    /// currently looking at and switching the active network for
+    /// each one would flicker the UI.
+    ///
+    /// Same configure / load-from-persistor side effects as
+    /// [`activate`]: a fresh manager comes up via
+    /// `manager.configure(sdk:modelContainer:)` and then
+    /// `manager.loadFromPersistor()`. Failures propagate to the
+    /// caller and the cache is left untouched.
+    func getOrCreateManager(network: Network, sdk: SDK) throws -> PlatformWalletManager {
+        if let existing = managers[network] {
+            return existing
+        }
+        let manager = PlatformWalletManager()
+        try manager.configure(sdk: sdk, modelContainer: modelContainer)
+        do {
+            _ = try manager.loadFromPersistor()
+        } catch {
+            SDKLogger.error(
+                "WalletManagerStore: load-from-persistor failed for "
+                    + "\(network.displayName): \(error.localizedDescription)"
+            )
+        }
+        managers[network] = manager
+        return manager
+    }
 }

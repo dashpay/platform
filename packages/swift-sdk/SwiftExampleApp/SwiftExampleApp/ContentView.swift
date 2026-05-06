@@ -13,6 +13,7 @@ struct ContentView: View {
     let onRetry: () -> Void
 
     @EnvironmentObject var walletManager: PlatformWalletManager
+    @EnvironmentObject var walletManagerStore: WalletManagerStore
     @EnvironmentObject var appUIState: AppUIState
     @EnvironmentObject var platformState: AppState
     @Environment(\.modelContext) private var modelContext
@@ -427,8 +428,34 @@ struct ContentView: View {
             entry.network ?? metadata?.resolvedNetworks.first ?? platformState.currentNetwork
         let restoredBirthHeight = metadata?.birthHeight
 
+        // Route the create call through the wallet's
+        // intended-network manager, NOT the user's currently-active
+        // one. `walletManager` (the env-injected active manager) is
+        // bound to whatever network the user happens to be looking
+        // at; calling `createWallet(network: restoredNetwork)` on it
+        // when those don't match registers the wallet inside the
+        // wrong manager, and the wallet's persister callback fires
+        // through that manager's persistence handler — pinning the
+        // SwiftData row to the active manager's network instead of
+        // the wallet's actual one. Result before this fix: every
+        // recovered wallet landed on whichever network the user
+        // was looking at (typically testnet), regardless of what
+        // the keychain metadata recorded.
+        let recoveryManager: PlatformWalletManager
         do {
-            let managed = try walletManager.createWallet(
+            let networkSdk = try SDK(network: restoredNetwork)
+            recoveryManager = try walletManagerStore.getOrCreateManager(
+                network: restoredNetwork,
+                sdk: networkSdk
+            )
+        } catch {
+            recoveryError = "Failed to prepare \(restoredNetwork.displayName) wallet manager: "
+                + error.localizedDescription
+            return false
+        }
+
+        do {
+            let managed = try recoveryManager.createWallet(
                 mnemonic: mnemonic,
                 network: restoredNetwork,
                 name: restoredName

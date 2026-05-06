@@ -107,6 +107,14 @@ struct SwiftExampleAppApp: App {
                 // PlatformWalletManager` consumers see the right
                 // network's manager without any view changes.
                 .environmentObject(walletManager)
+                // Inject the store itself so flows that need to
+                // operate on a non-active network's manager
+                // (orphan-mnemonic recovery — wallets restored
+                // from keychain may belong to networks the user
+                // isn't currently looking at) can route through
+                // `getOrCreateManager(network:sdk:)` without
+                // flipping the user's active view.
+                .environmentObject(walletManagerStore)
                 .environmentObject(shieldedService)
                 .environmentObject(platformBalanceSyncService)
                 .environmentObject(transitionState)
