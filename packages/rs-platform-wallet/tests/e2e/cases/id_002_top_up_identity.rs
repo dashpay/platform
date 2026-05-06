@@ -17,6 +17,7 @@ use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
 
 use crate::framework::prelude::*;
+use crate::framework::wait::wait_for_identity_balance;
 
 // Option C (DeductFromInput) delivers exactly the requested credits
 // to the recipient. Floors equal the funded amount.
@@ -127,11 +128,19 @@ async fn id_002_top_up_identity_from_addresses() {
 
     // The wallet returns the post-fee balance. Cross-check against
     // an on-chain fetch so we trust both surfaces.
-    let on_chain_post = Identity::fetch(s.ctx.sdk(), registered.id)
-        .await
-        .expect("fetch post")
-        .expect("identity visible")
-        .balance();
+    //
+    // The wallet credits its local view as soon as the top-up
+    // state transition is broadcast and acknowledged. The
+    // proof-verified `Identity::fetch` path can briefly trail that
+    // — DAPI nodes apply the new block at slightly different
+    // wall-clock times, and the next request may land on the
+    // lagging replica (Marvin v7 QA-702: wallet 75M, fetch 50M).
+    // Poll on the chain side until it agrees with the wallet
+    // view, then pin the equality.
+    let on_chain_post =
+        wait_for_identity_balance(s.ctx.sdk(), registered.id, new_balance, STEP_TIMEOUT)
+            .await
+            .expect("on-chain identity balance never reached wallet-returned value");
     assert_eq!(
         on_chain_post, new_balance,
         "wallet-returned balance {new_balance} must match on-chain fetch {on_chain_post}"
