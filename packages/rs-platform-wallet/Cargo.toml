@@ -90,7 +90,7 @@ tokio-util = { version = "0.7", features = ["rt"] }
 # and `framework/context_provider.rs` and is currently disabled
 # (see harness.rs) — re-enable when SPV cold-start is stable
 # (Task #15).
-rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider" }
+rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider", features = ["dpns-contract"] }
 
 
 [features]
