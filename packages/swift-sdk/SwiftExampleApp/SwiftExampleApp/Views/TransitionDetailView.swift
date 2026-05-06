@@ -1660,37 +1660,55 @@ struct TransitionDetailView: View {
     // it with "expected a map, got sequence".
     var groups: [String: Any]? = nil
     if let groupsJson = formInputs["groups"], !groupsJson.isEmpty {
-      guard let data = groupsJson.data(using: .utf8),
-            let parsed = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+      guard let data = groupsJson.data(using: .utf8) else {
         throw SDKError.serializationError("Invalid groups JSON")
       }
-      // `RegisterContractSourceView` injects an `id` for every entry
-      // (Int when the source map's key parsed as integer, String
-      // otherwise) and entries derive from a map so keys are unique
-      // by construction. The three failure modes below are therefore
-      // unreachable today — but silently dropping or overwriting
-      // entries here would corrupt the contract submission and
-      // surface as a confusing chain rejection rather than a clear
-      // registration error, so trip loudly with `SDKError` on each.
-      var byPosition: [String: Any] = [:]
-      for var entry in parsed {
-        guard let rawId = entry.removeValue(forKey: "id") else {
-          throw SDKError.serializationError("Group entry is missing an `id` field")
+      // `RegisterContractSourceView` flattens the chain-shape map
+      // into an array with an injected `id`. Other callers of this
+      // transition builder (manual JSON paste, future refactors)
+      // may pass the canonical position-keyed map directly. Accept
+      // either, and let genuine `JSONSerialization` errors surface
+      // instead of getting collapsed into the same "Invalid groups
+      // JSON" as a shape mismatch.
+      let parsed = try JSONSerialization.jsonObject(with: data)
+      switch parsed {
+      case let byPosition as [String: Any]:
+        // Canonical chain shape — already what the FFI assembler
+        // wants, no re-keying needed.
+        groups = byPosition
+      case let entries as [[String: Any]]:
+        // Form-flattened shape from `RegisterContractSourceView`.
+        // The injected `id` is Int when the source map's key
+        // parsed as integer, String otherwise; entries derive from
+        // a map so keys are unique by construction. The three
+        // failure modes below are therefore unreachable from the
+        // current upstream — but silently dropping or overwriting
+        // entries here would corrupt the contract submission and
+        // surface as a confusing chain rejection rather than a
+        // clear registration error, so trip loudly with `SDKError`
+        // on each.
+        var byPosition: [String: Any] = [:]
+        for var entry in entries {
+          guard let rawId = entry.removeValue(forKey: "id") else {
+            throw SDKError.serializationError("Group entry is missing an `id` field")
+          }
+          let key: String
+          if let intId = rawId as? Int {
+            key = String(intId)
+          } else if let strId = rawId as? String {
+            key = strId
+          } else {
+            throw SDKError.serializationError("Group entry has unsupported `id` type — expected Int or String")
+          }
+          guard byPosition[key] == nil else {
+            throw SDKError.serializationError("Duplicate group position `\(key)` in groups payload")
+          }
+          byPosition[key] = entry
         }
-        let key: String
-        if let intId = rawId as? Int {
-          key = String(intId)
-        } else if let strId = rawId as? String {
-          key = strId
-        } else {
-          throw SDKError.serializationError("Group entry has unsupported `id` type — expected Int or String")
-        }
-        guard byPosition[key] == nil else {
-          throw SDKError.serializationError("Duplicate group position `\(key)` in groups payload")
-        }
-        byPosition[key] = entry
+        groups = byPosition
+      default:
+        throw SDKError.serializationError("Invalid groups JSON")
       }
-      groups = byPosition
     }
 
     // Build contract configuration
