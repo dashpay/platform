@@ -547,17 +547,18 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             .iter()
             .find(|a| &a.managed_account_type().to_account_type() == target)?;
         // Funds-only fields (`utxos`) live on the funds variant; the
-        // ref-enum delegates the rest. `transactions_iter()` returns an
-        // empty iterator when `keep_txs_in_memory` is off (the default
-        // — tx history is event-driven), so `total_transactions` reads
-        // 0 in production builds. Both behaviors are intentional.
+        // ref-enum delegates the rest. `transactions()` returns an
+        // empty map when `keep-finalized-transactions` is off (the
+        // default — tx history is event-driven), so
+        // `total_transactions` reads 0 in production builds. Both
+        // behaviors are intentional.
         let funds = account.as_funds();
         Some(AccountMetadataSnapshot {
-            // `transactions_iter()` returns empty when
-            // `keep_txs_in_memory` is off (the default — tx history is
-            // event-driven), so `total_transactions` reads 0 in
-            // production builds.
-            total_transactions: account.transactions_iter().count() as u64,
+            // `transactions()` is empty when
+            // `keep-finalized-transactions` is off (the default — tx
+            // history is event-driven), so `total_transactions` reads
+            // 0 in production builds.
+            total_transactions: account.transactions().len() as u64,
             total_utxos: funds.map(|a| a.utxos.len() as u64).unwrap_or(0),
             monitor_revision: account.monitor_revision(),
         })
@@ -657,17 +658,14 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         else {
             return Vec::new();
         };
-        // `transactions_iter` is the variant-agnostic walk and returns
-        // an empty iterator when `keep_txs_in_memory` is disabled — the
-        // default. Tx history is delivered through the event channel,
-        // not stored in-memory, so a paged readout here is effectively
-        // a debug surface for builds that flip the feature on. We
-        // collapse `(Txid, &TransactionRecord)` to just records, since
-        // the snapshot type carries the txid as a field of its own.
-        let iter = account
-            .transactions_iter()
-            .map(|(_, record)| record)
-            .skip(page_offset);
+        // `transactions()` returns an empty map when
+        // `keep-finalized-transactions` is disabled — the default. Tx
+        // history is delivered through the event channel, not stored
+        // in-memory, so a paged readout here is effectively a debug
+        // surface for builds that flip the feature on. The snapshot
+        // type carries the txid as a field of its own, so we walk
+        // values only.
+        let iter = account.transactions().values().skip(page_offset);
         let take = if page_limit == 0 {
             usize::MAX
         } else {

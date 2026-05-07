@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use dashcore::Address as DashAddress;
 use dashcore::{OutPoint, PrivateKey};
+use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 
@@ -105,7 +106,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             .accounts
             .standard_bip44_accounts
             .get(&account_index)
-            .and_then(|a| a.transactions.get(&out_point.txid));
+            .and_then(|a| a.transactions().get(&out_point.txid));
 
         match record {
             Some(record) => match &record.context {
