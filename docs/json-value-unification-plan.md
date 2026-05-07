@@ -433,8 +433,29 @@ Ordered to fix bugs first, then easy wins, then long-pole work. Each step gates 
      cleaned up in this branch's earlier asset-lock-proof tagged-enum
      work.
 
-4. **`to_cleaned_object` → `serde(skip_serializing_if = "Option::is_none")`**:
-   - On `IdentityPublicKey::disabled_at` and any other field currently nulled-then-cleaned. Eliminates A7 and A9's only novel behavior. **Risk**: medium — anything hashing serializations sees different bytes; audit before merging.
+4. **`to_cleaned_object` → `serde(skip_serializing_if = "Option::is_none")`** ✅ DONE in commit `7bed945068`:
+   - Added `#[serde(skip_serializing_if = "Option::is_none")]` to
+     `IdentityPublicKeyV0::disabled_at`. The serde-driven JSON /
+     platform_value paths now strip `disabledAt: null` automatically
+     for non-disabled keys.
+   - Pre-merge audit confirmed zero consensus impact: every hashing /
+     signing / proof path on `IdentityPublicKey` goes through bincode
+     (via `PlatformSerializable::serialize_to_bytes`), which is
+     independent of serde-skip attributes. State transitions adding /
+     updating keys use `IdentityPublicKeyInCreationV0`, which has no
+     `disabled_at` field. `to_canonical_*` paths exist only on state
+     transitions, never on standalone `IdentityPublicKey`.
+   - Simplified `IdentityPublicKeyV0::to_cleaned_object` and
+     `IdentityV0::to_cleaned_object` to pure delegations to
+     `to_object` (the explicit `remove("disabledAt")` is now a no-op).
+     Both methods are now deletable in step 5 along with the
+     `IdentityPlatformValueConversionMethodsV0` /
+     `IdentityPublicKeyPlatformValueConversionMethodsV0` trait surface.
+   - Wire-shape change visible only on JSON / platform_value paths:
+     non-disabled keys emit `{ ...fields }` instead of
+     `{ ..., disabledAt: null }`. Round-trip works because the field
+     also has `#[serde(default)]`. Updated 3 wasm-dpp2 fixtures and
+     2 rs-dpp test assertions.
 
 5. **`Identity` family canonical migration** (A6, A7 partly, A8, A9 partly):
    - Replace `to_json` / `to_json_object` / `to_object` / `from_object` with canonical traits.
