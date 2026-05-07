@@ -335,7 +335,7 @@ impl BatchTransitionInternalTransformerV1 for BatchTransition {
         let validation_result = token_transitions
             .iter()
             .map(|token_transition| {
-                Self::transform_token_transition_v1(
+                let mut result = Self::transform_token_transition_v1(
                     platform.drive,
                     transaction,
                     block_info,
@@ -346,11 +346,31 @@ impl BatchTransitionInternalTransformerV1 for BatchTransition {
                     user_fee_increase,
                     execution_context,
                     platform_version,
-                )
+                )?;
+                // Issue #2867: if the per-transition handler failed without
+                // emitting any action (data:None + errors), inject a
+                // bump-only action so the transition's contract nonce
+                // always advances. Closes the replay surface where a
+                // failed transition's nonce was being left unbumped — the
+                // user could re-broadcast identical bytes indefinitely.
+                // CheckTx's per-transition nonce check rejects re-broadcasts
+                // once any transition's nonce is consumed, so this works
+                // even when only the failing transition is bumped.
+                if !result.is_valid() && result.data.is_none() {
+                    let bump =
+                        BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition(
+                            token_transition.base(),
+                            owner_id,
+                            0,
+                        );
+                    result = ConsensusValidationResult::new_with_data_and_errors(
+                        BatchedTransitionAction::BumpIdentityDataContractNonce(bump),
+                        std::mem::take(&mut result.errors),
+                    );
+                }
+                Ok(result)
             })
             .collect::<Result<Vec<ConsensusValidationResult<BatchedTransitionAction>>, Error>>()?;
-        // Issue #2867: strict variant returns data:None when no token
-        // transition produced an action.
         let validation_result = ConsensusValidationResult::merge_many(validation_result);
         Ok(validation_result)
     }
@@ -482,8 +502,7 @@ impl BatchTransitionInternalTransformerV1 for BatchTransition {
             let document_transition_actions_validation_result = document_transitions
                 .iter()
                 .map(|transition| {
-                    // we validate every transition in this document type
-                    Self::transform_document_transition_v1(
+                    let mut result = Self::transform_document_transition_v1(
                         platform.drive,
                         transaction,
                         validate_against_state,
@@ -495,14 +514,35 @@ impl BatchTransitionInternalTransformerV1 for BatchTransition {
                         owner_id,
                         execution_context,
                         platform_version,
-                    )
+                    )?;
+                    // Issue #2867: if the per-transition handler failed
+                    // without emitting any action (data:None + errors),
+                    // inject a bump-only action so the transition's
+                    // contract nonce always advances. Closes the replay
+                    // surface where a failed transition's nonce was being
+                    // left unbumped — the user could re-broadcast identical
+                    // bytes indefinitely. CheckTx's per-transition nonce
+                    // check rejects re-broadcasts once any transition's
+                    // nonce is consumed, so injecting a bump only on the
+                    // failing transitions is sufficient (successful
+                    // transitions' real actions advance their own nonces).
+                    if !result.is_valid() && result.data.is_none() {
+                        let bump = BumpIdentityDataContractNonceAction::
+                            from_borrowed_document_base_transition(
+                                transition.base(),
+                                owner_id,
+                                0,
+                            );
+                        result = ConsensusValidationResult::new_with_data_and_errors(
+                            BatchedTransitionAction::BumpIdentityDataContractNonce(bump),
+                            std::mem::take(&mut result.errors),
+                        );
+                    }
+                    Ok(result)
                 })
                 .collect::<Result<Vec<ConsensusValidationResult<BatchedTransitionAction>>, Error>>(
                 )?;
 
-            // Issue #2867: strict variant returns data:None when no
-            // per-transition validation produced an action — propagates
-            // through to UnpaidConsensusError downstream.
             let result = ConsensusValidationResult::merge_many(
                 document_transition_actions_validation_result,
             );
