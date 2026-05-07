@@ -69,10 +69,8 @@ pub(crate) fn fetch_documents_for_transitions(
         })
         .collect::<Result<Vec<ConsensusValidationResult<Vec<Document>>>, Error>>()?;
 
-    let validation_result = ConsensusValidationResult::flatten(
-        validation_results_of_documents,
-        platform_version,
-    )?;
+    let validation_result =
+        ConsensusValidationResult::flatten(validation_results_of_documents, platform_version)?;
 
     Ok(validation_result)
 }
