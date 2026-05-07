@@ -78,8 +78,11 @@ class ShieldedService: ObservableObject {
     /// Wallet manager whose shielded sync events we mirror.
     private weak var walletManager: PlatformWalletManager?
 
-    /// Wallet id we filter sync results by.
-    private var walletId: Data?
+    /// Wallet id we filter sync results by. Exposed read-only so
+    /// diagnostics views (e.g. Sync Status) can resolve persisted
+    /// per-account watermarks without each one knowing the active
+    /// wallet through a separate path.
+    @Published private(set) var boundWalletId: Data?
 
     /// Network of the currently-bound wallet. Stashed so
     /// `switchTo(walletId:)` can reach the right per-network
@@ -122,7 +125,7 @@ class ShieldedService: ObservableObject {
         accounts: [UInt32] = [0]
     ) {
         self.walletManager = walletManager
-        self.walletId = walletId
+        self.boundWalletId = walletId
         self.network = network
         self.resolver = resolver
         self.syncStateCancellable?.cancel()
@@ -219,7 +222,7 @@ class ShieldedService: ObservableObject {
     /// No-op if the requested wallet is already bound. Logs and
     /// returns early if `bind(...)` was never called yet.
     func switchTo(walletId: Data) {
-        if self.walletId == walletId, isBound {
+        if self.boundWalletId == walletId, isBound {
             return
         }
         guard
@@ -276,7 +279,7 @@ class ShieldedService: ObservableObject {
         syncStateCancellable?.cancel()
         syncEventCancellable?.cancel()
         walletManager = nil
-        walletId = nil
+        boundWalletId = nil
         isSyncing = false
         shieldedBalance = 0
         lastNewNotes = 0

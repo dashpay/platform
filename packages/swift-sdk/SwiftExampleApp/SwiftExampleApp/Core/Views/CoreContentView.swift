@@ -436,6 +436,17 @@ var body: some View {
                         }
                     }
 
+                    // Per-account commitment-tree watermarks read
+                    // straight from the persisted ShieldedSyncState
+                    // rows — the "global note index we have appended
+                    // up to". Useful when diagnosing
+                    // ShieldedTreeDiverged / anchor-mismatch
+                    // failures, where the wallet's local tree state
+                    // and Platform's recorded anchors disagree.
+                    ShieldedSyncIndexRows(
+                        boundWalletId: shieldedService.boundWalletId
+                    )
+
                     // Sync counters since launch — `total_scanned`
                     // is the wire-level encrypted-note count (every
                     // pass), while new + spent are the wallet-side
@@ -1161,5 +1172,60 @@ extension CoreContentView {
             return "\(formatted) DASH"
         }
         return String(format: "%.8f DASH", dash)
+    }
+}
+
+// MARK: - ShieldedSyncIndexRows
+
+/// One row per ZIP-32 account showing the persisted commitment-tree
+/// watermark for the currently-bound shielded wallet.
+///
+/// The watermark is the global note index up to which that
+/// subwallet has appended commitments to the local tree — i.e.
+/// "we've seen Platform's pool through index N" — and is the
+/// single most useful diagnostic when local and Platform anchors
+/// disagree (anchor-mismatch / ShieldedTreeDiverged at spend
+/// time). Rendered straight from `PersistentShieldedSyncState`
+/// rather than via `ShieldedService` so the values reflect what's
+/// actually on disk for the next cold start, not just the
+/// in-memory mirror.
+private struct ShieldedSyncIndexRows: View {
+    let boundWalletId: Data?
+
+    @Query(sort: [SortDescriptor(\PersistentShieldedSyncState.accountIndex)])
+    private var allRows: [PersistentShieldedSyncState]
+
+    private var rows: [PersistentShieldedSyncState] {
+        guard let id = boundWalletId else { return [] }
+        return allRows.filter { $0.walletId == id }
+    }
+
+    var body: some View {
+        if !rows.isEmpty {
+            VStack(spacing: 4) {
+                HStack {
+                    Text("Synced Index")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                }
+                ForEach(rows, id: \.accountIndex) { row in
+                    HStack {
+                        Text("acct \(row.accountIndex)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Text("\(row.lastSyncedIndex)")
+                            .font(.system(.caption, design: .monospaced))
+                            .fontWeight(.medium)
+                        if row.hasNullifierCheckpoint {
+                            Text("· nf h \(row.nullifierCheckpointHeight)")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
+        }
     }
 }
