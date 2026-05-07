@@ -3,8 +3,8 @@ use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use std::fmt::Debug;
 
-mod v0;
-mod v1;
+mod flatten;
+mod merge_many;
 
 #[macro_export]
 macro_rules! check_validation_result_with_data {
@@ -56,8 +56,8 @@ impl<TData: Clone, E: Debug> ValidationResult<Vec<TData>, E> {
         platform_version: &PlatformVersion,
     ) -> Result<ValidationResult<Vec<TData>, E>, ProtocolError> {
         match platform_version.dpp.validation.validation_result.flatten {
-            0 => Ok(v0::flatten(items)),
-            1 => Ok(v1::flatten(items)),
+            0 => Ok(flatten::v0::flatten_v0(items)),
+            1 => Ok(flatten::v1::flatten_v1(items)),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "ValidationResult::flatten".to_string(),
                 known_versions: vec![0, 1],
@@ -87,8 +87,8 @@ impl<TData: Clone, E: Debug> ValidationResult<TData, E> {
         platform_version: &PlatformVersion,
     ) -> Result<ValidationResult<Vec<TData>, E>, ProtocolError> {
         match platform_version.dpp.validation.validation_result.merge_many {
-            0 => Ok(v0::merge_many(items)),
-            1 => Ok(v1::merge_many(items)),
+            0 => Ok(merge_many::v0::merge_many_v0(items)),
+            1 => Ok(merge_many::v1::merge_many_v1(items)),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "ValidationResult::merge_many".to_string(),
                 known_versions: vec![0, 1],
@@ -570,7 +570,7 @@ mod tests {
         assert_eq!(result.errors, vec!["bad".to_string()]);
     }
 
-    // -- v1::flatten() (canonical, honors data.is_none() ⇔ no work done) --
+    // -- flatten::v1::flatten_v1() (canonical, honors data.is_none() ⇔ no work done) --
 
     #[test]
     fn test_v1_flatten_merges_non_empty_data() {
@@ -580,7 +580,7 @@ mod tests {
         let r3: ValidationResult<Vec<i32>, String> =
             ValidationResult::new_with_error("e2".to_string());
 
-        let flat = v1::flatten(vec![r1, r2, r3]);
+        let flat = flatten::v1::flatten_v1(vec![r1, r2, r3]);
         assert_eq!(flat.data, Some(vec![1, 2, 3]));
         assert_eq!(flat.errors, vec!["e".to_string(), "e2".to_string()]);
     }
@@ -588,7 +588,7 @@ mod tests {
     #[test]
     fn test_v1_flatten_empty_input_returns_none_data() {
         let flat: ValidationResult<Vec<i32>, String> =
-            v1::flatten(std::iter::empty::<ValidationResult<Vec<i32>, String>>());
+            flatten::v1::flatten_v1(std::iter::empty::<ValidationResult<Vec<i32>, String>>());
         assert_eq!(flat.data, None);
         assert!(flat.errors.is_empty());
     }
@@ -604,7 +604,7 @@ mod tests {
         let r2: ValidationResult<Vec<i32>, String> =
             ValidationResult::new_with_error("e2".to_string());
 
-        let flat = v1::flatten(vec![r1, r2]);
+        let flat = flatten::v1::flatten_v1(vec![r1, r2]);
         assert!(flat.data.is_none());
         assert_eq!(flat.errors, vec!["e1".to_string(), "e2".to_string()]);
     }
@@ -616,7 +616,7 @@ mod tests {
         let r1: ValidationResult<Vec<i32>, String> = ValidationResult::new_with_data(vec![]);
         let r2: ValidationResult<Vec<i32>, String> = ValidationResult::new_with_data(vec![42]);
 
-        let flat = v1::flatten(vec![r1, r2]);
+        let flat = flatten::v1::flatten_v1(vec![r1, r2]);
         assert_eq!(flat.data, Some(vec![42]));
         assert!(flat.errors.is_empty());
     }
@@ -628,12 +628,12 @@ mod tests {
         let r1: ValidationResult<Vec<i32>, String> = ValidationResult::new_with_data(vec![]);
         let r2: ValidationResult<Vec<i32>, String> = ValidationResult::new_with_data(vec![]);
 
-        let flat = v1::flatten(vec![r1, r2]);
+        let flat = flatten::v1::flatten_v1(vec![r1, r2]);
         assert!(flat.data.is_none());
         assert!(flat.errors.is_empty());
     }
 
-    // -- v1::merge_many() (canonical) --
+    // -- merge_many::v1::merge_many_v1() (canonical) --
 
     #[test]
     fn test_v1_merge_many_collects_non_empty_data() {
@@ -641,7 +641,7 @@ mod tests {
         let r2: ValidationResult<i32, String> = ValidationResult::new_with_data(2);
         let r3: ValidationResult<i32, String> = ValidationResult::new_with_error("e".to_string());
 
-        let merged = v1::merge_many(vec![r1, r2, r3]);
+        let merged = merge_many::v1::merge_many_v1(vec![r1, r2, r3]);
         assert_eq!(merged.data, Some(vec![1, 2]));
         assert_eq!(merged.errors, vec!["e".to_string()]);
     }
@@ -649,7 +649,7 @@ mod tests {
     #[test]
     fn test_v1_merge_many_empty_input_returns_none_data() {
         let merged: ValidationResult<Vec<i32>, String> =
-            v1::merge_many(std::iter::empty::<ValidationResult<i32, String>>());
+            merge_many::v1::merge_many_v1(std::iter::empty::<ValidationResult<i32, String>>());
         assert!(merged.data.is_none());
         assert!(merged.errors.is_empty());
     }
@@ -659,7 +659,7 @@ mod tests {
         let r1: ValidationResult<i32, String> = ValidationResult::new_with_error("e1".to_string());
         let r2: ValidationResult<i32, String> = ValidationResult::new_with_error("e2".to_string());
 
-        let merged = v1::merge_many(vec![r1, r2]);
+        let merged = merge_many::v1::merge_many_v1(vec![r1, r2]);
         assert!(merged.data.is_none());
         assert_eq!(merged.errors, vec!["e1".to_string(), "e2".to_string()]);
     }
@@ -669,12 +669,12 @@ mod tests {
         let r1: ValidationResult<i32, String> = ValidationResult::new_with_error("e1".to_string());
         let r2: ValidationResult<i32, String> = ValidationResult::new_with_data(7);
 
-        let merged = v1::merge_many(vec![r1, r2]);
+        let merged = merge_many::v1::merge_many_v1(vec![r1, r2]);
         assert_eq!(merged.data, Some(vec![7]));
         assert_eq!(merged.errors, vec!["e1".to_string()]);
     }
 
-    // -- v0::flatten() / v0::merge_many() --
+    // -- flatten::v0::flatten_v0() / merge_many::v0::merge_many_v0() --
     // These pin the legacy `Some(empty_vec)`-on-no-data behavior preserved
     // for PROTOCOL_VERSION_11 and below.
 
@@ -686,7 +686,7 @@ mod tests {
         let r3: ValidationResult<Vec<i32>, String> =
             ValidationResult::new_with_error("e2".to_string());
 
-        let flat = v0::flatten(vec![r1, r2, r3]);
+        let flat = flatten::v0::flatten_v0(vec![r1, r2, r3]);
         assert_eq!(flat.data, Some(vec![1, 2, 3]));
         assert_eq!(flat.errors, vec!["e".to_string(), "e2".to_string()]);
     }
@@ -694,7 +694,7 @@ mod tests {
     #[test]
     fn test_v0_flatten_empty_input_returns_some_empty() {
         let flat: ValidationResult<Vec<i32>, String> =
-            v0::flatten(std::iter::empty::<ValidationResult<Vec<i32>, String>>());
+            flatten::v0::flatten_v0(std::iter::empty::<ValidationResult<Vec<i32>, String>>());
         // Legacy v11 behavior: Some(empty_vec), not None.
         assert_eq!(flat.data, Some(vec![]));
         assert!(flat.errors.is_empty());
@@ -707,7 +707,7 @@ mod tests {
         let r2: ValidationResult<Vec<i32>, String> =
             ValidationResult::new_with_error("e2".to_string());
 
-        let flat = v0::flatten(vec![r1, r2]);
+        let flat = flatten::v0::flatten_v0(vec![r1, r2]);
         assert_eq!(flat.data, Some(vec![]));
         assert_eq!(flat.errors, vec!["e1".to_string(), "e2".to_string()]);
     }
@@ -718,7 +718,7 @@ mod tests {
         let r2: ValidationResult<i32, String> = ValidationResult::new_with_data(2);
         let r3: ValidationResult<i32, String> = ValidationResult::new_with_error("e".to_string());
 
-        let merged = v0::merge_many(vec![r1, r2, r3]);
+        let merged = merge_many::v0::merge_many_v0(vec![r1, r2, r3]);
         assert_eq!(merged.data, Some(vec![1, 2]));
         assert_eq!(merged.errors, vec!["e".to_string()]);
     }
@@ -726,7 +726,7 @@ mod tests {
     #[test]
     fn test_v0_merge_many_empty_input_returns_some_empty() {
         let merged: ValidationResult<Vec<i32>, String> =
-            v0::merge_many(std::iter::empty::<ValidationResult<i32, String>>());
+            merge_many::v0::merge_many_v0(std::iter::empty::<ValidationResult<i32, String>>());
         // Legacy v11 behavior: Some(empty_vec), not None.
         assert_eq!(merged.data, Some(vec![]));
         assert!(merged.errors.is_empty());
@@ -737,7 +737,7 @@ mod tests {
         let r1: ValidationResult<i32, String> = ValidationResult::new_with_error("e1".to_string());
         let r2: ValidationResult<i32, String> = ValidationResult::new_with_error("e2".to_string());
 
-        let merged = v0::merge_many(vec![r1, r2]);
+        let merged = merge_many::v0::merge_many_v0(vec![r1, r2]);
         assert_eq!(merged.data, Some(vec![]));
         assert_eq!(merged.errors, vec!["e1".to_string(), "e2".to_string()]);
     }
