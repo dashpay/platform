@@ -287,6 +287,47 @@ pub struct PersistenceCallbacks {
             removed_incoming_count: usize,
         ) -> i32,
     >,
+    /// Look up a single chain-locked core transaction record by `txid`
+    /// for the asset-lock proof flow's persister fallback.
+    ///
+    /// With upstream's `keep-finalized-transactions` Cargo feature OFF
+    /// (the default), chain-locked records are evicted from the
+    /// in-memory `transactions()` map and only their txids retained in
+    /// `finalized_txids` for dedup. The asset-lock proof flow needs to
+    /// recover the chain-lock height to construct a
+    /// `ChainAssetLockProof`; the persister has the record (it
+    /// received it on the chain-lock-transition `store` call before
+    /// eviction) and answers this lookup.
+    ///
+    /// Scope: **chain-locked records only.** InstantSend records are
+    /// never evicted from the in-memory map, so a persister fallback
+    /// for them isn't needed; mempool / `InBlock` records similarly
+    /// stay in the in-memory map until they reach chain-lock. The
+    /// Rust side wraps the result in an `InChainLockedBlock` context
+    /// regardless of what the persister has stored — implementations
+    /// SHOULD only return found=true for records they know to be
+    /// chain-locked, and MUST populate `block_height`, `block_hash`,
+    /// `block_timestamp` accordingly.
+    ///
+    /// Output contract:
+    /// - Set `*out_found = true` and populate the three block fields
+    ///   when a chain-locked record exists for `txid`.
+    /// - Set `*out_found = false` when no such record exists.
+    /// - Return `0` on a successful lookup (whether found or not).
+    ///   Non-zero values are treated as a transient backend failure
+    ///   by the Rust side and surfaced as `None` (no error
+    ///   propagation through the proof flow).
+    pub on_get_chainlocked_tx_record_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            txid: *const u8,
+            out_block_height: *mut u32,
+            out_block_hash: *mut u8,
+            out_block_timestamp: *mut u32,
+            out_found: *mut bool,
+        ) -> i32,
+    >,
 }
 
 // SAFETY: The context pointer is managed by the FFI caller who must ensure
@@ -901,6 +942,110 @@ impl PlatformWalletPersistence for FFIPersister {
             }
         }
         Ok(out)
+    }
+
+    /// Look up a chain-locked transaction record by `txid` via the
+    /// `on_get_chainlocked_tx_record_fn` callback, and synthesize a
+    /// minimal [`TransactionRecord`] for the asset-lock proof flow.
+    ///
+    /// The callers in `platform-wallet/src/wallet/asset_lock/sync/` only
+    /// read `record.context` and `record.height()` (which is
+    /// `record.context.block_info().map(|b| b.height)`), so the
+    /// returned record only populates `txid` + `context` reliably.
+    /// All other fields are placeholders (empty / default). See the
+    /// trait method docs on [`PlatformWalletPersistence::get_core_tx_record`]
+    /// for the full contract.
+    ///
+    /// Returns `Ok(None)` when the callback is unset, when the callback
+    /// reports `out_found = false`, or when the callback returns a
+    /// non-zero result code (treated as a transient backend failure
+    /// per the trait contract — surfaced as `None` rather than
+    /// propagating an error through the proof flow).
+    fn get_core_tx_record(
+        &self,
+        wallet_id: WalletId,
+        txid: &dashcore::Txid,
+    ) -> Result<
+        Option<key_wallet::managed_account::transaction_record::TransactionRecord>,
+        PersistenceError,
+    > {
+        use dashcore::hashes::Hash;
+        use key_wallet::account::{AccountType, StandardAccountType};
+        use key_wallet::managed_account::transaction_record::{
+            TransactionDirection, TransactionRecord,
+        };
+        use key_wallet::transaction_checking::{BlockInfo, TransactionContext, TransactionType};
+
+        let Some(get_cb) = self.callbacks.on_get_chainlocked_tx_record_fn else {
+            return Ok(None);
+        };
+
+        let txid_bytes: [u8; 32] = *txid.as_byte_array();
+        let mut block_height: u32 = 0;
+        let mut block_hash: [u8; 32] = [0u8; 32];
+        let mut block_timestamp: u32 = 0;
+        let mut found: bool = false;
+
+        // SAFETY: All output pointers reference Rust-owned stack
+        // locals that outlive the callback invocation. `wallet_id` and
+        // `txid` are fixed-size byte arrays.
+        let rc = unsafe {
+            get_cb(
+                self.callbacks.context,
+                wallet_id.as_ptr(),
+                txid_bytes.as_ptr(),
+                &mut block_height,
+                block_hash.as_mut_ptr(),
+                &mut block_timestamp,
+                &mut found,
+            )
+        };
+
+        if rc != 0 {
+            tracing::debug!(
+                txid = %txid,
+                rc,
+                "on_get_chainlocked_tx_record_fn returned a non-zero \
+                 result; treating as miss"
+            );
+            return Ok(None);
+        }
+        if !found {
+            return Ok(None);
+        }
+
+        let context = TransactionContext::InChainLockedBlock(BlockInfo::new(
+            block_height,
+            dashcore::BlockHash::from_byte_array(block_hash),
+            block_timestamp,
+        ));
+
+        // Synthetic record: only `txid` and `context` are reliable.
+        // Placeholder transaction body keeps `dashcore::Transaction`
+        // construction trivial — proof-flow callers never read it.
+        let placeholder_tx = dashcore::blockdata::transaction::Transaction {
+            version: 1,
+            lock_time: 0,
+            input: Vec::new(),
+            output: Vec::new(),
+            special_transaction_payload: None,
+        };
+        Ok(Some(TransactionRecord {
+            transaction: placeholder_tx,
+            txid: *txid,
+            account_type: AccountType::Standard {
+                index: 0,
+                standard_account_type: StandardAccountType::BIP44Account,
+            },
+            context,
+            transaction_type: TransactionType::Standard,
+            direction: TransactionDirection::Internal,
+            input_details: Vec::new(),
+            output_details: Vec::new(),
+            net_amount: 0,
+            fee: None,
+            label: String::new(),
+        }))
     }
 }
 

@@ -781,6 +781,17 @@ public class PlatformWalletPersistenceHandler {
         cb.on_persist_identity_keys_fn = persistIdentityKeysCallback
         cb.on_persist_token_balances_fn = persistTokenBalancesCallback
         cb.on_persist_contacts_fn = persistContactsCallback
+        // Persister fallback for the asset-lock proof flow's
+        // chainlocked-tx lookup (Rust trait method
+        // `PlatformWalletPersistence::get_core_tx_record`). Without
+        // this wired, the Rust side's `record_or_persister` helper
+        // gracefully falls back to "miss" — but then chainlocked
+        // asset-lock proofs can't recover the chain-lock height
+        // once upstream's `keep-finalized-transactions` Cargo
+        // feature evicts the in-memory record (the production
+        // default). See the Rust trait doc for the field contract
+        // and the helper for the call sites.
+        cb.on_get_chainlocked_tx_record_fn = getChainlockedTxRecordCallback
         return cb
     }
 
@@ -2771,6 +2782,61 @@ public class PlatformWalletPersistenceHandler {
         return data
     }
 
+    /// Look up a chain-locked transaction record for the asset-lock
+    /// proof flow's persister fallback (Rust trait method
+    /// `PlatformWalletPersistence::get_core_tx_record`).
+    ///
+    /// The Rust-side asset-lock proof flow needs the chain-lock
+    /// height + block hash + timestamp to construct a
+    /// `ChainAssetLockProof`. With upstream's
+    /// `keep-finalized-transactions` Cargo feature OFF (the default),
+    /// chain-locked records are evicted from the in-memory
+    /// `transactions()` map and only their txids retained for dedup,
+    /// so the chain-lock metadata is no longer reachable through the
+    /// wallet-info API. The persister received the record on the
+    /// chain-lock-transition `store` call before eviction; this
+    /// lookup walks the corresponding `PersistentTransaction` row.
+    ///
+    /// Returns `nil` when:
+    /// - no `PersistentTransaction` row exists for `txid`, or
+    /// - the row exists but is not chain-locked (`context != 3`).
+    ///
+    /// The wallet-id is currently unused for the lookup (`txid` is
+    /// globally unique), but is accepted to match the Rust trait
+    /// signature and to leave room for a wallet-scoped variant.
+    func chainlockedTxRecord(
+        walletId: Data,
+        txid: Data
+    ) -> (blockHeight: UInt32, blockHash: Data, blockTimestamp: UInt32)? {
+        _ = walletId
+        return onQueue {
+            // PersistentTransaction.context: 3 = InChainLockedBlock.
+            // Predicate-side filter on context narrows the index scan
+            // to chain-locked rows so the lookup stays cheap when the
+            // store has many in-flight (mempool / IS / InBlock) rows.
+            let chainLocked: UInt32 = 3
+            let descriptor = FetchDescriptor<PersistentTransaction>(
+                predicate: #Predicate { $0.txid == txid && $0.context == chainLocked }
+            )
+            guard let row = try? backgroundContext.fetch(descriptor).first else {
+                return nil
+            }
+            // `blockHash` is optional in the row — chain-locked rows
+            // should always have it, but if a row got upserted in an
+            // older state without one, we treat that as "miss" rather
+            // than fabricate a zero hash that would round-trip back
+            // to Rust as a real block id.
+            guard let blockHash = row.blockHash, blockHash.count == 32 else {
+                return nil
+            }
+            return (
+                blockHeight: row.blockHeight,
+                blockHash: blockHash,
+                blockTimestamp: row.blockTimestamp
+            )
+        }
+    }
+
     /// Look up the network for a wallet id by reading the owning
     /// `PersistentWallet` row. Returns `nil` if the wallet row
     /// doesn't exist or its network hasn't been resolved yet.
@@ -3553,5 +3619,60 @@ private func persistWalletMetadataCallback(
         network: Network(ffiNetwork: network),
         birthHeight: birthHeight
     )
+    return 0
+}
+
+/// C shim for `on_get_chainlocked_tx_record_fn`. Calls
+/// `PlatformWalletPersistenceHandler.chainlockedTxRecord(...)` and
+/// writes the block height / hash / timestamp to the Rust-owned
+/// output pointers when a chain-locked row exists for `txid`.
+///
+/// Output contract:
+/// - Sets `*outFound = true` and populates the three block fields
+///   on a hit; returns `0`.
+/// - Sets `*outFound = false` and leaves the block fields untouched
+///   on a miss; returns `0`.
+/// - Returns `0` even on Swift-side errors (treated as miss); the
+///   Rust side's `record_or_persister` helper logs and falls
+///   through to the caller's existing not-found / poll path.
+private func getChainlockedTxRecordCallback(
+    context: UnsafeMutableRawPointer?,
+    walletIdPtr: UnsafePointer<UInt8>?,
+    txidPtr: UnsafePointer<UInt8>?,
+    outBlockHeight: UnsafeMutablePointer<UInt32>?,
+    outBlockHash: UnsafeMutablePointer<UInt8>?,
+    outBlockTimestamp: UnsafeMutablePointer<UInt32>?,
+    outFound: UnsafeMutablePointer<Bool>?
+) -> Int32 {
+    guard let context = context,
+          let walletIdPtr = walletIdPtr,
+          let txidPtr = txidPtr,
+          let outFound = outFound else {
+        return 0
+    }
+    outFound.pointee = false
+
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+    let walletId = Data(bytes: walletIdPtr, count: 32)
+    let txid = Data(bytes: txidPtr, count: 32)
+
+    guard let row = handler.chainlockedTxRecord(walletId: walletId, txid: txid) else {
+        // Miss — outFound already set to false above.
+        return 0
+    }
+
+    outBlockHeight?.pointee = row.blockHeight
+    outBlockTimestamp?.pointee = row.blockTimestamp
+    if let outBlockHash = outBlockHash {
+        // `chainlockedTxRecord` validates `blockHash.count == 32`
+        // before returning, so this copy is bounded.
+        row.blockHash.copyBytes(
+            to: UnsafeMutableBufferPointer(start: outBlockHash, count: 32),
+            count: 32
+        )
+    }
+    outFound.pointee = true
     return 0
 }

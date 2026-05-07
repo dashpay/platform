@@ -172,6 +172,21 @@ pub trait PlatformWalletPersistence: Send + Sync {
     /// window. Persisters whose backing store keys records by txid
     /// (`SqliteWalletPersister`, the SwiftData iOS persister) should
     /// override.
+    ///
+    /// **Field contract.** Implementations are only required to
+    /// populate `txid` and `context` (with the `BlockInfo` inside
+    /// `InChainLockedBlock` / `InBlock` carrying real height + block
+    /// hash + timestamp). Other fields (`transaction`, `input_details`,
+    /// `output_details`, `account_type`, `transaction_type`,
+    /// `direction`, `net_amount`, `fee`, `label`) MAY be returned as
+    /// best-effort placeholders and MUST NOT be relied upon by callers.
+    /// The current consumer — the asset-lock proof flow — only reads
+    /// `context` and `height()` (which is
+    /// `context.block_info().map(|b| b.height)`). FFI-backed
+    /// implementations (e.g. the SwiftData iOS persister) take
+    /// advantage of this contract by emitting a synthetic record with a
+    /// placeholder transaction body, since reconstructing the full
+    /// `Transaction` over the C ABI is not free and isn't needed.
     fn get_core_tx_record(
         &self,
         _wallet_id: WalletId,
