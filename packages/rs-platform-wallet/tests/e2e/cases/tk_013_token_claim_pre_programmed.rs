@@ -239,11 +239,21 @@ async fn tk_013_token_claim_from_pre_programmed_distribution() {
          observed before={balance_before} after={balance_after} expected_delta={PAYOUT}"
     );
 
-    // Spec § TK-013: a second claim against the same epoch must fail
-    // with a typed "already claimed" / "no claimable amount" error.
-    // A regression that silently lets the same epoch be claimed
-    // multiple times — exactly the silent-on-failure class of bug
-    // the spec rationale calls out — would otherwise pass undetected.
+    // Spec § TK-013: a second claim against the same pre-programmed epoch
+    // must fail. The canonical protocol variant is
+    // `InvalidTokenClaimNoCurrentRewards` (QA-V25-001: confirmed on v25
+    // testnet). Its `Display` message is "No current rewards available …".
+    // We match on that substring rather than on the full formatted string so
+    // the test stays robust against minor wording tweaks while still catching
+    // regressions where the protocol silently credits a second payout.
+    //
+    // The `last_claimed_moment: Some(_)` field on
+    // `InvalidTokenClaimNoCurrentRewards` distinguishes "already claimed all
+    // distributions" from "schedule is still in the future" (which would have
+    // `last_claimed_moment: None`). The Display string includes "Last claimed
+    // moment: 'Never claimed before'" for the None case and a concrete
+    // timestamp for the Some case; we assert it does NOT say "Never claimed
+    // before" to pin the Some(_) path and catch future variant churn loudly.
     let retry_builder = TokenClaimTransitionBuilder::new(
         data_contract,
         DEFAULT_TOKEN_POSITION,
@@ -262,13 +272,15 @@ async fn tk_013_token_claim_from_pre_programmed_distribution() {
         Err(err) => format!("{err}").to_lowercase(),
     };
     assert!(
-        err_text.contains("already claimed")
-            || err_text.contains("no claimable amount")
-            || err_text.contains("nothing to claim")
-            || err_text.contains("already paid")
-            || err_text.contains("alreadypaid"),
-        "second-claim error must reference the 'already claimed' / 'no claimable amount' \
-         class (observed: {err_text})"
+        err_text.contains("no current rewards available"),
+        "second-claim error must be InvalidTokenClaimNoCurrentRewards \
+         (observed: {err_text})"
+    );
+    assert!(
+        !err_text.contains("never claimed before"),
+        "second-claim error must carry last_claimed_moment: Some(_), \
+         not None — 'Never claimed before' would mean the distribution \
+         has not been recorded as paid yet (observed: {err_text})"
     );
 
     // Sanity: the failed retry must NOT have credited the owner a
