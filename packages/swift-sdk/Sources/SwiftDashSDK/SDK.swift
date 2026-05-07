@@ -159,9 +159,19 @@ public final class SDK: @unchecked Sendable {
     config.request_timeout_ms = 8000 // 8 seconds
 
     // Create SDK with trusted setup — Rust side auto-detects local/regtest
-    // and uses the quorum sidecar at localhost:22444 instead of remote endpoints
+    // and uses the quorum sidecar at localhost:22444 instead of remote endpoints.
+    //
+    // Regtest has no remote DAPI defaults on the Rust side, so it
+    // *must* be constructed with a local DAPI address regardless of
+    // the user-facing `useDockerSetup` toggle. Without this, building
+    // a regtest SDK from a context where the toggle has been
+    // auto-disabled (e.g. orphan-mnemonic recovery routing wallets to
+    // their original network from a non-regtest active state) fails
+    // with `DAPI addresses not available for network: Regtest` and
+    // the recovery loop stalls.
     let result: DashSDKResult
-    let forceLocal = UserDefaults.standard.bool(forKey: "useDockerSetup")
+    let forceLocal = network == .regtest
+        || UserDefaults.standard.bool(forKey: "useDockerSetup")
     if forceLocal {
       let localAddresses = Self.platformDAPIAddresses
       result = localAddresses.withCString { addressesCStr -> DashSDKResult in

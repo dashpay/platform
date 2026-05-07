@@ -458,39 +458,16 @@ struct ContentView: View {
             entry.network ?? metadata?.resolvedNetworks.first ?? platformState.currentNetwork
         let restoredBirthHeight = metadata?.birthHeight
 
-        // Route the create call through the wallet's
-        // intended-network manager, NOT the user's currently-active
-        // one. See the prior fix's commit message for the full
-        // rationale; the short version is that the active manager's
-        // persistence handler pins SwiftData rows to its own
-        // network, so a regtest wallet recovered while the user is
-        // looking at testnet would land on testnet without this.
-        //
-        // SDK init splits out from the manager get-or-create so
-        // local-only networks (regtest / devnet) surface a clear
-        // "is your local stack running?" hint when SDK creation
-        // fails — those networks talk to a local quorum sidecar
-        // (typically `localhost:22444`) and reject SDK creation
-        // when it isn't reachable, while public networks
-        // (testnet / mainnet) hit always-on remote endpoints.
-        let networkSdk: SDK
-        do {
-            networkSdk = try SDK(network: restoredNetwork)
-        } catch {
-            let hint = (restoredNetwork == .regtest || restoredNetwork == .devnet)
-                ? " — is your local \(restoredNetwork.displayName) stack running?"
-                : ""
-            let message = "\"\(entry.displayName)\" (\(restoredNetwork.displayName)): "
-                + "failed to spin up SDK — \(error.localizedDescription)\(hint)"
-            SDKLogger.error("Recovery: \(message) (raw: \(error))")
-            return message
-        }
+        // Route recovery to the manager for the wallet's original
+        // network — not the active manager. The Rust side stamps
+        // `wallet.network = self.sdk.network` at registration time,
+        // so creating a regtest wallet through the testnet manager
+        // would persist the row as testnet. `backgroundManager`
+        // lazy-builds the per-network manager (and its SDK) without
+        // changing the user's currently visible network.
         let recoveryManager: PlatformWalletManager
         do {
-            recoveryManager = try walletManagerStore.getOrCreateManager(
-                network: restoredNetwork,
-                sdk: networkSdk
-            )
+            recoveryManager = try walletManagerStore.backgroundManager(for: restoredNetwork)
         } catch {
             let message = "\"\(entry.displayName)\" (\(restoredNetwork.displayName)): "
                 + "failed to prepare wallet manager — \(error.localizedDescription)"
@@ -508,7 +485,32 @@ struct ContentView: View {
             let descriptor = FetchDescriptor<PersistentWallet>(
                 predicate: #Predicate { $0.walletId == walletIdMatch }
             )
-            if let row = try? modelContext.fetch(descriptor).first {
+
+            // Cross-context propagation: the row we just created
+            // landed in the target manager's background context,
+            // not in the main context that drives every `@Query`
+            // consumer in the UI. SwiftData merges sibling-context
+            // saves through `NSPersistentStoreRemoteChange`
+            // notifications, but that pipeline is asynchronous —
+            // an immediate `fetch` on the main context may still
+            // miss the row, in which case the post-recovery
+            // `isImported` / metadata flush is skipped *and* no
+            // main-context save fires, so `@Query` observers
+            // never re-evaluate. The wallet then "doesn't appear"
+            // until the next app launch when the main context is
+            // built fresh against disk. Retry a few times with a
+            // short yield between attempts so the merge has a
+            // chance to settle before we move on.
+            var row: PersistentWallet? = nil
+            for attempt in 0..<10 {
+                row = try? modelContext.fetch(descriptor).first
+                if row != nil { break }
+                if attempt < 9 {
+                    try? await Task.sleep(nanoseconds: 50_000_000)
+                }
+            }
+
+            if let row {
                 row.isImported = true
                 if row.walletDescription == nil {
                     row.walletDescription = restoredDescription

@@ -78,9 +78,15 @@ final class WalletManagerStore: ObservableObject {
     /// Failures during a fresh manager's `configure` /
     /// `loadFromPersistor` propagate to the caller — the cache
     /// stays untouched in that case so a later retry can succeed.
-    func activate(network: Network, sdk: SDK) throws {
+    ///
+    /// `makeActive == false` materializes the manager into the cache
+    /// without swapping `activeManager`. Used by background flows
+    /// (e.g. orphan recovery routing wallets to their original
+    /// network) that need a manager for a non-active network without
+    /// triggering a user-visible network switch.
+    func activate(network: Network, sdk: SDK, makeActive: Bool = true) throws {
         if let existing = managers[network] {
-            if existing !== activeManager {
+            if makeActive && existing !== activeManager {
                 activeManager = existing
             }
             return
@@ -102,7 +108,9 @@ final class WalletManagerStore: ObservableObject {
             )
         }
         managers[network] = manager
-        activeManager = manager
+        if makeActive {
+            activeManager = manager
+        }
     }
 
     /// Manager for `network` if one has been activated this session;
@@ -113,34 +121,29 @@ final class WalletManagerStore: ObservableObject {
         managers[network]
     }
 
-    /// Get or create the manager for `network` **without** changing
-    /// `activeManager`. Used by flows that need to operate on a
-    /// specific network's manager outside the user's current view —
-    /// e.g. orphan-mnemonic recovery, where wallets restored from
-    /// keychain metadata may belong to networks the user isn't
-    /// currently looking at and switching the active network for
-    /// each one would flicker the UI.
+    /// Get-or-build the manager for `network` without changing the
+    /// currently active one. Builds a fresh `SDK` for that network
+    /// on demand the first time it's requested.
     ///
-    /// Same configure / load-from-persistor side effects as
-    /// [`activate`]: a fresh manager comes up via
-    /// `manager.configure(sdk:modelContainer:)` and then
-    /// `manager.loadFromPersistor()`. Failures propagate to the
-    /// caller and the cache is left untouched.
-    func getOrCreateManager(network: Network, sdk: SDK) throws -> PlatformWalletManager {
+    /// Used by orphan-mnemonic recovery, which needs to route each
+    /// rebuilt wallet to the manager bound to the network the
+    /// wallet was originally created on — otherwise wallets bound
+    /// to non-active networks at creation time get re-derived and
+    /// persisted under the active network's manager (the Rust
+    /// manager stamps `wallet.network = self.sdk.network` at
+    /// registration time, so a regtest mnemonic recovered through
+    /// the testnet manager lands as a testnet row).
+    func backgroundManager(for network: Network) throws -> PlatformWalletManager {
         if let existing = managers[network] {
             return existing
         }
-        let manager = PlatformWalletManager()
-        try manager.configure(sdk: sdk, modelContainer: modelContainer)
-        do {
-            _ = try manager.loadFromPersistor()
-        } catch {
-            SDKLogger.error(
-                "WalletManagerStore: load-from-persistor failed for "
-                    + "\(network.displayName): \(error.localizedDescription)"
+        let sdk = try SDK(network: network)
+        try activate(network: network, sdk: sdk, makeActive: false)
+        guard let manager = managers[network] else {
+            throw PlatformWalletError.invalidParameter(
+                "Failed to materialize manager for \(network.displayName)"
             )
         }
-        managers[network] = manager
         return manager
     }
 }
