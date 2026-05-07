@@ -43,11 +43,9 @@ import SwiftDashSDK
 Public Swift errors keep `SDKError` associated `String` payloads clean and
 human-readable — `case .protocolError(let message)` produces the original FFI
 message. When the FFI layer surfaces structured `DashSDKConsensusError` entries
-alongside an error, throwing wrappers throw an `SDKDetailedError` that carries
-both the mapped `SDKError` and the structured `consensusErrors` array. Callers
-who need the structured details should catch `SDKDetailedError` before
-`SDKError`, or catch `Error` and downcast to both. The wrapped scalar error is
-available as `detailed.sdkError`.
+alongside an error, throwing wrappers still throw `SDKError`. Callers who need
+the structured details should catch `SDKError` and inspect
+`sdkError.consensusErrors` in the catch block.
 
 If you are working directly with the FFI `DashSDKError` pointer, inspect
 `SDKError.consensusErrors(fromDashSDKError:)` or

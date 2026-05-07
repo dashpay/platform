@@ -595,11 +595,8 @@ struct DiagnosticsView: View {
     }
 
     private func formatError(_ error: Error) -> String {
-        if let detailed = error as? SDKDetailedError {
-            return formatSDKError(detailed.sdkError, consensusErrors: detailed.consensusErrors)
-        }
         if let sdkError = error as? SDKError {
-            return formatSDKError(sdkError, consensusErrors: nil)
+            return formatSDKError(sdkError, consensusErrors: sdkError.consensusErrors)
         }
         return error.localizedDescription
     }

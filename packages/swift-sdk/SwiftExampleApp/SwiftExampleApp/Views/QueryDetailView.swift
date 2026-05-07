@@ -176,20 +176,13 @@ struct QueryDetailView: View {
                     isLoading = false
                     print("✅ QueryDetailView: Result displayed, showResult: \(showResult)")
                 }
-            } catch let detailed as SDKDetailedError {
-                print("❌ QueryDetailView: SDK detailed error occurred: \(detailed)")
-                await MainActor.run {
-                    self.error = QueryDetailView.formatSDKError(
-                        detailed.sdkError,
-                        consensusErrors: detailed.consensusErrors
-                    )
-                    isLoading = false
-                    print("❌ QueryDetailView: Error set to: \(self.error)")
-                }
             } catch let sdkError as SDKError {
                 print("❌ QueryDetailView: SDK error occurred: \(sdkError)")
                 await MainActor.run {
-                    self.error = QueryDetailView.formatSDKError(sdkError, consensusErrors: nil)
+                    self.error = QueryDetailView.formatSDKError(
+                        sdkError,
+                        consensusErrors: sdkError.consensusErrors
+                    )
                     isLoading = false
                     print("❌ QueryDetailView: Error set to: \(self.error)")
                 }

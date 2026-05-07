@@ -324,16 +324,16 @@ public struct SDKConsensusError: Equatable, Sendable {
   }
 }
 
-/// Wrapper error thrown by public Swift SDK helpers when an FFI error carries
+/// Wrapper error for callers that explicitly want to bundle an `SDKError` with
 /// structured protocol consensus details.
 ///
 /// `SDKError`'s associated `String` values are kept clean — they never embed
 /// private payload markers, so `case .protocolError(let message)` matches
-/// produce the original human-readable message. When the FFI also surfaces
-/// structured `DashSDKConsensusError` entries, `SDKError.consumeDashSDKError`
-/// throws this wrapper instead. Callers that need the structured detail can
-/// pattern-match on `SDKDetailedError`; callers that only need the mapped
-/// `SDKError` should unwrap via `detailed.sdkError`.
+/// produce the original human-readable message.
+///
+/// Public Swift wrappers now keep throwing `SDKError` for source compatibility.
+/// This wrapper remains available for callers that explicitly want to bundle an
+/// `SDKError` with structured consensus details into a single `Error` value.
 public struct SDKDetailedError: Error, LocalizedError {
   public let sdkError: SDKError
   public let consensusErrors: [SDKConsensusError]
@@ -359,13 +359,45 @@ public struct SDKDetailedError: Error, LocalizedError {
   }
 }
 
+private final class SDKErrorConsensusSidecar: @unchecked Sendable {
+  struct Signature: Equatable {
+    let code: UInt32
+    let message: String
+  }
+
+  struct Entry {
+    let signature: Signature
+    let consensusErrors: [SDKConsensusError]
+  }
+
+  private let lock = NSLock()
+  private var current: Entry?
+
+  func replace(with entry: Entry?) {
+    lock.lock()
+    current = entry
+    lock.unlock()
+  }
+
+  func consensusErrors(for signature: Signature) -> [SDKConsensusError]? {
+    lock.lock()
+    defer { lock.unlock() }
+
+    guard let current, current.signature == signature else {
+      return nil
+    }
+
+    return current.consensusErrors
+  }
+}
+
 /// SDK Error handling
 ///
 /// Associated `String` values are clean human-readable messages with no
 /// private embedded payload — `case .protocolError(let message)` matches
 /// produce exactly the message returned by the FFI. Structured protocol
-/// consensus details, when present, are surfaced via the
-/// `SDKDetailedError` wrapper thrown by `consumeDashSDKError(_:)`.
+/// consensus details, when present, are surfaced via `SDKError.consensusErrors`
+/// on the most recently consumed matching `SDKError`.
 public enum SDKError: Error {
   case invalidParameter(String)
   case invalidState(String)
@@ -437,6 +469,42 @@ public enum SDKError: Error {
     }
   }
 
+  private static let consensusSidecar = SDKErrorConsensusSidecar()
+
+  private var sidecarSignature: SDKErrorConsensusSidecar.Signature {
+    SDKErrorConsensusSidecar.Signature(code: code, message: message)
+  }
+
+  static func updateConsensusSidecar(
+    for error: SDKError,
+    consensusErrors: [SDKConsensusError]?
+  ) {
+    guard let consensusErrors, !consensusErrors.isEmpty else {
+      consensusSidecar.replace(with: nil)
+      return
+    }
+
+    consensusSidecar.replace(
+      with: SDKErrorConsensusSidecar.Entry(
+        signature: error.sidecarSignature,
+        consensusErrors: consensusErrors
+      )
+    )
+  }
+
+  /// Structured consensus details captured when a matching FFI error was most
+  /// recently consumed by `consumeDashSDKError(_:)`.
+  ///
+  /// This accessor is source-compatible with existing `catch let sdkError as
+  /// SDKError` flows: wrappers continue throwing `SDKError`, while callers that
+  /// need protocol details can inspect `sdkError.consensusErrors` immediately in
+  /// the catch scope. The sidecar is replaced on every consume path and matches
+  /// by SDK error code plus message, so unrelated `SDKError` values do not
+  /// inherit stale details.
+  public var consensusErrors: [SDKConsensusError]? {
+    SDKError.consensusSidecar.consensusErrors(for: sidecarSignature)
+  }
+
   /// Returns the structured consensus errors carried by `error`, if any.
   ///
   /// Takes the **original** heap pointer that the FFI returned. Sidecar
@@ -475,19 +543,27 @@ public enum SDKError: Error {
     return (mapped, details)
   }
 
+  // Shared finalization path so tests can verify sidecar behavior without
+  // depending on FFI-owned pointers.
+  static func finalizeConsumedDashSDKError(
+    _ error: SDKError,
+    consensusErrors: [SDKConsensusError]?
+  ) -> SDKError {
+    updateConsensusSidecar(for: error, consensusErrors: consensusErrors)
+    return error
+  }
+
   /// Frees the owned FFI error pointer after mapping it to a Swift error.
   ///
-  /// Returns `SDKDetailedError` when the FFI carries structured consensus
-  /// details, so callers that need the structured surface can downcast to it
-  /// after the FFI pointer is freed. Otherwise returns the bare `SDKError`,
-  /// preserving clean `case .protocolError(let message)` pattern matches.
-  static func consumeDashSDKError(_ error: UnsafeMutablePointer<DashSDKError>) -> Error {
+  /// Always returns the mapped `SDKError`, preserving the public thrown runtime
+  /// type for existing `catch let sdkError as SDKError` handlers. If the FFI
+  /// error also carries structured consensus details, they are captured before
+  /// freeing the pointer and made available via `sdkError.consensusErrors`.
+  static func consumeDashSDKError(_ error: UnsafeMutablePointer<DashSDKError>) -> SDKError {
     let (mapped, details) = fromDashSDKErrorWithConsensusErrors(UnsafePointer(error))
+    let finalized = finalizeConsumedDashSDKError(mapped, consensusErrors: details)
     dash_sdk_error_free(error)
-    if let details, !details.isEmpty {
-      return SDKDetailedError(sdkError: mapped, consensusErrors: details)
-    }
-    return mapped
+    return finalized
   }
 
   /// Human-readable message carried by this error, regardless of case.
@@ -507,6 +583,33 @@ public enum SDKError: Error {
       return message
     }
   }
+
+  var code: UInt32 {
+    switch self {
+    case .invalidParameter:
+      return 1
+    case .invalidState:
+      return 2
+    case .networkError:
+      return 3
+    case .serializationError:
+      return 4
+    case .protocolError:
+      return 5
+    case .cryptoError:
+      return 6
+    case .notFound:
+      return 7
+    case .timeout:
+      return 8
+    case .notImplemented:
+      return 9
+    case .internalError:
+      return 99
+    case .unknown:
+      return 0
+    }
+  }
 }
 
 extension SDKError: LocalizedError {
@@ -521,7 +624,7 @@ extension SDKError: LocalizedError {
       description = "Network Error: \(message)"
     case .serializationError(let message):
       description = "Serialization Error: \(message)"
-    case .protocolError:
+    case .protocolError(let message):
       description = "Protocol Error: \(message)"
     case .cryptoError(let message):
       description = "Cryptographic Error: \(message)"
