@@ -22,27 +22,45 @@ use super::super::manager::AssetLockManager;
 /// persister that doesn't index records by txid (the trait's default
 /// impl,
 /// [`NoPlatformPersistence`](crate::wallet::persister::NoPlatformPersistence))
-/// returns `None` here — callers must still handle the absence.
+/// returns `Ok(None)` here — callers must still handle the absence.
 ///
-/// Persister errors are logged at `debug` and surfaced as `None` so a
-/// transient backend failure doesn't turn into a hard error in the
-/// proof flow — the caller's existing `None` handling (timeout / poll
-/// loop / not-found error) still applies.
+/// Persister errors are surfaced as `Err(PersistenceError)` so call
+/// sites can choose their own policy:
+///
+/// - **Poll loops** (`wait_for_chain_lock`, `wait_for_proof`) typically
+///   downgrade to `None` for the current iteration so the next tick
+///   retries — see [`record_or_persister_or_log`] for that policy.
+/// - **One-shot recovery / fast-fail call sites** want the error
+///   visible so a transient backend failure isn't silently classified
+///   as "tx not found" — they handle the `Err` arm explicitly.
 pub(super) fn record_or_persister(
     in_memory: Option<TransactionRecord>,
     persister: &crate::wallet::persister::WalletPersister,
     txid: &Txid,
-) -> Option<TransactionRecord> {
+) -> Result<Option<TransactionRecord>, crate::changeset::PersistenceError> {
     if let Some(record) = in_memory {
-        return Some(record);
+        return Ok(Some(record));
     }
-    match persister.get_core_tx_record(txid) {
+    persister.get_core_tx_record(txid)
+}
+
+/// Variant of [`record_or_persister`] that swallows persister errors
+/// as `None` after a `warn`-level log. Use this from poll loops where
+/// the next iteration retries — a hard error from a single tick would
+/// abort the whole poll prematurely.
+pub(super) fn record_or_persister_or_log(
+    in_memory: Option<TransactionRecord>,
+    persister: &crate::wallet::persister::WalletPersister,
+    txid: &Txid,
+) -> Option<TransactionRecord> {
+    match record_or_persister(in_memory, persister, txid) {
         Ok(opt) => opt,
         Err(e) => {
-            tracing::debug!(
+            tracing::warn!(
                 txid = %txid,
                 error = %e,
-                "Persister fallback for core tx record failed"
+                "Persister fallback for core tx record failed; \
+                 treating as miss for this poll iteration"
             );
             None
         }
@@ -88,8 +106,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             // wm dropped at end of block — release before persister + DAPI calls.
         };
 
-        let record =
-            record_or_persister(in_memory, &self.persister, &out_point.txid).ok_or_else(|| {
+        let record = record_or_persister(in_memory, &self.persister, &out_point.txid)
+            .map_err(|e| {
+                PlatformWalletError::AssetLockProofWait(format!(
+                    "Persister lookup for tx {} failed: {}",
+                    out_point.txid, e
+                ))
+            })?
+            .ok_or_else(|| {
                 PlatformWalletError::AssetLockProofWait(format!(
                     "Transaction {} not found in account {} (in-memory or persister)",
                     out_point.txid, account_index
@@ -182,12 +206,28 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 .and_then(|a| a.transactions().get(&txid).cloned())
         };
 
-        let height = match record_or_persister(in_memory, &self.persister, &txid) {
-            Some(record) if matches!(record.context, TransactionContext::InChainLockedBlock(_)) => {
-                record.height()
-            }
-            Some(_) => None,
-            None => None,
+        let record = record_or_persister(in_memory, &self.persister, &txid).map_err(|e| {
+            PlatformWalletError::AssetLockProofWait(format!(
+                "Persister lookup for tx {} failed: {}",
+                txid, e
+            ))
+        })?;
+        let record = record.ok_or_else(|| {
+            // Both lookups missed. The asset lock is known-tracked
+            // (we validated `tracked_asset_locks.get` above), so this
+            // is a wallet-state mismatch / post-wipe race rather than
+            // a "not chain-locked yet" case. Fast-fail rather than
+            // dispatching to `wait_for_chain_lock` and burning the
+            // full timeout.
+            PlatformWalletError::AssetLockProofWait(format!(
+                "Transaction {} not found in account {} (in-memory or persister)",
+                txid, account_index
+            ))
+        })?;
+        let height = if matches!(record.context, TransactionContext::InChainLockedBlock(_)) {
+            record.height()
+        } else {
+            None
         };
 
         let height = match height {
@@ -264,7 +304,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         .and_then(|a| a.transactions().get(&out_point.txid).cloned())
                 })
             };
-            if let Some(record) = record_or_persister(in_memory, &self.persister, &out_point.txid) {
+            if let Some(record) =
+                record_or_persister_or_log(in_memory, &self.persister, &out_point.txid)
+            {
                 if matches!(record.context, TransactionContext::InChainLockedBlock(_)) {
                     if let Some(h) = record.height() {
                         return Ok(h);
@@ -336,7 +378,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         .and_then(|a| a.transactions().get(&out_point.txid).cloned())
                 })
             };
-            if let Some(record) = record_or_persister(in_memory, &self.persister, &out_point.txid) {
+            if let Some(record) =
+                record_or_persister_or_log(in_memory, &self.persister, &out_point.txid)
+            {
                 match &record.context {
                     TransactionContext::InstantSend(instant_lock) => {
                         return Ok(dpp::prelude::AssetLockProof::Instant(
@@ -506,7 +550,8 @@ mod tests {
         let other = record_with_txid(0xBB);
         let persister = wallet_persister(Arc::new(FakeRecordStore::with_records([other])));
 
-        let resolved = record_or_persister(Some(in_memory.clone()), &persister, &in_memory_txid);
+        let resolved = record_or_persister(Some(in_memory.clone()), &persister, &in_memory_txid)
+            .expect("in-memory hit cannot fail");
         assert_eq!(resolved.map(|r| r.txid), Some(in_memory_txid));
     }
 
@@ -518,19 +563,21 @@ mod tests {
         let stored_txid = stored.txid;
         let persister = wallet_persister(Arc::new(FakeRecordStore::with_records([stored])));
 
-        let resolved = record_or_persister(None, &persister, &stored_txid);
+        let resolved =
+            record_or_persister(None, &persister, &stored_txid).expect("persister succeeded");
         assert_eq!(resolved.map(|r| r.txid), Some(stored_txid));
     }
 
     #[test]
     fn record_or_persister_returns_none_when_neither_has_it() {
-        // Both miss → None; callers handle this as "tx not found locally"
-        // (proof flow returns its own AssetLockProofWait error, poll
-        // loops continue waiting).
+        // Both miss → Ok(None); callers handle this as "tx not found
+        // locally" (proof flow returns its own AssetLockProofWait
+        // error, poll loops continue waiting).
         let unknown_txid = Txid::from([0xDD; 32]);
         let persister = wallet_persister(Arc::new(FakeRecordStore::with_records([])));
 
-        let resolved = record_or_persister(None, &persister, &unknown_txid);
+        let resolved =
+            record_or_persister(None, &persister, &unknown_txid).expect("persister succeeded");
         assert!(resolved.is_none());
     }
 
@@ -544,19 +591,33 @@ mod tests {
         let unknown_txid = Txid::from([0xEE; 32]);
         let persister = wallet_persister(Arc::new(NoPlatformPersistence));
 
-        let resolved = record_or_persister(None, &persister, &unknown_txid);
+        let resolved =
+            record_or_persister(None, &persister, &unknown_txid).expect("persister succeeded");
         assert!(resolved.is_none());
     }
 
     #[test]
-    fn record_or_persister_swallows_backend_errors_as_none() {
-        // A transient backend failure must not turn into a hard error
-        // in the proof flow — the caller's existing `None` handling
-        // (timeout / poll loop / not-found error) still applies.
+    fn record_or_persister_propagates_backend_errors() {
+        // Backend errors surface as `Err` so call sites can choose
+        // their own policy (one-shot recovery logs at error and
+        // degrades; poll loops downgrade to None for one tick via
+        // `record_or_persister_or_log`).
         let unknown_txid = Txid::from([0xFF; 32]);
         let persister = wallet_persister(Arc::new(ErroringStore));
 
         let resolved = record_or_persister(None, &persister, &unknown_txid);
+        assert!(resolved.is_err());
+    }
+
+    #[test]
+    fn record_or_persister_or_log_swallows_backend_errors_as_none() {
+        // The poll-loop variant downgrades errors to `None` (after a
+        // `warn` log) so a transient backend failure on one tick
+        // doesn't abort the whole poll.
+        let unknown_txid = Txid::from([0xFF; 32]);
+        let persister = wallet_persister(Arc::new(ErroringStore));
+
+        let resolved = record_or_persister_or_log(None, &persister, &unknown_txid);
         assert!(resolved.is_none());
     }
 }
