@@ -458,9 +458,36 @@ Ordered to fix bugs first, then easy wins, then long-pole work. Each step gates 
      2 rs-dpp test assertions.
 
 5. **`Identity` family canonical migration** (A6, A7 partly, A8, A9 partly):
-   - Replace `to_json` / `to_json_object` / `to_object` / `from_object` with canonical traits.
-   - Move `from_json_object` binary-field replacement to one-shot `from_legacy_json` helpers.
-   - **Unblocks**: full canonical adoption for Identity-family wasm wrappers.
+   - ✅ DONE in commit `18034d6e70`:
+     - Deleted `IdentityPlatformValueConversionMethodsV0` (entire 1-method
+       trait — its only method `to_cleaned_object` was a default-body
+       `self.to_object()` and the V0 impl was pure delegation after step 4).
+       Files removed: `identity/conversion/platform_value/v0/mod.rs`,
+       `identity/v0/conversion/platform_value.rs`. Outer impl on `Identity`
+       deleted.
+     - Removed `to_cleaned_object` from
+       `IdentityPublicKeyPlatformValueConversionMethodsV0` (trait def + V0
+       impl + outer impl). The trait stays for its `from_object(value,
+       &platform_version)` method, which has legitimate version-dispatch
+       semantics that canonical `ValueConvertible::from_object` doesn't
+       provide.
+     - Migrated `IdentityV0::to_json` / `to_json_object` and
+       `IdentityPublicKeyV0::to_json` / `to_json_object` to use canonical
+       `ValueConvertible::to_object` (was `to_cleaned_object`, now
+       byte-identical after step 4).
+     - Migrated `IdentityPublicKeyWasm::to_object` (wasm-dpp2) similarly.
+   - ⬜ Remaining (deferred, larger scope):
+     - Replace `to_json` / `to_json_object` / `to_object` / `from_object`
+       methods on the *outer* legacy traits
+       (`IdentityJsonConversionMethodsV0`,
+       `IdentityPublicKeyJsonConversionMethodsV0`,
+       remaining `IdentityPublicKeyPlatformValueConversionMethodsV0` surface)
+       with canonical traits everywhere they're called from.
+     - Move `from_json_object` binary-field replacement (uses
+       `replace_at_paths(BINARY_DATA_FIELDS, BinaryBytes)`) to a one-shot
+       `from_legacy_json` helper.
+     - Audit consumers in rs-drive / rs-drive-abci / rs-sdk before
+       deletion.
 
 6. **AssetLockProof tagged-enum fix (C2)**:
    - Pick a tagged-enum representation; fix Serialize/Deserialize symmetry; implement canonical traits manually using the §6 escape-hatch pattern. Becomes the documented exemplar.
