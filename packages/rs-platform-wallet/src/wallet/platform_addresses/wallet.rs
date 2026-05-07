@@ -236,6 +236,83 @@ impl PlatformAddressWallet {
         })
     }
 
+    /// Derive `count` consecutive UNUSED receive addresses, always
+    /// extending past `highest_generated`.
+    ///
+    /// Unlike [`Self::next_unused_receive_address`] (which parks on the
+    /// LOWEST unused index until something marks it used), this accessor
+    /// permanently advances the address pool's `highest_generated`
+    /// watermark on every call, so consecutive invocations on the same
+    /// wallet yield non-overlapping ranges. This is the contract PA-005b
+    /// pins at the `gap_limit` boundary.
+    ///
+    /// **Gap-limit interaction**: an `AddressPool` exposes `gap_limit`
+    /// unused addresses past the highest-used index (or `gap_limit`
+    /// total when nothing is used yet). If `count` would push the unused
+    /// run past that ceiling — i.e. `(highest_generated + count) -
+    /// highest_used > gap_limit` — the call returns
+    /// [`PlatformWalletError::GapLimitExceeded`] without mutating pool
+    /// state. Callers can mark an address used (e.g. by funding it) to
+    /// open more headroom and retry.
+    pub async fn next_unused_receive_addresses(
+        &self,
+        account_key: key_wallet::account::account_collection::PlatformPaymentAccountKey,
+        count: usize,
+    ) -> Result<Vec<PlatformAddress>, PlatformWalletError> {
+        if count == 0 {
+            return Ok(Vec::new());
+        }
+
+        let mut wm = self.wallet_manager.write().await;
+        let (wallet, info) = wm
+            .get_wallet_mut_and_info_mut(&self.wallet_id)
+            .ok_or_else(|| {
+                PlatformWalletError::WalletNotFound(format!(
+                    "Wallet {:?} not found",
+                    hex::encode(self.wallet_id)
+                ))
+            })?;
+
+        let managed_account = info
+            .core_wallet
+            .platform_payment_managed_account_at_index_mut(account_key.account)
+            .ok_or_else(|| {
+                PlatformWalletError::AddressSync(format!(
+                    "No platform payment account at index {}",
+                    account_key.account
+                ))
+            })?;
+
+        let key_source = {
+            let xpub = wallet
+                .accounts
+                .platform_payment_accounts
+                .get(&account_key)
+                .map(|acct| acct.account_xpub)
+                .ok_or_else(|| {
+                    PlatformWalletError::AddressSync(format!(
+                        "No platform payment account key for {:?}",
+                        account_key
+                    ))
+                })?;
+            key_wallet::KeySource::Public(xpub)
+        };
+
+        let addresses =
+            derive_fresh_unused_addresses(&mut managed_account.addresses, &key_source, count)?;
+
+        addresses
+            .into_iter()
+            .map(|address| {
+                PlatformAddress::try_from(address).map_err(|e| {
+                    PlatformWalletError::AddressSync(format!(
+                        "Failed to convert to PlatformAddress: {e}"
+                    ))
+                })
+            })
+            .collect()
+    }
+
     /// Get all platform addresses with their cached balances.
     ///
     /// Returns the balances from the last call to [`sync_balances`](Self::sync_balances),
@@ -293,5 +370,189 @@ impl std::fmt::Debug for PlatformAddressWallet {
         f.debug_struct("PlatformAddressWallet")
             .field("network", &self.sdk.network)
             .finish()
+    }
+}
+
+/// Allocate `count` fresh, unused addresses past the pool's
+/// `highest_generated` watermark.
+///
+/// Unlike [`AddressPool::next_unused_multiple`] this never recycles
+/// already-issued unused indices — every returned address is a freshly
+/// derived index. The operation is gated by the pool's gap-limit:
+/// requesting more than the current headroom returns
+/// [`PlatformWalletError::GapLimitExceeded`] without mutating pool
+/// state. Caller is expected to hold an exclusive (`&mut`) borrow of
+/// the pool.
+fn derive_fresh_unused_addresses(
+    pool: &mut key_wallet::AddressPool,
+    key_source: &key_wallet::KeySource,
+    count: usize,
+) -> Result<Vec<key_wallet::Address>, PlatformWalletError> {
+    if count == 0 {
+        return Ok(Vec::new());
+    }
+
+    // Headroom = (highest_used + gap_limit) - highest_generated, where
+    // missing watermarks fall back to the empty-pool case (highest_used
+    // absent ⇒ ceiling at gap_limit-1; highest_generated absent ⇒
+    // start at index 0). All arithmetic stays in u32: gap_limit is u32
+    // and the watermarks are u32.
+    let gap_limit = pool.gap_limit;
+    let ceiling: u32 = match pool.highest_used {
+        None => gap_limit.saturating_sub(1),
+        Some(highest) => highest.saturating_add(gap_limit),
+    };
+    let next_index: u32 = pool
+        .highest_generated
+        .map(|h| h.saturating_add(1))
+        .unwrap_or(0);
+    let available: u32 = ceiling.saturating_sub(next_index).saturating_add(1);
+    let count_u32 = u32::try_from(count).unwrap_or(u32::MAX);
+    if count_u32 > available {
+        return Err(PlatformWalletError::GapLimitExceeded {
+            requested: count,
+            available,
+            highest_used: pool.highest_used,
+            highest_generated: pool.highest_generated,
+            gap_limit,
+        });
+    }
+
+    pool.generate_addresses(count_u32, key_source, true)
+        .map_err(|e| PlatformWalletError::AddressSync(e.to_string()))
+}
+
+#[cfg(test)]
+mod next_unused_receive_addresses_tests {
+    //! Unit tests for the pool-level helper backing
+    //! [`PlatformAddressWallet::next_unused_receive_addresses`].
+    //! Driving the wallet entry point directly requires a full
+    //! `WalletManager + Sdk` fixture, which is heavyweight and
+    //! exercised in e2e (PA-005b). The helper itself is the meaningful
+    //! contract — the wallet method is a thin lock-and-lookup wrapper.
+    use super::derive_fresh_unused_addresses;
+    use crate::error::PlatformWalletError;
+    use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey};
+    use key_wallet::dashcore::secp256k1::Secp256k1;
+    use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType};
+    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::{KeySource, Network};
+
+    fn test_key_source() -> KeySource {
+        let mnemonic = Mnemonic::from_phrase(
+            "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+            Language::English,
+        )
+        .expect("mnemonic parses");
+        let seed = mnemonic.to_seed("");
+        let master = ExtendedPrivKey::new_master(Network::Testnet, &seed).expect("master xprv");
+        let secp = Secp256k1::new();
+        let path = DerivationPath::from(vec![
+            ChildNumber::from_hardened_idx(44).unwrap(),
+            ChildNumber::from_hardened_idx(1).unwrap(),
+            ChildNumber::from_hardened_idx(0).unwrap(),
+        ]);
+        let account_key = master
+            .derive_priv(&secp, &path)
+            .expect("account derivation");
+        KeySource::Private(account_key)
+    }
+
+    fn empty_pool(gap_limit: u32) -> AddressPool {
+        let base_path = DerivationPath::from(vec![ChildNumber::from_normal_idx(0).unwrap()]);
+        AddressPool::new_without_generation(
+            base_path,
+            AddressPoolType::External,
+            gap_limit,
+            Network::Testnet,
+        )
+    }
+
+    #[test]
+    fn returns_count_addresses_all_distinct() {
+        let mut pool = empty_pool(20);
+        let key_source = test_key_source();
+        let addrs = derive_fresh_unused_addresses(&mut pool, &key_source, 19)
+            .expect("19 ≤ gap_limit, must succeed");
+        assert_eq!(addrs.len(), 19);
+        let unique: std::collections::HashSet<_> = addrs.iter().collect();
+        assert_eq!(unique.len(), 19, "all 19 addresses must be distinct");
+        assert_eq!(pool.highest_generated, Some(18));
+    }
+
+    #[test]
+    fn consecutive_calls_yield_non_overlapping_ranges() {
+        let mut pool = empty_pool(20);
+        let key_source = test_key_source();
+        let first = derive_fresh_unused_addresses(&mut pool, &key_source, 5)
+            .expect("first batch fits in gap_limit");
+        // After 5 generated and none used, headroom is 20 - 5 = 15;
+        // request another 5 to lock the non-overlap contract.
+        let second = derive_fresh_unused_addresses(&mut pool, &key_source, 5)
+            .expect("second batch fits in remaining headroom");
+        assert_eq!(first.len(), 5);
+        assert_eq!(second.len(), 5);
+        let intersection: std::collections::HashSet<_> = first.iter().collect();
+        assert!(
+            second.iter().all(|a| !intersection.contains(a)),
+            "consecutive calls must not return any overlapping address"
+        );
+        assert_eq!(pool.highest_generated, Some(9));
+    }
+
+    #[test]
+    fn does_not_exceed_gap_limit_cap() {
+        let gap_limit = 20;
+        let mut pool = empty_pool(gap_limit);
+        let key_source = test_key_source();
+        // No used indices ⇒ ceiling at index gap_limit-1=19, headroom = gap_limit = 20.
+        // Requesting 21 must error rather than over-extend.
+        let err = derive_fresh_unused_addresses(&mut pool, &key_source, 21).unwrap_err();
+        match err {
+            PlatformWalletError::GapLimitExceeded {
+                requested,
+                available,
+                gap_limit: gl,
+                ..
+            } => {
+                assert_eq!(requested, 21);
+                assert_eq!(available, 20);
+                assert_eq!(gl, gap_limit);
+            }
+            other => panic!("expected GapLimitExceeded, got {:?}", other),
+        }
+        // Pool must remain untouched after a rejected request.
+        assert_eq!(pool.highest_generated, None);
+    }
+
+    #[test]
+    fn count_zero_is_no_op() {
+        let mut pool = empty_pool(20);
+        let key_source = test_key_source();
+        let addrs = derive_fresh_unused_addresses(&mut pool, &key_source, 0)
+            .expect("count = 0 is a no-op success");
+        assert!(addrs.is_empty());
+        assert_eq!(pool.highest_generated, None);
+    }
+
+    #[test]
+    fn marking_used_extends_headroom() {
+        // Once an index is marked used, the gap-limit ceiling shifts
+        // up by `gap_limit`, so a subsequent request that would have
+        // exceeded the original cap can succeed.
+        let gap_limit = 20;
+        let mut pool = empty_pool(gap_limit);
+        let key_source = test_key_source();
+        let first = derive_fresh_unused_addresses(&mut pool, &key_source, gap_limit as usize)
+            .expect("first batch fits exactly in initial gap_limit window");
+        assert_eq!(first.len(), gap_limit as usize);
+        // Mark the lowest one used to advance highest_used to 0; new
+        // ceiling = 0 + gap_limit = 20, but highest_generated is 19,
+        // so headroom = 1 fresh address.
+        pool.mark_used(&first[0]);
+        let second =
+            derive_fresh_unused_addresses(&mut pool, &key_source, 1).expect("one more fits");
+        assert_eq!(second.len(), 1);
+        assert!(!first.contains(&second[0]));
     }
 }
