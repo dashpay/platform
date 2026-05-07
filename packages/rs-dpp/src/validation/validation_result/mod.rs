@@ -1,6 +1,10 @@
 use crate::errors::consensus::ConsensusError;
+use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use std::fmt::Debug;
+
+mod v0;
+mod v1;
 
 #[macro_export]
 macro_rules! check_validation_result_with_data {
@@ -35,133 +39,62 @@ impl<T: Clone, E: Debug> Default for ValidationResult<T, E> {
 
 impl<TData: Clone, E: Debug> ValidationResult<Vec<TData>, E> {
     /// Aggregate a list of `ValidationResult<Vec<TData>, E>` into a single
-    /// result. Returns `data: None` when no input contributed any data
-    /// (i.e. every input was either `data: None` or `data: Some(empty_vec)`),
-    /// and `data: Some(merged_vec)` when at least one input contributed
-    /// non-empty data.
+    /// result. Dispatches to the version selected by `platform_version`:
     ///
-    /// This honors the invariant `data.is_none() ⇔ no work done`, which
-    /// downstream code (e.g. `process_validation_result_v0:241`) relies on
-    /// to choose between `PaidConsensusError` and `UnpaidConsensusError`.
+    /// - **v0** (`PROTOCOL_VERSION_11` and below): always returns
+    ///   `data: Some(Vec<...>)`, including `Some(empty_vec)` when no input
+    ///   contributed any data. Preserved for chain reproducibility.
+    /// - **v1** (`PROTOCOL_VERSION_12`+): returns `data: None` when no input
+    ///   contributed any data. Honors the invariant
+    ///   `data.is_none() ⇔ no work done`, which downstream code (e.g.
+    ///   `process_validation_result_v0:241`) relies on to choose between
+    ///   `PaidConsensusError` and `UnpaidConsensusError`.
     ///
-    /// For the legacy variant that always returns `data: Some(...)` even
-    /// when no input contributed data (preserved for `PROTOCOL_VERSION_11`
-    /// chain reproducibility), see [`flatten_or_empty_vec`].
-    ///
-    /// [`flatten_or_empty_vec`]: ValidationResult::flatten_or_empty_vec
+    /// See issue #2867 for context on the v0 → v1 change.
     pub fn flatten<I: IntoIterator<Item = ValidationResult<Vec<TData>, E>>>(
         items: I,
-    ) -> ValidationResult<Vec<TData>, E> {
-        let mut aggregate_errors = vec![];
-        let mut aggregate_data = vec![];
-        items.into_iter().for_each(|single_validation_result| {
-            let ValidationResult { mut errors, data } = single_validation_result;
-            aggregate_errors.append(&mut errors);
-            if let Some(mut data) = data {
-                aggregate_data.append(&mut data);
-            }
-        });
-        if aggregate_data.is_empty() {
-            ValidationResult::new_with_errors(aggregate_errors)
-        } else {
-            ValidationResult::new_with_data_and_errors(aggregate_data, aggregate_errors)
+        platform_version: &PlatformVersion,
+    ) -> Result<ValidationResult<Vec<TData>, E>, ProtocolError> {
+        match platform_version.dpp.validation.validation_result.flatten {
+            0 => Ok(v0::flatten(items)),
+            1 => Ok(v1::flatten(items)),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "ValidationResult::flatten".to_string(),
+                known_versions: vec![0, 1],
+                received: version,
+            }),
         }
-    }
-
-    /// Legacy variant of [`flatten`] that always returns `data: Some(Vec<...>)` —
-    /// including `Some(empty_vec)` when no input contributed any data.
-    ///
-    /// Preserved for `PROTOCOL_VERSION_11` and below: the
-    /// `Some(empty_vec)`-on-no-data behavior is part of the existing chain
-    /// history, and changing it would be a consensus-breaking change for
-    /// already-finalized blocks. New code should prefer [`flatten`], which
-    /// honors `data.is_none() ⇔ no work done`.
-    ///
-    /// See issue #2867 for context.
-    ///
-    /// [`flatten`]: ValidationResult::flatten
-    #[deprecated(
-        since = "3.1.0",
-        note = "use `flatten` instead unless you specifically need PROTOCOL_VERSION_11 chain reproducibility (only the v0 batch transformer should need this) — issue #2867"
-    )]
-    pub fn flatten_or_empty_vec<I: IntoIterator<Item = ValidationResult<Vec<TData>, E>>>(
-        items: I,
-    ) -> ValidationResult<Vec<TData>, E> {
-        let mut aggregate_errors = vec![];
-        let mut aggregate_data = vec![];
-        items.into_iter().for_each(|single_validation_result| {
-            let ValidationResult { mut errors, data } = single_validation_result;
-            aggregate_errors.append(&mut errors);
-            if let Some(mut data) = data {
-                aggregate_data.append(&mut data);
-            }
-        });
-        ValidationResult::new_with_data_and_errors(aggregate_data, aggregate_errors)
     }
 }
 
 impl<TData: Clone, E: Debug> ValidationResult<TData, E> {
     /// Aggregate a list of `ValidationResult<TData, E>` into a
-    /// `ValidationResult<Vec<TData>, E>`. Returns `data: None` when no
-    /// input had `data: Some(_)`, and `data: Some(Vec<TData>)` when at
-    /// least one input contributed data.
+    /// `ValidationResult<Vec<TData>, E>`. Dispatches to the version selected
+    /// by `platform_version`:
     ///
-    /// This honors the invariant `data.is_none() ⇔ no work done` — see
-    /// [`flatten`] for context.
+    /// - **v0** (`PROTOCOL_VERSION_11` and below): always returns
+    ///   `data: Some(Vec<...>)`, including `Some(empty_vec)` when no input
+    ///   contributed any data. Preserved for chain reproducibility.
+    /// - **v1** (`PROTOCOL_VERSION_12`+): returns `data: None` when no input
+    ///   contributed any data. See [`flatten`] for the invariant this
+    ///   restores.
     ///
-    /// For the legacy variant that always returns `data: Some(...)` even
-    /// when no input contributed data, see [`merge_many_or_empty_vec`].
+    /// See issue #2867 for context on the v0 → v1 change.
     ///
     /// [`flatten`]: ValidationResult::flatten
-    /// [`merge_many_or_empty_vec`]: ValidationResult::merge_many_or_empty_vec
     pub fn merge_many<I: IntoIterator<Item = ValidationResult<TData, E>>>(
         items: I,
-    ) -> ValidationResult<Vec<TData>, E> {
-        let mut aggregate_errors = vec![];
-        let mut aggregate_data = vec![];
-        items.into_iter().for_each(|single_validation_result| {
-            let ValidationResult { mut errors, data } = single_validation_result;
-            aggregate_errors.append(&mut errors);
-            if let Some(data) = data {
-                aggregate_data.push(data);
-            }
-        });
-        if aggregate_data.is_empty() {
-            ValidationResult::new_with_errors(aggregate_errors)
-        } else {
-            ValidationResult::new_with_data_and_errors(aggregate_data, aggregate_errors)
+        platform_version: &PlatformVersion,
+    ) -> Result<ValidationResult<Vec<TData>, E>, ProtocolError> {
+        match platform_version.dpp.validation.validation_result.merge_many {
+            0 => Ok(v0::merge_many(items)),
+            1 => Ok(v1::merge_many(items)),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "ValidationResult::merge_many".to_string(),
+                known_versions: vec![0, 1],
+                received: version,
+            }),
         }
-    }
-
-    /// Legacy variant of [`merge_many`] that always returns
-    /// `data: Some(Vec<...>)` — including `Some(empty_vec)` when no input
-    /// had `data: Some(_)`.
-    ///
-    /// Preserved for `PROTOCOL_VERSION_11` and below: the
-    /// `Some(empty_vec)`-on-no-data behavior is part of the existing chain
-    /// history, and changing it would be a consensus-breaking change.
-    /// New code should prefer [`merge_many`].
-    ///
-    /// See issue #2867 for context.
-    ///
-    /// [`merge_many`]: ValidationResult::merge_many
-    #[deprecated(
-        since = "3.1.0",
-        note = "use `merge_many` instead unless you specifically need PROTOCOL_VERSION_11 chain reproducibility (only the v0 batch transformer should need this) — issue #2867"
-    )]
-    pub fn merge_many_or_empty_vec<I: IntoIterator<Item = ValidationResult<TData, E>>>(
-        items: I,
-    ) -> ValidationResult<Vec<TData>, E> {
-        let mut aggregate_errors = vec![];
-        let mut aggregate_data = vec![];
-        items.into_iter().for_each(|single_validation_result| {
-            let ValidationResult { mut errors, data } = single_validation_result;
-            aggregate_errors.append(&mut errors);
-            if let Some(data) = data {
-                aggregate_data.push(data);
-            }
-        });
-        ValidationResult::new_with_data_and_errors(aggregate_data, aggregate_errors)
     }
 }
 
@@ -637,31 +570,31 @@ mod tests {
         assert_eq!(result.errors, vec!["bad".to_string()]);
     }
 
-    // -- flatten() (canonical, honors data.is_none() ⇔ no work done) --
+    // -- v1::flatten() (canonical, honors data.is_none() ⇔ no work done) --
 
     #[test]
-    fn test_flatten_merges_non_empty_data() {
+    fn test_v1_flatten_merges_non_empty_data() {
         let r1: ValidationResult<Vec<i32>, String> = ValidationResult::new_with_data(vec![1, 2]);
         let r2: ValidationResult<Vec<i32>, String> =
             ValidationResult::new_with_data_and_errors(vec![3], vec!["e".to_string()]);
         let r3: ValidationResult<Vec<i32>, String> =
             ValidationResult::new_with_error("e2".to_string());
 
-        let flat = ValidationResult::flatten(vec![r1, r2, r3]);
+        let flat = v1::flatten(vec![r1, r2, r3]);
         assert_eq!(flat.data, Some(vec![1, 2, 3]));
         assert_eq!(flat.errors, vec!["e".to_string(), "e2".to_string()]);
     }
 
     #[test]
-    fn test_flatten_empty_input_returns_none_data() {
+    fn test_v1_flatten_empty_input_returns_none_data() {
         let flat: ValidationResult<Vec<i32>, String> =
-            ValidationResult::flatten(std::iter::empty());
+            v1::flatten(std::iter::empty::<ValidationResult<Vec<i32>, String>>());
         assert_eq!(flat.data, None);
         assert!(flat.errors.is_empty());
     }
 
     #[test]
-    fn test_flatten_all_inputs_no_data_returns_none() {
+    fn test_v1_flatten_all_inputs_no_data_returns_none() {
         // When no input contributed data, return data:None — not
         // Some(empty_vec). Downstream code
         // (process_validation_result_v0:241) keys on data.is_none() to
@@ -671,152 +604,183 @@ mod tests {
         let r2: ValidationResult<Vec<i32>, String> =
             ValidationResult::new_with_error("e2".to_string());
 
-        let flat = ValidationResult::flatten(vec![r1, r2]);
+        let flat = v1::flatten(vec![r1, r2]);
         assert!(flat.data.is_none());
         assert_eq!(flat.errors, vec!["e1".to_string(), "e2".to_string()]);
     }
 
     #[test]
-    fn test_flatten_some_empty_some_non_empty_returns_some() {
+    fn test_v1_flatten_some_empty_some_non_empty_returns_some() {
         // Mixed input: one had data:Some(empty_vec), another had
         // Some(non_empty). The aggregate is non-empty → data:Some(...).
         let r1: ValidationResult<Vec<i32>, String> = ValidationResult::new_with_data(vec![]);
         let r2: ValidationResult<Vec<i32>, String> = ValidationResult::new_with_data(vec![42]);
 
-        let flat = ValidationResult::flatten(vec![r1, r2]);
+        let flat = v1::flatten(vec![r1, r2]);
         assert_eq!(flat.data, Some(vec![42]));
         assert!(flat.errors.is_empty());
     }
 
     #[test]
-    fn test_flatten_all_some_empty_returns_none() {
+    fn test_v1_flatten_all_some_empty_returns_none() {
         // All inputs had data:Some(empty_vec). The aggregate Vec is
         // empty → data:None.
         let r1: ValidationResult<Vec<i32>, String> = ValidationResult::new_with_data(vec![]);
         let r2: ValidationResult<Vec<i32>, String> = ValidationResult::new_with_data(vec![]);
 
-        let flat = ValidationResult::flatten(vec![r1, r2]);
+        let flat = v1::flatten(vec![r1, r2]);
         assert!(flat.data.is_none());
         assert!(flat.errors.is_empty());
     }
 
-    // -- merge_many() (canonical) --
+    // -- v1::merge_many() (canonical) --
 
     #[test]
-    fn test_merge_many_collects_non_empty_data() {
+    fn test_v1_merge_many_collects_non_empty_data() {
         let r1: ValidationResult<i32, String> = ValidationResult::new_with_data(1);
         let r2: ValidationResult<i32, String> = ValidationResult::new_with_data(2);
         let r3: ValidationResult<i32, String> = ValidationResult::new_with_error("e".to_string());
 
-        let merged = ValidationResult::merge_many(vec![r1, r2, r3]);
+        let merged = v1::merge_many(vec![r1, r2, r3]);
         assert_eq!(merged.data, Some(vec![1, 2]));
         assert_eq!(merged.errors, vec!["e".to_string()]);
     }
 
     #[test]
-    fn test_merge_many_empty_input_returns_none_data() {
+    fn test_v1_merge_many_empty_input_returns_none_data() {
         let merged: ValidationResult<Vec<i32>, String> =
-            ValidationResult::merge_many(std::iter::empty::<ValidationResult<i32, String>>());
+            v1::merge_many(std::iter::empty::<ValidationResult<i32, String>>());
         assert!(merged.data.is_none());
         assert!(merged.errors.is_empty());
     }
 
     #[test]
-    fn test_merge_many_all_inputs_no_data_returns_none() {
+    fn test_v1_merge_many_all_inputs_no_data_returns_none() {
         let r1: ValidationResult<i32, String> = ValidationResult::new_with_error("e1".to_string());
         let r2: ValidationResult<i32, String> = ValidationResult::new_with_error("e2".to_string());
 
-        let merged = ValidationResult::merge_many(vec![r1, r2]);
+        let merged = v1::merge_many(vec![r1, r2]);
         assert!(merged.data.is_none());
         assert_eq!(merged.errors, vec!["e1".to_string(), "e2".to_string()]);
     }
 
     #[test]
-    fn test_merge_many_some_data_returns_some() {
+    fn test_v1_merge_many_some_data_returns_some() {
         let r1: ValidationResult<i32, String> = ValidationResult::new_with_error("e1".to_string());
         let r2: ValidationResult<i32, String> = ValidationResult::new_with_data(7);
 
-        let merged = ValidationResult::merge_many(vec![r1, r2]);
+        let merged = v1::merge_many(vec![r1, r2]);
         assert_eq!(merged.data, Some(vec![7]));
         assert_eq!(merged.errors, vec!["e1".to_string()]);
     }
 
-    // -- flatten_or_empty_vec() / merge_many_or_empty_vec() --
+    // -- v0::flatten() / v0::merge_many() --
     // These pin the legacy `Some(empty_vec)`-on-no-data behavior preserved
-    // for PROTOCOL_VERSION_11 and below. Both methods are `#[deprecated]`
-    // to steer new code away from them; we suppress the warnings on the
-    // tests that intentionally exercise them.
+    // for PROTOCOL_VERSION_11 and below.
 
     #[test]
-    #[allow(deprecated)]
-    fn test_flatten_or_empty_vec_merges_data_and_errors() {
+    fn test_v0_flatten_merges_data_and_errors() {
         let r1: ValidationResult<Vec<i32>, String> = ValidationResult::new_with_data(vec![1, 2]);
         let r2: ValidationResult<Vec<i32>, String> =
             ValidationResult::new_with_data_and_errors(vec![3], vec!["e".to_string()]);
         let r3: ValidationResult<Vec<i32>, String> =
             ValidationResult::new_with_error("e2".to_string());
 
-        let flat = ValidationResult::flatten_or_empty_vec(vec![r1, r2, r3]);
+        let flat = v0::flatten(vec![r1, r2, r3]);
         assert_eq!(flat.data, Some(vec![1, 2, 3]));
         assert_eq!(flat.errors, vec!["e".to_string(), "e2".to_string()]);
     }
 
     #[test]
-    #[allow(deprecated)]
-    fn test_flatten_or_empty_vec_empty_input_returns_some_empty() {
+    fn test_v0_flatten_empty_input_returns_some_empty() {
         let flat: ValidationResult<Vec<i32>, String> =
-            ValidationResult::flatten_or_empty_vec(std::iter::empty());
+            v0::flatten(std::iter::empty::<ValidationResult<Vec<i32>, String>>());
         // Legacy v11 behavior: Some(empty_vec), not None.
         assert_eq!(flat.data, Some(vec![]));
         assert!(flat.errors.is_empty());
     }
 
     #[test]
-    #[allow(deprecated)]
-    fn test_flatten_or_empty_vec_all_inputs_no_data_returns_some_empty() {
+    fn test_v0_flatten_all_inputs_no_data_returns_some_empty() {
         let r1: ValidationResult<Vec<i32>, String> =
             ValidationResult::new_with_error("e1".to_string());
         let r2: ValidationResult<Vec<i32>, String> =
             ValidationResult::new_with_error("e2".to_string());
 
-        let flat = ValidationResult::flatten_or_empty_vec(vec![r1, r2]);
+        let flat = v0::flatten(vec![r1, r2]);
         assert_eq!(flat.data, Some(vec![]));
         assert_eq!(flat.errors, vec!["e1".to_string(), "e2".to_string()]);
     }
 
     #[test]
-    #[allow(deprecated)]
-    fn test_merge_many_or_empty_vec_collects_data_into_vec() {
+    fn test_v0_merge_many_collects_data_into_vec() {
         let r1: ValidationResult<i32, String> = ValidationResult::new_with_data(1);
         let r2: ValidationResult<i32, String> = ValidationResult::new_with_data(2);
         let r3: ValidationResult<i32, String> = ValidationResult::new_with_error("e".to_string());
 
-        let merged = ValidationResult::merge_many_or_empty_vec(vec![r1, r2, r3]);
+        let merged = v0::merge_many(vec![r1, r2, r3]);
         assert_eq!(merged.data, Some(vec![1, 2]));
         assert_eq!(merged.errors, vec!["e".to_string()]);
     }
 
     #[test]
-    #[allow(deprecated)]
-    fn test_merge_many_or_empty_vec_empty_input_returns_some_empty() {
+    fn test_v0_merge_many_empty_input_returns_some_empty() {
         let merged: ValidationResult<Vec<i32>, String> =
-            ValidationResult::merge_many_or_empty_vec(std::iter::empty::<
-                ValidationResult<i32, String>,
-            >());
+            v0::merge_many(std::iter::empty::<ValidationResult<i32, String>>());
         // Legacy v11 behavior: Some(empty_vec), not None.
         assert_eq!(merged.data, Some(vec![]));
         assert!(merged.errors.is_empty());
     }
 
     #[test]
-    #[allow(deprecated)]
-    fn test_merge_many_or_empty_vec_all_inputs_no_data_returns_some_empty() {
+    fn test_v0_merge_many_all_inputs_no_data_returns_some_empty() {
         let r1: ValidationResult<i32, String> = ValidationResult::new_with_error("e1".to_string());
         let r2: ValidationResult<i32, String> = ValidationResult::new_with_error("e2".to_string());
 
-        let merged = ValidationResult::merge_many_or_empty_vec(vec![r1, r2]);
+        let merged = v0::merge_many(vec![r1, r2]);
         assert_eq!(merged.data, Some(vec![]));
         assert_eq!(merged.errors, vec!["e1".to_string(), "e2".to_string()]);
+    }
+
+    // -- facade dispatch (flatten / merge_many take platform_version) --
+    //
+    // These verify the version field on PlatformVersion correctly steers the
+    // facade to v0 vs v1 semantics.
+
+    #[test]
+    fn test_facade_flatten_v0_returns_some_empty_on_no_data() {
+        // PROTOCOL_VERSION_11 maps to dpp.validation.validation_result.flatten = 0
+        let pv = PlatformVersion::get(11).expect("v11 exists");
+        let r1: ValidationResult<Vec<i32>, ConsensusError> =
+            ValidationResult::new_with_errors(vec![]);
+        let flat = ValidationResult::flatten(vec![r1], pv).expect("dispatch ok");
+        assert_eq!(flat.data, Some(vec![]));
+    }
+
+    #[test]
+    fn test_facade_flatten_v1_returns_none_on_no_data() {
+        // PROTOCOL_VERSION_12 maps to dpp.validation.validation_result.flatten = 1
+        let pv = PlatformVersion::get(12).expect("v12 exists");
+        let r1: ValidationResult<Vec<i32>, ConsensusError> =
+            ValidationResult::new_with_errors(vec![]);
+        let flat = ValidationResult::flatten(vec![r1], pv).expect("dispatch ok");
+        assert!(flat.data.is_none());
+    }
+
+    #[test]
+    fn test_facade_merge_many_v0_returns_some_empty_on_no_data() {
+        let pv = PlatformVersion::get(11).expect("v11 exists");
+        let r1: ValidationResult<i32, ConsensusError> = ValidationResult::new_with_errors(vec![]);
+        let merged = ValidationResult::merge_many(vec![r1], pv).expect("dispatch ok");
+        assert_eq!(merged.data, Some(vec![]));
+    }
+
+    #[test]
+    fn test_facade_merge_many_v1_returns_none_on_no_data() {
+        let pv = PlatformVersion::get(12).expect("v12 exists");
+        let r1: ValidationResult<i32, ConsensusError> = ValidationResult::new_with_errors(vec![]);
+        let merged = ValidationResult::merge_many(vec![r1], pv).expect("dispatch ok");
+        assert!(merged.data.is_none());
     }
 
     // -- merge_many_errors() --

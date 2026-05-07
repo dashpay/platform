@@ -10,13 +10,15 @@ use crate::version::drive_abci_versions::drive_abci_validation_versions::{
 // v1 adds config min_version enforcement: since protocol version 12, V0 config is no longer
 // accepted because it lacks sized_integer_types support.
 //
-// Bump batch_state_transition.transform_into_action to v1 (issue #2867):
-// v1 of the batch transformer uses the canonical `flatten` / `merge_many`
-// aggregators which return `data: None` when no input contributed —
-// closing the "validating state transition for free" gap where an
-// all-failed Documents Batch was being recorded as PaidConsensusError
-// with an empty action and the same exact bytes could be replayed
-// across blocks. v0 stays for PROTOCOL_VERSION_11 chain reproducibility.
+// Issue #2867 ("validating state transition for free") is fixed at the
+// aggregator layer instead — see
+// `dpp_versions::dpp_validation_versions::v3::DPP_VALIDATION_VERSIONS_V3`,
+// which bumps `validation_result.flatten` and `merge_many` from v0 to v1
+// for PROTOCOL_VERSION_12. This keeps the batch transformer single-version
+// while changing the underlying aggregator semantics so empty-action
+// failure paths become UnpaidConsensusError (tx removed from block by
+// prepare_proposal) instead of being synthesised into a paid empty
+// BatchTransitionAction.
 pub const DRIVE_ABCI_VALIDATION_VERSIONS_V8: DriveAbciValidationVersions =
     DriveAbciValidationVersions {
         state_transitions: DriveAbciStateTransitionValidationVersions {
@@ -118,14 +120,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V8: DriveAbciValidationVersions =
                 advanced_structure: 0,
                 state: 0,
                 revision: 0,
-                // Issue #2867: route to v1 of the transformer so empty-action
-                // failure paths become UnpaidConsensusError (tx removed from
-                // block by prepare_proposal) instead of being synthesised
-                // into a paid empty BatchTransitionAction by the legacy
-                // `_or_empty_vec` aggregators. v0 stays for
-                // PROTOCOL_VERSION_11 so mainnet history is preserved
-                // bit-for-bit.
-                transform_into_action: 1,
+                transform_into_action: 0,
                 data_triggers: DriveAbciValidationDataTriggerAndBindingVersions {
                     bindings: 0,
                     triggers: DriveAbciValidationDataTriggerVersions {
