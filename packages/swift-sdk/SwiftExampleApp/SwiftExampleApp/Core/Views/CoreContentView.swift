@@ -19,14 +19,38 @@ struct CoreContentView: View {
     /// (which only reflects the currently-configured wallet).
     @Query private var platformAddresses: [PersistentPlatformAddress]
 
-    /// Aggregate platform credit balance across every wallet on disk.
-    private var aggregatePlatformBalance: UInt64 {
-        platformAddresses.reduce(0) { $0 + $1.balance }
+    /// All persisted wallets — used as the network-scoping pivot for
+    /// `platformAddresses`. `PersistentPlatformAddress` doesn't carry
+    /// a `networkRaw` column itself; the canonical join is through
+    /// `walletId` to the parent `PersistentWallet.networkRaw`. We
+    /// build a `Set<Data>` for the active network and filter the
+    /// address aggregate against it so switching to local doesn't
+    /// keep showing testnet sums.
+    @Query private var allWallets: [PersistentWallet]
+
+    private var walletIdsOnNetwork: Set<Data> {
+        let raw = platformState.currentNetwork.rawValue
+        return Set(allWallets.lazy
+            .filter { $0.networkRaw == raw }
+            .map(\.walletId))
     }
 
-    /// Addresses with a non-zero balance across every wallet.
+    /// Platform addresses scoped to the active network.
+    private var scopedPlatformAddresses: [PersistentPlatformAddress] {
+        let ids = walletIdsOnNetwork
+        return platformAddresses.filter { ids.contains($0.walletId) }
+    }
+
+    /// Aggregate platform credit balance across every wallet on the
+    /// active network.
+    private var aggregatePlatformBalance: UInt64 {
+        scopedPlatformAddresses.reduce(0) { $0 + $1.balance }
+    }
+
+    /// Addresses with a non-zero balance across every wallet on the
+    /// active network.
     private var aggregateActiveAddressCount: Int {
-        platformAddresses.reduce(0) { $1.balance > 0 ? $0 + 1 : $0 }
+        scopedPlatformAddresses.reduce(0) { $1.balance > 0 ? $0 + 1 : $0 }
     }
 
     // Display helpers
@@ -460,24 +484,55 @@ var body: some View {
                 .appendingPathComponent(platformState.currentNetwork.networkName)
             try? FileManager.default.createDirectory(at: dataDirURL, withIntermediateDirectories: true)
 
-            let useLocalCore = UserDefaults.standard.bool(forKey: "useLocalhostCore")
-            let peers: [String] = useLocalCore
-                ? ((UserDefaults.standard.string(forKey: "localCorePeers") ?? "127.0.0.1")
-                    .split(separator: ",")
-                    .map { $0.trimmingCharacters(in: .whitespaces) })
-                : []
+            let peers = spvPeerOverride()
+            let restrictToConfiguredPeers = !peers.isEmpty
 
             let config = PlatformSpvStartConfig(
                 dataDir: dataDirURL.path,
                 network: platformState.currentNetwork,
                 peers: peers,
-                restrictToConfiguredPeers: useLocalCore,
+                restrictToConfiguredPeers: restrictToConfiguredPeers,
                 masternodeSyncEnabled: masternodesEnabled
             )
             try walletManager.startSpv(config: config)
         } catch {
             print("❌ Sync failed: \(error)")
         }
+    }
+
+    /// Resolve the SPV peer override for the current network /
+    /// docker combo.
+    ///
+    /// Three modes coexist on top of the same `useLocalhostCore` /
+    /// `localCorePeers` `UserDefaults` keys, which used to bleed into
+    /// each other when the user reconfigured between sessions:
+    ///
+    ///   1. **regtest + docker** — connect to dashmate's `local_seed`
+    ///      Core P2P port. The default 3-node setup maps the seed to
+    ///      `127.0.0.1:20301` (`getLocalConfigFactory.js` base 20001
+    ///      + `setupLocalPresetTaskFactory.js` `+ i*100` with seed
+    ///      at index = `nodeCount`, typically 3). Anything sitting
+    ///      in `localCorePeers` from a previous testnet / mainnet
+    ///      "custom peers" session is ignored — the UI doesn't show
+    ///      that knob on regtest+docker so a stale value is always
+    ///      bleed-through, never user intent.
+    ///   2. **non-regtest + custom peers** — honor `localCorePeers`
+    ///      verbatim. The OptionsView "Use Custom SPV Peers" toggle
+    ///      seeds and edits this string.
+    ///   3. **everything else** — empty list, FFI uses the network's
+    ///      built-in seed nodes.
+    private func spvPeerOverride() -> [String] {
+        let useDocker = UserDefaults.standard.bool(forKey: "useDockerSetup")
+        if platformState.currentNetwork == .regtest && useDocker {
+            return ["127.0.0.1:20301"]
+        }
+        let useLocalCore = UserDefaults.standard.bool(forKey: "useLocalhostCore")
+        guard useLocalCore else { return [] }
+        let raw = UserDefaults.standard.string(forKey: "localCorePeers") ?? ""
+        return raw
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
     }
 
     private func pauseSync() {

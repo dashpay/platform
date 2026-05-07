@@ -74,6 +74,24 @@ BIP-39 mnemonic generator already used by `framework/wallet_factory.rs`. Cases
 that exercise non-ASCII content (e.g. Unicode display names) do so on
 downstream fields, not on the seed.
 
+### 1.3 Known issues / operator notes
+
+**Known issue: dash-spv mn-list QRInfo stall.** When the workdir's
+`masternodestate.json` cache is missing (first run or after wipe), and
+the test starts near a testnet quorum rotation boundary, dash-spv's
+QRInfo retry loop may hard-cap at 3 attempts with the error
+`Required rotated chain lock sig at h - 0 not present`. The engine
+then stops trying to advance mn-list. `wait_for_mn_list_synced` now
+surfaces this immediately as `dash-spv reported ManagerError before
+mn-list synced` (event-driven path) or as a no-forward-progress stall
+after 120 s (heuristic backstop), instead of waiting the full 600 s
+cold-cache floor.
+
+Operator workaround: wait 10–20 min for the next testnet ChainLock
+cycle, then retry. If the issue persists, wipe
+`${TMPDIR}/dash-platform-wallet-e2e/spv-data/` and retry from a clean
+state.
+
 ---
 
 ## 2. Harness capability matrix
@@ -106,95 +124,112 @@ Source citations for the "Wallet API exists" column are listed inline per case
 
 ### Quick index
 
-| ID | Title | Priority | Complexity |
-|----|-------|----------|------------|
-| PA-001 | Multi-output platform-address transfer | P0 | S |
-| PA-002 | Partial-fund + change handling | P0 | S |
-| PA-004 | Sweep-back: drain test wallet, observe bank credit | P0 | S |
-| PA-003 | Fee scaling: one-output vs. five-output | P1 | M |
-| PA-005 | Address rotation: gap-limit + observed-used cursor | P1 | M |
-| PA-006 | Replay safety: same outputs, second submission rejected | P1 | M |
-| PA-007 | Sync watermark idempotency | P1 | M |
-| PA-008 | Concurrent funding from bank: serialised | P1 | S |
-| PA-002b | Zero-change exact-equality (`Σ outputs + fee == input balance`) | P1 | S |
-| PA-010 | Bank starvation: typed `BankUnderfunded` error | P1 | S |
-| PA-001b | Transfer with `output_change_address: None` vs `Some(addr)` | P2 | S |
-| PA-001c | Zero-credit single-output transfer | P2 | S |
-| PA-004b | Sweep dust threshold boundary triplet | P2 | M |
-| PA-004c | Sweep with exactly zero balance | P2 | S |
-| PA-005b | `DEFAULT_GAP_LIMIT` triplet (19 / 20 / 21 unused) | P2 | M |
-| PA-006b | Two concurrent broadcasts of identical ST bytes | P2 | M |
-| PA-007b | Two concurrent `sync_balances` on one wallet | P2 | M |
-| PA-008b | Two `TestWallet`s × three concurrent funders each | P2 | M |
-| PA-008c | Observable serialisation of `FUNDING_MUTEX` | P2 | M |
-| PA-009 | `min_input_amount` boundary triplet for cleanup | P2 | M |
-| PA-011 | Workdir slot exhaustion at `MAX_SLOTS + 1` | P2 | M |
-| PA-012 | `sync_balances` racing with `transfer` | P2 | M |
-| PA-013 | Broadcast retry under transient DAPI 5xx | P2 | M |
-| PA-014 | Multi-output at protocol-max output count | P2 | M |
-| ID-001 | Register identity funded from platform addresses | P0 | L |
-| ID-002 | Top-up identity from platform addresses | P0 | M |
-| ID-003 | Identity-to-identity credit transfer | P0 | M |
-| ID-004 | Identity update: add and disable a key | P1 | L |
-| ID-005 | Transfer credits from identity to platform addresses | P1 | M |
-| ID-006 | Refresh and load identity by index | P1 | M |
-| ID-001b | `setup_with_n_identities(N)` multi-identity helper | P1 | M |
-| ID-001c | Non-default `StateTransitionSettings` (`wait_for_proof = false`) | P2 | M |
-| ID-003b | Concurrent identity-to-identity transfers serialise on identity nonce | P2 | M |
-| ID-005b | `transfer_credits_to_addresses` with empty outputs | P2 | S |
-| ID-006b | Identity-key derivation index boundary (`0` and `DEFAULT_GAP_LIMIT - 1`) | P2 | M |
-| TK-001 | Token transfer between two identities | P1 | L |
-| TK-001b | Token transfer of amount 0 | P2 | S |
-| TK-002 | Token claim (perpetual / pre-programmed distribution) | P2 | L |
-| TK-003 | Token mint (authorised identity) | P2 | M |
-| TK-004 | Token burn | P2 | M |
-| CR-001 | SPV mn-list sync readiness | P1 | M |
-| CR-002 | Core wallet receive address derivation | P1 | M |
-| CR-003 | Asset-lock-funded identity registration (full path) | P2 | L |
-| CR-004 | Legacy BIP32 account: balance + UTXO state updates after spend | P1 | M |
-| CT-001 | Document put: deploy a fixture data contract | P1 | M |
-| CT-002 | Document put / replace lifecycle | P2 | M |
-| CT-003 | Contract update (add document type) | P2 | M |
-| DPNS-001 | Register and resolve a `.dash` name | P0 | M |
-| DPNS-001b | Name-length boundary quartet (2 / 3 / 63 / 64 chars) | P2 | M |
-| DPNS-001c | DPNS name with a multibyte character | P2 | S |
-| DPNS-002 | Resolve a known external name (negative-only) | P2 | S |
-| DP-001 | Set DashPay profile | P1 | M |
-| DP-001b | Profile with optional fields `None` vs `Some` | P2 | M |
-| DP-001c | Profile `display_name` containing emoji / RTL text | P2 | S |
-| DP-002 | Send and accept a contact request | P1 | L |
-| DP-003 | Send a DashPay payment | P2 | L |
-| CN-001 | Initiate a contested DPNS name (premium / 3-char) | P2 | L |
-| CN-002 | Cast a masternode vote on a contested name | DEFERRED | — |
-| Harness-G1a | Corrupted registry JSON: refuse to overwrite | P2 | M |
-| Harness-G1b | Registry forward-compatible unknown field | P2 | S |
-| Harness-G4 | Drop `wallet.transfer` future mid-flight, recover on next sync | P2 | L |
-| Harness-ID-1 | `sweep_identities` regression: registered identities surrender credits at teardown | P0 | S |
+<!-- merge note: kept theirs' Status-column structure (legend + Status column + ID-007 row + expanded TK list TK-001c..TK-014). Re-added the CR-004 row from cr004-spec under the CR section with status reflecting its ENV-GATED FAILING-by-design body. -->
+Status legend: **green** = test file present, body has real assertions, runnable end-to-end on testnet today (subject to operator env vars). **blocked** = test file or spec entry exists but cannot run end-to-end yet — the body panics on a missing helper / prereq, the `#[ignore]` reason names an unmet prereq, or the spec body marks the entry `STUB` / `BLOCKED`. **red** = test exists and is known to fail (no entries today). **failing-by-design** = test exists, gated by an env var, and is expected to fail until the production fix lands; surfaces the contract a fix must satisfy. **not implemented** = spec entry exists but no `<id>_*.rs` file under `tests/e2e/cases/` yet. The Status column reflects the spec body's `Status:` line where present; otherwise it is derived from the test file.
+
+| ID | Title | Priority | Status | Complexity |
+|----|-------|----------|--------|------------|
+| PA-001 | Multi-output platform-address transfer | P0 | green | S |
+| PA-002 | Partial-fund + change handling | P0 | green | S |
+| PA-004 | Sweep-back: drain test wallet, observe bank credit | P0 | green | S |
+| PA-003 | Fee scaling: one-output vs. five-output | P1 | green | M |
+| PA-005 | Address rotation: gap-limit + observed-used cursor | P1 | green | M |
+| PA-006 | Replay safety: same outputs, second submission rejected | P1 | green | M |
+| PA-007 | Sync watermark idempotency | P1 | green | M |
+| PA-008 | Concurrent funding from bank: serialised | P1 | green | S |
+| PA-002b | Zero-change exact-equality (`Σ outputs + fee == input balance`) | P1 | green | S |
+| PA-010 | Bank starvation: typed `BankUnderfunded` error | P1 | blocked | S |
+| PA-001b | Transfer with `output_change_address: None` vs `Some(addr)` | P2 | blocked | S |
+| PA-001c | Zero-credit single-output transfer | P2 | green | S |
+| PA-004b | Sweep dust threshold boundary triplet | P2 | green | M |
+| PA-004c | Sweep with exactly zero balance | P2 | green | S |
+| PA-005b | `DEFAULT_GAP_LIMIT` triplet (19 / 20 / 21 unused) | P2 | blocked | M |
+| PA-006b | Two concurrent broadcasts of identical ST bytes | P2 | green | M |
+| PA-007b | Two concurrent `sync_balances` on one wallet | P2 | green | M |
+| PA-008b | Two `TestWallet`s × three concurrent funders each | P2 | green | M |
+| PA-008c | Observable serialisation of `FUNDING_MUTEX` | P2 | green | M |
+| PA-009 | `min_input_amount` boundary triplet for cleanup | P2 | green | M |
+| PA-011 | Workdir slot exhaustion at `MAX_SLOTS + 1` | P2 | not implemented | M |
+| PA-012 | `sync_balances` racing with `transfer` | P2 | not implemented | M |
+| PA-013 | Broadcast retry under transient DAPI 5xx | P2 | not implemented | M |
+| PA-014 | Multi-output at protocol-max output count | P2 | not implemented | M |
+| ID-001 | Register identity funded from platform addresses | P0 | green | L |
+| ID-002 | Top-up identity from platform addresses | P0 | green | M |
+| ID-003 | Identity-to-identity credit transfer | P0 | green | M |
+| ID-004 | Identity update: add and disable a key | P1 | not implemented | L |
+| ID-005 | Transfer credits from identity to platform addresses | P1 | green | M |
+| ID-006 | Refresh and load identity by index | P1 | not implemented | M |
+| ID-001b | `setup_with_n_identities(N)` multi-identity helper | P1 | not implemented | M |
+| ID-001c | Non-default `StateTransitionSettings` (`wait_for_proof = false`) | P2 | not implemented | M |
+| ID-003b | Concurrent identity-to-identity transfers serialise on identity nonce | P2 | not implemented | M |
+| ID-005b | `transfer_credits_to_addresses` with empty outputs | P2 | not implemented | S |
+| ID-006b | Identity-key derivation index boundary (`0` and `DEFAULT_GAP_LIMIT - 1`) | P2 | not implemented | M |
+| ID-007 | Identity-auth addresses are intentionally NOT monitored (pins intended architecture) | P2 | green | M |
+| TK-001 | Token transfer between two identities | P1 | blocked | L |
+| TK-001b | Token transfer of amount 0 | P2 | blocked | S |
+| TK-001c | Token transfer across re-issued identity (signer rotation) | P2 | blocked | M |
+| TK-002 | Token claim (perpetual — long-runtime nightly) | P2 | blocked | L |
+| TK-003 | Register token contract (deploy via `create_data_contract_with_signer`) | P0 | blocked | L |
+| TK-004 | Token transfer fee accounting & balance round-trip | P0 | blocked | M |
+| TK-005 | Token mint + total-supply assertion | P1 | blocked | M |
+| TK-005b | Mint with `recipient_id != self` | P2 | blocked | S |
+| TK-006 | Token burn + total-supply decrement | P1 | blocked | M |
+| TK-007 | Freeze identity for token (admin action) | P1 | blocked | M |
+| TK-008 | Unfreeze identity for token | P1 | blocked | S |
+| TK-009 | Destroy frozen funds | P1 | blocked | M |
+| TK-010 | Pause and resume token (emergency action) | P1 | blocked | M |
+| TK-011 | Set price + direct purchase round-trip | P1 | blocked | L |
+| TK-012 | Update token config (single ChangeItem mutation) | P2 | blocked | M |
+| TK-013 | Token claim from pre-programmed distribution | P2 | blocked | L |
+| TK-014 | Group-action gateway: queue a mint, list pending, co-sign | P2 | blocked | L |
+| CR-001 | SPV mn-list sync readiness | P1 | not implemented | M |
+| CR-002 | Core wallet receive address derivation | P1 | not implemented | M |
+| CR-003 | Asset-lock-funded identity registration (full path) | P2 | not implemented | L |
+| CR-004 | Legacy BIP32 account: balance + UTXO state updates after spend | P1 | failing-by-design | M |
+| CT-001 | Document put: deploy a fixture data contract | P1 | not implemented | M |
+| CT-002 | Document put / replace lifecycle | P2 | not implemented | M |
+| CT-003 | Contract update (add document type) | P2 | not implemented | M |
+| DPNS-001 | Register and resolve a `.dash` name | P0 | blocked | M |
+| DPNS-001b | Name-length boundary quartet (2 / 3 / 63 / 64 chars) | P2 | not implemented | M |
+| DPNS-001c | DPNS name with a multibyte character | P2 | not implemented | S |
+| DPNS-002 | Resolve a known external name (negative-only) | P2 | not implemented | S |
+| DP-001 | Set DashPay profile | P1 | not implemented | M |
+| DP-001b | Profile with optional fields `None` vs `Some` | P2 | not implemented | M |
+| DP-001c | Profile `display_name` containing emoji / RTL text | P2 | not implemented | S |
+| DP-002 | Send and accept a contact request | P1 | not implemented | L |
+| DP-003 | Send a DashPay payment | P2 | not implemented | L |
+| CN-001 | Initiate a contested DPNS name (premium / 3-char) | P2 | not implemented | L |
+| CN-002 | Cast a masternode vote on a contested name | DEFERRED | not implemented | — |
+| Harness-G1a | Corrupted registry JSON: refuse to overwrite | P2 | not implemented | M |
+| Harness-G1b | Registry forward-compatible unknown field | P2 | not implemented | S |
+| Harness-G4 | Drop `wallet.transfer` future mid-flight, recover on next sync | P2 | not implemented | L |
+| Harness-ID-1 | `sweep_identities` regression: registered identities surrender credits at teardown | P0 | green | S |
 
 #### Found-bug pins
 
-| ID | Title | Priority | Complexity |
-|----|-------|----------|------------|
-| Found-001 | `auto_select_inputs_for_withdrawal` ignores `min_input_amount` floor | P2 | S |
-| Found-002 | `auto_select_inputs_for_withdrawal` skips fee-target headroom check | P2 | M |
-| Found-003 | `addresses_with_balances` and `total_credits` only see the first platform-payment account | P2 | S |
-| Found-004 | `transfer` / `withdraw` / `fund_from_asset_lock` silently fall back to `address_index = 0` on lookup miss | P2 | S |
-| Found-005 | `register_from_addresses` / `top_up_from_addresses` discard SDK-returned address balances and nonces | P2 | M |
-| Found-006 | `top_up_identity_with_funding` ignores caller-supplied `topup_index` | P2 | S |
-| Found-007 | `PlatformAddressSyncManager::start` lacks a generation guard so a fast `start()` → `stop()` → `start()` can spawn parallel sync threads | P2 | M |
-| Found-008 | `LockNotifyHandler` uses `notify_waiters()` so a lock event arriving in the check / wait gap of `wait_for_proof` is dropped | P2 | M |
-| Found-009 | wallet-event adapter swallows `RecvError::Lagged` events without compensating recovery | P2 | M |
-| Found-010 | `PlatformAddressChangeSet::apply` ignores `funds.nonce` so persister-only nonce state can drift behind balance | P2 | S |
-| Found-011 | `IdentityChangeSet::merge` documents commutativity but `insert + tombstone` for the same key resolves to "removed" regardless of submission order | P2 | S |
-| Found-012 | `validate_or_upgrade_proof` and `wait_for_proof` only consult `standard_bip44_accounts`, missing CoinJoin / non-BIP-44 funding accounts | P2 | M |
-| Found-013 | `recover_asset_lock_blocking` swallows every error and returns `()` — silent recovery failure | P2 | S |
-| Found-014 | `transfer_credits_with_external_signer` never updates the receiver's local balance even when the receiver is wallet-owned | P2 | S |
-| Found-015 | `load_from_persistor` leaves a partially registered wallet in `wallet_manager` when `wallet_id` mismatches | P2 | M |
-| Found-016 | `remove_wallet` removes from `self.wallets` then `self.wallet_manager` non-atomically, leaving a window where readers see only one of the two | P2 | M |
-| Found-017 | `register_wallet` registers wallet in memory even when persister `store` returns `Err` — vanishes on next launch | P2 | S |
-| Found-018 | `PlatformAddressChangeSet::merge` documents fee semantics as "fee paid by the transfer that produced this changeset" but actually accumulates fees across merged changesets | P2 | S |
+| ID | Title | Priority | Status | Complexity |
+|----|-------|----------|--------|------------|
+| Found-001 | `auto_select_inputs_for_withdrawal` ignores `min_input_amount` floor | P2 | not implemented | S |
+| Found-002 | `auto_select_inputs_for_withdrawal` skips fee-target headroom check | P2 | not implemented | M |
+| Found-003 | `addresses_with_balances` and `total_credits` only see the first platform-payment account | P2 | not implemented | S |
+| Found-004 | `transfer` / `withdraw` / `fund_from_asset_lock` silently fall back to `address_index = 0` on lookup miss | P2 | not implemented | S |
+| Found-005 | `register_from_addresses` / `top_up_from_addresses` discard SDK-returned address balances and nonces | P2 | not implemented | M |
+| Found-006 | `top_up_identity_with_funding` ignores caller-supplied `topup_index` | P2 | not implemented | S |
+| Found-007 | `PlatformAddressSyncManager::start` lacks a generation guard so a fast `start()` → `stop()` → `start()` can spawn parallel sync threads | P2 | not implemented | M |
+| Found-008 | `LockNotifyHandler` uses `notify_waiters()` so a lock event arriving in the check / wait gap of `wait_for_proof` is dropped | P2 | not implemented | M |
+| Found-009 | wallet-event adapter swallows `RecvError::Lagged` events without compensating recovery | P2 | not implemented | M |
+| Found-010 | `PlatformAddressChangeSet::apply` ignores `funds.nonce` so persister-only nonce state can drift behind balance | P2 | not implemented | S |
+| Found-011 | `IdentityChangeSet::merge` documents commutativity but `insert + tombstone` for the same key resolves to "removed" regardless of submission order | P2 | not implemented | S |
+| Found-012 | `validate_or_upgrade_proof` and `wait_for_proof` only consult `standard_bip44_accounts`, missing CoinJoin / non-BIP-44 funding accounts | P2 | not implemented | M |
+| Found-013 | `recover_asset_lock_blocking` swallows every error and returns `()` — silent recovery failure | P2 | not implemented | S |
+| Found-014 | `transfer_credits_with_external_signer` never updates the receiver's local balance even when the receiver is wallet-owned | P2 | not implemented | S |
+| Found-015 | `load_from_persistor` leaves a partially registered wallet in `wallet_manager` when `wallet_id` mismatches | P2 | not implemented | M |
+| Found-016 | `remove_wallet` removes from `self.wallets` then `self.wallet_manager` non-atomically, leaving a window where readers see only one of the two | P2 | not implemented | M |
+| Found-017 | `register_wallet` registers wallet in memory even when persister `store` returns `Err` — vanishes on next launch | P2 | not implemented | S |
+| Found-018 | `PlatformAddressChangeSet::merge` documents fee semantics as "fee paid by the transfer that produced this changeset" but actually accumulates fees across merged changesets | P2 | not implemented | S |
 
-Counts by priority: **P0: 8**, **P1: 18** (incl. 3 Core/SPV — now unblocked), **P2: 53** (incl. 1 env-gated FAILING-by-design, 18 Found-bug pins), **DEFERRED: 1** (80 total entries; 61 baseline + 18 Found-bug pins + 1 deferred placeholder).
+<!-- merge note: theirs' counts already reflect the expanded TK section + ID-007 (93 total; 74 baseline). cr004-spec adds the CR-004 row (P1, env-gated FAILING-by-design), so P1 and total each +1: P1: 25, baseline: 75, total: 94. Kept theirs' "post-Task #15" annotations and noted CR-004 as the env-gated entry under P1. -->
+Counts by priority: **P0: 10**, **P1: 25** (incl. 2 post-Task #15 + 1 env-gated FAILING-by-design (CR-004)), **P2: 58** (incl. 2 post-Task #15, 1 gated, 18 Found-bug pins), **DEFERRED: 1** (94 total index entries; 75 baseline + 18 Found-bug pins + 1 deferred placeholder).
 
 ### Platform Addresses (PA)
 
@@ -891,25 +926,87 @@ Counts by priority: **P0: 8**, **P1: 18** (incl. 3 Core/SPV — now unblocked), 
 - **Estimated complexity**: M
 - **Rationale**: ID-006 covers `identity_index` boundaries; `key_index` is the parallel axis and currently uncovered.
 
+#### ID-007 — Identity-auth addresses are intentionally NOT monitored
+- **Priority**: P2
+- **Status**: Pass — `tests/e2e/cases/id_007_identity_auth_addresses_not_monitored.rs`
+  pins the intentional architecture that DIP-9 identity-authentication
+  subfeature paths (subfeature `0..3`,
+  `m/9'/coinType'/5'/{0,1,2,3}'/identity_index'/key_index'`) are NOT in
+  `WalletAccountCreationOptions::Default` and therefore NOT in
+  `PlatformWalletInfo::monitored_addresses()`. Sending Core duffs to
+  one of those addresses does NOT increase the wallet's Core balance,
+  and the UTXO set never observes such a send. `#[ignore]`-tagged so a
+  default `cargo test` stays green; `cargo test -- --ignored` runs it
+  end-to-end and is expected to PASS. Documents the intended
+  architecture; closed PR `dashpay/rust-dashcore#554` was a speculative
+  attempt to change this and was correctly rejected. End-to-end runs
+  are gated on **operator pre-funding the bank's Core (Layer-1) receive
+  address** with at least `100_000 + fee` duffs of testnet DASH (the
+  address is logged at framework init under target
+  `platform_wallet::e2e::bank`).
+- **Wallet feature exercised**: `PlatformWalletInfo::monitored_addresses` (`wallet/platform_wallet_traits.rs:93`) projection for DIP-9 identity-authentication addresses derived via `derive_ecdsa_identity_auth_keypair_from_master` (`wallet/identity/network/identity_handle.rs:143`). Concretely: the `m/9'/coinType'/5'/0'/identity_index'/key_index'` subfeature path, which is intentionally excluded from `WalletAccountCreationOptions::Default` because identity-auth keys are pure key material, not funds-bearing addresses.
+- **DET parallel**: `dash-evo-tool/src/backend_task/account_summary.rs:226-229` — explicitly states identity-auth addresses "usually hold zero balance"; `receive_address()` returns BIP-44 paths only and DET's UI hides them outside developer-mode "Identity System" view.
+- **Preconditions**:
+  - SPV runtime enabled (Task #15 — gates `CR-001` too).
+  - ID-001 helper landed (Wave A).
+  - Bank wallet that holds **Core coins**, not just credits — same prerequisite as `CR-003`.
+- **Scenario**:
+  1. `let id = setup_with_n_identities(1, 30_000_000).await?.identities[0];`
+  2. Compute `auth_addr = P2PKH(derive_ecdsa_identity_auth_keypair_from_master(master, network, identity_index = 0, key_index = 0).public_key)`.
+  3. Snapshot `wallet.monitored_addresses()` *before* sending anything.
+  4. Send `100_000` duffs from the Core-funded bank to `auth_addr` on Layer-1.
+  5. Snapshot `wallet.monitored_addresses()` *after* the broadcast.
+  6. Wait up to `30s` for the wallet's Core balance to reflect the incoming UTXO; expect it does NOT.
+- **Assertions** (pin the **intended** contract — green when the architecture is intact):
+  - `auth_addr` is **NOT** in `monitored_addresses()` both before and after step 4.
+  - The wallet's Core balance does **NOT** increase to `pre_balance + 1` within the negative window after step 6 (the `wait_for_core_balance` call is expected to time out).
+  - The wallet's UTXO set does **NOT** contain a `100_000`-duff UTXO at `auth_addr`.
+  - When this test starts FAILING, a regression has happened: either `WalletAccountCreationOptions::Default` started including `BlockchainIdentities*` `AccountType`s, or some other code path has begun monitoring these addresses without architecture review. Investigate before flipping.
+- **Variants** (covered inline in the same test — registration status is irrelevant, the derivation is pure; same architecture applies):
+  - Compute `auth_addr` for `identity_index = 1` (an unregistered slot) — the address must remain unmonitored regardless of registration state.
+  - Repeat for the BLS subfeature path (`m/9'/coinType'/5'/2'/identity_index'/key_index'`) once `derive_*_bls_identity_auth_keypair_from_master` lands; same intended-contract assertions apply. (Deferred — TODO comment in the test body.)
+- **Harness extensions required**:
+  - SPV runtime re-enabled (Task #15 — same prerequisite as `CR-001`).
+  - Core-funded bank wallet helper (same prerequisite as `CR-003`).
+  - `wait_for_core_balance(wallet, expected_min, timeout)` — landed in `framework/wait.rs` alongside this case (parallel of `wait_for_balance` for Layer-1 balance instead of credits).
+  - Wave A's `SeedBackedIdentitySigner` (already needed for `ID-001`).
+- **Estimated complexity**: M (test body is short — most of the cost is the prerequisite SPV + Core-faucet bring-up that `CR-001` and `CR-003` already require).
+- **Funding budget**: `100_000` Core duffs (~0.001 DASH) per run for the Layer-1 send; rounding for Core-tx fee. Negligible compared to the credit budget of any P0/P1 case.
+- **Rationale**: Pins the **intentional** architecture for "which DIP-9 subfeatures get monitored?" Identity-auth addresses are pure key material — they sign identity state transitions, they don't receive Layer-1 Dash. dash-evo-tool (the canonical Platform client) treats them this way: `account_summary.rs:226-229` explicitly notes they "usually hold zero balance"; `receive_address()` returns BIP-44 paths only; the UI hides them outside developer-mode "Identity System" view. No standard flow sends Layer-1 Dash to these addresses. The closed PR `dashpay/rust-dashcore#554` was a speculative attempt to change this for a hypothetical use case, not a fix for any active bug — its rejection was correct. ID-007 pins the not-monitored contract so any accidental regression — or any deliberate architecture shift — surfaces loudly.
+- **Operator notes**: First cold-cache run takes ~15 minutes because SPV walks compact filters from genesis (~1.47M testnet blocks). Subsequent runs reuse the on-disk cache and complete in seconds. The harness gates init on `PLATFORM_WALLET_E2E_BANK_CORE_GATE` — **default-on with a 900s deadline**, waiting for the bank's confirmed Core balance to become non-zero so ID-007 doesn't race a cold-cache scan and see `core_balance_confirmed=0` mid-scan for an already-funded address. Set the var to `0` (or `disabled` / `false` / `off`) to opt out for Platform-only suites; set a positive integer to override the timeout in seconds. Set `RUST_LOG=info,platform_wallet::e2e::wait=info` to see scan-progress lines (`scan_height` vs `scan_tip`) every 30s.
+- **Notes**:
+  - Today `derive_ecdsa_identity_auth_keypair_from_master` is the only DIP-9 subfeature `rs-platform-wallet` exposes (subfeature 0, ECDSA). Adding the BLS / Hash160 variants is contingent on the upstream `key-wallet` API gaining BLS derivation helpers.
+  - This is a **defensive pin of intentional behavior**, in the same family as `Found-003` / `Found-004`: green = architecture intact, red = something changed and needs review. The change might be a real architecture shift (in which case flip the assertions in the same PR that wires the change) or an accident (in which case revert the breakage).
+
 ### Tokens (TK)
 
 The wallet has token operations on the API surface
-(`wallet/tokens/wallet.rs` + `wallet/identity/network/tokens/*`). They all
-require an existing on-testnet token contract and an authorised identity.
-Without a contract-registry strategy, only TK-001/TK-002 (operations on
-existing balances) are achievable in P0/P1.
+(`wallet/tokens/wallet.rs` + `wallet/identity/network/tokens/*`). The earlier
+plan rested on an operator-pre-funded testnet token contract; that approach
+is superseded. The current plan deploys a fresh token contract per CI run via
+`create_data_contract_with_signer` (the wallet already accepts a
+`tokens_schema_json` argument — `wallet/identity/network/contract.rs:124`),
+shared across most TK cases via a OnceCell fixture and re-built fresh only
+where a non-default contract config is required (pre-programmed distribution,
+groups, paused-on-create). Every TK entry below is `Status: BLOCKED` until
+both Wave A (Identity signer harness, currently on PR #3578) and Wave G
+(token-contract bootstrap helpers, see §4) land. What were previously tracked
+as `Gap-T1..Gap-T6` (wallet-API surface gaps) are now resolved: Wave G
+delivers framework-level SDK-wrapper helpers for each, living in
+`packages/rs-platform-wallet/tests/e2e/framework/tokens.rs`. No new wallet
+public API is required; tests compose the SDK directly through those helpers.
 
 #### TK-001 — Token transfer between two identities
 - **Priority**: P1
-- **Status**: STUB — placeholder for follow-up PR (Wave A + Wave D — token contract operator config).
+- **Status**: STUB — `tests/e2e/cases/tk_001_token_transfer.rs` (full body landed Wave 2-α; `#[ignore]`-tagged, runs on demand against testnet).
 - **Wallet feature exercised**: `wallet/identity/network/tokens/transfer.rs:21` (`token_transfer_with_signer`).
 - **DET parallel**: `dash-evo-tool/tests/backend-e2e/token_tasks.rs:359` (`step_transfer`).
-- **Preconditions**: ID-001 helper; **a known testnet token contract** (env-driven `PLATFORM_WALLET_E2E_TOKEN_CONTRACT_ID` + `_TOKEN_POSITION`); the registered identity must already hold a non-zero balance of that token (operator pre-funds via the same flow used to fund the bank).
+- **Preconditions**: Wave A signer + Wave G token-contract bootstrap (TK-003 helper); two registered identities (`identity_a`, `identity_b`); `identity_a` holds a non-zero token balance from an in-test mint (TK-005 helper).
 - **Scenario**:
-  1. Register `identity_a` and `identity_b` per ID-001.
-  2. Pre-condition: operator pre-funds `identity_a` with `≥ 100` tokens of the configured contract (one-time setup, similar to bank funding).
-  3. Call `token_transfer_with_signer(identity_a, contract_id, token_position, identity_b, amount=50)`.
-  4. Sync token balances on both.
+  1. `setup_with_token_and_two_identities()` returns `(token_fixture, identity_a, identity_b)` (the shared OnceCell-cached contract).
+  2. `identity_a` mints `≥ 100` tokens to self via the harness `mint_to` shortcut.
+  3. Call `token_transfer_with_signer(identity_a, contract_id, token_position=0, identity_b, amount=50, …)`.
+  4. Sync token balances on both via `token_balance_of`.
 - **Assertions**:
   - `identity_a` token balance decreased by exactly `50`.
   - `identity_b` token balance increased by exactly `50`.
@@ -917,21 +1014,17 @@ existing balances) are achievable in P0/P1.
 - **Negative variants**:
   - Transfer amount exceeds sender token balance → typed error.
   - Transfer with wrong `token_position` → contract-validation error.
-- **Harness extensions required**:
-  - Wave A (Identity signer).
-  - `Config::token_contract_id` + `token_position` env vars.
-  - `TestWallet::token_balance(identity_id, contract_id, token_pos)` helper.
-  - Operator documentation: how to pre-fund tokens (one-time, sibling of bank pre-funding).
+- **Harness extensions required**: Wave A; Wave G's `setup_with_token_and_two_identities`, `mint_to`, `token_balance_of`.
 - **Estimated complexity**: L
-- **Rationale**: Most-used token op. Catches token-amount underflow bugs and credit-fee accounting bugs in one shot.
+- **Rationale**: Most-used token op. Catches token-amount underflow bugs and credit-fee accounting bugs in one shot. TK-004 is the upgraded round-trip variant with explicit fee separation; TK-001 stays as the canonical happy path.
 
 #### TK-001b — Token transfer of amount 0
 - **Priority**: P2
-- **Status**: STUB — placeholder for follow-up PR (Wave A + Wave D).
+- **Status**: STUB — `tests/e2e/cases/tk_001b_token_transfer_zero.rs` (full body landed Wave 2-α; `#[ignore]`-tagged, runs on demand).
 - **Wallet feature exercised**: `wallet/identity/network/tokens/transfer.rs:21` zero-amount boundary.
 - **DET parallel**: none.
-- **Preconditions**: TK-001 setup (two identities with non-zero token balance on `identity_a`).
-- **Scenario**: call `token_transfer_with_signer(identity_a, contract_id, token_position, identity_b, amount=0)`.
+- **Preconditions**: TK-001 setup (in-test deployed token + two identities with non-zero balance on `identity_a` via in-test mint).
+- **Scenario**: call `token_transfer_with_signer(identity_a, contract_id, token_position=0, identity_b, amount=0, …)`.
 - **Assertions**: pin one contract:
   - **(a) Reject**: typed validation error of "amount must be positive" shape; no broadcast; balances unchanged.
   - **(b) Accept**: broadcast succeeds; both token balances unchanged; only `identity_a` credit balance decreased by `transfer_fee`.
@@ -940,49 +1033,335 @@ existing balances) are achievable in P0/P1.
 - **Estimated complexity**: S
 - **Rationale**: Zero-amount transfers may be valid no-ops or invalid per contract. Either contract needs an asserted test.
 
-#### TK-002 — Token claim (perpetual / pre-programmed distribution)
+#### TK-001c — Token transfer across re-issued identity (signer rotation)
+- **Status**: STUB — `tests/e2e/cases/tk_001c_token_transfer_after_reissue.rs` (Wave 2-α; `#[ignore]`-tagged. Body panics-with-todo on the key-rotation step until ID-004 signer-cache injection helper lands — Wave 4 will surface this at runtime).
 - **Priority**: P2
-- **Status**: PASS-with-caveat — the typed error `InvalidTokenClaimNoCurrentRewards` is accepted as a testnet-timing pass (not a real failure). On testnet, the perpetual-distribution interval may not have advanced by the time the claim runs, returning this error rather than a positive balance increase. The test treats this outcome as an explicit "no rewards yet" pass branch, not a failure. Any other error is still a test failure.
-- **Wallet feature exercised**: `wallet/identity/network/tokens/claim.rs:18` (`token_claim_with_signer`).
-- **DET parallel**: `dash-evo-tool/tests/backend-e2e/token_tasks.rs:702` (`tc_064_estimate_perpetual_rewards`) and `step_*` token lifecycle.
-- **Preconditions**: TK-001 setup + a token contract that grants the registered identity claim rights.
+<!-- merge note: HEAD's content here was misplaced TK-002 prose (perpetual claim / InvalidTokenClaimNoCurrentRewards) — the surrounding TK-001c heading + scenario describe key rotation, so theirs is the correct content for this entry. TK-002 already carries its own STUB status downstream; no relocation needed. -->
+- **Wallet feature exercised**: `wallet/identity/network/tokens/transfer.rs:21` after the sender's signing key has been rotated (add new key, disable old key, transfer with new key).
+- **DET parallel**: none direct.
+- **Preconditions**: TK-003 helper + ID-004 helpers; identity with a minted token balance from an in-test mint.
 - **Scenario**:
-  1. Register identity per ID-001.
-  2. Wait for the perpetual-distribution interval to advance.
+  1. Setup token + identity with mint balance.
+  2. Add a fresh AUTHENTICATION key via `update_identity` (ID-004 path), disable the old one.
+  3. Transfer tokens using the **new** key as the signer.
+- **Assertions**:
+  - Transfer succeeds with the new key.
+  - Transfer with the disabled key would fail with a typed "key not found / disabled" error (sub-case).
+- **Negative variants**: covered above.
+- **Harness extensions required**: depends on Wave A + ID-004 chain; TK-003 helper.
+- **Estimated complexity**: M
+- **Rationale**: Token operations don't hard-code a signing key — they accept a `signing_key: &IdentityPublicKey` parameter and rely on the identity's current key set. Pinning that "the wallet picks the right active key after rotation" prevents a quiet "still uses the old key" regression.
+
+#### TK-002 — Token claim (live perpetual distribution — long-runtime, nightly only)
+- **Priority**: P2
+- **Status**: STUB — `tests/e2e/cases/tk_002_token_claim_perpetual.rs` (Wave 2-α; `#[ignore]`-tagged, nightly only). Body panics-with-todo on the perpetual-distribution helper override in `framework/tokens.rs` until that knob lands — Wave 4 will surface this at runtime. Demoted to nightly because perpetual intervals run on testnet block time (~3 s) and a meaningful claim window is 30–60 s of wall clock; the synchronous CI tier covers the same surface via TK-013's pre-programmed-distribution variant.
+- **Wallet feature exercised**: `wallet/identity/network/tokens/claim.rs:18` (`token_claim_with_signer`).
+- **DET parallel**: `dash-evo-tool/tests/backend-e2e/token_tasks.rs:702` (`tc_064_estimate_perpetual_rewards`) and `step_*` token lifecycle (DET tests only the *estimate* path).
+- **Preconditions**: TK-003 helper extended to deploy a token with live perpetual distribution; identity holding claim rights.
+- **Scenario**:
+  1. Deploy the token with perpetual distribution rules (interval = block-based, minimum testnet interval).
+  2. Wait for the perpetual-distribution interval to advance (~30–60 s wall clock).
   3. Call `token_claim_with_signer`.
 - **Assertions**:
-  - Token balance increases by the documented per-interval claim amount (operator-supplied env `PLATFORM_WALLET_E2E_TOKEN_CLAIM_AMOUNT`).
-  - Second claim within the same interval returns a typed "already claimed" error.
+  - Token balance increases by the per-interval claim amount documented in the contract.
+  - Second claim within the same interval returns a typed "already claimed" / "no claimable amount" error.
 - **Negative variants**: claim with no rights → typed error.
-- **Harness extensions required**: TK-001 extensions + interval-aware sleep helper (10–60 s).
+- **Harness extensions required**: TK-003 extensions + interval-aware sleep helper (30–60 s).
 - **Estimated complexity**: L
-- **Rationale**: Perpetual-distribution bugs are silent — balance just doesn't increase. Adding claim coverage is the only way to surface those.
+- **Rationale**: Perpetual-distribution bugs are silent — balance just doesn't increase. TK-013 covers the synchronous path; TK-002 keeps the live-time variant in scope behind a `slow-tests` cargo feature (cf. §6 Q3). Without it, a regression that breaks perpetual-distribution event scheduling never surfaces.
 
-#### TK-003 — Token mint (authorised identity)
-- **Priority**: P2 (gated)
-- **Status**: STUB — placeholder for follow-up PR (Wave A + Wave D; gated on a token contract whose mint authorisation can be assigned to a test identity).
-- **Wallet feature exercised**: `wallet/identity/network/tokens/mint.rs:19`.
-- **DET parallel**: `dash-evo-tool/tests/backend-e2e/token_tasks.rs:305` (`step_mint`).
-- **Preconditions**: TK-001 setup + the registered identity is on the contract's mint allow-list.
-- **Scenario**: mint `100` of token to self; sync.
-- **Assertions**: identity token balance increased by `100`; total supply increased.
-- **Negative variants**: mint without authority (TK-001's `identity_b`) → unauthorised error (DET parallel: `tc_065_mint_unauthorized` at `token_tasks.rs:756`).
-- **Harness extensions required**: TK-001 extensions.
+#### TK-003 — Register token contract (deploy via `create_data_contract_with_signer`)
+- **Status**: STUB — `tests/e2e/cases/tk_003_register_token_contract.rs` (Wave 2-β; `#[ignore]`-tagged). Body panics-with-todo on the MASTER signing path; a CRITICAL signing-key-class upgrade for `DataContractCreate` may be required — Wave 4 will surface the exact `InvalidSignatureError` rollup at runtime.
+- **Priority**: P0 (gateway for every other TK-NNN entry)
+- **Wallet feature exercised**: `wallet/identity/network/contract.rs:124` (`create_data_contract_with_signer`) with non-empty `tokens_schema_json`.
+- **DET parallel**: `dash-evo-tool/tests/backend-e2e/token_tasks.rs:78` (`tc_045_register_token_contract`); fixture at `tests/backend-e2e/framework/fixtures.rs:111`; helper at `tests/backend-e2e/framework/token_helpers.rs:33`.
+- **Preconditions**: ID-001 helper; identity has ≥ `1_000_000_000` credits (contract-create fee + headroom).
+- **Scenario**:
+  1. Register identity via ID-001.
+  2. Build a permissive owner-only token-config JSON (mirror DET's `build_register_token_task`: 8 decimals, max supply 1e15, no perpetual distribution, owner-only ChangeControlRules across mint/burn/freeze/unfreeze/destroy/emergency/max-supply/conventions/marketplace, `start_paused = false`, `allow_transfers_to_frozen_identities = false`, `marketplace_trade_mode = 1`).
+  3. Call `create_data_contract_with_signer(owner, documents="{}", tokens=Some(config), …)`.
+  4. `sdk.fetch::<DataContract>(returned.id())`.
+- **Assertions**:
+  - Returned contract id matches the on-chain fetch.
+  - `contract.tokens()` is non-empty; token at position 0 has the configured name / decimals / max supply.
+  - Identity credit balance decreased by `> 0` (contract-create fee).
+- **Negative variants**:
+  - Re-deploy with same id (contrived — id is owner+nonce-derived) → `AlreadyExists` SDK error class.
+  - Token config with `max_supply < base_supply` → typed validation error.
+- **Harness extensions required**: `setup_with_token_contract(...)` helper (§4 Wave G); contract fixture JSON template at `tests/fixtures/contracts/permissive_token.json`. The TK-003 happy path runs against the shared OnceCell-cached contract; the negative variants opt into a fresh deploy.
+- **Estimated complexity**: L (the JSON template assembly is the long pole; per-test harness orchestration is M)
+- **Rationale**: Without an asserted register-side case, every other TK-NNN entry rests on an unasserted assumption. This case exercises the `register_token_contract_via_sdk` helper from Wave G (previously tracked as Gap-T1).
+
+#### TK-004 — Token transfer fee accounting & balance round-trip
+- **Status**: STUB — `tests/e2e/cases/tk_004_token_transfer_round_trip.rs` (Wave 2-β; `#[ignore]`-tagged, runs on demand against testnet).
+- **Priority**: P0
+- **Wallet feature exercised**: `wallet/identity/network/tokens/transfer.rs:21` (`token_transfer_with_signer`).
+- **DET parallel**: `token_tasks.rs:359` (`step_transfer`).
+- **Preconditions**: TK-003 + a minted balance on `identity_a` (mint via `token_mint_with_signer` — itself covered in TK-005). Two identities (`identity_a`, `identity_b`).
+- **Scenario**:
+  1. `setup_with_token_and_two_identities()` returns `(token, owner=A, peer=B)` (shared OnceCell-cached contract).
+  2. Owner mints `100_000` to self.
+  3. Owner transfers `40_000` to B with `public_note = Some("e2e-tk006")`.
+  4. Wait for sync; read both balances; read owner's credit balance.
+- **Assertions**:
+  - `token_balance(A, contract, 0) == 60_000` exactly (mint − transfer).
+  - `token_balance(B, contract, 0) == 40_000` exactly.
+  - `A.credit_balance` decreased by `transfer_fee > 0` only (token transfer pays fees in credits, not in tokens).
+  - Returned `TransferResult` carries `actual_fee > 0`.
+- **Negative variants**:
+  - Transfer amount exceeds balance → typed insufficient-tokens error.
+  - Transfer to self (A → A) → pin contract: either accepted as a no-op (still pays fee) or rejected as "self-transfer disallowed".
+  - Wrong `token_position` (e.g. position 7 on a single-token contract) → typed contract-validation error.
+- **Harness extensions required**: `setup_with_token_and_two_identities`, `token_balance_of` helper (Wave G SDK-wrapper).
 - **Estimated complexity**: M
-- **Rationale**: Mint-without-authority is the canonical token authz failure mode.
+- **Rationale**: Most-used token op. Pins the credit-fee vs. token-amount accounting separation that any refactor of the fee model would silently break.
 
-#### TK-004 — Token burn
+#### TK-005 — Token mint + total-supply assertion
+- **Status**: STUB — `tests/e2e/cases/tk_005_token_mint.rs` (Wave 2-γ; `#[ignore]`-tagged, runs on demand).
+- **Priority**: P1
+- **Wallet feature exercised**: `wallet/identity/network/tokens/mint.rs:19` (`token_mint_with_signer`).
+- **DET parallel**: `token_tasks.rs:305` (`step_mint`).
+- **Preconditions**: TK-003; owner identity with ≥ `100_000_000` credits.
+- **Scenario**:
+  1. `setup_with_token()` returns `(token, owner)` (shared OnceCell-cached contract).
+  2. Read pre-mint `token_supply(contract, 0)` (== 0 for a base-supply-zero token).
+  3. Owner mints `500_000` to self with `recipient_id: None`.
+  4. Owner mints `50_000` to self with `recipient_id: Some(owner_id)` (explicit-recipient sub-case).
+  5. Read post-mint supply and owner balance.
+- **Assertions**:
+  - `token_supply(contract, 0) == 550_000` after both mints.
+  - `token_balance(owner, contract, 0) == 550_000`.
+  - Both `MintResult.actual_fee > 0`.
+- **Negative variants**:
+  - Unauthorised mint (non-owner identity attempts) → typed authorisation error. **DET parallel: `token_tasks.rs:756` (`tc_065_mint_unauthorized`).**
+  - Mint with `amount = 0` → pin contract (reject with "amount must be positive" vs. accept as fee-only no-op).
+  - Mint that would exceed `max_supply` → typed error.
+  - Mint to a non-existent identity (`recipient_id: Some(garbage)`) → typed error.
+- **Harness extensions required**: TK-003 helpers; `register_extra_identity` for the unauthorised sub-case; supply accessor.
+- **Estimated complexity**: M
+- **Rationale**: Pins both the supply bookkeeping and the authorisation gate (TC-065 in DET is one of the few negative tests that already exists; we mirror it).
+
+#### TK-005b — Mint with `recipient_id != self`
+- **Status**: STUB — `tests/e2e/cases/tk_005b_token_mint_to_other.rs` (Wave 2-γ; `#[ignore]`-tagged, runs on demand).
 - **Priority**: P2
-- **Status**: STUB — placeholder for follow-up PR (Wave A + Wave D).
-- **Wallet feature exercised**: `wallet/identity/network/tokens/burn.rs` (mod-level fn at `tokens/mod.rs`).
+- **Wallet feature exercised**: `wallet/identity/network/tokens/mint.rs:19` `recipient_id: Some(other)` branch.
+- **DET parallel**: tested implicitly in DET via `mint_to: Some(identity.id)`; the cross-identity case isn't exercised explicitly.
+- **Preconditions**: TK-003 helper with `minting_allow_choosing_destination = true`; owner + second identity.
+- **Scenario**:
+  1. Setup token (`allow_choose_destination = true`); register second identity.
+  2. Owner mints `100` with `recipient_id: Some(second.id)`.
+- **Assertions**:
+  - `token_balance(second, contract, 0) == 100`.
+  - `token_balance(owner, contract, 0) == 0` (mint went to the recipient, not owner).
+  - Total supply == `100`.
+- **Negative variants**:
+  - Mint with `recipient_id` on a contract that has `allow_choose_destination = false` → typed validation error (build a separate token contract with this rule for the negative — fresh contract, opt out of the shared OnceCell).
+- **Harness extensions required**: TK-003 helpers; `register_extra_identity`; supply accessor.
+- **Estimated complexity**: S
+- **Rationale**: Pins the cross-identity destination contract (an Option-branch the DET tests don't split).
+
+#### TK-006 — Token burn + total-supply decrement
+- **Status**: STUB — `tests/e2e/cases/tk_006_token_burn.rs` (Wave 2-γ; `#[ignore]`-tagged, runs on demand).
+- **Priority**: P1
+- **Wallet feature exercised**: `wallet/identity/network/tokens/burn.rs:19` (`token_burn_with_signer`).
 - **DET parallel**: `token_tasks.rs:330` (`step_burn`).
-- **Preconditions**: TK-001 setup with non-zero balance.
-- **Scenario**: burn `25` tokens; sync.
-- **Assertions**: identity token balance decreased by `25`; total supply decreased.
-- **Negative variants**: burn more than balance → typed error.
-- **Harness extensions required**: TK-001 extensions.
+- **Preconditions**: TK-003; owner with `≥ 1_000` token balance (mint inside the test).
+- **Scenario**:
+  1. `setup_with_token()`; owner mints `1_000`.
+  2. Read pre-burn supply.
+  3. Owner burns `100`.
+  4. Read post-burn supply and balance.
+- **Assertions**:
+  - Owner balance: `1_000 → 900`.
+  - Total supply: `1_000 → 900`.
+  - `BurnResult.actual_fee > 0`.
+- **Negative variants**:
+  - Burn more than balance → typed insufficient-tokens error.
+  - Burn `amount = 0` → pin contract.
+  - Burn without authority (when ChangeControlRules disallow caller) → typed error. (Note: DET's permissive contract has `manual_burning_rules: ContractOwner` — non-owner burn fails. This sub-case uses the second identity.)
+- **Harness extensions required**: TK-003 helpers.
 - **Estimated complexity**: M
-- **Rationale**: Symmetric partner of TK-003; together they validate supply bookkeeping.
+- **Rationale**: Symmetric partner of TK-005. Together they validate supply conservation across mint+burn pairs.
+
+#### TK-007 — Freeze identity for token (admin action)
+- **Status**: STUB — `tests/e2e/cases/tk_007_token_freeze.rs` (Wave 2-δ; `#[ignore]`-tagged, runs on demand).
+- **Priority**: P1
+- **Wallet feature exercised**: `wallet/identity/network/tokens/freeze.rs:18` (`token_freeze_with_signer`).
+- **DET parallel**: `token_tasks.rs:389` (`step_freeze`).
+- **Preconditions**: TK-003 with two identities (owner = admin, target = peer); peer has a non-zero token balance (transfer some over before freeze).
+- **Scenario**:
+  1. Setup token + two identities; mint to owner; owner transfers `200` to peer.
+  2. Owner calls `token_freeze_with_signer(contract, 0, owner_id, peer_id, …)`.
+  3. Wait for sync.
+  4. Peer attempts `token_transfer_with_signer(contract, 0, peer, owner, 50, …)`.
+- **Assertions**:
+  - Step 4 fails with a typed "frozen balance / cannot transfer" error class.
+  - Peer's token balance unchanged after the failed transfer.
+  - `token_frozen_balance_of(peer, fixture) == Some(200)` (via Wave G helper).
+  - `FreezeResult.actual_fee > 0`.
+- **Negative variants**:
+  - Non-admin attempts to freeze → typed authorisation error.
+  - Freeze an already-frozen identity → pin contract (idempotent vs. typed "already frozen" error).
+- **Harness extensions required**: TK-003 helpers; `register_extra_identity`.
+- **Estimated complexity**: M
+- **Rationale**: Freeze is the canonical regulatory primitive. Without explicit coverage, a regression that turns freeze into a no-op would only surface as "users complain transfers work after we froze them".
+
+#### TK-008 — Unfreeze identity for token
+- **Status**: STUB — `tests/e2e/cases/tk_008_token_unfreeze.rs` (Wave 2-δ; `#[ignore]`-tagged, composes with TK-007).
+- **Priority**: P1
+- **Wallet feature exercised**: `wallet/identity/network/tokens/unfreeze.rs:18` (`token_unfreeze_with_signer`).
+- **DET parallel**: `token_tasks.rs:419` (`step_unfreeze`).
+- **Preconditions**: TK-007 setup, post-freeze state.
+- **Scenario**:
+  1. Re-use TK-007's frozen state.
+  2. Owner calls `token_unfreeze_with_signer(contract, 0, owner_id, peer_id, …)`.
+  3. Peer retries the transfer that was rejected in TK-007.
+- **Assertions**:
+  - Step 3 succeeds; peer balance decremented; owner balance incremented.
+  - `UnfreezeResult.actual_fee > 0`.
+  - `token_frozen_balance_of(peer, fixture)` is `None` or `0` (via Wave G helper).
+- **Negative variants**:
+  - Unfreeze an identity that was never frozen → pin contract (idempotent vs. typed error).
+  - Non-admin unfreeze → typed auth error.
+- **Harness extensions required**: same as TK-007.
+- **Estimated complexity**: S (composes with TK-007)
+- **Rationale**: Round-trip pin: freeze + unfreeze must restore exactly the pre-freeze state.
+
+#### TK-009 — Destroy frozen funds
+- **Status**: STUB — `tests/e2e/cases/tk_009_token_destroy_frozen.rs` (Wave 2-δ; `#[ignore]`-tagged, composes with TK-007).
+- **Priority**: P1
+- **Wallet feature exercised**: `wallet/identity/network/tokens/destroy_frozen_funds.rs:20` (`token_destroy_frozen_funds_with_signer`).
+- **DET parallel**: `token_tasks.rs:452` (`step_destroy_frozen`).
+- **Preconditions**: TK-007 frozen state; total supply recorded.
+- **Scenario**:
+  1. Compose with TK-007: peer has frozen balance `200`.
+  2. Owner calls `token_destroy_frozen_funds_with_signer(contract, 0, owner_id, peer_id, …)` — note no `amount` parameter; the call destroys the full frozen balance.
+  3. Read post-destroy supply, peer balance, and frozen balance.
+- **Assertions**:
+  - Peer balance == `0`.
+  - Total supply decreased by exactly `200`.
+  - `DestroyFrozenFundsResult.actual_fee > 0`.
+  - Subsequent unfreeze would have nothing to unfreeze (`token_frozen_balance_of` returns `None`).
+- **Negative variants**:
+  - Destroy on a not-frozen identity → typed error.
+  - Non-admin destroy → typed auth error.
+- **Harness extensions required**: TK-003 + TK-007 chain.
+- **Estimated complexity**: M
+- **Rationale**: Destroy-frozen-funds is the irreversible "burn the rule-breaker's bag" action — the negative-supply consequence must be pinned.
+
+#### TK-010 — Pause and resume token (emergency action)
+- **Status**: STUB — `tests/e2e/cases/tk_010_token_pause_resume.rs` (Wave 2-ε; `#[ignore]`-tagged, runs on demand). Uses the shared OnceCell-cached contract; the `start_paused = true` variant (TK-paused-on-create) remains deferred.
+- **Priority**: P1
+- **Wallet feature exercised**: `wallet/identity/network/tokens/pause.rs:19`, `wallet/identity/network/tokens/resume.rs:18`.
+- **DET parallel**: `token_tasks.rs:501` (`step_pause`), `token_tasks.rs:529` (`step_resume`).
+- **Preconditions**: TK-003 with two identities; both have a non-zero token balance.
+- **Scenario**:
+  1. Setup token + two identities; mint to owner; transfer some to peer.
+  2. Owner calls `token_pause_with_signer(contract, 0, owner_id, …)`.
+  3. Owner attempts `token_transfer_with_signer(...)` — should be rejected.
+  4. Owner calls `token_resume_with_signer(contract, 0, owner_id, …)`.
+  5. Owner retries the transfer.
+- **Assertions**:
+  - Step 3 fails with typed "token paused" error class.
+  - Step 5 succeeds.
+  - Both `EmergencyActionResult.actual_fee > 0`.
+  - `token_is_paused_of(fixture) == true` after pause, `false` after resume (via Wave G helper).
+- **Negative variants**:
+  - Pause an already-paused token → pin contract (idempotent vs. typed error).
+  - Non-admin pause → typed auth error.
+- **Harness extensions required**: TK-003 helpers; second identity.
+- **Estimated complexity**: M
+- **Rationale**: Pause is the kill switch. Pinning both directions (pause-blocks, resume-restores) catches the "resume forgot to clear the flag" regression class.
+
+#### TK-011 — Set price + direct purchase round-trip
+- **Status**: STUB — `tests/e2e/cases/tk_011_token_price_purchase.rs` (Wave 2-ε; `#[ignore]`-tagged, runs on demand).
+- **Priority**: P1
+- **Wallet feature exercised**: `wallet/identity/network/tokens/set_price.rs:26` (`token_set_price_with_signer`); `wallet/identity/network/tokens/purchase.rs:25` (`token_purchase_with_signer`).
+- **DET parallel**: `token_tasks.rs:557` (`step_set_price`); `token_tasks.rs:588` (`step_purchase`).
+- **Preconditions**: TK-003; owner with mintable supply; buyer identity (= second identity) with `≥ 50_000_000` credits.
+- **Scenario**:
+  1. Setup token; owner mints `1_000` to self.
+  2. Owner sets pricing schedule to `Some(SinglePrice(1_000))` (1 000 credits per token).
+  3. Buyer calls `token_purchase_with_signer(contract, 0, buyer_id, amount=10, total_agreed_price=10_000, …)`.
+  4. Read post-purchase balances on owner and buyer.
+- **Assertions**:
+  - Buyer's token balance: `0 → 10`.
+  - Owner's token balance: `1_000 → 990` (purchase reduces seller stock).
+  - Buyer's credit balance decreased by `10_000 + purchase_fee`.
+  - Owner's credit balance increased by `10_000` (purchase price arrives as credits, minus protocol fees per the pricing-schedule spec).
+  - `SetPriceResult.actual_fee > 0`; `DirectPurchaseResult.actual_fee > 0`.
+- **Negative variants**:
+  - Buyer submits `total_agreed_price` lower than chain pricing → typed price-mismatch / over-budget error (this is the on-chain race-protection contract).
+  - Purchase before any price is set → typed "no pricing schedule" error.
+  - Set price to `None` (clear schedule) then buyer attempts purchase → typed "no pricing schedule" error.
+- **Harness extensions required**: TK-003 helpers; second identity with credits.
+- **Estimated complexity**: L (two related transitions, two-side balance bookkeeping, on-chain price race assertion).
+- **Rationale**: Direct purchase is the only money-flow primitive on the wallet that crosses two identities AND moves both credits and tokens in one transition. Pricing-race protection (`total_agreed_price` mismatch) is the headline correctness property.
+
+#### TK-012 — Update token config (single ChangeItem mutation)
+- **Status**: STUB — `tests/e2e/cases/tk_012_token_update_config.rs` (Wave 2-ε; `#[ignore]`-tagged, runs on demand). Single-ChangeItem mutation against a fresh deploy to keep the shared OnceCell fixture immutable.
+- **Priority**: P2
+- **Wallet feature exercised**: `wallet/identity/network/tokens/update_config.rs:20` (`token_update_config_with_signer`).
+- **DET parallel**: `token_tasks.rs:617` (`step_update_config`).
+- **Preconditions**: TK-003; owner identity. Note the shared OnceCell contract caches `max_supply` for cross-test reads — this case uses a fresh deploy to avoid mutating the shared fixture under other tests.
+- **Scenario**:
+  1. Setup token (fresh deploy) with `max_supply = Some(1_000_000_000_000_000)`.
+  2. Owner calls `token_update_config_with_signer(contract, 0, owner, ChangeItem::MaxSupply(Some(2_000_000_000_000_000)), …)`.
+  3. Re-fetch the contract; read the token's `max_supply`.
+- **Assertions**:
+  - Returned contract reflects the new `max_supply`.
+  - Contract version (or token-config version, whichever DPP increments) advanced.
+  - `ConfigUpdateResult.actual_fee > 0`.
+- **Negative variants**:
+  - Update with `MaxSupply(Some(< current_supply))` → typed error.
+  - Update with a `ChangeItem` variant disallowed by ChangeControlRules → typed auth error.
+  - Non-admin update → typed auth error.
+- **Harness extensions required**: TK-003 helpers (fresh-deploy variant); helper to re-fetch the contract bytes after the change.
+- **Estimated complexity**: M
+- **Rationale**: `TokenConfigurationChangeItem` is open-ended (DPP grows it over time). One pinned variant (`MaxSupply`) catches schema-drift across DPP bumps; specific high-risk variants get their own follow-up cases.
+
+#### TK-013 — Token claim from pre-programmed distribution
+- **Status**: STUB — `tests/e2e/cases/tk_013_token_claim_pre_programmed.rs` (Wave 2-ζ; `#[ignore]`-tagged, runs on demand). Uses a fresh deploy with `distribution_rules` override (not the shared OnceCell), since the distribution config is per-test.
+- **Priority**: P2
+- **Wallet feature exercised**: `wallet/identity/network/tokens/claim.rs:18` (`token_claim_with_signer`).
+- **DET parallel**: `token_tasks.rs:702` (`tc_064_estimate_perpetual_rewards`) — DET only tests the *estimate* path because their `shared_token` has no perpetual; the actual claim flow is uncovered in DET. We propose to cover it.
+- **Preconditions**: a token deployed with pre-programmed distribution: epoch 0 at a past timestamp granting `100` tokens to the configured beneficiary identity (= owner).
+- **Scenario**:
+  1. `setup_with_token_and_pre_programmed_distribution()` returns `(token, owner)` with a distribution event already eligible.
+  2. Owner calls `token_claim_with_signer(contract, 0, owner_id, distribution_type=PreProgrammed, …)`.
+  3. Read post-claim balance.
+- **Assertions**:
+  - Owner balance increased by exactly the documented per-epoch payout (`100`).
+  - `ClaimResult.actual_fee > 0`.
+  - Second claim within the same epoch returns a typed "already claimed" / "no claimable amount" error.
+- **Negative variants**:
+  - Identity with no distribution rights claims → typed error.
+  - Claim on a contract with no distribution configured → typed error.
+- **Harness extensions required**: TK-003 helpers extended with a `with_pre_programmed_distribution(epoch_zero_at, payout)` variant; `token_balance_of` helper (Wave G SDK-wrapper).
+- **Estimated complexity**: L (the contract config is the non-trivial part — pre-programmed distribution JSON shape).
+- **Rationale**: Claim is silent on failure — the balance just doesn't move. Pre-programmed-distribution variant dodges the live-time perpetual-distribution wait, putting the test inside CI runtime budget. The live-perpetual sibling (TK-002) stays out of the synchronous tier.
+
+#### TK-014 — Group-action gateway: queue a mint, list pending, co-sign
+- **Status**: STUB — `tests/e2e/cases/tk_014_token_group_action.rs` (Wave 2-ζ; `#[ignore]`-tagged, runs on demand). Uses a fresh deploy with `main_control_group` and `groups` populated; spins three identities (proposer + two co-signers) and asserts the proposer's mint is non-final, that pending lists it, and that the co-sign produces the synchronous group MintResult.
+- **Priority**: P2
+- **Wallet feature exercised**: `wallet/identity/network/tokens/mint.rs:19` (`token_mint_with_signer`) with `group_info: Some(...)`; read-side `wallet/tokens/group_queries.rs::pending_group_actions_external` and `group_action_signers_external`.
+- **DET parallel**: none direct in `tests/backend-e2e/token_tasks.rs` (DET's contract uses `groups: BTreeMap::new()`); coverage exists in DET production code.
+- **Preconditions**: token contract with `mint_rules` requiring group action and `groups` populated with a group containing three identities.
+- **Scenario**:
+  1. Identity A proposes a mint via `token_mint_with_signer(..., group_info: Some(NewGroupAction(...)))`.
+  2. Read `pending_group_actions_external(...)` — assert one entry, status `Open`, params == proposed mint.
+  3. Identity B co-signs by re-issuing `token_mint_with_signer(..., group_info: Some(ExistingGroupAction(action_id)))`.
+  4. Read `pending_group_actions_external(...)` — status now `Closed`/`Approved`; mint applied; supply increased.
+- **Assertions**:
+  - After step 1: pending list contains the proposal; recipient balance unchanged.
+  - After step 3: pending list shows action closed; recipient balance increased by minted amount; total supply increased.
+  - `MintResult.actual_fee > 0` on both proposer and co-signer.
+- **Negative variants**:
+  - Co-sign by a non-member → typed auth error.
+  - Co-sign with a parameter mismatch (different amount) → typed mismatch error.
+- **Harness extensions required**: TK-003 with group config; `setup_three_identities` helper; group-discovery accessor wiring.
+- **Estimated complexity**: L
+- **Rationale**: Group-gated actions are an entire class of bug surface (sign-thresholds, parameter binding). One pinned end-to-end case unlocks the rest as cheap variants in a follow-up.
 
 ### Core / SPV (CR)
 
@@ -1022,9 +1401,10 @@ implies SPV-off is the default is incorrect.
 - **Rationale**: Catches Core-account derivation regressions independently of broadcast/sync.
 
 #### CR-003 — Asset-lock-funded identity registration (full path)
-- **Priority**: P2
-- **Status**: PASS — SPV enabled (Task #15 complete); Core-sweep teardown is best-effort (warns on failure, does not propagate). Any teardown sweep failure is logged and skipped rather than failing the test.
-- **Wallet feature exercised**: `wallet/asset_lock/build.rs:39` + `wallet/identity/network/registration.rs:240` (`register_identity_with_signer`).
+<!-- merge note: both sides flip CR-003 to PASS. Kept theirs' detailed Status (file path, env-gate behaviour, funding-amount + operator-actionable error contract, bank Core address logging) and theirs' more precise Wallet-feature exercise list (build.rs:39 + build.rs:285 + registration.rs:59). Folded in HEAD's distinct Core-sweep-teardown-best-effort fact as a separate Status sentence so it isn't lost. -->
+- **Priority**: P2 (post-Task #15)
+- **Status**: Pass — `tests/e2e/cases/cr_003_asset_lock_funded_registration.rs` (`#[ignore]`-tagged; harness init blocks on the **default-on** `PLATFORM_WALLET_E2E_BANK_CORE_GATE`). Builds the asset-lock tx via `setup_with_core_funded_test_wallet(TEST_WALLET_CORE_FUNDING)`, waits for the IS-lock, registers the identity, and pins on-chain identity existence + `tracked_asset_locks` recording + Core-balance decrement (lock amount + fee, in duffs). End-to-end runs require the bank's Core (Layer-1) primary receive address to hold at least `TEST_WALLET_CORE_FUNDING + CORE_TX_FEE_RESERVE` (≈ 200_010_000 duffs ≈ 2.0001 DASH testnet); under-funded surfaces as `FrameworkError::Bank` with the bank's Core address embedded so the operator-actionable "top up at &lt;addr&gt;" message reaches the test log unchanged. The bank Core address is logged once per process at framework init under the `platform_wallet::e2e::bank` target. Core-sweep teardown is best-effort: any teardown sweep failure is logged and skipped rather than failing the test.
+- **Wallet feature exercised**: `wallet/asset_lock/build.rs:39` (`build_asset_lock_transaction`) + `wallet/asset_lock/build.rs:285` (`create_funded_asset_lock_proof`) + `wallet/identity/network/registration.rs:59` (`register_identity_with_funding_external_signer` driving `IdentityFundingMethod::FundWithWallet`).
 - **DET parallel**: `dash-evo-tool/tests/backend-e2e/core_tasks.rs:132` (`test_tc004_create_registration_asset_lock`).
 - **Preconditions**: CR-001 + a Core-funded test wallet (operator funds via testnet faucet).
 - **Scenario**: build asset-lock tx; wait for instant-lock; register identity.
@@ -1033,6 +1413,7 @@ implies SPV-off is the default is incorrect.
 - **Harness extensions required**: faucet adapter; Core-funded wallet helper.
 - **Estimated complexity**: L
 - **Rationale**: Mirrors DET's existing canonical Identity-create coverage. Lower priority than ID-001 because address-funded is the path with no other coverage in the workspace.
+- **Operator notes**: First cold-cache run takes ~15 minutes because SPV walks compact filters from genesis (~1.47M testnet blocks). Subsequent runs reuse the on-disk cache and complete in seconds. The harness gates init on `PLATFORM_WALLET_E2E_BANK_CORE_GATE` — **default-on with a 900s deadline**, waiting for the bank's confirmed Core balance to become non-zero so CR-003 doesn't race a cold-cache scan and see `core_balance_confirmed=0` mid-scan. Set the var to `0` (or `disabled` / `false` / `off`) to opt out for Platform-only suites; set a positive integer to override the timeout in seconds. Set `RUST_LOG=info,platform_wallet::e2e::wait=info` to see scan-progress lines (`scan_height` vs `scan_tip`) every 30s.
 
 #### CR-004 — Legacy BIP32 account: balance + UTXO state updates after spend
 
@@ -1115,7 +1496,7 @@ implies SPV-off is the default is incorrect.
 
 #### DPNS-001 — Register and resolve a `.dash` name
 - **Priority**: P0
-- **Status**: STUB — placeholder for follow-up PR (Wave A + DPNS helpers).
+- **Status**: STUB — implemented in `cases/dpns_001_register_name.rs`; `#[ignore]`-gated, run with `cargo test -- --ignored`.
 - **Wallet feature exercised**: `wallet/identity/network/dpns.rs:176` (`register_name_with_external_signer`); `dpns.rs:281` (`resolve_name`).
 - **DET parallel**: `dash-evo-tool/tests/backend-e2e/register_dpns.rs:14` (`test_register_dpns_name`).
 - **Preconditions**: ID-001 helper; identity has `≥ 100_000_000` credits (DPNS register fee + headroom).
@@ -1808,7 +2189,7 @@ order. Each wave unlocks the cases listed.
 - Add `derive_identity_key(seed_bytes, network, identity_index, key_index, purpose, security_level) -> IdentityPublicKey` test helper.
 - Add `TestWallet::register_identity_from_addresses(funding: Credits) -> Identity` helper that builds the placeholder, calls `register_from_addresses`, and waits for on-chain visibility.
 - Add `wait_for_identity_balance(identity_id, expected, timeout)` in `framework/wait.rs`.
-- **Unlocks**: ID-001, ID-001c, ID-002, ID-003, ID-004, ID-005, ID-005b, ID-006, ID-006b, DPNS-001, DPNS-001b, DPNS-001c, DPNS-002 (partial), CT-001, DP-001, DP-001b, DP-001c, DP-002, DP-003, TK-001, TK-001b, TK-002, TK-003, TK-004, CN-001.
+- **Unlocks**: ID-001, ID-001c, ID-002, ID-003, ID-004, ID-005, ID-005b, ID-006, ID-006b, DPNS-001, DPNS-001b, DPNS-001c, DPNS-002 (partial), CT-001, DP-001, DP-001b, DP-001c, DP-002, DP-003, TK-001, TK-001b, TK-002, CN-001.
 
 ### Wave B — Multi-identity per setup
 - Extend `setup()` to accept `setup_with_n_identities(n: u32) -> SetupGuard { test_wallet, identities: Vec<RegisteredIdentity> }`.
@@ -1820,10 +2201,9 @@ order. Each wave unlocks the cases listed.
 - One canonical `minimal.json` (one doc type, two scalar fields).
 - **Unlocks**: CT-001, CT-002, CT-003.
 
-### Wave D — Token contract operator config
-- `Config::token_contract_id`, `Config::token_position`, optional `Config::token_claim_amount`.
-- Operator pre-funds tokens to the bank-derived identity (one-time, README'd next to bank pre-funding).
-- **Unlocks**: TK-001, TK-001b, TK-002, TK-003, TK-004.
+### Wave D — Token contract operator config (SUPERSEDED by Wave G)
+- Original plan: `Config::token_contract_id`, `Config::token_position`, optional `Config::token_claim_amount`; operator pre-funds tokens to a bank-derived identity (one-time, README'd next to bank pre-funding).
+- Superseded: the wallet already accepts `tokens_schema_json` on `create_data_contract_with_signer` (`wallet/identity/network/contract.rs:124`), so the suite can deploy a fresh token contract per CI run instead of relying on operator pre-funding. See Wave G below.
 
 ### Wave E — SPV re-enablement (Task #15) — COMPLETE
 - SPV block in `harness.rs:200-218` is active; `SpvContextProvider` is wired (replaces `TrustedHttpContextProvider`).
@@ -1831,6 +2211,33 @@ order. Each wave unlocks the cases listed.
 - Core-funded test wallet helper (faucet integration) is ready.
 - **Unlocked**: CR-001, CR-002, CR-003 (all PASS-pending-validation or PASS).
 - **Note**: `PLATFORM_WALLET_E2E_DISABLE_SPV=1` is an operator escape hatch for ChainLock-cycle outages (rust-dashcore #470). It is NOT the default. SPV-on has been the operating mode since v17.
+
+### Wave G — Token harness extensions
+- Replaces Wave D. The wallet's `create_data_contract_with_signer` already accepts a `tokens_schema_json` argument; Wave G assembles the V1 token-config JSON from a structured `TokenContractOpts` struct so test bodies stay terse and the schema-drift surface lives in exactly one place.
+- Default contract is OnceCell-cached and shared across most TK cases (mirrors PA's bank-shared / per-test-wallet split). Tests that need a non-default config (pre-programmed distribution, groups, paused-on-create) opt into a fresh deploy.
+- All helpers live in `packages/rs-platform-wallet/tests/e2e/framework/tokens.rs` (new module).
+- Harness helpers (~19 total — helpers 6–10 and 14–19 are SDK-wrapper helpers, replacing what were previously tracked as Gap-T1..Gap-T6 wallet-API gaps; the wallet's public API does not need new methods to support these tests):
+  1. `setup_with_token_contract(harness, opts: TokenContractOpts) -> TokenContractFixture` — registers an identity (via Wave A) and deploys a permissive owner-only token contract; default opts mirror DET's `build_register_token_task` (8 decimals, max supply 1e15, owner-only ChangeControlRules, no perpetual, allow-choose-destination).
+  2. `setup_with_token_and_two_identities(harness, opts) -> (TokenContractFixture, TestIdentity)` — composes (1) with `register_extra_identity` for the multi-identity TK cases.
+  3. `setup_with_token_and_three_identities(harness, opts) -> (TokenContractFixture, [TestIdentity; 2])` — three-identity variant for TK-014 group co-sign.
+  4. `setup_with_token_pre_programmed_distribution(harness, payout, epoch_zero_at) -> TokenContractFixture` — TK-013 variant injecting a past-timestamp epoch-zero distribution.
+  5. `mint_to(wallet, fixture, recipient, amount) -> MintResult` — one-line mint shortcut for tests that need a balance on a given identity before the operation under test.
+  6. `token_balance_of(identity, fixture) -> TokenAmount` — read-side accessor; wraps `TokenInfo::fetch_one` (or equivalent SDK query) directly. SDK call site: `packages/rs-sdk/src/platform/fetch_many.rs` token-info variant. (Previously tracked as Gap-T2.)
+  7. `token_supply_of(fixture) -> TokenAmount` — total-supply accessor; queries SDK token-supply endpoint directly. (Previously tracked as Gap-T3.)
+  8. `token_is_paused_of(fixture) -> bool` — paused-flag accessor; re-fetches the data contract via `DataContract::fetch` and reads the token-state field. (Previously tracked as Gap-T4.)
+  9. `token_pricing_of(fixture) -> Option<TokenPricingSchedule>` — pricing accessor; re-fetches the data contract and extracts the pricing schedule. (Previously tracked as Gap-T5.)
+  10. `token_frozen_balance_of(identity, fixture) -> Option<TokenAmount>` — frozen-balance accessor; queries the SDK freeze-state proof endpoint directly. (Previously tracked as Gap-T6.)
+  11. `wait_for_token_balance(identity, fixture, expected, timeout) -> Result<()>` — polls `token_balance_of` until equal-or-timeout; mirrors the PA `wait_for_balance` shape.
+  12. `permissive_owner_token_contract_json(owner_id, opts) -> String` — pure helper that assembles the V1 token-contract JSON from the opts struct + owner id; the single source of truth for "what shape DPP wants today" (mirrors DET's `build_register_token_task` payload at `dash-evo-tool/tests/backend-e2e/framework/token_helpers.rs:33-96`).
+  13. `register_extra_identity(harness, funding) -> TestIdentity` — registers a fresh identity from a freshly funded test wallet; mirrors DET's `ensure_second_identity()` at `dash-evo-tool/tests/backend-e2e/token_tasks.rs:35`. Likely shared with ID-002 / ID-003 / DP-002.
+  14. `register_token_contract_via_sdk(sdk, owner_key, opts) -> DataContractId` — constructs the V1 token-contract document from `TokenContractOpts` and broadcasts via `Sdk::put_data_contract` (or the equivalent state-transition method). SDK call site: `packages/rs-sdk/src/platform/put.rs`. This is the SDK-direct path that helper (12) + `create_data_contract_with_signer` compose; exposed as a standalone helper for tests that need raw control. (Previously tracked as Gap-T1.)
+  15. `token_balance_raw(sdk, identity_id, contract_id, token_position) -> TokenAmount` — lower-level variant of helper (6) accepting raw ids rather than a fixture; useful for cross-contract assertions.
+  16. `token_supply_raw(sdk, contract_id, token_position) -> TokenAmount` — lower-level variant of helper (7).
+  17. `token_is_paused_raw(sdk, contract_id, token_position) -> bool` — lower-level variant of helper (8).
+  18. `token_pricing_raw(sdk, contract_id, token_position) -> Option<TokenPricingSchedule>` — lower-level variant of helper (9).
+  19. `token_frozen_balance_raw(sdk, identity_id, contract_id, token_position) -> Option<TokenAmount>` — lower-level variant of helper (10).
+- **Note on Gap-T1..Gap-T6**: these were previously listed as wallet-API surface gaps requiring new methods on `PlatformWallet`. That framing is superseded. Helpers 6–10 and 14–19 above implement the same functionality as framework-level SDK wrappers. No wallet public API change is needed; the test framework calls the SDK directly.
+- **Unlocks**: TK-001, TK-001b, TK-001c, TK-002, TK-003, TK-004, TK-005, TK-005b, TK-006, TK-007, TK-008, TK-009, TK-010, TK-011, TK-012, TK-013, TK-014.
 
 ### Wave F — Test-only utility helpers
 - `TestWallet::transfer_with_inputs` (PA-002 negative variant; PA-004b exact-balance setup).
@@ -1846,7 +2253,8 @@ order. Each wave unlocks the cases listed.
 - **Unlocks**: PA-002 (negative), PA-002b, PA-004 (full assertions), PA-004b, PA-004c, PA-006, PA-006b, PA-008c, PA-009, PA-010, PA-011, PA-012, PA-013, Harness-G1a, Harness-G1b, Harness-G4.
 - **Cost**: ~200-400 LoC across multiple commits; the test-DAPI-proxy and cancellation-hook items are non-trivial and can land late.
 
-**Recommended build order**: Wave A first (highest leverage — unblocks 25+ cases), then Wave F's cheap helpers (estimate-fee, transfer-with-inputs, registry status, FUNDING_MUTEX hook) which unblock most P2 PA cases, then Wave C, then Wave B as ID-003/DP-002 land. Wave F's expensive items (test DAPI proxy, cancellation hook) and Waves D/E are independent and can run in parallel with the others once a champion is assigned. Wave E is complete.
+<!-- merge note: kept theirs' updated build-order paragraph (Wave G/D supersession, SDK-wrapper helper note). Appended HEAD's "Wave E is complete" as a follow-on sentence reflecting Task #15 closure (CR-003 has flipped PASS). Preserved HEAD-only "Framework notes (post-V20)" subsection — distinct content the test-branch doesn't carry. -->
+**Recommended build order**: Wave A first (highest leverage — unblocks 25+ cases), then Wave F's cheap helpers (estimate-fee, transfer-with-inputs, registry status, FUNDING_MUTEX hook) which unblock most P2 PA cases, then Wave C, then Wave B as ID-003/DP-002 land. Wave G unlocks the entire TK column once Wave A is in place; the SDK-wrapper helpers in Wave G (helpers 6–10 and 14–19, previously tracked as Gap-T1..T6) land together with Wave G, not as follow-up wallet PRs. Wave F's expensive items (test DAPI proxy, cancellation hook) and Wave E are independent and can run in parallel with the others once a champion is assigned. Wave D is superseded by Wave G. Wave E is complete (Task #15 closed; CR-003 has flipped PASS, see §3 CR-003 Status).
 
 ### Framework notes (post-V20)
 
@@ -1862,7 +2270,7 @@ the spec but each would simplify a test if filed as a follow-up issue:
 1. **No `PlatformWallet::fee_paid` accessor** — every PA case derives the fee from `Σ funded - Σ received - Σ remaining`. A first-class `last_transfer_fee()` (or a `fee` field on `PlatformAddressChangeSet`) would let assertions read the fee directly. Currently noted as a comment in `cases/transfer.rs:142-147`.
 2. **No public sync-watermark getter on `PlatformAddressWallet`** — PA-007 needs to read the provider's `last_known_recent_block` to assert monotonicity. The field is internal; exposing a `pub fn sync_watermark() -> Option<RecentBlock>` would unblock cleanly.
 3. **`IdentityManager::known_identities()` shape** — needed by ID-001's "exactly one identity registered" assertion. If the manager exposes only `BTreeMap<u32, ManagedIdentity>` without a length convenience, the test must pull internals; a `.len()` / `.identity_ids()` helper would be cleaner.
-4. **Token-balance accessor by `(identity, contract, position)`** — `wallet/tokens/wallet.rs:248` already has `balance(...)`; confirm signature matches what TK-001 needs (`balance_for(identity_id, contract_id, position)`) and add the convenience if not.
+4. **Token-balance, supply, freeze, and pricing accessors on `PlatformWallet`** — `wallet/tokens/wallet.rs:248` already has `balance(...)`; the remaining read-side accessors (supply, freeze state, pricing, paused flag) are not yet on the wallet's public API. These are now covered by the SDK-wrapper helpers in `framework/tokens.rs` (Wave G helpers 6–10 and 14–19); adding first-class wallet methods remains a desirable but non-blocking follow-up. Previously tracked as Gap-T2..Gap-T6.
 5. **DPNS `register_name_with_external_signer` lacks a "wait for visibility" partner** — Wave A would benefit from a `wait_for_dpns_name_visible(name, timeout)` helper, ideally co-located with `wait_for_balance` in `framework/wait.rs`.
 6. **No protocol-version accessor for `min_input_amount` / `max_outputs`** — PA-009 and PA-014 need to read these from the active `PlatformVersion`; expose a thin test-friendly getter.
 
@@ -1874,8 +2282,9 @@ Explicit list of what this suite WILL NOT cover, with reasons. Each entry
 prevents future scope creep arguments.
 
 1. **Shielded transfers** — entire `wallet/shielded/` surface. Reason: prover, viewing-key derivation, and note-selection are a parallel system; coverage belongs in a dedicated suite. Re-evaluate when shielded ships to mainnet.
+<!-- merge note: item 2 — kept HEAD (SPV is enabled now via Task #15; withdrawal stays out-of-scope on its own merits, not on the SPV gate). Item 3 — kept theirs (Wave D is superseded by Wave G; the suite deploys per-CI rather than relying on operator pre-funding), which reflects the current architectural decision. -->
 2. **Credit withdrawals** (`wallet/identity/network/withdrawal.rs`, `wallet/platform_addresses/withdrawal.rs`) — withdrawal verification requires Layer-1 observation of the withdrawal tx. SPV is now enabled (Task #15 complete) but withdrawal coverage is deferred pending a dedicated test design — the flow is more complex than a simple SPV read and DET currently owns the canonical coverage.
-3. **Token contract deployment** — no testnet contract registry; the suite assumes pre-deployed contracts via env config (Wave D).
+3. **Operator-pre-funded testnet token contracts** — the original Wave D plan (env-config + operator-provided contract id) is superseded. The suite deploys a fresh token contract per CI run via Wave G; no operator-side registry is required and no testnet contract id is consumed from config.
 4. **Asset-lock-funded identity registration** — the bank holds Platform credits, not Core UTXOs. The address-funded variant (ID-001) covers this need from the wallet's perspective; full asset-lock coverage stays with DET (`dash-evo-tool/tests/backend-e2e/identity_create.rs`).
 5. **DAPI Core path** (`tx_is_ours`, mn-list diffs, peer behaviour) — DET territory; this suite tests the wallet against DAPI, not DAPI itself.
 6. **Cross-process bank concurrency** — README §"Multi-process safety" documents the operator-side requirement; not a test concern.
@@ -1890,7 +2299,7 @@ prevents future scope creep arguments.
 
 Each question's answer changes the spec; numbered for reference.
 
-1. **Token contract registry** — do we maintain one canonical testnet token contract for TK-001..TK-004, or do we rely on operators to provide their own via env? (Answer changes Wave D scope.)
+1. **Token contract registry** — superseded: Wave G deploys a fresh token contract per CI run via the wallet's `create_data_contract_with_signer` (`tokens_schema_json` argument). No operator-side registry is required. Retained here for historical context.
 2. **Contested-name coverage** — should CN-001 be promoted to P1, or do we accept DET parity and leave it P2/deferred?
 3. **Long-running tests** — PA-005 (16 funding round-trips, ~3 min) is borderline. Do we accept multi-minute tests in the default `cargo test --test e2e` run, or gate them behind a `slow-tests` cargo feature?
 4. **Identity withdrawal coverage** — SPV (Task #15) is now live. The question remains: do we add withdrawal coverage here, or defer to DET's exclusive territory?

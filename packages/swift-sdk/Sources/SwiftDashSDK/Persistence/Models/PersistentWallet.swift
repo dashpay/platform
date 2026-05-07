@@ -13,6 +13,12 @@ import SwiftData
 /// Per-account totals continue to live on `PersistentAccount`.
 @Model
 public final class PersistentWallet {
+    /// Index `networkRaw` so per-network wallet scans (used everywhere
+    /// from the network-scoped storage explorer to the per-network
+    /// "is there a wallet on this chain yet" lookups) don't degrade
+    /// to a table scan.
+    #Index<PersistentWallet>([\.networkRaw])
+
     /// 32-byte wallet ID (SHA256 of root public key).
     @Attribute(.unique) public var walletId: Data
     /// Network this wallet belongs to. `nil` means "not yet known" —
