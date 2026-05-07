@@ -52,6 +52,12 @@ jobs:
       - name: Check formatting
         run: cargo fmt --check --all
 
+      - name: No new inherent JSON/Value conversions
+        # Ensures new rs-dpp types use the canonical JsonConvertible /
+        # ValueConvertible traits instead of re-introducing parallel
+        # inherent methods. See docs/json-value-conversion-canonical-pattern.md.
+        run: ./scripts/lint/check_no_new_inherent_conversions.sh
+
       - name: Clippy lints
         run: |
           cargo clippy \
