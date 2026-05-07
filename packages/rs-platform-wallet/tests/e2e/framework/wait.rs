@@ -18,7 +18,7 @@ use dpp::data_contract::DataContract;
 use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
-use dpp::prelude::Identifier;
+use dpp::prelude::{AddressNonce, Identifier};
 use platform_wallet::SpvRuntime;
 
 use super::bank::BankWallet;
@@ -511,6 +511,119 @@ async fn wait_for_address_balance_chain_confirmed_with_gap(
 
         let next_sleep = if hit && streak < required {
             success_gap
+        } else {
+            BACKSTOP_WAKE_INTERVAL
+        };
+        tokio::time::sleep(std::cmp::min(remaining, next_sleep)).await;
+    }
+}
+
+/// Wait until every `(addr, expected_nonce)` pair in `expected` is
+/// observable on chain via proof-verified [`AddressInfo::fetch`] with
+/// `info.nonce >= expected_nonce`, requiring
+/// [`CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES`] back-to-back full-set
+/// successes spaced by [`CHAIN_CONFIRMED_SUCCESS_GAP`].
+///
+/// Used by `BankWallet::fund_address` to hold `FUNDING_MUTEX` until the
+/// chain state read by the **next** caller's
+/// `fetch_inputs_with_nonce` has caught up to the nonce we just
+/// committed. Without this gate, two parallel `fund_address` calls
+/// race the per-address nonce: the SDK's `broadcast_and_wait` returns
+/// once *some* DAPI node has the result, but the next caller's nonce
+/// fetch round-robins onto a sibling node still showing the pre-tx
+/// nonce, builds `provided_nonce = N` against an already-incremented
+/// chain expected-nonce of `N+1` (or vice versa), and the validator
+/// rejects with `AddressInvalidNonceError`. Mirrors the
+/// `wait_for_address_balance_chain_confirmed_n` / Marvin QA-802
+/// playbook on the nonce axis.
+///
+/// `expected` may include addresses whose nonce is unchanged (typical
+/// for transfer **outputs**); those gate-clear immediately and add no
+/// real wait cost. Empty `expected` returns `Ok(())` with no work.
+///
+/// Returns [`FrameworkError::Cleanup`] on timeout. The error message
+/// names the addresses still below target so operators can correlate
+/// with the broadcast log.
+pub async fn wait_for_address_nonces_chain_confirmed(
+    sdk: &Sdk,
+    expected: &[(PlatformAddress, AddressNonce)],
+    timeout: Duration,
+) -> FrameworkResult<()> {
+    if expected.is_empty() {
+        return Ok(());
+    }
+    let required = CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES.max(1);
+    let start = Instant::now();
+    let deadline = Instant::now() + timeout;
+    let mut streak: u32 = 0;
+
+    loop {
+        let mut all_satisfied = true;
+        let mut last_lag: Option<(PlatformAddress, AddressNonce, AddressNonce)> = None;
+        for (addr, expected_nonce) in expected {
+            match AddressInfo::fetch(sdk, *addr).await {
+                Ok(Some(info)) if info.nonce >= *expected_nonce => {}
+                Ok(Some(info)) => {
+                    all_satisfied = false;
+                    last_lag = Some((*addr, *expected_nonce, info.nonce));
+                    break;
+                }
+                Ok(None) => {
+                    all_satisfied = false;
+                    last_lag = Some((*addr, *expected_nonce, 0));
+                    break;
+                }
+                Err(err) => {
+                    all_satisfied = false;
+                    tracing::debug!(
+                        target: "platform_wallet::e2e::wait",
+                        error = %err,
+                        addr = ?addr,
+                        "AddressInfo::fetch failed during \
+                         wait_for_address_nonces_chain_confirmed; resetting streak"
+                    );
+                    break;
+                }
+            }
+        }
+
+        if all_satisfied {
+            streak = streak.saturating_add(1);
+            if streak >= required {
+                tracing::info!(
+                    target: "platform_wallet::e2e::wait",
+                    addresses = expected.len(),
+                    streak,
+                    required,
+                    elapsed = ?start.elapsed(),
+                    "address nonces chain-confirmed"
+                );
+                return Ok(());
+            }
+        } else {
+            if streak > 0 {
+                tracing::debug!(
+                    target: "platform_wallet::e2e::wait",
+                    streak,
+                    lag = ?last_lag,
+                    "nonce streak broken; resetting"
+                );
+            }
+            streak = 0;
+        }
+
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(FrameworkError::Cleanup(format!(
+                "wait_for_address_nonces_chain_confirmed timed out after {timeout:?} \
+                 (addresses={count} streak_at_timeout={streak} last_lag={lag:?})",
+                count = expected.len(),
+                lag = last_lag,
+            )));
+        }
+
+        let next_sleep = if all_satisfied && streak < required {
+            CHAIN_CONFIRMED_SUCCESS_GAP
         } else {
             BACKSTOP_WAKE_INTERVAL
         };

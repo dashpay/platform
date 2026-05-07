@@ -10,11 +10,12 @@ use std::collections::BTreeMap;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use bip39::Mnemonic as Bip39Mnemonic;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
+use dpp::prelude::AddressNonce;
 use dpp::util::hash::ripemd160_sha256;
 use dpp::version::PlatformVersion;
 use key_wallet::account::account_type::StandardAccountType;
@@ -35,7 +36,31 @@ use super::{make_platform_signer, FrameworkError, FrameworkResult};
 
 /// In-process funding mutex — serialises concurrent
 /// `bank.fund_address` calls so nonces don't race.
+///
+/// **Scope (QA-V20-001):** held for **broadcast AND chain
+/// observation**. The SDK's `transfer_address_funds` already does
+/// `broadcast_and_wait` and only returns Ok once *some* DAPI node has
+/// the proof, but the very next `fund_address` caller's
+/// `fetch_inputs_with_nonce` round-robins across DAPI replicas — and
+/// a sibling node still lagging the funded block returns the pre-tx
+/// nonce. The next caller then builds `provided_nonce = N` against an
+/// already-incremented chain expected-nonce of `N+1` and the
+/// validator rejects with `AddressInvalidNonceError`. To close the
+/// race, `fund_address` polls
+/// [`super::wait::wait_for_address_nonces_chain_confirmed`] over the
+/// just-spent input addresses **before** dropping the guard, so the
+/// next caller's nonce fetch is far less likely to land on a
+/// still-lagging node. Same shape as the QA-802 / Marvin
+/// chain-confirmed-balance gate, on the nonce axis.
 static FUNDING_MUTEX: AsyncMutex<()> = AsyncMutex::const_new(());
+
+/// Hard ceiling on the post-broadcast chain-confirmation wait inside
+/// [`BankWallet::fund_address`]. Testnet block production is usually
+/// 2–5 s but has been observed at ~75 s under contention (TK-013
+/// QA-V19-001 timeline). 120 s is a safety net: if the chain hasn't
+/// caught up in two minutes, something else is wrong and the test
+/// should fail fast with a clear panic rather than hang the suite.
+const FUNDING_TX_CONFIRMATION_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// Monotonic sequence for [`FUNDING_MUTEX`] entries. Each successful
 /// acquisition of [`FUNDING_MUTEX`] inside [`BankWallet::fund_address`]
@@ -317,6 +342,7 @@ impl BankWallet {
 
         let outputs: BTreeMap<PlatformAddress, Credits> =
             std::iter::once((*target, credits)).collect();
+        let broadcast_started = Instant::now();
         let result = self
             .wallet
             .platform()
@@ -330,6 +356,74 @@ impl BankWallet {
             )
             .await
             .map_err(wallet_err);
+
+        // Hold FUNDING_MUTEX until the chain-confirmed nonce is
+        // observable on enough DAPI replicas that the next caller's
+        // `fetch_inputs_with_nonce` won't round-robin onto a lagging
+        // node and collide on the same address nonce
+        // (QA-V20-001 / `AddressInvalidNonceError`). On Ok we collect
+        // the post-tx nonces from the changeset (these come from the
+        // proof returned by `broadcast_and_wait`, so they reflect the
+        // committed state) and gate on the standard
+        // chain-confirmed-streak helper. A timeout panics rather than
+        // returning a typed error: 120 s without chain catch-up is a
+        // platform-level failure, and silently retrying would mask it.
+        let result = match result {
+            Ok(cs) => {
+                let expected_nonces: Vec<(PlatformAddress, AddressNonce)> = cs
+                    .addresses
+                    .iter()
+                    .map(|entry| {
+                        (
+                            PlatformAddress::P2pkh(entry.address.to_bytes()),
+                            entry.funds.nonce,
+                        )
+                    })
+                    .collect();
+                tracing::info!(
+                    target: "platform_wallet::e2e::bank",
+                    addresses = expected_nonces.len(),
+                    seq,
+                    elapsed_ms = broadcast_started.elapsed().as_millis() as u64,
+                    "bank.fund_address: transfer broadcast accepted, waiting for chain confirmation"
+                );
+                let confirm_started = Instant::now();
+                match super::wait::wait_for_address_nonces_chain_confirmed(
+                    self.wallet.sdk(),
+                    &expected_nonces,
+                    FUNDING_TX_CONFIRMATION_TIMEOUT,
+                )
+                .await
+                {
+                    Ok(()) => {
+                        tracing::info!(
+                            target: "platform_wallet::e2e::bank",
+                            addresses = expected_nonces.len(),
+                            seq,
+                            elapsed_ms = confirm_started.elapsed().as_millis() as u64,
+                            "bank.fund_address: chain confirmation observed"
+                        );
+                        Ok(cs)
+                    }
+                    Err(err) => {
+                        tracing::error!(
+                            target: "platform_wallet::e2e::bank",
+                            error = %err,
+                            seq,
+                            elapsed_ms = confirm_started.elapsed().as_millis() as u64,
+                            timeout_secs = FUNDING_TX_CONFIRMATION_TIMEOUT.as_secs(),
+                            "bank.fund_address: chain confirmation timeout"
+                        );
+                        panic!(
+                            "bank.fund_address: chain-confirmed nonce did not catch up within \
+                             {timeout:?} (seq={seq}); platform-level failure, see error log: {err}",
+                            timeout = FUNDING_TX_CONFIRMATION_TIMEOUT,
+                        );
+                    }
+                }
+            }
+            Err(err) => Err(err),
+        };
 
         // Sample exit BEFORE `_guard` drops so the recorded interval
         // is a strict subset of the time the lock was actually held.
