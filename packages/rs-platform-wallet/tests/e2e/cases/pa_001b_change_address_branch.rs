@@ -77,7 +77,11 @@ async fn pa_001b_change_address_branch() {
         .expect("derive addr_2");
 
     let user_outputs: BTreeMap<_, _> = std::iter::once((addr_2, TRANSFER_CREDITS)).collect();
-    let inputs: BTreeMap<_, _> = std::iter::once((addr_1, FUNDING_CREDITS)).collect();
+    // QA-V19-002: Explicit declares "consume exactly this much from addr". Σ in must
+    // match Σ out (no implicit change synthesis on None branch). Declaring the full
+    // FUNDING_CREDITS would force a 100M-vs-30M mismatch — declare only what ships
+    // (TRANSFER_CREDITS) and the un-declared residual stays on addr_1 implicitly.
+    let inputs: BTreeMap<_, _> = std::iter::once((addr_1, TRANSFER_CREDITS)).collect();
 
     let platform_a: &PlatformAddressWallet = s_a.test_wallet.platform_wallet().platform();
     platform_a
@@ -104,12 +108,10 @@ async fn pa_001b_change_address_branch() {
     let bal_a = s_a.test_wallet.balances().await;
     let addr_1_post = bal_a.get(&addr_1).copied().unwrap_or(0);
     let addr_2_post = bal_a.get(&addr_2).copied().unwrap_or(0);
-    // None branch: implicit change. With `Explicit({addr_1: 60M})`
-    // and `outputs = {addr_2: 5M}` the protocol enforces
-    // `Σ inputs (consumed) == Σ outputs`, so addr_1's CONSUMED is
-    // 5M and the remaining ~95M sits on addr_1 untouched. Pin only
-    // the qualitative outcome — the exact post-balance numbers
-    // depend on chain-time fees.
+    // None branch: Explicit({addr_1: TRANSFER_CREDITS}) declares only the shipped
+    // amount. addr_2 receives TRANSFER_CREDITS; addr_1 keeps the undeclared
+    // FUNDING_CREDITS − TRANSFER_CREDITS residual implicitly. Pin only the
+    // qualitative outcome — exact post-balance numbers depend on chain-time fees.
     assert!(
         addr_1_post + addr_2_post >= FUNDING_CREDITS - 25_000_000,
         "Σ post-balances must be ≥ funding − fee ceiling; got addr_1={addr_1_post}, \
