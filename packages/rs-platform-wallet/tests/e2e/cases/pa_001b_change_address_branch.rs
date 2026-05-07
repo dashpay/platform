@@ -17,6 +17,8 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use crate::framework::prelude::*;
+use key_wallet::account::account_collection::PlatformPaymentAccountKey;
+use key_wallet::wallet::initialization::PlatformPaymentAccountSpec;
 use platform_wallet::wallet::platform_addresses::InputSelection;
 
 /// Bank fund per test address. Sized well above the chain-time fee
@@ -140,16 +142,31 @@ async fn pa_001b_change_address_branch() {
         .await
         .expect("src funding never observed");
 
-    let dest = s_b
+    // QA-V25-003 — `next_unused_receive_address` parks on the lowest
+    // unused index until something marks it used (PA-005 invariant,
+    // pinned by `key_wallet::AddressPool::next_unused`). `dest` and
+    // `change_addr` are both freshly derived without an intervening
+    // funding observation, so two sequential `next_unused_address()`
+    // calls would return the SAME index and `assert_ne!(dest,
+    // change_addr)` would fire — exactly the "change_addr ==
+    // receive_addr" symptom Marvin v25 reported. The batch accessor
+    // permanently advances `highest_generated`, so both addresses are
+    // guaranteed distinct without a pre-mark round-trip. (DIP-17 path:
+    // `m/9'/coin'/17'/account'/key_class'/index` — there is no BIP-44
+    // change branch at this layer; the symptom is purely a cursor-
+    // parking artefact, not a derivation collapse.)
+    let PlatformPaymentAccountSpec { account, key_class } = PlatformPaymentAccountSpec::default();
+    let key = PlatformPaymentAccountKey { account, key_class };
+    let pair = s_b
         .test_wallet
-        .next_unused_address()
+        .platform_wallet()
+        .platform()
+        .next_unused_receive_addresses(key, 2)
         .await
-        .expect("derive dest");
-    let change_addr = s_b
-        .test_wallet
-        .next_unused_address()
-        .await
-        .expect("derive change_addr");
+        .expect("derive (dest, change_addr) batch");
+    assert_eq!(pair.len(), 2, "batch must return both addresses");
+    let dest = pair[0];
+    let change_addr = pair[1];
     assert_ne!(src, dest);
     assert_ne!(src, change_addr);
     assert_ne!(dest, change_addr);
