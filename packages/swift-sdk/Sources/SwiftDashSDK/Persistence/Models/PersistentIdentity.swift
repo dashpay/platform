@@ -4,6 +4,11 @@ import SwiftData
 /// SwiftData model for persisting Identity data
 @Model
 public final class PersistentIdentity {
+    /// Index `networkRaw` so per-network scans (`#Predicate { $0.networkRaw == raw }`)
+    /// don't degrade to a table scan. Every UI surface that lists
+    /// identities filters by the active network.
+    #Index<PersistentIdentity>([\.networkRaw])
+
     // MARK: - Core Properties
     @Attribute(.unique) public var identityId: Data
     public var balance: Int64

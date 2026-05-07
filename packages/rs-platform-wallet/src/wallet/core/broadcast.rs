@@ -1,5 +1,9 @@
-use dashcore::{Address as DashAddress, Transaction};
+use std::collections::BTreeSet;
+
+use dashcore::{Address as DashAddress, OutPoint, Transaction};
 use key_wallet::account::account_type::StandardAccountType;
+use key_wallet::transaction_checking::{TransactionContext, WalletTransactionChecker};
+use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 
 use crate::broadcaster::TransactionBroadcaster;
 use crate::{CoreWallet, PlatformWalletError};
@@ -35,7 +39,6 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     ) -> Result<Transaction, PlatformWalletError> {
         use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionStrategy;
         use key_wallet::wallet::managed_wallet_info::transaction_builder::TransactionBuilder;
-        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 
         if outputs.is_empty() {
             return Err(PlatformWalletError::TransactionBuild(
@@ -127,12 +130,62 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 )
                 .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
 
-            builder
+            let tx = builder
                 .build()
-                .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?
+                .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
+
+            // Re-validate the selected outpoints are still spendable while
+            // we still hold the write lock. The lock makes our build atomic
+            // against other callers on this handle, but external mempool /
+            // block events processed before we acquired the lock may have
+            // invalidated UTXOs that were still in the spendable set when
+            // `select_inputs` ran.
+            //
+            // We deliberately do NOT mark the inputs as spent here — that
+            // happens after a successful broadcast (see #3466 review). A
+            // failed broadcast must not leave UTXOs falsely marked spent.
+            let selected: BTreeSet<OutPoint> =
+                tx.input.iter().map(|txin| txin.previous_output).collect();
+            let still_spendable: BTreeSet<OutPoint> = info
+                .get_spendable_utxos()
+                .into_iter()
+                .map(|utxo| utxo.outpoint)
+                .collect();
+            if !selected.is_subset(&still_spendable) {
+                return Err(PlatformWalletError::TransactionBuild(
+                    "Selected UTXOs are no longer available (concurrent transaction). \
+                     Please retry."
+                        .to_string(),
+                ));
+            }
+
+            tx
         };
 
+        // Broadcast first; if the network rejects we leave wallet state
+        // untouched so the caller can retry without manual sync repair.
         self.broadcast_transaction(&tx).await?;
+
+        // Now that the tx is in flight, register it as a mempool transaction
+        // so subsequent callers see the inputs as spent and don't reselect
+        // them. The trade-off is that two callers racing between the lock
+        // drop above and the broadcast can both pick the same UTXOs; the
+        // network resolves that race exactly as it does on `v3.1-dev`
+        // today, but neither caller corrupts local state on a transient
+        // broadcast failure.
+        {
+            let mut wm = self.wallet_manager.write().await;
+            let (wallet, info) =
+                wm.get_wallet_mut_and_info_mut(&self.wallet_id)
+                    .ok_or_else(|| {
+                        crate::error::PlatformWalletError::WalletNotFound(
+                            "Wallet not found in wallet manager".to_string(),
+                        )
+                    })?;
+            info.check_core_transaction(&tx, TransactionContext::Mempool, wallet, true, true)
+                .await;
+        }
+
         Ok(tx)
     }
 }

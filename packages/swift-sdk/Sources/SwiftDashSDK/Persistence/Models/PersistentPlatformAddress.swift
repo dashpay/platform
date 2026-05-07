@@ -21,6 +21,12 @@ import SwiftData
 /// type tag 14).
 @Model
 public final class PersistentPlatformAddress {
+    /// Index `walletId` so per-wallet platform-address scans —
+    /// `predicate(walletId:)`, the storage explorer's network scope
+    /// fallback, BLAST-sync re-upsert paths — hit an index instead
+    /// of scanning the whole table.
+    #Index<PersistentPlatformAddress>([\.walletId])
+
     /// DIP-0018 bech32m-encoded address (`dash1…` / `tdash1…`). Unique
     /// across the SwiftData store — a collision would imply a wallet-
     /// id / derivation path collision.

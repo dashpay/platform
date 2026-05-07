@@ -11,6 +11,7 @@ use std::time::Duration;
 use dpp::address_funds::{AddressFundsFeeStrategyStep, PlatformAddress};
 use dpp::fee::Credits;
 use dpp::identity::signer::Signer;
+use dpp::prelude::Identifier;
 use dpp::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
 use dpp::version::PlatformVersion;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
@@ -19,7 +20,10 @@ use platform_wallet::wallet::persister::NoPlatformPersistence;
 use platform_wallet::wallet::platform_addresses::InputSelection;
 use platform_wallet::{PlatformWallet, PlatformWalletError, PlatformWalletManager};
 
-use super::bank::BankWallet;
+use super::signer::SeedBackedIdentitySigner;
+
+use super::bank::{core_send, BankWallet, CORE_TX_FEE_RESERVE};
+use super::bank_identity::BankIdentity;
 use super::registry::{EntryStatus, PersistentTestWalletRegistry, RegistryEntry, WalletSeedHash};
 use super::wallet_factory::TestWallet;
 use super::{make_platform_signer, FrameworkError, FrameworkResult};
@@ -33,6 +37,15 @@ fn min_input_amount(version: &PlatformVersion) -> Credits {
     version.dpp.state_transitions.address_funds.min_input_amount
 }
 
+/// Public mirror of [`min_input_amount`] for tests that want to pin
+/// the cleanup gate against the active platform version (PA-004b /
+/// PA-009 boundary cases). Reads the same field, so a protocol bump
+/// shifts both the harness gate and the test's expected value in
+/// lockstep.
+pub fn cleanup_dust_gate(version: &PlatformVersion) -> Credits {
+    min_input_amount(version)
+}
+
 /// Default per-step timeout for cleanup polls.
 pub const CLEANUP_STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -44,6 +57,7 @@ pub const CLEANUP_STEP_TIMEOUT: Duration = Duration::from_secs(60);
 pub async fn sweep_orphans(
     manager: &Arc<PlatformWalletManager<NoPlatformPersistence>>,
     bank: &BankWallet,
+    bank_identity: &BankIdentity,
     registry: &PersistentTestWalletRegistry,
     network: Network,
 ) -> FrameworkResult<usize> {
@@ -58,7 +72,7 @@ pub async fn sweep_orphans(
 
     let mut swept = 0usize;
     for (hash, entry) in orphans {
-        match sweep_one(manager, bank, &hash, &entry, network).await {
+        match sweep_one(manager, bank, bank_identity, &hash, &entry, network).await {
             Ok(()) => {
                 if let Err(err) = registry.remove(&hash) {
                     tracing::warn!(
@@ -85,13 +99,19 @@ pub async fn sweep_orphans(
 async fn sweep_one(
     manager: &Arc<PlatformWalletManager<NoPlatformPersistence>>,
     bank: &BankWallet,
+    bank_identity: &BankIdentity,
     hash: &WalletSeedHash,
     entry: &RegistryEntry,
     network: Network,
 ) -> FrameworkResult<()> {
     let seed_bytes: [u8; 64] = parse_seed_hex(&entry.seed_hex)?;
     let wallet = manager
-        .create_wallet_from_seed_bytes(network, seed_bytes, WalletAccountCreationOptions::Default)
+        .create_wallet_from_seed_bytes(
+            network,
+            seed_bytes,
+            WalletAccountCreationOptions::Default,
+            None,
+        )
         .await
         .map_err(wallet_err)?;
     if wallet.wallet_id() != *hash {
@@ -122,8 +142,8 @@ async fn sweep_one(
             "orphan platform total below protocol min_input_amount; skipping"
         );
     }
-    sweep_identities(&wallet).await?;
-    sweep_core_addresses(&wallet).await?;
+    sweep_identities_with_seed(&wallet, &seed_bytes, network, bank_identity).await?;
+    sweep_core_addresses(&wallet, bank).await?;
     sweep_unused_core_asset_locks(&wallet).await?;
     sweep_shielded(&wallet).await?;
 
@@ -146,6 +166,7 @@ async fn sweep_one(
 pub async fn teardown_one(
     manager: &Arc<PlatformWalletManager<NoPlatformPersistence>>,
     bank: &BankWallet,
+    bank_identity: &BankIdentity,
     registry: &PersistentTestWalletRegistry,
     test_wallet: &TestWallet,
 ) -> FrameworkResult<()> {
@@ -168,8 +189,14 @@ pub async fn teardown_one(
             "test wallet total below protocol min_input_amount; skipping platform sweep"
         );
     }
-    sweep_identities(test_wallet.platform_wallet()).await?;
-    sweep_core_addresses(test_wallet.platform_wallet()).await?;
+    sweep_identities_with_seed(
+        test_wallet.platform_wallet(),
+        &test_wallet.seed_bytes(),
+        bank.network(),
+        bank_identity,
+    )
+    .await?;
+    sweep_core_addresses(test_wallet.platform_wallet(), bank).await?;
     sweep_unused_core_asset_locks(test_wallet.platform_wallet()).await?;
     sweep_shielded(test_wallet.platform_wallet()).await?;
 
@@ -328,22 +355,260 @@ fn build_sweep_plan(
     }
 }
 
-/// Drain identity credit balances back to the bank identity. Noop until
-/// the identity-transfer wiring lands.
-// TODO(rs-platform-wallet/e2e #identity-sweep): implement once a
-// Signer<IdentityPublicKey> is wired through `TestWallet` and the
-// CreditTransfer transition is reachable from this harness.
-async fn sweep_identities(_wallet: &Arc<PlatformWallet>) -> FrameworkResult<()> {
+/// Drain identity credit balances back to the bank identity by
+/// broadcasting a `CreditTransfer` state transition for each
+/// non-empty identity owned by `wallet`.
+///
+/// Operates in two phases:
+///
+/// 1. Walk DIP-9 identity indices `0..IDENTITY_DISCOVERY_GAP` calling
+///    `load_identity_by_index` so the wallet's `IdentityManager` is
+///    populated with every identity reachable from `seed_bytes`. This
+///    matters for the orphan-recovery path where the
+///    just-reconstructed wallet has an empty manager — without
+///    discovery the sweep would observe nothing.
+/// 2. Iterate every identity in the manager whose `wallet_id` matches
+///    `wallet.wallet_id()` and whose balance is at least
+///    [`IDENTITY_SWEEP_FLOOR`]. For each, build a
+///    [`SeedBackedIdentitySigner`] at that DIP-9 slot and issue a
+///    `transfer_credits_with_external_signer(.., to = bank_identity.id, ..)`.
+///
+/// The sweep skips the bank identity itself — a wallet that happens to
+/// own the bank identity would otherwise self-transfer (typed error).
+/// Skips identities whose balance is below
+/// [`IDENTITY_SWEEP_FLOOR`] — the network-level transfer fee is
+/// non-negligible, so attempting to drain dust just burns more
+/// credits than it recovers.
+///
+/// Best-effort: per-identity failures are logged and the loop
+/// continues. The caller treats `Ok(())` as "we tried"; the next-run
+/// orphan sweep will retry whatever stayed behind.
+async fn sweep_identities_with_seed(
+    wallet: &Arc<PlatformWallet>,
+    seed_bytes: &[u8; 64],
+    network: Network,
+    bank_identity: &BankIdentity,
+) -> FrameworkResult<()> {
+    // Phase 1 — discovery walk.
+    for identity_index in 0..IDENTITY_DISCOVERY_GAP {
+        match wallet
+            .identity()
+            .load_identity_by_index(identity_index)
+            .await
+        {
+            Ok(Some(_)) => {
+                tracing::debug!(
+                    target: "platform_wallet::e2e::cleanup",
+                    wallet_id = %hex::encode(wallet.wallet_id()),
+                    identity_index,
+                    "identity sweep: discovered identity at DIP-9 index"
+                );
+            }
+            Ok(None) => {}
+            Err(err) => tracing::debug!(
+                target: "platform_wallet::e2e::cleanup",
+                wallet_id = %hex::encode(wallet.wallet_id()),
+                identity_index,
+                error = %err,
+                "identity sweep: discovery probe failed; continuing"
+            ),
+        }
+    }
+
+    // Phase 2 — collect (identity_id, balance, registration_index)
+    // tuples under a short read lock so we don't hold the wallet
+    // manager lock across SDK round-trips.
+    let wallet_id = wallet.wallet_id();
+    let candidates: Vec<(Identifier, Credits, u32)> = {
+        let state = wallet.state().await;
+        let mut out = Vec::new();
+        if let Some(by_index) = state.identity_manager.wallet_identities.get(&wallet_id) {
+            for (idx, managed) in by_index.iter() {
+                use dpp::identity::accessors::IdentityGettersV0;
+                let id = managed.identity.id();
+                let balance = managed.identity.balance();
+                if id == bank_identity.id {
+                    continue;
+                }
+                out.push((id, balance, *idx));
+            }
+        }
+        out
+    };
+
+    for (identity_id, balance, identity_index) in candidates {
+        if balance < IDENTITY_SWEEP_FLOOR {
+            tracing::debug!(
+                target: "platform_wallet::e2e::cleanup",
+                wallet_id = %hex::encode(wallet_id),
+                %identity_id,
+                identity_index,
+                balance,
+                floor = IDENTITY_SWEEP_FLOOR,
+                "identity sweep: balance below floor; skipping"
+            );
+            continue;
+        }
+
+        let signer = match SeedBackedIdentitySigner::new(seed_bytes, network, identity_index) {
+            Ok(s) => s,
+            Err(err) => {
+                tracing::warn!(
+                    target: "platform_wallet::e2e::cleanup",
+                    wallet_id = %hex::encode(wallet_id),
+                    %identity_id,
+                    identity_index,
+                    error = %err,
+                    "identity sweep: signer build failed; skipping identity"
+                );
+                continue;
+            }
+        };
+
+        // Reserve a credit headroom for the CreditTransfer fee. The
+        // exact fee is protocol-version-dependent; subtract the floor
+        // (~30M, sized well above empirical fee on testnet) so the
+        // transition has room to land without
+        // "InsufficientIdentityBalance".
+        let amount = balance.saturating_sub(IDENTITY_SWEEP_FEE_RESERVE);
+        if amount == 0 {
+            continue;
+        }
+
+        match wallet
+            .identity()
+            .transfer_credits_with_external_signer(
+                &identity_id,
+                &bank_identity.id,
+                amount,
+                &signer,
+                None,
+            )
+            .await
+        {
+            Ok(()) => {
+                tracing::info!(
+                    target: "platform_wallet::e2e::cleanup",
+                    wallet_id = %hex::encode(wallet_id),
+                    %identity_id,
+                    identity_index,
+                    amount,
+                    bank_identity_id = %bank_identity.id,
+                    "identity sweep: drained credits to bank identity"
+                );
+            }
+            Err(err) => {
+                tracing::warn!(
+                    target: "platform_wallet::e2e::cleanup",
+                    wallet_id = %hex::encode(wallet_id),
+                    %identity_id,
+                    identity_index,
+                    amount,
+                    error = %err,
+                    "identity sweep: CreditTransfer failed; entry retained"
+                );
+            }
+        }
+    }
     Ok(())
 }
 
-/// Drain core (Layer 1) UTXOs to the bank's core address. Noop until
-/// the SPV wallet runtime is back online in this harness.
-// TODO(rs-platform-wallet/e2e #core-sweep): implement once the SPV
-// runtime (Task #15) lets us sign and broadcast core transactions.
-async fn sweep_core_addresses(_wallet: &Arc<PlatformWallet>) -> FrameworkResult<()> {
+/// Upper bound (exclusive) on DIP-9 identity indices probed during
+/// orphan recovery. Conservative — DIP-17's gap-limit is 20 for
+/// addresses; identities are far rarer per wallet, so 8 covers
+/// every realistic test pattern with room to spare while keeping
+/// the discovery cost bounded.
+const IDENTITY_DISCOVERY_GAP: u32 = 8;
+
+/// Below this balance the sweep refuses to broadcast a
+/// `CreditTransfer` — protocol-level transfer fees would consume
+/// most of the would-be transferred amount. Sized roughly at 2x the
+/// empirical CreditTransfer fee on testnet. Identities below this
+/// floor effectively burn until a future ID-005 (identity →
+/// addresses) sweep variant lands.
+const IDENTITY_SWEEP_FLOOR: Credits = 50_000_000;
+
+/// Headroom reserved for the on-chain fee when computing the
+/// `CreditTransfer` amount. Protocol returns a typed
+/// `InsufficientIdentityBalance` if the requested amount plus fee
+/// exceeds the identity's balance, so the floor must comfortably
+/// exceed the chain-time fee. Empirically ~12-15M on testnet.
+const IDENTITY_SWEEP_FEE_RESERVE: Credits = 30_000_000;
+
+/// Drain Core (Layer-1) UTXOs to the bank's primary BIP-44 receive
+/// address. No-op when the wallet's confirmed Core balance is at or
+/// below [`CORE_SWEEP_DUST_FLOOR`] — sweeping below the floor would
+/// either burn the entire balance to the chain fee or fail the
+/// builder's coin-selection step.
+///
+/// Best-effort: failures (no funded address, builder error, broadcast
+/// rejection) are logged at WARN and surfaced as
+/// [`FrameworkError::Wallet`]. The orphan-recovery loop in
+/// [`sweep_orphans`] catches that and keeps the registry entry for a
+/// later retry.
+async fn sweep_core_addresses(
+    wallet: &Arc<PlatformWallet>,
+    bank: &BankWallet,
+) -> FrameworkResult<()> {
+    let confirmed = wallet.balance().confirmed();
+    if confirmed <= CORE_SWEEP_DUST_FLOOR {
+        tracing::debug!(
+            target: "platform_wallet::e2e::cleanup",
+            wallet_id = %hex::encode(wallet.wallet_id()),
+            confirmed,
+            floor = CORE_SWEEP_DUST_FLOOR,
+            "core sweep: balance at or below dust floor; nothing to sweep"
+        );
+        return Ok(());
+    }
+
+    let amount = confirmed.saturating_sub(CORE_TX_FEE_RESERVE);
+    if amount == 0 {
+        tracing::debug!(
+            target: "platform_wallet::e2e::cleanup",
+            wallet_id = %hex::encode(wallet.wallet_id()),
+            confirmed,
+            "core sweep: balance covers fee reserve only; skipping"
+        );
+        return Ok(());
+    }
+
+    // Resolve the bank's primary Core receive address — same address
+    // surfaced in the harness pre-flight log so swept funds land at
+    // the operator-known location.
+    let bank_core_addr = bank.primary_core_receive_address().await?;
+
+    match core_send(wallet, &bank_core_addr, amount).await {
+        Ok(txid) => {
+            tracing::info!(
+                target: "platform_wallet::e2e::cleanup",
+                wallet_id = %hex::encode(wallet.wallet_id()),
+                %txid,
+                amount,
+                bank_core_addr = %bank_core_addr,
+                "core sweep: drained Core duffs to bank"
+            );
+        }
+        Err(err) => {
+            tracing::warn!(
+                target: "platform_wallet::e2e::cleanup",
+                wallet_id = %hex::encode(wallet.wallet_id()),
+                amount,
+                error = %err,
+                "core sweep: broadcast failed; entry retained"
+            );
+            return Err(err);
+        }
+    }
     Ok(())
 }
+
+/// Below this confirmed balance the Core sweep refuses to broadcast.
+/// Sized to comfortably exceed the [`CORE_TX_FEE_RESERVE`] floor so
+/// the post-fee residual is always non-trivial — sweeping a balance
+/// of e.g. 1.5x the fee reserve burns most of the value as fee and
+/// the recovered amount is meaningless.
+const CORE_SWEEP_DUST_FLOOR: u64 = 100_000;
 
 /// Consume unspent asset-lock outputs and refund their credits to the
 /// bank. Noop until the asset-lock harness is wired up.

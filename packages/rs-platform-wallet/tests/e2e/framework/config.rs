@@ -10,6 +10,7 @@
 
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::time::Duration;
 
 use dashcore::Network;
 
@@ -35,7 +36,29 @@ pub mod vars {
     /// the network default (mainnet 9999, testnet 19999); regtest and
     /// devnet have no default and require this var.
     pub const P2P_PORT: &str = "PLATFORM_WALLET_E2E_P2P_PORT";
+    /// Optional 32-byte hex identifier of a pre-registered bank
+    /// identity used as the destination of identity-credit sweeps.
+    /// Unset falls back to "register a fresh bank identity from the
+    /// bank's first platform address on first run and persist its id
+    /// to the workdir slot".
+    pub const BANK_IDENTITY_ID: &str = "PLATFORM_WALLET_E2E_BANK_IDENTITY_ID";
+    /// Bank Core (Layer-1) funding gate. Controls how long the harness
+    /// waits at init for the bank's confirmed Core balance to become
+    /// non-zero — the SPV compact-filter scan must have walked past the
+    /// bank's pre-funded UTXOs before tests like CR-* / ID-007 can
+    /// observe them. Unset (default) enables the gate with a
+    /// [`DEFAULT_BANK_CORE_GATE_TIMEOUT`] (900s) deadline; `0` /
+    /// `disabled` / `false` / `off` opt out for Platform-only suites
+    /// that don't need Core duffs; any positive integer overrides the
+    /// timeout (in seconds).
+    pub const BANK_CORE_GATE: &str = "PLATFORM_WALLET_E2E_BANK_CORE_GATE";
 }
+
+/// Default deadline for the bank Core funding gate when the env var is
+/// unset. Sized to fit a cold-cache compact-filter scan from genesis on
+/// testnet (~1.47M blocks ≈ 15 min); subsequent runs reuse the on-disk
+/// cache and clear the gate in seconds.
+pub const DEFAULT_BANK_CORE_GATE_TIMEOUT: Duration = Duration::from_secs(900);
 
 /// Default minimum bank balance in credits.
 ///
@@ -80,6 +103,38 @@ pub struct Config {
     /// peer-seeding path treats that as "skip and fall back to DNS
     /// discovery."
     pub p2p_port: Option<u16>,
+    /// Optional pre-registered bank-identity id (32 bytes hex). When
+    /// set, the harness loads it on init; when unset, the harness
+    /// auto-registers a bank identity on first run and persists its
+    /// id under the workdir slot.
+    pub bank_identity_id: Option<String>,
+    /// Bank Core (Layer-1) funding gate timeout. `Some(d)` waits up to
+    /// `d` for the bank's confirmed Core balance to become non-zero
+    /// before letting init proceed; `None` skips the gate entirely.
+    /// Default is `Some(`[`DEFAULT_BANK_CORE_GATE_TIMEOUT`]`)` — opt
+    /// out via `PLATFORM_WALLET_E2E_BANK_CORE_GATE=0` for Platform-
+    /// only suites that don't need Core duffs.
+    pub bank_core_gate_timeout: Option<Duration>,
+    /// Source of [`bank_core_gate_timeout`]'s value, kept for the init
+    /// log line so operators can tell defaulted-on from env-set.
+    pub bank_core_gate_source: BankCoreGateSource,
+}
+
+/// Provenance of the resolved bank-Core-gate timeout — surfaced in the
+/// harness init log so operators can tell "default kicked in" from
+/// "operator set the var".
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BankCoreGateSource {
+    /// Env var unset — default-on with [`DEFAULT_BANK_CORE_GATE_TIMEOUT`].
+    Default,
+    /// Env var set to a value that disables the gate (`0`, `disabled`,
+    /// `false`, `off`).
+    EnvDisabled,
+    /// Env var set to a positive integer — used as the timeout (seconds).
+    EnvTimeout,
+    /// Env var set to a value that didn't parse — fell back to the
+    /// default timeout with a warning.
+    EnvInvalidFallback,
 }
 
 impl std::fmt::Debug for Config {
@@ -94,6 +149,9 @@ impl std::fmt::Debug for Config {
             .field("workdir_base", &self.workdir_base)
             .field("trusted_context_url", &self.trusted_context_url)
             .field("p2p_port", &self.p2p_port)
+            .field("bank_identity_id", &self.bank_identity_id)
+            .field("bank_core_gate_timeout", &self.bank_core_gate_timeout)
+            .field("bank_core_gate_source", &self.bank_core_gate_source)
             .finish()
     }
 }
@@ -109,6 +167,9 @@ impl Default for Config {
             workdir_base: default_workdir_base(),
             trusted_context_url: None,
             p2p_port: default_p2p_port(network),
+            bank_identity_id: None,
+            bank_core_gate_timeout: Some(DEFAULT_BANK_CORE_GATE_TIMEOUT),
+            bank_core_gate_source: BankCoreGateSource::Default,
         }
     }
 }
@@ -191,6 +252,14 @@ impl Config {
             Err(_) => default_p2p_port(network),
         };
 
+        let bank_identity_id = std::env::var(vars::BANK_IDENTITY_ID)
+            .ok()
+            .map(|raw| raw.trim().to_string())
+            .filter(|s| !s.is_empty());
+
+        let (bank_core_gate_timeout, bank_core_gate_source) =
+            parse_bank_core_gate(std::env::var(vars::BANK_CORE_GATE).ok().as_deref());
+
         Ok(Self {
             bank_mnemonic,
             network,
@@ -199,6 +268,9 @@ impl Config {
             workdir_base,
             trusted_context_url,
             p2p_port,
+            bank_identity_id,
+            bank_core_gate_timeout,
+            bank_core_gate_source,
         })
     }
 
@@ -233,6 +305,60 @@ fn default_p2p_port(network: Network) -> Option<u16> {
     }
 }
 
+/// Resolve the bank Core funding gate timeout from the env-var raw
+/// value (`None` = unset).
+///
+/// Mapping:
+/// - unset (default) → on, [`DEFAULT_BANK_CORE_GATE_TIMEOUT`]
+/// - `0` / `disabled` / `false` / `off` (case-insensitive) → off
+/// - positive integer → on, that many seconds
+/// - non-empty unparseable → on, default timeout, with a warning
+/// - empty string → on, default timeout (treated as unset)
+pub(crate) fn parse_bank_core_gate(raw: Option<&str>) -> (Option<Duration>, BankCoreGateSource) {
+    let Some(raw) = raw else {
+        return (
+            Some(DEFAULT_BANK_CORE_GATE_TIMEOUT),
+            BankCoreGateSource::Default,
+        );
+    };
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return (
+            Some(DEFAULT_BANK_CORE_GATE_TIMEOUT),
+            BankCoreGateSource::Default,
+        );
+    }
+
+    if trimmed == "0"
+        || trimmed.eq_ignore_ascii_case("disabled")
+        || trimmed.eq_ignore_ascii_case("false")
+        || trimmed.eq_ignore_ascii_case("off")
+    {
+        return (None, BankCoreGateSource::EnvDisabled);
+    }
+
+    match trimmed.parse::<u64>() {
+        Ok(secs) => (
+            Some(Duration::from_secs(secs)),
+            BankCoreGateSource::EnvTimeout,
+        ),
+        Err(err) => {
+            tracing::warn!(
+                target: "platform_wallet::e2e::config",
+                var = vars::BANK_CORE_GATE,
+                value = %raw,
+                ?err,
+                default_secs = DEFAULT_BANK_CORE_GATE_TIMEOUT.as_secs(),
+                "could not parse bank Core gate value; falling back to default timeout"
+            );
+            (
+                Some(DEFAULT_BANK_CORE_GATE_TIMEOUT),
+                BankCoreGateSource::EnvInvalidFallback,
+            )
+        }
+    }
+}
+
 /// Parse a network string supporting the canonical dashcore names
 /// plus the test-harness `local` alias for regtest and an empty
 /// shorthand for testnet. Used only at [`Config`] construction;
@@ -247,4 +373,65 @@ fn parse_network(s: &str) -> FrameworkResult<Network> {
     }
     Network::from_str(trimmed)
         .map_err(|e| FrameworkError::Config(format!("invalid network {trimmed:?}: {e}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bank_core_gate_unset_defaults_to_900s() {
+        let (timeout, src) = parse_bank_core_gate(None);
+        assert_eq!(timeout, Some(DEFAULT_BANK_CORE_GATE_TIMEOUT));
+        assert_eq!(src, BankCoreGateSource::Default);
+    }
+
+    #[test]
+    fn bank_core_gate_empty_string_defaults_to_900s() {
+        let (timeout, src) = parse_bank_core_gate(Some(""));
+        assert_eq!(timeout, Some(DEFAULT_BANK_CORE_GATE_TIMEOUT));
+        assert_eq!(src, BankCoreGateSource::Default);
+
+        let (timeout, src) = parse_bank_core_gate(Some("   "));
+        assert_eq!(timeout, Some(DEFAULT_BANK_CORE_GATE_TIMEOUT));
+        assert_eq!(src, BankCoreGateSource::Default);
+    }
+
+    #[test]
+    fn bank_core_gate_zero_disables() {
+        let (timeout, src) = parse_bank_core_gate(Some("0"));
+        assert_eq!(timeout, None);
+        assert_eq!(src, BankCoreGateSource::EnvDisabled);
+    }
+
+    #[test]
+    fn bank_core_gate_aliases_disable() {
+        for raw in ["disabled", "DISABLED", "false", "False", "off", "OFF"] {
+            let (timeout, src) = parse_bank_core_gate(Some(raw));
+            assert_eq!(timeout, None, "{raw}");
+            assert_eq!(src, BankCoreGateSource::EnvDisabled, "{raw}");
+        }
+    }
+
+    #[test]
+    fn bank_core_gate_positive_integer_overrides_timeout() {
+        let (timeout, src) = parse_bank_core_gate(Some("60"));
+        assert_eq!(timeout, Some(Duration::from_secs(60)));
+        assert_eq!(src, BankCoreGateSource::EnvTimeout);
+
+        let (timeout, src) = parse_bank_core_gate(Some("  120  "));
+        assert_eq!(timeout, Some(Duration::from_secs(120)));
+        assert_eq!(src, BankCoreGateSource::EnvTimeout);
+    }
+
+    #[test]
+    fn bank_core_gate_invalid_falls_back_to_default() {
+        let (timeout, src) = parse_bank_core_gate(Some("abc"));
+        assert_eq!(timeout, Some(DEFAULT_BANK_CORE_GATE_TIMEOUT));
+        assert_eq!(src, BankCoreGateSource::EnvInvalidFallback);
+
+        let (timeout, src) = parse_bank_core_gate(Some("-1"));
+        assert_eq!(timeout, Some(DEFAULT_BANK_CORE_GATE_TIMEOUT));
+        assert_eq!(src, BankCoreGateSource::EnvInvalidFallback);
+    }
 }

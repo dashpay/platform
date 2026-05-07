@@ -4,6 +4,11 @@ import SwiftData
 /// SwiftData model for persisting data contracts
 @Model
 public final class PersistentDataContract {
+    /// Index `networkRaw` so the static `predicate(networkRaw:)` and
+    /// `tokensPredicate(networkRaw:)` helpers — plus every per-network
+    /// list view — can index-scan instead of table-scan.
+    #Index<PersistentDataContract>([\.networkRaw])
+
     @Attribute(.unique) public var id: Data
     public var name: String
     public var serializedContract: Data

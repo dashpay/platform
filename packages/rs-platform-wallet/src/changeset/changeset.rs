@@ -121,6 +121,20 @@ pub struct CoreChangeSet {
     /// durable filter-batch sync checkpoint to this value. Monotonic-max
     /// on merge.
     pub synced_height: Option<u32>,
+
+    /// Addresses freshly derived as a side effect of processing the
+    /// records in this batch — i.e. `WalletEvent::TransactionDetected.
+    /// addresses_derived` and `WalletEvent::BlockProcessed.
+    /// addresses_derived`. The persister mirrors these into its
+    /// address-pool table (e.g. `PersistentCoreAddress` on the Swift
+    /// side) so UTXOs landing on freshly-derived addresses can be
+    /// linked back to the canonical pool row instead of being
+    /// orphaned at the `coreAddress` link. De-duplicated on merge by
+    /// `(account_type, pool_type, derivation_index)` — same key the
+    /// upstream `project_derived_addresses` uses, so two records in
+    /// the same flush both pushing the same gap-limit boundary
+    /// collapse to one entry.
+    pub addresses_derived: Vec<key_wallet_manager::DerivedAddress>,
 }
 
 impl Merge for CoreChangeSet {
@@ -152,6 +166,34 @@ impl Merge for CoreChangeSet {
         if let Some(h) = other.synced_height {
             self.synced_height = Some(self.synced_height.map_or(h, |existing| existing.max(h)));
         }
+
+        // Derived-address dedup. Within a single `WalletEvent` the
+        // upstream `project_derived_addresses` already deduped on
+        // `(account_type, pool_type, derivation_index)`, but a flush
+        // can fold multiple events together (TransactionDetected +
+        // BlockProcessed for the same wallet over a sync round), and
+        // a tx in one event can push the same boundary as a tx in
+        // another. Build a fast-lookup set from current entries, then
+        // append only entries we haven't seen yet — preserves arrival
+        // order so the persister's writes line up with the same
+        // derivation order the wallet's pool sees.
+        if !other.addresses_derived.is_empty() {
+            let mut seen: std::collections::HashSet<(
+                key_wallet::account::AccountType,
+                key_wallet::managed_account::address_pool::AddressPoolType,
+                u32,
+            )> = self
+                .addresses_derived
+                .iter()
+                .map(|d| (d.account_type, d.pool_type, d.derivation_index))
+                .collect();
+            for d in other.addresses_derived {
+                let key = (d.account_type, d.pool_type, d.derivation_index);
+                if seen.insert(key) {
+                    self.addresses_derived.push(d);
+                }
+            }
+        }
     }
 
     fn is_empty(&self) -> bool {
@@ -161,6 +203,7 @@ impl Merge for CoreChangeSet {
             && self.instant_locks_for_non_final_records.is_empty()
             && self.last_processed_height.is_none()
             && self.synced_height.is_none()
+            && self.addresses_derived.is_empty()
     }
 }
 
