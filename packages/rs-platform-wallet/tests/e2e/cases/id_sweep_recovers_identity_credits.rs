@@ -123,14 +123,13 @@ async fn id_sweep_recovers_identity_credits() {
         "bank gain {bank_gain} must clear SWEEP_GAIN_FLOOR {SWEEP_GAIN_FLOOR} \
          (pre={bank_pre_balance} post={bank_post_balance})"
     );
-    // Upper bound: the bank identity cannot have gained more than
-    // the swept identity's pre-sweep balance — anything beyond
-    // that came from elsewhere and would indicate cross-talk.
-    assert!(
-        bank_gain <= pre_sweep_balance,
-        "bank gain {bank_gain} cannot exceed swept identity's pre-sweep balance \
-         {pre_sweep_balance}; cross-talk?"
-    );
+    // The bank identity is process-shared, so under parallel test
+    // execution (`--test-threads>1`) other tests' `teardown_one`
+    // identity sweeps land on the same bank identity inside this
+    // test's window. We therefore cannot assert `bank_gain <=
+    // pre_sweep_balance` — sibling sweeps inflate `bank_post_balance`
+    // legitimately. The lower bound above remains the meaningful
+    // contract: OUR sweep DID move credits to the bank identity.
 
     tracing::info!(
         target: "platform_wallet::e2e::cases::id_sweep",
