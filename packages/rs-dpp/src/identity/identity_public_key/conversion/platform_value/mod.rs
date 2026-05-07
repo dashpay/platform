@@ -7,18 +7,6 @@ use platform_value::Value;
 pub use v0::*;
 
 impl IdentityPublicKeyPlatformValueConversionMethodsV0 for IdentityPublicKey {
-    fn to_object(&self) -> Result<Value, ProtocolError> {
-        match self {
-            IdentityPublicKey::V0(key) => key.to_object(),
-        }
-    }
-
-    fn into_object(self) -> Result<Value, ProtocolError> {
-        match self {
-            IdentityPublicKey::V0(key) => key.into_object(),
-        }
-    }
-
     fn from_object(
         value: Value,
         platform_version: &PlatformVersion,
@@ -30,9 +18,9 @@ impl IdentityPublicKeyPlatformValueConversionMethodsV0 for IdentityPublicKey {
         {
             0 => IdentityPublicKeyV0::from_object(value, platform_version).map(Into::into),
             version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "IdentityPublicKey::from_object".to_string(),
                 known_versions: vec![0],
                 received: version,
+                method: "IdentityPublicKey::from_object".to_string(),
             }),
         }
     }
@@ -43,6 +31,7 @@ mod tests {
     use super::*;
     use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use crate::identity::{KeyType, Purpose, SecurityLevel};
+    use crate::serialization::ValueConvertible;
     use platform_value::BinaryData;
     use platform_version::version::LATEST_PLATFORM_VERSION;
 
@@ -59,25 +48,39 @@ mod tests {
         })
     }
 
+    // After Phase D step 5, `to_object` / `into_object` come from canonical
+    // `ValueConvertible` (the legacy trait methods were deleted because they
+    // were byte-identical). `from_object(value, &platform_version)` still
+    // routes through the legacy version-dispatch trait method.
+
     #[test]
-    fn to_object_delegates_to_v0() {
+    fn to_object_includes_format_version_tag() {
+        // The outer `IdentityPublicKey` is a tagged enum
+        // (`#[serde(tag = "$formatVersion")]`); canonical `to_object`
+        // emits `$formatVersion: "0"` next to the V0 fields. The inner
+        // V0 struct, in contrast, has no version tag.
         let key = wrapper(Some(5));
         let value = key.to_object().expect("to_object");
-        // Should match what V0 produces directly.
-        let IdentityPublicKey::V0(inner) = &key;
-        assert_eq!(value, inner.to_object().unwrap());
+        let map = value.to_map().expect("map");
+        assert!(
+            map.iter()
+                .any(|(k, v): &(Value, Value)| k.as_text() == Some("$formatVersion")
+                    && v.as_text() == Some("0")),
+            "outer enum must surface the $formatVersion tag"
+        );
     }
 
     #[test]
     fn to_object_strips_disabled_at_when_none() {
-        // After Phase D step 4, the `skip_serializing_if` attribute on
+        // The `skip_serializing_if` attribute on
         // `IdentityPublicKeyV0::disabled_at` strips the field for
         // non-disabled keys directly via the canonical `to_object` path.
-        // The dedicated `to_cleaned_object` method has been deleted.
         let key = wrapper(None);
         let value = key.to_object().expect("to_object");
         let map = value.to_map().expect("map");
-        assert!(!map.iter().any(|(k, _)| k.as_text() == Some("disabledAt")));
+        assert!(!map
+            .iter()
+            .any(|(k, _): &(Value, Value)| k.as_text() == Some("disabledAt")));
     }
 
     #[test]
@@ -92,13 +95,15 @@ mod tests {
     fn from_object_roundtrip_via_wrapper() {
         let key = wrapper(None);
         let value = key.to_object().unwrap();
-        let back = IdentityPublicKey::from_object(value, LATEST_PLATFORM_VERSION).unwrap();
+        // Version-aware `from_object` from the legacy trait — distinct from
+        // canonical `ValueConvertible::from_object` (no platform_version arg).
+        let back = <IdentityPublicKey as IdentityPublicKeyPlatformValueConversionMethodsV0>::from_object(value, LATEST_PLATFORM_VERSION).unwrap();
         assert_eq!(back, key);
     }
 
     #[test]
     fn from_object_fails_on_non_map() {
-        let result = IdentityPublicKey::from_object(Value::Null, LATEST_PLATFORM_VERSION);
+        let result = <IdentityPublicKey as IdentityPublicKeyPlatformValueConversionMethodsV0>::from_object(Value::Null, LATEST_PLATFORM_VERSION);
         assert!(matches!(result, Err(ProtocolError::ValueError(_))));
     }
 }

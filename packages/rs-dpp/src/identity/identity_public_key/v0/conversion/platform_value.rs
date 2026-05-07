@@ -6,18 +6,12 @@ use platform_value::Value;
 use std::convert::{TryFrom, TryInto};
 
 impl IdentityPublicKeyPlatformValueConversionMethodsV0 for IdentityPublicKeyV0 {
-    fn to_object(&self) -> Result<Value, ProtocolError> {
-        platform_value::to_value(self).map_err(ProtocolError::ValueError)
-    }
-
-    fn into_object(self) -> Result<Value, ProtocolError> {
-        platform_value::to_value(self).map_err(ProtocolError::ValueError)
-    }
-
     fn from_object(
         value: Value,
         _platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
+        // V0 ignores platform_version — it just deserializes via serde.
+        // The version dispatch happens at the outer `IdentityPublicKey` impl.
         value.try_into().map_err(ProtocolError::ValueError)
     }
 }
@@ -67,10 +61,16 @@ mod tests {
         }
     }
 
+    // V0 is the inner struct (not the outer `IdentityPublicKey` enum), so it
+    // doesn't carry the canonical `ValueConvertible` trait. Tests use
+    // `platform_value::to_value` directly to exercise the serde shape that
+    // the V0 round-trip relies on. The `from_object` path stays via the
+    // legacy version-aware trait method.
+
     #[test]
-    fn to_object_roundtrip_to_v0() {
+    fn to_value_roundtrip_to_v0() {
         let key = sample_v0(Some(1_700_000_000_000));
-        let value = key.to_object().expect("to_object should succeed");
+        let value = platform_value::to_value(&key).expect("to_value should succeed");
         // The inner serializes its fields with camelCase (no $formatVersion tag).
         assert!(value.is_map());
         let roundtripped =
@@ -78,31 +78,23 @@ mod tests {
         assert_eq!(roundtripped, key);
     }
 
-    // After Phase D step 4, `to_object` itself strips `disabledAt: null`
-    // for non-disabled keys via `#[serde(skip_serializing_if = "Option::is_none")]`.
-    // The dedicated `to_cleaned_object` method has been deleted.
+    // After Phase D step 4, the serde-driven `to_value` path itself strips
+    // `disabledAt: null` for non-disabled keys via
+    // `#[serde(skip_serializing_if = "Option::is_none")]`.
     #[test]
-    fn to_object_removes_disabled_at_when_none() {
+    fn to_value_removes_disabled_at_when_none() {
         let key = sample_v0(None);
-        let value = key.to_object().expect("to_object");
+        let value = platform_value::to_value(&key).expect("to_value");
         let map = value.to_map().expect("expected a map");
         assert!(!map.iter().any(|(k, _)| k.as_text() == Some("disabledAt")));
     }
 
     #[test]
-    fn to_object_keeps_disabled_at_when_some() {
+    fn to_value_keeps_disabled_at_when_some() {
         let key = sample_v0(Some(42));
-        let value = key.to_object().expect("to_object");
+        let value = platform_value::to_value(&key).expect("to_value");
         let map = value.to_map().expect("expected a map");
         assert!(map.iter().any(|(k, _)| k.as_text() == Some("disabledAt")));
-    }
-
-    #[test]
-    fn into_object_produces_same_as_to_object() {
-        let key = sample_v0(Some(1));
-        let via_ref = key.to_object().unwrap();
-        let via_owned = key.clone().into_object().unwrap();
-        assert_eq!(via_ref, via_owned);
     }
 
     #[test]
@@ -146,7 +138,7 @@ mod tests {
         key.contract_bounds = Some(ContractBounds::SingleContract {
             id: Identifier::from([0x12u8; 32]),
         });
-        let value = key.to_object().unwrap();
+        let value = platform_value::to_value(&key).unwrap();
         let back = IdentityPublicKeyV0::from_object(value, LATEST_PLATFORM_VERSION).unwrap();
         assert_eq!(back, key);
     }
