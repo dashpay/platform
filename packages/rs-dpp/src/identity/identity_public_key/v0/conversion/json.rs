@@ -1,7 +1,6 @@
 use crate::identity::identity_public_key::conversion::json::IdentityPublicKeyJsonConversionMethodsV0;
 use crate::identity::identity_public_key::fields::BINARY_DATA_FIELDS;
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
-use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::{ReplacementType, Value};
 use serde_json::Value as JsonValue;
@@ -25,10 +24,7 @@ impl IdentityPublicKeyJsonConversionMethodsV0 for IdentityPublicKeyV0 {
         value.try_into().map_err(ProtocolError::ValueError)
     }
 
-    fn from_json_object(
-        raw_object: JsonValue,
-        _platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError> {
+    fn from_json_object(raw_object: JsonValue) -> Result<Self, ProtocolError> {
         let mut value: Value = raw_object.into();
         // Legacy ingest: rewrite binary fields from byte-array form to
         // `Value::Bytes` before deserializing. Older JS clients sometimes
@@ -56,7 +52,6 @@ mod tests {
     use super::*;
     use crate::identity::{KeyType, Purpose, SecurityLevel};
     use platform_value::BinaryData;
-    use platform_version::version::LATEST_PLATFORM_VERSION;
 
     fn sample_v0(disabled_at: Option<u64>) -> IdentityPublicKeyV0 {
         IdentityPublicKeyV0 {
@@ -110,7 +105,7 @@ mod tests {
     fn from_json_object_roundtrip() {
         let key = sample_v0(None);
         let json = key.to_json().unwrap();
-        let back = IdentityPublicKeyV0::from_json_object(json, LATEST_PLATFORM_VERSION).unwrap();
+        let back = IdentityPublicKeyV0::from_json_object(json).unwrap();
         assert_eq!(back, key);
     }
 
@@ -164,7 +159,7 @@ mod tests {
     #[test]
     fn from_json_object_fails_on_missing_fields() {
         let json = serde_json::json!({ "id": 1 });
-        let result = IdentityPublicKeyV0::from_json_object(json, LATEST_PLATFORM_VERSION);
+        let result = IdentityPublicKeyV0::from_json_object(json);
         assert!(result.is_err());
     }
 }

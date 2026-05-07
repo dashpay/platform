@@ -27,7 +27,6 @@ use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
-use dpp::version::PlatformVersion;
 use hex;
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
@@ -441,12 +440,13 @@ impl IdentityPublicKeyWasm {
     ///
     /// Uses serde_json conversion which properly handles the tagged enum
     /// and deserializes base64 strings to binary data.
+    /// `platform_version` is accepted for SDK API consistency but not
+    /// load-bearing today (canonical tag-driven dispatch handles V0).
     #[wasm_bindgen(js_name = "fromJSON")]
     pub fn from_json(
         value: IdentityPublicKeyJSONJs,
-        platform_version: PlatformVersionLikeJs,
+        _platform_version: PlatformVersionLikeJs,
     ) -> WasmDppResult<IdentityPublicKeyWasm> {
-        let platform_version: PlatformVersion = platform_version.try_into()?;
         let json_value: JsonValue = serde_from_value(value.into()).map_err(|err| {
             WasmDppError::serialization(format!(
                 "IdentityPublicKey.fromJSON: unable to parse JSON: {}",
@@ -454,8 +454,7 @@ impl IdentityPublicKeyWasm {
             ))
         })?;
 
-        let key = IdentityPublicKey::from_json_object(json_value, &platform_version)
-            .map_err(WasmDppError::from)?;
+        let key = IdentityPublicKey::from_json_object(json_value).map_err(WasmDppError::from)?;
 
         Ok(IdentityPublicKeyWasm(key))
     }

@@ -1,7 +1,6 @@
 mod v0;
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use crate::identity::IdentityPublicKey;
-use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use serde_json::Value as JsonValue;
 pub use v0::IdentityPublicKeyJsonConversionMethodsV0;
@@ -19,27 +18,14 @@ impl IdentityPublicKeyJsonConversionMethodsV0 for IdentityPublicKey {
         }
     }
 
-    fn from_json_object(
-        raw_object: JsonValue,
-        platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError>
+    fn from_json_object(raw_object: JsonValue) -> Result<Self, ProtocolError>
     where
         Self: Sized,
     {
-        match platform_version
-            .dpp
-            .identity_versions
-            .identity_key_structure_version
-        {
-            0 => {
-                IdentityPublicKeyV0::from_json_object(raw_object, platform_version).map(Into::into)
-            }
-            version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "IdentityPublicKey::from_json_object".to_string(),
-                known_versions: vec![0],
-                received: version,
-            }),
-        }
+        // V0 is currently the only structure version. The inner enum is
+        // tagged with `$formatVersion`, so the value's own tag drives
+        // dispatch via serde — no platform_version arg needed.
+        IdentityPublicKeyV0::from_json_object(raw_object).map(Into::into)
     }
 }
 
@@ -49,7 +35,6 @@ mod tests {
     use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use crate::identity::{KeyType, Purpose, SecurityLevel};
     use platform_value::BinaryData;
-    use platform_version::version::LATEST_PLATFORM_VERSION;
 
     fn wrapper(disabled_at: Option<u64>) -> IdentityPublicKey {
         IdentityPublicKey::V0(IdentityPublicKeyV0 {
@@ -84,14 +69,14 @@ mod tests {
     fn from_json_object_roundtrip() {
         let key = wrapper(Some(1234));
         let json = key.to_json().expect("to_json");
-        let back = IdentityPublicKey::from_json_object(json, LATEST_PLATFORM_VERSION).unwrap();
+        let back = IdentityPublicKey::from_json_object(json).unwrap();
         assert_eq!(back, key);
     }
 
     #[test]
     fn from_json_object_missing_fields_errors() {
         let json = serde_json::json!({ "id": 0 });
-        let result = IdentityPublicKey::from_json_object(json, LATEST_PLATFORM_VERSION);
+        let result = IdentityPublicKey::from_json_object(json);
         assert!(result.is_err());
     }
 }
