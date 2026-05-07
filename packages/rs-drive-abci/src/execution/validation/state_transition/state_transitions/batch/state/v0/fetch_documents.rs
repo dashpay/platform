@@ -69,12 +69,13 @@ pub(crate) fn fetch_documents_for_transitions(
         })
         .collect::<Result<Vec<ConsensusValidationResult<Vec<Document>>>, Error>>()?;
 
-    // The deprecated non-strict aggregator is fine here: the only caller
-    // checks `is_valid()` (errors), not `data.is_some()`, so the
-    // `Some(empty_vec)` vs `None` distinction is invisible to it. See
-    // issue #2867 for context on the strict aggregators.
-    #[allow(deprecated)]
-    let validation_result = ConsensusValidationResult::flatten(validation_results_of_documents);
+    // The legacy `_or_empty_vec` aggregator is used here because this
+    // helper is shared with v0 of the batch transformer (which preserves
+    // PROTOCOL_VERSION_11 chain history). The only caller checks
+    // `is_valid()` (errors), not `data.is_some()`, so the
+    // `Some(empty_vec)` vs `None` distinction is invisible to it.
+    let validation_result =
+        ConsensusValidationResult::flatten_or_empty_vec(validation_results_of_documents);
 
     Ok(validation_result)
 }

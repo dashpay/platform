@@ -1,9 +1,11 @@
-// v0 uses the now-deprecated `ConsensusValidationResult::flatten` /
-// `merge_many` aggregators. This is intentional: changing them to the
-// strict variants would alter PROTOCOL_VERSION_11 (and earlier) chain
-// behavior. v1 of this transformer (used by PROTOCOL_VERSION_12+) uses
-// the strict variants. See issue #2867.
-#![allow(deprecated)]
+// v0 of the batch transformer uses the legacy
+// `ConsensusValidationResult::flatten_or_empty_vec` /
+// `merge_many_or_empty_vec` aggregators that always return
+// `data: Some(Vec)` — including `Some(empty_vec)` when no input
+// contributed any data. This is intentional and load-bearing for
+// PROTOCOL_VERSION_11 chain reproducibility. v1 (used from
+// PROTOCOL_VERSION_12 onwards) uses the canonical `flatten` / `merge_many`
+// which return `data: None` in that case. See issue #2867.
 
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
@@ -280,7 +282,7 @@ impl BatchTransitionTransformerV0 for BatchTransition {
 
         validation_results.append(&mut validation_result_tokens);
 
-        let validation_result = ConsensusValidationResult::flatten(validation_results);
+        let validation_result = ConsensusValidationResult::flatten_or_empty_vec(validation_results);
 
         if validation_result.has_data() {
             let (transitions, errors) = validation_result.into_data_and_errors()?;
@@ -352,7 +354,8 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 )
             })
             .collect::<Result<Vec<ConsensusValidationResult<BatchedTransitionAction>>, Error>>()?;
-        let validation_result = ConsensusValidationResult::merge_many(validation_result);
+        let validation_result =
+            ConsensusValidationResult::merge_many_or_empty_vec(validation_result);
         Ok(validation_result)
     }
     fn transform_document_transitions_within_contract_v0(
@@ -406,7 +409,9 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
             })
             .collect::<Result<Vec<ConsensusValidationResult<Vec<BatchedTransitionAction>>>, Error>>(
             )?;
-        Ok(ConsensusValidationResult::flatten(validation_result))
+        Ok(ConsensusValidationResult::flatten_or_empty_vec(
+            validation_result,
+        ))
     }
 
     fn transform_document_transitions_within_document_type_v0(
@@ -500,7 +505,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 .collect::<Result<Vec<ConsensusValidationResult<BatchedTransitionAction>>, Error>>(
                 )?;
 
-            let result = ConsensusValidationResult::merge_many(
+            let result = ConsensusValidationResult::merge_many_or_empty_vec(
                 document_transition_actions_validation_result,
             );
 

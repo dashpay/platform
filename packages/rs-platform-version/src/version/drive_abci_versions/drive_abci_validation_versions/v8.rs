@@ -112,10 +112,11 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V8: DriveAbciValidationVersions =
                 revision: 0,
                 // Issue #2867: route to v1 of the transformer so empty-action
                 // failure paths become UnpaidConsensusError (tx removed from
-                // block) instead of being synthesised into a paid empty
-                // BatchTransitionAction by the merge_many/flatten Some(empty)
-                // shape. v0 stays for PROTOCOL_VERSION_11 so mainnet history
-                // is preserved bit-for-bit.
+                // block by prepare_proposal) instead of being synthesised
+                // into a paid empty BatchTransitionAction by the legacy
+                // `_or_empty_vec` aggregators. v0 stays for
+                // PROTOCOL_VERSION_11 so mainnet history is preserved
+                // bit-for-bit.
                 transform_into_action: 1,
                 data_triggers: DriveAbciValidationDataTriggerAndBindingVersions {
                     bindings: 0,

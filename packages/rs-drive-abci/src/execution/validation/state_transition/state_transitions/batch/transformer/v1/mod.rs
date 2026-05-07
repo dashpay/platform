@@ -277,7 +277,7 @@ impl BatchTransitionTransformerV1 for BatchTransition {
         // surfaces as data:None — the downstream
         // process_validation_result_v0:241 then routes to UnpaidConsensusError
         // instead of synthesising a paid empty BatchTransitionAction.
-        let validation_result = ConsensusValidationResult::flatten_strict(validation_results);
+        let validation_result = ConsensusValidationResult::flatten(validation_results);
 
         if validation_result.has_data() {
             let (transitions, errors) = validation_result.into_data_and_errors()?;
@@ -351,7 +351,7 @@ impl BatchTransitionInternalTransformerV1 for BatchTransition {
             .collect::<Result<Vec<ConsensusValidationResult<BatchedTransitionAction>>, Error>>()?;
         // Issue #2867: strict variant returns data:None when no token
         // transition produced an action.
-        let validation_result = ConsensusValidationResult::merge_many_strict(validation_result);
+        let validation_result = ConsensusValidationResult::merge_many(validation_result);
         Ok(validation_result)
     }
     fn transform_document_transitions_within_contract_v1(
@@ -406,7 +406,7 @@ impl BatchTransitionInternalTransformerV1 for BatchTransition {
             .collect::<Result<Vec<ConsensusValidationResult<Vec<BatchedTransitionAction>>>, Error>>(
             )?;
         // Issue #2867: strict variant.
-        Ok(ConsensusValidationResult::flatten_strict(validation_result))
+        Ok(ConsensusValidationResult::flatten(validation_result))
     }
 
     fn transform_document_transitions_within_document_type_v1(
@@ -503,7 +503,7 @@ impl BatchTransitionInternalTransformerV1 for BatchTransition {
             // Issue #2867: strict variant returns data:None when no
             // per-transition validation produced an action — propagates
             // through to UnpaidConsensusError downstream.
-            let result = ConsensusValidationResult::merge_many_strict(
+            let result = ConsensusValidationResult::merge_many(
                 document_transition_actions_validation_result,
             );
 
@@ -1018,15 +1018,17 @@ impl BatchTransitionInternalTransformerV1 for BatchTransition {
 /// Public wrapper used by `BatchTransition::transform_into_action` dispatcher
 /// when `platform_version.…batch_state_transition.transform_into_action == 1`.
 /// Mirrors `transform_into_action_v0` in `batch/state/v0/mod.rs:323` but
-/// routes through the v1 transformer, which uses
-/// [`ConsensusValidationResult::flatten_strict`] /
-/// [`ConsensusValidationResult::merge_many_strict`] in place of the
-/// deprecated non-strict aggregators. This closes issue #2867's
-/// "validating state transition for free" gap: when no per-transition
-/// validation contributes an action, the result carries `data: None` and
-/// downstream `process_validation_result_v0:241` routes to
-/// `UnpaidConsensusError` (tx removed from block by prepare_proposal)
-/// instead of synthesising a paid empty `BatchTransitionAction`.
+/// routes through the v1 transformer, which uses the canonical
+/// [`ConsensusValidationResult::flatten`] /
+/// [`ConsensusValidationResult::merge_many`] aggregators (returning
+/// `data: None` when no input contributed). v0 keeps using the legacy
+/// `_or_empty_vec` variants for PROTOCOL_VERSION_11 chain reproducibility.
+///
+/// This closes issue #2867: when no per-transition validation contributes
+/// an action, the result carries `data: None` and downstream
+/// `process_validation_result_v0:241` routes to `UnpaidConsensusError`
+/// (tx removed from block by `prepare_proposal:223`) instead of
+/// synthesising a paid empty `BatchTransitionAction`.
 pub(in crate::execution::validation::state_transition::state_transitions::batch) trait BatchTransitionActionTransformerV1
 {
     fn transform_into_action_v1(
