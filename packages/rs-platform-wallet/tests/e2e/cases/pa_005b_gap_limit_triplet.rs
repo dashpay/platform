@@ -43,6 +43,10 @@
             key_wallet::AddressPool::next_unused_multiple. The 21-round funding \
             workaround works but is ~10 min runtime per sub-case. See spec status."]
 async fn pa_005b_gap_limit_triplet() {
+    // INTENTIONAL(QA-V16-005): keep hard panic instead of #[ignore]-only — failing
+    // test documents the missing next_unused_receive_addresses(count) production
+    // API gap until it's implemented; flipping to #[ignore] alone would silently
+    // hide the gap from CI signal.
     panic!(
         "PA-005b is BLOCKED on a missing production API. \
          `PlatformAddressWallet::next_unused_receive_address` parks on the \

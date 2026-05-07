@@ -46,6 +46,9 @@
             parameter. See TEST_SPEC.md PA-001b status field and the \
             Found-NNN entry for the spec/impl drift."]
 async fn pa_001b_change_address_branch() {
+    // INTENTIONAL(QA-V16-005): keep hard panic instead of #[ignore]-only — failing
+    // test documents the missing production API (output_change_address parameter)
+    // until it's implemented; silently hiding it from CI signal is worse.
     panic!(
         "PA-001b is BLOCKED on a missing production API. \
          The spec describes an `output_change_address: Option<PlatformAddress>` \
