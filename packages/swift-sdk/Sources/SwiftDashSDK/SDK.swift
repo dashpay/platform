@@ -359,45 +359,13 @@ public struct SDKDetailedError: Error, LocalizedError {
   }
 }
 
-private final class SDKErrorConsensusSidecar: @unchecked Sendable {
-  struct Signature: Equatable {
-    let code: UInt32
-    let message: String
-  }
-
-  struct Entry {
-    let signature: Signature
-    let consensusErrors: [SDKConsensusError]
-  }
-
-  private let lock = NSLock()
-  private var current: Entry?
-
-  func replace(with entry: Entry?) {
-    lock.lock()
-    current = entry
-    lock.unlock()
-  }
-
-  func consensusErrors(for signature: Signature) -> [SDKConsensusError]? {
-    lock.lock()
-    defer { lock.unlock() }
-
-    guard let current, current.signature == signature else {
-      return nil
-    }
-
-    return current.consensusErrors
-  }
-}
-
 /// SDK Error handling
 ///
 /// Associated `String` values are clean human-readable messages with no
 /// private embedded payload — `case .protocolError(let message)` matches
 /// produce exactly the message returned by the FFI. Structured protocol
-/// consensus details, when present, are surfaced via `SDKError.consensusErrors`
-/// on the most recently consumed matching `SDKError`.
+/// consensus details are only race-free on the original FFI error pointer and
+/// are not retained on the public scalar `SDKError` value.
 public enum SDKError: Error {
   case invalidParameter(String)
   case invalidState(String)
@@ -425,9 +393,9 @@ public enum SDKError: Error {
 
   /// Source-compatibility overload that maps a value-typed `DashSDKError`
   /// into an `SDKError`. This overload cannot resolve the structured
-  /// consensus-error sidecar (which is keyed on the heap pointer returned by
-  /// the FFI, not the value); sidecar-aware code paths must use the
-  /// pointer-typed `fromDashSDKError(_:)` overload combined with
+  /// consensus details owned by the original heap pointer returned by the FFI.
+  /// Callers that need those details must use the pointer-typed
+  /// `fromDashSDKError(_:)` overload combined with
   /// `consensusErrors(fromDashSDKError:)`.
   @available(
     *, deprecated,
@@ -469,40 +437,17 @@ public enum SDKError: Error {
     }
   }
 
-  private static let consensusSidecar = SDKErrorConsensusSidecar()
-
-  private var sidecarSignature: SDKErrorConsensusSidecar.Signature {
-    SDKErrorConsensusSidecar.Signature(code: code, message: message)
-  }
-
-  static func updateConsensusSidecar(
-    for error: SDKError,
-    consensusErrors: [SDKConsensusError]?
-  ) {
-    guard let consensusErrors, !consensusErrors.isEmpty else {
-      consensusSidecar.replace(with: nil)
-      return
-    }
-
-    consensusSidecar.replace(
-      with: SDKErrorConsensusSidecar.Entry(
-        signature: error.sidecarSignature,
-        consensusErrors: consensusErrors
-      )
-    )
-  }
-
-  /// Structured consensus details captured when a matching FFI error was most
-  /// recently consumed by `consumeDashSDKError(_:)`.
+  /// Structured consensus details are not retained on `SDKError`.
   ///
-  /// This accessor is source-compatible with existing `catch let sdkError as
-  /// SDKError` flows: wrappers continue throwing `SDKError`, while callers that
-  /// need protocol details can inspect `sdkError.consensusErrors` immediately in
-  /// the catch scope. The sidecar is replaced on every consume path and matches
-  /// by SDK error code plus message, so unrelated `SDKError` values do not
-  /// inherit stale details.
+  /// A scalar `SDKError` value does not have stable identity, so attaching
+  /// process-global structured details to matching `(code, message)` pairs can
+  /// misattribute concurrent same-signature failures, lose delayed catches, and
+  /// produce one-shot reads. Callers that need race-free structured consensus
+  /// details must read them from the original FFI pointer via
+  /// `fromDashSDKErrorWithConsensusErrors(_:)` or
+  /// `consensusErrors(fromDashSDKError:)` before `dash_sdk_error_free` runs.
   public var consensusErrors: [SDKConsensusError]? {
-    SDKError.consensusSidecar.consensusErrors(for: sidecarSignature)
+    nil
   }
 
   /// Returns the structured consensus errors carried by `error`, if any.
@@ -534,7 +479,7 @@ public enum SDKError: Error {
   }
 
   /// Convenience that returns the mapped `SDKError` plus any structured
-  /// protocol consensus details still attached to the FFI sidecar.
+  /// protocol consensus details still attached to the original FFI pointer.
   public static func fromDashSDKErrorWithConsensusErrors(_ error: UnsafePointer<DashSDKError>)
     -> (SDKError, [SDKConsensusError]?)
   {
@@ -543,25 +488,25 @@ public enum SDKError: Error {
     return (mapped, details)
   }
 
-  // Shared finalization path so tests can verify sidecar behavior without
+  // Shared finalization path so tests can verify wrapper behavior without
   // depending on FFI-owned pointers.
   static func finalizeConsumedDashSDKError(
     _ error: SDKError,
     consensusErrors: [SDKConsensusError]?
   ) -> SDKError {
-    updateConsensusSidecar(for: error, consensusErrors: consensusErrors)
+    _ = consensusErrors
     return error
   }
 
   /// Frees the owned FFI error pointer after mapping it to a Swift error.
   ///
   /// Always returns the mapped `SDKError`, preserving the public thrown runtime
-  /// type for existing `catch let sdkError as SDKError` handlers. If the FFI
-  /// error also carries structured consensus details, they are captured before
-  /// freeing the pointer and made available via `sdkError.consensusErrors`.
+  /// type for existing `catch let sdkError as SDKError` handlers. Structured
+  /// consensus details, if needed, must be read from the original pointer with
+  /// `fromDashSDKErrorWithConsensusErrors(_:)` before it is freed.
   static func consumeDashSDKError(_ error: UnsafeMutablePointer<DashSDKError>) -> SDKError {
-    let (mapped, details) = fromDashSDKErrorWithConsensusErrors(UnsafePointer(error))
-    let finalized = finalizeConsumedDashSDKError(mapped, consensusErrors: details)
+    let mapped = fromDashSDKError(UnsafePointer(error))
+    let finalized = finalizeConsumedDashSDKError(mapped, consensusErrors: nil)
     dash_sdk_error_free(error)
     return finalized
   }

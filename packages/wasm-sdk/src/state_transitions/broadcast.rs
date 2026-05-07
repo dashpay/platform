@@ -36,7 +36,7 @@ impl WasmSdk {
 
         st.broadcast(self.as_ref(), put_settings)
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast: {}", e)))?;
+            .map_err(WasmSdkError::from)?;
 
         Ok(())
     }
@@ -65,9 +65,7 @@ impl WasmSdk {
         let result = st
             .wait_for_response::<StateTransitionProofResult>(self.as_ref(), put_settings)
             .await
-            .map_err(|e| {
-                WasmSdkError::generic(format!("Failed to wait for state transition result: {}", e))
-            })?;
+            .map_err(WasmSdkError::from)?;
 
         convert_proof_result(result).map_err(WasmSdkError::from)
     }
@@ -94,7 +92,7 @@ impl WasmSdk {
         let result = st
             .broadcast_and_wait::<StateTransitionProofResult>(self.as_ref(), put_settings)
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast: {}", e)))?;
+            .map_err(WasmSdkError::from)?;
 
         convert_proof_result(result).map_err(WasmSdkError::from)
     }

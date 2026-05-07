@@ -42,15 +42,18 @@ import SwiftDashSDK
 
 Public Swift errors keep `SDKError` associated `String` payloads clean and
 human-readable — `case .protocolError(let message)` produces the original FFI
-message. When the FFI layer surfaces structured `DashSDKConsensusError` entries
-alongside an error, throwing wrappers still throw `SDKError`. Callers who need
-the structured details should catch `SDKError` and inspect
-`sdkError.consensusErrors` in the catch block.
+message. Public throwing wrappers still throw `SDKError` for source
+compatibility, but scalar `SDKError` values do not retain structured
+`DashSDKConsensusError` entries. A scalar enum value has no stable identity, so
+attaching process-global details by `(code, message)` can misattribute
+same-signature concurrent failures.
 
 If you are working directly with the FFI `DashSDKError` pointer, inspect
 `SDKError.consensusErrors(fromDashSDKError:)` or
 `SDKError.fromDashSDKErrorWithConsensusErrors(_:)` before
-`dash_sdk_error_free`.
+`dash_sdk_error_free` to retrieve race-free structured consensus details. Code
+that wants to pass both values around together can wrap them in
+`SDKDetailedError`.
 
 ## API Reference
 

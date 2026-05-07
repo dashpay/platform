@@ -78,7 +78,9 @@ final class SDKErrorTests: XCTestCase {
   func testConsumeDashSDKErrorReturnsSDKErrorForExistingCatchLogic() {
     let sdkError = SDKError.finalizeConsumedDashSDKError(
       .protocolError("Protocol mismatch"),
-      consensusErrors: nil
+      consensusErrors: [
+        SDKConsensusError(code: 1, kind: "Consensus", name: "X", message: "y")
+      ]
     )
 
     if case .protocolError(let message) = sdkError {
@@ -89,36 +91,26 @@ final class SDKErrorTests: XCTestCase {
     XCTAssertNil(sdkError.consensusErrors)
   }
 
-  func testConsensusSidecarMatchesErrorCodeAndMessage() {
-    let matchingError = SDKError.protocolError("Protocol mismatch")
-    let differentMessage = SDKError.protocolError("Different message")
-    let differentCode = SDKError.networkError("Protocol mismatch")
+  func testSDKErrorConsensusErrorsDoesNotExposeStructuredDetailsFromScalarValue() {
+    let sdkError = SDKError.protocolError("Protocol mismatch")
+
+    XCTAssertNil(sdkError.consensusErrors)
+  }
+
+  func testFinalizeConsumedDashSDKErrorIgnoresConsensusDetailsForSDKError() {
+    let sdkError = SDKError.finalizeConsumedDashSDKError(
+      .protocolError("Protocol mismatch"),
+      consensusErrors: [
+        SDKConsensusError(code: 1, kind: "Consensus", name: "X", message: "y")
+      ]
+    )
     let consensusErrors = [
       SDKConsensusError(code: 1, kind: "Consensus", name: "X", message: "y")
     ]
 
-    SDKError.updateConsensusSidecar(for: matchingError, consensusErrors: consensusErrors)
+    let detailed = SDKDetailedError(sdkError: sdkError, consensusErrors: consensusErrors)
 
-    XCTAssertEqual(matchingError.consensusErrors, consensusErrors)
-    XCTAssertNil(differentMessage.consensusErrors)
-    XCTAssertNil(differentCode.consensusErrors)
-  }
-
-  func testConsensusSidecarClearsForLaterNonDetailedConsume() {
-    let first = SDKError.protocolError("Scoped protocol error")
-    let consensusErrors = [
-      SDKConsensusError(code: 99, kind: "Consensus", name: "Scoped", message: "details")
-    ]
-
-    SDKError.updateConsensusSidecar(for: first, consensusErrors: consensusErrors)
-    XCTAssertEqual(first.consensusErrors, consensusErrors)
-
-    let later = SDKError.finalizeConsumedDashSDKError(
-      .networkError("Network failure"),
-      consensusErrors: nil
-    )
-
-    XCTAssertNil(first.consensusErrors)
-    XCTAssertNil(later.consensusErrors)
+    XCTAssertNil(sdkError.consensusErrors)
+    XCTAssertEqual(detailed.consensusErrors, consensusErrors)
   }
 }
