@@ -781,16 +781,6 @@ public class PlatformWalletPersistenceHandler {
         cb.on_persist_identity_keys_fn = persistIdentityKeysCallback
         cb.on_persist_token_balances_fn = persistTokenBalancesCallback
         cb.on_persist_contacts_fn = persistContactsCallback
-        // Persister fallback for the asset-lock proof flow's
-        // chainlocked-tx lookup (Rust trait method
-        // `PlatformWalletPersistence::get_core_tx_record`). Without
-        // this wired, the Rust side's `record_or_persister` helper
-        // gracefully falls back to "miss" — but then chainlocked
-        // asset-lock proofs can't recover the chain-lock height
-        // once upstream's `keep-finalized-transactions` Cargo
-        // feature evicts the in-memory record (the production
-        // default). See the Rust trait doc for the field contract
-        // and the helper for the call sites.
         cb.on_get_chainlocked_tx_record_fn = getChainlockedTxRecordCallback
         return cb
     }
