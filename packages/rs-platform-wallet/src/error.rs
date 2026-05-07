@@ -138,22 +138,6 @@ pub enum PlatformWalletError {
 
     #[error("Shielded sub-wallet not bound: call bind_shielded first")]
     ShieldedNotBound,
-
-    /// The local commitment tree has no checkpoint whose root is
-    /// in Platform's `recorded_anchors`. Spend can't proceed —
-    /// our tree has diverged from Platform's (mid-block sync,
-    /// dropped notes, double-append, etc.) and a re-sync is
-    /// required.
-    #[error(
-        "Shielded tree diverged from Platform: no local checkpoint matches any of {tried} \
-         recorded anchor(s) over {depths_walked} checkpoint depth(s); a re-sync is required"
-    )]
-    ShieldedTreeDiverged {
-        /// Number of Platform-side anchors we checked against.
-        tried: usize,
-        /// Number of local checkpoint depths we walked.
-        depths_walked: usize,
-    },
 }
 
 /// Check whether an SDK error indicates that an InstantSend lock proof was

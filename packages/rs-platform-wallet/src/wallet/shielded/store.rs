@@ -116,15 +116,11 @@ pub trait ShieldedStore: Send + Sync {
     fn tree_anchor(&self) -> Result<[u8; 32], Self::Error>;
 
     /// Generate a Merkle authentication path for `position`
-    /// against the tree state at `checkpoint_depth` checkpoints
-    /// before the current state (0 = most recent checkpoint, 1 =
-    /// one before, etc.). Returns `Ok(None)` if no checkpoint
-    /// exists at the requested depth or if the position is not
-    /// marked / has been pruned.
+    /// against the current tree state. Returns `Ok(None)` if no
+    /// witness is available (position not marked, or pruned).
     fn witness(
         &self,
         position: u64,
-        checkpoint_depth: usize,
     ) -> Result<Option<grovedb_commitment_tree::MerklePath>, Self::Error>;
 
     // ── Sync state (per-subwallet) ─────────────────────────────────────
@@ -295,7 +291,6 @@ impl ShieldedStore for InMemoryShieldedStore {
     fn witness(
         &self,
         _position: u64,
-        _checkpoint_depth: usize,
     ) -> Result<Option<grovedb_commitment_tree::MerklePath>, Self::Error> {
         Err(InMemoryStoreError(
             "Merkle witness not supported in in-memory store".into(),
