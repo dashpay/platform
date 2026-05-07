@@ -41,75 +41,20 @@ public class ManagedAccount {
         return managed_core_account_get_index(handle)
     }
 
-    /// Get the transaction count
-    public var transactionCount: UInt32 {
-        return managed_core_account_get_transaction_count(handle)
-    }
-
     /// Get the UTXO count
     public var utxoCount: UInt32 {
         return managed_core_account_get_utxo_count(handle)
     }
 
-    // MARK: - Transactions
-
-    /// Get all transactions for this account
-    /// - Returns: Array of transactions
-    public func getTransactions() -> [WalletTransaction] {
-        var ptr: UnsafeMutablePointer<FFITransactionRecord>?
-        var count: size_t = 0
-
-        let success = managed_core_account_get_transactions(handle, &ptr, &count)
-
-        guard success else {
-            preconditionFailure(
-              "Invalid state: managed_core_account_get_transactions can only fail if any pointer is nil"
-            )
-        }
-
-        // Handle empty case
-        guard count > 0, let ptr else {
-            return []
-        }
-
-        defer {
-            managed_core_account_free_transactions(ptr, count)
-        }
-
-        // Convert FFI transactions to Swift transactions
-        var transactions: [WalletTransaction] = []
-        transactions.reserveCapacity(count)
-
-        for i in 0..<count {
-            let ffiTx = ptr.advanced(by: i).pointee
-
-            // Convert txid to hex string
-            let txidHex = withUnsafeBytes(of: ffiTx.txid) { buffer in
-                buffer.map { String(format: "%02x", $0) }.joined()
-            }
-
-            // Extract context details from FFITransactionContext
-            let contextDetails = TransactionContextDetails(ffiContext: ffiTx.context)
-
-            let blockHashHex: String? = contextDetails.blockHash.map { data in
-                data.map { String(format: "%02x", $0) }.joined()
-            }
-
-            let transaction = WalletTransaction(
-                txid: txidHex,
-                netAmount: ffiTx.net_amount,
-                height: contextDetails.height,
-                blockHash: blockHashHex,
-                timestamp: UInt64(contextDetails.timestamp),
-                fee: ffiTx.fee > 0 ? ffiTx.fee : nil,
-                isOurs: true // direction-based, inferred from net_amount sign
-            )
-
-            transactions.append(transaction)
-        }
-
-        return transactions
-    }
+    // `transactionCount` and `getTransactions()` accessors were removed
+    // in lockstep with upstream gating
+    // `managed_core_account_get_transaction_count` /
+    // `managed_core_account_get_transactions` behind the
+    // `keep-finalized-transactions` Cargo feature (off by default).
+    // The production model delivers tx history through the
+    // platform-wallet event channel, not from the in-memory
+    // per-account map. Consumers that need history should subscribe
+    // to wallet events on the Rust side.
 
     // MARK: - Balance
 
