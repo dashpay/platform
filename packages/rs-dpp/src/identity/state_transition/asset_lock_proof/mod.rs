@@ -251,17 +251,6 @@ impl AssetLockProof {
         }
     }
 
-    pub fn to_raw_object(&self) -> Result<Value, ProtocolError> {
-        match self {
-            AssetLockProof::Instant(is) => {
-                platform_value::to_value(is).map_err(ProtocolError::ValueError)
-            }
-            AssetLockProof::Chain(cl) => {
-                platform_value::to_value(cl).map_err(ProtocolError::ValueError)
-            }
-        }
-    }
-
     /// Validate the structure of the asset lock proof
     #[cfg(feature = "validation")]
     pub fn validate_structure(
@@ -346,35 +335,14 @@ impl TryFrom<Value> for AssetLockProof {
     }
 }
 
-impl TryInto<Value> for AssetLockProof {
-    type Error = ProtocolError;
-
-    fn try_into(self) -> Result<Value, Self::Error> {
-        match self {
-            AssetLockProof::Instant(instant_proof) => {
-                platform_value::to_value(instant_proof).map_err(ProtocolError::ValueError)
-            }
-            AssetLockProof::Chain(chain_proof) => {
-                platform_value::to_value(chain_proof).map_err(ProtocolError::ValueError)
-            }
-        }
-    }
-}
-
-impl TryInto<Value> for &AssetLockProof {
-    type Error = ProtocolError;
-
-    fn try_into(self) -> Result<Value, Self::Error> {
-        match self {
-            AssetLockProof::Instant(instant_proof) => {
-                platform_value::to_value(instant_proof).map_err(ProtocolError::ValueError)
-            }
-            AssetLockProof::Chain(chain_proof) => {
-                platform_value::to_value(chain_proof).map_err(ProtocolError::ValueError)
-            }
-        }
-    }
-}
+// `TryInto<Value>` impls (and the inherent `to_raw_object` that mirrored
+// them) used to live here, producing *untagged* `Value` (drops the variant
+// tag entirely). They were structurally asymmetric with the canonical
+// Deserialize, which expects the `type: "instant" | "chain"` discriminator
+// to route through `RawAssetLockProof`. Confirmed zero production callers,
+// so deleted in Phase D step 6. Use canonical `ValueConvertible::to_object`
+// — it produces the correctly-tagged shape that `Deserialize` accepts on
+// the way back.
 
 #[cfg(test)]
 mod tests {
@@ -551,9 +519,14 @@ mod tests {
         }
 
         #[test]
-        fn chain_proof_to_raw_object() {
+        fn chain_proof_to_object_canonical() {
+            // After Phase D step 6, `to_raw_object` (which produced an
+            // untagged Value) was deleted. Canonical
+            // `ValueConvertible::to_object` produces the correctly-tagged
+            // shape that round-trips through `Deserialize`.
+            use crate::serialization::ValueConvertible;
             let proof = make_chain_lock_proof();
-            let result = proof.to_raw_object();
+            let result = proof.to_object();
             assert!(result.is_ok());
         }
 
@@ -570,22 +543,29 @@ mod tests {
 
         #[test]
         fn chain_proof_value_round_trip() {
+            // Canonical `ValueConvertible::to_object` produces a tagged
+            // Value (`{type: "chain", coreChainLockedHeight: ..., outPoint: ...}`)
+            // that round-trips through the manual `Deserialize` (which routes
+            // via `RawAssetLockProof`).
+            use crate::serialization::ValueConvertible;
             let chain_proof = ChainAssetLockProof::new(100, [0x42; 36]);
             let proof = AssetLockProof::Chain(chain_proof);
 
-            // Convert to Value
-            let value: Value = (&proof).try_into().expect("should convert to Value");
+            let value = proof.to_object().expect("to_object");
+            // The canonical `to_object` produces `type: "chain"` in the
+            // wire shape. `type_from_raw_value` expects an integer-typed
+            // tag (legacy shape), so it returns None on canonical output —
+            // confirm via the serde Map directly instead.
+            let map = value.to_map_ref().expect("map");
+            assert_eq!(
+                map.iter()
+                    .find_map(|(k, v)| (k.as_text() == Some("type")).then(|| v.as_text())),
+                Some(Some("chain"))
+            );
 
-            // Now try to read type from value
-            let _type_from_value = AssetLockProof::type_from_raw_value(&value);
-            // Chain proofs serialized via serde may or may not have "type" field depending
-            // on the serialization format. The untagged format may not include it.
-            // What matters is that the conversion itself works.
-
-            // Convert from Value back - this tests the TryFrom<Value> path
-            // with the untagged serde format
-            let raw_value = proof.to_raw_object().expect("should convert to raw object");
-            assert!(!raw_value.is_null());
+            let recovered =
+                AssetLockProof::from_object(value).expect("from_object should round-trip");
+            assert_eq!(proof, recovered);
         }
 
         #[test]
@@ -613,25 +593,7 @@ mod tests {
         }
     }
 
-    mod try_into_value {
-        use super::*;
-
-        #[test]
-        fn chain_proof_try_into_value() {
-            let chain_proof = ChainAssetLockProof::new(200, [0xDD; 36]);
-            let proof = AssetLockProof::Chain(chain_proof);
-
-            let value: Result<Value, ProtocolError> = proof.try_into();
-            assert!(value.is_ok());
-        }
-
-        #[test]
-        fn chain_proof_ref_try_into_value() {
-            let chain_proof = ChainAssetLockProof::new(200, [0xDD; 36]);
-            let proof = AssetLockProof::Chain(chain_proof);
-
-            let value: Result<Value, ProtocolError> = (&proof).try_into();
-            assert!(value.is_ok());
-        }
-    }
+    // The `try_into_value` module previously exercised the now-deleted
+    // `TryInto<Value>` impls (which produced untagged `Value`). Canonical
+    // `ValueConvertible::to_object` is exercised in `try_from_value` above.
 }
