@@ -361,7 +361,10 @@ impl TestWallet {
         use dpp::state_transition::address_funds_transfer_transition::methods::AddressFundsTransferTransitionMethodsV0;
         use dpp::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
 
-        let inputs_with_nonce = fetch_inputs_with_nonce(self.wallet.sdk(), &inputs)
+        let platform_version = PlatformVersion::latest();
+        let balanced_inputs = balance_explicit_inputs(&inputs, &outputs, platform_version)?;
+
+        let inputs_with_nonce = fetch_inputs_with_nonce(self.wallet.sdk(), &balanced_inputs)
             .await
             .map_err(|err| FrameworkError::Wallet(format!("nonce fetch: {err}")))?;
         let inputs_with_nonce = nonce_inc(inputs_with_nonce);
