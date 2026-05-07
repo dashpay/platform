@@ -150,16 +150,18 @@ async fn tk_011_set_price_and_direct_purchase_round_trip() {
     let owner_token_post = token_balance_of(ctx, contract_id, position, owner.id)
         .await
         .expect("owner token balance post-purchase");
+    // Direct purchase with keepsDirectPurchaseHistory=true mints new
+    // tokens to the buyer — owner stock is not the source.
     assert_eq!(
-        buyer_token_post, PURCHASE_AMOUNT,
-        "buyer must hold exactly PURCHASE_AMOUNT after the purchase \
-         (got {buyer_token_post})"
+        buyer_token_post,
+        buyer_token_pre + PURCHASE_AMOUNT,
+        "buyer token balance must increase by PURCHASE_AMOUNT after mint-on-purchase \
+         (pre={buyer_token_pre} post={buyer_token_post})"
     );
     assert_eq!(
-        owner_token_post,
-        owner_token_pre - PURCHASE_AMOUNT,
-        "owner stock must decrease by PURCHASE_AMOUNT \
-         (pre={owner_token_pre} post={owner_token_post})"
+        owner_token_post, owner_token_pre,
+        "owner stock must be unchanged — direct purchase mints new tokens, \
+         does not transfer from owner (pre={owner_token_pre} post={owner_token_post})"
     );
 
     let buyer_credits_post = <IdentityBalance as Fetch>::fetch(ctx.sdk(), buyer.id)
