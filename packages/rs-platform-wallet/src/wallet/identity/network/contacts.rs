@@ -5,6 +5,7 @@ use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV
 use dpp::identity::Identity;
 use dpp::prelude::Identifier;
 use key_wallet::account::AccountType;
+use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
@@ -139,12 +140,12 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             .get_wallet_info_mut(&self.wallet_id)
             .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
         // DashPay accounts are funds-bearing; use the typed
-        // `insert_funds` API exposed by the post-split collection
-        // rather than wrapping in `OwnedManagedCoreAccount`.
+        // `insert_funds_bearing_account` API exposed by the post-split
+        // collection rather than wrapping in `OwnedManagedCoreAccount`.
         let managed = key_wallet::managed_account::ManagedCoreFundsAccount::from_account(&account);
         info.core_wallet
             .accounts
-            .insert_funds(managed)
+            .insert_funds_bearing_account(managed)
             .map_err(|e| {
                 PlatformWalletError::InvalidIdentityData(format!(
                     "Failed to register contact account: {e}"
@@ -231,7 +232,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 user_identity_id,
                 friend_identity_id,
                 ..
-            } = &account.managed_account_type
+            } = account.managed_account_type()
             else {
                 // Routing invariant: dashpay_receival_accounts must
                 // only contain DashpayReceivingFunds. If this ever
@@ -497,7 +498,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         // (b) Insert ManagedCoreFundsAccount for address-pool tracking.
         info.core_wallet
             .accounts
-            .insert_funds(managed)
+            .insert_funds_bearing_account(managed)
             .map_err(|e| {
                 PlatformWalletError::InvalidIdentityData(format!(
                     "Failed to register external contact account: {}",
