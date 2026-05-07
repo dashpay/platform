@@ -105,6 +105,35 @@ pub struct PreProgrammedDistribution {
     pub distributions: BTreeMap<TimestampMillis, BTreeMap<Identifier, TokenAmount>>,
 }
 
+/// Perpetual distribution rule passed to
+/// [`setup_with_token_perpetual_distribution`].
+///
+/// Wraps the simplest workable BlockBasedDistribution config (fixed
+/// amount per N-block interval, recipient = ContractOwner). The
+/// harness embeds this under
+/// `tokens["0"].distributionRules.perpetualDistribution` in the V1
+/// JSON envelope so `token_claim` with `TokenDistributionType::
+/// Perpetual` can claim once `interval_blocks` of platform block
+/// height have elapsed since contract creation.
+///
+/// Only the BlockBased shape is exposed — TimeBased and EpochBased
+/// would need their own min-interval headroom (testnet floors:
+/// 600_000 ms / 1 epoch) and aren't required by TK-002.
+///
+/// Testnet enforces a minimum of 5 blocks for BlockBased intervals
+/// (see `RewardDistributionType::validate_structure_interval_v0`);
+/// passing a smaller value will trip
+/// `InvalidTokenDistributionBlockIntervalTooShortError` at chain
+/// validation.
+#[derive(Debug, Clone)]
+pub struct PerpetualDistribution {
+    /// Block interval between emissions. Platform block height —
+    /// not Core chain height. Must be ≥ 5 on testnet.
+    pub interval_blocks: u64,
+    /// Tokens emitted to the contract owner per interval.
+    pub amount_per_interval: TokenAmount,
+}
+
 /// Single-identity TK setup. Returned by
 /// [`setup_with_token_contract`] /
 /// [`setup_with_token_pre_programmed_distribution`].
@@ -521,6 +550,95 @@ pub async fn setup_with_token_pre_programmed_distribution(
         contract_id,
         token_position: DEFAULT_TOKEN_POSITION,
     })
+}
+
+// ---------------------------------------------------------------------------
+// 15b. setup_with_token_perpetual_distribution
+// ---------------------------------------------------------------------------
+
+/// Single-identity TK setup with a live perpetual distribution rule
+/// (TK-002). The owner receives `amount_per_interval` tokens every
+/// `interval_blocks` of platform block height; recipient is pinned
+/// to `ContractOwner`, distribution function is
+/// `FixedAmount { amount }`.
+///
+/// Tests must wait for at least one interval boundary to pass before
+/// issuing `token_claim` with `TokenDistributionType::Perpetual` —
+/// platform-block-time is ~3 s on testnet so a 5-block interval
+/// implies ~15 s wall-clock plus headroom.
+///
+/// Only BlockBasedDistribution is wired up; TimeBased / EpochBased
+/// would need their own per-network minimum interval handling and
+/// aren't on the TK-002 path.
+pub async fn setup_with_token_perpetual_distribution(
+    ctx: &E2eContext,
+    owner_funding: dpp::fee::Credits,
+    distribution: PerpetualDistribution,
+) -> FrameworkResult<TokenSetup> {
+    let _ = ctx;
+    let setup_guard = setup_with_n_identities(1, owner_funding).await?;
+    let owner = setup_guard.identities[0].clone_for_token_setup();
+
+    let json = permissive_owner_token_contract_with_perpetual_distribution_json(
+        owner.id,
+        DEFAULT_TOKEN_POSITION,
+        DEFAULT_MAX_SUPPLY,
+        &distribution,
+    );
+    let contract_id = register_token_contract_via_sdk(setup_guard.base.ctx, &owner, json).await?;
+
+    Ok(TokenSetup {
+        setup_guard,
+        owner,
+        contract_id,
+        token_position: DEFAULT_TOKEN_POSITION,
+    })
+}
+
+/// Sibling of [`permissive_owner_token_contract_json`] that injects a
+/// BlockBased perpetual-distribution rule under
+/// `tokens["0"].distributionRules.perpetualDistribution`. The rest of
+/// the contract envelope is identical to the permissive
+/// owner-only baseline (8 decimals, owner-only ChangeControlRules,
+/// `mintingAllowChoosingDestination = true`, no pre-programmed
+/// schedule) — the perpetual node is the only deviation.
+///
+/// Schema mirrors the round-trip example in
+/// `rs-dpp/src/data_contract/conversion/json/mod.rs`:
+/// `{ "distributionType": { "BlockBasedDistribution": { "interval", "function": { "FixedAmount": { "amount" } } } }, "distributionRecipient": "ContractOwner" }`.
+pub fn permissive_owner_token_contract_with_perpetual_distribution_json(
+    owner_id: Identifier,
+    position: u16,
+    supply: TokenAmount,
+    distribution: &PerpetualDistribution,
+) -> serde_json::Value {
+    let mut json = permissive_owner_token_contract_json(owner_id, position, supply);
+    let token_slot = json
+        .get_mut(position.to_string())
+        .and_then(|v| v.as_object_mut())
+        .expect("permissive token JSON missing slot just inserted");
+    let distribution_rules = token_slot
+        .get_mut("distributionRules")
+        .and_then(|v| v.as_object_mut())
+        .expect("permissive token JSON missing distributionRules");
+
+    distribution_rules.insert(
+        "perpetualDistribution".into(),
+        json!({
+            "$formatVersion": "0",
+            "distributionType": {
+                "BlockBasedDistribution": {
+                    "interval": distribution.interval_blocks,
+                    "function": {
+                        "FixedAmount": { "amount": distribution.amount_per_interval },
+                    },
+                },
+            },
+            "distributionRecipient": "ContractOwner",
+        }),
+    );
+
+    json
 }
 
 // ---------------------------------------------------------------------------
