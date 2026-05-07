@@ -58,6 +58,9 @@ async fn tk_001c_token_transfer_after_key_rotation() {
     // Both are tracked under TEST_SPEC.md § ID-004 (STUB). Once they
     // land, replace this panic with the rotate + transfer + sub-case
     // sequence outlined in the module docs.
+    // INTENTIONAL(QA-V16-004): keep hard panic — ID-004 key-rotation helper genuinely
+    // missing. Needs `inject_identity_key` mutation method on `SeedBackedIdentitySigner`
+    // (see TEST_SPEC.md §ID-004). Failing test documents the gap until the helper lands.
     panic!(
         "TK-001c: requires ID-004 key-rotation helper \
          (derive_identity_key + signer cache injection) — see TEST_SPEC.md § ID-004"

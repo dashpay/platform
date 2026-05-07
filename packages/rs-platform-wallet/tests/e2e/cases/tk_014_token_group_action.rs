@@ -297,7 +297,7 @@ async fn mint_with_group_info(
             .issued_to_identity_id(recipient_id)
             .with_using_group_info(group_info);
     ctx.sdk()
-        .token_mint(builder, &actor.critical_key, actor.signer.as_ref())
+        .token_mint(builder, &actor.high_key, actor.signer.as_ref())
         .await
 }
 

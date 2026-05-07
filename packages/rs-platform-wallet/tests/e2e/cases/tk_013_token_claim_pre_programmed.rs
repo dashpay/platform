@@ -114,7 +114,7 @@ async fn tk_013_token_claim_from_pre_programmed_distribution() {
     );
     let claim_result = ctx
         .sdk()
-        .token_claim(builder, &owner.critical_key, owner.signer.as_ref())
+        .token_claim(builder, &owner.high_key, owner.signer.as_ref())
         .await
         .expect("token_claim broadcast");
 
@@ -162,7 +162,7 @@ async fn tk_013_token_claim_from_pre_programmed_distribution() {
     );
     let retry_result = ctx
         .sdk()
-        .token_claim(retry_builder, &owner.critical_key, owner.signer.as_ref())
+        .token_claim(retry_builder, &owner.high_key, owner.signer.as_ref())
         .await;
     let err_text = match retry_result {
         Ok(_) => panic!(

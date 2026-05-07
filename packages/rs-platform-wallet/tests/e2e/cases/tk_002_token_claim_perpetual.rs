@@ -66,6 +66,10 @@ async fn tk_002_token_claim_perpetual_distribution() {
     // permissive template. Sub-team α is constrained from editing
     // `tokens.rs`; the helper extension is the work item that unblocks
     // this case.
+    // INTENTIONAL(QA-V16-004): keep hard panic — Wave-G perpetual-distribution helper
+    // genuinely missing. Needs `setup_with_token_perpetual_distribution` (or distribution_rules
+    // override on `permissive_owner_token_contract_json`) in `framework/tokens.rs`. Failing
+    // test documents the gap until the helper lands.
     panic!(
         "TK-002: requires Wave G perpetual-distribution helper \
          (setup_with_token_contract extended with `distribution_rules` override) — \
