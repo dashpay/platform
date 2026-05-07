@@ -243,6 +243,30 @@ impl SpvRuntime {
         Some(client.sync_progress().await)
     }
 
+    /// Read the unix-seconds block time of the SPV header storage's
+    /// current tip.
+    ///
+    /// Useful as a "is core producing blocks?" indicator: if this
+    /// stamp stays put across multiple polls, the chain has stalled
+    /// even though the local SPV client is healthy.
+    ///
+    /// Returns `None` if the SPV client isn't running, no headers
+    /// have been stored yet, or the tip header isn't readable for
+    /// any reason.
+    pub async fn tip_block_time(&self) -> Option<u32> {
+        use dash_spv::storage::{BlockHeaderStorage, StorageManager};
+
+        let client_guard = self.client.read().await;
+        let client = client_guard.as_ref()?;
+        let storage_arc = client.storage();
+        let storage = storage_arc.lock().await;
+        let block_headers = StorageManager::block_headers(&*storage);
+        drop(storage);
+        let bh = block_headers.read().await;
+        let tip = BlockHeaderStorage::get_tip(&*bh).await?;
+        Some(tip.header().time)
+    }
+
     /// Clear all persisted SPV storage (headers, filters, state).
     ///
     /// The SPV client must be running to perform this operation.

@@ -9,7 +9,7 @@ impl Drive {
     /// Version 0 implementation of counting shielded pool notes.
     ///
     /// Returns the total number of items in the CommitmentTree at
-    /// `[AddressBalances, "s", [1]]`.
+    /// `[AddressBalances, "s", [128]]`.
     pub(in crate::drive) fn shielded_pool_notes_count_v0(
         &self,
         transaction: TransactionArg,

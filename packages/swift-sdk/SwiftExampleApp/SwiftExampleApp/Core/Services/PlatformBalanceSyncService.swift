@@ -197,6 +197,14 @@ class PlatformBalanceSyncService: ObservableObject {
     // MARK: - Sync
 
     /// Perform the actual BLAST address sync via platform-wallet.
+    ///
+    /// Drives `isSyncing` directly around the await so the spinner
+    /// flashes even when the underlying Rust pass completes faster
+    /// than the manager's 1 Hz `isPlatformAddressSyncing` poll
+    /// cadence. Empty-pool regtest syncs return in tens of ms — the
+    /// polled `$platformAddressSyncIsSyncing` stays `false` for the
+    /// whole call and the subscription never fires, so we have to
+    /// reset locally regardless of outcome.
     func performSync() async {
         guard !isSyncing else { return }
         guard let walletManager = walletManager else {
@@ -206,11 +214,11 @@ class PlatformBalanceSyncService: ObservableObject {
 
         isSyncing = true
         lastError = nil
+        defer { isSyncing = false }
 
         do {
             try await walletManager.syncPlatformAddressNow()
         } catch {
-            isSyncing = false
             lastError = error.localizedDescription
             SDKLogger.log(
                 "BLAST sync error: \(error.localizedDescription)",

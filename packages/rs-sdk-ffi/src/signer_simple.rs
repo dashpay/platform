@@ -1,9 +1,8 @@
 //! Simple private key signer for iOS FFI
 
 use crate::signer::{signer_handle_from_single_key, VTableSigner};
-use crate::types::{DashSDKNetwork, SignerHandle};
+use crate::types::{FFINetwork, Network, SignerHandle};
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult};
-use dash_sdk::dpp::dashcore::Network;
 use dash_sdk::dpp::identity::signer::Signer;
 use dash_sdk::dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use simple_signer::SingleKeySigner;
@@ -70,7 +69,7 @@ pub(crate) fn parse_mnemonic_any_language(
 pub unsafe extern "C" fn dash_sdk_signer_create_from_private_key(
     private_key: *const u8,
     private_key_len: usize,
-    network: DashSDKNetwork,
+    network: FFINetwork,
 ) -> DashSDKResult {
     if private_key.is_null() {
         return DashSDKResult::error(DashSDKError::new(
@@ -86,14 +85,7 @@ pub unsafe extern "C" fn dash_sdk_signer_create_from_private_key(
         ));
     }
 
-    // Map the C-ABI network enum to dashcore::Network (mirrors sdk.rs).
-    let network = match network {
-        DashSDKNetwork::SDKMainnet => Network::Mainnet,
-        DashSDKNetwork::SDKTestnet => Network::Testnet,
-        DashSDKNetwork::SDKRegtest => Network::Regtest,
-        DashSDKNetwork::SDKDevnet => Network::Devnet,
-        DashSDKNetwork::SDKLocal => Network::Regtest,
-    };
+    let network: Network = network.into();
 
     // Copy into a zeroizing buffer so the key material doesn't linger on
     // the stack after we hand it off to SingleKeySigner.
@@ -273,7 +265,6 @@ pub const SIGN_WITH_MNEMONIC_ERR_UNSUPPORTED_KEY_TYPE: u8 = 8;
 /// network-independent (BIP-32 derivation only uses `network` as a
 /// tag on the `ExtendedPrivKey`), but we thread it through so the
 /// type matches every other key-derivation entry point in this crate.
-/// Mirrors [`DashSDKNetwork`] used elsewhere in `signer_simple.rs`.
 ///
 /// On any failure the function writes a non-zero tag into `*out_error`,
 /// zeroes the first `out_signature_capacity` bytes of `out_signature`,
@@ -300,7 +291,7 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_and_path(
     data: *const u8,
     data_len: usize,
     key_type: u8,
-    network: DashSDKNetwork,
+    network: FFINetwork,
     out_signature: *mut u8,
     out_signature_capacity: usize,
     out_signature_len: *mut usize,
@@ -384,18 +375,10 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_and_path(
         Err(_) => return fail(SIGN_WITH_MNEMONIC_ERR_INVALID_PATH),
     };
 
-    // Map the C-ABI network enum to dashcore::Network. Mirrors the
-    // mapping used in `dash_sdk_signer_create_from_private_key` above.
-    let dashcore_network = match network {
-        DashSDKNetwork::SDKMainnet => dash_sdk::dpp::dashcore::Network::Mainnet,
-        DashSDKNetwork::SDKTestnet => dash_sdk::dpp::dashcore::Network::Testnet,
-        DashSDKNetwork::SDKRegtest => dash_sdk::dpp::dashcore::Network::Regtest,
-        DashSDKNetwork::SDKDevnet => dash_sdk::dpp::dashcore::Network::Devnet,
-        DashSDKNetwork::SDKLocal => dash_sdk::dpp::dashcore::Network::Regtest,
-    };
+    let network: Network = network.into();
 
     // ---- Derive ECDSA private key at path -----------------------------------
-    let master = match ExtendedPrivKey::new_master(dashcore_network, seed.as_ref()) {
+    let master = match ExtendedPrivKey::new_master(network, seed.as_ref()) {
         Ok(m) => m,
         Err(_) => return fail(SIGN_WITH_MNEMONIC_ERR_DERIVATION),
     };

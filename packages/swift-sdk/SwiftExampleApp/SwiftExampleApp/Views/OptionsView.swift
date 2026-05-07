@@ -13,6 +13,80 @@ struct OptionsView: View {
     @State private var sdkStatus: SDKStatus?
     @State private var isLoadingStatus = false
 
+    /// Live-edit copy of the faucet RPC password. Round-trips through
+    /// `UserDefaults` on every `.onChange` so other surfaces
+    /// (`ReceiveAddressView.requestFromFaucet`) keep reading the
+    /// authoritative value, while a local `@State` lets the
+    /// debounced `.task(id:)` validator see edits immediately
+    /// without a fetch round-trip per keystroke.
+    @State private var faucetPassword: String =
+        UserDefaults.standard.string(forKey: "faucetRPCPassword") ?? ""
+    @State private var faucetValidation: FaucetValidationStatus = .idle
+
+    /// Driven by the 0.5s-debounced `.task(id: faucetPassword)`.
+    /// Runs a single cheap `getblockcount` JSON-RPC against the
+    /// dashmate-managed Core (`127.0.0.1:<faucetRPCPort>`) and
+    /// classifies the response so the UI can render an inline
+    /// state line under the password field.
+    private enum FaucetValidationStatus: Equatable {
+        case idle
+        case checking
+        case valid
+        case invalid
+        case unreachable(String)
+
+        var label: String? {
+            switch self {
+            case .idle:                return nil
+            case .checking:            return "Checking…"
+            case .valid:               return "Authorized"
+            case .invalid:             return "Wrong password"
+            case .unreachable(let r):  return "Unreachable (\(r))"
+            }
+        }
+
+        var systemImage: String? {
+            switch self {
+            case .idle:        return nil
+            case .checking:    return "ellipsis.circle"
+            case .valid:       return "checkmark.circle.fill"
+            case .invalid:     return "xmark.circle.fill"
+            case .unreachable: return "exclamationmark.triangle.fill"
+            }
+        }
+
+        var color: Color {
+            switch self {
+            case .idle, .checking: return .secondary
+            case .valid:           return .green
+            case .invalid:         return .red
+            case .unreachable:     return .orange
+            }
+        }
+    }
+
+    // Bind the SPV peer-override settings directly to the same
+    // UserDefaults keys that CoreContentView reads when starting SPV
+    // (`useLocalhostCore`, `localCorePeers`). This re-exposes the
+    // pre-rewrite "connect SPV to a local rust-dashcore" capability on
+    // testnet/mainnet/devnet — regtest still uses the Docker toggle
+    // above, which sets these same keys via AppState.useDockerSetup.
+    @AppStorage("useLocalhostCore") private var customSpvPeersEnabled: Bool = false
+    @AppStorage("localCorePeers") private var customSpvPeers: String = ""
+
+    /// Default localhost peer string for a given network. Used to
+    /// pre-populate the peers text field when the user enables the
+    /// custom-SPV toggle. The FFI drops bare-IP entries (no port),
+    /// so the default must include the network's standard P2P port.
+    private func defaultSpvPeers(for network: Network) -> String {
+        switch network {
+        case .mainnet: return "127.0.0.1:9999"
+        case .testnet: return "127.0.0.1:19999"
+        case .devnet:  return "127.0.0.1:29999"
+        case .regtest: return "127.0.0.1:19899"
+        }
+    }
+
     var body: some View {
         // `NavigationStack` (iOS 16+) instead of the deprecated
         // `NavigationView`. With `NavigationView`, `NavigationLink`s
@@ -52,7 +126,7 @@ struct OptionsView: View {
                             }
                         }
                     )) {
-                        ForEach(AppNetwork.allCases, id: \.self) { network in
+                        ForEach(Network.allCases, id: \.self) { network in
                             Text(network.displayName).tag(network)
                         }
                     }
@@ -71,13 +145,65 @@ struct OptionsView: View {
                             .help("Connect to local dashmate Docker network.")
 
                         if appState.useDockerSetup {
-                            TextField("Faucet RPC Password", text: Binding(
-                                get: { UserDefaults.standard.string(forKey: "faucetRPCPassword") ?? "" },
-                                set: { UserDefaults.standard.set($0, forKey: "faucetRPCPassword") }
-                            ))
-                            .font(.system(.body, design: .monospaced))
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
+                            TextField("Faucet RPC Password", text: $faucetPassword)
+                                .font(.system(.body, design: .monospaced))
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .onChange(of: faucetPassword) { _, newValue in
+                                    UserDefaults.standard.set(newValue, forKey: "faucetRPCPassword")
+                                }
+                                // Debounce keystrokes via `.task(id:)`: every
+                                // edit cancels the prior task (the sleep
+                                // throws `CancellationError`), so validation
+                                // only fires when the user pauses for 0.5s.
+                                .task(id: faucetPassword) {
+                                    do {
+                                        try await Task.sleep(nanoseconds: 500_000_000)
+                                    } catch {
+                                        return
+                                    }
+                                    await validateFaucetPassword(faucetPassword)
+                                }
+
+                            if let label = faucetValidation.label,
+                               let icon = faucetValidation.systemImage {
+                                HStack(spacing: 6) {
+                                    if faucetValidation == .checking {
+                                        ProgressView()
+                                            .scaleEffect(0.7)
+                                    } else {
+                                        Image(systemName: icon)
+                                            .foregroundColor(faucetValidation.color)
+                                    }
+                                    Text(label)
+                                        .font(.caption)
+                                        .foregroundColor(faucetValidation.color)
+                                    Spacer()
+                                }
+                            }
+                        }
+                    } else {
+                        Toggle("Use Custom SPV Peers", isOn: $customSpvPeersEnabled)
+                            .onChange(of: customSpvPeersEnabled) { _, isOn in
+                                // When enabling, seed the peers field with
+                                // the network's localhost default if the
+                                // user hasn't entered anything (or has the
+                                // legacy port-less "127.0.0.1" the FFI
+                                // would otherwise drop).
+                                if isOn && (customSpvPeers.isEmpty || !customSpvPeers.contains(":")) {
+                                    customSpvPeers = defaultSpvPeers(for: appState.currentNetwork)
+                                }
+                                // Stop SPV so the next start picks up the
+                                // new peer config in CoreContentView.
+                                try? walletManager.stopSpv()
+                            }
+                            .help("Connect Core SPV to specific peers (e.g. a local rust-dashcore) instead of the public seed nodes. Restart SPV from the Wallet tab to apply.")
+
+                        if customSpvPeersEnabled {
+                            TextField(defaultSpvPeers(for: appState.currentNetwork), text: $customSpvPeers)
+                                .font(.system(.body, design: .monospaced))
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
                         }
                     }
 
@@ -116,10 +242,6 @@ struct OptionsView: View {
 
                     NavigationLink(destination: WalletMemoryExplorerView()) {
                         Label("Wallet Memory Explorer", systemImage: "memorychip")
-                    }
-
-                    NavigationLink(destination: ContractsView()) {
-                        Label("Browse Contracts", systemImage: "doc.plaintext")
                     }
 
                     Button(action: { showingDataManagement = true }) {
@@ -265,6 +387,87 @@ struct OptionsView: View {
             await MainActor.run {
                 appState.dataStatistics = stats
             }
+        }
+    }
+
+    /// Validate `password` against the dashmate-managed Core RPC.
+    ///
+    /// Issues a single `getblockcount` JSON-RPC call to
+    /// `http://127.0.0.1:<faucetRPCPort>/` with HTTP basic auth and
+    /// classifies the response into the `FaucetValidationStatus`
+    /// the UI renders. Empty password short-circuits to `.idle` so
+    /// the inline status row stays hidden until the user types.
+    ///
+    /// Called from the password field's `.task(id: faucetPassword)`,
+    /// which already provides the 0.5s debounce — repeat keystrokes
+    /// auto-cancel the in-flight task before it gets here.
+    @MainActor
+    private func validateFaucetPassword(_ password: String) async {
+        guard !password.isEmpty else {
+            faucetValidation = .idle
+            return
+        }
+        faucetValidation = .checking
+
+        let rpcPort = UserDefaults.standard.string(forKey: "faucetRPCPort") ?? "20302"
+        let rpcUser = UserDefaults.standard.string(forKey: "faucetRPCUser") ?? "dashmate"
+
+        guard let url = URL(string: "http://127.0.0.1:\(rpcPort)/") else {
+            faucetValidation = .unreachable("invalid URL")
+            return
+        }
+
+        let body: [String: Any] = [
+            "jsonrpc": "1.0",
+            "id": "validate",
+            "method": "getblockcount",
+            "params": []
+        ]
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: body) else {
+            faucetValidation = .unreachable("encode failed")
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpBody = jsonData
+        request.setValue("text/plain", forHTTPHeaderField: "Content-Type")
+        // Short timeout — Docker not running surfaces as a fast
+        // failure rather than a hung "Checking…" spinner.
+        request.timeoutInterval = 3
+
+        let credentials = "\(rpcUser):\(password)"
+        if let credData = credentials.data(using: .utf8) {
+            request.setValue(
+                "Basic \(credData.base64EncodedString())",
+                forHTTPHeaderField: "Authorization"
+            )
+        }
+
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            // Bail if the user kept typing while we were waiting on
+            // the network — the next `.task(id:)` invocation will
+            // re-classify with the fresh value.
+            guard !Task.isCancelled else { return }
+            guard let http = response as? HTTPURLResponse else {
+                faucetValidation = .unreachable("invalid response")
+                return
+            }
+            switch http.statusCode {
+            case 200:
+                faucetValidation = .valid
+            case 401, 403:
+                faucetValidation = .invalid
+            default:
+                faucetValidation = .unreachable("HTTP \(http.statusCode)")
+            }
+        } catch is CancellationError {
+            // Superseded by a fresher keystroke; the new task will
+            // produce the next status.
+            return
+        } catch {
+            faucetValidation = .unreachable(error.localizedDescription)
         }
     }
 

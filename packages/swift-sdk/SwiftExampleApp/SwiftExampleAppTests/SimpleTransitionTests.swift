@@ -16,7 +16,7 @@ final class SimpleTransitionTests: XCTestCase {
     print("SDK initialized")
 
     // Create SDK instance
-    let sdk = try SDK(network: DashSDKNetwork(rawValue: 1))
+    let sdk = try SDK(network: .testnet)
     print("SDK instance created")
 
     // Load env variables (EnvLoader is @MainActor)
@@ -85,7 +85,7 @@ final class SimpleTransitionTests: XCTestCase {
         dash_sdk_signer_create_from_private_key(
           keyBytes.bindMemory(to: UInt8.self).baseAddress!,
           UInt(key3Private.count),
-          DashSDKNetwork(rawValue: 1)
+          Network.testnet.ffiValue
         )
       }
 

@@ -5,6 +5,7 @@ import SwiftData
 // MARK: - Account List View
 struct AccountListView: View {
     let wallet: PersistentWallet
+    @EnvironmentObject var walletManager: PlatformWalletManager
 
     @Query private var accounts: [PersistentAccount]
 
@@ -13,7 +14,7 @@ struct AccountListView: View {
         let walletId = wallet.walletId
         _accounts = Query(
             filter: #Predicate<PersistentAccount> { acc in
-                acc.wallet?.walletId == walletId
+                acc.wallet.walletId == walletId
             }
         )
     }
@@ -61,9 +62,19 @@ struct AccountListView: View {
                     description: Text("Accounts are created automatically when the wallet syncs.")
                 )
             } else {
+                let balances = walletManager.accountBalances(for: wallet.walletId)
                 List(orderedAccounts) { account in
                     NavigationLink(destination: AccountDetailView(wallet: wallet, account: account)) {
-                        AccountRowView(account: account)
+                        let match = balances.first { b in
+                            UInt32(b.typeTag) == account.accountType &&
+                            b.standardTag == account.standardTag &&
+                            b.index == account.accountIndex
+                        }
+                        AccountRowView(
+                            account: account,
+                            coreConfirmedBalance: match?.confirmed ?? 0,
+                            coreUnconfirmedBalance: match?.unconfirmed ?? 0
+                        )
                     }
                 }
                 .listStyle(.plain)
@@ -75,24 +86,20 @@ struct AccountListView: View {
 // MARK: - Account Row View
 struct AccountRowView: View {
     let account: PersistentAccount
+    /// Per-account confirmed balance queried from Rust's in-memory state.
+    let coreConfirmedBalance: UInt64
+    /// Per-account unconfirmed balance queried from Rust's in-memory state.
+    let coreUnconfirmedBalance: UInt64
 
-    /// Friendly label for the account. Indexed account types get a
-    /// trailing "#<index>"; other types keep the bare name emitted by
-    /// the FFI (identity / provider / etc.).
     private var label: String {
         switch account.accountType {
-        case 0, 1, 14: // Standard (BIP44/BIP32), CoinJoin, PlatformPayment
+        case 0, 1, 14:
             return "\(account.accountTypeName) #\(account.accountIndex)"
         default:
             return account.accountTypeName
         }
     }
 
-    /// Whether this account should surface a numeric balance on the
-    /// summary row. Keyed on the FFI `accountType` tag — name
-    /// matching was fragile because the Rust side emits different
-    /// labels (e.g. "BIP44 Account" vs "Standard BIP44") across
-    /// releases.
     private var shouldShowBalance: Bool {
         switch account.accountType {
         case 0, 1, 14: return true
@@ -100,9 +107,6 @@ struct AccountRowView: View {
         }
     }
 
-    /// PlatformPayment balance/unit differs from Core (credits, not
-    /// duffs) so the row needs a dedicated render path. `true` when
-    /// this row should use the `platformBalanceRow` helper.
     private var isPlatformPayment: Bool {
         account.accountType == 14
     }
@@ -164,17 +168,17 @@ struct AccountRowView: View {
                         Text("Confirmed")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                        Text(formatBalance(account.balanceConfirmed))
+                        Text(formatBalance(coreConfirmedBalance))
                             .font(.subheadline)
                             .fontWeight(.medium)
                     }
 
-                    if account.balanceUnconfirmed > 0 {
+                    if coreUnconfirmedBalance > 0 {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Pending")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
-                            Text(formatBalance(account.balanceUnconfirmed))
+                            Text(formatBalance(coreUnconfirmedBalance))
                                 .font(.subheadline)
                                 .fontWeight(.medium)
                                 .foregroundColor(.orange)
@@ -187,7 +191,7 @@ struct AccountRowView: View {
                         Text("Total")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                        Text(formatBalance(account.balanceConfirmed + account.balanceUnconfirmed))
+                        Text(formatBalance(coreConfirmedBalance + coreUnconfirmedBalance))
                             .font(.subheadline)
                             .fontWeight(.semibold)
                             .foregroundColor(iconColor)

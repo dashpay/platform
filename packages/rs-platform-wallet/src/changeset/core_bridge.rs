@@ -1,24 +1,28 @@
 //! Adapter that turns upstream `WalletEvent`s into `PlatformWalletChangeSet`s.
 //!
-//! Upstream `key_wallet_manager` no longer carries a `WalletPersistence`
-//! callback — each `WalletManager` exposes a `broadcast::Sender<WalletEvent>`
-//! and consumers subscribe at startup. [`WalletEventAdapter`] is the
-//! platform-wallet-side subscriber: a tokio task that drains the event
-//! stream, projects each event into a [`CoreChangeSet`], wraps it in a
-//! [`PlatformWalletChangeSet`], and forwards to the platform persister.
+//! Upstream `key_wallet_manager::WalletManager` exposes a
+//! `broadcast::Sender<WalletEvent>` and a `subscribe_events()` accessor
+//! returning a `broadcast::Receiver<WalletEvent>`; consumers attach at
+//! startup and drain the stream. [`spawn_wallet_event_adapter`] is the
+//! platform-wallet-side consumer: a tokio task that pulls events off
+//! that broadcast, projects each one into a
+//! [`CoreChangeSet`](crate::changeset::CoreChangeSet), wraps it in a
+//! [`PlatformWalletChangeSet`](crate::changeset::PlatformWalletChangeSet),
+//! and forwards to the [`PlatformWalletPersistence`] sink.
 //!
 //! # Why a single subscriber, not per-wallet
 //!
-//! `WalletManager::subscribe_events` returns a `broadcast::Receiver` that
-//! sees every event for every wallet. The adapter routes by `wallet_id`
-//! at projection time — there's no need to spawn a task per wallet.
+//! The broadcast channel emits every event for every wallet. Each
+//! event already carries a `wallet_id`, which the adapter forwards
+//! verbatim to [`PlatformWalletPersistence::store`] — no need to fan
+//! out a subscriber per wallet.
 //!
 //! # Lifetime
 //!
 //! [`spawn_wallet_event_adapter`] returns a [`JoinHandle`]. The caller
-//! (typically `PlatformWalletManager`) keeps it for the manager's
-//! lifetime; on shutdown, fire the [`CancellationToken`] to make the
-//! task exit cleanly.
+//! (typically `PlatformWalletManager`) keeps the handle for the
+//! manager's lifetime; on shutdown, fire the [`CancellationToken`] to
+//! make the task exit cleanly.
 
 use std::sync::Arc;
 
@@ -49,11 +53,19 @@ use crate::wallet::platform_wallet::PlatformWalletInfo;
 /// runtime), then loops dispatching events to the persister via
 /// [`PlatformWalletPersistence::store`]. Exits when `cancel` fires
 /// or the upstream broadcast channel closes.
-pub fn spawn_wallet_event_adapter(
+///
+/// Generic over `P` so the spawned task gets static-dispatch on
+/// every `persister.store(...)` call. Pass the manager's own
+/// `Arc<P>` (not the `Arc<dyn PlatformWalletPersistence>`
+/// coercion) to actually realize the static-dispatch win.
+pub fn spawn_wallet_event_adapter<P>(
     wallet_manager: Arc<InstrumentedRwLock<WalletManager<PlatformWalletInfo>>>,
-    persister: Arc<dyn PlatformWalletPersistence>,
+    persister: Arc<P>,
     cancel: CancellationToken,
-) -> JoinHandle<()> {
+) -> JoinHandle<()>
+where
+    P: PlatformWalletPersistence + 'static,
+{
     tokio::spawn(async move {
         let mut receiver = {
             // Subscribe-time read; happens once at task start. Tagged
@@ -63,7 +75,7 @@ pub fn spawn_wallet_event_adapter(
             let guard = wallet_manager.read_at("event_adapter::subscribe").await;
             guard.subscribe_events()
         };
-        tracing::debug!("WalletEventAdapter task started");
+        tracing::debug!("wallet-event adapter task started");
 
         loop {
             tokio::select! {
@@ -102,7 +114,7 @@ pub fn spawn_wallet_event_adapter(
                         Err(RecvError::Lagged(n)) => {
                             tracing::warn!(
                                 missed = n,
-                                "WalletEventAdapter lagged on broadcast channel; some events were dropped"
+                                "wallet-event adapter lagged on broadcast channel; some events were dropped"
                             );
                         }
                     }
@@ -110,7 +122,7 @@ pub fn spawn_wallet_event_adapter(
                 _ = cancel.cancelled() => break,
             }
         }
-        tracing::debug!("WalletEventAdapter task exiting");
+        tracing::debug!("wallet-event adapter task exiting");
     })
 }
 
@@ -121,14 +133,26 @@ async fn build_core_changeset(
     event: &WalletEvent,
 ) -> CoreChangeSet {
     match event {
-        WalletEvent::TransactionDetected { record, .. } => {
-            let mut cs = CoreChangeSet::default();
+        WalletEvent::TransactionDetected {
+            record,
+            addresses_derived,
+            ..
+        } => {
             // Derive UTXO deltas BEFORE moving the record into `records`
             // so we still have the per-record borrows.
-            cs.new_utxos = derive_new_utxos(record);
-            cs.spent_utxos = derive_spent_utxos(record);
-            cs.records.push((**record).clone());
-            cs
+            CoreChangeSet {
+                new_utxos: derive_new_utxos(record),
+                spent_utxos: derive_spent_utxos(record),
+                records: vec![(**record).clone()],
+                // Mirror the upstream-emitted derived addresses
+                // through to the persister so newly-extended pool
+                // rows are written transactionally with the tx that
+                // triggered the extension. See
+                // `CoreChangeSet.addresses_derived` for the cascade-
+                // link rationale.
+                addresses_derived: addresses_derived.clone(),
+                ..CoreChangeSet::default()
+            }
         }
         WalletEvent::TransactionInstantLocked {
             wallet_id,
@@ -152,6 +176,7 @@ async fn build_core_changeset(
             inserted,
             updated,
             matured,
+            addresses_derived,
             ..
         } => {
             let mut cs = CoreChangeSet::default();
@@ -169,6 +194,10 @@ async fn build_core_changeset(
             cs.records.extend(updated.iter().cloned());
             cs.records.extend(matured.iter().cloned());
             cs.last_processed_height = Some(*height);
+            // Pool extensions triggered by any record in this block.
+            // Already deduped upstream by `project_derived_addresses`;
+            // `Merge` re-dedupes if multiple events fold together.
+            cs.addresses_derived = addresses_derived.clone();
             cs
         }
         WalletEvent::SyncHeightAdvanced { height, .. } => CoreChangeSet {
@@ -196,8 +225,14 @@ async fn is_chain_locked(
     let Some(info) = guard.get_wallet_info(wallet_id) else {
         return false;
     };
+    // Walk every account; if any holds an in-memory record for this
+    // txid, the chain-lock determination falls out of its
+    // `TransactionContext`. With `keep-finalized-transactions` off
+    // (the default) `transactions()` returns an empty map regardless
+    // of state — chain-lock delivery is event-driven in that mode, and
+    // this helper just reports "no record locally" by returning false.
     for account in info.core_wallet.accounts.all_accounts() {
-        if let Some(record) = account.transactions.get(txid) {
+        if let Some(record) = account.transactions().get(txid) {
             return matches!(record.context, TransactionContext::InChainLockedBlock(_));
         }
     }
@@ -217,6 +252,9 @@ fn derive_new_utxos(record: &TransactionRecord) -> Vec<Utxo> {
     );
     let is_instant = matches!(record.context, TransactionContext::InstantSend(_));
     let is_coinbase = record.transaction.is_coin_base();
+    // We own at least one input iff the wallet recorded any input details
+    // (those entries are keyed to inputs that spent our outpoints).
+    let owns_any_input = !record.input_details.is_empty();
 
     record
         .output_details
@@ -231,6 +269,9 @@ fn derive_new_utxos(record: &TransactionRecord) -> Vec<Utxo> {
                 .get(detail.index as usize)?
                 .clone();
             let address = detail.address.clone()?;
+            // Mirror key-wallet's "trusted change" rule: change output of a
+            // transaction we authored (so it's our funds returning).
+            let is_trusted = matches!(detail.role, OutputRole::Change) && owns_any_input;
             Some(Utxo {
                 outpoint: OutPoint {
                     txid: record.txid,
@@ -243,6 +284,7 @@ fn derive_new_utxos(record: &TransactionRecord) -> Vec<Utxo> {
                 is_confirmed,
                 is_instantlocked: is_instant,
                 is_locked: false,
+                is_trusted,
             })
         })
         .collect()
@@ -278,6 +320,7 @@ fn derive_spent_utxos(record: &TransactionRecord) -> Vec<Utxo> {
                 is_confirmed: false,
                 is_instantlocked: false,
                 is_locked: false,
+                is_trusted: false,
             })
         })
         .collect()

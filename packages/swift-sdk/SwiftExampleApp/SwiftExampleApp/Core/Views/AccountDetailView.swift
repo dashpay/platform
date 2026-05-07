@@ -5,6 +5,7 @@ import SwiftData
 // MARK: - Account Detail View
 struct AccountDetailView: View {
     @EnvironmentObject var appUIState: AppUIState
+    @EnvironmentObject var walletManager: PlatformWalletManager
     let wallet: PersistentWallet
     let account: PersistentAccount
 
@@ -14,6 +15,33 @@ struct AccountDetailView: View {
     @State private var privateKeyToShow: (hex: String, wif: String)?
     @State private var showingPINPrompt = false
     @State private var pinInput = ""
+
+    /// Distinct on-chain transactions this account participates in:
+    /// the union of every TXO's creating tx and spending tx. Lives
+    /// here rather than on the model because `PersistentTransaction`
+    /// is no longer account-scoped (a single tx can produce outputs
+    /// into multiple accounts), so the per-account set has to be
+    /// derived on demand. Walks the address pool — the canonical
+    /// account → TXO path is `coreAddresses.flatMap(\.txos)` now
+    /// that `PersistentAccount.outputs` is gone.
+    private var distinctTransactionCount: Int {
+        var seen: Set<Data> = []
+        for address in account.coreAddresses {
+            for txo in address.txos {
+                if let tx = txo.transaction { seen.insert(tx.txid) }
+                if let spending = txo.spendingTransaction { seen.insert(spending.txid) }
+            }
+        }
+        return seen.count
+    }
+
+    /// Total TXO count for the account, summed across address
+    /// buckets. Avoids materializing a single big array since the
+    /// address pool is bounded (~gap limit) and txos-per-address
+    /// is small.
+    private var txoCount: Int {
+        account.coreAddresses.reduce(0) { $0 + $1.txos.count }
+    }
 
     var body: some View {
         ScrollView {
@@ -113,14 +141,6 @@ struct AccountDetailView: View {
                     Text(wallet.network?.displayName ?? "Unknown")
                         .fontWeight(.medium)
                 }
-
-                HStack {
-                    Text("Watch Only:")
-                        .foregroundColor(.secondary)
-                    Spacer()
-                    Text(account.isWatchOnly ? "Yes" : "No")
-                        .fontWeight(.medium)
-                }
             }
         }
         .padding()
@@ -130,12 +150,18 @@ struct AccountDetailView: View {
     }
 
     private func balanceCard() -> some View {
-        // PlatformPayment balances are in credits (1e11/DASH), live on
-        // `PersistentPlatformAddress.balance`, and have no
-        // confirmed / pending split on-chain.
         if account.accountType == 14 {
             return AnyView(platformBalanceCard())
         }
+
+        let balances = walletManager.accountBalances(for: wallet.walletId)
+        let match = balances.first { b in
+            UInt32(b.typeTag) == account.accountType &&
+            b.standardTag == account.standardTag &&
+            b.index == account.accountIndex
+        }
+        let confirmed = match?.confirmed ?? 0
+        let unconfirmed = match?.unconfirmed ?? 0
 
         return AnyView(VStack(alignment: .leading, spacing: 12) {
             Label("Balance", systemImage: "bitcoinsign.circle.fill")
@@ -149,19 +175,19 @@ struct AccountDetailView: View {
                     Text("Confirmed")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    Text(formatBalance(account.balanceConfirmed))
+                    Text(formatBalance(confirmed))
                         .font(.title3)
                         .fontWeight(.semibold)
                 }
 
                 Spacer()
 
-                if account.balanceUnconfirmed > 0 {
+                if unconfirmed > 0 {
                     VStack(alignment: .trailing, spacing: 4) {
                         Text("Pending")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                        Text(formatBalance(account.balanceUnconfirmed))
+                        Text(formatBalance(unconfirmed))
                             .font(.title3)
                             .fontWeight(.semibold)
                             .foregroundColor(.orange)
@@ -176,7 +202,7 @@ struct AccountDetailView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
                 Spacer()
-                Text(formatBalance(account.balanceConfirmed + account.balanceUnconfirmed))
+                Text(formatBalance(confirmed + unconfirmed))
                     .font(.headline)
                     .fontWeight(.bold)
             }
@@ -277,14 +303,18 @@ struct AccountDetailView: View {
                 Text("Transactions:")
                     .foregroundColor(.secondary)
                 Spacer()
-                Text("\(account.transactions.count)")
+                // Per-account transaction count = distinct creating
+                // and spending txs across this account's TXOs. The
+                // per-tx wallet/account columns are gone; the union
+                // is computed in Swift each time the card renders.
+                Text("\(distinctTransactionCount)")
                     .fontWeight(.medium)
             }
             HStack {
-                Text("UTXOs:")
+                Text("TXOs:")
                     .foregroundColor(.secondary)
                 Spacer()
-                Text("\(account.utxos.count)")
+                Text("\(txoCount)")
                     .fontWeight(.medium)
             }
         }

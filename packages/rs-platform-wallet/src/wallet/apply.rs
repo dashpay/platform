@@ -34,7 +34,13 @@
 //!    cached balance map.
 //! 5. `cs.asset_locks` — insert / remove tracked locks (with the
 //!    `AssetLockEntry` → `TrackedAssetLock` field rename).
-//! 6. `cs.token_balances` — balance updates + watch / unwatch deltas.
+//! 6. `cs.token_balances` — drained but **not replayed** here. The
+//!    canonical home of token-balance state is the
+//!    [`IdentitySyncManager`](crate::manager::identity_sync::IdentitySyncManager)
+//!    cache, which is rebuilt by the next sync pass; the FFI persister
+//!    surfaces upserts/tombstones to the Swift side via its own
+//!    callback. There is nothing on `PlatformWalletInfo` to apply
+//!    them onto.
 //! 7. `update_balance()` — recompute the cached `WalletBalance` from
 //!    the now-restored UTXO set; the returned changeset is discarded.
 
@@ -93,6 +99,15 @@ impl PlatformWalletInfo {
             token_balances,
             dashpay_profiles,
             dashpay_payments_overlay,
+            // Registration-round metadata / per-account specs /
+            // per-pool snapshots are persistence-only — the
+            // canonical in-memory wallet state is built up at
+            // creation time before this apply path ever runs.
+            // Drop them explicitly so future readers don't expect
+            // a replay hook here.
+            wallet_metadata: _,
+            account_registrations: _,
+            account_address_pools: _,
         } = cs;
 
         // 1. Core wallet state. In the new event-bus model, a
@@ -283,37 +298,19 @@ impl PlatformWalletInfo {
             }
         }
 
-        // 6. Token balances + watch registry deltas.
-        if let Some(tok_cs) = token_balances {
-            for (key, balance) in tok_cs.balances {
-                self.token_balances.insert(key, balance);
-            }
-            for key in tok_cs.removed_balances {
-                self.token_balances.remove(&key);
-            }
-            for (identity_id, tokens) in tok_cs.watched {
-                self.token_watched
-                    .entry(identity_id)
-                    .or_default()
-                    .extend(tokens);
-            }
-            for (identity_id, tokens) in tok_cs.unwatched {
-                if let Some(set) = self.token_watched.get_mut(&identity_id) {
-                    for token in &tokens {
-                        set.remove(token);
-                    }
-                    if set.is_empty() {
-                        self.token_watched.remove(&identity_id);
-                    }
-                }
-            }
-        }
+        // 6. Token balances. The persistent cache lives entirely on
+        //    the FFI / Swift side now; the in-memory canonical balance
+        //    state lives on `IdentitySyncManager`, which gets rebuilt
+        //    by the next sync pass rather than replayed from a
+        //    changeset. Drop the field explicitly so future readers
+        //    don't expect a mutation hook here.
+        drop(token_balances);
 
         // 7. Recompute cached UI balance from the now-restored UTXO set.
         //    `update_balance` returns its own changeset internally; we
         //    discard it (apply does not re-emit).
         use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
-        let _ = self.core_wallet.update_balance();
+        self.core_wallet.update_balance();
         // Mirror the recomputed balance into the lock-free Arc that the
         // UI reads.
         let core_balance = &self.core_wallet.balance;
@@ -331,7 +328,7 @@ impl PlatformWalletInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::{BTreeMap, BTreeSet};
+    use std::collections::BTreeMap;
     use std::sync::Arc;
 
     use dashcore::OutPoint;
@@ -367,12 +364,10 @@ mod tests {
 
     fn empty_info(wallet: &Wallet) -> PlatformWalletInfo {
         PlatformWalletInfo {
-            core_wallet: ManagedWalletInfo::from_wallet(wallet),
+            core_wallet: ManagedWalletInfo::from_wallet(wallet, 0),
             balance: std::sync::Arc::new(WalletBalance::new()),
             identity_manager: IdentityManager::new(),
             tracked_asset_locks: BTreeMap::new(),
-            token_watched: BTreeMap::new(),
-            token_balances: BTreeMap::new(),
         }
     }
 
@@ -406,7 +401,6 @@ mod tests {
         info.apply_changeset(&mut wallet, cs).expect("apply");
         assert!(info.identity_manager.is_empty());
         assert!(info.tracked_asset_locks.is_empty());
-        assert!(info.token_balances.is_empty());
     }
 
     #[test]
@@ -676,8 +670,16 @@ mod tests {
         assert!(!info.tracked_asset_locks.contains_key(&out_point));
     }
 
+    /// Token-balance changesets are accepted by `apply_changeset` for
+    /// shape compatibility but are not replayed onto
+    /// `PlatformWalletInfo` (which no longer has token_balances /
+    /// token_watched fields). The canonical balance cache lives on
+    /// `IdentitySyncManager` and is rebuilt by the next sync pass; the
+    /// FFI persister surfaces the upserts/tombstones to the Swift side
+    /// directly. This test pins the no-replay contract: applying a
+    /// non-empty token-balance changeset must not error.
     #[test]
-    fn apply_token_unwatch_clears_set_and_removes_empty_identity() {
+    fn apply_token_balance_changeset_is_noop_on_info() {
         let mut wallet = build_test_wallet();
         let mut info = empty_info(&wallet);
 
@@ -686,28 +688,13 @@ mod tests {
 
         let mut tok_cs = TokenBalanceChangeSet::default();
         tok_cs.balances.insert((identity, token), 999);
-        let mut watched = BTreeSet::new();
-        watched.insert(token);
-        tok_cs.watched.insert(identity, watched);
-        let mut cs = PlatformWalletChangeSet::default();
-        cs.token_balances = Some(tok_cs);
-        info.apply_changeset(&mut wallet, cs).expect("apply watch");
-        assert_eq!(info.token_balances.get(&(identity, token)), Some(&999));
-        assert!(info.token_watched.get(&identity).unwrap().contains(&token));
-
-        // Unwatch the token — set becomes empty, identity entry should
-        // be removed entirely.
-        let mut tok_cs = TokenBalanceChangeSet::default();
-        let mut unwatched = BTreeSet::new();
-        unwatched.insert(token);
-        tok_cs.unwatched.insert(identity, unwatched);
         tok_cs.removed_balances.insert((identity, token));
         let mut cs = PlatformWalletChangeSet::default();
         cs.token_balances = Some(tok_cs);
-        info.apply_changeset(&mut wallet, cs)
-            .expect("apply unwatch");
-        assert!(!info.token_balances.contains_key(&(identity, token)));
-        assert!(!info.token_watched.contains_key(&identity));
+        info.apply_changeset(&mut wallet, cs).expect("apply token");
+
+        // No assertion against `info` — the field is gone. The point
+        // of this test is the call must not error.
     }
 
     // ----------------------------------------------------------------------
@@ -1645,6 +1632,11 @@ mod tests {
             },
         });
 
+        // Token balance changesets are accepted for shape compat but
+        // no longer drive `PlatformWalletInfo` state — the manager
+        // owns the balance cache. Include one anyway to confirm the
+        // double-apply still works once the field has been replaced
+        // with a `drop`.
         let mut tok_cs = TokenBalanceChangeSet::default();
         let token = Identifier::from([8u8; 32]);
         tok_cs.balances.insert((identity, token), 42);
@@ -1669,6 +1661,5 @@ mod tests {
             account.address_credit_balance(&PlatformP2PKHAddress::new([42u8; 20])),
             1_000
         );
-        assert_eq!(info.token_balances.get(&(identity, token)), Some(&42));
     }
 }

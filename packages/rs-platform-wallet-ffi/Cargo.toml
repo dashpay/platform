@@ -27,6 +27,7 @@ tokio = { version = "1", features = ["rt-multi-thread"] }
 # Core dependencies (for Network type)
 dashcore = { workspace = true }
 key-wallet = { workspace = true, features = ["bincode"] }
+dash-network = { workspace = true, features = ["ffi"] }
 
 # Bincode used to serialize RootExtendedPubKey / ExtendedPubKey across
 # FFI for watch-only restore. Same version pinned elsewhere in workspace.
@@ -34,6 +35,16 @@ bincode = { version = "=2.0.1" }
 
 # Hex used for error diagnostics that include a wallet_id.
 hex = "0.4"
+
+# Persistence loader emits structured warnings for skipped /
+# corrupt rows so operators can detect snapshot drift without a
+# native debugger attached.
+tracing = "0.1"
+
+# anyhow surfaces from `KeyType::try_from` / `Purpose::try_from`
+# / `SecurityLevel::try_from` in dpp; we need the From impl in
+# `error.rs` so `unwrap_result_or_return!` can absorb it.
+anyhow = { version = "1.0.81" }
 
 # Used by group-action queries to build the JSON response shape that
 # Swift decodes via Codable. See `tokens/group_queries.rs`.
@@ -53,3 +64,8 @@ cbindgen = "0.27"
 [features]
 default = []
 mocks = []
+# Opt-in Orchard / shielded support. Pulls in the heavy
+# `grovedb-commitment-tree` + `zip32` dependencies via
+# `platform-wallet/shielded`. Builds that don't enable this feature
+# omit every `shielded_*` FFI symbol cleanly.
+shielded = ["platform-wallet/shielded"]

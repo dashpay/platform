@@ -3,15 +3,11 @@
 //! Implementors choose their own storage engine (SQLite, file, memory, remote).
 //! The traits guarantee that deltas are persisted atomically.
 
-use key_wallet::account::AccountType;
-use key_wallet::bip32::ExtendedPubKey;
-use key_wallet::managed_account::address_pool::AddressPoolType;
-use key_wallet::AddressInfo;
-use key_wallet::Network;
-
 use crate::changeset::changeset::PlatformWalletChangeSet;
 use crate::changeset::client_start_state::ClientStartState;
 use crate::wallet::platform_wallet::WalletId;
+use dashcore::Txid;
+use key_wallet::managed_account::transaction_record::TransactionRecord;
 
 /// Errors returned by a [`PlatformWalletPersistence`] backend.
 ///
@@ -155,64 +151,47 @@ pub trait PlatformWalletPersistence: Send + Sync {
     /// wallet attribution where needed.
     fn load(&self) -> Result<ClientStartState, PersistenceError>;
 
-    /// Persist an account entry for `wallet_id`. Called on account
-    /// insertion (initial registration or later `add_account` calls).
+    /// Look up a single core transaction record by `txid` for `wallet_id`.
     ///
-    /// This captures enough material to reconstruct every account of a
-    /// wallet as watch-only via `Account::from_xpub` at load time —
-    /// hardened derivation at the account level means the per-account
-    /// xpub is the only way to get it back without the mnemonic. The
-    /// `wallet_id` travels through `store_wallet_metadata`; paired with
-    /// this call, `Wallet::new_watch_only(network, wallet_id, accounts)`
-    /// has everything it needs.
+    /// Used by the asset-lock proof flow to recover records that the
+    /// in-memory `transactions()` map has evicted. Upstream's
+    /// `keep-finalized-transactions` Cargo feature is OFF by default —
+    /// chainlocked records are dropped from the in-memory map and only
+    /// their txids are retained in `finalized_txids` for dedup. The
+    /// chain-lock height / block hash that an asset-lock proof needs is
+    /// no longer reachable through the wallet-info API, but the
+    /// persister received the full record on the last `store` call
+    /// before eviction, so it can answer this lookup.
     ///
-    /// Default implementation is a no-op.
-    fn store_account(
+    /// The default implementation returns `Ok(None)` — backwards
+    /// compatible for persisters that don't index records by txid (e.g.
+    /// [`NoPlatformPersistence`]). The asset-lock proof flow's hot path
+    /// (mempool / `InBlock` window) hits the in-memory map first, so a
+    /// `None` response from this method only matters for the rare race
+    /// where the first lookup happens after the chainlock-eviction
+    /// window. Persisters whose backing store keys records by txid
+    /// (`SqliteWalletPersister`, the SwiftData iOS persister) should
+    /// override.
+    ///
+    /// **Field contract.** Implementations are only required to
+    /// populate `txid` and `context` (with the `BlockInfo` inside
+    /// `InChainLockedBlock` / `InBlock` carrying real height + block
+    /// hash + timestamp). Other fields (`transaction`, `input_details`,
+    /// `output_details`, `account_type`, `transaction_type`,
+    /// `direction`, `net_amount`, `fee`, `label`) MAY be returned as
+    /// best-effort placeholders and MUST NOT be relied upon by callers.
+    /// The current consumer — the asset-lock proof flow — only reads
+    /// `context` and `height()` (which is
+    /// `context.block_info().map(|b| b.height)`). FFI-backed
+    /// implementations (e.g. the SwiftData iOS persister) take
+    /// advantage of this contract by emitting a synthetic record with a
+    /// placeholder transaction body, since reconstructing the full
+    /// `Transaction` over the C ABI is not free and isn't needed.
+    fn get_core_tx_record(
         &self,
-        wallet_id: WalletId,
-        account_type: &AccountType,
-        account_xpub: &ExtendedPubKey,
-    ) -> Result<(), PersistenceError> {
-        let _ = (wallet_id, account_type, account_xpub);
-        Ok(())
-    }
-
-    /// Persist per-wallet metadata that isn't derivable from the xpub
-    /// alone: the network this wallet is bound to and the birth height
-    /// (best estimate of the chain tip at creation time; 0 means
-    /// "scan from genesis / unknown").
-    ///
-    /// Called once at registration alongside
-    /// [`store_wallet_root_xpub`](Self::store_wallet_root_xpub).
-    ///
-    /// Default implementation is a no-op.
-    fn store_wallet_metadata(
-        &self,
-        wallet_id: WalletId,
-        network: Network,
-        birth_height: u32,
-    ) -> Result<(), PersistenceError> {
-        let _ = (wallet_id, network, birth_height);
-        Ok(())
-    }
-
-    /// Persist every [`AddressInfo`] from one of an account's address
-    /// pools. Called per pool — callers emit external then internal
-    /// (or the single pool for simpler account types) so the entries
-    /// slice is homogeneous with respect to `pool_type`.
-    ///
-    /// Called at wallet create (initial gap-limit population) and on
-    /// any pool extension / "used" flip that happens during sync.
-    ///
-    /// Default implementation is a no-op.
-    fn store_account_addresses(
-        &self,
-        wallet_id: WalletId,
-        account_type: &AccountType,
-        pool_type: AddressPoolType,
-        addresses: &[AddressInfo],
-    ) -> Result<(), PersistenceError> {
-        let _ = (wallet_id, account_type, pool_type, addresses);
-        Ok(())
+        _wallet_id: WalletId,
+        _txid: &Txid,
+    ) -> Result<Option<TransactionRecord>, PersistenceError> {
+        Ok(None)
     }
 }
