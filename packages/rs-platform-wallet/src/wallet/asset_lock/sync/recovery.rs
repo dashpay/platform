@@ -63,7 +63,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             None => {
                 // Need to resolve from wallet info - drop the write guard and use a read.
                 // Actually we already have mutable access to info, so we can read from it.
-                Self::resolve_status_from_info(&info.core_wallet, account_index, &out_point)
+                self.resolve_status_from_info(&info.core_wallet, account_index, &out_point)
             }
         };
 
@@ -89,24 +89,30 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     }
 
     /// Determine asset lock status by looking up the transaction in
-    /// `ManagedWalletInfo`.
+    /// `ManagedWalletInfo`, falling back to the persister if the
+    /// in-memory map evicted the record (default
+    /// `keep-finalized-transactions` off).
     ///
     /// If the TX is in a chain-locked block, returns `ChainLocked` with a
     /// constructed `ChainAssetLockProof`. If the TX has an InstantSend
     /// context, returns `InstantSendLocked` (without a proof, since we lack
     /// the IS-lock data). Otherwise defaults to `Broadcast`.
     fn resolve_status_from_info(
+        &self,
         wallet_info: &ManagedWalletInfo,
         account_index: u32,
         out_point: &OutPoint,
     ) -> (AssetLockStatus, Option<dpp::prelude::AssetLockProof>) {
+        use super::proof::record_or_persister;
         use key_wallet::transaction_checking::TransactionContext;
 
-        let record = wallet_info
+        let in_memory = wallet_info
             .accounts
             .standard_bip44_accounts
             .get(&account_index)
-            .and_then(|a| a.transactions().get(&out_point.txid));
+            .and_then(|a| a.transactions().get(&out_point.txid).cloned());
+
+        let record = record_or_persister(in_memory, &self.persister, &out_point.txid);
 
         match record {
             Some(record) => match &record.context {
