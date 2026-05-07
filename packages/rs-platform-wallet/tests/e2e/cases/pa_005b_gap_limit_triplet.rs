@@ -30,12 +30,10 @@ async fn pa_005b_gap_limit_triplet() {
         let s = setup().await.expect("e2e setup failed (sub-case 1)");
         let platform = s.test_wallet.platform_wallet().platform();
         let key = default_account_key();
+        // QA-V19-003: Removed `pool_gap_limit ≥ 21` precondition — production uses
+        // DEFAULT_GAP_LIMIT = 20 (DIP17). The triplet (limit-1, limit, limit+1) is
+        // computed from the live value, no fixed lower bound required.
         let pool_gap_limit = pool_gap_limit(s.test_wallet.platform_wallet(), key).await;
-        assert!(
-            pool_gap_limit >= 21,
-            "PA-005b assumes gap_limit ≥ 21; observed {pool_gap_limit}. \
-             Bump the test or revisit the spec if production changed the default."
-        );
         let count = (pool_gap_limit - 1) as usize;
         let addrs = platform
             .next_unused_receive_addresses(key, count)
