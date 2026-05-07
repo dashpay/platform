@@ -126,8 +126,13 @@ impl TryFrom<&JsValue> for TokenConfigurationLocalizationWasm {
             return Ok(wasm_localization.clone());
         }
 
-        // Deserialize as a versioned object (with $formatVersion)
-        serialization::from_object(value.clone()).map(TokenConfigurationLocalizationWasm)
+        // Deserialize as a versioned object (with $formatVersion) via the
+        // canonical ValueConvertible trait.
+        use dpp::serialization::ValueConvertible;
+        let pv = serialization::platform_value_from_object(value)?;
+        let inner = TokenConfigurationLocalization::from_object(pv)
+            .map_err(|e| WasmDppError::serialization(format!("from_object: {}", e)))?;
+        Ok(TokenConfigurationLocalizationWasm(inner))
     }
 }
 

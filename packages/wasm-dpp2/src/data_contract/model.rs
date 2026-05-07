@@ -396,7 +396,16 @@ impl DataContractWasm {
 
     #[wasm_bindgen(getter = "config")]
     pub fn config(&self) -> WasmDppResult<DataContractConfigJs> {
-        let js_value = serialization::to_object(self.0.config())?;
+        // DataContractConfig is a versioned enum with the canonical
+        // ValueConvertible trait — route through it so any future custom
+        // impl propagates here automatically.
+        use dpp::serialization::ValueConvertible;
+        let value = self
+            .0
+            .config()
+            .to_object()
+            .map_err(|e| WasmDppError::serialization(format!("config: {}", e)))?;
+        let js_value = serialization::platform_value_to_object(&value)?;
         Ok(js_value.into())
     }
 
