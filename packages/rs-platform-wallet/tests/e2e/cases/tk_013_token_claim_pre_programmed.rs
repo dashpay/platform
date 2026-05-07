@@ -22,13 +22,15 @@
 //! DAPI access).
 
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use dpp::balances::credits::TokenAmount;
+use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
 use dpp::data_contract::DataContract;
 use dpp::prelude::{Identifier, TimestampMillis};
 
+use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
 use dash_sdk::platform::tokens::builders::claim::TokenClaimTransitionBuilder;
 use dash_sdk::platform::tokens::transitions::ClaimResult;
 use dash_sdk::platform::Fetch;
@@ -89,13 +91,36 @@ async fn tk_013_token_claim_from_pre_programmed_distribution() {
     // before issuing the claim. 60 s is comfortably above observed
     // testnet inclusion latency without turning the test into a
     // 5-minute hang.
-    const FUTURE_OFFSET: Duration = Duration::from_secs(60);
-    /// Cushion past `epoch_zero_at` to guarantee the next platform
-    /// block's `time_ms` is strictly greater than the schedule
-    /// timestamp. Testnet platform-block cadence under load can
-    /// stretch to ~5 s; 15 s is generous enough for the next block to
-    /// observe the elapsed schedule.
+    // QA-V19-001: Wall-clock waiting alone is not sufficient — the
+    // platform's `block_info.time_ms` (against which the claim
+    // transformer's `<= block_info.time_ms` filter runs) lags
+    // wall-clock on testnet by tens of seconds. v18 captured a run
+    // where wall_clock had crossed `epoch_zero_at + 15s` yet the
+    // chain reported `current_moment` ~75 s behind, still tripping
+    // `InvalidTokenClaimNoCurrentRewards`. The fix:
+    //   1. Bump `FUTURE_OFFSET` to 240 s so the contract-create
+    //      broadcast clears the `>= block_info.time_ms` validator
+    //      with comfortable headroom (chain-time can lag wall-clock
+    //      by 60–90 s under load and we still need the schedule
+    //      timestamp to be strictly in the platform-future).
+    //   2. After contract registration, *poll* the platform's latest
+    //      `ResponseMetadata.time_ms` (via `ExtendedEpochInfo::
+    //      fetch_current_with_metadata`) until that observed value
+    //      crosses `epoch_zero_at + POST_EPOCH_CUSHION` — this is
+    //      the same `block_info.time_ms` the claim transformer
+    //      consults, so once we've seen it advance past the schedule
+    //      we know the next claim will admit the distribution.
+    const FUTURE_OFFSET: Duration = Duration::from_secs(240);
+    /// Cushion past `epoch_zero_at` enforced against the OBSERVED
+    /// platform block time (not wall-clock). Once the chain reports
+    /// `time_ms >= epoch_zero_at + POST_EPOCH_CUSHION` the next
+    /// block's `block_info.time_ms` will satisfy the `<=` filter.
     const POST_EPOCH_CUSHION: Duration = Duration::from_secs(15);
+    /// Poll cadence for `ExtendedEpochInfo::fetch_current_with_metadata`.
+    const POLL_INTERVAL: Duration = Duration::from_secs(3);
+    /// Hard ceiling on the wait so a stuck testnet fails the test
+    /// fast rather than hanging the suite.
+    const MAX_WAIT: Duration = Duration::from_secs(420);
 
     let now_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -108,25 +133,49 @@ async fn tk_013_token_claim_from_pre_programmed_distribution() {
         .await
         .expect("register pre-programmed token contract");
 
-    // Sleep until wall-clock has crossed `epoch_zero_at` plus a
-    // cushion. Without this wait the claim transformer races the
-    // schedule and rejects with `InvalidTokenClaimNoCurrentRewards`
-    // (current_moment < epoch_zero_at).
-    let now_after_register_ms = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock is past UNIX_EPOCH")
-        .as_millis() as TimestampMillis;
+    // Poll platform-side block time until it crosses
+    // `epoch_zero_at + cushion`. Querying `ExtendedEpochInfo::
+    // fetch_current_with_metadata` returns the platform's latest
+    // `ResponseMetadata.time_ms` — the same value the claim
+    // transformer evaluates `<= block_info.time_ms` against. Without
+    // this poll the test races the chain and rejects with
+    // `InvalidTokenClaimNoCurrentRewards`.
     let target_ms = epoch_zero_at + POST_EPOCH_CUSHION.as_millis() as u64;
-    if now_after_register_ms < target_ms {
-        let to_wait = Duration::from_millis(target_ms - now_after_register_ms);
+    let deadline = Instant::now() + MAX_WAIT;
+    loop {
+        let (_, metadata) = ExtendedEpochInfo::fetch_current_with_metadata(ctx.sdk())
+            .await
+            .expect("fetch current epoch metadata");
+        let observed_ms = metadata.time_ms;
+        if observed_ms >= target_ms {
+            tracing::info!(
+                target: "platform_wallet::e2e::cases::tk_013",
+                ?contract_id,
+                epoch_zero_at,
+                observed_ms,
+                target_ms,
+                "TK-013 platform block time crossed target — proceeding to claim"
+            );
+            break;
+        }
+        if Instant::now() >= deadline {
+            panic!(
+                "TK-013: platform block time did not catch up to \
+                 epoch_zero_at + cushion within {:?} (observed_ms={observed_ms}, \
+                 target_ms={target_ms}, delta_ms={})",
+                MAX_WAIT,
+                target_ms - observed_ms,
+            );
+        }
         tracing::info!(
             target: "platform_wallet::e2e::cases::tk_013",
             ?contract_id,
-            epoch_zero_at,
-            wait_ms = to_wait.as_millis() as u64,
-            "TK-013 waiting for pre-programmed epoch to elapse"
+            observed_ms,
+            target_ms,
+            delta_ms = target_ms - observed_ms,
+            "TK-013 waiting for platform block time to advance"
         );
-        tokio::time::sleep(to_wait).await;
+        tokio::time::sleep(POLL_INTERVAL).await;
     }
 
     // Snapshot pre-claim balance so the assertion is robust against
