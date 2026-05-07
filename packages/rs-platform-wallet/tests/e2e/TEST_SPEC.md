@@ -172,7 +172,6 @@ Status legend: **green** = test file present, body has real assertions, runnable
 | CR-001 | SPV mn-list sync readiness | P1 | not implemented | M |
 | CR-002 | Core wallet receive address derivation | P1 | not implemented | M |
 | CR-003 | Asset-lock-funded identity registration (full path) | P2 | not implemented | L |
-| CR-004 | Legacy BIP32 account: balance + UTXO state updates after spend | P1 | not implemented | M |
 | CT-001 | Document put: deploy a fixture data contract | P1 | not implemented | M |
 | CT-002 | Document put / replace lifecycle | P2 | not implemented | M |
 | CT-003 | Contract update (add document type) | P2 | not implemented | M |
@@ -215,7 +214,7 @@ Status legend: **green** = test file present, body has real assertions, runnable
 | Found-017 | `register_wallet` registers wallet in memory even when persister `store` returns `Err` — vanishes on next launch | P2 | not implemented | S |
 | Found-018 | `PlatformAddressChangeSet::merge` documents fee semantics as "fee paid by the transfer that produced this changeset" but actually accumulates fees across merged changesets | P2 | not implemented | S |
 
-Counts by priority: **P0: 10**, **P1: 25** (incl. 3 post-Task #15), **P2: 58** (incl. 2 post-Task #15, 1 gated, 18 Found-bug pins), **DEFERRED: 1** (94 total index entries; 75 baseline + 18 Found-bug pins + 1 deferred placeholder).
+Counts by priority: **P0: 10**, **P1: 24** (incl. 2 post-Task #15), **P2: 58** (incl. 2 post-Task #15, 1 gated, 18 Found-bug pins), **DEFERRED: 1** (93 total index entries; 74 baseline + 18 Found-bug pins + 1 deferred placeholder).
 
 ### Platform Addresses (PA)
 
@@ -1396,35 +1395,6 @@ so that when SPV lands, the test bodies can be written without further design.
 - **Estimated complexity**: L
 - **Rationale**: Mirrors DET's existing canonical Identity-create coverage. Lower priority than ID-001 because address-funded is the path with no other coverage in the workspace.
 - **Operator notes**: First cold-cache run takes ~15 minutes because SPV walks compact filters from genesis (~1.47M testnet blocks). Subsequent runs reuse the on-disk cache and complete in seconds. The harness gates init on `PLATFORM_WALLET_E2E_BANK_CORE_GATE` — **default-on with a 900s deadline**, waiting for the bank's confirmed Core balance to become non-zero so CR-003 doesn't race a cold-cache scan and see `core_balance_confirmed=0` mid-scan. Set the var to `0` (or `disabled` / `false` / `off`) to opt out for Platform-only suites; set a positive integer to override the timeout in seconds. Set `RUST_LOG=info,platform_wallet::e2e::wait=info` to see scan-progress lines (`scan_height` vs `scan_tip`) every 30s.
-
-#### CR-004 — Legacy BIP32 account: balance + UTXO state updates after spend
-
-- **Priority**: P1 (post-Task #15) — open bug from upstream consumer
-- **Status**: BLOCKED — needs harness refactor: SPV runtime re-enablement (Task #15) AND the implementation fix (current PR #3609 carries the test and the production fix together).
-- **Wallet feature exercised**: `wallet/core/wallet.rs:54` (`CoreWallet::balance`); `wallet/core/broadcast.rs:185` (`check_core_transaction` post-broadcast state mutation on `standard_bip32_accounts`).
-- **Bug repro (upstream)**: [dashpay/dash-evo-tool#845](https://github.com/dashpay/dash-evo-tool/issues/845) — sending all funds from a legacy BIP32 account (`StandardAccountType::BIP32Account`) leaves the wallet's local UTXO set stale; a follow-up `send_to_addresses` call fails with `TransactionBuild("Coin selection error: No UTXOs available for selection")` despite the original UTXOs being long since spent on-chain.
-- **DET parallel**: none yet — DET is the affected consumer; this test pins the contract on the rs-platform-wallet side so a fix becomes verifiable from a single repository.
-- **Preconditions**: CR-001 + a Core-funded BIP32 legacy account (derivation path `m/44'/1'/0'`, `StandardAccountType::BIP32Account` at index `0`, stored under `wallet.accounts.standard_bip32_accounts`).
-- **Scenario**:
-  1. Create a wallet whose primary accounts include a **legacy BIP32 account** (`StandardAccountType::BIP32Account`). Fund it with at least 2 distinct UTXOs from the bank's Core funding helper so coin selection has more than one input to consider.
-  2. Sync until `core_balance_confirmed > 0` for the legacy account.
-  3. Build a "send all" Core transfer via `CoreWallet::send_to_addresses(StandardAccountType::BIP32Account, 0, outputs)` using the **advanced (explicit input selection)** path that consumes every UTXO on the legacy account; broadcast and wait for instant-lock or confirmation.
-  4. Read the wallet's balance for the legacy account immediately after broadcast completes (re-use `wait_for_core_balance` from CR-003 with target `== 0`).
-  5. Issue a second small transfer on the same legacy account via `send_to_addresses`.
-- **Assertions**:
-  - After step 3 + sync, the legacy account's confirmed balance equals `0` (or fee-only residue if the helper deducts the fee from outputs rather than inputs).
-  - `standard_bip32_accounts[0].spendable_utxos(current_height)` returns an empty set — no entry that is confirmed and unspent.
-  - The second `send_to_addresses` at step 5 fails with `PlatformWalletError::TransactionBuild` whose message identifies no spendable inputs, NOT with a stale-UTXO selection on already-spent outputs.
-- **Negative variants**:
-  - Mid-spend reorg of the broadcast (P2 — manual / mocked).
-  - Send-all on a legacy account that is itself sourced from a watch-only descriptor (P2 — separate ticket if it diverges from the keyed path).
-- **Harness extensions required**:
-  - `setup_with_legacy_bip32_funded_account(funding_duffs, utxo_count)` helper analogous to the existing `setup_with_core_funded_test_wallet`, but using `StandardAccountType::BIP32Account` at index `0` (path `m/44'/1'/0'`).
-  - `assert_no_unspent_utxos(account)` reusable assertion (or open-coded inline for now).
-  - `wait_for_core_balance` already exists from CR-003 — re-use with `target == 0`.
-- **Estimated complexity**: M
-- **Rationale**: Pins the spend → state-update contract of the Core wallet for the legacy BIP32 account path. Without it, any future regression in `check_core_transaction`'s handling of `standard_bip32_accounts` (which dash-evo-tool, the SwiftExampleApp, and Rust-SDK-driven UIs all depend on) ships silently to consumers and is caught only when downstream consumers file issues. The bug is currently open upstream, so the test fails at first run — exactly the "pin invariants, including currently-broken ones" pattern used throughout this spec.
-- **Operator notes**: Same SPV cold-cache caveat as CR-003 (~15 min on first run). The `PLATFORM_WALLET_E2E_BANK_CORE_GATE` default-on still applies. The legacy BIP32 account derivation must NOT cross-contaminate the wallet's default Core account UTXO set — assertions read `standard_bip32_accounts` slot state directly, not the wallet-aggregate balance.
 
 ### Contracts (CT)
 
