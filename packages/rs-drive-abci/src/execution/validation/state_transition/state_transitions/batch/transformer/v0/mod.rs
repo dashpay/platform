@@ -941,10 +941,12 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                         );
                     return Ok(ConsensusValidationResult::new_with_data_and_errors(
                         BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action),
-                        vec![StateError::DocumentNotForSaleError(
-                            DocumentNotForSaleError::new(original_document.id()),
-                        )
-                        .into()],
+                        vec![
+                            StateError::DocumentNotForSaleError(DocumentNotForSaleError::new(
+                                original_document.id(),
+                            ))
+                            .into(),
+                        ],
                     ));
                 };
 

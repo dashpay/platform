@@ -778,19 +778,20 @@ mod replacement_tests {
         altered_document.set_revision(Some(3));
         altered_document.set("displayName", "Out of order".into());
 
-        let replace_transition = BatchTransition::new_document_replacement_transition_from_document(
-            altered_document,
-            profile,
-            &key,
-            3,
-            0,
-            None,
-            &signer,
-            platform_version,
-            None,
-        )
-        .await
-        .expect("expected to build replace transition");
+        let replace_transition =
+            BatchTransition::new_document_replacement_transition_from_document(
+                altered_document,
+                profile,
+                &key,
+                3,
+                0,
+                None,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected to build replace transition");
 
         let replace_serialized = replace_transition
             .serialize_to_bytes()
