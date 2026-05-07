@@ -383,6 +383,20 @@ pub(crate) fn parse_bank_core_gate(raw: Option<&str>) -> (Option<Duration>, Bank
     }
 }
 
+/// Parse a boolean opt-in flag from a raw env-var value (`None` = unset).
+///
+/// Truthy: `1`, `true`, `yes`, `on` (case-insensitive, trimmed).
+/// Everything else — including empty / unset / unparseable — is `false`.
+/// Used by [`vars::RUN_FAILING_BY_DESIGN`].
+pub(crate) fn parse_truthy(raw: Option<&str>) -> bool {
+    let Some(raw) = raw else { return false };
+    let trimmed = raw.trim();
+    trimmed == "1"
+        || trimmed.eq_ignore_ascii_case("true")
+        || trimmed.eq_ignore_ascii_case("yes")
+        || trimmed.eq_ignore_ascii_case("on")
+}
+
 /// Parse a network string supporting the canonical dashcore names
 /// plus the test-harness `local` alias for regtest and an empty
 /// shorthand for testnet. Used only at [`Config`] construction;
