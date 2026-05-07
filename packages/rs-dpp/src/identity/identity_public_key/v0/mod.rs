@@ -48,7 +48,14 @@ pub struct IdentityPublicKeyV0 {
     pub key_type: KeyType,
     pub read_only: bool,
     pub data: BinaryData,
-    #[serde(default)]
+    // Phase D step 4: skip emitting `disabledAt: null` for non-disabled keys.
+    // Bincode (consensus binary path) is independent of this attribute and
+    // always writes the Option discriminant + payload. Identity hashing /
+    // Drive storage / state-transition signing all go through bincode, so
+    // none of those are affected. JSON / platform_value wire path becomes
+    // `{ ...fields }` instead of `{ ..., disabledAt: null }` for the
+    // common non-disabled case.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub disabled_at: Option<TimestampMillis>,
 }
 

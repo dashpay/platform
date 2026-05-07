@@ -121,6 +121,9 @@ mod json_convertible_tests {
             json!({
                 "$formatVersion": "0",
                 "id": "5TeWSsjg2gbxCyWVniXeCmwM7UtHTCK7svzJr5xYJzHf",
+                // After Phase D step 4, `disabled_at` carries
+                // `#[serde(skip_serializing_if = "Option::is_none")]`, so
+                // non-disabled keys no longer emit `disabledAt: null`.
                 "publicKeys": [
                     {
                         "$formatVersion": "0",
@@ -131,7 +134,6 @@ mod json_convertible_tests {
                         "type": 0,
                         "readOnly": false,
                         "data": "oKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCg",
-                        "disabledAt": serde_json::Value::Null,
                     },
                     {
                         "$formatVersion": "0",
@@ -142,7 +144,6 @@ mod json_convertible_tests {
                         "type": 0,
                         "readOnly": false,
                         "data": "sbGxsbGxsbGxsbGxsbGxsbGxsbGxsbGxsbGxsbGxsbGx",
-                        "disabledAt": serde_json::Value::Null,
                     },
                 ],
                 "balance": 1_000_000u64,
@@ -168,6 +169,8 @@ mod json_convertible_tests {
             platform_value!({
                 "$formatVersion": "0",
                 "id": id,
+                // `disabledAt: None` is now stripped per the
+                // `skip_serializing_if` attribute (Phase D step 4).
                 "publicKeys": [
                     {
                         "$formatVersion": "0",
@@ -178,7 +181,6 @@ mod json_convertible_tests {
                         "type": 0u8,
                         "readOnly": false,
                         "data": Value::Bytes(vec![0xa0; 33]),
-                        "disabledAt": Value::Null,
                     },
                     {
                         "$formatVersion": "0",
@@ -189,7 +191,6 @@ mod json_convertible_tests {
                         "type": 0u8,
                         "readOnly": false,
                         "data": Value::Bytes(vec![0xb1; 33]),
-                        "disabledAt": Value::Null,
                     },
                 ],
                 "balance": 1_000_000u64,

@@ -11,13 +11,12 @@ impl IdentityPublicKeyPlatformValueConversionMethodsV0 for IdentityPublicKeyV0 {
     }
 
     fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
-        let mut value = platform_value::to_value(self).map_err(ProtocolError::ValueError)?;
-        if self.disabled_at.is_none() {
-            value
-                .remove("disabledAt")
-                .map_err(ProtocolError::ValueError)?;
-        }
-        Ok(value)
+        // After Phase D step 4, `disabled_at` carries
+        // `#[serde(skip_serializing_if = "Option::is_none")]`, so the
+        // serde-driven `to_value` path already strips `disabledAt: null`.
+        // Pure delegation now, kept for trait-surface compatibility
+        // (scheduled for deletion in step 5).
+        self.to_object()
     }
 
     fn into_object(self) -> Result<Value, ProtocolError> {
