@@ -457,46 +457,140 @@ Ordered to fix bugs first, then easy wins, then long-pole work. Each step gates 
      also has `#[serde(default)]`. Updated 3 wasm-dpp2 fixtures and
      2 rs-dpp test assertions.
 
-5. **`Identity` family canonical migration** (A6, A7 partly, A8, A9 partly):
-   - ✅ DONE in commit `18034d6e70`:
-     - Deleted `IdentityPlatformValueConversionMethodsV0` (entire 1-method
-       trait — its only method `to_cleaned_object` was a default-body
-       `self.to_object()` and the V0 impl was pure delegation after step 4).
-       Files removed: `identity/conversion/platform_value/v0/mod.rs`,
-       `identity/v0/conversion/platform_value.rs`. Outer impl on `Identity`
-       deleted.
-     - Removed `to_cleaned_object` from
-       `IdentityPublicKeyPlatformValueConversionMethodsV0` (trait def + V0
-       impl + outer impl). The trait stays for its `from_object(value,
-       &platform_version)` method, which has legitimate version-dispatch
-       semantics that canonical `ValueConvertible::from_object` doesn't
-       provide.
-     - Migrated `IdentityV0::to_json` / `to_json_object` and
-       `IdentityPublicKeyV0::to_json` / `to_json_object` to use canonical
-       `ValueConvertible::to_object` (was `to_cleaned_object`, now
-       byte-identical after step 4).
-     - Migrated `IdentityPublicKeyWasm::to_object` (wasm-dpp2) similarly.
-   - ⬜ Remaining (deferred, larger scope):
-     - Replace `to_json` / `to_json_object` / `to_object` / `from_object`
-       methods on the *outer* legacy traits
-       (`IdentityJsonConversionMethodsV0`,
-       `IdentityPublicKeyJsonConversionMethodsV0`,
-       remaining `IdentityPublicKeyPlatformValueConversionMethodsV0` surface)
-       with canonical traits everywhere they're called from.
-     - Move `from_json_object` binary-field replacement (uses
-       `replace_at_paths(BINARY_DATA_FIELDS, BinaryBytes)`) to a one-shot
-       `from_legacy_json` helper.
-     - Audit consumers in rs-drive / rs-drive-abci / rs-sdk before
-       deletion.
+5. **`Identity` family canonical migration** (A6, A7, A8, A9) ✅ DONE.
 
-6. **AssetLockProof tagged-enum fix (C2)**:
-   - Pick a tagged-enum representation; fix Serialize/Deserialize symmetry; implement canonical traits manually using the §6 escape-hatch pattern. Becomes the documented exemplar.
+   Shipped across commits `18034d6e70`, `146959cc26`, `3d087d8fb3`,
+   `8b3cb08364`, `32a33f39be`. All four legacy conversion traits have
+   been **deleted entirely** — the identity family now goes exclusively
+   through canonical `JsonConvertible` / `ValueConvertible`:
+
+   - **`IdentityPlatformValueConversionMethodsV0`** (1-method trait,
+     `to_cleaned_object` only, default body `self.to_object()`):
+     entire trait + V0 impl + outer impl + module file deleted in
+     `18034d6e70`. Was redundant after step 4's
+     `skip_serializing_if` already stripped `disabledAt:null`.
+
+   - **`IdentityPublicKeyPlatformValueConversionMethodsV0`** (originally
+     4 methods: `to_object` / `to_cleaned_object` / `into_object` /
+     `from_object(value, &platform_version)`):
+     - `to_cleaned_object` removed in `18034d6e70` (after step 4).
+     - `to_object` / `into_object` removed in `146959cc26` (1:1
+       canonical equivalents).
+     - `from_object(value, &platform_version)` deleted in
+       `3d087d8fb3` after audit confirmed the platform_version
+       dispatch was dead scaffolding for hypothetical V1+ — for the
+       only currently-defined V0, canonical `ValueConvertible::from_object`
+       (which dispatches on the value's own `$formatVersion` tag)
+       produces identical output.
+     - Trait file + V0 impl deleted entirely.
+
+   - **`IdentityJsonConversionMethodsV0`** (Identity, 3 methods):
+     entire trait deleted in `32a33f39be`. Audit confirmed zero
+     non-test production callers anywhere in the workspace —
+     wasm-dpp2 already used canonical `JsonConvertible` after the
+     earlier migration on this branch.
+
+   - **`IdentityPublicKeyJsonConversionMethodsV0`** (3 methods,
+     including `to_json_object` validating-JSON shape and
+     `from_json_object` legacy-ingest with binary-field replacement):
+     entire trait deleted in `32a33f39be`. wasm-dpp2's IdentityPublicKey
+     JS API was the only production consumer; switched its `toJSON` /
+     `fromJSON` to canonical `JsonConvertible` (base64 strings for
+     binary fields, matching every other rs-dpp type). The
+     validating-JSON byte-array shape was deliberately dropped — it
+     was an SDK API deviation (every other type produces base64).
+     Updated 1 wasm-dpp2 test fixture.
+
+   - Misc. cleanup along the way (`8b3cb08364`): dropped dead
+     `platform_version` arg from `from_json_object` while it still
+     existed (same audit pattern); now moot since the trait is gone.
+
+   **Net for step 5**: ~−636 lines of legacy trait code, single canonical
+   wire shape across the entire SDK surface for identity-family types
+   (base58 identifiers in JSON, base64 binary fields in JSON,
+   Uint8Array binary in Object, BigInt large u64 in Object).
+
+6. **AssetLockProof tagged-enum fix (C2)** ✅ DONE.
+
+   Two-part work:
+
+   - **Tagged-enum representation** (the original C2 fix, landed
+     earlier on this branch): switched to `#[serde(tag = "type")]`
+     internal tagging; manual `Deserialize` routes through
+     `RawAssetLockProof` for the instant-lock raw-bytes shape.
+     Canonical `JsonConvertible` / `ValueConvertible` derived. Wire
+     shape: `{type: "instant", instantLock, transaction, outputIndex}`
+     or `{type: "chain", coreChainLockedHeight, outPoint}`. Round-trip
+     tests for both JSON and Value paths in
+     `asset_lock_proof/mod.rs::json_convertible_tests`.
+
+   - **Asymmetric helper deletion** (commits `7d44f44f8b` and
+     `d7e61dc70a`):
+     - Deleted `AssetLockProof::to_raw_object` and `TryInto<Value>`
+       impls (both produced *untagged* Value, asymmetric with the
+       canonical Deserialize).
+     - Replaced the `TryFrom<&Value>` / `TryFrom<Value>` hack (which
+       accepted legacy integer-tag and externally-tagged shapes —
+       both predated Critical-2) with one-line
+       `platform_value::from_value` calls. Audit confirmed those
+       legacy shapes no longer flow anywhere; the hack was
+       simultaneously broken-for-canonical (its
+       `get_optional_integer("type")` errored on string `type`) AND
+       unreachable-for-legacy. All 3684 rs-dpp lib tests pass after
+       the migration.
+
+   **Net for step 6**: ~−132 lines of asymmetric / dead code.
 
 7. **ExtendedDocument refactor (C1)**:
    - After G1 fix: switch to `#[serde(tag = "$version")]` enum derive, implement `JsonConvertible`. Trim the 10+ inherent passthrough methods. **Unblocks** wasm-dpp2 `ExtendedDocument` wrapper.
 
-8. **Document-family canonical migration** (A10, A11):
-   - Plain `to_json` becomes canonical. Keep `to_json_with_identifiers_using_bytes` and `to_map_value` as documented escape hatches.
+8. **Document-family canonical migration** (A10, A11) ⬜ DEFERRED to a
+   follow-up PR.
+
+   Audit (May 2026) confirmed the same dead-scaffolding pattern as
+   IdentityPublicKey for the version-dispatch methods, but the Document
+   family is **substantially more entangled** than the identity types
+   audited under step 5. Notably:
+
+   - **rs-drive consensus path involvement**:
+     `Document::from_platform_value(value, platform_version)` is called
+     in `packages/rs-drive/src/drive/document/update/mod.rs` at 4 call
+     sites within document-update validation. Migrating these requires
+     hash-equivalence verification against the storage / state-transition
+     signing paths.
+   - **`to_map_value` / `into_map_value`** return `BTreeMap<String, Value>`
+     (not `Value`) and are genuinely useful — the plan suggests
+     "promote to blanket impl on `ValueConvertible`-implementors", but
+     that's a workspace-wide API surface change that needs deliberation.
+   - **`from_json_value<S, E>`** has manual field-by-field ingest with
+     generic identifier deserialization, used by ExtendedDocument and JS
+     SDK paths. Genuinely different semantic from canonical.
+   - **`to_json_with_identifiers_using_bytes`** is the validating-JSON
+     shape used by JSON Schema validators. KEEP-AS-EXCEPTION.
+
+   Identified callers of legacy traits (production, non-test):
+
+   | Site | Methods used |
+   |---|---|
+   | `wasm-dpp2/data_contract/document/model.rs` | `to_map_value`, `from_platform_value`, `from_json_value` |
+   | `rs-drive/drive/document/update/mod.rs` | `from_platform_value` (×4 in update validation) |
+   | `rs-dpp/document/extended_document/...` | `to_map_value`, `into_map_value`, `from_platform_value` (internal) |
+
+   Steps for the follow-up PR:
+
+   1. Audit each rs-drive caller for hash/signing-equivalence (does the
+      output Value get hashed? Does the deserialize route differ from
+      canonical for any actual on-disk data?).
+   2. Decide on `to_map_value` API: blanket impl on `ValueConvertible`,
+      free function in a helper module, or inherent method on Document.
+   3. Migrate wasm-dpp2 DocumentWasm and ExtendedDocument internal
+      consumers to canonical / chosen helpers.
+   4. Per-property tests on the ExtendedDocument round-trip (it has
+      already been hardened on this branch but its internal `to_map_value`
+      use makes it touchpoint-sensitive).
+   5. Delete `DocumentPlatformValueMethodsV0` trait once empty; trim
+      `DocumentJsonMethodsV0` to just the validating-JSON method
+      (`to_json_with_identifiers_using_bytes` and `from_json_value`).
 
 9. **State-transition trait migration** (A1, A2 — long pole, ~70 files):
    - Strategy: introduce `SignableValueConvertible: ValueConvertible` carrying `skip_signature` + `to_canonical_object` + `to_canonical_cleaned_object`.
