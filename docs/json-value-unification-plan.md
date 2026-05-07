@@ -406,13 +406,32 @@ Ordered to fix bugs first, then easy wins, then long-pole work. Each step gates 
    - **G2**: Address `From<JsonValue> for Value` array→bytes heuristic. Either remove (with `replace_at_paths` cleanup at every `from_json` site) or formally document with safe-paths list. (Critical-2.)
    - **G3**: Document the `is_human_readable` divergence in a comment block on `JsonConvertible` and `ValueConvertible`. Add a property test that flags any type whose `to_json()` and `to_object().try_into()` produce non-equivalent output without a documented reason. (Critical-1.)
 
-2. **Trivially redundant inherent methods** (zero behavior change):
-   - `InstantAssetLockProof::to_object` / `to_cleaned_object`, `ChainAssetLockProof::to_object` / `to_cleaned_object` — pure `platform_value::to_value` delegation. Delete; callers use the canonical default. **Unblocks** wasm-dpp2 `AssetLockProof`-bearing wrappers.
+2. **Trivially redundant inherent methods** (zero behavior change) ✅ DONE in commit `30b43dc87b`:
+   - Deleted `InstantAssetLockProof::to_object` / `to_cleaned_object` and
+     `ChainAssetLockProof::to_object` / `to_cleaned_object` — pure
+     `platform_value::to_value` delegation, callers fall back to the
+     canonical `ValueConvertible` default. Patched the 2 `wasm-dpp`
+     legacy call sites that used `self.0.to_cleaned_object()`
+     per minimum-touch policy.
 
-3. **Dead code cleanup**:
-   - `IdentityPublicKeyCborConversionMethodsV0` (commented-out file).
-   - Commented-out `Serialize`/`Deserialize` blocks at `asset_lock_proof/mod.rs:62-133`.
-   - Commented-out `to_raw_object` at `public_key_in_creation/v0/mod.rs:169`.
+3. **Dead code cleanup** ✅ DONE in commit `bde42eb320`:
+   - Deleted `IdentityPublicKeyCborConversionMethodsV0` — three files
+     (`identity_public_key/conversion/cbor/mod.rs`, `…/cbor/v0/mod.rs`,
+     `identity_public_key/v0/conversion/cbor.rs`) were 100% commented
+     out; trait was unreferenced anywhere in the workspace.
+   - Removed the 119-line commented-out method block at
+     `state_transitions/identity/public_key_in_creation/v0/mod.rs:148-266`
+     (`from_object`, `from_raw_json_object`, `from_json_object`,
+     `to_raw_object`, `to_raw_cleaned_object`, `to_raw_json_object`,
+     `to_ecdsa_array`, `from_cbor_value`, `to_cbor_value`).
+   - Note: the `identity-cbor-conversion` feature flag in
+     `packages/rs-dpp/Cargo.toml` is now a pure dep-carrier — nothing
+     it gates exists. Left in place to avoid a downstream breaking
+     change; cleanup is a separate decision.
+   - Note: the plan's earlier reference to commented blocks at
+     `asset_lock_proof/mod.rs:62-133` was stale — that area was already
+     cleaned up in this branch's earlier asset-lock-proof tagged-enum
+     work.
 
 4. **`to_cleaned_object` → `serde(skip_serializing_if = "Option::is_none")`**:
    - On `IdentityPublicKey::disabled_at` and any other field currently nulled-then-cleaned. Eliminates A7 and A9's only novel behavior. **Risk**: medium — anything hashing serializations sees different bytes; audit before merging.
