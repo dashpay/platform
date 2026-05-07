@@ -264,40 +264,21 @@ impl AssetLockProof {
     }
 }
 
+// Canonical `TryFrom<Value> for AssetLockProof` is provided via the
+// `Deserialize` impl above (which routes through `RawAssetLockProof` for
+// the instant-lock raw-bytes shape) and `platform_value::from_value`. The
+// previous hack here accepted legacy integer-tagged
+// (`{type: 0|1, ...fields}`) and externally-tagged
+// (`{Instant: {...}}`) shapes — both predated the
+// `#[serde(tag = "type")]` Critical-2 fix. Audit (Phase D step 6)
+// confirmed all currently-flowing values are canonical-tagged
+// (string `type`), so the hacks were dead.
+
 impl TryFrom<&Value> for AssetLockProof {
     type Error = ProtocolError;
 
     fn try_from(value: &Value) -> Result<Self, Self::Error> {
-        //this is a complete hack for the moment
-        //todo: replace with
-        //  from_value(value.clone()).map_err(ProtocolError::ValueError)
-        let proof_type_int: Option<u8> = value
-            .get_optional_integer("type")
-            .map_err(ProtocolError::ValueError)?;
-        if let Some(proof_type_int) = proof_type_int {
-            let proof_type = AssetLockProofType::try_from(proof_type_int)?;
-
-            match proof_type {
-                AssetLockProofType::Instant => Ok(Self::Instant(value.clone().try_into()?)),
-                AssetLockProofType::Chain => Ok(Self::Chain(value.clone().try_into()?)),
-            }
-        } else {
-            let map = value.as_map().ok_or(ProtocolError::DecodingError(
-                "error decoding asset lock proof".to_string(),
-            ))?;
-            let (key, asset_lock_value) = map.first().ok_or(ProtocolError::DecodingError(
-                "error decoding asset lock proof as it was empty".to_string(),
-            ))?;
-            match key.as_str().ok_or(ProtocolError::DecodingError(
-                "error decoding asset lock proof".to_string(),
-            ))? {
-                "Instant" => Ok(Self::Instant(asset_lock_value.clone().try_into()?)),
-                "Chain" => Ok(Self::Chain(asset_lock_value.clone().try_into()?)),
-                _ => Err(ProtocolError::DecodingError(
-                    "error decoding asset lock proof".to_string(),
-                )),
-            }
-        }
+        platform_value::from_value(value.clone()).map_err(ProtocolError::ValueError)
     }
 }
 
@@ -305,33 +286,7 @@ impl TryFrom<Value> for AssetLockProof {
     type Error = ProtocolError;
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
-        let proof_type_int: Option<u8> = value
-            .get_optional_integer("type")
-            .map_err(ProtocolError::ValueError)?;
-        if let Some(proof_type_int) = proof_type_int {
-            let proof_type = AssetLockProofType::try_from(proof_type_int)?;
-
-            match proof_type {
-                AssetLockProofType::Instant => Ok(Self::Instant(value.try_into()?)),
-                AssetLockProofType::Chain => Ok(Self::Chain(value.try_into()?)),
-            }
-        } else {
-            let map = value.as_map().ok_or(ProtocolError::DecodingError(
-                "error decoding asset lock proof".to_string(),
-            ))?;
-            let (key, asset_lock_value) = map.first().ok_or(ProtocolError::DecodingError(
-                "error decoding asset lock proof as it was empty".to_string(),
-            ))?;
-            match key.as_str().ok_or(ProtocolError::DecodingError(
-                "error decoding asset lock proof".to_string(),
-            ))? {
-                "Instant" => Ok(Self::Instant(asset_lock_value.clone().try_into()?)),
-                "Chain" => Ok(Self::Chain(asset_lock_value.clone().try_into()?)),
-                _ => Err(ProtocolError::DecodingError(
-                    "error decoding asset lock proof".to_string(),
-                )),
-            }
-        }
+        platform_value::from_value(value).map_err(ProtocolError::ValueError)
     }
 }
 
