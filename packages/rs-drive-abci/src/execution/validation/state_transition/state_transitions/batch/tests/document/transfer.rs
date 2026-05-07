@@ -1123,10 +1123,17 @@ mod transfer_tests {
         assert_eq!(query_receiver_results.documents().len(), 0);
     }
 
-    #[tokio::test]
-    async fn test_document_transfer_that_does_not_yet_exist() {
-        let platform_version = PlatformVersion::latest();
+    /// Helper for the paired transfer-of-missing-document test. Same scenario
+    /// at PROTOCOL_VERSION_11 (legacy bump-only fee) and PROTOCOL_VERSION_12
+    /// (fee covers fetch + validation work).
+    async fn run_document_transfer_that_does_not_yet_exist_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        expected_processing_fee: dpp::fee::Credits,
+    ) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let (mut platform, contract) = TestPlatformBuilder::new()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_initial_state_structure()
             .with_crypto_card_game_transfer_only(Transferable::Never);
@@ -1256,10 +1263,12 @@ mod transfer_tests {
 
         assert_eq!(processing_result.valid_count(), 0);
 
-        // Covers the fetch + ownership check that ran before the failure.
-        // Previously the failure path emitted no action and this work was
-        // charged as 0.
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 517400);
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            expected_processing_fee,
+            "PROTOCOL_VERSION_{}: processing fee must match the version-specific baseline",
+            protocol_version,
+        );
 
         let query_sender_results = platform
             .drive
@@ -1275,6 +1284,24 @@ mod transfer_tests {
         assert_eq!(query_sender_results.documents().len(), 0);
 
         assert_eq!(query_receiver_results.documents().len(), 0);
+    }
+
+    /// PROTOCOL_VERSION_12+: bump emission charges the user for the fetch
+    /// that ran before the failure.
+    #[tokio::test]
+    async fn test_document_transfer_that_does_not_yet_exist() {
+        run_document_transfer_that_does_not_yet_exist_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            517400,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_11: pre-fix bump-only fee. Pinned so v11 chain
+    /// history stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_document_transfer_that_does_not_yet_exist_protocol_version_11() {
+        run_document_transfer_that_does_not_yet_exist_at_protocol_version(11, 36200).await;
     }
 
     #[tokio::test]

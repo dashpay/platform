@@ -111,6 +111,13 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V8: DriveAbciValidationVersions =
                 state: 0,
                 revision: 0,
                 transform_into_action: 0,
+                // PROTOCOL_VERSION_12 (v3.1 hard fork): per-transition
+                // failure paths in `transform_document_transition` now emit
+                // a `BumpIdentityDataContractNonce` action so the user pays
+                // for the validation work that already ran (fetch +
+                // ownership/revision check). v0 stays for chain
+                // reproducibility on PROTOCOL_VERSION_11 and below.
+                failed_per_transition_action: 1,
                 data_triggers: DriveAbciValidationDataTriggerAndBindingVersions {
                     bindings: 0,
                     triggers: DriveAbciValidationDataTriggerVersions {

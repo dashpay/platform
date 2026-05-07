@@ -509,11 +509,17 @@ mod replacement_tests {
         .await;
     }
 
-    #[tokio::test]
-    async fn test_document_replace_on_document_type_that_is_not_mutable() {
-        let platform_version = PlatformVersion::latest();
+    /// Helper for the paired Replace-on-immutable-doc test. The same scenario
+    /// is exercised at PROTOCOL_VERSION_11 (legacy bump-only fee) and at
+    /// PROTOCOL_VERSION_12 (fee covers fetch + validation).
+    async fn run_document_replace_on_document_type_that_is_not_mutable_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        expected_processing_fee: dpp::fee::Credits,
+    ) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let mut platform = TestPlatformBuilder::new()
-            .with_latest_protocol_version()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_genesis_state();
 
@@ -651,10 +657,32 @@ mod replacement_tests {
 
         assert_eq!(processing_result.valid_count(), 0);
 
-        // Covers the document fetch + structure validation that ran before
-        // the failure. Previously the failure path emitted no action and this
-        // work was charged as 0; now the bump covers it.
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 445700);
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            expected_processing_fee,
+            "PROTOCOL_VERSION_{}: processing fee must match the version-specific baseline",
+            protocol_version,
+        );
+    }
+
+    /// PROTOCOL_VERSION_12+: bump emission charges the user for the fetch +
+    /// structure validation that ran before the failure.
+    #[tokio::test]
+    async fn test_document_replace_on_document_type_that_is_not_mutable() {
+        run_document_replace_on_document_type_that_is_not_mutable_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            445700,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_11: pre-fix bump-only fee (no charge for the fetch
+    /// + validation work). Pinned so v11 chain history stays bit-for-bit
+    /// reproducible.
+    #[tokio::test]
+    async fn test_document_replace_on_document_type_that_is_not_mutable_protocol_version_11() {
+        run_document_replace_on_document_type_that_is_not_mutable_at_protocol_version(11, 41880)
+            .await;
     }
 
     /// Pins the bump-emission contract on Replace's revision-mismatch path.
