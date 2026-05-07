@@ -509,11 +509,32 @@ mod replacement_tests {
         .await;
     }
 
-    #[tokio::test]
-    async fn test_document_replace_on_document_type_that_is_not_mutable() {
-        let platform_version = PlatformVersion::latest();
+    /// Issue #2867 — paired test: same scenario at v11 (preserved buggy
+    /// behavior) and v12 (architectural fix). The Replace targets an
+    /// immutable doc type, so per-transition validation fails with no
+    /// fallback action.
+    ///
+    /// On PROTOCOL_VERSION_11 (`expected_unpaid_consensus = false`):
+    /// the deprecated `merge_many`/`flatten` aggregators wrap the empty
+    /// per-transition results as `Some(empty_vec)` → empty
+    /// `BatchTransitionAction` → `PaidConsensusError` is recorded with a
+    /// 41880 bump-only fee, but the bump action's drive op is empty so
+    /// nothing actually advances. Tx stays in the block.
+    ///
+    /// On PROTOCOL_VERSION_12+ (`expected_unpaid_consensus = true`):
+    /// `flatten_strict`/`merge_many_strict` return `data: None`, downstream
+    /// `process_validation_result_v0:241` routes to `UnpaidConsensusError`,
+    /// `prepare_proposal:223` removes the tx from the block. No fee charged,
+    /// no chain bloat.
+    async fn run_document_replace_on_immutable_doc_type_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        expected_unpaid_consensus: bool,
+        expected_processing_fee: dpp::fee::Credits,
+    ) {
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected platform version");
         let mut platform = TestPlatformBuilder::new()
-            .with_latest_protocol_version()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_genesis_state();
 
@@ -645,13 +666,64 @@ mod replacement_tests {
             .unwrap()
             .expect("expected to commit transaction");
 
-        assert_eq!(processing_result.invalid_paid_count(), 1);
-
-        assert_eq!(processing_result.invalid_unpaid_count(), 0);
-
+        if expected_unpaid_consensus {
+            // PROTOCOL_VERSION_12+: architectural fix — strict aggregator
+            // surfaces the all-failed batch as data:None →
+            // UnpaidConsensusError → tx removed from block.
+            assert_eq!(
+                processing_result.invalid_unpaid_count(),
+                1,
+                "PROTOCOL_VERSION_{}: must surface as UnpaidConsensusError; \
+                 results: {:?}",
+                protocol_version,
+                processing_result.execution_results(),
+            );
+            assert_eq!(processing_result.invalid_paid_count(), 0);
+        } else {
+            // PROTOCOL_VERSION_11: preserved buggy behavior — empty action
+            // synthesised as PaidConsensusError, user charged for nothing.
+            assert_eq!(
+                processing_result.invalid_paid_count(),
+                1,
+                "PROTOCOL_VERSION_{}: must preserve historical \
+                 PaidConsensusError-with-empty-action shape; results: {:?}",
+                protocol_version,
+                processing_result.execution_results(),
+            );
+            assert_eq!(processing_result.invalid_unpaid_count(), 0);
+        }
         assert_eq!(processing_result.valid_count(), 0);
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            expected_processing_fee
+        );
+    }
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 41880);
+    /// PROTOCOL_VERSION_12+ (architectural fix active): all-failed Replace
+    /// batch surfaces as `UnpaidConsensusError`, no fee charged, tx will
+    /// be removed from the block by `prepare_proposal`. Issue #2867.
+    #[tokio::test]
+    async fn test_document_replace_on_document_type_that_is_not_mutable() {
+        run_document_replace_on_immutable_doc_type_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            true, // architectural fix active
+            0,    // no fee charged on UnpaidConsensus
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_11: preserved historical buggy behavior. Empty
+    /// `BatchTransitionAction` synthesised by the deprecated non-strict
+    /// aggregators → user pays the 41880 bump-only fee for no actual work.
+    /// Pinned so any accidental change to the deprecated aggregators
+    /// or v0 transformer surfaces here as a consensus break for v11.
+    #[tokio::test]
+    async fn test_document_replace_on_document_type_that_is_not_mutable_protocol_version_11() {
+        run_document_replace_on_immutable_doc_type_at_protocol_version(
+            11, false, // bug preserved: PaidConsensus with empty action
+            41880, // pre-fix bump-only fee
+        )
+        .await;
     }
 
     #[tokio::test]

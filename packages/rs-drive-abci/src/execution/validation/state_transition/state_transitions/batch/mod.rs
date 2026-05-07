@@ -33,6 +33,7 @@ use crate::rpc::core::CoreRPCLike;
 use crate::execution::validation::state_transition::batch::advanced_structure::v0::DocumentsBatchStateTransitionStructureValidationV0;
 use crate::execution::validation::state_transition::batch::identity_contract_nonce::v0::DocumentsBatchStateTransitionIdentityContractNonceV0;
 use crate::execution::validation::state_transition::batch::state::v0::DocumentsBatchStateTransitionStateValidationV0;
+use crate::execution::validation::state_transition::batch::transformer::v1::BatchTransitionActionTransformerV1;
 use crate::execution::validation::state_transition::processor::advanced_structure_with_state::StateTransitionStructureKnownInStateValidationV0;
 use crate::execution::validation::state_transition::processor::basic_structure::StateTransitionBasicStructureValidationV0;
 use crate::execution::validation::state_transition::processor::identity_nonces::StateTransitionIdentityNonceValidationV0;
@@ -75,9 +76,10 @@ impl StateTransitionActionTransformer for BatchTransition {
             .transform_into_action
         {
             0 => self.transform_into_action_v0(&platform.into(), block_info, validation_mode, tx),
+            1 => self.transform_into_action_v1(&platform.into(), block_info, validation_mode, tx),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "documents batch transition: transform_into_action".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

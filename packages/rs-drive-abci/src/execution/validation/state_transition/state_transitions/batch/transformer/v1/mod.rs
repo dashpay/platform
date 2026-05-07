@@ -1,10 +1,3 @@
-// v0 uses the now-deprecated `ConsensusValidationResult::flatten` /
-// `merge_many` aggregators. This is intentional: changing them to the
-// strict variants would alter PROTOCOL_VERSION_11 (and earlier) chain
-// behavior. v1 of this transformer (used by PROTOCOL_VERSION_12+) uses
-// the strict variants. See issue #2867.
-#![allow(deprecated)]
-
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -77,9 +70,9 @@ use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 
-pub(in crate::execution::validation::state_transition::state_transitions::batch) trait BatchTransitionTransformerV0
+pub(in crate::execution::validation::state_transition::state_transitions::batch) trait BatchTransitionTransformerV1
 {
-    fn try_into_action_v0(
+    fn try_into_action_v1(
         &self,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
@@ -89,9 +82,9 @@ pub(in crate::execution::validation::state_transition::state_transitions::batch)
     ) -> Result<ConsensusValidationResult<BatchTransitionAction>, Error>;
 }
 
-trait BatchTransitionInternalTransformerV0 {
+trait BatchTransitionInternalTransformerV1 {
     #[allow(clippy::too_many_arguments)]
-    fn transform_document_transitions_within_contract_v0(
+    fn transform_document_transitions_within_contract_v1(
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         full_validation: bool,
@@ -104,7 +97,7 @@ trait BatchTransitionInternalTransformerV0 {
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<Vec<BatchedTransitionAction>>, Error>;
     #[allow(clippy::too_many_arguments)]
-    fn transform_document_transitions_within_document_type_v0(
+    fn transform_document_transitions_within_document_type_v1(
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         full_validation: bool,
@@ -118,7 +111,7 @@ trait BatchTransitionInternalTransformerV0 {
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<Vec<BatchedTransitionAction>>, Error>;
     #[allow(clippy::too_many_arguments)]
-    fn transform_token_transitions_within_contract_v0(
+    fn transform_token_transitions_within_contract_v1(
         platform: &PlatformStateRef,
         data_contract_id: &Identifier,
         block_info: &BlockInfo,
@@ -132,7 +125,7 @@ trait BatchTransitionInternalTransformerV0 {
     ) -> Result<ConsensusValidationResult<Vec<BatchedTransitionAction>>, Error>;
     #[allow(clippy::too_many_arguments)]
     /// Transfer token transition
-    fn transform_token_transition_v0(
+    fn transform_token_transition_v1(
         drive: &Drive,
         transaction: TransactionArg,
         block_info: &BlockInfo,
@@ -146,7 +139,7 @@ trait BatchTransitionInternalTransformerV0 {
     ) -> Result<ConsensusValidationResult<BatchedTransitionAction>, Error>;
     /// The data contract can be of multiple difference versions
     #[allow(clippy::too_many_arguments)]
-    fn transform_document_transition_v0(
+    fn transform_document_transition_v1(
         drive: &Drive,
         transaction: TransactionArg,
         full_validation: bool,
@@ -159,24 +152,24 @@ trait BatchTransitionInternalTransformerV0 {
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<BatchedTransitionAction>, Error>;
-    fn find_replaced_document_v0<'a>(
+    fn find_replaced_document_v1<'a>(
         document_transition: &'a DocumentTransition,
         fetched_documents: &'a [Document],
     ) -> ConsensusValidationResult<&'a Document>;
-    fn check_ownership_of_old_replaced_document_v0(
+    fn check_ownership_of_old_replaced_document_v1(
         document_id: Identifier,
         fetched_document: &Document,
         owner_id: &Identifier,
     ) -> SimpleConsensusValidationResult;
-    fn check_revision_is_bumped_by_one_during_replace_v0(
+    fn check_revision_is_bumped_by_one_during_replace_v1(
         transition_revision: Revision,
         document_id: Identifier,
         original_document: &Document,
     ) -> SimpleConsensusValidationResult;
 }
 
-impl BatchTransitionTransformerV0 for BatchTransition {
-    fn try_into_action_v0(
+impl BatchTransitionTransformerV1 for BatchTransition {
+    fn try_into_action_v1(
         &self,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
@@ -240,7 +233,7 @@ impl BatchTransitionTransformerV0 for BatchTransition {
             .iter()
             .map(
                 |(data_contract_id, document_transitions_by_document_type)| {
-                    Self::transform_document_transitions_within_contract_v0(
+                    Self::transform_document_transitions_within_contract_v1(
                         platform,
                         block_info,
                         validate_against_state,
@@ -260,7 +253,7 @@ impl BatchTransitionTransformerV0 for BatchTransition {
         let mut validation_result_tokens = token_transitions_by_contracts
             .iter()
             .map(|(data_contract_id, token_transitions)| {
-                Self::transform_token_transitions_within_contract_v0(
+                Self::transform_token_transitions_within_contract_v1(
                     platform,
                     data_contract_id,
                     block_info,
@@ -280,7 +273,11 @@ impl BatchTransitionTransformerV0 for BatchTransition {
 
         validation_results.append(&mut validation_result_tokens);
 
-        let validation_result = ConsensusValidationResult::flatten(validation_results);
+        // Issue #2867: use the strict aggregator so an all-failed batch
+        // surfaces as data:None — the downstream
+        // process_validation_result_v0:241 then routes to UnpaidConsensusError
+        // instead of synthesising a paid empty BatchTransitionAction.
+        let validation_result = ConsensusValidationResult::flatten_strict(validation_results);
 
         if validation_result.has_data() {
             let (transitions, errors) = validation_result.into_data_and_errors()?;
@@ -302,8 +299,8 @@ impl BatchTransitionTransformerV0 for BatchTransition {
     }
 }
 
-impl BatchTransitionInternalTransformerV0 for BatchTransition {
-    fn transform_token_transitions_within_contract_v0(
+impl BatchTransitionInternalTransformerV1 for BatchTransition {
+    fn transform_token_transitions_within_contract_v1(
         platform: &PlatformStateRef,
         data_contract_id: &Identifier,
         block_info: &BlockInfo,
@@ -338,7 +335,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
         let validation_result = token_transitions
             .iter()
             .map(|token_transition| {
-                Self::transform_token_transition_v0(
+                Self::transform_token_transition_v1(
                     platform.drive,
                     transaction,
                     block_info,
@@ -352,10 +349,12 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 )
             })
             .collect::<Result<Vec<ConsensusValidationResult<BatchedTransitionAction>>, Error>>()?;
-        let validation_result = ConsensusValidationResult::merge_many(validation_result);
+        // Issue #2867: strict variant returns data:None when no token
+        // transition produced an action.
+        let validation_result = ConsensusValidationResult::merge_many_strict(validation_result);
         Ok(validation_result)
     }
-    fn transform_document_transitions_within_contract_v0(
+    fn transform_document_transitions_within_contract_v1(
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         validate_against_state: bool,
@@ -390,7 +389,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
         let validation_result = document_transitions
             .iter()
             .map(|(document_type_name, document_transitions)| {
-                Self::transform_document_transitions_within_document_type_v0(
+                Self::transform_document_transitions_within_document_type_v1(
                     platform,
                     block_info,
                     validate_against_state,
@@ -406,10 +405,11 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
             })
             .collect::<Result<Vec<ConsensusValidationResult<Vec<BatchedTransitionAction>>>, Error>>(
             )?;
-        Ok(ConsensusValidationResult::flatten(validation_result))
+        // Issue #2867: strict variant.
+        Ok(ConsensusValidationResult::flatten_strict(validation_result))
     }
 
-    fn transform_document_transitions_within_document_type_v0(
+    fn transform_document_transitions_within_document_type_v1(
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         validate_against_state: bool,
@@ -483,7 +483,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 .iter()
                 .map(|transition| {
                     // we validate every transition in this document type
-                    Self::transform_document_transition_v0(
+                    Self::transform_document_transition_v1(
                         platform.drive,
                         transaction,
                         validate_against_state,
@@ -500,7 +500,10 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 .collect::<Result<Vec<ConsensusValidationResult<BatchedTransitionAction>>, Error>>(
                 )?;
 
-            let result = ConsensusValidationResult::merge_many(
+            // Issue #2867: strict variant returns data:None when no
+            // per-transition validation produced an action — propagates
+            // through to UnpaidConsensusError downstream.
+            let result = ConsensusValidationResult::merge_many_strict(
                 document_transition_actions_validation_result,
             );
 
@@ -514,7 +517,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
     }
 
     /// The data contract can be of multiple difference versions
-    fn transform_token_transition_v0(
+    fn transform_token_transition_v1(
         drive: &Drive,
         transaction: TransactionArg,
         block_info: &BlockInfo,
@@ -645,7 +648,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
     }
 
     /// The data contract can be of multiple difference versions
-    fn transform_document_transition_v0<'a>(
+    fn transform_document_transition_v1<'a>(
         drive: &Drive,
         transaction: TransactionArg,
         validate_against_state: bool,
@@ -674,7 +677,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 let mut result = ConsensusValidationResult::<BatchedTransitionAction>::new();
 
                 let validation_result =
-                    Self::find_replaced_document_v0(transition, replaced_documents);
+                    Self::find_replaced_document_v1(transition, replaced_documents);
 
                 if !validation_result.is_valid_with_data() {
                     // We can set the user fee increase to 0 here because it is decided by the Documents Batch instead
@@ -695,7 +698,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
 
                 let original_document = validation_result.into_data()?;
 
-                let validation_result = Self::check_ownership_of_old_replaced_document_v0(
+                let validation_result = Self::check_ownership_of_old_replaced_document_v1(
                     document_replace_transition.base().id(),
                     original_document,
                     &owner_id,
@@ -710,7 +713,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     //there are situations where we don't want to validate this against the state
                     // for example when we already applied the state transition action
                     // and we are just validating it happened
-                    let validation_result = Self::check_revision_is_bumped_by_one_during_replace_v0(
+                    let validation_result = Self::check_revision_is_bumped_by_one_during_replace_v1(
                         document_replace_transition.revision(),
                         document_replace_transition.base().id(),
                         original_document,
@@ -755,7 +758,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 let mut result = ConsensusValidationResult::<BatchedTransitionAction>::new();
 
                 let validation_result =
-                    Self::find_replaced_document_v0(transition, replaced_documents);
+                    Self::find_replaced_document_v1(transition, replaced_documents);
 
                 if !validation_result.is_valid_with_data() {
                     result.merge(validation_result);
@@ -764,7 +767,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
 
                 let original_document = validation_result.into_data()?;
 
-                let validation_result = Self::check_ownership_of_old_replaced_document_v0(
+                let validation_result = Self::check_ownership_of_old_replaced_document_v1(
                     document_transfer_transition.base().id(),
                     original_document,
                     &owner_id,
@@ -779,7 +782,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     //there are situations where we don't want to validate this against the state
                     // for example when we already applied the state transition action
                     // and we are just validating it happened
-                    let validation_result = Self::check_revision_is_bumped_by_one_during_replace_v0(
+                    let validation_result = Self::check_revision_is_bumped_by_one_during_replace_v1(
                         document_transfer_transition.revision(),
                         document_transfer_transition.base().id(),
                         original_document,
@@ -814,7 +817,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 let mut result = ConsensusValidationResult::<BatchedTransitionAction>::new();
 
                 let validation_result =
-                    Self::find_replaced_document_v0(transition, replaced_documents);
+                    Self::find_replaced_document_v1(transition, replaced_documents);
 
                 if !validation_result.is_valid_with_data() {
                     result.merge(validation_result);
@@ -823,7 +826,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
 
                 let original_document = validation_result.into_data()?;
 
-                let validation_result = Self::check_ownership_of_old_replaced_document_v0(
+                let validation_result = Self::check_ownership_of_old_replaced_document_v1(
                     document_update_price_transition.base().id(),
                     original_document,
                     &owner_id,
@@ -838,7 +841,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     //there are situations where we don't want to validate this against the state
                     // for example when we already applied the state transition action
                     // and we are just validating it happened
-                    let validation_result = Self::check_revision_is_bumped_by_one_during_replace_v0(
+                    let validation_result = Self::check_revision_is_bumped_by_one_during_replace_v1(
                         document_update_price_transition.revision(),
                         document_update_price_transition.base().id(),
                         original_document,
@@ -873,7 +876,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 let mut result = ConsensusValidationResult::<BatchedTransitionAction>::new();
 
                 let validation_result =
-                    Self::find_replaced_document_v0(transition, replaced_documents);
+                    Self::find_replaced_document_v1(transition, replaced_documents);
 
                 if !validation_result.is_valid_with_data() {
                     result.merge(validation_result);
@@ -907,7 +910,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     //there are situations where we don't want to validate this against the state
                     // for example when we already applied the state transition action
                     // and we are just validating it happened
-                    let validation_result = Self::check_revision_is_bumped_by_one_during_replace_v0(
+                    let validation_result = Self::check_revision_is_bumped_by_one_during_replace_v1(
                         document_purchase_transition.revision(),
                         document_purchase_transition.base().id(),
                         original_document,
@@ -942,7 +945,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
         }
     }
 
-    fn find_replaced_document_v0<'a>(
+    fn find_replaced_document_v1<'a>(
         document_transition: &'a DocumentTransition,
         fetched_documents: &'a [Document],
     ) -> ConsensusValidationResult<&'a Document> {
@@ -961,7 +964,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
         }
     }
 
-    fn check_ownership_of_old_replaced_document_v0(
+    fn check_ownership_of_old_replaced_document_v1(
         document_id: Identifier,
         fetched_document: &Document,
         owner_id: &Identifier,
@@ -978,7 +981,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
         }
         result
     }
-    fn check_revision_is_bumped_by_one_during_replace_v0(
+    fn check_revision_is_bumped_by_one_during_replace_v1(
         transition_revision: Revision,
         document_id: Identifier,
         original_document: &Document,
@@ -1009,5 +1012,59 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
             ))
         }
         result
+    }
+}
+
+/// Public wrapper used by `BatchTransition::transform_into_action` dispatcher
+/// when `platform_version.…batch_state_transition.transform_into_action == 1`.
+/// Mirrors `transform_into_action_v0` in `batch/state/v0/mod.rs:323` but
+/// routes through the v1 transformer, which uses
+/// [`ConsensusValidationResult::flatten_strict`] /
+/// [`ConsensusValidationResult::merge_many_strict`] in place of the
+/// deprecated non-strict aggregators. This closes issue #2867's
+/// "validating state transition for free" gap: when no per-transition
+/// validation contributes an action, the result carries `data: None` and
+/// downstream `process_validation_result_v0:241` routes to
+/// `UnpaidConsensusError` (tx removed from block by prepare_proposal)
+/// instead of synthesising a paid empty `BatchTransitionAction`.
+pub(in crate::execution::validation::state_transition::state_transitions::batch) trait BatchTransitionActionTransformerV1
+{
+    fn transform_into_action_v1(
+        &self,
+        platform: &PlatformStateRef,
+        block_info: &BlockInfo,
+        validation_mode: crate::execution::validation::state_transition::ValidationMode,
+        tx: TransactionArg,
+    ) -> Result<
+        ConsensusValidationResult<drive::state_transition_action::StateTransitionAction>,
+        Error,
+    >;
+}
+
+impl BatchTransitionActionTransformerV1 for BatchTransition {
+    fn transform_into_action_v1(
+        &self,
+        platform: &PlatformStateRef,
+        block_info: &BlockInfo,
+        validation_mode: crate::execution::validation::state_transition::ValidationMode,
+        tx: TransactionArg,
+    ) -> Result<
+        ConsensusValidationResult<drive::state_transition_action::StateTransitionAction>,
+        Error,
+    > {
+        let platform_version = platform.state.current_platform_version()?;
+
+        let mut execution_context =
+            <StateTransitionExecutionContext as dpp::version::DefaultForPlatformVersion>::default_for_platform_version(platform_version)?;
+
+        let validation_result = self.try_into_action_v1(
+            platform,
+            block_info,
+            validation_mode.should_validate_batch_valid_against_state(),
+            tx,
+            &mut execution_context,
+        )?;
+
+        Ok(validation_result.map(Into::into))
     }
 }

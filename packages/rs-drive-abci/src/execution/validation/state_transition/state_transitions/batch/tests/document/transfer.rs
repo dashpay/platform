@@ -1123,10 +1123,19 @@ mod transfer_tests {
         assert_eq!(query_receiver_results.documents().len(), 0);
     }
 
-    #[tokio::test]
-    async fn test_document_transfer_that_does_not_yet_exist() {
-        let platform_version = PlatformVersion::latest();
+    /// Issue #2867 paired test (helper). Same scenario across protocol
+    /// versions: Transfer a non-existent document → all-failed batch.
+    /// v11 = `PaidConsensusError` with empty action (bug); v12 =
+    /// `UnpaidConsensusError` (architectural fix).
+    async fn run_document_transfer_that_does_not_yet_exist_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        expected_unpaid_consensus: bool,
+        expected_processing_fee: dpp::fee::Credits,
+    ) {
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected platform version");
         let (mut platform, contract) = TestPlatformBuilder::new()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_initial_state_structure()
             .with_crypto_card_game_transfer_only(Transferable::Never);
@@ -1250,13 +1259,30 @@ mod transfer_tests {
             .unwrap()
             .expect("expected to commit transaction");
 
-        assert_eq!(processing_result.invalid_paid_count(), 1);
-
-        assert_eq!(processing_result.invalid_unpaid_count(), 0);
+        if expected_unpaid_consensus {
+            assert_eq!(
+                processing_result.invalid_unpaid_count(),
+                1,
+                "PROTOCOL_VERSION_{}: must surface as UnpaidConsensusError",
+                protocol_version,
+            );
+            assert_eq!(processing_result.invalid_paid_count(), 0);
+        } else {
+            assert_eq!(
+                processing_result.invalid_paid_count(),
+                1,
+                "PROTOCOL_VERSION_{}: must preserve historical PaidConsensusError shape",
+                protocol_version,
+            );
+            assert_eq!(processing_result.invalid_unpaid_count(), 0);
+        }
 
         assert_eq!(processing_result.valid_count(), 0);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 36200);
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            expected_processing_fee
+        );
 
         let query_sender_results = platform
             .drive
@@ -1272,6 +1298,27 @@ mod transfer_tests {
         assert_eq!(query_sender_results.documents().len(), 0);
 
         assert_eq!(query_receiver_results.documents().len(), 0);
+    }
+
+    /// PROTOCOL_VERSION_12+ (architectural fix active).
+    #[tokio::test]
+    async fn test_document_transfer_that_does_not_yet_exist() {
+        run_document_transfer_that_does_not_yet_exist_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            true, // architectural fix active
+            0,    // no fee charged on UnpaidConsensus
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_11: preserved historical buggy behavior.
+    #[tokio::test]
+    async fn test_document_transfer_that_does_not_yet_exist_protocol_version_11() {
+        run_document_transfer_that_does_not_yet_exist_at_protocol_version(
+            11, false, // bug preserved
+            36200, // pre-fix bump-only fee
+        )
+        .await;
     }
 
     #[tokio::test]
