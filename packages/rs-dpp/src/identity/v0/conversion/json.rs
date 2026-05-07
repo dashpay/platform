@@ -1,6 +1,6 @@
 use crate::identity::conversion::json::IdentityJsonConversionMethodsV0;
-use crate::identity::conversion::platform_value::IdentityPlatformValueConversionMethodsV0;
 use crate::identity::{identity_public_key, IdentityV0, IDENTIFIER_FIELDS_RAW_OBJECT};
+use crate::serialization::ValueConvertible;
 use crate::ProtocolError;
 use platform_value::{ReplacementType, Value};
 use serde_json::Value as JsonValue;
@@ -8,13 +8,17 @@ use std::convert::TryInto;
 
 impl IdentityJsonConversionMethodsV0 for IdentityV0 {
     fn to_json_object(&self) -> Result<JsonValue, ProtocolError> {
-        self.to_cleaned_object()?
+        // After Phase D step 4, `disabledAt: null` is stripped by the
+        // `skip_serializing_if` attribute on `IdentityPublicKeyV0::disabled_at`,
+        // so `to_object` produces the same shape that `to_cleaned_object`
+        // used to. Routing through canonical `ValueConvertible::to_object`.
+        self.to_object()?
             .try_into_validating_json()
             .map_err(ProtocolError::ValueError)
     }
 
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        self.to_cleaned_object()?
+        self.to_object()?
             .try_into()
             .map_err(ProtocolError::ValueError)
     }

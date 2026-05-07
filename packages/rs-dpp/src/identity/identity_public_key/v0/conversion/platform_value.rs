@@ -10,15 +10,6 @@ impl IdentityPublicKeyPlatformValueConversionMethodsV0 for IdentityPublicKeyV0 {
         platform_value::to_value(self).map_err(ProtocolError::ValueError)
     }
 
-    fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
-        // After Phase D step 4, `disabled_at` carries
-        // `#[serde(skip_serializing_if = "Option::is_none")]`, so the
-        // serde-driven `to_value` path already strips `disabledAt: null`.
-        // Pure delegation now, kept for trait-surface compatibility
-        // (scheduled for deletion in step 5).
-        self.to_object()
-    }
-
     fn into_object(self) -> Result<Value, ProtocolError> {
         platform_value::to_value(self).map_err(ProtocolError::ValueError)
     }
@@ -87,19 +78,22 @@ mod tests {
         assert_eq!(roundtripped, key);
     }
 
+    // After Phase D step 4, `to_object` itself strips `disabledAt: null`
+    // for non-disabled keys via `#[serde(skip_serializing_if = "Option::is_none")]`.
+    // The dedicated `to_cleaned_object` method has been deleted.
     #[test]
-    fn to_cleaned_object_removes_disabled_at_when_none() {
+    fn to_object_removes_disabled_at_when_none() {
         let key = sample_v0(None);
-        let cleaned = key.to_cleaned_object().expect("to_cleaned_object");
-        let map = cleaned.to_map().expect("expected a map");
+        let value = key.to_object().expect("to_object");
+        let map = value.to_map().expect("expected a map");
         assert!(!map.iter().any(|(k, _)| k.as_text() == Some("disabledAt")));
     }
 
     #[test]
-    fn to_cleaned_object_keeps_disabled_at_when_some() {
+    fn to_object_keeps_disabled_at_when_some() {
         let key = sample_v0(Some(42));
-        let cleaned = key.to_cleaned_object().expect("to_cleaned_object");
-        let map = cleaned.to_map().expect("expected a map");
+        let value = key.to_object().expect("to_object");
+        let map = value.to_map().expect("expected a map");
         assert!(map.iter().any(|(k, _)| k.as_text() == Some("disabledAt")));
     }
 

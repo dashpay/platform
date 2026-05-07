@@ -391,11 +391,17 @@ impl IdentityPublicKeyWasm {
 
     /// Serialize to JS object (non-human-readable).
     ///
-    /// Uses platform_value conversion which properly handles the tagged enum
-    /// and removes None fields like disabledAt.
+    /// Uses platform_value conversion which properly handles the tagged enum.
+    /// `disabledAt: null` is stripped automatically by the
+    /// `skip_serializing_if` attribute on the rs-dpp side.
     #[wasm_bindgen(js_name = "toObject")]
     pub fn to_object(&self) -> WasmDppResult<IdentityPublicKeyObjectJs> {
-        let value = self.0.to_cleaned_object().map_err(WasmDppError::from)?;
+        // Disambiguate: both canonical `ValueConvertible::to_object` and the
+        // legacy `IdentityPublicKeyPlatformValueConversionMethodsV0::to_object`
+        // are in scope. The canonical one produces the same shape — explicit
+        // call so we route through it.
+        use dpp::serialization::ValueConvertible;
+        let value = ValueConvertible::to_object(&self.0).map_err(WasmDppError::from)?;
         let js_value = serialization::platform_value_to_object(&value)?;
         Ok(js_value.into())
     }

@@ -13,12 +13,6 @@ impl IdentityPublicKeyPlatformValueConversionMethodsV0 for IdentityPublicKey {
         }
     }
 
-    fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
-        match self {
-            IdentityPublicKey::V0(key) => key.to_cleaned_object(),
-        }
-    }
-
     fn into_object(self) -> Result<Value, ProtocolError> {
         match self {
             IdentityPublicKey::V0(key) => key.into_object(),
@@ -75,10 +69,14 @@ mod tests {
     }
 
     #[test]
-    fn to_cleaned_object_removes_disabled_at_when_none() {
+    fn to_object_strips_disabled_at_when_none() {
+        // After Phase D step 4, the `skip_serializing_if` attribute on
+        // `IdentityPublicKeyV0::disabled_at` strips the field for
+        // non-disabled keys directly via the canonical `to_object` path.
+        // The dedicated `to_cleaned_object` method has been deleted.
         let key = wrapper(None);
-        let cleaned = key.to_cleaned_object().expect("to_cleaned_object");
-        let map = cleaned.to_map().expect("map");
+        let value = key.to_object().expect("to_object");
+        let map = value.to_map().expect("map");
         assert!(!map.iter().any(|(k, _)| k.as_text() == Some("disabledAt")));
     }
 

@@ -10,13 +10,15 @@ use std::convert::{TryFrom, TryInto};
 
 impl IdentityPublicKeyJsonConversionMethodsV0 for IdentityPublicKeyV0 {
     fn to_json_object(&self) -> Result<JsonValue, ProtocolError> {
-        self.to_cleaned_object()?
+        // After Phase D step 4, `disabled_at` carries `skip_serializing_if`,
+        // so `to_object` produces the cleaned shape directly.
+        self.to_object()?
             .try_into_validating_json()
             .map_err(ProtocolError::ValueError)
     }
 
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        self.to_cleaned_object()?
+        self.to_object()?
             .try_into()
             .map_err(ProtocolError::ValueError)
     }
