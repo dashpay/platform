@@ -681,13 +681,16 @@ macro_rules! impl_wasm_conversions_inner {
 }
 
 /// Macro to implement `toObject`, `fromObject`, `toJSON`, and `fromJSON` methods
-/// for a wasm_bindgen type that implements `Serialize` and `DeserializeOwned`.
+/// for a wasm-only DTO that has `#[derive(Serialize, Deserialize)]` directly.
 ///
-/// Serializes the wasm wrapper directly via **serde** (`#[serde(transparent)]`).
-/// Use this as a fallback when the inner type does NOT have
-/// `JsonConvertible + ValueConvertible` trait impls.
+/// Use this for wasm wrappers that decompose an rs-dpp enum variant into a
+/// named-field struct (e.g., spreading `StateTransitionProofResult::Verified...`
+/// tuple variants into per-variant JS classes), where there is no rs-dpp
+/// domain type to delegate to.
 ///
-/// Prefer [`impl_wasm_conversions_inner!`] when trait impls are available.
+/// For wasm wrappers around an rs-dpp domain type that has
+/// `JsonConvertible + ValueConvertible`, use [`impl_wasm_conversions_inner!`]
+/// instead — it delegates to the canonical traits and is the preferred path.
 ///
 /// # Usage
 ///

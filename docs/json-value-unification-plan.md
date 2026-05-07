@@ -560,10 +560,40 @@ The five Critical findings in §3.0 are real but most surface naturally during P
 - ⬜ For each "KEEP-AS-EXCEPTION" mechanism: document why
 
 ### Phase E — WASM cleanup (wasm-dpp2 only — wasm-dpp legacy is left alone)
-- ⬜ Migrate every `_serde!` call site in **wasm-dpp2** to `_inner!`
-- ⬜ Once zero callers remain in wasm-dpp2, delete `impl_wasm_conversions_serde!` macro entirely
-- ⬜ Add wasm-dpp2 spec round-trip tests for any newly-migrated wrappers
-- ⬜ **wasm-dpp (legacy)**: only patch enough to keep it compiling — no `_serde!`/`_inner!` migration there
+- ✅ **Phase 1** — migrated 15 `_serde!` callers wrapping rs-dpp domain types
+  to `_inner!` (commits in this branch: `shielded/*`, `asset_lock_proof/*`,
+  `tokens/contract_info`, `state_transitions/batch/token_payment_info`, 6 ×
+  `platform_address/transitions/`, `IdentityCreditTransferToAddresses`,
+  `SerializedOrchardAction`).
+- ❌ **"Delete `_serde!` macro entirely" — infeasible without major refactor.**
+  Audit (May 2026) of the remaining 17 callers confirmed all are wasm-only
+  DTOs in `state_transitions/proof_result/` that decompose
+  `StateTransitionProofResult` tuple variants (e.g., `VerifiedBalanceTransfer
+  (PartialIdentity, PartialIdentity)`) into named-field JS classes
+  (`{ sender, recipient }`). They have **no rs-dpp counterpart** that could
+  provide `JsonConvertible`/`ValueConvertible` impls. Migration would
+  require inventing 17 new rs-dpp types just for proof-result decomposition
+  — significant churn with no reuse outside the wasm boundary.
+- ✅ **Macro doc updated** to reflect this is the canonical path for wasm-only
+  DTOs (not a "fallback awaiting migration").
+- ✅ **Manual `Serialize`/`Deserialize` impls audit** (`IdentifierWasm`,
+  `PlatformAddressWasm`): both are intentional JS-interop adapters
+  (`visit_seq` for Uint8Array, `visit_map` for `{type, data}` JS quirks).
+  NOT backport candidates — rs-dpp's strict canonical wire format is by
+  design; loosening it would weaken the canonical contract.
+- ✅ **Manual `to_*`/`from_*` methods audit** (Identity, Document,
+  DataContract, VerifiedTokenIdentitiesBalances, VerifiedShieldedNullifiers):
+  all carry context (`platform_version`, `data_contract`) or wrap
+  `js_sys::Map` directly — legitimate wasm-side extensions that the trait
+  signatures don't accommodate.
+- ⬜ **wasm-dpp (legacy)**: only patch enough to keep it compiling — no
+  `_serde!`/`_inner!` migration there.
+
+#### Small follow-up (separate PR)
+- Backport candidate: extend rs-dpp's `serde_bytes` (currently `[u8; N]`-only)
+  with a `Vec<u8>` flavor, OR delete wasm-dpp2's `bytes_b64` module and
+  switch its single user (`document/model.rs:108`) to platform_value's
+  `BinaryData`. Trivial cleanup.
 
 ### Phase F — Tighten
 - ⬜ Add a CI grep that fails on new `to_object`/`to_json` inherent method introduction
