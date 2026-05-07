@@ -1256,7 +1256,11 @@ mod transfer_tests {
 
         assert_eq!(processing_result.valid_count(), 0);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 36200);
+        // Fee bumped from 36200 in PROTOCOL_VERSION_12 — issue #2867 fix: the
+        // Transfer find-replaced-document failure path now emits a bump action
+        // (previously dropped, leaking nonce-replay risk). Cost covers the
+        // fetch+validation work that was already happening.
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 517400);
 
         let query_sender_results = platform
             .drive

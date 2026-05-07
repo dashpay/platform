@@ -664,7 +664,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 Ok(document_create_action)
             }
             DocumentTransition::Replace(document_replace_transition) => {
-                let mut result = ConsensusValidationResult::<BatchedTransitionAction>::new();
+                let result = ConsensusValidationResult::<BatchedTransitionAction>::new();
 
                 let validation_result =
                     Self::find_replaced_document_v0(transition, replaced_documents);
@@ -695,8 +695,19 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 );
 
                 if !validation_result.is_valid() {
-                    result.merge(validation_result);
-                    return Ok(result);
+                    // Emit a bump action so the identity_contract_nonce advances even
+                    // when ownership doesn't match. Without this, the same exact bytes
+                    // could be replayed forever — see issue #2867.
+                    let bump_action =
+                        BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition(
+                            document_replace_transition.base(),
+                            owner_id,
+                            0,
+                        );
+                    return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                        BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action),
+                        validation_result.errors,
+                    ));
                 }
 
                 if validate_against_state {
@@ -710,8 +721,20 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     );
 
                     if !validation_result.is_valid() {
-                        result.merge(validation_result);
-                        return Ok(result);
+                        // Emit a bump action so the identity_contract_nonce advances even
+                        // when the revision doesn't bump by one. Without this, out-of-order
+                        // SDK retries can replay the same bytes across multiple blocks —
+                        // see issue #2867 (mainnet 35C0…313C, 2026-05-04).
+                        let bump_action =
+                            BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition(
+                                document_replace_transition.base(),
+                                owner_id,
+                                0,
+                            );
+                        return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                            BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action),
+                            validation_result.errors,
+                        ));
                     }
                 }
 
@@ -745,14 +768,24 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 Ok(batched_action)
             }
             DocumentTransition::Transfer(document_transfer_transition) => {
-                let mut result = ConsensusValidationResult::<BatchedTransitionAction>::new();
+                let result = ConsensusValidationResult::<BatchedTransitionAction>::new();
 
                 let validation_result =
                     Self::find_replaced_document_v0(transition, replaced_documents);
 
                 if !validation_result.is_valid_with_data() {
-                    result.merge(validation_result);
-                    return Ok(result);
+                    // Emit a bump action so the identity_contract_nonce advances even
+                    // when the target document is missing — see issue #2867.
+                    let bump_action =
+                        BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition(
+                            document_transfer_transition.base(),
+                            owner_id,
+                            0,
+                        );
+                    return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                        BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action),
+                        validation_result.errors,
+                    ));
                 }
 
                 let original_document = validation_result.into_data()?;
@@ -764,8 +797,16 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 );
 
                 if !validation_result.is_valid() {
-                    result.merge(validation_result);
-                    return Ok(result);
+                    let bump_action =
+                        BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition(
+                            document_transfer_transition.base(),
+                            owner_id,
+                            0,
+                        );
+                    return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                        BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action),
+                        validation_result.errors,
+                    ));
                 }
 
                 if validate_against_state {
@@ -779,8 +820,16 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     );
 
                     if !validation_result.is_valid() {
-                        result.merge(validation_result);
-                        return Ok(result);
+                        let bump_action =
+                            BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition(
+                                document_transfer_transition.base(),
+                                owner_id,
+                                0,
+                            );
+                        return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                            BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action),
+                            validation_result.errors,
+                        ));
                     }
                 }
 
@@ -804,14 +853,24 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 }
             }
             DocumentTransition::UpdatePrice(document_update_price_transition) => {
-                let mut result = ConsensusValidationResult::<BatchedTransitionAction>::new();
+                let result = ConsensusValidationResult::<BatchedTransitionAction>::new();
 
                 let validation_result =
                     Self::find_replaced_document_v0(transition, replaced_documents);
 
                 if !validation_result.is_valid_with_data() {
-                    result.merge(validation_result);
-                    return Ok(result);
+                    // Emit a bump action so the identity_contract_nonce advances even
+                    // when the target document is missing — see issue #2867.
+                    let bump_action =
+                        BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition(
+                            document_update_price_transition.base(),
+                            owner_id,
+                            0,
+                        );
+                    return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                        BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action),
+                        validation_result.errors,
+                    ));
                 }
 
                 let original_document = validation_result.into_data()?;
@@ -823,8 +882,16 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 );
 
                 if !validation_result.is_valid() {
-                    result.merge(validation_result);
-                    return Ok(result);
+                    let bump_action =
+                        BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition(
+                            document_update_price_transition.base(),
+                            owner_id,
+                            0,
+                        );
+                    return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                        BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action),
+                        validation_result.errors,
+                    ));
                 }
 
                 if validate_against_state {
@@ -838,8 +905,16 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     );
 
                     if !validation_result.is_valid() {
-                        result.merge(validation_result);
-                        return Ok(result);
+                        let bump_action =
+                            BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition(
+                                document_update_price_transition.base(),
+                                owner_id,
+                                0,
+                            );
+                        return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                            BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action),
+                            validation_result.errors,
+                        ));
                     }
                 }
 
@@ -863,14 +938,24 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 }
             }
             DocumentTransition::Purchase(document_purchase_transition) => {
-                let mut result = ConsensusValidationResult::<BatchedTransitionAction>::new();
+                let result = ConsensusValidationResult::<BatchedTransitionAction>::new();
 
                 let validation_result =
                     Self::find_replaced_document_v0(transition, replaced_documents);
 
                 if !validation_result.is_valid_with_data() {
-                    result.merge(validation_result);
-                    return Ok(result);
+                    // Emit a bump action so the identity_contract_nonce advances even
+                    // when the target document is missing — see issue #2867.
+                    let bump_action =
+                        BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition(
+                            document_purchase_transition.base(),
+                            owner_id,
+                            0,
+                        );
+                    return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                        BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action),
+                        validation_result.errors,
+                    ));
                 }
 
                 let original_document = validation_result.into_data()?;
@@ -879,21 +964,39 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     .properties()
                     .get_optional_integer::<Credits>(PRICE)?
                 else {
-                    result.add_error(StateError::DocumentNotForSaleError(
-                        DocumentNotForSaleError::new(original_document.id()),
+                    let bump_action =
+                        BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition(
+                            document_purchase_transition.base(),
+                            owner_id,
+                            0,
+                        );
+                    return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                        BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action),
+                        vec![StateError::DocumentNotForSaleError(
+                            DocumentNotForSaleError::new(original_document.id()),
+                        )
+                        .into()],
                     ));
-                    return Ok(result);
                 };
 
                 if listed_price != document_purchase_transition.price() {
-                    result.add_error(StateError::DocumentIncorrectPurchasePriceError(
-                        DocumentIncorrectPurchasePriceError::new(
-                            original_document.id(),
-                            document_purchase_transition.price(),
-                            listed_price,
-                        ),
+                    let bump_action =
+                        BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition(
+                            document_purchase_transition.base(),
+                            owner_id,
+                            0,
+                        );
+                    return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                        BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action),
+                        vec![StateError::DocumentIncorrectPurchasePriceError(
+                            DocumentIncorrectPurchasePriceError::new(
+                                original_document.id(),
+                                document_purchase_transition.price(),
+                                listed_price,
+                            ),
+                        )
+                        .into()],
                     ));
-                    return Ok(result);
                 }
 
                 if validate_against_state {
@@ -907,8 +1010,16 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     );
 
                     if !validation_result.is_valid() {
-                        result.merge(validation_result);
-                        return Ok(result);
+                        let bump_action =
+                            BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition(
+                                document_purchase_transition.base(),
+                                owner_id,
+                                0,
+                            );
+                        return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                            BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action),
+                            validation_result.errors,
+                        ));
                     }
                 }
 

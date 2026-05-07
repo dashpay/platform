@@ -651,7 +651,272 @@ mod replacement_tests {
 
         assert_eq!(processing_result.valid_count(), 0);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 41880);
+        // Fee bumped from the previous 41880 (bare bump-only) to 445700 in
+        // PROTOCOL_VERSION_12. Issue #2867 fix: the failure path now emits the
+        // bump after running the document fetch + validation work, so the fee
+        // covers that work — same drive ops, just charged correctly.
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 445700);
+    }
+
+    /// Regression test for issue #2867 (mainnet duplicate-tx escalation, 2026-05-04).
+    ///
+    /// Mainnet ST hash 35C0...313C — a Documents Batch Replace by Techawanka.dash
+    /// (6Pp1RFqRnpStnY8vmp5k3ypE6rFBvzPwcoguwDXbRA7F) — landed at block 361774 idx 1
+    /// as FAIL with gasUsed 41880, then re-appeared in a later block, panicking the
+    /// explorer indexer with `duplicate key value violates unique constraint
+    /// state_transition_hash`. The shape: nonce 4 ran successfully *before* nonce
+    /// 3 in the same block (out-of-order SDK retries), so when nonce 3's Replace
+    /// reached deliver_tx the doc revision had already advanced. The
+    /// revision-bump-by-one check in
+    /// batch/transformer/v0/mod.rs::check_revision_is_bumped_by_one_during_replace_v0
+    /// fails, and the surrounding handler (lines 712–715) returns `Ok(result)`
+    /// with errors-only and **no BumpIdentityDataContractNonce action** — unlike
+    /// the find_replaced_document_v0 path on the same enum arm (lines 672–686)
+    /// which DOES emit a bump.
+    ///
+    /// Consequence: the user pays the 41880 bump fee (because the empty
+    /// BatchTransitionAction still triggers PaidConsensusError accounting), but
+    /// the contract nonce IS NEVER ADVANCED in state. The exact same bytes can
+    /// then be re-broadcast indefinitely; each retry lands a new failed copy in
+    /// a new block, all sharing the same hash.
+    ///
+    /// What this test pins:
+    ///   1. After a Replace that fails the revision-bump-by-one check commits,
+    ///      the stored identity_contract_nonce MUST advance past the submitted
+    ///      nonce. (Direct invariant — fails fast on RED.)
+    ///   2. Re-submitting the same exact bytes through CheckTx FirstTimeCheck
+    ///      MUST be rejected with InvalidIdentityNonceError. (Symptom-level —
+    ///      this is what lklimek's Feb 10 2026 testnet debug log proved was
+    ///      broken.)
+    ///
+    /// Both assertions fail on v3.1-dev today; both should pass once the bump
+    /// is emitted on revision/ownership-mismatch paths in batch/transformer/v0.
+    #[tokio::test]
+    async fn replayed_failed_replace_with_consumed_nonce_must_be_rejected_at_check_tx() {
+        use crate::execution::check_tx::CheckTxLevel;
+        use crate::execution::validation::state_transition::check_tx_verification::state_transition_to_execution_event_for_check_tx;
+        use crate::platform_types::platform::PlatformRef;
+        use dpp::serialization::PlatformDeserializable;
+        use dpp::state_transition::StateTransition;
+
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(437);
+
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.5));
+
+        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay_contract = dashpay.clone();
+
+        // Use the mutable `profile` doc type — same contract-and-doc-type that
+        // mainnet 35C0 was operating on (DPNS-like profile-replace flow).
+        let profile = dashpay_contract
+            .document_type_for_name("profile")
+            .expect("expected a profile document type");
+        assert!(profile.documents_mutable());
+
+        let entropy = Bytes32::random_with_rng(&mut rng);
+        let mut document = profile
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+        // Random fillers can produce a non-URI avatarUrl that fails JSON-schema
+        // validation on Create. Pin it to a valid URI like the sibling tests do.
+        document.set("avatarUrl", "http://test.com/bob.jpg".into());
+        document.set("displayName", "Original".into());
+
+        // 1) Create at nonce 2 — consumes nonce 2; doc lands at revision 1.
+        let create_transition = BatchTransition::new_document_creation_transition_from_document(
+            document.clone(),
+            profile,
+            entropy.0,
+            &key,
+            2,
+            0,
+            None,
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected to build create transition");
+
+        let create_serialized = create_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize create");
+
+        let transaction = platform.drive.grove.start_transaction();
+        let create_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![create_serialized],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process create");
+        assert_eq!(create_result.valid_count(), 1);
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit create");
+
+        let (post_create_nonce_raw, _) = platform
+            .drive
+            .fetch_identity_contract_nonce_with_fees(
+                identity.id().to_buffer(),
+                dashpay_contract.id().to_buffer(),
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch contract nonce after create");
+        let post_create_nonce =
+            post_create_nonce_raw.expect("contract nonce must be present after create");
+
+        // 2) Build a Replace at nonce 3 with a revision the chain will reject.
+        //    Doc at revision 1 → expected revision 2 on replace. We submit
+        //    revision 3 → check_revision_is_bumped_by_one_during_replace_v0
+        //    returns InvalidDocumentRevisionError(Some(1), 3). On mainnet this
+        //    happened naturally because nonce 4 ran first and advanced the doc
+        //    revision past what nonce 3's tx expected.
+        let mut altered_document = document.clone();
+        altered_document.set_revision(Some(3));
+        altered_document.set("displayName", "Out of order".into());
+
+        let replace_transition = BatchTransition::new_document_replacement_transition_from_document(
+            altered_document,
+            profile,
+            &key,
+            3,
+            0,
+            None,
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected to build replace transition");
+
+        let replace_serialized = replace_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize replace");
+
+        let transaction = platform.drive.grove.start_transaction();
+        let replace_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![replace_serialized.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process replace");
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit failed replace");
+
+        assert_eq!(
+            replace_result.invalid_paid_count(),
+            1,
+            "Replace must commit as invalid_paid (PaidConsensusError); execution_results={:?}",
+            replace_result.execution_results()
+        );
+        assert_eq!(replace_result.valid_count(), 0);
+
+        // 3) Direct invariant: the bump must have advanced the contract nonce
+        //    in state. If the stored nonce is still post-create, the bump
+        //    silently dropped — that is the bug.
+        let (post_replace_nonce_raw, _) = platform
+            .drive
+            .fetch_identity_contract_nonce_with_fees(
+                identity.id().to_buffer(),
+                dashpay_contract.id().to_buffer(),
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch contract nonce after failed replace");
+        let post_replace_nonce =
+            post_replace_nonce_raw.expect("contract nonce must be present after failed replace");
+
+        assert_ne!(
+            post_replace_nonce, post_create_nonce,
+            "BUG: failed Replace's bump action did not advance the contract \
+             nonce. Stored nonce is still {:#x} (= post-create value), so the \
+             same exact serialized bytes can be replayed forever. \
+             Root cause: batch/transformer/v0/mod.rs:712-715 (and 697-700) \
+             return Ok(result) with errors-only and no BumpIdentityDataContractNonce \
+             action when check_revision_is_bumped_by_one_during_replace_v0 (or \
+             check_ownership_of_old_replaced_document_v0) fails — unlike the \
+             find_replaced_document_v0 failure path on the same arm (lines \
+             672-686) which does emit the bump.",
+            post_create_nonce
+        );
+
+        // 4) Symptom-level: re-submitting identical bytes through CheckTx
+        //    FirstTimeCheck must hit the nonce check first and reject. This is
+        //    exactly what lklimek's Feb 10 2026 testnet check_tx debug log
+        //    showed NOT happening.
+        let replayed_state_transition =
+            StateTransition::deserialize_from_bytes(&replace_serialized)
+                .expect("expected to deserialize replayed transition");
+
+        let platform_state = platform.state.load();
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
+
+        let check_tx_result = state_transition_to_execution_event_for_check_tx(
+            &platform_ref,
+            replayed_state_transition,
+            CheckTxLevel::FirstTimeCheck,
+            platform_version,
+        )
+        .expect("expected check_tx to not return an Err");
+
+        assert!(
+            !check_tx_result.is_valid(),
+            "CheckTx FirstTimeCheck MUST reject identical bytes after the \
+             failed-Replace bump consumed the nonce — it accepted them on \
+             testnet on 2026-02-10."
+        );
+        assert!(
+            check_tx_result.errors.iter().any(|e| matches!(
+                e,
+                ConsensusError::StateError(StateError::InvalidIdentityNonceError(_))
+            )),
+            "expected InvalidIdentityNonceError on replay; got {:?}",
+            check_tx_result.errors
+        );
     }
 
     #[tokio::test]

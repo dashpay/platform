@@ -2788,7 +2788,11 @@ mod nft_tests {
 
         assert_eq!(processing_result.valid_count(), 0);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 36200);
+        // Fee bumped from 36200 in PROTOCOL_VERSION_12 — issue #2867 fix: the
+        // UpdatePrice ownership-mismatch failure path now emits a bump action
+        // (previously dropped, leaking nonce-replay risk). Cost covers the
+        // fetch+validation work that was already happening.
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 571240);
 
         let sender_documents_sql_string =
             format!("select * from card where $ownerId == '{}'", identity.id());
