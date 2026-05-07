@@ -1776,3 +1776,69 @@ struct WalletManagerMetadataStorageDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 }
+
+// MARK: - PersistentShieldedNote
+
+struct ShieldedNoteStorageDetailView: View {
+    let record: PersistentShieldedNote
+
+    var body: some View {
+        Form {
+            Section("Identity") {
+                FieldRow(label: "Wallet ID", value: hexString(record.walletId))
+                FieldRow(label: "Account Index", value: "\(record.accountIndex)")
+                FieldRow(label: "Position", value: "\(record.position)")
+            }
+            Section("Commitment") {
+                FieldRow(label: "cmx", value: hexString(record.cmx))
+                FieldRow(label: "Nullifier", value: hexString(record.nullifier))
+            }
+            Section("State") {
+                FieldRow(label: "Block Height", value: "\(record.blockHeight)")
+                FieldRow(label: "Spent", value: record.isSpent ? "Yes" : "No")
+                FieldRow(label: "Value", value: "\(record.value) credits")
+            }
+            Section("Note Bytes") {
+                Text(hexString(record.noteData))
+                    .font(.system(.caption2, design: .monospaced))
+                    .textSelection(.enabled)
+            }
+            Section("Timestamps") {
+                FieldRow(label: "Created", value: dateString(record.createdAt))
+                FieldRow(label: "Updated", value: dateString(record.lastUpdated))
+            }
+        }
+        .navigationTitle("Shielded Note")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// MARK: - PersistentShieldedSyncState
+
+struct ShieldedSyncStateStorageDetailView: View {
+    let record: PersistentShieldedSyncState
+
+    var body: some View {
+        Form {
+            Section("Identity") {
+                FieldRow(label: "Wallet ID", value: hexString(record.walletId))
+                FieldRow(label: "Account Index", value: "\(record.accountIndex)")
+            }
+            Section("Sync") {
+                FieldRow(label: "Last Synced Index", value: "\(record.lastSyncedIndex)")
+            }
+            Section("Nullifier Checkpoint") {
+                FieldRow(label: "Present", value: record.hasNullifierCheckpoint ? "Yes" : "No")
+                if record.hasNullifierCheckpoint {
+                    FieldRow(label: "Height", value: "\(record.nullifierCheckpointHeight)")
+                    FieldRow(label: "Timestamp", value: "\(record.nullifierCheckpointTimestamp)")
+                }
+            }
+            Section("Timestamps") {
+                FieldRow(label: "Updated", value: dateString(record.lastUpdated))
+            }
+        }
+        .navigationTitle("Shielded Sync State")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}

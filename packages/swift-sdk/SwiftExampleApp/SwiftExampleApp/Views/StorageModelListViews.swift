@@ -1714,31 +1714,33 @@ struct ShieldedNoteStorageListView: View {
                 }
             }
             ForEach(visible) { record in
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 8) {
-                        Text("acct \(record.accountIndex)")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                        Text("pos \(record.position)")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                        if record.blockHeight > 0 {
-                            Text("h \(record.blockHeight)")
+                NavigationLink(destination: ShieldedNoteStorageDetailView(record: record)) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 8) {
+                            Text("acct \(record.accountIndex)")
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
-                        }
-                        Spacer()
-                        if record.isSpent {
-                            Text("spent")
+                            Text("pos \(record.position)")
                                 .font(.caption2)
-                                .foregroundColor(.red)
+                                .foregroundColor(.secondary)
+                            if record.blockHeight > 0 {
+                                Text("h \(record.blockHeight)")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            if record.isSpent {
+                                Text("spent")
+                                    .font(.caption2)
+                                    .foregroundColor(.red)
+                            }
                         }
+                        Text("\(record.value) credits")
+                            .font(.caption)
+                        Text(record.nullifier.prefix(8).map { String(format: "%02x", $0) }.joined())
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundColor(.secondary)
                     }
-                    Text("\(record.value) credits")
-                        .font(.caption)
-                    Text(record.nullifier.prefix(8).map { String(format: "%02x", $0) }.joined())
-                        .font(.system(.caption2, design: .monospaced))
-                        .foregroundColor(.secondary)
                 }
             }
         }
@@ -1780,24 +1782,26 @@ struct ShieldedSyncStateStorageListView: View {
         let visible = scopedRecords
         List {
             ForEach(visible) { record in
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text(
-                            record.walletId.prefix(4)
-                                .map { String(format: "%02x", $0) }.joined()
-                        )
-                        .font(.system(.caption2, design: .monospaced))
-                        Text("acct \(record.accountIndex)")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                        Spacer()
-                    }
-                    Text("synced index: \(record.lastSyncedIndex)")
-                        .font(.caption)
-                    if record.hasNullifierCheckpoint {
-                        Text("nf: h \(record.nullifierCheckpointHeight) · ts \(record.nullifierCheckpointTimestamp)")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
+                NavigationLink(destination: ShieldedSyncStateStorageDetailView(record: record)) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(
+                                record.walletId.prefix(4)
+                                    .map { String(format: "%02x", $0) }.joined()
+                            )
+                            .font(.system(.caption2, design: .monospaced))
+                            Text("acct \(record.accountIndex)")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                        }
+                        Text("synced index: \(record.lastSyncedIndex)")
+                            .font(.caption)
+                        if record.hasNullifierCheckpoint {
+                            Text("nf: h \(record.nullifierCheckpointHeight) · ts \(record.nullifierCheckpointTimestamp)")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
                     }
                 }
             }
