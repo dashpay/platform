@@ -24,6 +24,7 @@ pub mod cleanup;
 pub mod config;
 pub mod context_provider;
 pub mod harness;
+pub mod identities;
 pub mod registry;
 pub mod sdk;
 pub mod signer;
