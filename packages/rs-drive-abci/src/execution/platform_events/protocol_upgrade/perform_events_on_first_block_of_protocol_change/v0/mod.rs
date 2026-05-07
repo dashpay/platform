@@ -625,8 +625,15 @@ impl<C> Platform<C> {
             &platform_version.drive,
         )?;
 
-        // Notes tree (CommitmentTree = CountTree items + Sinsemilla Frontier):
-        // [AddressBalances, "s"] / [1]
+        // The four child inserts below are ordered breadth-first to match the
+        // intended balanced shape of the parent Merk tree (see the layout
+        // diagram in `drive::drive::shielded::paths`): root first, then both
+        // depth-1 children, then the depth-2 leaf. AVL rebalancing is
+        // order-sensitive, so this ordering is what actually places
+        // `SHIELDED_NOTES_KEY` at the root and the spend-path keys at depth 1.
+
+        // Level 0 (root): notes tree (CommitmentTree = CountTree items + Sinsemilla Frontier)
+        // [AddressBalances, "s"] / [128]
         let shielded_pool_path = shielded_credit_pool_path();
         self.drive.grove_insert_if_not_exists(
             (&shielded_pool_path).into(),
@@ -637,7 +644,8 @@ impl<C> Platform<C> {
             &platform_version.drive,
         )?;
 
-        // Nullifiers tree (ProvableCountTree): [AddressBalances, "s"] / [2]
+        // Level 1 (left): nullifiers tree (ProvableCountTree)
+        // [AddressBalances, "s"] / [64]
         self.drive.grove_insert_if_not_exists(
             (&shielded_pool_path).into(),
             &[SHIELDED_NULLIFIERS_KEY],
@@ -647,22 +655,23 @@ impl<C> Platform<C> {
             &platform_version.drive,
         )?;
 
-        // Total balance SumItem(0): [AddressBalances, "s"] / [5]
+        // Level 1 (right): anchors tree (NormalTree) — anchor_bytes → block_height_be
+        // [AddressBalances, "s"] / [192]
         self.drive.grove_insert_if_not_exists(
             (&shielded_pool_path).into(),
-            &[SHIELDED_TOTAL_BALANCE_KEY],
-            Element::new_sum_item(0),
+            &[SHIELDED_ANCHORS_IN_POOL_KEY],
+            Element::empty_tree(),
             Some(transaction),
             None,
             &platform_version.drive,
         )?;
 
-        // Anchors tree (NormalTree) inside pool: [AddressBalances, "s"] / [6]
-        // Stores block_height_be → anchor_bytes
+        // Level 2: total balance SumItem(0)
+        // [AddressBalances, "s"] / [32]
         self.drive.grove_insert_if_not_exists(
             (&shielded_pool_path).into(),
-            &[SHIELDED_ANCHORS_IN_POOL_KEY],
-            Element::empty_tree(),
+            &[SHIELDED_TOTAL_BALANCE_KEY],
+            Element::new_sum_item(0),
             Some(transaction),
             None,
             &platform_version.drive,

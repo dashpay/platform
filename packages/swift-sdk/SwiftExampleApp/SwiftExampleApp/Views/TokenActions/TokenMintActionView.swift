@@ -25,6 +25,10 @@ struct TokenMintActionView: View {
     @State private var recipient: RecipientSelection?
     @State private var isSubmitting: Bool = false
     @State private var submitError: AlertMessage?
+    /// Generation counter so a late `MainActor.run` from a previous
+    /// `submit()` Task can't write back to a re-entered view instance
+    /// after the user pops + repushes mid-broadcast.
+    @State private var submitGeneration: Int = 0
 
     private struct AlertMessage: Identifiable {
         let id = UUID()
@@ -35,8 +39,11 @@ struct TokenMintActionView: View {
         Form {
             Section("Token") {
                 LabeledContent("Token", value: token.displayName)
-                if let maxSupply = token.maxSupply {
-                    LabeledContent("Max supply", value: maxSupply)
+                if let maxSupplyRaw = parsedMaxSupply {
+                    LabeledContent(
+                        "Max supply",
+                        value: formatTokenAmount(maxSupplyRaw, decimals: token.decimals)
+                    )
                 }
             }
 
@@ -69,8 +76,19 @@ struct TokenMintActionView: View {
             }
 
             Section("Recipient") {
-                Toggle("Mint to self", isOn: $mintToSelf)
-                    .disabled(!token.mintingAllowChoosingDestination)
+                // Label tracks what the toggle actually does:
+                // - When the contract permits a runtime destination,
+                //   "Mint to self" is honest (toggle off → pick recipient).
+                // - When it doesn't, the toggle is force-on/disabled and
+                //   tokens go to the contract's `newTokensDestinationIdentity`,
+                //   not the caller — the literal "Mint to self" lies.
+                Toggle(
+                    token.mintingAllowChoosingDestination
+                        ? "Mint to self"
+                        : "Use configured destination",
+                    isOn: $mintToSelf
+                )
+                .disabled(!token.mintingAllowChoosingDestination)
                 if !mintToSelf {
                     if let wallet = managedWallet {
                         RecipientPickerView(
@@ -89,7 +107,7 @@ struct TokenMintActionView: View {
 
             Section("Amount") {
                 TextField("Amount", text: $amountText)
-                    .keyboardType(.numberPad)
+                    .keyboardType(.decimalPad)
                 if let amountValue = parsedAmount,
                    let maxSupplyValue = parsedMaxSupply,
                    amountValue > maxSupplyValue {
@@ -146,11 +164,13 @@ struct TokenMintActionView: View {
         return walletManager.wallet(for: walletId)
     }
 
+    /// User input is in display units; scale to raw on-chain units so
+    /// the `amount > maxSupply` check (both raw u64) is meaningful.
     private var parsedAmount: UInt64? {
-        let trimmed = amountText.trimmingCharacters(in: .whitespacesAndNewlines)
-        return UInt64(trimmed)
+        parseTokenAmount(amountText, decimals: token.decimals)
     }
 
+    /// `token.maxSupply` is a string-encoded raw u64.
     private var parsedMaxSupply: UInt64? {
         guard let raw = token.maxSupply else { return nil }
         return UInt64(raw)
@@ -200,7 +220,20 @@ struct TokenMintActionView: View {
 
         let recipientId: Data?
         if mintToSelf {
-            recipientId = nil
+            if token.mintingAllowChoosingDestination {
+                // The contract permits a caller-supplied destination,
+                // so be explicit: pass our own identity id. Passing nil
+                // would defer to `newTokensDestinationIdentity`, which
+                // may be unset — the FFI then surfaces "Destination
+                // identity for minting not set" instead of minting to
+                // self.
+                recipientId = identity.identityId
+            } else {
+                // The contract forbids overriding the destination; any
+                // non-nil recipient would be rejected. Defer to the
+                // configured `newTokensDestinationIdentity` via nil.
+                recipientId = nil
+            }
         } else {
             guard let chosen = recipient else {
                 submitError = .init(message: "Pick a recipient or enable mint-to-self.")
@@ -226,6 +259,8 @@ struct TokenMintActionView: View {
         }
 
         isSubmitting = true
+        submitGeneration &+= 1
+        let gen = submitGeneration
         let signer = KeychainSigner(modelContainer: modelContext.container)
         let identityId = identity.identityId
         let contractId = token.contractId
@@ -245,11 +280,13 @@ struct TokenMintActionView: View {
                     signer: signer
                 )
                 await MainActor.run {
+                    guard self.submitGeneration == gen else { return }
                     self.isSubmitting = false
                     self.dismiss()
                 }
             } catch {
                 await MainActor.run {
+                    guard self.submitGeneration == gen else { return }
                     self.submitError = .init(message: error.localizedDescription)
                     self.isSubmitting = false
                 }

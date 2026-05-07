@@ -4,6 +4,8 @@ pub mod accessors;
 pub mod identity_sync;
 mod load;
 pub mod platform_address_sync;
+#[cfg(feature = "shielded")]
+pub mod shielded_sync;
 mod wallet_lifecycle;
 
 use std::sync::Arc;
@@ -18,6 +20,8 @@ use crate::changeset::{spawn_wallet_event_adapter, PlatformWalletPersistence};
 use crate::events::{PlatformEventHandler, PlatformEventManager};
 use crate::manager::identity_sync::IdentitySyncManager;
 use crate::manager::platform_address_sync::PlatformAddressSyncManager;
+#[cfg(feature = "shielded")]
+use crate::manager::shielded_sync::ShieldedSyncManager;
 use crate::spv::SpvRuntime;
 use crate::wallet::asset_lock::LockNotifyHandler;
 use crate::wallet::core::BalanceUpdateHandler;
@@ -48,6 +52,13 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// wallet. Not auto-started — call `start` after wallets are
     /// registered. See [`IdentitySyncManager`].
     pub(super) identity_sync_manager: Arc<IdentitySyncManager<P>>,
+    /// Periodic shielded (Orchard) note + nullifier sync coordinator.
+    /// Iterates every wallet that has been bound via
+    /// [`PlatformWallet::bind_shielded`](crate::wallet::PlatformWallet::bind_shielded);
+    /// unbound wallets are skipped silently. Not auto-started — call
+    /// `start` after wallets are registered.
+    #[cfg(feature = "shielded")]
+    pub(super) shielded_sync_manager: Arc<ShieldedSyncManager>,
     pub(super) persister: Arc<P>,
     /// Cancellation token + join handle for the wallet-event adapter
     /// task. Held so [`shutdown`] can stop it cleanly when the manager
@@ -107,6 +118,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             Arc::clone(&sdk),
             Arc::clone(&persister),
         ));
+        #[cfg(feature = "shielded")]
+        let shielded_sync = Arc::new(ShieldedSyncManager::new(
+            Arc::clone(&wallets),
+            Arc::clone(&event_manager),
+        ));
         Self {
             sdk,
             wallet_manager,
@@ -115,6 +131,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             spv_manager: spv,
             platform_address_sync_manager: platform_address_sync,
             identity_sync_manager: identity_sync,
+            #[cfg(feature = "shielded")]
+            shielded_sync_manager: shielded_sync,
             persister,
             event_adapter_cancel,
             event_adapter_join: tokio::sync::Mutex::new(Some(event_adapter_join)),
@@ -131,6 +149,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     pub async fn shutdown(&self) {
         self.platform_address_sync_manager.stop();
         self.identity_sync_manager.stop();
+        #[cfg(feature = "shielded")]
+        self.shielded_sync_manager.stop();
 
         self.event_adapter_cancel.cancel();
         if let Some(handle) = self.event_adapter_join.lock().await.take() {

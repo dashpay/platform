@@ -17,6 +17,8 @@ pub use dash_spv::EventHandler;
 pub use key_wallet_manager::WalletEvent;
 
 use crate::manager::platform_address_sync::PlatformAddressSyncSummary;
+#[cfg(feature = "shielded")]
+use crate::manager::shielded_sync::ShieldedSyncPassSummary;
 
 /// Extension of [`EventHandler`] for platform-wallet consumers.
 ///
@@ -30,6 +32,17 @@ pub trait PlatformEventHandler: EventHandler {
     ///
     /// [`PlatformAddressSyncManager`]: crate::manager::platform_address_sync::PlatformAddressSyncManager
     fn on_platform_address_sync_completed(&self, _summary: &PlatformAddressSyncSummary) {}
+
+    /// Fired after each [`ShieldedSyncManager`] pass completes,
+    /// including passes that produced no updates or skipped every
+    /// wallet because none had a bound shielded sub-wallet yet.
+    ///
+    /// Default impl is a no-op so existing handlers don't have to
+    /// care.
+    ///
+    /// [`ShieldedSyncManager`]: crate::manager::shielded_sync::ShieldedSyncManager
+    #[cfg(feature = "shielded")]
+    fn on_shielded_sync_completed(&self, _summary: &ShieldedSyncPassSummary) {}
 }
 
 /// Dispatches events to all registered [`PlatformEventHandler`]s.
@@ -67,6 +80,18 @@ impl PlatformEventManager {
         let handlers = self.handlers.load();
         for h in handlers.iter() {
             h.on_platform_address_sync_completed(summary);
+        }
+    }
+
+    /// Dispatch a shielded sync completion to every handler.
+    ///
+    /// Not on the SPV hot path — called once per shielded sync pass
+    /// (~60s by default).
+    #[cfg(feature = "shielded")]
+    pub fn on_shielded_sync_completed(&self, summary: &ShieldedSyncPassSummary) {
+        let handlers = self.handlers.load();
+        for h in handlers.iter() {
+            h.on_shielded_sync_completed(summary);
         }
     }
 }
