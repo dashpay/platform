@@ -76,6 +76,24 @@ const POST_DRAIN_PROBE_AMOUNT: u64 = 1_000_000;
             `standard_bip32_accounts[0]` directly."]
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 async fn cr_004_legacy_bip32_utxo_update_after_spend() {
+    // FAILING-by-design guard: `#[ignore]` is bypassed by
+    // `cargo test -- --ignored`, which runs every ignored case. CR-004
+    // is intentionally pinning a not-yet-reproducible upstream bug and
+    // would pollute the standard `--ignored` cohort with a body-side
+    // panic. Require an explicit opt-in env var so the case can still
+    // be exercised on demand without being part of the default run.
+    if !crate::framework::config::parse_truthy(
+        std::env::var(crate::framework::config::vars::RUN_FAILING_BY_DESIGN)
+            .ok()
+            .as_deref(),
+    ) {
+        eprintln!(
+            "CR-004 skipped: set {}=1 to exercise (FAILING-by-design pin per spec)",
+            crate::framework::config::vars::RUN_FAILING_BY_DESIGN
+        );
+        return;
+    }
+
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
