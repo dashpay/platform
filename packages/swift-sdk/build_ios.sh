@@ -160,11 +160,18 @@ EOF
   done
 }
 
+# Shielded (Orchard / ZK) support is compiled in by default. The
+# `shielded` Cargo feature is opt-in at the crate level so non-iOS
+# consumers don't pay for the heavy crypto deps, but the iOS
+# framework ships everything — keep `--features shielded` here so
+# the bundled SDK exposes the platform-wallet shielded FFI.
+CARGO_FEATURES="shielded"
+
 # iOS device
 if $BUILD_IOS; then
   IOS_TARGET="aarch64-apple-ios"
   log_info "Building iOS device ($IOS_TARGET)..."
-  cargo build -p "$PACKAGE" --profile "$PROFILE" --target "$IOS_TARGET"
+  cargo build -p "$PACKAGE" --profile "$PROFILE" --target "$IOS_TARGET" --features "$CARGO_FEATURES"
   IOS_LIB="$TARGET_DIR/$IOS_TARGET/$OUTPUT_DIR/librs_unified_sdk_ffi.a"
   IOS_HEADERS="$TARGET_DIR/$IOS_TARGET/$OUTPUT_DIR/include"
   inject_modulemap "$IOS_HEADERS"
@@ -174,7 +181,7 @@ fi
 if $BUILD_SIM; then
   SIM_TARGET="aarch64-apple-ios-sim"
   log_info "Building iOS simulator ($SIM_TARGET)..."
-  cargo build -p "$PACKAGE" --profile "$PROFILE" --target "$SIM_TARGET"
+  cargo build -p "$PACKAGE" --profile "$PROFILE" --target "$SIM_TARGET" --features "$CARGO_FEATURES"
   SIM_LIB="$TARGET_DIR/$SIM_TARGET/$OUTPUT_DIR/librs_unified_sdk_ffi.a"
   SIM_HEADERS="$TARGET_DIR/$SIM_TARGET/$OUTPUT_DIR/include"
   inject_modulemap "$SIM_HEADERS"
@@ -184,7 +191,7 @@ fi
 if $BUILD_MAC; then
   MAC_TARGET="aarch64-apple-darwin"
   log_info "Building macOS ($MAC_TARGET)..."
-  cargo build -p "$PACKAGE" --profile "$PROFILE" --target "$MAC_TARGET"
+  cargo build -p "$PACKAGE" --profile "$PROFILE" --target "$MAC_TARGET" --features "$CARGO_FEATURES"
   MAC_LIB="$TARGET_DIR/$MAC_TARGET/$OUTPUT_DIR/librs_unified_sdk_ffi.a"
   MAC_HEADERS="$TARGET_DIR/$MAC_TARGET/$OUTPUT_DIR/include"
   inject_modulemap "$MAC_HEADERS"

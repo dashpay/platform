@@ -1,114 +1,254 @@
+// ShieldedService.swift
+// SwiftExampleApp
+//
+// Display-state surface for the Rust-owned shielded (Orchard) sync
+// coordinator. The service binds to a single wallet, subscribes to
+// the platform-wallet manager's shielded sync events, and exposes
+// `@Published` properties for the UI. It does not own any of the
+// shielded crypto: bind, sync, and persistence all live on the Rust
+// `platform-wallet` side.
+
 import Foundation
+import SwiftUI
+import Combine
 import SwiftDashSDK
 
-/// App-level service for shielded (ZK/Orchard) pool operations.
-/// Publishes balance, address, and sync status for the UI layer.
+/// Observable service mirroring Rust-owned shielded sync state.
 @MainActor
 class ShieldedService: ObservableObject {
-    @Published var shieldedBalance: UInt64 = 0
-    @Published var orchardDisplayAddress: String?
+    // MARK: - Published state
+
+    /// Whether a shielded sync pass is currently in flight.
     @Published var isSyncing: Bool = false
+
+    /// Current shielded balance reported by the most recent sync.
+    @Published var shieldedBalance: UInt64 = 0
+
+    /// New decrypted notes detected on the most recent sync pass.
+    @Published var lastNewNotes: UInt32 = 0
+
+    /// Notes newly detected as spent on the most recent sync pass.
+    @Published var lastNewlySpent: UInt32 = 0
+
+    /// Whether the bound wallet has a shielded sub-wallet on the Rust
+    /// side. Until [`bind`] runs successfully every pass marks the
+    /// wallet as `skipped` and we surface that here so the UI can
+    /// show a clear "not yet bound" state instead of stale zeros.
+    @Published var isBound: Bool = false
+
+    /// Local clock timestamp of the last completed sync pass.
+    @Published var lastSyncTime: Date?
+
+    /// Number of successful shielded sync passes observed since
+    /// launch (skipped passes don't count).
+    @Published var syncCountSinceLaunch: Int = 0
+
+    /// Cumulative encrypted notes scanned since launch — sum of
+    /// every pass's `total_scanned`.
+    @Published var totalScanned: UInt64 = 0
+
+    /// Cumulative decrypted notes accepted since launch.
+    @Published var totalNewNotes: UInt64 = 0
+
+    /// Cumulative notes newly detected as spent since launch.
+    @Published var totalNewlySpent: UInt64 = 0
+
+    /// Last error from a shielded operation. Cleared on a successful
+    /// pass.
     @Published var lastError: String?
 
-    private(set) var poolClient: ShieldedPoolClient?
-    private var spendingKey: Data?
-    private var currentNetwork: Network?
+    /// Bech32m-encoded Orchard payment address. Currently a
+    /// placeholder — the manager doesn't expose the per-wallet
+    /// address yet (defer until bundle building lands).
+    @Published var orchardDisplayAddress: String?
 
-    /// Initialize (or reinitialize) the shielded pool client.
+    // MARK: - Internals
+
+    /// Wallet manager whose shielded sync events we mirror.
+    private weak var walletManager: PlatformWalletManager?
+
+    /// Wallet id we filter sync results by.
+    private var walletId: Data?
+
+    /// Subscription to `walletManager.$shieldedSyncIsSyncing`.
+    private var syncStateCancellable: AnyCancellable?
+
+    /// Subscription to `walletManager.$lastShieldedSyncEvent`.
+    private var syncEventCancellable: AnyCancellable?
+
+    // MARK: - Lifecycle
+
+    /// Bind the service to a wallet. Drives `bindShielded` on the
+    /// Rust side first (resolver-driven mnemonic lookup, ZIP-32
+    /// derivation, per-network commitment tree open) and then
+    /// subscribes to shielded sync events for `walletId`.
     ///
-    /// Call after wallet seed is available or on network switch.
-    /// Uses the first 32 bytes of the wallet seed as the spending key.
+    /// Failure during the Rust-side bind sets `lastError`; the
+    /// service continues to subscribe to events so a successful
+    /// `bind` retried later picks up automatically.
+    func bind(
+        walletManager: PlatformWalletManager,
+        walletId: Data,
+        network: Network,
+        resolver: MnemonicResolver
+    ) {
+        self.walletManager = walletManager
+        self.walletId = walletId
+        self.syncStateCancellable?.cancel()
+        self.syncEventCancellable?.cancel()
+
+        // Clear the previous wallet's snapshot up front. Without
+        // this, switching wallets (or a failed rebind) leaves the
+        // prior wallet's balance / counters / orchard address on
+        // the UI until the new wallet's first sync event lands —
+        // which can be tens of seconds, or never if the new bind
+        // fails. Per-published-field reset rather than `reset()`
+        // because the manager subscriptions get re-attached just
+        // below; we don't want to nil out walletManager/walletId.
+        isBound = false
+        isSyncing = false
+        shieldedBalance = 0
+        lastNewNotes = 0
+        lastNewlySpent = 0
+        lastSyncTime = nil
+        lastError = nil
+        orchardDisplayAddress = nil
+        syncCountSinceLaunch = 0
+        totalScanned = 0
+        totalNewNotes = 0
+        totalNewlySpent = 0
+
+        let dbPath = Self.dbPath(for: network)
+        do {
+            try walletManager.bindShielded(
+                walletId: walletId,
+                resolver: resolver,
+                account: 0,
+                dbPath: dbPath
+            )
+            isBound = true
+            lastError = nil
+
+            // Pull the default Orchard payment address now that bind
+            // succeeded so the Receive sheet has something to render
+            // before the first sync pass lands. Best-effort —
+            // failures here don't unbind the wallet.
+            if let raw = try? walletManager.shieldedDefaultAddress(walletId: walletId) {
+                orchardDisplayAddress = DashAddress.encodeOrchard(
+                    rawBytes: raw,
+                    network: network
+                )
+            }
+
+            SDKLogger.log(
+                "Shielded bound: walletId=\(walletId.prefix(4).map { String(format: "%02x", $0) }.joined())… network=\(network.networkName) tree=\(dbPath)",
+                minimumLevel: .medium
+            )
+        } catch {
+            lastError = "Shielded bind failed: \(error.localizedDescription)"
+            SDKLogger.log(lastError ?? "", minimumLevel: .medium)
+        }
+
+        syncStateCancellable = walletManager.$shieldedSyncIsSyncing
+            .sink { [weak self] isSyncing in
+                self?.isSyncing = isSyncing
+            }
+
+        syncEventCancellable = walletManager.$lastShieldedSyncEvent
+            .sink { [weak self] event in
+                guard let self, let event else { return }
+                self.handleShieldedSyncEvent(event)
+            }
+    }
+
+    /// Trigger a manual shielded sync pass. No-op if a pass is
+    /// already in flight.
     ///
-    /// - Parameters:
-    ///   - seed: Wallet seed (>= 32 bytes). First 32 bytes used as spending key.
-    ///   - network: Current network.
-    func initialize(seed: Data, network: Network) {
-        guard seed.count >= 32 else {
-            lastError = "Seed must be at least 32 bytes"
+    /// Drives `isSyncing` directly around the await so the spinner
+    /// flashes even when the underlying Rust pass completes faster
+    /// than the manager's 1 Hz `isShieldedSyncing` poll cadence —
+    /// the published `$shieldedSyncIsSyncing` stays `false` the
+    /// whole time on a fast (e.g. empty-tree) sync, so we can't
+    /// rely on the subscription alone to flip it back.
+    func manualSync() async {
+        guard !isSyncing else { return }
+        guard let walletManager else {
+            lastError = "Shielded service not configured"
             return
         }
 
-        let sk = seed.prefix(32)
-        self.spendingKey = Data(sk)
-        self.currentNetwork = network
-
-        let dbPath = Self.dbPath(for: network)
-
-        do {
-            poolClient = try ShieldedPoolClient(dbPath: dbPath, spendingKey: Data(sk))
-            let rawAddress = try poolClient!.address
-            orchardDisplayAddress = DashAddress.encodeOrchard(rawBytes: rawAddress, network: network)
-            shieldedBalance = try poolClient!.balance
-            lastError = nil
-        } catch {
-            lastError = "Failed to init shielded pool: \(error.localizedDescription)"
-            poolClient = nil
-            orchardDisplayAddress = nil
-            shieldedBalance = 0
-        }
-    }
-
-    /// Sync notes from the network.
-    func syncNotes(sdk: SDK) async throws {
-        guard let client = poolClient else {
-            throw SDKError.invalidState("Shielded pool not initialized")
-        }
-
         isSyncing = true
-        defer { isSyncing = false }
-
-        let result = try await client.syncNotes(sdk: sdk)
-        shieldedBalance = result.balance
-    }
-
-    /// Sync nullifiers (mark spent notes).
-    func syncNullifiers(sdk: SDK) async throws {
-        guard let client = poolClient else {
-            throw SDKError.invalidState("Shielded pool not initialized")
-        }
-
-        isSyncing = true
-        defer { isSyncing = false }
-
-        let result = try await client.syncNullifiers(sdk: sdk)
-        shieldedBalance = result.balance
-    }
-
-    /// Full sync: notes then nullifiers.
-    func fullSync(sdk: SDK) async {
-        do {
-            try await syncNotes(sdk: sdk)
-            try await syncNullifiers(sdk: sdk)
-            lastError = nil
-        } catch {
-            lastError = "Sync error: \(error.localizedDescription)"
-        }
-    }
-
-    /// Refresh balance from the local database (no network call).
-    func refreshBalance() {
-        guard let client = poolClient else { return }
-        do {
-            shieldedBalance = try client.balance
-        } catch {
-            lastError = "Balance refresh error: \(error.localizedDescription)"
-        }
-    }
-
-    /// Reset state (e.g., on wallet deletion or logout).
-    func reset() {
-        poolClient = nil
-        spendingKey = nil
-        shieldedBalance = 0
-        orchardDisplayAddress = nil
-        isSyncing = false
         lastError = nil
+        defer { isSyncing = false }
+        do {
+            try await walletManager.syncShieldedNow()
+        } catch {
+            lastError = "Shielded sync error: \(error.localizedDescription)"
+            SDKLogger.log(lastError ?? "", minimumLevel: .medium)
+        }
+    }
+
+    /// Reset display state. Cancels the manager subscriptions but
+    /// does not stop the manager-wide background loop — that's the
+    /// caller's responsibility (see
+    /// [`PlatformWalletManager.stopShieldedSync`]).
+    func reset() {
+        syncStateCancellable?.cancel()
+        syncEventCancellable?.cancel()
+        walletManager = nil
+        walletId = nil
+        isSyncing = false
+        shieldedBalance = 0
+        lastNewNotes = 0
+        lastNewlySpent = 0
+        isBound = false
+        lastSyncTime = nil
+        lastError = nil
+        orchardDisplayAddress = nil
+        syncCountSinceLaunch = 0
+        totalScanned = 0
+        totalNewNotes = 0
+        totalNewlySpent = 0
+    }
+
+    // MARK: - Sync event handling
+
+    private func handleShieldedSyncEvent(_ event: ShieldedSyncEvent) {
+        guard let walletId, let result = event.result(for: walletId) else {
+            return
+        }
+
+        if result.success {
+            lastError = nil
+            isBound = true
+            shieldedBalance = result.balance
+            lastNewNotes = result.newNotes
+            lastNewlySpent = result.newlySpent
+            lastSyncTime = Date(timeIntervalSince1970: TimeInterval(event.syncUnixSeconds))
+            syncCountSinceLaunch += 1
+            totalScanned += result.totalScanned
+            totalNewNotes += UInt64(result.newNotes)
+            totalNewlySpent += UInt64(result.newlySpent)
+        } else if result.skipped {
+            // Skipped means the wallet hasn't been bound yet on the
+            // Rust side. The UI can prompt the user to retry the
+            // bind step.
+            isBound = false
+        } else {
+            lastError = result.errorMessage ?? "Shielded sync failed"
+        }
     }
 
     // MARK: - Private
 
+    /// One commitment tree per network (the Orchard tree is global per
+    /// network; only the per-wallet decrypted notes are wallet-scoped).
     private static func dbPath(for network: Network) -> String {
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        return docs.appendingPathComponent("shielded_\(network.networkName).sqlite").path
+        let docs = FileManager.default
+            .urls(for: .documentDirectory, in: .userDomainMask)
+            .first!
+        return docs
+            .appendingPathComponent("shielded_tree_\(network.networkName).sqlite")
+            .path
     }
 }

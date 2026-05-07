@@ -244,10 +244,6 @@ struct OptionsView: View {
                         Label("Wallet Memory Explorer", systemImage: "memorychip")
                     }
 
-                    NavigationLink(destination: ContractsView()) {
-                        Label("Browse Contracts", systemImage: "doc.plaintext")
-                    }
-
                     Button(action: { showingDataManagement = true }) {
                         Label("Manage Local Data", systemImage: "internaldrive")
                     }

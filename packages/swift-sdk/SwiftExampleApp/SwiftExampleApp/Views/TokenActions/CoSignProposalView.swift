@@ -32,6 +32,10 @@ struct CoSignProposalView: View {
     @State private var loadError: String?
     @State private var isSubmitting: Bool = false
     @State private var submitMessage: AlertMessage?
+    /// Generation counter so a late `MainActor.run` from a previous
+    /// `dispatch()` Task can't write back to a re-entered view
+    /// instance after the user pops + repushes mid-broadcast.
+    @State private var submitGeneration: Int = 0
 
     private struct AlertMessage: Identifiable {
         let id = UUID()
@@ -335,6 +339,8 @@ struct CoSignProposalView: View {
         }
 
         isSubmitting = true
+        submitGeneration &+= 1
+        let gen = submitGeneration
         let signer = KeychainSigner(modelContainer: modelContext.container)
         let mode = GroupActionMode.signExisting(
             position: UInt16(position),
@@ -356,6 +362,7 @@ struct CoSignProposalView: View {
                     tokenPosition: tokenPosition
                 )
                 await MainActor.run {
+                    guard self.submitGeneration == gen else { return }
                     self.isSubmitting = false
                     self.submitMessage = .init(
                         title: "Signed",
@@ -364,6 +371,7 @@ struct CoSignProposalView: View {
                 }
             } catch {
                 await MainActor.run {
+                    guard self.submitGeneration == gen else { return }
                     self.isSubmitting = false
                     self.submitMessage = .init(
                         title: "Co-sign failed",

@@ -25,17 +25,19 @@ const DASH_COIN_TYPE_TESTNET: u32 = 1;
 
 /// ZIP-32 derived Orchard key hierarchy.
 ///
-/// Contains all key material needed for shielded operations:
-/// - `spending_key` — master secret, needed to authorize spends
+/// Contains the key material needed for shielded sync and address
+/// generation. The master `SpendingKey` is intentionally not retained:
+/// it is derived inside [`Self::from_seed`] only long enough to extract
+/// the FVK / ASK / IVK / OVK and is dropped before this struct is
+/// returned. Spend authorization for an actual transaction re-derives
+/// the SK transiently from the wallet seed via the host signer.
+///
 /// - `full_viewing_key` — derived from SK, can view all transactions
 /// - `spend_auth_key` — signs individual spend authorizations
 /// - `incoming_viewing_key` — detects incoming notes (trial decryption)
 /// - `outgoing_viewing_key` — recovers sent notes (wallet recovery)
 /// - `default_address` — the default payment address at index 0
 pub struct OrchardKeySet {
-    /// The spending key (master secret). Crate-private — never expose externally.
-    #[allow(dead_code)]
-    pub(crate) spending_key: SpendingKey,
     /// Full viewing key derived from the spending key.
     pub full_viewing_key: FullViewingKey,
     /// Spend authorization key for signing spends. Crate-private.
@@ -84,9 +86,15 @@ impl OrchardKeySet {
         let ivk = fvk.to_ivk(Scope::External);
         let ovk = fvk.to_ovk(Scope::External);
         let default_address = fvk.address_at(0u32, Scope::External);
+        // `sk` falls out of scope here. The FVK / ASK / IVK / OVK
+        // already capture every quantity the wallet needs; spend
+        // authorization is re-derived transiently from the wallet
+        // seed via the host signer at sign time. (Orchard
+        // `SpendingKey` is `Copy`, so explicit zeroization of this
+        // local would require wrapping in `Zeroizing`; revisit when
+        // the spend signer lands.)
 
         Ok(Self {
-            spending_key: sk,
             full_viewing_key: fvk,
             spend_auth_key: ask,
             incoming_viewing_key: ivk,
