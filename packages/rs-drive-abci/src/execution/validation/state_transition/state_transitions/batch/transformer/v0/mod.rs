@@ -6,6 +6,11 @@
 // PROTOCOL_VERSION_11 chain reproducibility. v1 (used from
 // PROTOCOL_VERSION_12 onwards) uses the canonical `flatten` / `merge_many`
 // which return `data: None` in that case. See issue #2867.
+//
+// Those legacy aggregators are `#[deprecated]` to steer new code away
+// from them; we suppress the warnings here because v0 specifically
+// needs them.
+#![allow(deprecated)]
 
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;

@@ -9,6 +9,14 @@ use crate::version::drive_abci_versions::drive_abci_validation_versions::{
 // Bump basic_structure to v1 for contract create and update state transitions.
 // v1 adds config min_version enforcement: since protocol version 12, V0 config is no longer
 // accepted because it lacks sized_integer_types support.
+//
+// Bump batch_state_transition.transform_into_action to v1 (issue #2867):
+// v1 of the batch transformer uses the canonical `flatten` / `merge_many`
+// aggregators which return `data: None` when no input contributed —
+// closing the "validating state transition for free" gap where an
+// all-failed Documents Batch was being recorded as PaidConsensusError
+// with an empty action and the same exact bytes could be replayed
+// across blocks. v0 stays for PROTOCOL_VERSION_11 chain reproducibility.
 pub const DRIVE_ABCI_VALIDATION_VERSIONS_V8: DriveAbciValidationVersions =
     DriveAbciValidationVersions {
         state_transitions: DriveAbciStateTransitionValidationVersions {

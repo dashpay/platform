@@ -62,10 +62,7 @@ impl<TData: Clone, E: Debug> ValidationResult<Vec<TData>, E> {
             }
         });
         if aggregate_data.is_empty() {
-            ValidationResult {
-                errors: aggregate_errors,
-                data: None,
-            }
+            ValidationResult::new_with_errors(aggregate_errors)
         } else {
             ValidationResult::new_with_data_and_errors(aggregate_data, aggregate_errors)
         }
@@ -83,6 +80,10 @@ impl<TData: Clone, E: Debug> ValidationResult<Vec<TData>, E> {
     /// See issue #2867 for context.
     ///
     /// [`flatten`]: ValidationResult::flatten
+    #[deprecated(
+        since = "3.1.0",
+        note = "use `flatten` instead unless you specifically need PROTOCOL_VERSION_11 chain reproducibility (only the v0 batch transformer should need this) — issue #2867"
+    )]
     pub fn flatten_or_empty_vec<I: IntoIterator<Item = ValidationResult<Vec<TData>, E>>>(
         items: I,
     ) -> ValidationResult<Vec<TData>, E> {
@@ -126,10 +127,7 @@ impl<TData: Clone, E: Debug> ValidationResult<TData, E> {
             }
         });
         if aggregate_data.is_empty() {
-            ValidationResult {
-                errors: aggregate_errors,
-                data: None,
-            }
+            ValidationResult::new_with_errors(aggregate_errors)
         } else {
             ValidationResult::new_with_data_and_errors(aggregate_data, aggregate_errors)
         }
@@ -147,6 +145,10 @@ impl<TData: Clone, E: Debug> ValidationResult<TData, E> {
     /// See issue #2867 for context.
     ///
     /// [`merge_many`]: ValidationResult::merge_many
+    #[deprecated(
+        since = "3.1.0",
+        note = "use `merge_many` instead unless you specifically need PROTOCOL_VERSION_11 chain reproducibility (only the v0 batch transformer should need this) — issue #2867"
+    )]
     pub fn merge_many_or_empty_vec<I: IntoIterator<Item = ValidationResult<TData, E>>>(
         items: I,
     ) -> ValidationResult<Vec<TData>, E> {
@@ -741,9 +743,12 @@ mod tests {
 
     // -- flatten_or_empty_vec() / merge_many_or_empty_vec() --
     // These pin the legacy `Some(empty_vec)`-on-no-data behavior preserved
-    // for PROTOCOL_VERSION_11 and below.
+    // for PROTOCOL_VERSION_11 and below. Both methods are `#[deprecated]`
+    // to steer new code away from them; we suppress the warnings on the
+    // tests that intentionally exercise them.
 
     #[test]
+    #[allow(deprecated)]
     fn test_flatten_or_empty_vec_merges_data_and_errors() {
         let r1: ValidationResult<Vec<i32>, String> = ValidationResult::new_with_data(vec![1, 2]);
         let r2: ValidationResult<Vec<i32>, String> =
@@ -757,6 +762,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_flatten_or_empty_vec_empty_input_returns_some_empty() {
         let flat: ValidationResult<Vec<i32>, String> =
             ValidationResult::flatten_or_empty_vec(std::iter::empty());
@@ -766,6 +772,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_flatten_or_empty_vec_all_inputs_no_data_returns_some_empty() {
         let r1: ValidationResult<Vec<i32>, String> =
             ValidationResult::new_with_error("e1".to_string());
@@ -778,6 +785,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_merge_many_or_empty_vec_collects_data_into_vec() {
         let r1: ValidationResult<i32, String> = ValidationResult::new_with_data(1);
         let r2: ValidationResult<i32, String> = ValidationResult::new_with_data(2);
@@ -789,6 +797,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_merge_many_or_empty_vec_empty_input_returns_some_empty() {
         let merged: ValidationResult<Vec<i32>, String> =
             ValidationResult::merge_many_or_empty_vec(std::iter::empty::<
@@ -800,6 +809,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_merge_many_or_empty_vec_all_inputs_no_data_returns_some_empty() {
         let r1: ValidationResult<i32, String> = ValidationResult::new_with_error("e1".to_string());
         let r2: ValidationResult<i32, String> = ValidationResult::new_with_error("e2".to_string());
