@@ -41,10 +41,6 @@
             (Bank::with_test_balance) OR injectable balance override on the \
             singleton, plus a typed BankError::Underfunded variant. See spec status."]
 async fn pa_010_bank_starvation_typed_error() {
-    // INTENTIONAL(QA-V16-005): keep hard panic instead of #[ignore]-only — failing
-    // test documents the missing per-test bank instance (Bank::with_test_balance)
-    // and typed BankError::Underfunded harness gaps until they are implemented;
-    // flipping to #[ignore] alone would silently hide the gap from CI signal.
     panic!(
         "PA-010 is BLOCKED on a harness refactor. The bank is a process-\
          shared singleton (E2eContext.bank, OnceCell-backed); building a \
