@@ -43,9 +43,17 @@ async fn cr_001_spv_mn_list_sync_readiness() {
     // Respect the operator escape hatch — when SPV is disabled the mn-list
     // will never sync; skip with an informative message rather than burn
     // the full timeout.
-    let ctx = E2eContext::init().await.expect("E2eContext::init failed");
-
-    if ctx.config.disable_spv {
+    let disable_spv = std::env::var("PLATFORM_WALLET_E2E_DISABLE_SPV")
+        .ok()
+        .map(|v| {
+            let t = v.trim().to_string();
+            t == "1"
+                || t.eq_ignore_ascii_case("true")
+                || t.eq_ignore_ascii_case("yes")
+                || t.eq_ignore_ascii_case("on")
+        })
+        .unwrap_or(false);
+    if disable_spv {
         tracing::info!(
             target: "platform_wallet::e2e::cases::cr_001",
             "PLATFORM_WALLET_E2E_DISABLE_SPV is set — skipping CR-001 \
