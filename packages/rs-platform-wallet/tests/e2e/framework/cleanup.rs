@@ -305,7 +305,7 @@ where
         "sweep_platform_addresses: ReduceOutput(0) sweep"
     );
 
-    wallet
+    match wallet
         .platform()
         .transfer(
             super::wallet_factory::DEFAULT_ACCOUNT_INDEX_PUB,
@@ -316,7 +316,18 @@ where
             signer,
         )
         .await
-        .map_err(wallet_err)?;
+    {
+        Ok(_) => {}
+        Err(err) => {
+            tracing::warn!(
+                target: "platform_wallet::e2e::cleanup",
+                wallet_id = %hex::encode(wallet.wallet_id()),
+                error = %err,
+                "sweep_platform_addresses: broadcast failed (residual may be below sweep fee); \
+                 retaining registry entry for sweep_orphans retry"
+            );
+        }
+    }
     Ok(())
 }
 
