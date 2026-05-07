@@ -68,61 +68,68 @@ impl Drive {
     }
 
     /// Adds shielded pool batch operations for initialization.
+    ///
+    /// The eight subtree inserts are ordered breadth-first to match the
+    /// intended balanced shape of the parent Merk tree (see the layout
+    /// diagram in `crate::drive::shielded::paths`): root first, then both
+    /// depth-1 children, then the four depth-2 children, then the depth-3
+    /// leaf. AVL rebalancing is order-sensitive, so this ordering is what
+    /// actually places `SHIELDED_NOTES_KEY` at the root and the spend-path
+    /// keys at depth 1.
     pub(in crate::drive::initialization) fn initial_state_structure_shielded_pool_operations(
         &self,
         batch: &mut GroveDbOpBatch,
     ) -> Result<(), Error> {
-        // 1. Shielded credit pool SumTree under AddressBalances
+        // Parent: shielded credit pool SumTree under AddressBalances. Must be
+        // inserted before any of its children so the subtree exists.
         batch.add_insert(
             vec![vec![RootTree::AddressBalances as u8]],
             vec![SHIELDED_CREDIT_POOL_KEY_U8],
             Element::empty_sum_tree(),
         );
 
-        // 2. Notes tree (CommitmentTree = CountTree items + Sinsemilla Frontier)
+        // Level 0 (root): notes tree (CommitmentTree = CountTree items + Sinsemilla Frontier)
         batch.add_insert(
             shielded_credit_pool_path_vec(),
             vec![SHIELDED_NOTES_KEY],
             Element::empty_commitment_tree(SHIELDED_NOTES_CHUNK_POWER)?,
         );
 
-        // 3. Nullifiers tree (ProvableCountTree)
+        // Level 1 (left): nullifiers tree (ProvableCountTree) — checked on every spend.
         batch.add_insert(
             shielded_credit_pool_path_vec(),
             vec![SHIELDED_NULLIFIERS_KEY],
             Element::empty_provable_count_tree(),
         );
 
-        // 4. Total balance SumItem(0)
-        batch.add_insert(
-            shielded_credit_pool_path_vec(),
-            vec![SHIELDED_TOTAL_BALANCE_KEY],
-            Element::new_sum_item(0),
-        );
-
-        // 5. Anchors tree (NormalTree) inside pool: anchor_bytes → block_height_be
+        // Level 1 (right): anchors tree (NormalTree) — checked on every spend.
+        // Stores anchor_bytes → block_height_be.
         batch.add_insert(
             shielded_credit_pool_path_vec(),
             vec![SHIELDED_ANCHORS_IN_POOL_KEY],
             Element::empty_tree(),
         );
 
-        // 5b. Anchors-by-height tree (NormalTree): block_height_be → anchor_bytes
-        // Reverse index for pruning old anchors by height range.
+        // Level 2: total balance SumItem(0).
+        batch.add_insert(
+            shielded_credit_pool_path_vec(),
+            vec![SHIELDED_TOTAL_BALANCE_KEY],
+            Element::new_sum_item(0),
+        );
+
+        // Level 2: anchors-by-height tree (NormalTree) — block_height_be → anchor_bytes.
+        // Reverse index for pruning old anchors by height range and the
+        // canonical source of the most-recent anchor (read via `limit 1`
+        // reverse query) — there is no separate "most recent" slot; key 7
+        // was retired because the duplicate state could desync from the
+        // anchors tree under prune.
         batch.add_insert(
             shielded_credit_pool_path_vec(),
             vec![SHIELDED_ANCHORS_BY_HEIGHT_KEY],
             Element::empty_tree(),
         );
 
-        // 5c. Most recent anchor item (empty initially, set on first block with notes)
-        batch.add_insert(
-            shielded_credit_pool_path_vec(),
-            vec![SHIELDED_MOST_RECENT_ANCHOR_KEY],
-            Element::new_item(vec![0u8; 32]),
-        );
-
-        // 6. Per-block nullifiers CountSumTree under shielded credit pool.
+        // Level 2: per-block recent-nullifiers CountSumTree.
         // Each item is an ItemWithSumItem (serialized Vec<[u8;32]> + nullifier count as sum).
         batch.add_insert(
             shielded_credit_pool_path_vec(),
@@ -130,15 +137,15 @@ impl Drive {
             Element::empty_count_sum_tree(),
         );
 
-        // 7. Compacted nullifiers NormalTree under shielded credit pool.
-        // Key: (start_block, end_block) as 16 bytes, Value: serialized Vec<[u8;32]>
+        // Level 2: compacted nullifiers NormalTree.
+        // Key: (start_block, end_block) as 16 bytes, Value: serialized Vec<[u8;32]>.
         batch.add_insert(
             shielded_credit_pool_path_vec(),
             vec![SHIELDED_COMPACTED_NULLIFIERS_KEY_U8],
             Element::empty_tree(),
         );
 
-        // 8. Nullifiers expiration time NormalTree under shielded credit pool.
+        // Level 3: nullifiers-expiration-time NormalTree (deepest leaf).
         batch.add_insert(
             shielded_credit_pool_path_vec(),
             vec![SHIELDED_NULLIFIERS_EXPIRATION_TIME_KEY_U8],

@@ -12,6 +12,13 @@ import SwiftDashSDK
 struct TokenBurnActionView: View {
     let token: PersistentToken
     let identity: PersistentIdentity
+    /// Balance the parent screen already fetched for this token via
+    /// `sdk.getIdentityTokenBalances`. When non-nil, it's the source of
+    /// truth; when nil, we fall back to the `PersistentTokenBalance`
+    /// row, which may not be populated yet. Declared as `var` (not
+    /// `let`) so the synthesized memberwise init exposes it with the
+    /// default of `nil`.
+    var initialBalance: UInt64? = nil
 
     @EnvironmentObject var walletManager: PlatformWalletManager
     @Environment(\.modelContext) private var modelContext
@@ -21,6 +28,10 @@ struct TokenBurnActionView: View {
     @State private var publicNote: String = ""
     @State private var isSubmitting: Bool = false
     @State private var submitError: AlertMessage?
+    /// Generation counter so a late `MainActor.run` from a previous
+    /// `submit()` Task can't write back to a re-entered view instance
+    /// after the user pops + repushes mid-broadcast.
+    @State private var submitGeneration: Int = 0
 
     private struct AlertMessage: Identifiable {
         let id = UUID()
@@ -62,7 +73,7 @@ struct TokenBurnActionView: View {
 
             Section("Amount") {
                 TextField("Amount", text: $amountText)
-                    .keyboardType(.numberPad)
+                    .keyboardType(.decimalPad)
                 if let amountValue = parsedAmount, amountValue > balanceValue {
                     Text("Amount exceeds your balance.")
                         .font(.caption)
@@ -113,25 +124,32 @@ struct TokenBurnActionView: View {
     }
 
     private var balanceValue: UInt64 {
+        if let initialBalance { return initialBalance }
         guard let balance = matchingBalance else { return 0 }
         return balance.balance < 0 ? 0 : UInt64(balance.balance)
     }
 
     private var balanceDisplay: String {
+        if let initialBalance {
+            return formatTokenAmount(initialBalance, decimals: token.decimals)
+        }
         guard let balance = matchingBalance else { return "0" }
         return balance.displayBalance
     }
 
+    /// Match against the SwiftData relationship key. The earlier
+    /// `tb.tokenId == token.id.toBase58String()` arm of this matcher
+    /// was always false: `tb.tokenId` holds the canonical on-chain
+    /// token id while `token.id` is a `contractId + position` SwiftData
+    /// uniqueness key.
     private var matchingBalance: PersistentTokenBalance? {
-        identity.tokenBalances.first { tb in
-            tb.tokenId == token.id.toBase58String()
-                || tb.token?.id == token.id
-        }
+        identity.tokenBalances.first { $0.token?.id == token.id }
     }
 
+    /// See `parseTokenAmount` — input is in display units, scaled to
+    /// raw on-chain units by `token.decimals` before validation.
     private var parsedAmount: UInt64? {
-        let trimmed = amountText.trimmingCharacters(in: .whitespacesAndNewlines)
-        return UInt64(trimmed)
+        parseTokenAmount(amountText, decimals: token.decimals)
     }
 
     private var canSubmit: Bool {
@@ -202,6 +220,8 @@ struct TokenBurnActionView: View {
         }
 
         isSubmitting = true
+        submitGeneration &+= 1
+        let gen = submitGeneration
         let signer = KeychainSigner(modelContainer: modelContext.container)
         let identityId = identity.identityId
         let contractId = token.contractId
@@ -220,11 +240,13 @@ struct TokenBurnActionView: View {
                     signer: signer
                 )
                 await MainActor.run {
+                    guard self.submitGeneration == gen else { return }
                     self.isSubmitting = false
                     self.dismiss()
                 }
             } catch {
                 await MainActor.run {
+                    guard self.submitGeneration == gen else { return }
                     self.submitError = .init(message: error.localizedDescription)
                     self.isSubmitting = false
                 }

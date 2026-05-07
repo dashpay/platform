@@ -53,6 +53,13 @@ struct SwiftExampleAppApp: App {
     @State private var bootstrapError: Error?
     @State private var bootstrapTask: Task<Void, Never>?
 
+    /// Resolver that backs the platform-wallet-ffi `MnemonicResolverHandle`
+    /// for shielded wallet binding. Reuses the default `WalletStorage`
+    /// keychain access — same shape as the identity-key signing path.
+    /// Held for the lifetime of the App so the underlying handle is
+    /// valid across every `bind_shielded` call.
+    private let shieldedResolver = MnemonicResolver()
+
     init() {
         // Suppress auto layout constraint warnings in debug builds
         // These are typically harmless keyboard-related warnings
@@ -100,6 +107,7 @@ struct SwiftExampleAppApp: App {
                 // PlatformWalletManager` consumers see the right
                 // network's manager without any view changes.
                 .environmentObject(walletManager)
+                .environmentObject(walletManagerStore)
                 .environmentObject(shieldedService)
                 .environmentObject(platformBalanceSyncService)
                 .environmentObject(transitionState)
@@ -180,12 +188,14 @@ struct SwiftExampleAppApp: App {
         guard let wallet else {
             do {
                 try walletManager.stopPlatformAddressSync()
+                try walletManager.stopShieldedSync()
             } catch {
                 SDKLogger.error(
-                    "Failed to stop platform address sync: \(error.localizedDescription)"
+                    "Failed to stop sync coordinators: \(error.localizedDescription)"
                 )
             }
             platformBalanceSyncService.reset()
+            shieldedService.reset()
             return
         }
         do {
@@ -203,9 +213,24 @@ struct SwiftExampleAppApp: App {
                 "🔗 BLAST sync running; balance-sync UI bound to wallet \(wallet.walletId.prefix(4).map { String(format: "%02x", $0) }.joined())… on \(platformState.currentNetwork.displayName) (of \(walletManager.wallets.count) loaded)",
                 minimumLevel: .medium
             )
+
+            // Bind the shielded service against the same wallet.
+            // The bind is best-effort — failures (no mnemonic in
+            // keychain, biometric prompt declined, etc.) leave the
+            // service in a "not bound" state and the user can
+            // retry from the Sync Status surface.
+            shieldedService.bind(
+                walletManager: walletManager,
+                walletId: wallet.walletId,
+                network: platformState.currentNetwork,
+                resolver: shieldedResolver
+            )
+            if try !walletManager.isShieldedSyncRunning() {
+                try walletManager.startShieldedSync()
+            }
         } catch {
             SDKLogger.error(
-                "Failed to bind platform address wallet: \(error.localizedDescription)"
+                "Failed to bind wallet-scoped services: \(error.localizedDescription)"
             )
         }
     }
@@ -240,8 +265,20 @@ struct SwiftExampleAppApp: App {
                     )
                 }
 
-                // Initialize shielded pool using first available wallet's data.
-                initializeShieldedService()
+                // Pre-warm per-network managers for any orphan
+                // mnemonic whose original network differs from
+                // the active one, so the orphan-recovery flow
+                // doesn't have to lazy-build them mid-session.
+                // SwiftData's @Query observers in the main
+                // context don't always reflect rows persisted
+                // through a `backgroundContext` that was
+                // created mid-session — pre-warming here means
+                // those backgrounds are wired up alongside the
+                // main context at launch and the recovered
+                // wallet appears in its correct tab on the same
+                // run instead of only after a relaunch.
+                preWarmOrphanNetworkManagers()
+
                 rebindWalletScopedServices()
             }
 
@@ -270,15 +307,42 @@ struct SwiftExampleAppApp: App {
         return ["127.0.0.1"]
     }
 
-    /// Initialize the shielded pool client. Best-effort — does nothing if no
-    /// wallet is available yet.
-    private func initializeShieldedService() {
-        // TODO(platform-wallet): Derive a ZIP32 spending key from
-        // the managed wallet. The legacy code path reused the
-        // seed bytes stashed on the (now-deleted) HDWallet row;
-        // the seed now lives only in the keychain, so a fresh
-        // derivation path is needed. For now the shielded
-        // service starts empty; it will be re-initialized once
-        // the user creates/loads a wallet via `createWallet(...)`.
+    /// Materialize a `PlatformWalletManager` for every network that
+    /// has an orphan keychain mnemonic, except the already-active
+    /// one. Used during bootstrap so the orphan-recovery flow has
+    /// pre-warmed managers when the user authorizes recovery —
+    /// avoids a SwiftData edge case where a mid-session-created
+    /// background `ModelContext` doesn't propagate writes back to
+    /// the launch-time main context's `@Query` observers.
+    @MainActor
+    private func preWarmOrphanNetworkManagers() {
+        let storage = WalletStorage()
+        let keychainIds = (try? storage.listWalletIdsWithMnemonic()) ?? []
+        guard !keychainIds.isEmpty else { return }
+
+        var orphanNetworks: Set<Network> = []
+        for walletId in keychainIds {
+            guard let metadata = (try? storage.metadata(for: walletId)) ?? nil,
+                  let resolved = metadata.resolvedNetworks.first
+            else { continue }
+            orphanNetworks.insert(resolved)
+        }
+
+        let active = platformState.currentNetwork
+        for network in orphanNetworks where network != active {
+            do {
+                _ = try walletManagerStore.backgroundManager(for: network)
+                SDKLogger.log(
+                    "🔥 Pre-warmed wallet manager for \(network.displayName) "
+                        + "(orphan recovery target)",
+                    minimumLevel: .medium
+                )
+            } catch {
+                SDKLogger.error(
+                    "Failed to pre-warm \(network.displayName) manager: "
+                        + error.localizedDescription
+                )
+            }
+        }
     }
 }

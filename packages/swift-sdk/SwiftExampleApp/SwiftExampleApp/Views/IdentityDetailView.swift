@@ -114,9 +114,22 @@ struct IdentityDetailView: View {
                             .foregroundColor(.blue)
                     }
 
-                    Label(identity.identityIdString, systemImage: "number")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    // Hex row: raw byte form most users see when an
+                    // identity id surfaces in logs / errors.
+                    IdentityIDCopyRow(
+                        icon: "number",
+                        value: identity.identityIdString,
+                        accessibilityLabel: "Copy identity ID (hex)"
+                    )
+                    // Base58 row. Most platform tooling (contract JSON
+                    // group members, FFI args, dashmate) consumes the
+                    // base58 form, so it deserves equal visibility next
+                    // to hex rather than being hidden behind a menu.
+                    IdentityIDCopyRow(
+                        icon: "textformat.abc",
+                        value: identity.identityIdBase58,
+                        accessibilityLabel: "Copy identity ID (base58)"
+                    )
                 }
                 .padding(.vertical, 4)
 
@@ -291,7 +304,8 @@ struct IdentityDetailView: View {
                             NavigationLink(
                                 destination: TokenActionPermissionsView(
                                     token: entry.token,
-                                    identity: identity
+                                    identity: identity,
+                                    initialBalance: entry.balance
                                 )
                             ) {
                                 IdentityTokenRow(entry: entry)
@@ -1023,6 +1037,43 @@ struct IdentityDetailView: View {
             } catch {
                 tokensError = "Failed to load token balances: \(error.localizedDescription)"
             }
+        }
+    }
+}
+
+// MARK: - Identity ID row
+
+/// Compact tap-to-copy row for an identity id rendered in some
+/// representation (hex, base58, …). Two of these stack in the Identity
+/// Details header so users can grab whichever shape the next tool
+/// downstream needs. `.contextMenu` on a `Label` inside a `List` row
+/// is unreliable (the row's own gesture eats the long-press), so the
+/// copy target is a visible borderless button instead.
+private struct IdentityIDCopyRow: View {
+    let icon: String
+    let value: String
+    let accessibilityLabel: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 6) {
+            Image(systemName: icon)
+                .foregroundColor(.secondary)
+                .font(.caption)
+            Text(value)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .textSelection(.enabled)
+            Spacer(minLength: 4)
+            Button {
+                UIPasteboard.general.string = value
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+            } label: {
+                Image(systemName: "doc.on.doc")
+                    .font(.caption)
+                    .foregroundColor(.blue)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel(accessibilityLabel)
         }
     }
 }

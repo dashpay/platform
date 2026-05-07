@@ -16,18 +16,31 @@ struct ReceiveAddressView: View {
     @EnvironmentObject var shieldedService: ShieldedService
     let wallet: PersistentWallet
 
-    /// All persisted accounts across wallets. Filtered down to this
-    /// view's wallet + primary BIP44 account inside
-    /// `nextCoreReceiveAddress`. A `Query(filter:)` with the natural
-    /// predicate exceeded Swift's type-checker budget, so filtering in
-    /// Swift keeps compile times reasonable at negligible runtime
-    /// cost (tens of accounts per store, not thousands).
-    @Query private var allAccounts: [PersistentAccount]
-    /// All PlatformPayment (DIP-17) addresses. Filtered down to this
-    /// wallet in `nextPlatformReceiveAddress`.
+    /// The single primary BIP44 account for this wallet.
+    /// Predicate uses a single-hop relationship traversal for the
+    /// wallet id; single-hop is well within the type-checker budget
+    /// unlike the multi-condition relationship predicates that
+    /// previously caused compiler timeouts.
+    @Query private var bip44Accounts: [PersistentAccount]
+    /// PlatformPayment (DIP-17) addresses for this wallet.
     @Query private var platformAddresses: [PersistentPlatformAddress]
 
+    init(wallet: PersistentWallet) {
+        self.wallet = wallet
+        let walletId = wallet.walletId
+        _bip44Accounts = Query(
+            filter: #Predicate<PersistentAccount> {
+                $0.wallet.walletId == walletId &&
+                $0.accountType == 0 &&
+                $0.standardTag == 0
+            },
+            sort: \.accountIndex
+        )
+        _platformAddresses = Query(filter: PersistentPlatformAddress.predicate(walletId: walletId))
+    }
+
     @State private var selectedTab: ReceiveAddressTab = .core
+    @State private var selectedAccountIndex: UInt32 = 0
     @State private var copiedToClipboard = false
     @State private var faucetStatus: String?
     @State private var isFaucetLoading = false
@@ -51,37 +64,14 @@ struct ReceiveAddressView: View {
     /// is unnecessary now that Platform addresses have their own
     /// model.
     private var nextPlatformReceiveAddress: PersistentPlatformAddress? {
-        let walletId = wallet.walletId
-        var best: PersistentPlatformAddress? = nil
-        for addr in platformAddresses {
-            if addr.walletId != walletId { continue }
-            if addr.isUsed { continue }
-            if let current = best, current.addressIndex <= addr.addressIndex {
-                continue
-            }
-            best = addr
-        }
-        return best
+        platformAddresses
+            .filter { !$0.isUsed }
+            .min(by: { $0.addressIndex < $1.addressIndex })
     }
 
-    /// Primary Standard account (BIP44 or BIP32) for the active wallet,
-    /// or nil if it hasn't been persisted yet. `standardTag` is not
-    /// required to match — a wallet only ever has one `(accountType=0,
-    /// accountIndex=0)` account, so the uniqueness already follows
-    /// from the two upstream fields.
     private var primaryBip44Account: PersistentAccount? {
-        findAccount(accountType: 0, accountIndex: 0)
-    }
-
-    private func findAccount(accountType: UInt32, accountIndex: UInt32) -> PersistentAccount? {
-        let walletId = wallet.walletId
-        for account in allAccounts {
-            if account.wallet.walletId != walletId { continue }
-            if account.accountType != accountType { continue }
-            if account.accountIndex != accountIndex { continue }
-            return account
-        }
-        return nil
+        bip44Accounts.first { $0.accountIndex == selectedAccountIndex }
+            ?? bip44Accounts.first
     }
 
     /// Lowest-indexed address in the given pool on the given account
@@ -166,6 +156,26 @@ struct ReceiveAddressView: View {
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
+
+                if selectedTab == .core && bip44Accounts.count > 1 {
+                    if bip44Accounts.count <= 4 {
+                        Picker("Account", selection: $selectedAccountIndex) {
+                            ForEach(bip44Accounts, id: \.accountIndex) { account in
+                                Text("Account \(account.accountIndex)").tag(account.accountIndex)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .padding(.horizontal)
+                    } else {
+                        Picker("Account", selection: $selectedAccountIndex) {
+                            ForEach(bip44Accounts, id: \.accountIndex) { account in
+                                Text("Account \(account.accountIndex)").tag(account.accountIndex)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .padding(.horizontal)
+                    }
+                }
 
                 if hasValidAddress {
                     if let qrImage = generateQRCode(from: currentAddress) {
@@ -276,6 +286,9 @@ struct ReceiveAddressView: View {
                 }
             }
             .onChange(of: selectedTab) { _, _ in
+                copiedToClipboard = false
+            }
+            .onChange(of: selectedAccountIndex) { _, _ in
                 copiedToClipboard = false
             }
         }
