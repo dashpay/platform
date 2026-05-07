@@ -12,8 +12,8 @@ use dpp::fee::Credits;
 use dpp::identity::identity_public_key::conversion::json::IdentityPublicKeyJsonConversionMethodsV0;
 use dpp::identity::identity_public_key::conversion::platform_value::IdentityPublicKeyPlatformValueConversionMethodsV0;
 use dpp::identity::{IdentityPublicKey, KeyID, PartialIdentity};
-use dpp::platform_value;
 use dpp::prelude::Revision;
+use dpp::serialization::ValueConvertible;
 use dpp::version::PlatformVersion;
 use js_sys::{Array, Object, Reflect};
 use std::collections::{BTreeMap, BTreeSet};
@@ -192,20 +192,25 @@ impl PartialIdentityWasm {
 
     #[wasm_bindgen(js_name = "toJSON")]
     pub fn to_json(&self) -> WasmDppResult<PartialIdentityJSONJs> {
-        // Convert to platform_value, which handles integer map keys by converting to strings
-        let value = platform_value::to_value(&self.0)
+        // Route through the canonical ValueConvertible to preserve typed
+        // map keys / bytes through the platform_value tree, then convert
+        // to a JS-friendly JSON value (Identifier -> base58, bytes -> base64).
+        let value = self
+            .0
+            .to_object()
             .map_err(|e| WasmDppError::serialization(format!("toJSON: {}", e)))?;
-        // platform_value_to_json converts Identifier to base58, bytes to base64
         let js_value = serialization::platform_value_to_json(&value)?;
         Ok(js_value.into())
     }
 
     #[wasm_bindgen(js_name = "toObject")]
     pub fn to_object(&self) -> WasmDppResult<PartialIdentityObjectJs> {
-        // Convert to platform_value, which handles integer map keys by converting to strings
-        let value = platform_value::to_value(&self.0)
+        // Route through the canonical ValueConvertible. Bytes stay as
+        // Uint8Array, u64 as BigInt at the JS boundary.
+        let value = self
+            .0
+            .to_object()
             .map_err(|e| WasmDppError::serialization(format!("toObject: {}", e)))?;
-        // platform_value_to_object keeps bytes as Uint8Array, u64 as BigInt
         let js_value = serialization::platform_value_to_object(&value)?;
         Ok(js_value.into())
     }
@@ -379,7 +384,7 @@ pub fn value_to_loaded_public_keys_from_object(
         })?;
 
         let platform_value = serialization::platform_value_from_object(&js_key)?;
-        let pub_key = IdentityPublicKey::from_object(platform_value, platform_version)
+        let pub_key = <IdentityPublicKey as IdentityPublicKeyPlatformValueConversionMethodsV0>::from_object(platform_value, platform_version)
             .map_err(WasmDppError::from)?;
         map.insert(key_id, pub_key);
     }
