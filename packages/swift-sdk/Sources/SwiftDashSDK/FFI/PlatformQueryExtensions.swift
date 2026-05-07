@@ -271,9 +271,7 @@ extension SDK {
 
         // Check for error
         if let error = result.error {
-            let errorMessage = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Unknown error"
-            dash_sdk_error_free(error)
-            throw SDKError.internalError("Failed to fetch data contract: \(errorMessage)")
+            throw SDKError.consumeDashSDKError(error)
         }
 
         // Get the JSON string
@@ -352,9 +350,7 @@ extension SDK {
         // First fetch the data contract
         let contractResult = dash_sdk_data_contract_fetch(handle, dataContractId)
         if let error = contractResult.error {
-            let errorMessage = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Unknown error"
-            dash_sdk_error_free(error)
-            throw SDKError.internalError("Failed to fetch data contract: \(errorMessage)")
+            throw SDKError.consumeDashSDKError(error)
         }
 
         guard let contractHandle = contractResult.data else {
@@ -443,9 +439,7 @@ extension SDK {
         // First fetch the data contract
         let contractResult = dash_sdk_data_contract_fetch(handle, dataContractId)
         if let error = contractResult.error {
-            let errorMessage = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Unknown error"
-            dash_sdk_error_free(error)
-            throw SDKError.internalError("Failed to fetch data contract: \(errorMessage)")
+            throw SDKError.consumeDashSDKError(error)
         }
 
         guard let contractHandle = contractResult.data else {
@@ -462,9 +456,7 @@ extension SDK {
         let documentResult = dash_sdk_document_fetch(handle, contractHandle.assumingMemoryBound(to: DataContractHandle.self), documentType, documentId)
 
         if let error = documentResult.error {
-            let errorMessage = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Unknown error"
-            dash_sdk_error_free(error)
-            throw SDKError.internalError("Failed to fetch document: \(errorMessage)")
+            throw SDKError.consumeDashSDKError(error)
         }
 
         guard let documentHandle = documentResult.data else {
@@ -689,9 +681,7 @@ extension SDK {
 
         // Check for error
         if let error = result.error {
-            let errorMessage = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Unknown error"
-            dash_sdk_error_free(error)
-            throw SDKError.internalError(errorMessage)
+            throw SDKError.consumeDashSDKError(error)
         }
 
         // Parse the JSON result
@@ -783,9 +773,7 @@ extension SDK {
         let result = dash_sdk_identity_resolve_name(handle, name)
 
         if let error = result.error {
-            let errorMessage = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Unknown error"
-            dash_sdk_error_free(error)
-            throw SDKError.internalError(errorMessage)
+            throw SDKError.consumeDashSDKError(error)
         }
 
         guard let dataPtr = result.data else {
@@ -981,9 +969,7 @@ extension SDK {
 
         // Special handling for protocol version upgrade state which returns an array
         if let error = result.error {
-            let errorMessage = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Unknown error"
-            dash_sdk_error_free(error)
-            throw SDKError.internalError(errorMessage)
+            throw SDKError.consumeDashSDKError(error)
         }
 
         // If no data, return empty result
@@ -1210,11 +1196,7 @@ extension SDK {
         }
 
         if let error = result.error {
-            let errorMessage = error.pointee.message != nil
-                ? String(cString: error.pointee.message!)
-                : "Unknown error"
-            dash_sdk_error_free(error)
-            throw SDKError.internalError(errorMessage)
+            throw SDKError.consumeDashSDKError(error)
         }
 
         guard let dataPtr = result.data else {
@@ -1236,9 +1218,7 @@ extension SDK {
 
         // Special handling for this query - null means no claim found
         if let error = result.error {
-            let errorMessage = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Unknown error"
-            dash_sdk_error_free(error)
-            throw SDKError.internalError(errorMessage)
+            throw SDKError.consumeDashSDKError(error)
         }
 
         guard let dataPtr = result.data else {

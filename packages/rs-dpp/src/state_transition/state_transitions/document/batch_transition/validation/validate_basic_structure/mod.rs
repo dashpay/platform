@@ -1,5 +1,3 @@
-#[cfg(any(test, feature = "state-transition-signing"))]
-use crate::data_contract::document_type::DocumentTypeRef;
 use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use crate::state_transition::batch_transition::document_create_transition::validate_structure::DocumentCreateTransitionStructureValidation;
 use crate::state_transition::batch_transition::BatchTransition;
@@ -66,13 +64,9 @@ impl BatchTransition {
     /// Non-create document transition-local checks are expected to have
     /// already run in the relevant `from_document` constructor, so this hook
     /// relies on those constructors instead of re-dispatching that work here.
-    /// `document_type` is still accepted to keep the constructor call sites
-    /// stable while create-ID checks remain here; token constructors use
-    /// `None`.
     #[cfg(any(test, feature = "state-transition-signing"))]
     pub(crate) fn validate_base_structure_pre_sign(
         &self,
-        _document_type: Option<DocumentTypeRef<'_>>,
         platform_version: &PlatformVersion,
     ) -> Result<(), ProtocolError> {
         let mut result = match platform_version
@@ -143,12 +137,11 @@ impl BatchTransition {
         self,
         identity_public_key: &IdentityPublicKey,
         signer: &S,
-        document_type: Option<DocumentTypeRef<'_>>,
         required_security_level: Option<SecurityLevel>,
         platform_version: &PlatformVersion,
         options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
-        self.validate_base_structure_pre_sign(document_type, platform_version)?;
+        self.validate_base_structure_pre_sign(platform_version)?;
         let resolved_options = options.unwrap_or_default();
         let mut state_transition: StateTransition = self.into();
         match required_security_level {

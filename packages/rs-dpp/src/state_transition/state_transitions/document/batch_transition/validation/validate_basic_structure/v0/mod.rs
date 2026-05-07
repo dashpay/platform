@@ -527,7 +527,7 @@ mod tests {
         let bad_nonce: u64 = u64::MAX;
         let batch = make_batch_v0(vec![make_invalid_create(owner_id_v0(), bad_nonce)]);
 
-        match batch.validate_base_structure_pre_sign(None, pv) {
+        match batch.validate_base_structure_pre_sign(pv) {
             Err(ProtocolError::ConsensusErrors(errors)) => {
                 assert_eq!(errors.len(), 2, "expected all accumulated errors");
                 assert!(errors.iter().any(|error| matches!(
@@ -549,7 +549,7 @@ mod tests {
         let bad_nonce: u64 = u64::MAX;
         let batch = make_token_batch_v1(vec![make_invalid_token_burn(bad_nonce)]);
 
-        match batch.validate_base_structure_pre_sign(None, pv) {
+        match batch.validate_base_structure_pre_sign(pv) {
             Err(ProtocolError::ConsensusErrors(errors)) => {
                 assert_eq!(errors.len(), 2, "expected all accumulated errors");
                 assert!(errors.iter().any(|error| matches!(

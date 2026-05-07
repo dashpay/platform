@@ -135,7 +135,6 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV1 {
             .validate_and_sign(
                 identity_public_key,
                 signer,
-                Some(document_type),
                 Some(document_type.security_level_requirement()),
                 platform_version,
                 Some(resolved_options),
@@ -178,7 +177,6 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV1 {
             .validate_and_sign(
                 identity_public_key,
                 signer,
-                Some(document_type),
                 Some(document_type.security_level_requirement()),
                 platform_version,
                 Some(resolved_options),
@@ -221,7 +219,6 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV1 {
             .validate_and_sign(
                 identity_public_key,
                 signer,
-                Some(document_type),
                 Some(document_type.security_level_requirement()),
                 platform_version,
                 Some(resolved_options),
@@ -266,7 +263,6 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV1 {
             .validate_and_sign(
                 identity_public_key,
                 signer,
-                Some(document_type),
                 Some(document_type.security_level_requirement()),
                 platform_version,
                 Some(resolved_options),
@@ -311,7 +307,6 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV1 {
             .validate_and_sign(
                 identity_public_key,
                 signer,
-                Some(document_type),
                 Some(document_type.security_level_requirement()),
                 platform_version,
                 Some(resolved_options),
@@ -371,7 +366,6 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV1 {
             .validate_and_sign(
                 identity_public_key,
                 signer,
-                Some(document_type),
                 Some(document_type.security_level_requirement()),
                 platform_version,
                 Some(resolved_options),
