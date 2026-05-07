@@ -11,7 +11,6 @@ use dashcore::Address as DashAddress;
 use dashcore::{OutPoint, PrivateKey};
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
-use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 
 use crate::changeset::changeset::AssetLockChangeSet;
 use crate::error::PlatformWalletError;
