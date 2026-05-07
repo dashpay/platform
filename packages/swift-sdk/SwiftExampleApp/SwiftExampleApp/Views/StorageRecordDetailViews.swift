@@ -1477,9 +1477,7 @@ struct TransactionStorageDetailView: View {
             Section("Metadata") {
                 FieldRow(label: "Label", value: record.label.isEmpty ? "None" : record.label)
                 FieldRow(label: "First Seen", value: "\(record.firstSeen)")
-                if let size = record.transactionData?.count {
-                    FieldRow(label: "TX Size", value: "\(size) bytes")
-                }
+                FieldRow(label: "TX Size", value: "\(record.transactionData.count) bytes")
             }
             // Per-output drill-downs. Each row navigates to the
             // owning `PersistentTxo` so the address / spent state /

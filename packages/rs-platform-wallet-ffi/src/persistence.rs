@@ -378,6 +378,74 @@ pub struct PersistenceCallbacks {
             count: usize,
         ),
     >,
+    /// Look up a single core transaction record by `txid` for the
+    /// asset-lock proof flow's persister fallback.
+    ///
+    /// With upstream's `keep-finalized-transactions` Cargo feature OFF
+    /// (the default), chain-locked records are evicted from the
+    /// in-memory `transactions()` map and only their txids retained in
+    /// `finalized_txids` for dedup. The asset-lock proof flow needs to
+    /// recover the chain-lock height to construct a
+    /// `ChainAssetLockProof`; the persister has the record (it
+    /// received it on the chain-lock-transition `store` call before
+    /// eviction) and answers this lookup.
+    ///
+    /// Output contract:
+    /// - Set `*out_found = true` when a row exists for `txid`. Set
+    ///   `*out_context_kind` to the row's actual context (0=Mempool,
+    ///   1=InstantSend, 2=InBlock, 3=InChainLockedBlock). For
+    ///   context kinds 2 and 3, populate `out_block_height`,
+    ///   `out_block_hash` (32 bytes), and `out_block_timestamp` from
+    ///   the row's block info; the Rust side ignores those fields
+    ///   for kinds 0 and 1.
+    /// - Hand back the row's raw transaction bytes via
+    ///   `*out_tx_bytes` + `*out_tx_bytes_len`. The buffer is
+    ///   caller-allocated and must remain valid until the Rust side
+    ///   invokes [`Self::on_get_core_tx_record_free_fn`]. Set
+    ///   `*out_tx_bytes = null` + `*out_tx_bytes_len = 0` if the
+    ///   row exists but the persister never stored the bytes (the
+    ///   Rust side will surface `None` rather than synthesize a
+    ///   placeholder).
+    /// - Set `*out_found = false` when no row exists for `txid`.
+    /// - Return `0` on a successful lookup (whether found or not).
+    ///   Non-zero values are treated as a transient backend failure
+    ///   by the Rust side and surfaced as `None` (no error
+    ///   propagation through the proof flow).
+    ///
+    /// The Rust side faithfully reconstructs the
+    /// [`TransactionContext`](key_wallet::transaction_checking::TransactionContext)
+    /// from `*out_context_kind` and decodes the tx bytes into a real
+    /// [`dashcore::Transaction`]. InstantSend rows are reported back
+    /// with the kind tag but not currently consumed (the persister
+    /// doesn't store the IS-lock blob), so for an IS hit the Rust
+    /// side surfaces `None` to the proof flow — same outcome as a
+    /// miss. The proof flow then falls through to its existing
+    /// SPV-event-driven wait path, which is what would have happened
+    /// without the fallback at all.
+    pub on_get_core_tx_record_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            txid: *const u8,
+            out_context_kind: *mut u8,
+            out_block_height: *mut u32,
+            out_block_hash: *mut u8,
+            out_block_timestamp: *mut u32,
+            out_tx_bytes: *mut *const u8,
+            out_tx_bytes_len: *mut usize,
+            out_found: *mut bool,
+        ) -> i32,
+    >,
+    /// Paired free callback for the tx-bytes buffer returned by
+    /// [`Self::on_get_core_tx_record_fn`]. The Rust side invokes
+    /// this with the same `(tx_bytes, tx_bytes_len)` pair the lookup
+    /// callback wrote into the output pointers, exactly once per
+    /// hit. Implementations should release the buffer (e.g.
+    /// `UnsafeMutablePointer<UInt8>.deallocate()` on the Swift
+    /// side).
+    pub on_get_core_tx_record_free_fn: Option<
+        unsafe extern "C" fn(context: *mut c_void, tx_bytes: *const u8, tx_bytes_len: usize),
+    >,
 }
 
 // SAFETY: The context pointer is managed by the FFI caller who must ensure
@@ -1279,6 +1347,207 @@ impl PlatformWalletPersistence for FFIPersister {
         }
 
         Ok(out)
+    }
+
+    /// Look up a transaction record by `txid` via the
+    /// `on_get_core_tx_record_fn` callback and reconstruct the
+    /// [`TransactionRecord`] for the asset-lock proof flow.
+    ///
+    /// The proof-flow callers in
+    /// `platform-wallet/src/wallet/asset_lock/sync/` only read
+    /// `record.context`, `record.height()`, and (for site 4)
+    /// `record.transaction.txid`. The Swift side hands back the
+    /// row's actual context kind plus the raw transaction bytes, so
+    /// `txid` / `context` / `transaction` are all reliable. Other
+    /// fields (`account_type`, `transaction_type`, `direction`,
+    /// `input_details`, `output_details`, `net_amount`, `fee`,
+    /// `label`) are best-effort placeholders per the trait field
+    /// contract; see
+    /// [`PlatformWalletPersistence::get_core_tx_record`].
+    ///
+    /// The InstantSend variant requires an
+    /// [`InstantLock`](dashcore::ephemerealdata::instant_lock::InstantLock)
+    /// blob that the persister doesn't currently store, so for an IS
+    /// hit we surface `None` (treat as miss) and let the proof
+    /// flow's existing SPV-event-driven wait path complete the
+    /// proof.
+    ///
+    /// Returns `Ok(None)` when the callback is unset, when the
+    /// callback reports `out_found = false`, when the callback
+    /// returns a non-zero result code (treated as a transient backend
+    /// failure per the trait contract — surfaced as `None` rather
+    /// than propagating), when the callback hands back a null /
+    /// empty tx-bytes buffer, when the bytes don't decode as a
+    /// `dashcore::Transaction`, or for an IS hit (see above).
+    fn get_core_tx_record(
+        &self,
+        wallet_id: WalletId,
+        txid: &dashcore::Txid,
+    ) -> Result<
+        Option<key_wallet::managed_account::transaction_record::TransactionRecord>,
+        PersistenceError,
+    > {
+        use dashcore::consensus::Decodable;
+        use dashcore::hashes::Hash;
+        use key_wallet::account::{AccountType, StandardAccountType};
+        use key_wallet::managed_account::transaction_record::{
+            TransactionDirection, TransactionRecord,
+        };
+        use key_wallet::transaction_checking::{BlockInfo, TransactionContext, TransactionType};
+
+        let Some(get_cb) = self.callbacks.on_get_core_tx_record_fn else {
+            return Ok(None);
+        };
+
+        let txid_bytes: [u8; 32] = *txid.as_byte_array();
+        let mut context_kind: u8 = 0;
+        let mut block_height: u32 = 0;
+        let mut block_hash: [u8; 32] = [0u8; 32];
+        let mut block_timestamp: u32 = 0;
+        let mut tx_bytes_ptr: *const u8 = std::ptr::null();
+        let mut tx_bytes_len: usize = 0;
+        let mut found: bool = false;
+
+        // SAFETY: All output pointers reference Rust-owned stack
+        // locals that outlive the callback invocation. `wallet_id`
+        // and `txid` are fixed-size byte arrays.
+        let rc = unsafe {
+            get_cb(
+                self.callbacks.context,
+                wallet_id.as_ptr(),
+                txid_bytes.as_ptr(),
+                &mut context_kind,
+                &mut block_height,
+                block_hash.as_mut_ptr(),
+                &mut block_timestamp,
+                &mut tx_bytes_ptr,
+                &mut tx_bytes_len,
+                &mut found,
+            )
+        };
+
+        // RAII guard so the tx-bytes free callback fires on every
+        // exit path past this point — early returns for unknown
+        // context kinds, decode failures, and the IS-skip case all
+        // correctly hand the buffer back to Swift.
+        struct TxBytesGuard<'a> {
+            ptr: *const u8,
+            len: usize,
+            free_fn: Option<
+                unsafe extern "C" fn(
+                    context: *mut c_void,
+                    tx_bytes: *const u8,
+                    tx_bytes_len: usize,
+                ),
+            >,
+            ctx: *mut c_void,
+            _marker: std::marker::PhantomData<&'a ()>,
+        }
+        impl<'a> Drop for TxBytesGuard<'a> {
+            fn drop(&mut self) {
+                if let (Some(free), false) = (self.free_fn, self.ptr.is_null()) {
+                    // SAFETY: ptr+len match the values the lookup
+                    // callback wrote; Swift owns the allocation
+                    // until this free fires.
+                    unsafe { free(self.ctx, self.ptr, self.len) };
+                }
+            }
+        }
+        let _bytes_guard = TxBytesGuard {
+            ptr: tx_bytes_ptr,
+            len: tx_bytes_len,
+            free_fn: self.callbacks.on_get_core_tx_record_free_fn,
+            ctx: self.callbacks.context,
+            _marker: std::marker::PhantomData,
+        };
+
+        if rc != 0 {
+            tracing::debug!(
+                txid = %txid,
+                rc,
+                "on_get_core_tx_record_fn returned a non-zero result; \
+                 treating as miss"
+            );
+            return Ok(None);
+        }
+        if !found {
+            return Ok(None);
+        }
+
+        let context = match context_kind {
+            0 => TransactionContext::Mempool,
+            1 => {
+                // InstantSend requires the IS-lock blob, which the
+                // persister doesn't currently store. Treat as miss
+                // so the proof flow's SPV wait path completes the
+                // proof from the live event stream.
+                return Ok(None);
+            }
+            2 => TransactionContext::InBlock(BlockInfo::new(
+                block_height,
+                dashcore::BlockHash::from_byte_array(block_hash),
+                block_timestamp,
+            )),
+            3 => TransactionContext::InChainLockedBlock(BlockInfo::new(
+                block_height,
+                dashcore::BlockHash::from_byte_array(block_hash),
+                block_timestamp,
+            )),
+            unknown => {
+                tracing::debug!(
+                    txid = %txid,
+                    unknown,
+                    "on_get_core_tx_record_fn returned an unknown \
+                     context kind; treating as miss"
+                );
+                return Ok(None);
+            }
+        };
+
+        if tx_bytes_ptr.is_null() || tx_bytes_len == 0 {
+            tracing::debug!(
+                txid = %txid,
+                "on_get_core_tx_record_fn reported a hit but no tx \
+                 bytes; treating as miss"
+            );
+            return Ok(None);
+        }
+        // SAFETY: Swift guarantees `tx_bytes_ptr` points to
+        // `tx_bytes_len` valid bytes for the duration of the
+        // callback window — `_bytes_guard` keeps that window open
+        // until this function returns.
+        let tx_slice = unsafe { slice::from_raw_parts(tx_bytes_ptr, tx_bytes_len) };
+        let transaction = match dashcore::blockdata::transaction::Transaction::consensus_decode(
+            &mut &tx_slice[..],
+        ) {
+            Ok(tx) => tx,
+            Err(err) => {
+                tracing::debug!(
+                    txid = %txid,
+                    error = %err,
+                    "on_get_core_tx_record_fn returned undecodable \
+                     tx bytes; treating as miss"
+                );
+                return Ok(None);
+            }
+        };
+
+        Ok(Some(TransactionRecord {
+            transaction,
+            txid: *txid,
+            account_type: AccountType::Standard {
+                index: 0,
+                standard_account_type: StandardAccountType::BIP44Account,
+            },
+            context,
+            transaction_type: TransactionType::Standard,
+            direction: TransactionDirection::Internal,
+            input_details: Vec::new(),
+            output_details: Vec::new(),
+            net_amount: 0,
+            fee: None,
+            label: String::new(),
+        }))
     }
 }
 
