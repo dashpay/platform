@@ -4,6 +4,7 @@ use crate::broadcaster::TransactionBroadcaster;
 use std::time::Duration;
 
 use dashcore::OutPoint;
+use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 
 use crate::error::PlatformWalletError;
 
@@ -45,7 +46,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             .accounts
             .standard_bip44_accounts
             .get(&account_index)
-            .and_then(|a| a.transactions.get(&out_point.txid))
+            .and_then(|a| a.transactions().get(&out_point.txid))
             .ok_or_else(|| {
                 PlatformWalletError::AssetLockProofWait(format!(
                     "Transaction {} not found in account {}",
@@ -139,7 +140,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 .accounts
                 .standard_bip44_accounts
                 .get(&account_index)
-                .and_then(|a| a.transactions.get(&txid))
+                .and_then(|a| a.transactions().get(&txid))
                 .ok_or_else(|| {
                     PlatformWalletError::AssetLockProofWait(format!(
                         "Transaction {} not found in account {}",
@@ -223,7 +224,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         .accounts
                         .standard_bip44_accounts
                         .get(&account_index)
-                        .and_then(|a| a.transactions.get(&out_point.txid))
+                        .and_then(|a| a.transactions().get(&out_point.txid))
                     {
                         if matches!(record.context, TransactionContext::InChainLockedBlock(_)) {
                             if let Some(h) = record.height() {
@@ -294,7 +295,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         .accounts
                         .standard_bip44_accounts
                         .get(&account_index)
-                        .and_then(|a| a.transactions.get(&out_point.txid))
+                        .and_then(|a| a.transactions().get(&out_point.txid))
                     {
                         match &record.context {
                             TransactionContext::InstantSend(instant_lock) => {

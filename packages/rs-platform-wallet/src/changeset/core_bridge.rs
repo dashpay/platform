@@ -211,12 +211,12 @@ async fn is_chain_locked(
     };
     // Walk every account; if any holds an in-memory record for this
     // txid, the chain-lock determination falls out of its
-    // `TransactionContext`. With `keep_txs_in_memory` off (the default)
-    // `get_transaction` returns `None` regardless of state — chain-lock
-    // delivery is event-driven in that mode, and this helper just
-    // reports "no record locally" by returning false.
+    // `TransactionContext`. With `keep-finalized-transactions` off
+    // (the default) `transactions()` returns an empty map regardless
+    // of state — chain-lock delivery is event-driven in that mode, and
+    // this helper just reports "no record locally" by returning false.
     for account in info.core_wallet.accounts.all_accounts() {
-        if let Some(record) = account.get_transaction(txid) {
+        if let Some(record) = account.transactions().get(txid) {
             return matches!(record.context, TransactionContext::InChainLockedBlock(_));
         }
     }
