@@ -50,37 +50,11 @@ impl<'de> Deserialize<'de> for PoolingWasm {
     where
         D: Deserializer<'de>,
     {
-        let value: serde_json::Value = Deserialize::deserialize(deserializer)?;
-
-        // Try as string first
-        if let Some(s) = value.as_str() {
-            return match s.to_lowercase().as_str() {
-                "never" => Ok(PoolingWasm::Never),
-                "ifavailable" => Ok(PoolingWasm::IfAvailable),
-                "standard" => Ok(PoolingWasm::Standard),
-                _ => Err(serde::de::Error::custom(format!(
-                    "unsupported pooling value ({})",
-                    s
-                ))),
-            };
-        }
-
-        // Try as number
-        if let Some(n) = value.as_u64() {
-            return match n {
-                0 => Ok(PoolingWasm::Never),
-                1 => Ok(PoolingWasm::IfAvailable),
-                2 => Ok(PoolingWasm::Standard),
-                _ => Err(serde::de::Error::custom(format!(
-                    "unsupported pooling value ({})",
-                    n
-                ))),
-            };
-        }
-
-        Err(serde::de::Error::custom(
-            "pooling must be a string or number",
-        ))
+        // Delegate to the canonical helper in dpp — already accepts both
+        // string variants ("never" / "ifAvailable" / "standard", with
+        // various capitalizations) and the numeric discriminant (0 / 1 / 2).
+        let pooling = dpp::withdrawal::pooling_serde::deserialize(deserializer)?;
+        Ok(pooling.into())
     }
 }
 
