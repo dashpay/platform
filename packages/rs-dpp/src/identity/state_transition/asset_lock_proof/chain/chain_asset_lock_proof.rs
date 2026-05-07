@@ -9,7 +9,7 @@ use platform_value::Value;
 use std::convert::TryFrom;
 
 use crate::util::hash::hash_double;
-use crate::{identifier::Identifier, ProtocolError};
+use crate::identifier::Identifier;
 use dashcore::OutPoint;
 
 /// Instant Asset Lock Proof is a part of Identity Create and Identity Topup
@@ -190,13 +190,6 @@ impl TryFrom<Value> for ChainAssetLockProof {
 }
 
 impl ChainAssetLockProof {
-    pub fn to_object(&self) -> Result<Value, ProtocolError> {
-        platform_value::to_value(self).map_err(ProtocolError::ValueError)
-    }
-    pub fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
-        self.to_object()
-    }
-
     pub fn new(core_chain_locked_height: u32, out_point: [u8; 36]) -> Self {
         Self {
             core_chain_locked_height,
@@ -250,6 +243,7 @@ mod tests {
 
     #[test]
     fn chain_asset_lock_proof_value_round_trip() {
+        use crate::serialization::ValueConvertible;
         let txid_hex = "e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d";
         let txid = Txid::from_str(txid_hex).unwrap();
         let proof = ChainAssetLockProof {

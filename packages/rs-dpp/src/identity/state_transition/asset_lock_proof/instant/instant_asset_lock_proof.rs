@@ -108,14 +108,6 @@ impl InstantAssetLockProof {
         }
     }
 
-    pub fn to_object(&self) -> Result<Value, ProtocolError> {
-        platform_value::to_value(self).map_err(ProtocolError::ValueError)
-    }
-
-    pub fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
-        self.to_object()
-    }
-
     pub fn instant_lock(&self) -> &InstantLock {
         &self.instant_lock
     }
@@ -393,20 +385,14 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // to_object()
+    // to_object() — canonical ValueConvertible
     // ---------------------------------------------------------------
 
     #[test]
     fn test_to_object_succeeds() {
+        use crate::serialization::ValueConvertible;
         let proof = raw_instant_asset_lock_proof_fixture(None, None);
         let result = proof.to_object();
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_to_cleaned_object_succeeds() {
-        let proof = raw_instant_asset_lock_proof_fixture(None, None);
-        let result = proof.to_cleaned_object();
         assert!(result.is_ok());
     }
 
@@ -461,6 +447,7 @@ mod tests {
 
     #[test]
     fn test_try_from_value_round_trip() {
+        use crate::serialization::ValueConvertible;
         let proof = raw_instant_asset_lock_proof_fixture(None, None);
         let value = proof.to_object().unwrap();
         let recovered = InstantAssetLockProof::try_from(value).unwrap();
