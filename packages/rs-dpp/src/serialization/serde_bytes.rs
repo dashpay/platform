@@ -102,6 +102,69 @@ pub fn deserialize<'de, D: Deserializer<'de>, const N: usize>(
     }
 }
 
+/// Serde helper for `Option<[u8; N]>` — wraps the parent module's
+/// const-generic `[u8; N]` codec in `Option`-aware visitors.
+///
+/// Use via `#[serde(with = "crate::serialization::serde_bytes::option")]`.
+/// `None` round-trips as `null` in JSON / `unit` in binary formats; `Some`
+/// values use the parent module's base64-vs-bytes shape.
+pub mod option {
+    use serde::de::{self, Visitor};
+    use serde::{Deserializer, Serializer};
+    use std::fmt;
+
+    pub fn serialize<S: Serializer, const N: usize>(
+        value: &Option<[u8; N]>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        // Wrap the inner `[u8; N]` so we can call `serialize_some` and let the
+        // outer serializer write the Option tag (None / Some). Calling
+        // `super::serialize` directly with the inner serializer would bypass
+        // the Option variant tag in non-self-describing formats like bincode.
+        struct Inner<'a, const N: usize>(&'a [u8; N]);
+        impl<'a, const N: usize> serde::Serialize for Inner<'a, N> {
+            fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+                super::serialize(self.0, s)
+            }
+        }
+        match value {
+            Some(bytes) => serializer.serialize_some(&Inner::<N>(bytes)),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>, const N: usize>(
+        deserializer: D,
+    ) -> Result<Option<[u8; N]>, D::Error> {
+        struct OptionVisitor<const N: usize>;
+
+        impl<'de, const N: usize> Visitor<'de> for OptionVisitor<N> {
+            type Value = Option<[u8; N]>;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                write!(f, "optional {} bytes", N)
+            }
+
+            fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
+                Ok(None)
+            }
+
+            fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
+                Ok(None)
+            }
+
+            fn visit_some<D: Deserializer<'de>>(
+                self,
+                deserializer: D,
+            ) -> Result<Self::Value, D::Error> {
+                super::deserialize::<D, N>(deserializer).map(Some)
+            }
+        }
+
+        deserializer.deserialize_option(OptionVisitor::<N>)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use base64::prelude::BASE64_STANDARD;
@@ -157,6 +220,40 @@ mod tests {
         let bytes = bincode::serde::encode_to_vec(&original, bincode::config::standard())
             .expect("bincode encode");
         let (restored, _): (Wrap32, usize) =
+            bincode::serde::decode_from_slice(&bytes, bincode::config::standard())
+                .expect("bincode decode");
+        assert_eq!(original, restored);
+    }
+
+    // --- option submodule --------------------------------------------------
+
+    #[derive(Serialize, Deserialize, PartialEq, Debug)]
+    struct OptWrap32(#[serde(with = "super::option")] Option<[u8; 32]>);
+
+    #[test]
+    fn option_some_json_round_trip() {
+        let original = OptWrap32(Some([0xab; 32]));
+        let value = serde_json::to_value(&original).expect("serialize");
+        assert_eq!(value, serde_json::json!(BASE64_STANDARD.encode([0xab; 32])));
+        let restored: OptWrap32 = serde_json::from_value(value).expect("deserialize");
+        assert_eq!(original, restored);
+    }
+
+    #[test]
+    fn option_none_json_round_trip() {
+        let original = OptWrap32(None);
+        let value = serde_json::to_value(&original).expect("serialize");
+        assert_eq!(value, serde_json::Value::Null);
+        let restored: OptWrap32 = serde_json::from_value(value).expect("deserialize");
+        assert_eq!(original, restored);
+    }
+
+    #[test]
+    fn option_some_binary_round_trip() {
+        let original = OptWrap32(Some([0x77; 32]));
+        let bytes = bincode::serde::encode_to_vec(&original, bincode::config::standard())
+            .expect("bincode encode");
+        let (restored, _): (OptWrap32, usize) =
             bincode::serde::decode_from_slice(&bytes, bincode::config::standard())
                 .expect("bincode decode");
         assert_eq!(original, restored);

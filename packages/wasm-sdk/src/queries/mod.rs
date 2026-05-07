@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
-use wasm_dpp2::serialization::bytes_b64;
+use dash_sdk::dpp::serialization::serde_bytes_var as bytes_b64;
 use wasm_dpp2::serialization::conversions as serialization;
 
 #[dpp_json_convertible_derive::json_safe_fields(crate = "dash_sdk::dpp")]

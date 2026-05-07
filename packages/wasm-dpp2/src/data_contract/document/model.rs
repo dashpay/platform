@@ -105,7 +105,7 @@ pub struct DocumentWasm {
     pub(crate) document_type_name: String,
     #[serde(
         rename = "$entropy",
-        with = "serialization::bytes_b64::option",
+        with = "dpp::serialization::serde_bytes::option",
         skip_serializing_if = "Option::is_none",
         default
     )]

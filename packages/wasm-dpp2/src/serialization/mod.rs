@@ -1,10 +1,14 @@
 //! Serialization utilities for WASM bindings.
 //!
 //! This module contains:
-//! - `bytes_b64`: Serde helpers for bytes that serialize as Base64 in human-readable formats
 //! - `conversions`: Format-aware conversion helpers between Rust/JS/JSON representations
+//!
+//! For bytes serde helpers (base64 in human-readable, raw bytes in binary),
+//! use the canonical helpers from rs-dpp:
+//! - `dpp::serialization::serde_bytes` — for `[u8; N]` (and `Option<[u8; N]>`
+//!   via `dpp::serialization::serde_bytes::option`)
+//! - `dpp::serialization::serde_bytes_var` — for `Vec<u8>`
 
-pub mod bytes_b64;
 pub mod conversions;
 
 // Re-export commonly used items from conversions
