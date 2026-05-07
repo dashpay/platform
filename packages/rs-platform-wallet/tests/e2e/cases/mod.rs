@@ -7,6 +7,7 @@
 //! in subsequent PRs.
 
 pub mod cr_003_asset_lock_funded_registration;
+pub mod cr_004_legacy_bip32_utxo_update_after_spend;
 pub mod dpns_001_register_name;
 pub mod id_001_register_identity_from_addresses;
 pub mod id_002_top_up_identity;
