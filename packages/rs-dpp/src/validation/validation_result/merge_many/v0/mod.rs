@@ -34,3 +34,38 @@ where
     });
     ValidationResult::new_with_data_and_errors(aggregate_data, aggregate_errors)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn collects_data_into_vec() {
+        let r1: ValidationResult<i32, String> = ValidationResult::new_with_data(1);
+        let r2: ValidationResult<i32, String> = ValidationResult::new_with_data(2);
+        let r3: ValidationResult<i32, String> = ValidationResult::new_with_error("e".to_string());
+
+        let merged = merge_many_v0(vec![r1, r2, r3]);
+        assert_eq!(merged.data, Some(vec![1, 2]));
+        assert_eq!(merged.errors, vec!["e".to_string()]);
+    }
+
+    #[test]
+    fn empty_input_returns_some_empty() {
+        // Legacy v11 behavior: Some(empty_vec), not None.
+        let merged: ValidationResult<Vec<i32>, String> =
+            merge_many_v0(std::iter::empty::<ValidationResult<i32, String>>());
+        assert_eq!(merged.data, Some(vec![]));
+        assert!(merged.errors.is_empty());
+    }
+
+    #[test]
+    fn all_inputs_no_data_returns_some_empty() {
+        let r1: ValidationResult<i32, String> = ValidationResult::new_with_error("e1".to_string());
+        let r2: ValidationResult<i32, String> = ValidationResult::new_with_error("e2".to_string());
+
+        let merged = merge_many_v0(vec![r1, r2]);
+        assert_eq!(merged.data, Some(vec![]));
+        assert_eq!(merged.errors, vec!["e1".to_string(), "e2".to_string()]);
+    }
+}
