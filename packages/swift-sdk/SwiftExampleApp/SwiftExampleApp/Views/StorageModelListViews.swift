@@ -1744,7 +1744,7 @@ struct ShieldedNoteStorageListView: View {
         }
         .navigationTitle("Shielded Notes (\(visible.count))")
         .overlay {
-            if visible.isEmpty {
+            if scoped.isEmpty {
                 ContentUnavailableView("No Notes", systemImage: "lock.shield")
             }
         }
