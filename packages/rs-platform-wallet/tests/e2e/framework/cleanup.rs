@@ -599,6 +599,26 @@ async fn sweep_core_addresses(
                 bank_core_addr = %bank_core_addr,
                 "core sweep: drained Core duffs to bank"
             );
+            Ok(())
+        }
+        // Drain-class errors are expected when a prior sweep step (e.g.
+        // identity-credit drain) already mutated the Core balance to
+        // zero or below the coin-selection floor. Mirror the
+        // `sweep_platform_addresses` pattern: log a warn, return Ok so
+        // the per-test `teardown_one` doesn't panic, and rely on
+        // `sweep_orphans` to retry on a future run if needed.
+        Err(err) if is_core_drain_class(&err) => {
+            tracing::warn!(
+                target: "platform_wallet::e2e::cleanup",
+                wallet_id = %hex::encode(wallet.wallet_id()),
+                confirmed,
+                amount,
+                error = %err,
+                "core sweep: address already drained or below coin-selection floor; \
+                 best-effort skip — registry retains entry for next-run sweep_orphans \
+                 retry if anything resurfaces"
+            );
+            Ok(())
         }
         Err(err) => {
             tracing::warn!(
@@ -606,12 +626,31 @@ async fn sweep_core_addresses(
                 wallet_id = %hex::encode(wallet.wallet_id()),
                 amount,
                 error = %err,
-                "core sweep: broadcast failed; entry retained"
+                "core sweep: broadcast failed with non-drain error; entry retained"
             );
-            return Err(err);
+            Err(err)
         }
     }
-    Ok(())
+}
+
+/// Classify whether a Core-sweep failure is a benign "address already
+/// drained" / "below coin-selection floor" condition that the
+/// best-effort teardown should swallow rather than panic on.
+///
+/// Matches the substrings produced by the wallet's coin-selection /
+/// fee-builder error paths when the Core UTXO set has been emptied by
+/// a sibling cleanup step (the identity-credit sweep can move funds
+/// off-chain into Platform credits, which an immediately-following
+/// Core sweep then sees as "no UTXOs"). Substring matching is
+/// deliberate: the underlying error type chain wraps these in
+/// `Wallet("Transaction building failed: ...")` so we can't pattern
+/// match a structured variant from outside the wallet crate.
+fn is_core_drain_class(err: &FrameworkError) -> bool {
+    let s = err.to_string();
+    s.contains("No UTXOs available")
+        || s.contains("Insufficient balance")
+        || s.contains("Insufficient funds")
+        || s.contains("Coin selection error")
 }
 
 /// Below this confirmed balance the Core sweep refuses to broadcast.
