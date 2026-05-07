@@ -577,23 +577,96 @@ The five Critical findings in §3.0 are real but most surface naturally during P
 - ✅ **Macro doc updated** to reflect this is the canonical path for wasm-only
   DTOs (not a "fallback awaiting migration").
 - ✅ **Manual `Serialize`/`Deserialize` impls audit** (`IdentifierWasm`,
-  `PlatformAddressWasm`): both are intentional JS-interop adapters
-  (`visit_seq` for Uint8Array, `visit_map` for `{type, data}` JS quirks).
-  NOT backport candidates — rs-dpp's strict canonical wire format is by
-  design; loosening it would weaken the canonical contract.
-- ✅ **Manual `to_*`/`from_*` methods audit** (Identity, Document,
-  DataContract, VerifiedTokenIdentitiesBalances, VerifiedShieldedNullifiers):
-  all carry context (`platform_version`, `data_contract`) or wrap
-  `js_sys::Map` directly — legitimate wasm-side extensions that the trait
-  signatures don't accommodate.
+  `PlatformAddressWasm`).
+
+  **Don't re-litigate this.** First-pass conclusion was "JS-interop quirks,
+  no backport candidates" — that under-described what the adapters do.
+  Second-pass tracing shows ~80% structural overlap with dpp's strict
+  deserializers AND ~20% deliberate wasm-only extensions that back a
+  public TS API contract. The current factoring is correct; pushing more
+  into dpp would either weaken the canonical wire format or add dpp
+  surface for a single consumer. Details:
+
+  | Shape | dpp `IdentifierBytes32::deserialize` | wasm `IdentifierWasmVisitor` |
+  |---|---|---|
+  | `visit_str` (canonical) | base58 only (strict) | `try_from(&str)` — base58 + 64-char hex (lenient) |
+  | `visit_bytes` (32 bytes) | ✅ | ✅ via `Identifier::from_vec` |
+  | `visit_seq` (`[1,2,3,…]`) | ❌ | ✅ via `Identifier::from_vec` |
+  | `visit_map` (`{type,data}` JS class) | ❌ | ✅ via `serde_wasm_bindgen` round-trip |
+
+  Same pattern for PlatformAddress (canonical `hex` + lenient `bech32m`).
+  Each branch in the wasm visitor already dispatches to dpp/platform_value
+  APIs — the byte/encoding heavy lifting lives in dpp, the wasm wrapper is
+  pure dispatch shim.
+
+  The lenient parsing is **production-required**, not test-only:
+  - `IdentifierLike = Identifier | Uint8Array | string` — public TS type
+    accepted by every wasm-sdk API (DPNS, identity, document state
+    transitions). No encoding constraint on the `string` arm.
+  - `wasm-sdk` `address_infos_to_js_map` returns `Map<hex_string, ...>`
+    keyed on `PlatformAddressWasm::to_hex()` — JS callers who later look
+    up by that key are passing hex back through the deserialize path.
+  - `bech32m` (`tdash1…` / `dash1…`) is the human-typed UI format — JS
+    users entering an address in a form expect it to "just work."
+  - Tests use 64-char hex for Identifier (printable, fits in URLs, easy
+    to type in fixtures).
+
+  Why we don't push these to dpp:
+  - dpp's strict deserializer is correct for canonical wire format
+    (consensus, drive, proofs) — loosening it weakens the canonical
+    contract.
+  - The `visit_map` path round-trips JS class instances through
+    `serde_wasm_bindgen` — pure JS-runtime artifact, no dpp meaning.
+  - The lenient API is one consumer (wasm). A `LenientIdentifier` newtype
+    or feature flag in dpp would be added complexity for little reuse.
+
+  Verdict: **status quo is correct.** If a future change wants to drop
+  the lenient parsing (e.g., RFC tightening the JS API to base58-only
+  strings), that's a separate JS API decision, not a dpp/wasm
+  factoring fix.
+
+- ✅ **Manual `to_*`/`from_*` methods audit** (Identity, PartialIdentity,
+  IdentityPublicKey, Document, DataContract, plus `VerifiedTokenIdentitiesBalances`
+  and `VerifiedShieldedNullifiers`).
+
+  **Migrated where possible, kept where context-aware:**
+
+  | Wrapper | Method delegation summary |
+  |---|---|
+  | `IdentityWasm` | `to_object` ✅ `ValueConvertible::to_object`. `to_json` / `from_json` ✅ `JsonConvertible::*` (migrated this branch). `from_object` ❌ uses `try_from_platform_versioned` — wasm SDK convention dispatches on `platform_version` arg, not value's `$formatVersion` tag. |
+  | `PartialIdentityWasm` | `to_object` / `to_json` ✅ `ValueConvertible::to_object` (migrated this branch). `from_*` ❌ manual field-by-field with `platform_version` for inner key deserialization. |
+  | `IdentityPublicKeyWasm` | All four use dpp methods directly: `to_cleaned_object`, `to_json_object`, `from_object`, `from_json_object` (dpp's IdentityPublicKey conversion trait). `to_cleaned_object` is intentional — strips `disabledAt: None` for JS ergonomics. |
+  | `DocumentWasm` | All use dpp methods: `to_map_value`, `from_platform_value`, `Document::to_json`, `from_json_value`. The wasm wrapper carries metadata (`$dataContractId`, `$type`, `$entropy`) not in the inner Document, merged manually. |
+  | `DataContractWasm` | All use dpp methods: `to_value`, `from_value`, `from_json`, `from_bytes`, `to_bytes`. The `config()` getter migrated this branch from generic serde to canonical `ValueConvertible`. |
+  | `VerifiedTokenIdentitiesBalances` / `VerifiedShieldedNullifiers` | Wrap `js_sys::Map` directly because typed map keys (BTreeMap<Identifier, _>, etc.) don't survive `serde_wasm_bindgen` round-trip. Wasm-only DTOs, no rs-dpp counterpart. |
+
+  Net result: every wasm-dpp2 wrapper of an rs-dpp domain type now routes
+  through dpp's conversion logic (canonical traits where they apply,
+  context-aware dpp methods otherwise). The only generic-serde callers
+  that remain (`serialization::to_object` / `from_object`) wrap leaf
+  collection types (`BTreeMap<String, JsonSchema>` for document_schemas,
+  `BTreeMap<String, Value>` for document data) that aren't versioned dpp
+  structures.
 - ⬜ **wasm-dpp (legacy)**: only patch enough to keep it compiling — no
   `_serde!`/`_inner!` migration there.
 
-#### Small follow-up (separate PR)
-- Backport candidate: extend rs-dpp's `serde_bytes` (currently `[u8; N]`-only)
-  with a `Vec<u8>` flavor, OR delete wasm-dpp2's `bytes_b64` module and
-  switch its single user (`document/model.rs:108`) to platform_value's
-  `BinaryData`. Trivial cleanup.
+#### Small follow-ups landed in this branch
+- ✅ `wasm-dpp2/src/serialization/bytes_b64` deleted; switched its
+  `Option<[u8; 32]>` user to a new `dpp::serialization::serde_bytes::option`
+  submodule, and the 5 `Vec<u8>` users in wasm-sdk to the existing
+  `dpp::serialization::serde_bytes_var`. Single canonical source for bytes
+  serde across rs-dpp + wasm-dpp2 + wasm-sdk.
+- ✅ 4 wasm-dpp2 wrappers migrated to canonical traits this branch:
+  `BatchTransitionWasm`, `GroupWasm`, `TokenConfigurationLocalizationWasm`
+  (via `_inner!` macro), and `PoolingWasm::Deserialize` (delegates to
+  `dpp::withdrawal::pooling_serde::deserialize`).
+- ✅ 2 wasm-dpp2 wrappers refactored to call canonical traits directly:
+  `IdentityWasm` (`to_json` / `from_json`), `PartialIdentityWasm`
+  (`to_object` / `to_json`).
+- ✅ `DataContractWasm::config()` getter routed through canonical
+  `ValueConvertible::to_object` (was generic serde).
+- ✅ `TokenConfigurationLocalizationWasm::TryFrom<&JsValue>` fallback
+  routed through canonical `ValueConvertible::from_object`.
 
 ### Phase F — Tighten
 - ⬜ Add a CI grep that fails on new `to_object`/`to_json` inherent method introduction
