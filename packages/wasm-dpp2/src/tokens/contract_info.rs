@@ -9,8 +9,12 @@ use wasm_bindgen::prelude::wasm_bindgen;
 const TOKEN_CONTRACT_INFO_TYPES_TS: &str = r#"
 /**
  * TokenContractInfo serialized as a plain object.
+ *
+ * Versioned enum tagged with `$formatVersion`. V0 carries `contractId` and
+ * `tokenContractPosition` flat at the top level via internal tagging.
  */
 export interface TokenContractInfoObject {
+    $formatVersion: "0";
     contractId: Uint8Array;
     tokenContractPosition: number;
 }
@@ -19,6 +23,7 @@ export interface TokenContractInfoObject {
  * TokenContractInfo serialized as JSON (with string identifiers).
  */
 export interface TokenContractInfoJSON {
+    $formatVersion: "0";
     contractId: string;
     tokenContractPosition: number;
 }

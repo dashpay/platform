@@ -10,12 +10,15 @@ use wasm_bindgen::prelude::wasm_bindgen;
 const TS_TYPES: &str = r#"
 /**
  * GroupAction serialized as a plain object.
+ *
+ * Versioned enum tagged with `$formatVersion`. V0 fields use snake_case
+ * (rs-dpp's GroupActionV0 has no `rename_all` attribute).
  */
 export interface GroupActionObject {
-    $formatVersion: string;
-    contractId: Uint8Array;
-    proposerId: Uint8Array;
-    tokenContractPosition: number;
+    $formatVersion: "0";
+    contract_id: Uint8Array;
+    proposer_id: Uint8Array;
+    token_contract_position: number;
     event: GroupActionEventObject;
 }
 
@@ -23,10 +26,10 @@ export interface GroupActionObject {
  * GroupAction serialized as JSON.
  */
 export interface GroupActionJSON {
-    $formatVersion: string;
-    contractId: string;
-    proposerId: string;
-    tokenContractPosition: number;
+    $formatVersion: "0";
+    contract_id: string;
+    proposer_id: string;
+    token_contract_position: number;
     event: GroupActionEventJSON;
 }
 "#;
