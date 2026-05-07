@@ -9,7 +9,6 @@ use crate::utils::{
 };
 use crate::version::PlatformVersionLikeJs;
 use dpp::fee::Credits;
-use dpp::identity::identity_public_key::conversion::json::IdentityPublicKeyJsonConversionMethodsV0;
 use dpp::identity::{IdentityPublicKey, KeyID, PartialIdentity};
 use dpp::prelude::Revision;
 use dpp::serialization::ValueConvertible;
@@ -434,8 +433,9 @@ pub fn value_to_loaded_public_keys_from_json(
             serde_wasm_bindgen::from_value(js_key).map_err(|e| {
                 WasmDppError::serialization(format!("IdentityPublicKey fromJSON: {}", e))
             })?;
-        let pub_key = IdentityPublicKey::from_json_object(json_value)
-            .map_err(WasmDppError::from)?;
+        // Canonical JsonConvertible — base64 strings for binary fields.
+        use dpp::serialization::JsonConvertible;
+        let pub_key = IdentityPublicKey::from_json(json_value).map_err(WasmDppError::from)?;
         map.insert(key_id, pub_key);
     }
 
