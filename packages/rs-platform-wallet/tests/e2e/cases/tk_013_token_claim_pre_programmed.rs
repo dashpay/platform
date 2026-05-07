@@ -1,18 +1,21 @@
 //! TK-013 — Token claim from pre-programmed distribution.
 //!
 //! Owner deploys a token with a pre-programmed distribution whose
-//! epoch zero is scheduled 5 minutes ahead of wall time, then calls
-//! `token_claim` with `TokenDistributionType::PreProgrammed`. Asserts
-//! the owner's balance increases by exactly the configured payout.
-//! Mirrors the wallet's `token_claim_with_signer` chain path — the
-//! wallet helper just forwards to `Sdk::token_claim`, which is what
-//! this test drives directly to keep the framework surface flat (cf.
-//! `mint_to` in `framework/tokens.rs`).
+//! epoch zero is scheduled a short window ahead of wall time, waits
+//! for that window to elapse, then calls `token_claim` with
+//! `TokenDistributionType::PreProgrammed`. Asserts the owner's
+//! balance increases by exactly the configured payout. Mirrors the
+//! wallet's `token_claim_with_signer` chain path — the wallet helper
+//! just forwards to `Sdk::token_claim`, which is what this test
+//! drives directly to keep the framework surface flat (cf. `mint_to`
+//! in `framework/tokens.rs`).
 //!
 //! Pre-programmed (not perpetual). Perpetual is TK-002, gated behind
 //! `slow-tests` because it needs live block-time. The pre-programmed
-//! variant uses a near-future epoch so contract registration clears
-//! block-time validation; the claim is issued after the epoch elapses.
+//! variant pins a *near-future* epoch so contract registration clears
+//! the `< block_info.time_ms` block-time validation gate, then sleeps
+//! until the timestamp has elapsed so the claim transformer's
+//! `<= block_info.time_ms` filter admits it.
 //!
 //! Gated behind `#[ignore]` — same operator-env reasoning as the
 //! transfer case (`PLATFORM_WALLET_E2E_BANK_MNEMONIC` + live testnet
@@ -71,22 +74,60 @@ async fn tk_013_token_claim_from_pre_programmed_distribution() {
     let owner = &setup_guard.identities[0];
     let owner_id = owner.id;
 
-    // Park epoch zero 5 minutes in the future so the contract
-    // registration passes block-time validation (the platform rejects
-    // any pre-programmed distribution whose epoch is already in the
-    // past at broadcast time). 300 s gives enough runway to clear
-    // the broadcast-plus-block-inclusion window on testnet without
-    // turning the test into a 10-minute wait.
+    // Two competing chain-side rules force a narrow window for
+    // `epoch_zero_at`:
+    //   * `data_contract_create` rejects a pre-programmed distribution
+    //     whose first timestamp is *strictly less than* the current
+    //     block time at broadcast — `PreProgrammedDistributionTimestampInPast`.
+    //   * The claim transformer only credits distributions whose
+    //     timestamp is `<= block_info.time_ms` at claim time —
+    //     anything still in the future yields
+    //     `InvalidTokenClaimNoCurrentRewards`.
+    // So we park epoch zero a small window ahead of `now_ms` (enough
+    // to clear the broadcast + block-inclusion lag for the contract
+    // create), then wait wall-clock until the timestamp has elapsed
+    // before issuing the claim. 60 s is comfortably above observed
+    // testnet inclusion latency without turning the test into a
+    // 5-minute hang.
+    const FUTURE_OFFSET: Duration = Duration::from_secs(60);
+    /// Cushion past `epoch_zero_at` to guarantee the next platform
+    /// block's `time_ms` is strictly greater than the schedule
+    /// timestamp. Testnet platform-block cadence under load can
+    /// stretch to ~5 s; 15 s is generous enough for the next block to
+    /// observe the elapsed schedule.
+    const POST_EPOCH_CUSHION: Duration = Duration::from_secs(15);
+
     let now_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system clock is past UNIX_EPOCH")
         .as_millis() as TimestampMillis;
-    let epoch_zero_at = now_ms + Duration::from_secs(300).as_millis() as u64;
+    let epoch_zero_at = now_ms + FUTURE_OFFSET.as_millis() as u64;
 
     let contract_json = build_pre_programmed_token_json(owner_id, epoch_zero_at, PAYOUT);
     let contract_id = register_token_contract_via_sdk(ctx, owner, contract_json)
         .await
         .expect("register pre-programmed token contract");
+
+    // Sleep until wall-clock has crossed `epoch_zero_at` plus a
+    // cushion. Without this wait the claim transformer races the
+    // schedule and rejects with `InvalidTokenClaimNoCurrentRewards`
+    // (current_moment < epoch_zero_at).
+    let now_after_register_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock is past UNIX_EPOCH")
+        .as_millis() as TimestampMillis;
+    let target_ms = epoch_zero_at + POST_EPOCH_CUSHION.as_millis() as u64;
+    if now_after_register_ms < target_ms {
+        let to_wait = Duration::from_millis(target_ms - now_after_register_ms);
+        tracing::info!(
+            target: "platform_wallet::e2e::cases::tk_013",
+            ?contract_id,
+            epoch_zero_at,
+            wait_ms = to_wait.as_millis() as u64,
+            "TK-013 waiting for pre-programmed epoch to elapse"
+        );
+        tokio::time::sleep(to_wait).await;
+    }
 
     // Snapshot pre-claim balance so the assertion is robust against
     // any historical seed in the contract (there shouldn't be one,
