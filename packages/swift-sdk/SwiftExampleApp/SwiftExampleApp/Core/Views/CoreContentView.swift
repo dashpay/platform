@@ -436,13 +436,14 @@ var body: some View {
                         }
                     }
 
-                    // Per-account commitment-tree watermarks read
-                    // straight from the persisted ShieldedSyncState
-                    // rows — the "global note index we have appended
-                    // up to". Useful when diagnosing
-                    // ShieldedTreeDiverged / anchor-mismatch
-                    // failures, where the wallet's local tree state
-                    // and Platform's recorded anchors disagree.
+                    // Per-account synced-index + persisted balance,
+                    // read straight from SwiftData. The persisted
+                    // balance is a cross-check against
+                    // `ShieldedService.shieldedBalance` (which is
+                    // mirrored from Rust sync events): when the two
+                    // disagree, the divergence is in the event path;
+                    // when both agree at zero while notes exist, the
+                    // divergence is on the persister / restore side.
                     ShieldedSyncIndexRows(
                         boundWalletId: shieldedService.boundWalletId
                     )
@@ -1177,52 +1178,80 @@ extension CoreContentView {
 
 // MARK: - ShieldedSyncIndexRows
 
-/// One row per ZIP-32 account showing the persisted commitment-tree
-/// watermark for the currently-bound shielded wallet.
+/// Per-account commitment-tree + persisted-balance summary for the
+/// currently-bound shielded wallet.
 ///
-/// The watermark is the global note index up to which that
-/// subwallet has appended commitments to the local tree — i.e.
-/// "we've seen Platform's pool through index N" — and is the
-/// single most useful diagnostic when local and Platform anchors
-/// disagree (anchor-mismatch / ShieldedTreeDiverged at spend
-/// time). Rendered straight from `PersistentShieldedSyncState`
-/// rather than via `ShieldedService` so the values reflect what's
-/// actually on disk for the next cold start, not just the
-/// in-memory mirror.
+/// Two diagnostics that don't otherwise have a UI surface:
+///
+///   * **Synced Index** — global note index up to which each
+///     subwallet has appended commitments to the local tree.
+///     Useful when local and Platform anchors disagree
+///     (anchor-mismatch / ShieldedTreeDiverged at spend time).
+///
+///   * **Balance (persisted)** — sum of unspent
+///     `PersistentShieldedNote.value` for each bound subwallet,
+///     read **directly from SwiftData** rather than via the
+///     `ShieldedService.shieldedBalance` mirror that's updated
+///     from sync events. When the two numbers disagree, the bug
+///     is in the Rust→Swift event path; when they agree at zero
+///     while notes exist, the bug is in the persister callback or
+///     the cold-start restore.
+///
+/// The account label is suppressed when only one account is
+/// bound — the redundant `acct 0` is just visual noise in the
+/// single-account default.
 private struct ShieldedSyncIndexRows: View {
     let boundWalletId: Data?
 
     @Query(sort: [SortDescriptor(\PersistentShieldedSyncState.accountIndex)])
-    private var allRows: [PersistentShieldedSyncState]
+    private var syncStateRows: [PersistentShieldedSyncState]
 
-    private var rows: [PersistentShieldedSyncState] {
+    @Query private var allNotes: [PersistentShieldedNote]
+
+    private var scopedSyncRows: [PersistentShieldedSyncState] {
         guard let id = boundWalletId else { return [] }
-        return allRows.filter { $0.walletId == id }
+        return syncStateRows.filter { $0.walletId == id }
+    }
+
+    /// Sum of `value` over unspent notes for `(boundWalletId,
+    /// account)`. Reads SwiftData directly — independent of the
+    /// in-memory shielded wallet's `balance_total()`.
+    private func persistedBalance(account: UInt32) -> UInt64 {
+        guard let id = boundWalletId else { return 0 }
+        return allNotes
+            .lazy
+            .filter { $0.walletId == id && $0.accountIndex == account && !$0.isSpent }
+            .reduce(UInt64(0)) { $0 &+ $1.value }
     }
 
     var body: some View {
-        if !rows.isEmpty {
+        if !scopedSyncRows.isEmpty {
             VStack(spacing: 4) {
                 HStack {
-                    Text("Synced Index")
+                    Text("Per-Account State")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                     Spacer()
                 }
-                ForEach(rows, id: \.accountIndex) { row in
-                    HStack {
-                        Text("acct \(row.accountIndex)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        Text("\(row.lastSyncedIndex)")
+                let showAccountLabel = scopedSyncRows.count > 1
+                ForEach(scopedSyncRows, id: \.accountIndex) { row in
+                    HStack(spacing: 8) {
+                        if showAccountLabel {
+                            Text("acct \(row.accountIndex)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        Text("idx \(row.lastSyncedIndex)")
                             .font(.system(.caption, design: .monospaced))
-                            .fontWeight(.medium)
                         if row.hasNullifierCheckpoint {
-                            Text("· nf h \(row.nullifierCheckpointHeight)")
+                            Text("nf h \(row.nullifierCheckpointHeight)")
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
                         }
+                        Spacer()
+                        Text("\(persistedBalance(account: row.accountIndex)) credits")
+                            .font(.system(.caption, design: .monospaced))
+                            .fontWeight(.medium)
                     }
                 }
             }
