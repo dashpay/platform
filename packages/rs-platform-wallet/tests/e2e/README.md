@@ -164,16 +164,42 @@ Tracing output (SPV sync events, balance polls, sweep results) is written to std
 
 ---
 
-## Multi-process safety
+## Parallelism
 
-Multiple `cargo test` invocations running concurrently — for example, parallel CI jobs
-on different branches — must not share the same bank wallet or working directory, or
-they will conflict on nonces.
+The harness supports running cases in parallel within a single `cargo test`
+invocation (`--test-threads=N`, N > 1) AND across multiple concurrent invocations
+on the same machine.
 
-The framework handles this at two levels:
+### In-process (`--test-threads=N`)
+
+All tests share one `E2eContext` (singleton via `tokio::sync::OnceCell`), one bank
+wallet, one SPV runtime, and one workdir slot. Per-test isolation comes from:
+
+- **Fresh per-test wallets** — every `setup()` mints a fresh OS-random 64-byte seed,
+  so two parallel tests have disjoint wallet ids, addresses, identities, and nonces.
+- **Serialised bank funding** — `bank.fund_address` and `bank.send_core_to` lock a
+  process-global `FUNDING_MUTEX` so concurrent callers don't race UTXO selection or
+  nonce assignment. Tests waiting on `wait_for_balance` do NOT hold the mutex —
+  bank serialisation only covers the actual broadcast critical section.
+- **Compile-time `Send + Sync`** — `E2eContext` and `SetupGuard` are statically
+  asserted thread-safe (`framework/mod.rs`). A future field addition that breaks
+  thread-safety fails to compile.
+
+Two cases need a note under parallel execution:
+
+- **PA-008c** observes the process-global `FUNDING_MUTEX_HISTORY` ring buffer to
+  prove the mutex serialises. Asserts a lower bound on entry count (`>= 3`) and
+  the pairwise non-overlap property — both hold regardless of sibling traffic.
+- **PA-010** is `#[ignore]`'d pending a per-test bank instance API; bank is
+  process-shared by design.
+
+### Cross-process (concurrent `cargo test` invocations)
+
+Multiple `cargo test` invocations on the same machine — for example, parallel CI
+jobs or developer worktrees — must NOT share the same bank wallet or workdir slot.
 
 **Workdir slots** — each process tries to acquire an exclusive `flock` on the base
-working directory. If that lock is already held it tries up to 10 numbered slot
+working directory. If that lock is already held it walks up to 10 numbered slot
 directories (`<workdir>-1`, `<workdir>-2`, ...). A slot holds the SPV block cache,
 the SDK config, and the test-wallet registry independently from every other slot.
 

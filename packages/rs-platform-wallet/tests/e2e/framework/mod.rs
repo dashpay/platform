@@ -15,6 +15,54 @@
 //! ```
 //!
 //! Convenience imports: [`prelude`].
+//!
+//! # Parallelism contract
+//!
+//! The harness is designed to support `--test-threads>1`. Tests share
+//! one [`E2eContext`] (`OnceCell`-backed singleton), one bank wallet,
+//! one SPV runtime, and one workdir slot. Per-test isolation comes
+//! from:
+//!
+//! 1. **Disjoint test wallets** — every [`setup`] call mints a fresh
+//!    OS-random 64-byte seed via [`wallet_factory::fresh_seed`]. Two
+//!    parallel tests have distinct wallet ids with cryptographic
+//!    probability; their on-chain identities, addresses, and nonces
+//!    don't collide.
+//! 2. **Serialised bank funding** — [`bank::BankWallet::fund_address`]
+//!    and [`bank::BankWallet::send_core_to`] take an in-process
+//!    [`tokio::sync::Mutex`] (`FUNDING_MUTEX`) so concurrent callers
+//!    can't race the bank's UTXO selection / nonce assignment. Tests
+//!    waiting on `wait_for_balance` and friends do NOT hold the mutex.
+//! 3. **Cross-process workdir slots** — [`workdir::pick_available_workdir`]
+//!    walks `0..MAX_SLOTS` and acquires an exclusive `flock` on each.
+//!    A second `cargo test` invocation against the same machine lands
+//!    on a separate slot, so SPV caches and registries don't share
+//!    state across processes. Slot 0 is reusable across runs of the
+//!    same process when its lock is released cleanly.
+//! 4. **Process-shared singletons** are limited to thread-safe
+//!    primitives: [`tokio::sync::OnceCell`] for `CTX`,
+//!    `std::sync::Mutex<Option<Arc<SpvRuntime>>>` for `IN_FLIGHT_SPV`,
+//!    `tokio::sync::Mutex<()>` for `FUNDING_MUTEX`, `parking_lot::Mutex`
+//!    for the registry's in-memory map.
+//!
+//! ## Tests that need special handling under parallelism
+//!
+//! - [`cases::pa_008c_funding_mutex_observable`] reads the
+//!   process-global `FUNDING_MUTEX_HISTORY` ring buffer. The buffer is
+//!   written to by EVERY `bank.fund_address` call across all tests, so
+//!   the test asserts a **lower bound** on entry count (`>= 3`) and the
+//!   pairwise non-overlap property that holds across ALL entries — not
+//!   strict equality on its own three entries.
+//! - [`cases::pa_010_bank_starvation`] is `#[ignore]`'d pending a
+//!   per-test bank instance API (the bank is process-shared by design).
+//!
+//! All other cases mint fresh seeds and reach for shared resources only
+//! via the serialised paths above.
+//!
+//! Background reading: `dash-evo-tool/tests/backend-e2e/framework/`
+//! pioneered this pattern (`harness.rs::FUNDING_MUTEX`,
+//! `BackendTestContext::create_funded_test_wallet`); the structure
+//! here mirrors it.
 
 #![allow(dead_code)]
 
@@ -81,6 +129,16 @@ pub mod prelude {
 pub use wallet_factory::SetupGuard;
 
 use harness::E2eContext;
+
+// Parallelism guard rails: enforce at compile time that the types
+// shared across worker threads under `--test-threads>1` are `Send + Sync`.
+// `E2eContext` is held behind a `&'static` so all tests reach for the
+// same instance; `SetupGuard` is held by the running test body. Any
+// future field addition that breaks `Send + Sync` (e.g. an `Rc`, a
+// non-`Send` future, an inadvertent `RefCell`) trips this static assert
+// at compile time rather than at runtime through a flaky parallel run.
+static_assertions::assert_impl_all!(E2eContext: Send, Sync);
+static_assertions::assert_impl_all!(SetupGuard: Send, Sync);
 
 /// Errors surfaced by the e2e framework.
 #[derive(Debug, thiserror::Error)]

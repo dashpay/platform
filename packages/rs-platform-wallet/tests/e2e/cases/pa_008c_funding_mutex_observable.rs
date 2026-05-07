@@ -43,6 +43,29 @@
 //! Two parallel funders is the minimum contention case; three
 //! exercises the queueing contract that catches a hypothetical
 //! "first-and-last" mutex implementation that drops the middle waiter.
+//!
+//! ## Parallel-safe assertions
+//!
+//! `FUNDING_MUTEX_HISTORY` is a process-global ring buffer that EVERY
+//! `bank.fund_address` call writes to — including sibling tests running
+//! in other worker threads under `--test-threads>1`. We therefore can
+//! NOT assert strict cardinality (`history.len() == 3`); a sibling
+//! test that funds during our fan-in window would inflate the count.
+//!
+//! Instead we check the contract that holds globally:
+//!   - **At least 3** entries are present (our fan-in must have
+//!     populated the buffer).
+//!   - Sorted by `seq`, pairs are pairwise non-overlapping
+//!     (`prev.exit_ns <= next.entry_ns`). This is the substance of
+//!     the mutex's serialisation contract — it holds across ALL
+//!     entries in the buffer, ours or anyone else's.
+//!   - `FUNDING_MUTEX_SEQ` is strictly monotonic (atomic counter
+//!     never reuses or decrements).
+//!
+//! Removing the strict-3 assertion is intentional: under serial
+//! execution (`--test-threads=1`) sibling tests can't race in, so the
+//! count would be 3 — but we don't gain signal by failing on a `≥ 3`
+//! observation that's still consistent with the contract.
 
 use std::time::Duration;
 
@@ -160,13 +183,17 @@ async fn pa_008c_funding_mutex_serialisation_observable() {
         "FUNDING_MUTEX observed history"
     );
 
-    // (1) Cardinality: one entry per spawned future. If the harness
-    // has bled in extra entries from a sibling test (it shouldn't,
-    // because we drained after the markers), this fires deterministically.
-    assert_eq!(
-        history.len(),
-        3,
-        "PA-008c: expected exactly 3 FUNDING_MUTEX entries from the \
+    // (1) Cardinality lower bound: our three concurrent funds must
+    // have populated the buffer. Strict equality (`== 3`) would fail
+    // under `--test-threads>1` if a sibling test funds during our
+    // fan-in window — `FUNDING_MUTEX_HISTORY` is process-global and
+    // every `bank.fund_address` writes to it. Loosening to `>= 3`
+    // keeps the contract honest under parallel execution; the
+    // serialisation property checked in (3) holds across ALL entries
+    // regardless of who recorded them.
+    assert!(
+        history.len() >= 3,
+        "PA-008c: expected at least 3 FUNDING_MUTEX entries from the \
          concurrent fan-in, observed {}: {history:?}",
         history.len()
     );
