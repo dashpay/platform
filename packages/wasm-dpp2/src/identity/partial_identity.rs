@@ -10,7 +10,6 @@ use crate::utils::{
 use crate::version::PlatformVersionLikeJs;
 use dpp::fee::Credits;
 use dpp::identity::identity_public_key::conversion::json::IdentityPublicKeyJsonConversionMethodsV0;
-use dpp::identity::identity_public_key::conversion::platform_value::IdentityPublicKeyPlatformValueConversionMethodsV0;
 use dpp::identity::{IdentityPublicKey, KeyID, PartialIdentity};
 use dpp::prelude::Revision;
 use dpp::serialization::ValueConvertible;
@@ -384,7 +383,12 @@ pub fn value_to_loaded_public_keys_from_object(
         })?;
 
         let platform_value = serialization::platform_value_from_object(&js_key)?;
-        let pub_key = <IdentityPublicKey as IdentityPublicKeyPlatformValueConversionMethodsV0>::from_object(platform_value, platform_version)
+        // Canonical `ValueConvertible::from_object` dispatches on the
+        // value's `$formatVersion` tag (the outer `IdentityPublicKey`
+        // enum is internally tagged). The legacy version-aware form
+        // produced identical output for V0 (the only structure version
+        // currently defined).
+        let pub_key = <IdentityPublicKey as dpp::serialization::ValueConvertible>::from_object(platform_value)
             .map_err(WasmDppError::from)?;
         map.insert(key_id, pub_key);
     }

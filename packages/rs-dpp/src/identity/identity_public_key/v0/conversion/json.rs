@@ -1,5 +1,4 @@
 use crate::identity::identity_public_key::conversion::json::IdentityPublicKeyJsonConversionMethodsV0;
-use crate::identity::identity_public_key::conversion::platform_value::IdentityPublicKeyPlatformValueConversionMethodsV0;
 use crate::identity::identity_public_key::fields::BINARY_DATA_FIELDS;
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use crate::version::PlatformVersion;
@@ -28,11 +27,15 @@ impl IdentityPublicKeyJsonConversionMethodsV0 for IdentityPublicKeyV0 {
 
     fn from_json_object(
         raw_object: JsonValue,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let mut value: Value = raw_object.into();
+        // Legacy ingest: rewrite binary fields from byte-array form to
+        // `Value::Bytes` before deserializing. Older JS clients sometimes
+        // emit data fields as JSON arrays of u8 (the validating-JSON shape
+        // produced by `to_json_object`) rather than canonical base64.
         value.replace_at_paths(BINARY_DATA_FIELDS, ReplacementType::BinaryBytes)?;
-        Self::from_object(value, platform_version)
+        platform_value::from_value(value).map_err(ProtocolError::ValueError)
     }
 }
 
@@ -44,7 +47,7 @@ impl TryFrom<&str> for IdentityPublicKeyV0 {
             .map_err(|e| ProtocolError::StringDecodeError(e.to_string()))?
             .into();
         platform_value.replace_at_paths(BINARY_DATA_FIELDS, ReplacementType::BinaryBytes)?;
-        platform_value.try_into().map_err(ProtocolError::ValueError)
+        platform_value::from_value(platform_value).map_err(ProtocolError::ValueError)
     }
 }
 

@@ -1,39 +1,19 @@
-mod v0;
-use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
-use crate::identity::IdentityPublicKey;
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
-use platform_value::Value;
-pub use v0::*;
-
-impl IdentityPublicKeyPlatformValueConversionMethodsV0 for IdentityPublicKey {
-    fn from_object(
-        value: Value,
-        platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError> {
-        match platform_version
-            .dpp
-            .identity_versions
-            .identity_key_structure_version
-        {
-            0 => IdentityPublicKeyV0::from_object(value, platform_version).map(Into::into),
-            version => Err(ProtocolError::UnknownVersionMismatch {
-                known_versions: vec![0],
-                received: version,
-                method: "IdentityPublicKey::from_object".to_string(),
-            }),
-        }
-    }
-}
+// `IdentityPublicKey` value-side conversion now goes exclusively through
+// the canonical `ValueConvertible` trait (derived on the outer enum). The
+// legacy `IdentityPublicKeyPlatformValueConversionMethodsV0` trait has
+// been deleted: it carried `to_object` / `into_object` that were
+// byte-identical to canonical, plus a `from_object(value, &platform_version)`
+// version-dispatch method that produced identical output to canonical for
+// the only currently-defined V0 (canonical dispatches on the value's own
+// `$formatVersion` tag, which all V0 values carry).
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
-    use crate::identity::{KeyType, Purpose, SecurityLevel};
+    use crate::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
     use crate::serialization::ValueConvertible;
-    use platform_value::BinaryData;
-    use platform_version::version::LATEST_PLATFORM_VERSION;
+    use crate::ProtocolError;
+    use platform_value::{BinaryData, Value};
 
     fn wrapper(disabled_at: Option<u64>) -> IdentityPublicKey {
         IdentityPublicKey::V0(IdentityPublicKeyV0 {
@@ -48,17 +28,11 @@ mod tests {
         })
     }
 
-    // After Phase D step 5, `to_object` / `into_object` come from canonical
-    // `ValueConvertible` (the legacy trait methods were deleted because they
-    // were byte-identical). `from_object(value, &platform_version)` still
-    // routes through the legacy version-dispatch trait method.
-
     #[test]
     fn to_object_includes_format_version_tag() {
         // The outer `IdentityPublicKey` is a tagged enum
         // (`#[serde(tag = "$formatVersion")]`); canonical `to_object`
-        // emits `$formatVersion: "0"` next to the V0 fields. The inner
-        // V0 struct, in contrast, has no version tag.
+        // emits `$formatVersion: "0"` next to the V0 fields.
         let key = wrapper(Some(5));
         let value = key.to_object().expect("to_object");
         let map = value.to_map().expect("map");
@@ -95,15 +69,15 @@ mod tests {
     fn from_object_roundtrip_via_wrapper() {
         let key = wrapper(None);
         let value = key.to_object().unwrap();
-        // Version-aware `from_object` from the legacy trait — distinct from
-        // canonical `ValueConvertible::from_object` (no platform_version arg).
-        let back = <IdentityPublicKey as IdentityPublicKeyPlatformValueConversionMethodsV0>::from_object(value, LATEST_PLATFORM_VERSION).unwrap();
+        // Canonical `ValueConvertible::from_object` dispatches on the
+        // value's `$formatVersion` tag.
+        let back = IdentityPublicKey::from_object(value).unwrap();
         assert_eq!(back, key);
     }
 
     #[test]
     fn from_object_fails_on_non_map() {
-        let result = <IdentityPublicKey as IdentityPublicKeyPlatformValueConversionMethodsV0>::from_object(Value::Null, LATEST_PLATFORM_VERSION);
+        let result = IdentityPublicKey::from_object(Value::Null);
         assert!(matches!(result, Err(ProtocolError::ValueError(_))));
     }
 }
