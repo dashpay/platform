@@ -651,46 +651,24 @@ mod replacement_tests {
 
         assert_eq!(processing_result.valid_count(), 0);
 
-        // Fee bumped from the previous 41880 (bare bump-only) to 445700 in
-        // PROTOCOL_VERSION_12. Issue #2867 fix: the failure path now emits the
-        // bump after running the document fetch + validation work, so the fee
-        // covers that work — same drive ops, just charged correctly.
+        // Covers the document fetch + structure validation that ran before
+        // the failure. Previously the failure path emitted no action and this
+        // work was charged as 0; now the bump covers it.
         assert_eq!(processing_result.aggregated_fees().processing_fee, 445700);
     }
 
-    /// Regression test for issue #2867 (mainnet duplicate-tx escalation, 2026-05-04).
+    /// Pins the bump-emission contract on Replace's revision-mismatch path.
     ///
-    /// Mainnet ST hash 35C0...313C — a Documents Batch Replace by Techawanka.dash
-    /// (6Pp1RFqRnpStnY8vmp5k3ypE6rFBvzPwcoguwDXbRA7F) — landed at block 361774 idx 1
-    /// as FAIL with gasUsed 41880, then re-appeared in a later block, panicking the
-    /// explorer indexer with `duplicate key value violates unique constraint
-    /// state_transition_hash`. The shape: nonce 4 ran successfully *before* nonce
-    /// 3 in the same block (out-of-order SDK retries), so when nonce 3's Replace
-    /// reached deliver_tx the doc revision had already advanced. The
-    /// revision-bump-by-one check in
-    /// batch/transformer/v0/mod.rs::check_revision_is_bumped_by_one_during_replace_v0
-    /// fails, and the surrounding handler (lines 712–715) returns `Ok(result)`
-    /// with errors-only and **no BumpIdentityDataContractNonce action** — unlike
-    /// the find_replaced_document_v0 path on the same enum arm (lines 672–686)
-    /// which DOES emit a bump.
+    /// Without the bump, a failed Replace returns errors-only with no action.
+    /// Fee accounting then charges the user (PaidConsensusError) but the
+    /// identity_contract_nonce in state never advances — the same exact bytes
+    /// can be re-broadcast indefinitely.
     ///
-    /// Consequence: the user pays the 41880 bump fee (because the empty
-    /// BatchTransitionAction still triggers PaidConsensusError accounting), but
-    /// the contract nonce IS NEVER ADVANCED in state. The exact same bytes can
-    /// then be re-broadcast indefinitely; each retry lands a new failed copy in
-    /// a new block, all sharing the same hash.
-    ///
-    /// What this test pins:
-    ///   1. After a Replace that fails the revision-bump-by-one check commits,
-    ///      the stored identity_contract_nonce MUST advance past the submitted
-    ///      nonce. (Direct invariant — fails fast on RED.)
-    ///   2. Re-submitting the same exact bytes through CheckTx FirstTimeCheck
-    ///      MUST be rejected with InvalidIdentityNonceError. (Symptom-level —
-    ///      this is what lklimek's Feb 10 2026 testnet debug log proved was
-    ///      broken.)
-    ///
-    /// Both assertions fail on v3.1-dev today; both should pass once the bump
-    /// is emitted on revision/ownership-mismatch paths in batch/transformer/v0.
+    /// The test asserts:
+    ///   1. After a Replace that fails `check_revision_is_bumped_by_one`, the
+    ///      stored contract nonce MUST advance past the submitted nonce.
+    ///   2. Re-submitting the same bytes through CheckTx FirstTimeCheck MUST
+    ///      be rejected with `InvalidIdentityNonceError`.
     #[tokio::test]
     async fn replayed_failed_replace_with_consumed_nonce_must_be_rejected_at_check_tx() {
         use crate::execution::check_tx::CheckTxLevel;
@@ -792,12 +770,10 @@ mod replacement_tests {
         let post_create_nonce =
             post_create_nonce_raw.expect("contract nonce must be present after create");
 
-        // 2) Build a Replace at nonce 3 with a revision the chain will reject.
-        //    Doc at revision 1 → expected revision 2 on replace. We submit
-        //    revision 3 → check_revision_is_bumped_by_one_during_replace_v0
-        //    returns InvalidDocumentRevisionError(Some(1), 3). On mainnet this
-        //    happened naturally because nonce 4 ran first and advanced the doc
-        //    revision past what nonce 3's tx expected.
+        // 2) Build a Replace at nonce 3 with revision 3. Doc is at revision
+        //    1, so check_revision_is_bumped_by_one_during_replace_v0 returns
+        //    InvalidDocumentRevisionError(Some(1), 3) and we hit the
+        //    failure-with-bump path in the transformer.
         let mut altered_document = document.clone();
         altered_document.set_revision(Some(3));
         altered_document.set("displayName", "Out of order".into());
@@ -867,22 +843,14 @@ mod replacement_tests {
 
         assert_ne!(
             post_replace_nonce, post_create_nonce,
-            "BUG: failed Replace's bump action did not advance the contract \
-             nonce. Stored nonce is still {:#x} (= post-create value), so the \
-             same exact serialized bytes can be replayed forever. \
-             Root cause: batch/transformer/v0/mod.rs:712-715 (and 697-700) \
-             return Ok(result) with errors-only and no BumpIdentityDataContractNonce \
-             action when check_revision_is_bumped_by_one_during_replace_v0 (or \
-             check_ownership_of_old_replaced_document_v0) fails — unlike the \
-             find_replaced_document_v0 failure path on the same arm (lines \
-             672-686) which does emit the bump.",
+            "failed Replace's bump action did not advance the contract \
+             nonce — stored nonce is still {:#x} (= post-create value), so \
+             the same serialized bytes can be replayed",
             post_create_nonce
         );
 
-        // 4) Symptom-level: re-submitting identical bytes through CheckTx
-        //    FirstTimeCheck must hit the nonce check first and reject. This is
-        //    exactly what lklimek's Feb 10 2026 testnet check_tx debug log
-        //    showed NOT happening.
+        // 4) Re-submitting identical bytes through CheckTx FirstTimeCheck must
+        //    hit the nonce check first and reject.
         let replayed_state_transition =
             StateTransition::deserialize_from_bytes(&replace_serialized)
                 .expect("expected to deserialize replayed transition");
@@ -905,9 +873,8 @@ mod replacement_tests {
 
         assert!(
             !check_tx_result.is_valid(),
-            "CheckTx FirstTimeCheck MUST reject identical bytes after the \
-             failed-Replace bump consumed the nonce — it accepted them on \
-             testnet on 2026-02-10."
+            "CheckTx FirstTimeCheck must reject identical bytes after the \
+             failed-Replace bump consumed the nonce"
         );
         assert!(
             check_tx_result.errors.iter().any(|e| matches!(

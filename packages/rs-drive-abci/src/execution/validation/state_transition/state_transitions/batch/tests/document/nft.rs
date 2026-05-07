@@ -2788,10 +2788,9 @@ mod nft_tests {
 
         assert_eq!(processing_result.valid_count(), 0);
 
-        // Fee bumped from 36200 in PROTOCOL_VERSION_12 — issue #2867 fix: the
-        // UpdatePrice ownership-mismatch failure path now emits a bump action
-        // (previously dropped, leaking nonce-replay risk). Cost covers the
-        // fetch+validation work that was already happening.
+        // Covers the fetch + ownership check that ran before the failure.
+        // Previously the failure path emitted no action and this work was
+        // charged as 0.
         assert_eq!(processing_result.aggregated_fees().processing_fee, 571240);
 
         let sender_documents_sql_string =

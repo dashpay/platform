@@ -1256,10 +1256,9 @@ mod transfer_tests {
 
         assert_eq!(processing_result.valid_count(), 0);
 
-        // Fee bumped from 36200 in PROTOCOL_VERSION_12 — issue #2867 fix: the
-        // Transfer find-replaced-document failure path now emits a bump action
-        // (previously dropped, leaking nonce-replay risk). Cost covers the
-        // fetch+validation work that was already happening.
+        // Covers the fetch + ownership check that ran before the failure.
+        // Previously the failure path emitted no action and this work was
+        // charged as 0.
         assert_eq!(processing_result.aggregated_fees().processing_fee, 517400);
 
         let query_sender_results = platform

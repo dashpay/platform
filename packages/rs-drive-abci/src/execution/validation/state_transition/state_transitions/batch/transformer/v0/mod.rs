@@ -637,7 +637,14 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
         }
     }
 
-    /// The data contract can be of multiple difference versions
+    /// Per-transition handler for document arms. Each per-transition failure
+    /// path (ownership mismatch, revision mismatch, missing target document,
+    /// etc.) emits a `BumpIdentityDataContractNonce` action so the user pays
+    /// for the validation work that already ran (fetch + ownership/revision
+    /// checks) and the contract nonce advances. Without this, the failure
+    /// path would return errors-only with no action data, fee accounting
+    /// would charge 0, and the same nonce would remain available — i.e. a
+    /// "free advanced-structure validation" hole.
     fn transform_document_transition_v0<'a>(
         drive: &Drive,
         transaction: TransactionArg,
@@ -664,24 +671,19 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 Ok(document_create_action)
             }
             DocumentTransition::Replace(document_replace_transition) => {
-                let result = ConsensusValidationResult::<BatchedTransitionAction>::new();
-
                 let validation_result =
                     Self::find_replaced_document_v0(transition, replaced_documents);
 
                 if !validation_result.is_valid_with_data() {
-                    // We can set the user fee increase to 0 here because it is decided by the Documents Batch instead
+                    // user_fee_increase is set on the outer Documents Batch
                     let bump_action =
                         BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition(
                             document_replace_transition.base(),
                             owner_id,
                             0,
                         );
-                    let batched_action =
-                        BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
-
                     return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                        batched_action,
+                        BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action),
                         validation_result.errors,
                     ));
                 }
@@ -695,9 +697,6 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 );
 
                 if !validation_result.is_valid() {
-                    // Emit a bump action so the identity_contract_nonce advances even
-                    // when ownership doesn't match. Without this, the same exact bytes
-                    // could be replayed forever — see issue #2867.
                     let bump_action =
                         BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition(
                             document_replace_transition.base(),
@@ -711,9 +710,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 }
 
                 if validate_against_state {
-                    //there are situations where we don't want to validate this against the state
-                    // for example when we already applied the state transition action
-                    // and we are just validating it happened
+                    // Skipped on the rerun path where the action has already been applied.
                     let validation_result = Self::check_revision_is_bumped_by_one_during_replace_v0(
                         document_replace_transition.revision(),
                         document_replace_transition.base().id(),
@@ -721,10 +718,6 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     );
 
                     if !validation_result.is_valid() {
-                        // Emit a bump action so the identity_contract_nonce advances even
-                        // when the revision doesn't bump by one. Without this, out-of-order
-                        // SDK retries can replay the same bytes across multiple blocks —
-                        // see issue #2867 (mainnet 35C0…313C, 2026-05-04).
                         let bump_action =
                             BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition(
                                 document_replace_transition.base(),
@@ -751,11 +744,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 execution_context
                     .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
 
-                if result.is_valid() {
-                    Ok(document_replace_action)
-                } else {
-                    Ok(result)
-                }
+                Ok(document_replace_action)
             }
             DocumentTransition::Delete(document_delete_transition) => {
                 let (batched_action, fee_result) = DocumentDeleteTransitionAction::try_from_document_borrowed_delete_transition_with_contract_lookup(document_delete_transition, owner_id, user_fee_increase, |_identifier| {
@@ -768,14 +757,10 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 Ok(batched_action)
             }
             DocumentTransition::Transfer(document_transfer_transition) => {
-                let result = ConsensusValidationResult::<BatchedTransitionAction>::new();
-
                 let validation_result =
                     Self::find_replaced_document_v0(transition, replaced_documents);
 
                 if !validation_result.is_valid_with_data() {
-                    // Emit a bump action so the identity_contract_nonce advances even
-                    // when the target document is missing — see issue #2867.
                     let bump_action =
                         BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition(
                             document_transfer_transition.base(),
@@ -846,21 +831,13 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 execution_context
                     .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
 
-                if result.is_valid() {
-                    Ok(document_transfer_action)
-                } else {
-                    Ok(result)
-                }
+                Ok(document_transfer_action)
             }
             DocumentTransition::UpdatePrice(document_update_price_transition) => {
-                let result = ConsensusValidationResult::<BatchedTransitionAction>::new();
-
                 let validation_result =
                     Self::find_replaced_document_v0(transition, replaced_documents);
 
                 if !validation_result.is_valid_with_data() {
-                    // Emit a bump action so the identity_contract_nonce advances even
-                    // when the target document is missing — see issue #2867.
                     let bump_action =
                         BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition(
                             document_update_price_transition.base(),
@@ -931,21 +908,13 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 execution_context
                     .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
 
-                if result.is_valid() {
-                    Ok(document_update_price_action)
-                } else {
-                    Ok(result)
-                }
+                Ok(document_update_price_action)
             }
             DocumentTransition::Purchase(document_purchase_transition) => {
-                let result = ConsensusValidationResult::<BatchedTransitionAction>::new();
-
                 let validation_result =
                     Self::find_replaced_document_v0(transition, replaced_documents);
 
                 if !validation_result.is_valid_with_data() {
-                    // Emit a bump action so the identity_contract_nonce advances even
-                    // when the target document is missing — see issue #2867.
                     let bump_action =
                         BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition(
                             document_purchase_transition.base(),
@@ -1037,11 +1006,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 execution_context
                     .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
 
-                if result.is_valid() {
-                    Ok(document_purchase_action)
-                } else {
-                    Ok(result)
-                }
+                Ok(document_purchase_action)
             }
         }
     }
