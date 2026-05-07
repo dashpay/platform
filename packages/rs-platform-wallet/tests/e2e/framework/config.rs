@@ -62,6 +62,21 @@ pub mod vars {
     /// testnet is in a ChainLock-cycle window that prevents mn-list
     /// from advancing (rust-dashcore #470).
     pub const DISABLE_SPV: &str = "PLATFORM_WALLET_E2E_DISABLE_SPV";
+    /// Opt-in switch for FAILING-by-design tests that would otherwise
+    /// pollute a `cargo test -- --ignored` run with their pinned
+    /// failure (the `#[ignore]` attribute is bypassed by `--ignored`,
+    /// so a body-side guard is the only way to keep the standard
+    /// ignored-cohort run clean).
+    ///
+    /// Truthy values (`1` / `true` / `yes` / `on`, case-insensitive)
+    /// flip the guarded test bodies into "actually exercise the
+    /// pinned regression" mode; everything else (unset / empty /
+    /// falsy) makes them early-return as a passing no-op.
+    ///
+    /// Currently consumed by:
+    /// - CR-004 (`cr_004_legacy_bip32_utxo_update_after_spend`) —
+    ///   pins dash-evo-tool#845's UTXO-update-after-spend regression.
+    pub const RUN_FAILING_BY_DESIGN: &str = "PLATFORM_WALLET_E2E_RUN_FAILING_BY_DESIGN";
 }
 
 /// Default deadline for the bank Core funding gate when the env var is
