@@ -299,7 +299,8 @@ class ShieldedService: ObservableObject {
     // MARK: - Sync event handling
 
     private func handleShieldedSyncEvent(_ event: ShieldedSyncEvent) {
-        guard let walletId, let result = event.result(for: walletId) else {
+        guard let walletId = boundWalletId,
+              let result = event.result(for: walletId) else {
             return
         }
 
