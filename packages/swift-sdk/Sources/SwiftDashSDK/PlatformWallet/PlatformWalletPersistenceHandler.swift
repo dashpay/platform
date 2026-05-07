@@ -407,12 +407,25 @@ public class PlatformWalletPersistenceHandler {
             predicate: #Predicate { $0.txid == txidData }
         )
 
+        // The FFI projection always serializes the transaction body
+        // (`dashcore::consensus::encode::serialize` upstream), so
+        // `tx.tx_data` is non-null and `tx.tx_data_len > 0` in
+        // practice. Fall back to empty `Data()` only as a defensive
+        // guard against a future projection change — the
+        // persister-fallback read path treats empty bytes as miss
+        // (the Rust side can't decode an empty consensus buffer).
+        let transactionData: Data = {
+            guard let dataPtr = tx.tx_data, tx.tx_data_len > 0 else { return Data() }
+            return Data(bytes: dataPtr, count: Int(tx.tx_data_len))
+        }()
+
         let record: PersistentTransaction
         if let existing = try? backgroundContext.fetch(descriptor).first {
             record = existing
         } else {
             record = PersistentTransaction(
                 txid: txidData,
+                transactionData: transactionData,
                 context: tx.context,
                 blockHeight: tx.block_height,
                 direction: tx.direction,
@@ -438,9 +451,7 @@ public class PlatformWalletPersistenceHandler {
             record.label = String(cString: labelPtr)
         }
         record.firstSeen = tx.first_seen
-        if let dataPtr = tx.tx_data, tx.tx_data_len > 0 {
-            record.transactionData = Data(bytes: dataPtr, count: Int(tx.tx_data_len))
-        }
+        record.transactionData = transactionData
         record.lastUpdated = Date()
 
         // Walk every input in this transaction and reconcile it
@@ -593,7 +604,14 @@ public class PlatformWalletPersistenceHandler {
             if let existingTx = try? backgroundContext.fetch(txDescriptor).first {
                 parentTx = existingTx
             } else {
-                parentTx = PersistentTransaction(txid: txidData)
+                // Stub row — `transactionData` is left as empty
+                // `Data()` on purpose. The real upsert (which has the
+                // tx bytes) overwrites every field including
+                // `transactionData` when it arrives. An orphaned
+                // stub (real upsert never lands) reads back as empty
+                // bytes, which the persister-fallback decode path
+                // treats as miss.
+                parentTx = PersistentTransaction(txid: txidData, transactionData: Data())
                 backgroundContext.insert(parentTx)
             }
 
@@ -781,7 +799,8 @@ public class PlatformWalletPersistenceHandler {
         cb.on_persist_identity_keys_fn = persistIdentityKeysCallback
         cb.on_persist_token_balances_fn = persistTokenBalancesCallback
         cb.on_persist_contacts_fn = persistContactsCallback
-        cb.on_get_chainlocked_tx_record_fn = getChainlockedTxRecordCallback
+        cb.on_get_core_tx_record_fn = getCoreTxRecordCallback
+        cb.on_get_core_tx_record_free_fn = getCoreTxRecordFreeCallback
         return cb
     }
 
@@ -2772,8 +2791,8 @@ public class PlatformWalletPersistenceHandler {
         return data
     }
 
-    /// Look up a chain-locked transaction record for the asset-lock
-    /// proof flow's persister fallback (Rust trait method
+    /// Look up a transaction record for the asset-lock proof flow's
+    /// persister fallback (Rust trait method
     /// `PlatformWalletPersistence::get_core_tx_record`).
     ///
     /// The Rust-side asset-lock proof flow needs the chain-lock
@@ -2781,49 +2800,81 @@ public class PlatformWalletPersistenceHandler {
     /// `ChainAssetLockProof`. With upstream's
     /// `keep-finalized-transactions` Cargo feature OFF (the default),
     /// chain-locked records are evicted from the in-memory
-    /// `transactions()` map and only their txids retained for dedup,
-    /// so the chain-lock metadata is no longer reachable through the
-    /// wallet-info API. The persister received the record on the
-    /// chain-lock-transition `store` call before eviction; this
-    /// lookup walks the corresponding `PersistentTransaction` row.
+    /// `transactions()` map, so the chain-lock metadata is no longer
+    /// reachable through the wallet-info API. The persister received
+    /// the record on the chain-lock-transition `store` call before
+    /// eviction; this lookup walks the corresponding
+    /// `PersistentTransaction` row.
     ///
-    /// Returns `nil` when:
-    /// - no `PersistentTransaction` row exists for `txid`, or
-    /// - the row exists but is not chain-locked (`context != 3`).
+    /// Returns the row's actual `context` discriminant alongside the
+    /// block info (when applicable). The Rust side faithfully
+    /// reconstructs the matching `TransactionContext` variant — no
+    /// chain-lock filter here, so a row in any state may be
+    /// returned. `blockHash` / `blockHeight` / `blockTimestamp` are
+    /// only meaningful for `context` 2 (InBlock) and 3
+    /// (InChainLockedBlock); the Rust side ignores those fields for
+    /// 0 (Mempool) and 1 (InstantSend).
     ///
-    /// The wallet-id is currently unused for the lookup (`txid` is
-    /// globally unique), but is accepted to match the Rust trait
-    /// signature and to leave room for a wallet-scoped variant.
-    func chainlockedTxRecord(
+    /// Returns `nil` when no `PersistentTransaction` row exists for
+    /// `txid`, when an in-block / chain-locked row is missing its
+    /// `blockHash` (treated as miss rather than fabricating a zero
+    /// hash that would round-trip back to Rust as a real block id),
+    /// or when the row has no `transactionData` (the FFI write path
+    /// always populates it, so a missing one signals a corrupt row
+    /// the Rust side can't decode anyway).
+    ///
+    /// The wallet-id is currently unused (`txid` is globally
+    /// unique), but is accepted to match the Rust trait signature
+    /// and to leave room for a wallet-scoped variant.
+    func coreTxRecord(
         walletId: Data,
         txid: Data
-    ) -> (blockHeight: UInt32, blockHash: Data, blockTimestamp: UInt32)? {
+    ) -> (context: UInt32, blockHeight: UInt32, blockHash: Data, blockTimestamp: UInt32, transactionData: Data)? {
         _ = walletId
         return onQueue {
-            // PersistentTransaction.context: 3 = InChainLockedBlock.
-            // Predicate-side filter on context narrows the index scan
-            // to chain-locked rows so the lookup stays cheap when the
-            // store has many in-flight (mempool / IS / InBlock) rows.
-            let chainLocked: UInt32 = 3
             let descriptor = FetchDescriptor<PersistentTransaction>(
-                predicate: #Predicate { $0.txid == txid && $0.context == chainLocked }
+                predicate: #Predicate { $0.txid == txid }
             )
             guard let row = try? backgroundContext.fetch(descriptor).first else {
                 return nil
             }
-            // `blockHash` is optional in the row — chain-locked rows
-            // should always have it, but if a row got upserted in an
-            // older state without one, we treat that as "miss" rather
-            // than fabricate a zero hash that would round-trip back
-            // to Rust as a real block id.
-            guard let blockHash = row.blockHash, blockHash.count == 32 else {
+            // The Rust side decodes `transactionData` into a
+            // `dashcore::Transaction`; an empty buffer (left over
+            // from an orphaned stub row in the UTXO upsert path
+            // whose real upsert never arrived) won't decode, so
+            // treat it as miss.
+            guard !row.transactionData.isEmpty else {
                 return nil
             }
-            return (
-                blockHeight: row.blockHeight,
-                blockHash: blockHash,
-                blockTimestamp: row.blockTimestamp
-            )
+            let transactionData = row.transactionData
+            switch row.context {
+            case 0, 1:
+                // Mempool / InstantSend — block fields not meaningful;
+                // the Rust side ignores them. Hand back zeroed
+                // placeholders so the caller's tuple shape stays
+                // uniform.
+                return (
+                    context: row.context,
+                    blockHeight: 0,
+                    blockHash: Data(count: 32),
+                    blockTimestamp: 0,
+                    transactionData: transactionData
+                )
+            default:
+                // InBlock / InChainLockedBlock — `blockHash` MUST be
+                // present and 32 bytes for the row to round-trip
+                // correctly to Rust as a `BlockHash`.
+                guard let blockHash = row.blockHash, blockHash.count == 32 else {
+                    return nil
+                }
+                return (
+                    context: row.context,
+                    blockHeight: row.blockHeight,
+                    blockHash: blockHash,
+                    blockTimestamp: row.blockTimestamp,
+                    transactionData: transactionData
+                )
+            }
         }
     }
 
@@ -3612,26 +3663,35 @@ private func persistWalletMetadataCallback(
     return 0
 }
 
-/// C shim for `on_get_chainlocked_tx_record_fn`. Calls
-/// `PlatformWalletPersistenceHandler.chainlockedTxRecord(...)` and
-/// writes the block height / hash / timestamp to the Rust-owned
-/// output pointers when a chain-locked row exists for `txid`.
+/// C shim for `on_get_core_tx_record_fn`. Calls
+/// `PlatformWalletPersistenceHandler.coreTxRecord(...)` and writes
+/// the row's actual context kind, block info (when applicable), and
+/// raw transaction bytes to the Rust-owned output pointers.
+///
+/// The transaction bytes are allocated here via
+/// `UnsafeMutablePointer<UInt8>.allocate(capacity:)` and the
+/// allocation is owned by the Rust side until it invokes
+/// `getCoreTxRecordFreeCallback` below — Rust calls free exactly
+/// once per hit.
 ///
 /// Output contract:
-/// - Sets `*outFound = true` and populates the three block fields
-///   on a hit; returns `0`.
-/// - Sets `*outFound = false` and leaves the block fields untouched
-///   on a miss; returns `0`.
+/// - Sets `*outFound = true` and populates `outContextKind` (and
+///   the three block fields when context is 2 or 3, plus the tx
+///   bytes pointer + length) on a hit; returns `0`.
+/// - Sets `*outFound = false` on a miss; returns `0`.
 /// - Returns `0` even on Swift-side errors (treated as miss); the
 ///   Rust side's `record_or_persister` helper logs and falls
 ///   through to the caller's existing not-found / poll path.
-private func getChainlockedTxRecordCallback(
+private func getCoreTxRecordCallback(
     context: UnsafeMutableRawPointer?,
     walletIdPtr: UnsafePointer<UInt8>?,
     txidPtr: UnsafePointer<UInt8>?,
+    outContextKind: UnsafeMutablePointer<UInt8>?,
     outBlockHeight: UnsafeMutablePointer<UInt32>?,
     outBlockHash: UnsafeMutablePointer<UInt8>?,
     outBlockTimestamp: UnsafeMutablePointer<UInt32>?,
+    outTxBytes: UnsafeMutablePointer<UnsafePointer<UInt8>?>?,
+    outTxBytesLen: UnsafeMutablePointer<UInt>?,
     outFound: UnsafeMutablePointer<Bool>?
 ) -> Int32 {
     guard let context = context,
@@ -3641,6 +3701,8 @@ private func getChainlockedTxRecordCallback(
         return 0
     }
     outFound.pointee = false
+    outTxBytes?.pointee = nil
+    outTxBytesLen?.pointee = 0
 
     let handler = Unmanaged<PlatformWalletPersistenceHandler>
         .fromOpaque(context)
@@ -3648,21 +3710,51 @@ private func getChainlockedTxRecordCallback(
     let walletId = Data(bytes: walletIdPtr, count: 32)
     let txid = Data(bytes: txidPtr, count: 32)
 
-    guard let row = handler.chainlockedTxRecord(walletId: walletId, txid: txid) else {
+    guard let row = handler.coreTxRecord(walletId: walletId, txid: txid) else {
         // Miss — outFound already set to false above.
         return 0
     }
 
+    outContextKind?.pointee = UInt8(row.context)
     outBlockHeight?.pointee = row.blockHeight
     outBlockTimestamp?.pointee = row.blockTimestamp
     if let outBlockHash = outBlockHash {
-        // `chainlockedTxRecord` validates `blockHash.count == 32`
-        // before returning, so this copy is bounded.
+        // `coreTxRecord` returns a 32-byte `blockHash` (real for
+        // in-block / chain-locked rows, zeroed placeholder for
+        // mempool / IS rows that the Rust side will ignore), so
+        // this copy is bounded.
         row.blockHash.copyBytes(
             to: UnsafeMutableBufferPointer(start: outBlockHash, count: 32),
             count: 32
         )
     }
+
+    // Hand the tx bytes to Rust. The buffer outlives this callback
+    // — Rust calls `getCoreTxRecordFreeCallback` to release it.
+    let len = row.transactionData.count
+    let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: len)
+    row.transactionData.copyBytes(
+        to: UnsafeMutableBufferPointer(start: buffer, count: len),
+        count: len
+    )
+    outTxBytes?.pointee = UnsafePointer(buffer)
+    outTxBytesLen?.pointee = UInt(len)
+
     outFound.pointee = true
     return 0
+}
+
+/// Paired free callback for `on_get_core_tx_record_free_fn`.
+/// Releases the buffer `getCoreTxRecordCallback` allocated above.
+/// `UInt8` is trivial so no `deinitialize(count:)` is required —
+/// `deallocate()` alone matches the `allocate(capacity:)`.
+private func getCoreTxRecordFreeCallback(
+    context: UnsafeMutableRawPointer?,
+    txBytes: UnsafePointer<UInt8>?,
+    _ txBytesLen: UInt
+) {
+    guard let txBytes = txBytes else { return }
+    UnsafeMutablePointer(mutating: txBytes).deallocate()
+    _ = context
+    _ = txBytesLen
 }
