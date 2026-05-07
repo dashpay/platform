@@ -669,8 +669,18 @@ The five Critical findings in §3.0 are real but most surface naturally during P
   routed through canonical `ValueConvertible::from_object`.
 
 ### Phase F — Tighten
-- ⬜ Add a CI grep that fails on new `to_object`/`to_json` inherent method introduction
-- ⬜ Add a doc page in `docs/` explaining the canonical pattern + escape hatch
+- ✅ CI lint that fails on new `to_object` / `to_json` / `from_object` /
+  `from_json` / `into_object` inherent methods on rs-dpp types
+  (`scripts/lint/check_no_new_inherent_conversions.sh`, run from the
+  `tests-rs-workspace.yml` workflow alongside fmt/clippy). Snapshot
+  allowlist with 7 currently-tolerated exceptions (all context-aware
+  methods that take `platform_version`).
+- ✅ Canonical-pattern reference doc:
+  [docs/json-value-conversion-canonical-pattern.md](json-value-conversion-canonical-pattern.md).
+  Covers the two traits, decision tree for derive vs hand-roll, tag-key
+  conventions table, test template, escape hatches (with reference
+  impls), Critical-1 through Critical-5 awareness, wasm-dpp2 wrapper
+  patterns, anti-patterns.
 
 ## 8. Test strategy
 
