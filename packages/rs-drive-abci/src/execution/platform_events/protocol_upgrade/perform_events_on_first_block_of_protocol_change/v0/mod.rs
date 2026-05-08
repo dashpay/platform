@@ -1015,12 +1015,24 @@ mod tests {
             )
             .expect("expected to convert to serialization format");
 
-        // Inject unknown property into the "person" document schema
+        // Inject unknown properties into the "person" document schema. These
+        // include both an arbitrary unknown key and the v12-introduced flags
+        // (`documentsCountable` / `rangeCountable`) — the latter must also be
+        // stripped from pre-v12 contracts so the v2 parser cannot revive them
+        // and reinterpret a NormalTree contract as a count tree post-upgrade.
         for (_doc_type_name, schema_value) in serialization_format.document_schemas_mut().iter_mut()
         {
             if let Some(map) = schema_value.as_map_mut() {
                 map.push((
                     PlatformValue::Text("unknownSmuggled".to_string()),
+                    PlatformValue::Bool(true),
+                ));
+                map.push((
+                    PlatformValue::Text("documentsCountable".to_string()),
+                    PlatformValue::Bool(true),
+                ));
+                map.push((
+                    PlatformValue::Text("rangeCountable".to_string()),
                     PlatformValue::Bool(true),
                 ));
             }
@@ -1144,18 +1156,26 @@ mod tests {
         .expect("deserialize")
         .0;
 
-        let has_unknown_after = format_after.document_schemas().values().any(|schema| {
-            schema
-                .as_map()
-                .map(|map| {
-                    map.iter()
-                        .any(|(k, _)| k.as_text() == Some("unknownSmuggled"))
-                })
-                .unwrap_or(false)
-        });
+        let schema_has_key = |format: &DataContractInSerializationFormat, key: &str| -> bool {
+            format.document_schemas().values().any(|schema| {
+                schema
+                    .as_map()
+                    .map(|map| map.iter().any(|(k, _)| k.as_text() == Some(key)))
+                    .unwrap_or(false)
+            })
+        };
+
         assert!(
-            !has_unknown_after,
+            !schema_has_key(&format_after, "unknownSmuggled"),
             "Contract should NOT have unknownSmuggled property after v12 migration"
+        );
+        assert!(
+            !schema_has_key(&format_after, "documentsCountable"),
+            "Contract should NOT have smuggled documentsCountable after v12 migration"
+        );
+        assert!(
+            !schema_has_key(&format_after, "rangeCountable"),
+            "Contract should NOT have smuggled rangeCountable after v12 migration"
         );
 
         // 7. Verify known properties are still present
@@ -1207,18 +1227,26 @@ mod tests {
         )
         .expect("convert to serialization format");
 
-        let has_unknown_refetched = refetched_format.document_schemas().values().any(|schema| {
-            schema
-                .as_map()
-                .map(|map| {
-                    map.iter()
-                        .any(|(k, _)| k.as_text() == Some("unknownSmuggled"))
+        let schema_has_key_refetched =
+            |format: &DataContractInSerializationFormat, key: &str| -> bool {
+                format.document_schemas().values().any(|schema| {
+                    schema
+                        .as_map()
+                        .map(|map| map.iter().any(|(k, _)| k.as_text() == Some(key)))
+                        .unwrap_or(false)
                 })
-                .unwrap_or(false)
-        });
+            };
         assert!(
-            !has_unknown_refetched,
+            !schema_has_key_refetched(&refetched_format, "unknownSmuggled"),
             "Contract fetched through Drive API after migration should not have unknownSmuggled"
+        );
+        assert!(
+            !schema_has_key_refetched(&refetched_format, "documentsCountable"),
+            "Contract fetched through Drive API after migration should not have smuggled documentsCountable"
+        );
+        assert!(
+            !schema_has_key_refetched(&refetched_format, "rangeCountable"),
+            "Contract fetched through Drive API after migration should not have smuggled rangeCountable"
         );
     }
 
