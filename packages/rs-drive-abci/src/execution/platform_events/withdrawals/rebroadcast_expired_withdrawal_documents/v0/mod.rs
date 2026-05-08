@@ -37,3 +37,43 @@ where
         self.rebroadcast_expired_withdrawal_documents_v1(block_info, transaction, platform_version)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::block::epoch::Epoch;
+
+    /// A freshly built test platform has no validator sets, so
+    /// `current_validator_set_position_in_list_by_most_recent` returns None
+    /// and v0 must return `Ok(())` without invoking the inner v1 logic.
+    /// This exercises the first `Ok(())` early-return in v0 and proves that
+    /// the withdrawals contract is not required to be installed.
+    #[test]
+    fn v0_returns_ok_when_current_quorum_not_in_validator_set() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let block_info = BlockInfo {
+            time_ms: 1,
+            height: 1,
+            core_height: 96,
+            epoch: Epoch::default(),
+        };
+
+        let platform_state = platform.state.load();
+
+        platform
+            .rebroadcast_expired_withdrawal_documents_v0(
+                &block_info,
+                &platform_state,
+                &transaction,
+                platform_version,
+            )
+            .expect("early return on missing quorum must be Ok");
+    }
+}

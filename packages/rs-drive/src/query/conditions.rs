@@ -1701,6 +1701,7 @@ fn meta_field_property_type(field: &str) -> Option<DocumentPropertyType> {
 
 #[cfg(feature = "server")]
 #[cfg(test)]
+#[allow(clippy::approx_constant)]
 mod tests {
     use crate::error::query::QuerySyntaxError;
     use crate::query::conditions::WhereClause;
@@ -2581,7 +2582,7 @@ mod tests {
 
     #[test]
     fn in_values_too_many_returns_error() {
-        let values: Vec<Value> = (0..101).map(|i| Value::I64(i)).collect();
+        let values: Vec<Value> = (0..101).map(Value::I64).collect();
         let clause = WhereClause {
             field: "f".to_string(),
             operator: In,
@@ -3786,5 +3787,683 @@ mod tests {
         };
         let res = clause.validate_against_schema(doc_type);
         assert!(res.is_valid());
+    }
+
+    // ---- sql_value_to_platform_value ----
+
+    #[test]
+    fn sql_value_boolean_true() {
+        use super::sql_value_to_platform_value;
+        let result = sql_value_to_platform_value(sqlparser::ast::Value::Boolean(true));
+        assert_eq!(result, Some(Value::Bool(true)));
+    }
+
+    #[test]
+    fn sql_value_boolean_false() {
+        use super::sql_value_to_platform_value;
+        let result = sql_value_to_platform_value(sqlparser::ast::Value::Boolean(false));
+        assert_eq!(result, Some(Value::Bool(false)));
+    }
+
+    #[test]
+    fn sql_value_number_integer() {
+        use super::sql_value_to_platform_value;
+        let result =
+            sql_value_to_platform_value(sqlparser::ast::Value::Number("42".to_string(), false));
+        assert_eq!(result, Some(Value::I64(42)));
+    }
+
+    #[test]
+    fn sql_value_number_negative_integer() {
+        use super::sql_value_to_platform_value;
+        let result =
+            sql_value_to_platform_value(sqlparser::ast::Value::Number("-7".to_string(), false));
+        assert_eq!(result, Some(Value::I64(-7)));
+    }
+
+    #[test]
+    fn sql_value_number_float() {
+        use super::sql_value_to_platform_value;
+        let result =
+            sql_value_to_platform_value(sqlparser::ast::Value::Number("3.14".to_string(), false));
+        assert_eq!(result, Some(Value::Float(3.14)));
+    }
+
+    #[test]
+    fn sql_value_number_unparseable_returns_none() {
+        use super::sql_value_to_platform_value;
+        // A string that cannot parse as i64
+        let result = sql_value_to_platform_value(sqlparser::ast::Value::Number(
+            "not_a_number".to_string(),
+            false,
+        ));
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn sql_value_single_quoted_string() {
+        use super::sql_value_to_platform_value;
+        let result = sql_value_to_platform_value(sqlparser::ast::Value::SingleQuotedString(
+            "hello".to_string(),
+        ));
+        assert_eq!(result, Some(Value::Text("hello".to_string())));
+    }
+
+    #[test]
+    fn sql_value_double_quoted_string() {
+        use super::sql_value_to_platform_value;
+        let result = sql_value_to_platform_value(sqlparser::ast::Value::DoubleQuotedString(
+            "world".to_string(),
+        ));
+        assert_eq!(result, Some(Value::Text("world".to_string())));
+    }
+
+    #[test]
+    fn sql_value_hex_string_literal() {
+        use super::sql_value_to_platform_value;
+        let result = sql_value_to_platform_value(sqlparser::ast::Value::HexStringLiteral(
+            "0xABCD".to_string(),
+        ));
+        assert_eq!(result, Some(Value::Text("0xABCD".to_string())));
+    }
+
+    #[test]
+    fn sql_value_national_string_literal() {
+        use super::sql_value_to_platform_value;
+        let result = sql_value_to_platform_value(sqlparser::ast::Value::NationalStringLiteral(
+            "n_str".to_string(),
+        ));
+        assert_eq!(result, Some(Value::Text("n_str".to_string())));
+    }
+
+    #[test]
+    fn sql_value_null_returns_none() {
+        use super::sql_value_to_platform_value;
+        let result = sql_value_to_platform_value(sqlparser::ast::Value::Null);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn sql_value_placeholder_returns_none() {
+        use super::sql_value_to_platform_value;
+        let result =
+            sql_value_to_platform_value(sqlparser::ast::Value::Placeholder("?".to_string()));
+        assert_eq!(result, None);
+    }
+
+    // ---- WhereClause::from_components: additional operator coverage ----
+
+    #[test]
+    fn from_components_with_between_operator() {
+        let components = vec![
+            Value::Text("age".to_string()),
+            Value::Text("between".to_string()),
+            Value::Array(vec![Value::I64(10), Value::I64(20)]),
+        ];
+        let clause = WhereClause::from_components(&components).unwrap();
+        assert_eq!(clause.field, "age");
+        assert_eq!(clause.operator, Between);
+        assert_eq!(
+            clause.value,
+            Value::Array(vec![Value::I64(10), Value::I64(20)])
+        );
+    }
+
+    #[test]
+    fn from_components_with_between_exclude_bounds_operator() {
+        let components = vec![
+            Value::Text("score".to_string()),
+            Value::Text("betweenExcludeBounds".to_string()),
+            Value::Array(vec![Value::Float(1.0), Value::Float(9.0)]),
+        ];
+        let clause = WhereClause::from_components(&components).unwrap();
+        assert_eq!(clause.operator, BetweenExcludeBounds);
+    }
+
+    #[test]
+    fn from_components_with_greater_than_or_equals() {
+        let components = vec![
+            Value::Text("price".to_string()),
+            Value::Text(">=".to_string()),
+            Value::U64(100),
+        ];
+        let clause = WhereClause::from_components(&components).unwrap();
+        assert_eq!(clause.operator, GreaterThanOrEquals);
+        assert_eq!(clause.value, Value::U64(100));
+    }
+
+    #[test]
+    fn from_components_with_less_than() {
+        let components = vec![
+            Value::Text("height".to_string()),
+            Value::Text("<".to_string()),
+            Value::I64(200),
+        ];
+        let clause = WhereClause::from_components(&components).unwrap();
+        assert_eq!(clause.operator, LessThan);
+    }
+
+    #[test]
+    fn from_components_with_less_than_or_equals() {
+        let components = vec![
+            Value::Text("height".to_string()),
+            Value::Text("<=".to_string()),
+            Value::I64(200),
+        ];
+        let clause = WhereClause::from_components(&components).unwrap();
+        assert_eq!(clause.operator, LessThanOrEquals);
+    }
+
+    #[test]
+    fn from_components_preserves_value_type() {
+        // Ensure the value is cloned as-is, including complex types
+        let components = vec![
+            Value::Text("tags".to_string()),
+            Value::Text("in".to_string()),
+            Value::Array(vec![
+                Value::Text("a".to_string()),
+                Value::Text("b".to_string()),
+                Value::Text("c".to_string()),
+            ]),
+        ];
+        let clause = WhereClause::from_components(&components).unwrap();
+        assert_eq!(clause.operator, In);
+        if let Value::Array(arr) = &clause.value {
+            assert_eq!(arr.len(), 3);
+        } else {
+            panic!("expected Array value");
+        }
+    }
+
+    #[test]
+    fn from_components_empty_returns_error() {
+        let components: Vec<Value> = vec![];
+        assert!(WhereClause::from_components(&components).is_err());
+    }
+
+    #[test]
+    fn from_components_single_element_returns_error() {
+        let components = vec![Value::Text("name".to_string())];
+        assert!(WhereClause::from_components(&components).is_err());
+    }
+
+    // ---- WhereClause::less_than: additional equal-value coverage ----
+
+    #[test]
+    fn less_than_u64_equal_values_with_allow_eq() {
+        let a = WhereClause {
+            field: "f".to_string(),
+            operator: Equal,
+            value: Value::U64(10),
+        };
+        assert!(a.less_than(&a, true).unwrap()); // le
+        assert!(!a.less_than(&a, false).unwrap()); // lt
+    }
+
+    #[test]
+    fn less_than_u32_equal_values_with_allow_eq() {
+        let a = WhereClause {
+            field: "f".to_string(),
+            operator: Equal,
+            value: Value::U32(5),
+        };
+        assert!(a.less_than(&a, true).unwrap());
+        assert!(!a.less_than(&a, false).unwrap());
+    }
+
+    #[test]
+    fn less_than_i32_equal_values_with_allow_eq() {
+        let a = WhereClause {
+            field: "f".to_string(),
+            operator: Equal,
+            value: Value::I32(-3),
+        };
+        assert!(a.less_than(&a, true).unwrap());
+        assert!(!a.less_than(&a, false).unwrap());
+    }
+
+    #[test]
+    fn less_than_u16_equal_values_with_allow_eq() {
+        let a = WhereClause {
+            field: "f".to_string(),
+            operator: Equal,
+            value: Value::U16(100),
+        };
+        assert!(a.less_than(&a, true).unwrap());
+        assert!(!a.less_than(&a, false).unwrap());
+    }
+
+    #[test]
+    fn less_than_u8_equal_values_with_allow_eq() {
+        let a = WhereClause {
+            field: "f".to_string(),
+            operator: Equal,
+            value: Value::U8(7),
+        };
+        assert!(a.less_than(&a, true).unwrap());
+        assert!(!a.less_than(&a, false).unwrap());
+    }
+
+    #[test]
+    fn less_than_i8_equal_values_with_allow_eq() {
+        let a = WhereClause {
+            field: "f".to_string(),
+            operator: Equal,
+            value: Value::I8(-1),
+        };
+        assert!(a.less_than(&a, true).unwrap());
+        assert!(!a.less_than(&a, false).unwrap());
+    }
+
+    #[test]
+    fn less_than_u128_equal_values_with_allow_eq() {
+        let a = WhereClause {
+            field: "f".to_string(),
+            operator: Equal,
+            value: Value::U128(999),
+        };
+        assert!(a.less_than(&a, true).unwrap());
+        assert!(!a.less_than(&a, false).unwrap());
+    }
+
+    #[test]
+    fn less_than_bytes_equal_values_with_allow_eq() {
+        let a = WhereClause {
+            field: "f".to_string(),
+            operator: Equal,
+            value: Value::Bytes(vec![1, 2, 3]),
+        };
+        assert!(a.less_than(&a, true).unwrap());
+        assert!(!a.less_than(&a, false).unwrap());
+    }
+
+    #[test]
+    fn less_than_text_equal_values_with_allow_eq() {
+        let a = WhereClause {
+            field: "f".to_string(),
+            operator: Equal,
+            value: Value::Text("same".to_string()),
+        };
+        assert!(a.less_than(&a, true).unwrap());
+        assert!(!a.less_than(&a, false).unwrap());
+    }
+
+    #[test]
+    fn less_than_float_equal_values_with_allow_eq() {
+        let a = WhereClause {
+            field: "f".to_string(),
+            operator: Equal,
+            value: Value::Float(2.5),
+        };
+        assert!(a.less_than(&a, true).unwrap());
+        assert!(!a.less_than(&a, false).unwrap());
+    }
+
+    #[test]
+    fn less_than_mismatched_integer_types_returns_error() {
+        let a = WhereClause {
+            field: "f".to_string(),
+            operator: Equal,
+            value: Value::U64(1),
+        };
+        let b = WhereClause {
+            field: "f".to_string(),
+            operator: Equal,
+            value: Value::I64(1),
+        };
+        assert!(a.less_than(&b, false).is_err());
+    }
+
+    #[test]
+    fn less_than_bool_vs_bool_returns_error() {
+        let a = WhereClause {
+            field: "f".to_string(),
+            operator: Equal,
+            value: Value::Bool(true),
+        };
+        let b = WhereClause {
+            field: "f".to_string(),
+            operator: Equal,
+            value: Value::Bool(false),
+        };
+        assert!(a.less_than(&b, false).is_err());
+    }
+
+    // ---- value_shape_ok: additional coverage ----
+
+    #[test]
+    fn value_shape_ok_between_with_three_elements_rejected() {
+        use super::WhereOperator;
+        use dpp::data_contract::document_type::DocumentPropertyType;
+
+        let three = Value::Array(vec![Value::I64(1), Value::I64(5), Value::I64(10)]);
+        assert!(!WhereOperator::Between.value_shape_ok(&three, &DocumentPropertyType::I64));
+    }
+
+    #[test]
+    fn value_shape_ok_between_with_empty_array_rejected() {
+        use super::WhereOperator;
+        use dpp::data_contract::document_type::DocumentPropertyType;
+
+        let empty = Value::Array(vec![]);
+        assert!(!WhereOperator::Between.value_shape_ok(&empty, &DocumentPropertyType::I64));
+    }
+
+    #[test]
+    fn value_shape_ok_between_for_f64_property_requires_numeric_elements() {
+        use super::WhereOperator;
+        use dpp::data_contract::document_type::DocumentPropertyType;
+
+        let good = Value::Array(vec![Value::Float(1.0), Value::Float(10.0)]);
+        assert!(WhereOperator::Between.value_shape_ok(&good, &DocumentPropertyType::F64));
+
+        let also_good = Value::Array(vec![Value::I64(1), Value::I64(10)]);
+        assert!(WhereOperator::Between.value_shape_ok(&also_good, &DocumentPropertyType::F64));
+
+        let bad = Value::Array(vec![Value::Text("a".into()), Value::Text("b".into())]);
+        assert!(!WhereOperator::Between.value_shape_ok(&bad, &DocumentPropertyType::F64));
+    }
+
+    #[test]
+    fn value_shape_ok_between_for_string_property_requires_text_elements() {
+        use super::WhereOperator;
+        use dpp::data_contract::document_type::{DocumentPropertyType, StringPropertySizes};
+
+        let str_ty = DocumentPropertyType::String(StringPropertySizes {
+            min_length: None,
+            max_length: None,
+        });
+
+        let good = Value::Array(vec![Value::Text("aaa".into()), Value::Text("zzz".into())]);
+        assert!(WhereOperator::Between.value_shape_ok(&good, &str_ty));
+
+        let bad = Value::Array(vec![Value::I64(1), Value::I64(10)]);
+        assert!(!WhereOperator::Between.value_shape_ok(&bad, &str_ty));
+    }
+
+    #[test]
+    fn value_shape_ok_between_exclude_left_with_non_array_rejected() {
+        use super::WhereOperator;
+        use dpp::data_contract::document_type::DocumentPropertyType;
+
+        assert!(!WhereOperator::BetweenExcludeLeft
+            .value_shape_ok(&Value::I64(5), &DocumentPropertyType::I64));
+    }
+
+    #[test]
+    fn value_shape_ok_between_exclude_right_with_non_array_rejected() {
+        use super::WhereOperator;
+        use dpp::data_contract::document_type::DocumentPropertyType;
+
+        assert!(!WhereOperator::BetweenExcludeRight
+            .value_shape_ok(&Value::I64(5), &DocumentPropertyType::I64));
+    }
+
+    #[test]
+    fn value_shape_ok_between_exclude_bounds_with_non_array_rejected() {
+        use super::WhereOperator;
+        use dpp::data_contract::document_type::DocumentPropertyType;
+
+        assert!(!WhereOperator::BetweenExcludeBounds
+            .value_shape_ok(&Value::I64(5), &DocumentPropertyType::I64));
+    }
+
+    #[test]
+    fn value_shape_ok_range_accepts_all_integer_widths() {
+        use super::WhereOperator;
+        use dpp::data_contract::document_type::DocumentPropertyType;
+
+        // Each integer value variant should be accepted for its corresponding property type
+        let cases: Vec<(Value, DocumentPropertyType)> = vec![
+            (Value::U8(1), DocumentPropertyType::U8),
+            (Value::I8(-1), DocumentPropertyType::I8),
+            (Value::U16(1), DocumentPropertyType::U16),
+            (Value::I16(-1), DocumentPropertyType::I16),
+            (Value::U32(1), DocumentPropertyType::U32),
+            (Value::I32(-1), DocumentPropertyType::I32),
+            (Value::U64(1), DocumentPropertyType::U64),
+            (Value::I64(-1), DocumentPropertyType::I64),
+            (Value::U128(1), DocumentPropertyType::U128),
+            (Value::I128(-1), DocumentPropertyType::I128),
+        ];
+        for (val, ty) in cases {
+            assert!(
+                WhereOperator::GreaterThan.value_shape_ok(&val, &ty),
+                "GreaterThan should accept integer value for {:?}",
+                ty
+            );
+            assert!(
+                WhereOperator::LessThanOrEquals.value_shape_ok(&val, &ty),
+                "LessThanOrEquals should accept integer value for {:?}",
+                ty
+            );
+        }
+    }
+
+    #[test]
+    fn value_shape_ok_range_rejects_bool_for_integer_type() {
+        use super::WhereOperator;
+        use dpp::data_contract::document_type::DocumentPropertyType;
+
+        assert!(!WhereOperator::GreaterThan
+            .value_shape_ok(&Value::Bool(true), &DocumentPropertyType::U64));
+    }
+
+    #[test]
+    fn value_shape_ok_in_rejects_text() {
+        use super::WhereOperator;
+        use dpp::data_contract::document_type::DocumentPropertyType;
+
+        assert!(!WhereOperator::In
+            .value_shape_ok(&Value::Text("not-array".into()), &DocumentPropertyType::U64));
+    }
+
+    // ---- ValueClause::matches_value: additional operator coverage ----
+
+    #[test]
+    fn value_clause_matches_value_less_than() {
+        let clause = ValueClause {
+            operator: LessThan,
+            value: Value::I64(50),
+        };
+        assert!(clause.matches_value(&Value::I64(30)));
+        assert!(!clause.matches_value(&Value::I64(50)));
+        assert!(!clause.matches_value(&Value::I64(60)));
+    }
+
+    #[test]
+    fn value_clause_matches_value_less_than_or_equals() {
+        let clause = ValueClause {
+            operator: LessThanOrEquals,
+            value: Value::I64(50),
+        };
+        assert!(clause.matches_value(&Value::I64(30)));
+        assert!(clause.matches_value(&Value::I64(50)));
+        assert!(!clause.matches_value(&Value::I64(51)));
+    }
+
+    #[test]
+    fn value_clause_matches_value_greater_than_or_equals() {
+        let clause = ValueClause {
+            operator: GreaterThanOrEquals,
+            value: Value::I64(10),
+        };
+        assert!(clause.matches_value(&Value::I64(10)));
+        assert!(clause.matches_value(&Value::I64(100)));
+        assert!(!clause.matches_value(&Value::I64(9)));
+    }
+
+    #[test]
+    fn value_clause_matches_between_inclusive() {
+        let clause = ValueClause {
+            operator: Between,
+            value: Value::Array(vec![Value::U64(10), Value::U64(20)]),
+        };
+        assert!(clause.matches_value(&Value::U64(10)));
+        assert!(clause.matches_value(&Value::U64(15)));
+        assert!(clause.matches_value(&Value::U64(20)));
+        assert!(!clause.matches_value(&Value::U64(9)));
+        assert!(!clause.matches_value(&Value::U64(21)));
+    }
+
+    #[test]
+    fn value_clause_matches_between_exclude_bounds() {
+        let clause = ValueClause {
+            operator: BetweenExcludeBounds,
+            value: Value::Array(vec![Value::U64(10), Value::U64(20)]),
+        };
+        assert!(!clause.matches_value(&Value::U64(10)));
+        assert!(clause.matches_value(&Value::U64(15)));
+        assert!(!clause.matches_value(&Value::U64(20)));
+    }
+
+    #[test]
+    fn value_clause_matches_between_exclude_left() {
+        let clause = ValueClause {
+            operator: BetweenExcludeLeft,
+            value: Value::Array(vec![Value::U64(10), Value::U64(20)]),
+        };
+        assert!(!clause.matches_value(&Value::U64(10)));
+        assert!(clause.matches_value(&Value::U64(11)));
+        assert!(clause.matches_value(&Value::U64(20)));
+    }
+
+    #[test]
+    fn value_clause_matches_between_exclude_right() {
+        let clause = ValueClause {
+            operator: BetweenExcludeRight,
+            value: Value::Array(vec![Value::U64(10), Value::U64(20)]),
+        };
+        assert!(clause.matches_value(&Value::U64(10)));
+        assert!(clause.matches_value(&Value::U64(19)));
+        assert!(!clause.matches_value(&Value::U64(20)));
+    }
+
+    #[test]
+    fn value_clause_in_with_bytes() {
+        let clause = ValueClause {
+            operator: In,
+            value: Value::Bytes(vec![5, 10, 15]),
+        };
+        assert!(clause.matches_value(&Value::U8(10)));
+        assert!(!clause.matches_value(&Value::U8(20)));
+        // Non-U8 against Bytes returns false
+        assert!(!clause.matches_value(&Value::I64(10)));
+    }
+
+    #[test]
+    fn value_clause_starts_with_non_text_returns_false() {
+        let clause = ValueClause {
+            operator: super::StartsWith,
+            value: Value::Text("he".to_string()),
+        };
+        assert!(!clause.matches_value(&Value::I64(42)));
+    }
+
+    // ---- WhereClause::matches_value: additional coverage ----
+
+    #[test]
+    fn where_clause_matches_value_between() {
+        let clause = WhereClause {
+            field: "price".to_string(),
+            operator: Between,
+            value: Value::Array(vec![Value::U64(100), Value::U64(500)]),
+        };
+        assert!(clause.matches_value(&Value::U64(100)));
+        assert!(clause.matches_value(&Value::U64(300)));
+        assert!(clause.matches_value(&Value::U64(500)));
+        assert!(!clause.matches_value(&Value::U64(99)));
+        assert!(!clause.matches_value(&Value::U64(501)));
+    }
+
+    #[test]
+    fn where_clause_matches_value_in() {
+        let clause = WhereClause {
+            field: "status".to_string(),
+            operator: In,
+            value: Value::Array(vec![
+                Value::Text("a".to_string()),
+                Value::Text("b".to_string()),
+            ]),
+        };
+        assert!(clause.matches_value(&Value::Text("a".to_string())));
+        assert!(clause.matches_value(&Value::Text("b".to_string())));
+        assert!(!clause.matches_value(&Value::Text("c".to_string())));
+    }
+
+    #[test]
+    fn where_clause_matches_value_starts_with() {
+        let clause = WhereClause {
+            field: "name".to_string(),
+            operator: super::StartsWith,
+            value: Value::Text("pre".to_string()),
+        };
+        assert!(clause.matches_value(&Value::Text("prefix_value".to_string())));
+        assert!(!clause.matches_value(&Value::Text("no_match".to_string())));
+    }
+
+    // ---- eval: additional coverage for text comparison operators ----
+
+    #[test]
+    fn eval_greater_than_with_text() {
+        assert!(GreaterThan.eval(
+            &Value::Text("banana".to_string()),
+            &Value::Text("apple".to_string())
+        ));
+        assert!(!GreaterThan.eval(
+            &Value::Text("apple".to_string()),
+            &Value::Text("banana".to_string())
+        ));
+    }
+
+    #[test]
+    fn eval_less_than_with_text() {
+        assert!(LessThan.eval(
+            &Value::Text("apple".to_string()),
+            &Value::Text("banana".to_string())
+        ));
+        assert!(!LessThan.eval(
+            &Value::Text("banana".to_string()),
+            &Value::Text("apple".to_string())
+        ));
+    }
+
+    #[test]
+    fn eval_between_with_text() {
+        let bounds = Value::Array(vec![
+            Value::Text("b".to_string()),
+            Value::Text("d".to_string()),
+        ]);
+        assert!(Between.eval(&Value::Text("b".to_string()), &bounds));
+        assert!(Between.eval(&Value::Text("c".to_string()), &bounds));
+        assert!(Between.eval(&Value::Text("d".to_string()), &bounds));
+        assert!(!Between.eval(&Value::Text("a".to_string()), &bounds));
+        assert!(!Between.eval(&Value::Text("e".to_string()), &bounds));
+    }
+
+    #[test]
+    fn eval_equal_with_text() {
+        assert!(Equal.eval(
+            &Value::Text("same".to_string()),
+            &Value::Text("same".to_string())
+        ));
+        assert!(!Equal.eval(
+            &Value::Text("one".to_string()),
+            &Value::Text("two".to_string())
+        ));
+    }
+
+    #[test]
+    fn eval_in_with_empty_array_returns_false() {
+        let arr = Value::Array(vec![]);
+        assert!(!In.eval(&Value::I64(1), &arr));
+    }
+
+    #[test]
+    fn eval_starts_with_empty_prefix_matches_everything() {
+        assert!(super::StartsWith.eval(
+            &Value::Text("anything".to_string()),
+            &Value::Text("".to_string())
+        ));
     }
 }

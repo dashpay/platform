@@ -80,7 +80,8 @@ impl<S: Signer<IdentityPublicKey>> TransferDocument<S> for Document {
             signer,
             sdk.version(),
             settings.state_transition_creation_options,
-        )?;
+        )
+        .await?;
         ensure_valid_state_transition_structure(&transition, sdk.version())?;
 
         let request = transition.broadcast_request_for_state_transition()?;

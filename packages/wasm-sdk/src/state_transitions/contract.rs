@@ -221,6 +221,7 @@ impl WasmSdk {
             self.inner_sdk().version(),
             None,
         )
+        .await
         .map_err(|e| WasmSdkError::generic(format!("Failed to create update transition: {}", e)))?;
 
         // Broadcast the transition

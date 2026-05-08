@@ -236,9 +236,11 @@ where
 #[cfg(test)]
 mod tests {
     use crate::execution::platform_events::core_chain_lock::verify_chain_lock_locally::v0::CHAIN_LOCK_REQUEST_ID_PREFIX;
+    use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::bls_signatures::{Bls12381G2Impl, Pairing};
     use dpp::dashcore::hashes::{sha256d, Hash, HashEngine};
-    use dpp::dashcore::QuorumSigningRequestId;
+    use dpp::dashcore::{BlockHash, ChainLock, QuorumSigningRequestId};
+    use dpp::version::PlatformVersion;
 
     #[test]
     fn verify_request_id() {
@@ -331,5 +333,42 @@ mod tests {
                     .is_some(),
             );
         }
+    }
+
+    /// Exercises the early `Err(Error::BLSError(DeserializationError))` branch of
+    /// `verify_chain_lock_locally_v0` — this is reached when the chain lock's
+    /// signature bytes are not a valid BLS G2 compressed point. Using an
+    /// all-zero 96-byte blob ensures deserialization fails before the function
+    /// ever touches the quorum set.
+    #[test]
+    fn verify_chain_lock_locally_v0_invalid_signature_returns_bls_error() {
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let platform_state = platform.platform.state.load();
+        let platform_version = PlatformVersion::latest();
+
+        // An all-zero compressed BLS signature is not a valid G2 point; the
+        // G2 decoder expects a flag bit, so this must fail deserialization.
+        let bad_chain_lock = ChainLock {
+            block_height: 1,
+            block_hash: BlockHash::from_byte_array([7u8; 32]),
+            signature: [0u8; 96].into(),
+        };
+
+        let err = platform
+            .platform
+            .verify_chain_lock_locally_v0(0, &platform_state, &bad_chain_lock, platform_version)
+            .expect_err("invalid signature must yield BLSError");
+
+        let msg = err.to_string();
+        assert!(
+            msg.to_lowercase().contains("chain lock signature")
+                || msg.to_lowercase().contains("deserialization"),
+            "expected BLS deserialization error, got: {}",
+            msg
+        );
     }
 }

@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct DPNSTestView: View {
-    @EnvironmentObject var appState: UnifiedAppState
+    @EnvironmentObject var appState: AppState
     @State private var testResults: String = ""
     @State private var isLoading = false
     @State private var searchPrefix = "test"
@@ -199,6 +199,6 @@ struct DPNSTestView: View {
 struct DPNSTestView_Previews: PreviewProvider {
     static var previews: some View {
         DPNSTestView()
-            .environmentObject(UnifiedAppState())
+            .environmentObject(AppState())
     }
 }

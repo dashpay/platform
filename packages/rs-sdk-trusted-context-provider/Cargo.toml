@@ -8,6 +8,7 @@ description = "Trusted HTTP-based context provider for Dash Platform SDK"
 
 [dependencies]
 
+dash-async = { path = "../rs-dash-async" }
 dash-context-provider = { path = "../rs-context-provider" }
 dpp = { path = "../rs-dpp", default-features = false, features = [
     "dash-sdk-features",
@@ -21,7 +22,6 @@ tracing = "0.1.41"
 lru = "0.16.3"
 arc-swap = "1.7.1"
 hex = "0.4.3"
-futures = "0.3"
 url = "2.5"
 
 [features]

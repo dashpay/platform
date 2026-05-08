@@ -25,12 +25,12 @@ fn should_emit_test_logs_to_stdout() -> bool {
 /// Create a mock document type for testing of mock API
 pub fn mock_document_type() -> dpp::data_contract::document_type::DocumentType {
     use dpp::{
-        data_contract::document_type::DocumentType,
-        platform_value::platform_value,
-        version::{PlatformVersion, PlatformVersionCurrentVersion},
+        data_contract::document_type::DocumentType, platform_value::platform_value,
+        version::PlatformVersion,
     };
 
-    let platform_version = PlatformVersion::get_current().unwrap();
+    // `set_current()` is no longer called by the SDK builder; use `latest()` directly.
+    let platform_version = PlatformVersion::latest();
 
     let schema = platform_value!({
         "type": "object",

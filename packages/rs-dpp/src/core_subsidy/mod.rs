@@ -20,7 +20,6 @@ impl NetworkCoreSubsidy for Network {
             Network::Testnet => 210240,
             Network::Devnet => 210240,
             Network::Regtest => 150,
-            _ => 210240,
         }
     }
 }

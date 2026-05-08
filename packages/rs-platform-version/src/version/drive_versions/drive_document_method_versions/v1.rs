@@ -67,4 +67,5 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V1: DriveDocumentMethodVersions =
             validate_document_purchase_transition_action_uniqueness: 0,
             validate_document_update_price_transition_action_uniqueness: 0,
         },
+        primary_key_tree_type: 0,
     };

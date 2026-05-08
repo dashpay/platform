@@ -8,6 +8,13 @@ describe('DocumentsFacade', () => {
   let document: wasmSDKPackage.Document;
   let identityKey: wasmSDKPackage.IdentityPublicKey;
   let signer: wasmSDKPackage.IdentitySigner;
+  const tokenPaymentInfo = {
+    paymentTokenContractId: 'BpJvvpPiR2obh7ueZixjtYXsmWQdgJhiZtQJWjD7Ruus',
+    tokenContractPosition: 0,
+    minimumTokenCost: BigInt(10),
+    maximumTokenCost: BigInt(25),
+    gasFeesPaidBy: 'PreferContractOwner',
+  };
 
   // Stub references for type-safe assertions
   let getDocumentsStub: SinonStub;
@@ -116,6 +123,7 @@ describe('DocumentsFacade', () => {
         document,
         identityKey,
         signer,
+        tokenPaymentInfo,
       };
 
       await client.documents.create(options);
@@ -130,6 +138,7 @@ describe('DocumentsFacade', () => {
         document,
         identityKey,
         signer,
+        tokenPaymentInfo,
         settings: { retries: 3 },
       };
 
@@ -145,6 +154,7 @@ describe('DocumentsFacade', () => {
         document,
         identityKey,
         signer,
+        tokenPaymentInfo,
       };
 
       await client.documents.delete(options);
@@ -162,6 +172,7 @@ describe('DocumentsFacade', () => {
         },
         identityKey,
         signer,
+        tokenPaymentInfo,
       };
 
       await client.documents.delete(options);
@@ -178,6 +189,7 @@ describe('DocumentsFacade', () => {
         recipientId,
         identityKey,
         signer,
+        tokenPaymentInfo,
       };
 
       await client.documents.transfer(options);
@@ -195,6 +207,7 @@ describe('DocumentsFacade', () => {
         price: BigInt(1000000), // 1M credits
         identityKey,
         signer,
+        tokenPaymentInfo,
       };
 
       await client.documents.purchase(options);
@@ -210,6 +223,7 @@ describe('DocumentsFacade', () => {
         price: BigInt(5000000), // 5M credits
         identityKey,
         signer,
+        tokenPaymentInfo,
       };
 
       await client.documents.setPrice(options);

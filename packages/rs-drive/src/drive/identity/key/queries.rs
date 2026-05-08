@@ -43,3 +43,74 @@ impl Drive {
         PathQuery::merge(path_queries.iter().collect(), grove_version).map_err(Error::from)
     }
 }
+
+#[cfg(feature = "server")]
+#[cfg(test)]
+mod tests {
+    use crate::util::test_helpers::setup::setup_drive;
+    use dpp::version::PlatformVersion;
+
+    #[test]
+    fn should_build_merged_query_for_single_identity() {
+        let drive = setup_drive(None);
+        let platform_version = PlatformVersion::latest();
+        let grove_version = &platform_version.drive.grove_version;
+
+        let identity_id: [u8; 32] = [1u8; 32];
+        let result = drive.fetch_identities_all_keys_query(&[identity_id], None, grove_version);
+        assert!(
+            result.is_ok(),
+            "expected successful path query for single identity"
+        );
+
+        let path_query = result.unwrap();
+        assert!(
+            !path_query.path.is_empty(),
+            "expected non-empty path in query"
+        );
+    }
+
+    #[test]
+    fn should_build_merged_query_for_multiple_identities() {
+        let drive = setup_drive(None);
+        let platform_version = PlatformVersion::latest();
+        let grove_version = &platform_version.drive.grove_version;
+
+        let id_a: [u8; 32] = [1u8; 32];
+        let id_b: [u8; 32] = [2u8; 32];
+        let id_c: [u8; 32] = [3u8; 32];
+
+        let result =
+            drive.fetch_identities_all_keys_query(&[id_a, id_b, id_c], None, grove_version);
+        assert!(
+            result.is_ok(),
+            "expected successful path query for multiple identities: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn should_fail_for_empty_identity_ids_slice() {
+        let drive = setup_drive(None);
+        let platform_version = PlatformVersion::latest();
+        let grove_version = &platform_version.drive.grove_version;
+
+        let result = drive.fetch_identities_all_keys_query(&[], None, grove_version);
+        // Merging zero path queries should fail
+        assert!(
+            result.is_err(),
+            "expected error when merging zero path queries"
+        );
+    }
+
+    #[test]
+    fn should_build_query_with_limit() {
+        let drive = setup_drive(None);
+        let platform_version = PlatformVersion::latest();
+        let grove_version = &platform_version.drive.grove_version;
+
+        let identity_id: [u8; 32] = [7u8; 32];
+        let result = drive.fetch_identities_all_keys_query(&[identity_id], Some(5), grove_version);
+        assert!(result.is_ok(), "expected successful path query with limit");
+    }
+}

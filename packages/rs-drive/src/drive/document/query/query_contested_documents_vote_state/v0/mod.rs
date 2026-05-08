@@ -94,3 +94,19 @@ impl Drive {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn vote_state_outcome_v0_defaults() {
+        // The outcome struct exposes trait methods — cover accessor and
+        // consuming branches on a default-initialised value.
+        let outcome = QueryContestedDocumentsVoteStateOutcomeV0::default();
+        assert!(outcome.contenders().is_empty());
+        assert_eq!(outcome.cost(), 0);
+        let owned = outcome.contenders_owned();
+        assert!(owned.is_empty());
+    }
+}

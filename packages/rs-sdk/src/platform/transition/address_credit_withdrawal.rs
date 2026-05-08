@@ -104,7 +104,8 @@ impl<S: Signer<PlatformAddress>> WithdrawAddressFunds<S> for Sdk {
             signer,
             user_fee_increase,
             self.version(),
-        )?;
+        )
+        .await?;
         ensure_valid_state_transition_structure(&state_transition, self.version())?;
 
         match state_transition

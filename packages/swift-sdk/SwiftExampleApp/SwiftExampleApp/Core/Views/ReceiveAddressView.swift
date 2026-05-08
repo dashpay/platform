@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 import SwiftDashSDK
 import CoreImage.CIFilterBuiltins
 
@@ -10,80 +11,136 @@ enum ReceiveAddressTab: String, CaseIterable {
 
 struct ReceiveAddressView: View {
     @Environment(\.dismiss) private var dismiss
-    @EnvironmentObject var walletService: WalletService
-    @EnvironmentObject var unifiedAppState: UnifiedAppState
+    @EnvironmentObject var walletManager: PlatformWalletManager
+    @EnvironmentObject var platformState: AppState
     @EnvironmentObject var shieldedService: ShieldedService
-    let wallet: HDWallet
+    let wallet: PersistentWallet
+
+    /// The single primary BIP44 account for this wallet.
+    /// Predicate uses a single-hop relationship traversal for the
+    /// wallet id; single-hop is well within the type-checker budget
+    /// unlike the multi-condition relationship predicates that
+    /// previously caused compiler timeouts.
+    @Query private var bip44Accounts: [PersistentAccount]
+    /// PlatformPayment (DIP-17) addresses for this wallet.
+    @Query private var platformAddresses: [PersistentPlatformAddress]
+
+    init(wallet: PersistentWallet) {
+        self.wallet = wallet
+        let walletId = wallet.walletId
+        _bip44Accounts = Query(
+            filter: #Predicate<PersistentAccount> {
+                $0.wallet.walletId == walletId &&
+                $0.accountType == 0 &&
+                $0.standardTag == 0
+            },
+            sort: \.accountIndex
+        )
+        _platformAddresses = Query(filter: PersistentPlatformAddress.predicate(walletId: walletId))
+    }
 
     @State private var selectedTab: ReceiveAddressTab = .core
+    @State private var selectedAccountIndex: UInt32 = 0
     @State private var copiedToClipboard = false
     @State private var faucetStatus: String?
     @State private var isFaucetLoading = false
 
+    /// Lowest-indexed external address on the primary BIP44 account
+    /// that has never received an inbound transaction.
+    /// `PersistentCoreAddress` rows are populated by the Rust
+    /// `on_persist_account_address_pools_fn` callback at wallet creation
+    /// (initial gap-limit fill), so they're available without a
+    /// runtime FFI hop.
+    private var nextCoreReceiveAddress: PersistentCoreAddress? {
+        guard let account = primaryBip44Account else { return nil }
+        return firstUnreceivedAddress(in: account, poolTag: 0)
+    }
+
+    /// Lowest-indexed unused address on the primary PlatformPayment
+    /// account. Queries the dedicated `PersistentPlatformAddress`
+    /// store directly (address-emit populates it for type-14
+    /// accounts). The previous implementation walked
+    /// `PersistentAccount.coreAddresses` with a pool-tag filter; that
+    /// is unnecessary now that Platform addresses have their own
+    /// model.
+    private var nextPlatformReceiveAddress: PersistentPlatformAddress? {
+        platformAddresses
+            .filter { !$0.isUsed }
+            .min(by: { $0.addressIndex < $1.addressIndex })
+    }
+
+    private var primaryBip44Account: PersistentAccount? {
+        bip44Accounts.first { $0.accountIndex == selectedAccountIndex }
+            ?? bip44Accounts.first
+    }
+
+    /// Lowest-indexed address in the given pool on the given account
+    /// that has never received an inbound transaction. `PersistentTxo`
+    /// rows are created on the SPV inbound-UTXO path and only ever
+    /// flagged spent (never deleted), so `addr.txos.isEmpty` is a
+    /// reliable "never received" signal — strictly stronger than the
+    /// `isUsed` flag, which doesn't always survive sync edge cases.
+    private func firstUnreceivedAddress(
+        in account: PersistentAccount,
+        poolTag: UInt8
+    ) -> PersistentCoreAddress? {
+        var best: PersistentCoreAddress? = nil
+        for addr in account.coreAddresses {
+            if addr.poolTypeTag != poolTag { continue }
+            if !addr.txos.isEmpty { continue }
+            if let current = best, current.addressIndex <= addr.addressIndex {
+                continue
+            }
+            best = addr
+        }
+        return best
+    }
+
     private var currentAddress: String {
         switch selectedTab {
         case .core:
-            return walletService.walletManager.getReceiveAddress(for: wallet)
+            return nextCoreReceiveAddress?.address
+                ?? "No unused receive address available yet — sync the wallet to extend the pool."
         case .platform:
-            return platformAddress ?? "No platform identity"
+            return nextPlatformReceiveAddress?.address
+                ?? "No Platform receive address available yet — create a wallet after enabling Platform address persistence."
         case .shielded:
             return shieldedService.orchardDisplayAddress ?? "Not available"
         }
     }
 
-    private var platformAddress: String? {
-        // Get the next receive address from the wallet's DIP-17 platform payment account
-        // Address encoding is done in Rust via DPP's PlatformAddress::to_bech32m_string
-        do {
-            try walletService.walletManager.ensurePlatformPaymentAccount(for: wallet)
-            guard let collection = walletService.walletManager.getManagedAccountCollection(for: wallet),
-                  let platformAccount = collection.getPlatformPaymentAccount(accountIndex: 0, keyClass: 0) else {
-                return nil
-            }
-            guard let pool = platformAccount.getAddressPool() else { return nil }
-            let addresses = try pool.getAddresses(from: 0, to: 1)
-            guard let addrInfo = addresses.first else { return nil }
-
-            // Encode scriptPubKey as bech32m platform address via Rust FFI
-            let network = unifiedAppState.platformState.currentNetwork
-            let networkValue: UInt32 = {
-                switch network {
-                case .mainnet: return 0
-                case .testnet: return 1
-                case .regtest: return 2
-                case .devnet: return 3
-                }
-            }()
-
-            let result = addrInfo.scriptPubKey.withUnsafeBytes { buffer -> DashSDKResult in
-                guard let base = buffer.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
-                    return DashSDKResult()
-                }
-                return dash_sdk_encode_platform_address(base, UInt32(addrInfo.scriptPubKey.count), networkValue)
-            }
-
-            guard result.error == nil, let dataPtr = result.data else {
-                if let error = result.error {
-                    dash_sdk_error_free(error)
-                }
-                return nil
-            }
-
-            let cStr = dataPtr.assumingMemoryBound(to: CChar.self)
-            let addressString = String(cString: cStr)
-            dash_sdk_string_free(UnsafeMutablePointer(mutating: cStr))
-            return addressString
-        } catch {
-            return nil
+    /// BIP32 derivation path for the currently-selected tab's address,
+    /// or nil when the address didn't come out of an HD pool (Shielded
+    /// today) or no address is available yet.
+    private var currentDerivationPath: String? {
+        switch selectedTab {
+        case .core: return nextCoreReceiveAddress?.derivationPath
+        case .platform: return nextPlatformReceiveAddress?.derivationPath
+        case .shielded: return nil
         }
+    }
+
+    /// 33-byte compressed secp256k1 public key rendered as lowercase
+    /// hex. `nil` when the entry was persisted without a public key
+    /// (BLS accounts, script-only pool entries) or when the tab
+    /// doesn't expose one.
+    private var currentPublicKeyHex: String? {
+        let bytes: Data?
+        switch selectedTab {
+        case .core: bytes = nextCoreReceiveAddress?.publicKey
+        case .platform: bytes = nextPlatformReceiveAddress?.publicKey
+        case .shielded: bytes = nil
+        }
+        guard let data = bytes, !data.isEmpty else { return nil }
+        return data.map { String(format: "%02x", $0) }.joined()
     }
 
     private var hasValidAddress: Bool {
         switch selectedTab {
         case .core:
-            return true
+            return nextCoreReceiveAddress != nil
         case .platform:
-            return platformAddress != nil
+            return nextPlatformReceiveAddress != nil
         case .shielded:
             return shieldedService.orchardDisplayAddress != nil
         }
@@ -92,7 +149,6 @@ struct ReceiveAddressView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 20) {
-                // Segmented picker
                 Picker("Address Type", selection: $selectedTab) {
                     ForEach(ReceiveAddressTab.allCases, id: \.self) { tab in
                         Text(tab.rawValue).tag(tab)
@@ -101,8 +157,27 @@ struct ReceiveAddressView: View {
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
 
+                if selectedTab == .core && bip44Accounts.count > 1 {
+                    if bip44Accounts.count <= 4 {
+                        Picker("Account", selection: $selectedAccountIndex) {
+                            ForEach(bip44Accounts, id: \.accountIndex) { account in
+                                Text("Account \(account.accountIndex)").tag(account.accountIndex)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .padding(.horizontal)
+                    } else {
+                        Picker("Account", selection: $selectedAccountIndex) {
+                            ForEach(bip44Accounts, id: \.accountIndex) { account in
+                                Text("Account \(account.accountIndex)").tag(account.accountIndex)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .padding(.horizontal)
+                    }
+                }
+
                 if hasValidAddress {
-                    // QR Code
                     if let qrImage = generateQRCode(from: currentAddress) {
                         Image(uiImage: qrImage)
                             .interpolation(.none)
@@ -114,7 +189,6 @@ struct ReceiveAddressView: View {
                             .cornerRadius(12)
                     }
 
-                    // Address label
                     VStack(spacing: 12) {
                         Text(addressLabel)
                             .font(.subheadline)
@@ -129,10 +203,34 @@ struct ReceiveAddressView: View {
                             .onTapGesture {
                                 copyToClipboard(currentAddress)
                             }
+
+                        if let path = currentDerivationPath {
+                            HStack(spacing: 4) {
+                                Text("Path")
+                                    .foregroundColor(.secondary)
+                                Text(path)
+                                    .fontDesign(.monospaced)
+                                    .textSelection(.enabled)
+                            }
+                            .font(.caption2)
+                        }
+
+                        if let pubKey = currentPublicKeyHex {
+                            VStack(spacing: 2) {
+                                Text("Public Key")
+                                    .foregroundColor(.secondary)
+                                Text(pubKey)
+                                    .fontDesign(.monospaced)
+                                    .textSelection(.enabled)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            }
+                            .font(.caption2)
+                            .frame(maxWidth: .infinity)
+                        }
                     }
                     .padding(.horizontal)
 
-                    // Copy Button
                     Button {
                         copyToClipboard(currentAddress)
                     } label: {
@@ -147,7 +245,7 @@ struct ReceiveAddressView: View {
                     .padding(.horizontal)
 
                     // Faucet button — only on local Docker, Core tab
-                    if selectedTab == .core && unifiedAppState.platformState.useDockerSetup {
+                    if selectedTab == .core && platformState.useDockerSetup {
                         Button {
                             Task { await requestFromFaucet() }
                         } label: {
@@ -168,7 +266,7 @@ struct ReceiveAddressView: View {
                     }
                 } else {
                     Spacer()
-                    Text(unavailableMessage)
+                    Text(currentAddress)
                         .font(.body)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
@@ -190,6 +288,9 @@ struct ReceiveAddressView: View {
             .onChange(of: selectedTab) { _, _ in
                 copiedToClipboard = false
             }
+            .onChange(of: selectedAccountIndex) { _, _ in
+                copiedToClipboard = false
+            }
         }
     }
 
@@ -206,14 +307,6 @@ struct ReceiveAddressView: View {
         case .core: return .blue
         case .platform: return .indigo
         case .shielded: return .purple
-        }
-    }
-
-    private var unavailableMessage: String {
-        switch selectedTab {
-        case .core: return "No core address available"
-        case .platform: return "No platform payment account available.\nEnsure the wallet has a DIP-17 account."
-        case .shielded: return "Shielded pool not initialized.\nA wallet with a valid seed is required."
         }
     }
 

@@ -9,15 +9,9 @@ class AppState: ObservableObject {
     @Published var showError = false
     @Published var errorMessage = ""
 
-    @Published var identities: [IdentityModel] = []
-    @Published var contracts: [ContractModel] = []
-    @Published var tokens: [TokenModel] = []
-    @Published var documents: [DocumentModel] = []
-    @Published var dataContracts: [DPPDataContract] = []
-
-    @Published var currentNetwork: AppNetwork {
+    @Published var currentNetwork: Network {
         didSet {
-            UserDefaults.standard.set(currentNetwork.rawValue, forKey: "currentNetwork")
+            UserDefaults.standard.set(Int(currentNetwork.rawValue), forKey: "currentNetwork")
             Task {
                 await switchNetwork(to: currentNetwork)
             }
@@ -37,18 +31,21 @@ class AppState: ObservableObject {
         }
     }
 
-    /// Backward-compat computed properties (read-only)
-    var useLocalPlatform: Bool { useDockerSetup }
-    var useLocalCore: Bool { useDockerSetup }
-
-    private let testSigner = TestSigner()
+    // Identity-key signing is performed per-flow via a fresh
+    // `KeychainSigner` constructed from the active `ModelContainer`
+    // (see `CreateIdentityView.submit()`). `AppState` no longer holds
+    // a long-lived signer field — there is no shared signing state to
+    // amortize across flows, and the keychain-backed lookup makes
+    // construction effectively free.
     private var dataManager: DataManager?
     private var modelContext: ModelContext?
 
     init() {
-        // Load saved network preference or use default
-        if let savedNetwork = UserDefaults.standard.string(forKey: "currentNetwork"),
-           let network = AppNetwork(rawValue: savedNetwork) {
+        // Load saved network preference or use default. Read via
+        // `object(forKey:)` and cast — `integer(forKey:)` returns 0
+        // for missing keys, which would silently pin to mainnet.
+        if let rawInt = UserDefaults.standard.object(forKey: "currentNetwork") as? Int,
+           let network = Network(rawValue: UInt32(rawInt)) {
             self.currentNetwork = network
         } else {
             self.currentNetwork = .testnet
@@ -81,17 +78,13 @@ class AppState: ObservableObject {
                 SDK.initialize()
                 SDK.enableLogging(level: .debug)
 
-                let sdkNetwork: DashSDKNetwork = currentNetwork.sdkNetwork
                 NSLog("🔵 AppState: Creating SDK for network=\(currentNetwork), docker=\(useDockerSetup)")
-                let newSDK = try SDK(network: sdkNetwork)
+                let newSDK = try SDK(network: currentNetwork)
                 sdk = newSDK
                 NSLog("✅ AppState: SDK created successfully")
 
                 // Load known contracts into the SDK's trusted provider
                 await loadKnownContractsIntoSDK(sdk: newSDK, modelContext: modelContext)
-
-                // Load persisted data first
-                await loadPersistedData()
 
                 isLoading = false
             } catch {
@@ -103,81 +96,18 @@ class AppState: ObservableObject {
         }
     }
 
-    func loadPersistedData() async {
-        guard let dataManager = dataManager else { return }
-
-        do {
-            // Load identities
-            identities = try dataManager.fetchIdentities()
-
-            // Load contracts
-            contracts = try dataManager.fetchContracts()
-
-            // Load documents for all contracts
-            var allDocuments: [DocumentModel] = []
-            for contract in contracts {
-                let docs = try dataManager.fetchDocuments(contractId: contract.id)
-                allDocuments.append(contentsOf: docs)
-            }
-            documents = allDocuments
-
-            // TODO: Load tokens from contracts with token support
-        } catch {
-            print("Error loading persisted data: \(error)")
-        }
-    }
-
-    func loadSampleIdentities() async {
-        guard let dataManager = dataManager else { return }
-
-        // Add some sample local identities for testing
-        let sampleIdentities = [
-            IdentityModel(
-                idString: "1111111111111111111111111111111111111111111111111111111111111111",
-                balance: 1000000000,
-                isLocal: true,
-                alias: "Alice"
-            ),
-            IdentityModel(
-                idString: "2222222222222222222222222222222222222222222222222222222222222222",
-                balance: 500000000,
-                isLocal: true,
-                alias: "Bob"
-            ),
-            IdentityModel(
-                idString: "3333333333333333333333333333333333333333333333333333333333333333",
-                balance: 250000000,
-                isLocal: true,
-                alias: "Charlie"
-            )
-        ].compactMap { $0 }
-
-        // Save to persistence
-        for identity in sampleIdentities {
-            do {
-                try dataManager.saveIdentity(identity)
-            } catch {
-                print("Error saving sample identity: \(error)")
-            }
-        }
-
-        // Update published array
-        identities = sampleIdentities
-    }
-
     func showError(message: String) {
         errorMessage = message
         showError = true
     }
 
-    func switchNetwork(to network: AppNetwork) async {
+    func switchNetwork(to network: Network) async {
         guard let modelContext = modelContext else { return }
 
-        // Clear current data
-        identities.removeAll()
-        contracts.removeAll()
-        documents.removeAll()
-        tokens.removeAll()
+        // Identities, contracts, documents, and token balances are
+        // scoped per-network inside SwiftData. `@Query` consumers
+        // filter by `network` and update reactively once we swap
+        // the DataManager's scope below — nothing to clear here.
 
         // Update DataManager's current network
         dataManager?.currentNetwork = network
@@ -187,15 +117,11 @@ class AppState: ObservableObject {
             isLoading = true
 
             // Create new SDK instance for the network
-            let sdkNetwork: DashSDKNetwork = network.sdkNetwork
-            let newSDK = try SDK(network: sdkNetwork)
+            let newSDK = try SDK(network: network)
             sdk = newSDK
 
             // Load known contracts into the SDK's trusted provider
             await loadKnownContractsIntoSDK(sdk: newSDK, modelContext: modelContext)
-
-            // Reload data for the new network
-            await loadPersistedData()
 
             isLoading = false
         } catch {
@@ -206,268 +132,11 @@ class AppState: ObservableObject {
         }
     }
 
-    func addIdentity(_ identity: IdentityModel, walletId: Data? = nil) {
-        guard let dataManager = dataManager else { return }
-
-        var updatedIdentity = identity
-        if let walletId = walletId {
-            updatedIdentity.walletId = walletId
-        }
-
-        if !identities.contains(where: { $0.id == identity.id }) {
-            identities.append(updatedIdentity)
-
-            // Save to persistence
-            Task {
-                do {
-                    try dataManager.saveIdentity(updatedIdentity)
-                } catch {
-                    print("Error saving identity: \(error)")
-                }
-            }
-        }
-    }
-
-    func updateIdentity(_ identity: IdentityModel) {
-        guard let dataManager = dataManager else { return }
-
-        if let index = identities.firstIndex(where: { $0.id == identity.id }) {
-            identities[index] = identity
-
-            // Save to persistence
-            Task {
-                do {
-                    try dataManager.saveIdentity(identity)
-                } catch {
-                    print("Error updating identity: \(error)")
-                }
-            }
-        }
-    }
-
-    func removeIdentity(_ identity: IdentityModel) {
-        guard let dataManager = dataManager else { return }
-
-        identities.removeAll { $0.id == identity.id }
-
-        // Remove from persistence
-        Task {
-            do {
-                try dataManager.deleteIdentity(withId: identity.id)
-            } catch {
-                print("Error deleting identity: \(error)")
-            }
-        }
-    }
-
-    func associateIdentityWithWallet(identityId: Data, walletId: Data) {
-        guard let dataManager = dataManager else { return }
-
-        // Find and update the identity
-        if let index = identities.firstIndex(where: { $0.id == identityId }) {
-            identities[index].walletId = walletId
-
-            // Update persistence
-            Task {
-                do {
-                    try dataManager.saveIdentity(identities[index])
-                } catch {
-                    print("Error updating identity wallet association: \(error)")
-                }
-            }
-        }
-    }
-
-    func updateIdentityBalance(id: Data, newBalance: UInt64) {
-        guard let dataManager = dataManager else { return }
-
-        if let index = identities.firstIndex(where: { $0.id == id }) {
-            var identity = identities[index]
-            identity.balance = newBalance
-            identities[index] = identity
-
-            // Update in persistence
-            Task {
-                do {
-                    try dataManager.saveIdentity(identity)
-                } catch {
-                    print("Error updating identity balance: \(error)")
-                }
-            }
-        }
-    }
-
-    func updateIdentityDPNSName(id: Data, dpnsName: String) {
-        guard let dataManager = dataManager else { return }
-
-        if let index = identities.firstIndex(where: { $0.id == id }) {
-            var identity = identities[index]
-            identity.dpnsName = dpnsName
-            identities[index] = identity
-
-            // Update in persistence
-            Task {
-                do {
-                    try dataManager.saveIdentity(identity)
-                } catch {
-                    print("Error updating identity DPNS name: \(error)")
-                }
-            }
-        }
-    }
-
-    func updateIdentityMainName(id: Data, mainName: String?) {
-        guard let dataManager = dataManager else { return }
-
-        if let index = identities.firstIndex(where: { $0.id == id }) {
-            let oldIdentity = identities[index]
-            let updatedIdentity = IdentityModel(
-                id: oldIdentity.id,
-                balance: oldIdentity.balance,
-                isLocal: oldIdentity.isLocal,
-                alias: oldIdentity.alias,
-                type: oldIdentity.type,
-                privateKeys: oldIdentity.privateKeys,
-                votingPrivateKey: oldIdentity.votingPrivateKey,
-                ownerPrivateKey: oldIdentity.ownerPrivateKey,
-                payoutPrivateKey: oldIdentity.payoutPrivateKey,
-                dpnsName: oldIdentity.dpnsName,
-                mainDpnsName: mainName,
-                dpnsNames: oldIdentity.dpnsNames,
-                contestedDpnsNames: oldIdentity.contestedDpnsNames,
-                contestedDpnsInfo: oldIdentity.contestedDpnsInfo,
-                publicKeys: oldIdentity.publicKeys
-            )
-            identities[index] = updatedIdentity
-
-            // Update in persistence
-            Task {
-                do {
-                    try dataManager.saveIdentity(updatedIdentity)
-                } catch {
-                    print("Error updating identity main name: \(error)")
-                }
-            }
-        }
-    }
-
-    func updateIdentityDPNSNames(id: Data, dpnsNames: [String], contestedNames: [String], contestedInfo: [String: Any]) {
-        guard let dataManager = dataManager else { return }
-
-        if let index = identities.firstIndex(where: { $0.id == id }) {
-            var identity = identities[index]
-            identity.dpnsNames = dpnsNames
-            identity.contestedDpnsNames = contestedNames
-            identity.contestedDpnsInfo = contestedInfo
-
-            // Set the primary dpnsName if we have registered names
-            if !dpnsNames.isEmpty && identity.dpnsName == nil {
-                identity.dpnsName = dpnsNames.first
-            }
-
-            identities[index] = identity
-
-            // Update in persistence
-            Task {
-                do {
-                    try dataManager.saveIdentity(identity)
-                } catch {
-                    print("Error updating identity DPNS names: \(error)")
-                }
-            }
-        }
-    }
-
-    func removePrivateKeyReference(identityId: Data, keyId: Int32) {
-        guard let dataManager = dataManager else { return }
-
-        Task {
-            do {
-                try dataManager.removePrivateKeyReference(identityId: identityId, keyId: keyId)
-            } catch {
-                print("Error removing private key reference: \(error)")
-            }
-        }
-    }
-
-    func updateIdentityPublicKeys(id: Data, publicKeys: [IdentityPublicKey]) {
-        print("🔵 updateIdentityPublicKeys called with \(publicKeys.count) keys for identity \(id.toHexString())")
-        guard let dataManager = dataManager else {
-            print("❌ No dataManager available")
-            return
-        }
-
-        if let index = identities.firstIndex(where: { $0.id == id }) {
-            print("🔵 Found identity at index \(index)")
-            // Create a new identity with updated public keys
-            let oldIdentity = identities[index]
-            let updatedIdentity = IdentityModel(
-                id: oldIdentity.id,
-                balance: oldIdentity.balance,
-                isLocal: oldIdentity.isLocal,
-                alias: oldIdentity.alias,
-                type: oldIdentity.type,
-                privateKeys: oldIdentity.privateKeys,
-                votingPrivateKey: oldIdentity.votingPrivateKey,
-                ownerPrivateKey: oldIdentity.ownerPrivateKey,
-                payoutPrivateKey: oldIdentity.payoutPrivateKey,
-                dpnsName: oldIdentity.dpnsName,
-                mainDpnsName: oldIdentity.mainDpnsName,
-                dpnsNames: oldIdentity.dpnsNames,
-                contestedDpnsNames: oldIdentity.contestedDpnsNames,
-                contestedDpnsInfo: oldIdentity.contestedDpnsInfo,
-                publicKeys: publicKeys
-            )
-            identities[index] = updatedIdentity
-            print("🔵 Updated identity in array, now has \(updatedIdentity.publicKeys.count) public keys")
-
-            // Update in persistence
-            Task {
-                do {
-                    try dataManager.saveIdentity(updatedIdentity)
-                    print("✅ Saved identity to persistence")
-                } catch {
-                    print("Error updating identity public keys: \(error)")
-                }
-            }
-        } else {
-            print("❌ Identity not found in identities array")
-        }
-    }
-
-    func addContract(_ contract: ContractModel) {
-        guard let dataManager = dataManager else { return }
-
-        if !contracts.contains(where: { $0.id == contract.id }) {
-            contracts.append(contract)
-
-            // Save to persistence
-            Task {
-                do {
-                    try dataManager.saveContract(contract)
-                } catch {
-                    print("Error saving contract: \(error)")
-                }
-            }
-        }
-    }
-
-    func addDocument(_ document: DocumentModel) {
-        guard let dataManager = dataManager else { return }
-
-        if !documents.contains(where: { $0.id == document.id }) {
-            documents.append(document)
-
-            // Save to persistence
-            Task {
-                do {
-                    try dataManager.saveDocument(document)
-                } catch {
-                    print("Error saving document: \(error)")
-                }
-            }
-        }
-    }
+    // Identity, contract, and document mutations are performed
+    // directly on SwiftData now. Views own their `ModelContext` and
+    // write via `PersistentIdentity` / `PersistentDataContract` /
+    // `PersistentDocument` helpers, so the fan-out mutators that
+    // used to live here are gone.
 
     // MARK: - Contract Loading
 

@@ -1,6 +1,14 @@
 import Foundation
 import DashSDKFFI
 
+/// Result of building and signing a transaction
+public struct BuildAndSignResult: Sendable {
+    /// The signed transaction bytes
+    public let transactionData: Data
+    /// The fee paid in duffs
+    public let fee: UInt64
+}
+
 /// Transaction utilities for wallet operations
 public class Transaction {
 
@@ -15,11 +23,9 @@ public class Transaction {
         }
 
         func toFFI() -> FFITxOutput {
-            // TODO: This memory is not being freed, FFI must free FFITxOutput
-            // or expose a method to do it
-            let cString = strdup(address)
-
-            return FFITxOutput(address: cString, amount: amount)
+            return address.withCString { addressCStr in
+                FFITxOutput(address: addressCStr, amount: amount)
+            }
         }
     }
 
@@ -35,7 +41,7 @@ public class Transaction {
     /// - Returns: Transaction check result
     public static func check(wallet: Wallet,
                             transactionData: Data,
-                            context: TransactionContext = .mempool,
+                            context: TransactionContextType = .mempool,
                             blockHeight: UInt32 = 0,
                             blockHash: Data? = nil,
                             timestamp: UInt64 = 0,
@@ -43,26 +49,29 @@ public class Transaction {
         var error = FFIError()
         var result = FFITransactionCheckResult()
 
+        // Build FFIBlockInfo
+        var blockInfo = FFIBlockInfo()
+        blockInfo.height = blockHeight
+        blockInfo.timestamp = UInt32(timestamp)
+        if let hash = blockHash, hash.count == 32 {
+            hash.withUnsafeBytes { buf in
+                withUnsafeMutableBytes(of: &blockInfo.block_hash) { dst in
+                    dst.copyBytes(from: buf.prefix(32))
+                }
+            }
+        }
+
+        let contextType = FFITransactionContextType(rawValue: context.rawValue)
+
         let success = transactionData.withUnsafeBytes { txBytes in
             let txPtr = txBytes.bindMemory(to: UInt8.self).baseAddress
 
-            if let hash = blockHash {
-                return hash.withUnsafeBytes { hashBytes in
-                    let hashPtr = hashBytes.bindMemory(to: UInt8.self).baseAddress
-
-                    return wallet_check_transaction(
-                        wallet.ffiHandle,
-                        txPtr, transactionData.count,
-                        context.ffiValue, blockHeight, hashPtr,
-                        timestamp, updateState, &result, &error)
-                }
-            } else {
-                return wallet_check_transaction(
-                    wallet.ffiHandle,
-                    txPtr, transactionData.count,
-                    context.ffiValue, blockHeight, nil,
-                    timestamp, updateState, &result, &error)
-            }
+            return wallet_check_transaction(
+                wallet.ffiHandle,
+                txPtr, transactionData.count,
+                contextType, blockInfo,
+                nil, 0, // islock_data, islock_len
+                updateState, &result, &error)
         }
 
         defer {

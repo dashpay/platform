@@ -1,8 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
-export IPHONEOS_DEPLOYMENT_TARGET="18.0"
-export IPHONESIMULATOR_DEPLOYMENT_TARGET="18.0"
+IPHONEOS_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-17.0}"
+IPHONESIMULATOR_DEPLOYMENT_TARGET="${IPHONESIMULATOR_DEPLOYMENT_TARGET:-17.0}"
+export IPHONEOS_DEPLOYMENT_TARGET
+export IPHONESIMULATOR_DEPLOYMENT_TARGET
 
 # -------------------------------
 # Colors
@@ -37,14 +39,13 @@ log_error() { echo -e "${RED}$1${NC}"; }
 # Help
 # -------------------------------
 show_help() {
-  echo "Usage: $0 --target <ios|sim|mac|intel-mac> [--profile <dev|release>]"
+  echo "Usage: $0 --target <ios|sim|mac> [--profile <dev|release>]"
   echo ""
   echo "Targets:"
   echo "  ios         -> iPhone device"
   echo "  sim         -> auto-detected iOS simulator"
   echo "  mac         -> Apple Silicon Mac"
-  echo "  intel-mac   -> Intel Mac"
-  echo "  all         -> all targets except Intel Mac"
+  echo "  all         -> all targets"
   echo ""
   echo "Profile:"
   echo "  dev (default)"
@@ -53,18 +54,6 @@ show_help() {
   echo "Examples:"
   echo "  $0 --target sim --profile release"
   exit 1
-}
-
-# -------------------------------
-# Detect simulator target
-# -------------------------------
-detect_sim_target() {
-  ARCH=$(uname -m)
-  if [[ "$ARCH" == "arm64" ]]; then
-    echo "aarch64-apple-ios-sim"
-  else
-    echo "x86_64-apple-ios"
-  fi
 }
 
 # -------------------------------
@@ -81,7 +70,6 @@ while [[ $# -gt 0 ]]; do
         ios) BUILD_IOS=true ;;
         sim) BUILD_SIM=true ;;
         mac) BUILD_MAC=true ;;
-        intel-mac) BUILD_INTEL_MAC=true ;;
         all) BUILD_IOS=true; BUILD_SIM=true; BUILD_MAC=true ;;
         *) log_error "Unknown target $2"; show_help ;;
       esac
@@ -140,10 +128,11 @@ inject_modulemap() {
 #ifndef DASHSDKFFI_H
 #define DASHSDKFFI_H
 
-// key-wallet-ffi defines FFINetwork used by dash-spv-ffi, so must come first
+#include "dash-network/dash-network.h"
 #include "key-wallet-ffi/key-wallet-ffi.h"
 #include "dash-spv-ffi/dash-spv-ffi.h"
 #include "rs-sdk-ffi/rs-sdk-ffi.h"
+#include "platform-wallet-ffi/platform-wallet-ffi.h"
 
 #endif
 EOF
@@ -155,16 +144,6 @@ module DashSDKFFI {
 }
 EOF
   log_info "  → module.modulemap + umbrella header injected in $HEADERS_DIR"
-
-  # TODO(build_ios): Quick fix — upstream headers from rust-dashcore emit FFIAssetLockFundingType
-  # with bare enumerator names (IDENTITY_REGISTRATION, IDENTITY_TOP_UP, etc.) that collide with
-  # FFIAccountType, which is invalid C (enum constants share the global namespace).
-  # The proper fix belongs in rust-dashcore's cbindgen config (prefix or namespace the variants).
-  # Until that fix lands, we strip the enum typedef and replace the type with uint32_t.
-  for h in "$HEADERS_DIR"/*/*.h; do
-    perl -i -0777 -pe 's{/\*\*?\s*\n\s*The type of funding account.*?\n\s*\*/\s*\ntypedef enum \{.*?\} FFIAssetLockFundingType;\n}{}s' "$h"
-    sed -i '' 's/FFIAssetLockFundingType/uint32_t/g' "$h"
-  done
 
   # Give opaque struct forward declarations a body so Swift can use UnsafeMutablePointer<T>.
   # Skip types that already have a full definition in another header to avoid redefinition.
@@ -181,11 +160,18 @@ EOF
   done
 }
 
+# Shielded (Orchard / ZK) support is compiled in by default. The
+# `shielded` Cargo feature is opt-in at the crate level so non-iOS
+# consumers don't pay for the heavy crypto deps, but the iOS
+# framework ships everything — keep `--features shielded` here so
+# the bundled SDK exposes the platform-wallet shielded FFI.
+CARGO_FEATURES="shielded"
+
 # iOS device
 if $BUILD_IOS; then
   IOS_TARGET="aarch64-apple-ios"
   log_info "Building iOS device ($IOS_TARGET)..."
-  cargo build -p "$PACKAGE" --profile "$PROFILE" --target "$IOS_TARGET"
+  cargo build -p "$PACKAGE" --profile "$PROFILE" --target "$IOS_TARGET" --features "$CARGO_FEATURES"
   IOS_LIB="$TARGET_DIR/$IOS_TARGET/$OUTPUT_DIR/librs_unified_sdk_ffi.a"
   IOS_HEADERS="$TARGET_DIR/$IOS_TARGET/$OUTPUT_DIR/include"
   inject_modulemap "$IOS_HEADERS"
@@ -193,9 +179,9 @@ fi
 
 # iOS simulator
 if $BUILD_SIM; then
-  SIM_TARGET=$(detect_sim_target)
+  SIM_TARGET="aarch64-apple-ios-sim"
   log_info "Building iOS simulator ($SIM_TARGET)..."
-  cargo build -p "$PACKAGE" --profile "$PROFILE" --target "$SIM_TARGET"
+  cargo build -p "$PACKAGE" --profile "$PROFILE" --target "$SIM_TARGET" --features "$CARGO_FEATURES"
   SIM_LIB="$TARGET_DIR/$SIM_TARGET/$OUTPUT_DIR/librs_unified_sdk_ffi.a"
   SIM_HEADERS="$TARGET_DIR/$SIM_TARGET/$OUTPUT_DIR/include"
   inject_modulemap "$SIM_HEADERS"
@@ -205,20 +191,10 @@ fi
 if $BUILD_MAC; then
   MAC_TARGET="aarch64-apple-darwin"
   log_info "Building macOS ($MAC_TARGET)..."
-  cargo build -p "$PACKAGE" --profile "$PROFILE" --target "$MAC_TARGET"
+  cargo build -p "$PACKAGE" --profile "$PROFILE" --target "$MAC_TARGET" --features "$CARGO_FEATURES"
   MAC_LIB="$TARGET_DIR/$MAC_TARGET/$OUTPUT_DIR/librs_unified_sdk_ffi.a"
   MAC_HEADERS="$TARGET_DIR/$MAC_TARGET/$OUTPUT_DIR/include"
   inject_modulemap "$MAC_HEADERS"
-fi
-
-# Intel Mac
-if $BUILD_INTEL_MAC; then
-  INTEL_MAC_TARGET="x86_64-apple-darwin"
-  log_info "Building Intel macOS ($INTEL_MAC_TARGET)..."
-  cargo build -p "$PACKAGE" --profile "$PROFILE" --target "$INTEL_MAC_TARGET"
-  INTEL_MAC_LIB="$TARGET_DIR/$INTEL_MAC_TARGET/$OUTPUT_DIR/librs_unified_sdk_ffi.a"
-  INTEL_MAC_HEADERS="$TARGET_DIR/$INTEL_MAC_TARGET/$OUTPUT_DIR/include"
-  inject_modulemap "$INTEL_MAC_HEADERS"
 fi
 
 # -------------------------------
@@ -230,7 +206,6 @@ rm -rf "$XCFRAMEWORK"
 xcodebuild -create-xcframework \
   ${IOS_LIB:+-library "$IOS_LIB" -headers "$IOS_HEADERS"} \
   ${MAC_LIB:+-library "$MAC_LIB" -headers "$MAC_HEADERS"} \
-  ${INTEL_MAC_LIB:+-library "$INTEL_MAC_LIB" -headers "$INTEL_MAC_HEADERS"} \
   ${SIM_LIB:+-library "$SIM_LIB" -headers "$SIM_HEADERS"} \
   -output "$XCFRAMEWORK"
 
@@ -244,6 +219,10 @@ SWIFT_SCHEME="SwiftExampleApp"
 SWIFT_DESTINATION="generic/platform=iOS Simulator"
 EXCLUDED_ARCHS="x86_64"
 
+OTHER_SWIFT_FLAGS="-warnings-as-errors"
+SWIFT_TREAT_WARNINGS_AS_ERRORS=YES
+SWIFT_SUPPRESS_WARNINGS=NO
+
 if command -v xcodebuild >/dev/null 2>&1; then
     set +e
     xcodebuild -project "$SWIFT_PROJECT" \
@@ -251,6 +230,9 @@ if command -v xcodebuild >/dev/null 2>&1; then
                -sdk iphonesimulator \
                -destination "$SWIFT_DESTINATION" \
                EXCLUDED_ARCHS="$EXCLUDED_ARCHS" \
+               OTHER_SWIFT_FLAGS="$OTHER_SWIFT_FLAGS" \
+               SWIFT_TREAT_WARNINGS_AS_ERRORS=$SWIFT_TREAT_WARNINGS_AS_ERRORS \
+               SWIFT_SUPPRESS_WARNINGS=$SWIFT_SUPPRESS_WARNINGS \
                build
     XC_STATUS=$?
     set -e

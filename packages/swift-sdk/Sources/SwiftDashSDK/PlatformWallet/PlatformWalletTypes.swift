@@ -1,170 +1,80 @@
 import Foundation
 import DashSDKFFI
 
-// FFI types from platform-wallet-ffi (not in C header, so we define them here)
-// These match the Rust definitions in rs-platform-wallet-ffi
-
-typealias Handle = UInt64
 let NULL_HANDLE: Handle = 0
 
-struct IdentifierBytes {
-    var bytes: (UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8)
-}
-
-struct IdentifierArray {
-    var items: UnsafeMutablePointer<IdentifierBytes>?
-    var count: Int
-}
-
-typealias NetworkType = UInt32
-
-typealias PlatformWalletFFIResult = Int32
-
-struct PlatformWalletFFIError {
-    var message: UnsafePointer<CChar>?
-}
-
-struct FFIBlockTime {
-    var height: UInt32
-    var core_height: UInt32
-    var timestamp: UInt64
-}
-
-// Error result codes (must match Rust enum values)
-let Success: PlatformWalletFFIResult = 0
-let ErrorNullPointer: PlatformWalletFFIResult = 1
-let ErrorInvalidHandle: PlatformWalletFFIResult = 2
-let ErrorInvalidParameter: PlatformWalletFFIResult = 3
-let ErrorInvalidIdentifier: PlatformWalletFFIResult = 4
-let ErrorInvalidNetwork: PlatformWalletFFIResult = 5
-let ErrorWalletOperation: PlatformWalletFFIResult = 6
-let ErrorIdentityNotFound: PlatformWalletFFIResult = 7
-let ErrorContactNotFound: PlatformWalletFFIResult = 8
-let ErrorUtf8Conversion: PlatformWalletFFIResult = 9
-let ErrorSerialization: PlatformWalletFFIResult = 10
-let ErrorDeserialization: PlatformWalletFFIResult = 11
-
-/// Platform Wallet error types
-public enum PlatformWalletError: Error {
-    case nullPointer
-    case invalidHandle
-    case invalidParameter
-    case invalidIdentifier
-    case invalidNetwork
-    case walletOperation(String)
-    case identityNotFound
-    case contactNotFound
-    case utf8Conversion
-    case serialization
-    case deserialization
-    case unknown(String)
-
-    init(result: PlatformWalletFFIResult, error: PlatformWalletFFIError) {
-        let message = error.message != nil ? String(cString: error.message!) : "Unknown error"
-
-        switch result {
-        case ErrorNullPointer:
-            self = .nullPointer
-        case ErrorInvalidHandle:
-            self = .invalidHandle
-        case ErrorInvalidParameter:
-            self = .invalidParameter
-        case ErrorInvalidIdentifier:
-            self = .invalidIdentifier
-        case ErrorInvalidNetwork:
-            self = .invalidNetwork
-        case ErrorWalletOperation:
-            self = .walletOperation(message)
-        case ErrorIdentityNotFound:
-            self = .identityNotFound
-        case ErrorContactNotFound:
-            self = .contactNotFound
-        case ErrorUtf8Conversion:
-            self = .utf8Conversion
-        case ErrorSerialization:
-            self = .serialization
-        case ErrorDeserialization:
-            self = .deserialization
-        default:
-            self = .unknown(message)
+extension Identifier {
+    /// Run `body` with a `*const u8` to this identifier's 32-byte
+    /// payload.
+    ///
+    /// Preconditions: `count == 32`. Identifiers on Platform are
+    /// always exactly 32 bytes; a precondition here surfaces the
+    /// drift loudly rather than letting Rust read garbage on
+    /// dereference.
+    @inline(__always)
+    func withFFIBytes<R>(_ body: (UnsafePointer<UInt8>) throws -> R) rethrows -> R {
+        precondition(count == 32, "identifier must be 32 bytes, got \(count)")
+        return try withUnsafeBytes { raw in
+            try body(raw.bindMemory(to: UInt8.self).baseAddress!)
         }
     }
 }
 
-/// Network type for Platform wallet
-public enum PlatformNetwork: UInt32 {
-    case mainnet = 0
-    case testnet = 1
-    case devnet = 2
-    case local = 3
+/// Identity lifecycle status as carried on the Rust-side
+/// `ManagedIdentity.status`. Mirrors `IdentityStatusFFI` /
+/// `platform_wallet::wallet::identity::state::managed_identity::IdentityStatus`.
+public enum IdentityStatus: UInt8, Sendable {
+    case unknown = 0
+    case pendingCreation = 1
+    case active = 2
+    case failedCreation = 3
+    case notFound = 4
 
-    var ffiValue: NetworkType {
-        NetworkType(self.rawValue)
-    }
-}
-
-/// Block time information
-public struct BlockTime {
-    public let height: UInt32
-    public let coreHeight: UInt32
-    public let timestamp: UInt64
-
-    public init(height: UInt32, coreHeight: UInt32, timestamp: UInt64) {
-        self.height = height
-        self.coreHeight = coreHeight
-        self.timestamp = timestamp
-    }
-
-    init(ffiBlockTime: FFIBlockTime) {
-        self.height = ffiBlockTime.height
-        self.coreHeight = ffiBlockTime.core_height
-        self.timestamp = ffiBlockTime.timestamp
-    }
-
-    var ffiValue: FFIBlockTime {
-        FFIBlockTime(
-            height: self.height,
-            core_height: self.coreHeight,
-            timestamp: self.timestamp
-        )
+    /// Short human-readable label for the explorer UI.
+    public var displayName: String {
+        switch self {
+        case .unknown: return "Unknown"
+        case .pendingCreation: return "Pending Creation"
+        case .active: return "Active"
+        case .failedCreation: return "Failed Creation"
+        case .notFound: return "Not Found"
+        }
     }
 }
 
 // MARK: - Identifier FFI Conversion Helpers
 
-/// Convert Identifier (Data) to FFI IdentifierBytes
-func identifierToFFI(_ identifier: Identifier) -> IdentifierBytes {
-    var ffiBytes = IdentifierBytes(bytes: (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0))
-    identifier.withUnsafeBytes { (ptr: UnsafeRawBufferPointer) in
-        withUnsafeMutableBytes(of: &ffiBytes.bytes) { ffiPtr in
-            for i in 0..<min(32, identifier.count) {
-                ffiPtr[i] = ptr[i]
-            }
-        }
-    }
-    return ffiBytes
+/// Read 32 bytes from `ptr` into an `Identifier` (a `Data` of length 32).
+///
+/// Replaces the old `identifierFromFFI(_: IdentifierBytes)` helper.
+/// `ptr` must point at exactly 32 readable bytes.
+@inline(__always)
+func identifierFromFFI(_ ptr: UnsafePointer<UInt8>) -> Identifier {
+    Data(bytes: ptr, count: 32)
 }
 
-/// Convert FFI IdentifierBytes to Identifier (Data)
-func identifierFromFFI(_ ffiIdentifier: IdentifierBytes) -> Identifier {
-    var bytesArray = ffiIdentifier.bytes
-    return withUnsafeBytes(of: &bytesArray) { Data($0) }
+/// Read a row from an `IdentifierArray` returned by Rust.
+///
+/// `array.items` points at a contiguous `[[u8; 32]; count]` buffer;
+/// take a `Data` snapshot of the i-th 32-byte row. Swift imports
+/// `uint8_t (*)[32]` as a pointer to a 32-tuple, so we rebind to a
+/// flat `UInt8` pointer before indexing.
+@inline(__always)
+func identifierFromFFIArray(_ array: IdentifierArray, at index: Int) -> Identifier {
+    precondition(index >= 0 && index < Int(array.count), "index out of range")
+    let raw = UnsafeRawPointer(array.items!)
+    let base = raw.assumingMemoryBound(to: UInt8.self)
+    let row = base.advanced(by: index * 32)
+    return Data(bytes: row, count: 32)
 }
 
-/// Generate a random identifier
+/// Generate a random identifier via the FFI.
 public func generateRandomIdentifier() throws -> Identifier {
-    var ffiId = IdentifierBytes(bytes: (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0))
-    var error = PlatformWalletFFIError()
-
-    let result = platform_wallet_generate_random_identifier(&ffiId, &error)
-    guard result == Success else {
-        throw PlatformWalletError(result: result, error: error)
+    var buf = [UInt8](repeating: 0, count: 32)
+    try buf.withUnsafeMutableBufferPointer { bp in
+        try platform_wallet_generate_random_identifier(bp.baseAddress!).check()
     }
-
-    return identifierFromFFI(ffiId)
+    return Data(buf)
 }
 
 extension Data {

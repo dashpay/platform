@@ -1,27 +1,47 @@
 import SwiftUI
 import SwiftDashSDK
 import SwiftData
-import DashSDKFFI
-
-// AccountDetailInfo and AddressDetail are imported from SwiftDashSDK
 
 // MARK: - Account Detail View
 struct AccountDetailView: View {
-    @EnvironmentObject var walletService: WalletService
-    @EnvironmentObject var unifiedAppState: UnifiedAppState
-    let wallet: HDWallet
-    let account: AccountInfo
+    @EnvironmentObject var appUIState: AppUIState
+    @EnvironmentObject var walletManager: PlatformWalletManager
+    let wallet: PersistentWallet
+    let account: PersistentAccount
 
-    @State private var detailInfo: AccountDetailInfo?
-    @State private var isLoading = true
     @State private var errorMessage: String?
-    @State private var selectedTab = 0
     @State private var copiedText: String?
-    @State private var showingPrivateKey: String? // Path for which we're showing private key
+    @State private var showingPrivateKey: String?
     @State private var privateKeyToShow: (hex: String, wif: String)?
     @State private var showingPINPrompt = false
     @State private var pinInput = ""
-    @State private var pendingAddressDetail: AddressDetail? // Store the address detail while waiting for PIN
+
+    /// Distinct on-chain transactions this account participates in:
+    /// the union of every TXO's creating tx and spending tx. Lives
+    /// here rather than on the model because `PersistentTransaction`
+    /// is no longer account-scoped (a single tx can produce outputs
+    /// into multiple accounts), so the per-account set has to be
+    /// derived on demand. Walks the address pool — the canonical
+    /// account → TXO path is `coreAddresses.flatMap(\.txos)` now
+    /// that `PersistentAccount.outputs` is gone.
+    private var distinctTransactionCount: Int {
+        var seen: Set<Data> = []
+        for address in account.coreAddresses {
+            for txo in address.txos {
+                if let tx = txo.transaction { seen.insert(tx.txid) }
+                if let spending = txo.spendingTransaction { seen.insert(spending.txid) }
+            }
+        }
+        return seen.count
+    }
+
+    /// Total TXO count for the account, summed across address
+    /// buckets. Avoids materializing a single big array since the
+    /// address pool is bounded (~gap limit) and txos-per-address
+    /// is small.
+    private var txoCount: Int {
+        account.coreAddresses.reduce(0) { $0 + $1.txos.count }
+    }
 
     var body: some View {
         ScrollView {
@@ -31,56 +51,65 @@ struct AccountDetailView: View {
                     systemImage: "exclamationmark.triangle",
                     description: Text(error)
                 )
-            } else if let info = detailInfo {
+            } else {
                 VStack(alignment: .leading, spacing: 20) {
-                    // Account Overview Card
-                    accountOverviewCard(info: info)
+                    accountOverviewCard()
 
-                    // Extended Public Key Card
-                    if let xpub = info.xpub {
-                        xpubCard(xpub: xpub)
-                    }
-
-                    // Balance Card (only for BIP44/BIP32/CoinJoin)
-                    if shouldShowBalanceInDetail {
+                    if shouldShowBalance {
                         balanceCard()
                     }
 
-                    // Address Pool Information
-                    addressPoolCard(info: info)
+                    poolSummaryCard()
 
-                    // Address Lists
-                    addressListsSection(info: info)
+                    if account.accountType == 14 {
+                        // PlatformPayment accounts keep their address
+                        // list in `platformAddresses`, with no
+                        // external/internal pool split.
+                        let sorted = account.platformAddresses.sorted {
+                            $0.addressIndex < $1.addressIndex
+                        }
+                        if sorted.isEmpty {
+                            emptyAddressesCard()
+                        } else {
+                            platformAddressListCard(addresses: sorted)
+                        }
+                    } else {
+                        ForEach(addressSections(), id: \.0) { name, addresses in
+                            addressListCard(
+                                name: name,
+                                systemImage: poolIcon(for: name),
+                                addresses: addresses
+                            )
+                        }
+
+                        if account.coreAddresses.isEmpty {
+                            emptyAddressesCard()
+                        }
+                    }
                 }
                 .padding()
             }
         }
-        .navigationTitle(account.label)
+        .navigationTitle(account.accountTypeName)
         .navigationBarTitleDisplayMode(.large)
-        .task {
-            loadAccountDetails()
-        }
         .sheet(isPresented: $showingPINPrompt) {
             PINPromptView(
                 pinInput: $pinInput,
                 isPresented: $showingPINPrompt,
                 onSubmit: {
-                    if let detail = pendingAddressDetail {
-                        Task {
-                            await derivePrivateKeyWithPIN(for: detail, pin: pinInput)
-                            pinInput = ""
-                            pendingAddressDetail = nil
-                        }
+                    Task {
+                        await derivePrivateKeyWithPIN()
+                        pinInput = ""
                     }
                 }
             )
         }
-        .onAppear { unifiedAppState.showWalletsSyncDetails = false }
+        .onAppear { appUIState.showWalletsSyncDetails = false }
     }
 
-    // MARK: - View Components
+    // MARK: - Cards
 
-    private func accountOverviewCard(info: AccountDetailInfo) -> some View {
+    private func accountOverviewCard() -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("Account Information", systemImage: "info.circle.fill")
                 .font(.headline)
@@ -93,71 +122,26 @@ struct AccountDetailView: View {
                     Text("Type:")
                         .foregroundColor(.secondary)
                     Spacer()
-                    Text(accountTypeName)
+                    Text(account.accountTypeName)
                         .fontWeight(.medium)
                 }
 
-                // Only show index for account types that have one
-                if hasAccountIndex {
-                    HStack {
-                        Text("Index:")
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        Text("#\(accountDisplayIndex)")
-                            .font(.system(.body, design: .monospaced))
-                    }
-                }
-
                 HStack {
-                    Text("Derivation Path:")
+                    Text("Index:")
                         .foregroundColor(.secondary)
                     Spacer()
-                    Text(info.derivationPath)
-                        .font(.system(.caption, design: .monospaced))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                    Text("#\(account.accountIndex)")
+                        .font(.system(.body, design: .monospaced))
                 }
 
                 HStack {
                     Text("Network:")
                         .foregroundColor(.secondary)
                     Spacer()
-                    Text(wallet.network.rawValue.capitalized)
+                    Text(wallet.network?.displayName ?? "Unknown")
                         .fontWeight(.medium)
                 }
             }
-        }
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
-    }
-
-    private func xpubCard(xpub: String) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Label("Extended Public Key", systemImage: "key.horizontal.fill")
-                    .font(.headline)
-                    .foregroundColor(.primary)
-
-                Spacer()
-
-                Button(action: {
-                    copyToClipboard(xpub, label: "Extended public key")
-                }) {
-                    Image(systemName: copiedText == xpub ? "checkmark.circle.fill" : "doc.on.doc")
-                        .foregroundColor(copiedText == xpub ? .green : .blue)
-                }
-            }
-
-            Divider()
-
-            Text(xpub)
-                .font(.system(.caption, design: .monospaced))
-                .padding(8)
-                .background(Color(.secondarySystemBackground))
-                .cornerRadius(8)
-                .textSelection(.enabled)
         }
         .padding()
         .background(Color(.systemBackground))
@@ -166,7 +150,20 @@ struct AccountDetailView: View {
     }
 
     private func balanceCard() -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        if account.accountType == 14 {
+            return AnyView(platformBalanceCard())
+        }
+
+        let balances = walletManager.accountBalances(for: wallet.walletId)
+        let match = balances.first { b in
+            UInt32(b.typeTag) == account.accountType &&
+            b.standardTag == account.standardTag &&
+            b.index == account.accountIndex
+        }
+        let confirmed = match?.confirmed ?? 0
+        let unconfirmed = match?.unconfirmed ?? 0
+
+        return AnyView(VStack(alignment: .leading, spacing: 12) {
             Label("Balance", systemImage: "bitcoinsign.circle.fill")
                 .font(.headline)
                 .foregroundColor(.primary)
@@ -178,19 +175,19 @@ struct AccountDetailView: View {
                     Text("Confirmed")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    Text(formatBalance(account.balance.confirmed))
+                    Text(formatBalance(confirmed))
                         .font(.title3)
                         .fontWeight(.semibold)
                 }
 
                 Spacer()
 
-                if account.balance.unconfirmed > 0 {
+                if unconfirmed > 0 {
                     VStack(alignment: .trailing, spacing: 4) {
                         Text("Pending")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                        Text(formatBalance(account.balance.unconfirmed))
+                        Text(formatBalance(unconfirmed))
                             .font(.title3)
                             .fontWeight(.semibold)
                             .foregroundColor(.orange)
@@ -205,10 +202,44 @@ struct AccountDetailView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
                 Spacer()
-                Text(formatBalance(account.balance.confirmed + account.balance.unconfirmed))
+                Text(formatBalance(confirmed + unconfirmed))
                     .font(.headline)
                     .fontWeight(.bold)
-                    .foregroundColor(accountTypeColor)
+            }
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2))
+    }
+
+    private func platformBalanceCard() -> some View {
+        let total = account.platformAddresses.reduce(0) { $0 + $1.balance }
+        return VStack(alignment: .leading, spacing: 12) {
+            Label("Balance", systemImage: "creditcard")
+                .font(.headline)
+                .foregroundColor(.primary)
+
+            Divider()
+
+            HStack {
+                Text("Platform Credits")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text(formatCredits(total))
+                    .font(.title3)
+                    .fontWeight(.semibold)
+            }
+
+            HStack {
+                Text("Raw Credits")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text("\(total)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
         }
         .padding()
@@ -217,65 +248,164 @@ struct AccountDetailView: View {
         .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
     }
 
-    private func addressPoolCard(info: AccountDetailInfo) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+    private func poolSummaryCard() -> some View {
+        // DIP-17 PlatformPayment pools are flat — there's no
+        // external/internal split, no on-chain transactions, and no
+        // UTXOs. Surface only address-pool cardinality instead.
+        if account.accountType == 14 {
+            return AnyView(platformPoolSummaryCard())
+        }
+
+        let externalCount = account.coreAddresses.filter { $0.poolTypeTag == 0 }.count
+        let internalCount = account.coreAddresses.filter { $0.poolTypeTag == 1 }.count
+        return AnyView(VStack(alignment: .leading, spacing: 12) {
             Label("Address Pool", systemImage: "square.stack.3d.up.fill")
                 .font(.headline)
                 .foregroundColor(.primary)
 
             Divider()
 
-            VStack(alignment: .leading, spacing: 8) {
+            if externalCount > 0 {
                 HStack {
-                    Text("Gap Limit:")
+                    Text("Pool Size (External):")
                         .foregroundColor(.secondary)
                     Spacer()
-                    Text("\(info.gapLimit)")
+                    Text("\(externalCount)")
                         .fontWeight(.medium)
                 }
-
-                // Only show external/internal for BIP44/BIP32 accounts
-                if hasInternalExternalAddresses {
-                    HStack {
-                        Text("External Addresses:")
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        Text("\(info.externalAddresses.count)")
-                            .fontWeight(.medium)
-                    }
-
-                    HStack {
-                        Text("Internal Addresses:")
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        Text("\(info.internalAddresses.count)")
-                            .fontWeight(.medium)
-                    }
-                } else {
-                    HStack {
-                        Text("Addresses:")
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        Text("\(info.externalAddresses.count)")
-                            .fontWeight(.medium)
-                    }
-                }
-
+            }
+            if internalCount > 0 {
                 HStack {
-                    Text("Used Addresses:")
+                    Text("Pool Size (Internal):")
                         .foregroundColor(.secondary)
                     Spacer()
-                    Text("\(info.usedAddresses)")
+                    Text("\(internalCount)")
                         .fontWeight(.medium)
                 }
+            }
+            HStack {
+                Text("Highest Used (External):")
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text(account.externalHighestUsed >= 0
+                     ? "\(account.externalHighestUsed)" : "—")
+                    .fontWeight(.medium)
+            }
+            HStack {
+                Text("Highest Used (Internal):")
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text(account.internalHighestUsed >= 0
+                     ? "\(account.internalHighestUsed)" : "—")
+                    .fontWeight(.medium)
+            }
+            HStack {
+                Text("Transactions:")
+                    .foregroundColor(.secondary)
+                Spacer()
+                // Per-account transaction count = distinct creating
+                // and spending txs across this account's TXOs. The
+                // per-tx wallet/account columns are gone; the union
+                // is computed in Swift each time the card renders.
+                Text("\(distinctTransactionCount)")
+                    .fontWeight(.medium)
+            }
+            HStack {
+                Text("TXOs:")
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text("\(txoCount)")
+                    .fontWeight(.medium)
+            }
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2))
+    }
 
-                HStack {
-                    Text("Unused Addresses:")
-                        .foregroundColor(.secondary)
-                    Spacer()
-                    Text("\(info.unusedAddresses)")
-                        .fontWeight(.medium)
-                        .foregroundColor(.green)
+    /// Platform-payment-specific pool summary. Shows total vs used
+    /// addresses plus the highest-seen index, and omits external /
+    /// internal / transactions / UTXOs (not meaningful for DIP-17).
+    private func platformPoolSummaryCard() -> some View {
+        let total = account.platformAddresses.count
+        let used = account.platformAddresses.filter { $0.isUsed }.count
+        let highest = account.platformAddresses
+            .filter { $0.isUsed }
+            .map { $0.addressIndex }
+            .max()
+        return VStack(alignment: .leading, spacing: 12) {
+            Label("Address Pool", systemImage: "square.stack.3d.up.fill")
+                .font(.headline)
+                .foregroundColor(.primary)
+
+            Divider()
+
+            HStack {
+                Text("Total Addresses:")
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text("\(total)")
+                    .fontWeight(.medium)
+            }
+            HStack {
+                Text("Addresses Used:")
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text("\(used)")
+                    .fontWeight(.medium)
+            }
+            HStack {
+                Text("Highest Used:")
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text(highest.map { "\($0)" } ?? "—")
+                    .fontWeight(.medium)
+            }
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+    }
+
+    /// Group this account's persisted addresses by pool tag, in a
+    /// stable display order (External → Internal → Absent → Absent
+    /// Hardened). Empty pools are skipped.
+    private func addressSections() -> [(String, [PersistentCoreAddress])] {
+        let grouped = Dictionary(grouping: account.coreAddresses) { $0.poolTypeTag }
+        let order: [(UInt8, String)] = [
+            (0, "External"),
+            (1, "Internal"),
+            (2, "Absent"),
+            (3, "Absent (Hardened)"),
+        ]
+        return order.compactMap { tag, name in
+            guard let bucket = grouped[tag], !bucket.isEmpty else { return nil }
+            let sorted = bucket.sorted { $0.addressIndex < $1.addressIndex }
+            return (name, sorted)
+        }
+    }
+
+    private func addressListCard(
+        name: String,
+        systemImage: String,
+        addresses: [PersistentCoreAddress]
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("\(name) Addresses (\(addresses.count))", systemImage: systemImage)
+                .font(.headline)
+                .foregroundColor(.primary)
+
+            Divider()
+
+            ForEach(Array(addresses.enumerated()), id: \.element.id) { idx, addr in
+                NavigationLink(destination: CoreAddressDetailView(record: addr)) {
+                    addressRow(addr)
+                }
+                .buttonStyle(.plain)
+                if idx < addresses.count - 1 {
+                    Divider()
                 }
             }
         }
@@ -285,347 +415,159 @@ struct AccountDetailView: View {
         .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
     }
 
-    private func addressListsSection(info: AccountDetailInfo) -> some View {
+    /// DIP-17 Platform Payment address list — single section (no
+    /// external/internal split). Rows link to `PlatformAddressDetailView`
+    /// so all the platform-specific fields (bech32m string, nonce,
+    /// hash, etc.) are reachable from here.
+    private func platformAddressListCard(
+        addresses: [PersistentPlatformAddress]
+    ) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("Addresses", systemImage: "list.bullet.rectangle.fill")
+            Label(
+                "Platform Addresses (\(addresses.count))",
+                systemImage: "creditcard"
+            )
+            .font(.headline)
+            .foregroundColor(.primary)
+
+            Divider()
+
+            ForEach(Array(addresses.enumerated()), id: \.element.id) { idx, addr in
+                NavigationLink(destination: PlatformAddressDetailView(record: addr)) {
+                    platformAddressRow(addr)
+                }
+                .buttonStyle(.plain)
+                if idx < addresses.count - 1 {
+                    Divider()
+                }
+            }
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+    }
+
+    private func platformAddressRow(_ addr: PersistentPlatformAddress) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(addr.address)
+                    .font(.system(.caption, design: .monospaced))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .foregroundColor(.primary)
+                HStack(spacing: 6) {
+                    Text("#\(addr.addressIndex)")
+                    if addr.isUsed { Text("• used") }
+                    if addr.balance > 0 {
+                        Text("• \(addr.balance) credits")
+                    }
+                }
+                .font(.caption2)
+                .foregroundColor(.secondary)
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .foregroundColor(.secondary)
+                .font(.caption)
+        }
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+    }
+
+    private func addressRow(_ addr: PersistentCoreAddress) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(addr.address)
+                    .font(.system(.caption, design: .monospaced))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .foregroundColor(.primary)
+                HStack(spacing: 6) {
+                    Text("#\(addr.addressIndex)")
+                    if addr.isUsed { Text("• used") }
+                    if addr.balance > 0 {
+                        Text("• \(formatBalance(addr.balance))")
+                    }
+                }
+                .font(.caption2)
+                .foregroundColor(.secondary)
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .foregroundColor(.secondary)
+                .font(.caption)
+        }
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+    }
+
+    private func emptyAddressesCard() -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Addresses", systemImage: "info.circle")
                 .font(.headline)
                 .foregroundColor(.primary)
+            Text("No addresses have been persisted for this account yet. They land here after the wallet is (re)created via `PlatformWalletManager`.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding()
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(12)
+    }
 
-            if hasInternalExternalAddresses {
-                Picker("Address Type", selection: $selectedTab) {
-                    Text("Receive (\(info.externalAddresses.count))").tag(0)
-                    Text("Change (\(info.internalAddresses.count))").tag(1)
-                }
-                .pickerStyle(SegmentedPickerStyle())
-                .padding(.bottom, 8)
-
-                if selectedTab == 0 {
-                    addressList(addresses: info.externalAddresses, type: "Receive")
-                } else {
-                    addressList(addresses: info.internalAddresses, type: "Change")
-                }
-            } else {
-                // For accounts without internal/external distinction, just show all addresses
-                addressList(addresses: info.externalAddresses, type: "")
-            }
+    private func poolIcon(for name: String) -> String {
+        switch name {
+        case "External": return "arrow.down.circle"
+        case "Internal": return "arrow.triangle.2.circlepath"
+        default: return "square.stack"
         }
     }
 
-    private func addressList(addresses: [AddressDetail], type: String) -> some View {
-        VStack(spacing: 8) {
-            if addresses.isEmpty {
-                let message = type.isEmpty ? "No addresses generated" : "No \(type.lowercased()) addresses generated"
-                Text(message)
-                    .foregroundColor(.secondary)
-                    .padding()
-                    .frame(maxWidth: .infinity)
-                    .background(Color(.secondarySystemBackground))
-                    .cornerRadius(8)
-            } else {
-                ForEach(addresses, id: \.address) { detail in
-                    addressRow(detail: detail)
-                }
-            }
+    // MARK: - Helpers
+
+    private var shouldShowBalance: Bool {
+        switch account.accountType {
+        case 0, 1, 14: return true
+        default: return false
         }
     }
-
-    private func addressRow(detail: AddressDetail) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text("#\(detail.index)")
-                            .font(.caption)
-                            .fontWeight(.medium)
-                            .foregroundColor(.secondary)
-
-                        if detail.isUsed {
-                            Label("Used", systemImage: "checkmark.circle.fill")
-                                .font(.caption)
-                                .foregroundColor(.green)
-                        } else {
-                            Label("Unused", systemImage: "circle")
-                                .font(.caption)
-                                .foregroundColor(.orange)
-                        }
-                    }
-
-                    Text(detail.address)
-                        .font(.system(.caption, design: .monospaced))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-
-                    if !detail.publicKey.isEmpty {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Public Key:")
-                                .font(.system(.caption2))
-                                .foregroundColor(.secondary)
-                            Text(detail.publicKey)
-                                .font(.system(.caption2, design: .monospaced))
-                                .textSelection(.enabled)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-
-                    Text(detail.path)
-                        .font(.system(.caption2, design: .monospaced))
-                        .foregroundColor(.secondary)
-                }
-
-                Spacer()
-
-                VStack(spacing: 4) {
-                    Button(action: {
-                        copyToClipboard(detail.address, label: "Address")
-                    }) {
-                        Image(systemName: copiedText == detail.address ? "checkmark.circle.fill" : "doc.on.doc")
-                            .foregroundColor(copiedText == detail.address ? .green : .blue)
-                    }
-
-                    // Show private key button for non-BIP32/BIP44/CoinJoin accounts
-                    if shouldShowPrivateKeyButton {
-                        Button(action: {
-                            pendingAddressDetail = detail
-                            showingPINPrompt = true
-                        }) {
-                            Image(systemName: "key")
-                                .foregroundColor(.orange)
-                        }
-                    }
-                }
-            }
-            .padding(12)
-            .background(detail.isUsed ? Color(.tertiarySystemBackground) : Color(.secondarySystemBackground))
-            .cornerRadius(8)
-
-            // Show private key if requested
-            if showingPrivateKey == detail.path, let privateKeyData = privateKeyToShow {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Text("Private Key")
-                            .font(.headline)
-                            .fontWeight(.medium)
-                        Spacer()
-                        Button(action: {
-                            showingPrivateKey = nil
-                            privateKeyToShow = nil
-                        }) {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.secondary)
-                        }
-                    }
-
-                    // Hex format
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Text("Hex Format:")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Spacer()
-                            Button(action: {
-                                copyToClipboard(privateKeyData.hex, label: "Hex Private Key")
-                            }) {
-                                Image(systemName: copiedText == privateKeyData.hex ? "checkmark.circle.fill" : "doc.on.doc")
-                                    .font(.caption)
-                                    .foregroundColor(copiedText == privateKeyData.hex ? .green : .blue)
-                            }
-                        }
-
-                        Text(privateKeyData.hex)
-                            .font(.system(size: 11, design: .monospaced))
-                            .fixedSize(horizontal: false, vertical: true)
-                            .lineLimit(nil)
-                            .textSelection(.enabled)
-                            .padding(8)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color(.tertiarySystemBackground))
-                            .cornerRadius(4)
-                    }
-
-                    // WIF format
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Text("WIF Format:")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Spacer()
-                            Button(action: {
-                                copyToClipboard(privateKeyData.wif, label: "WIF Private Key")
-                            }) {
-                                Image(systemName: copiedText == privateKeyData.wif ? "checkmark.circle.fill" : "doc.on.doc")
-                                    .font(.caption)
-                                    .foregroundColor(copiedText == privateKeyData.wif ? .green : .blue)
-                            }
-                        }
-
-                        Text(privateKeyData.wif)
-                            .font(.system(size: 11, design: .monospaced))
-                            .fixedSize(horizontal: false, vertical: true)
-                            .lineLimit(nil)
-                            .textSelection(.enabled)
-                            .padding(8)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color(.tertiarySystemBackground))
-                            .cornerRadius(4)
-                    }
-                }
-                .padding()
-                .background(Color(.systemYellow).opacity(0.1))
-                .cornerRadius(8)
-            }
-        }
-    }
-
-    // MARK: - Helper Properties
-
-    private var hasAccountIndex: Bool {
-        return account.index != nil
-    }
-
-    private var accountDisplayIndex: UInt32 { account.index ?? 0 }
-
-    private var hasInternalExternalAddresses: Bool {
-        guard let info = detailInfo else { return false }
-        switch info.accountType {
-        case STANDARD_BIP44, STANDARD_BIP32:
-            return true
-        default:
-            return false
-        }
-    }
-
-    private var shouldShowPrivateKeyButton: Bool {
-        guard let info = detailInfo else { return false }
-        switch info.accountType {
-        case STANDARD_BIP44, STANDARD_BIP32, COIN_JOIN:
-            // These account types use HD derivation, don't show individual private keys
-            return false
-        case IDENTITY_REGISTRATION, IDENTITY_TOP_UP, IDENTITY_TOP_UP_NOT_BOUND_TO_IDENTITY, IDENTITY_INVITATION,
-             PROVIDER_VOTING_KEYS, PROVIDER_OWNER_KEYS, PROVIDER_OPERATOR_KEYS, PROVIDER_PLATFORM_KEYS:
-            // These special accounts have single keys that can be shown
-            return true
-        default:
-            return false
-        }
-    }
-
-    private var accountTypeName: String {
-        guard let info = detailInfo else { return "Unknown Account" }
-        switch info.accountType {
-        case STANDARD_BIP44:
-            return account.index == 0 ? "Main Account" : "BIP44 Account"
-        case STANDARD_BIP32:
-            return "BIP32 Account"
-        case COIN_JOIN:
-            return "CoinJoin Account"
-        case IDENTITY_REGISTRATION:
-            return "Identity Registration"
-        case IDENTITY_TOP_UP:
-            return "Identity Top-up"
-        case IDENTITY_TOP_UP_NOT_BOUND_TO_IDENTITY:
-            return "Identity Top-up (Not Bound)"
-        case IDENTITY_INVITATION:
-            return "Identity Invitation"
-        case PROVIDER_VOTING_KEYS:
-            return "Provider Voting Keys"
-        case PROVIDER_OWNER_KEYS:
-            return "Provider Owner Keys"
-        case PROVIDER_OPERATOR_KEYS:
-            return "Provider Operator Keys (BLS)"
-        case PROVIDER_PLATFORM_KEYS:
-            return "Provider Platform Keys (EdDSA)"
-        default:
-            return "Special Account"
-        }
-    }
-
-    private var accountTypeColor: Color {
-        guard let info = detailInfo else { return .gray }
-        switch info.accountType {
-        case STANDARD_BIP44:
-            return account.index == 0 ? .green : .blue
-        case STANDARD_BIP32:
-            return .teal
-        case COIN_JOIN:
-            return .orange
-        case IDENTITY_REGISTRATION, IDENTITY_TOP_UP, IDENTITY_TOP_UP_NOT_BOUND_TO_IDENTITY, IDENTITY_INVITATION:
-            return .purple
-        case PROVIDER_VOTING_KEYS:
-            return .red
-        case PROVIDER_OWNER_KEYS:
-            return .pink
-        case PROVIDER_OPERATOR_KEYS:
-            return .indigo
-        case PROVIDER_PLATFORM_KEYS:
-            return .cyan
-        default:
-            return .gray
-        }
-    }
-
-    // MARK: - Helper Methods
 
     private func formatBalance(_ amount: UInt64) -> String {
         let dash = Double(amount) / 100_000_000.0
-
         let formatter = NumberFormatter()
         formatter.minimumFractionDigits = 0
         formatter.maximumFractionDigits = 8
         formatter.numberStyle = .decimal
         formatter.groupingSeparator = ","
         formatter.decimalSeparator = "."
-
         if let formatted = formatter.string(from: NSNumber(value: dash)) {
             return "\(formatted) DASH"
         }
-
         return String(format: "%.8f DASH", dash)
     }
 
-    private func copyToClipboard(_ text: String, label: String) {
-        #if os(iOS)
-        UIPasteboard.general.string = text
-        #endif
-
-        copiedText = text
-
-        // Reset after 2 seconds
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            if copiedText == text {
-                copiedText = nil
-            }
+    /// Credits (1e11 per DASH) → DASH string. Used for the
+    /// PlatformPayment balance row.
+    private func formatCredits(_ amount: UInt64) -> String {
+        let dash = Double(amount) / 100_000_000_000.0
+        let formatter = NumberFormatter()
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = 8
+        formatter.numberStyle = .decimal
+        formatter.groupingSeparator = ","
+        formatter.decimalSeparator = "."
+        if let formatted = formatter.string(from: NSNumber(value: dash)) {
+            return "\(formatted) DASH"
         }
+        return String(format: "%.8f DASH", dash)
     }
 
-    private func derivePrivateKeyWithPIN(for detail: AddressDetail, pin: String) async {
-        do {
-            // Gate with PIN but derive via account-based FFI (no seed passage required)
-            let wifPrivateKey = try await walletService.walletManager.derivePrivateKeyAsWIF(
-                for: wallet,
-                accountInfo: account,
-                addressIndex: detail.index
-            )
-            await MainActor.run {
-                self.showingPrivateKey = detail.path
-                self.privateKeyToShow = (hex: "", wif: wifPrivateKey)
-            }
-        } catch {
-            await MainActor.run {
-                errorMessage = "Failed to derive private key: \(error.localizedDescription)"
-            }
-        }
-    }
-
-    // MARK: - Data Loading
-
-    private func loadAccountDetails() {
-        if let details = walletService.walletManager.getAccountDetails(
-            for: wallet,
-            accountInfo: account
-        ) {
-            self.detailInfo = details
-        } else {
-            self.errorMessage = "Unable to load account details"
+    private func derivePrivateKeyWithPIN() async {
+        // TODO(platform-wallet): needs new FFI for WIF derivation via
+        // PlatformWalletManager. For now, surface a stubbed error.
+        await MainActor.run {
+            errorMessage = "Private key derivation is not yet available through the new PlatformWalletManager."
         }
     }
 }
@@ -673,18 +615,6 @@ struct PINPromptView: View {
             }
             .padding()
             .navigationBarHidden(true)
-        }
-    }
-}
-
-// MARK: - Helpers
-private extension AccountDetailView {
-    var shouldShowBalanceInDetail: Bool {
-        switch account.category {
-        case .bip44, .bip32, .coinjoin:
-            return true
-        default:
-            return false
         }
     }
 }

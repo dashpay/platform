@@ -86,6 +86,175 @@ fn get_list<T: TryFrom<Value, Error = platform_value::Error>>(
         .collect()
 }
 
+#[cfg(test)]
+#[allow(clippy::items_after_test_module)]
+mod test {
+    use super::*;
+    use crate::state_transition::{
+        StateTransitionHasUserFeeIncrease, StateTransitionIdentitySigned, StateTransitionLike,
+        StateTransitionOwned, StateTransitionSingleSigned, StateTransitionType,
+        StateTransitionValueConvert,
+    };
+    use platform_value::BinaryData;
+
+    fn make_update_v0() -> IdentityUpdateTransitionV0 {
+        IdentityUpdateTransitionV0 {
+            identity_id: Identifier::random(),
+            revision: 2,
+            nonce: 5,
+            add_public_keys: vec![],
+            disable_public_keys: vec![1, 2],
+            user_fee_increase: 3,
+            signature_public_key_id: 0,
+            signature: [0u8; 65].to_vec().into(),
+        }
+    }
+
+    #[test]
+    fn test_default() {
+        let t = IdentityUpdateTransitionV0::default();
+        assert_eq!(t.revision, 0);
+        assert_eq!(t.nonce, 0);
+        assert!(t.add_public_keys.is_empty());
+        assert!(t.disable_public_keys.is_empty());
+    }
+
+    #[test]
+    fn test_state_transition_like() {
+        let t = make_update_v0();
+        assert_eq!(
+            t.state_transition_type(),
+            StateTransitionType::IdentityUpdate
+        );
+        assert_eq!(t.state_transition_protocol_version(), 0);
+        assert_eq!(t.modified_data_ids(), vec![t.identity_id]);
+        assert_eq!(t.owner_id(), t.identity_id);
+    }
+
+    #[test]
+    fn test_unique_identifiers() {
+        let t = make_update_v0();
+        let ids = t.unique_identifiers();
+        assert_eq!(ids.len(), 1);
+        assert!(!ids[0].is_empty());
+    }
+
+    #[test]
+    fn test_identity_signed() {
+        use crate::identity::{Purpose, SecurityLevel};
+        let mut t = make_update_v0();
+        assert_eq!(t.signature_public_key_id(), 0);
+        t.set_signature_public_key_id(42);
+        assert_eq!(t.signature_public_key_id(), 42);
+        let security = t.security_level_requirement(Purpose::AUTHENTICATION);
+        assert_eq!(security, vec![SecurityLevel::MASTER]);
+    }
+
+    #[test]
+    fn test_user_fee_increase() {
+        let mut t = make_update_v0();
+        assert_eq!(t.user_fee_increase(), 3);
+        t.set_user_fee_increase(10);
+        assert_eq!(t.user_fee_increase(), 10);
+    }
+
+    #[test]
+    fn test_single_signed() {
+        let mut t = make_update_v0();
+        assert_eq!(t.signature().len(), 65);
+        t.set_signature(BinaryData::new(vec![1, 2, 3]));
+        assert_eq!(t.signature().as_slice(), &[1, 2, 3]);
+        t.set_signature_bytes(vec![4, 5]);
+        assert_eq!(t.signature().as_slice(), &[4, 5]);
+    }
+
+    #[test]
+    fn test_into_state_transition() {
+        use crate::state_transition::StateTransition;
+        let t = make_update_v0();
+        let st: StateTransition = t.into();
+        match st {
+            StateTransition::IdentityUpdate(_) => {}
+            _ => panic!("expected IdentityUpdate"),
+        }
+    }
+
+    #[test]
+    fn test_value_conversion_roundtrip() {
+        let t = make_update_v0();
+        let obj = t.to_object(false).expect("to_object should work");
+        let restored =
+            IdentityUpdateTransitionV0::from_object(obj, crate::version::PlatformVersion::latest())
+                .expect("from_object should work");
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn test_to_object_skip_signature() {
+        let t = make_update_v0();
+        let obj = t.to_object(true).expect("should work");
+        let map = obj.into_btree_string_map().expect("should be map");
+        assert!(!map.contains_key("signature"));
+    }
+
+    #[test]
+    fn test_to_cleaned_object() {
+        let t = make_update_v0();
+        let obj = t.to_cleaned_object(false).expect("should work");
+        assert!(obj.is_map());
+    }
+
+    #[test]
+    fn test_to_cleaned_object_removes_empty_arrays() {
+        let t = IdentityUpdateTransitionV0 {
+            identity_id: Identifier::random(),
+            revision: 1,
+            nonce: 1,
+            add_public_keys: vec![],
+            disable_public_keys: vec![],
+            user_fee_increase: 0,
+            signature_public_key_id: 0,
+            signature: vec![].into(),
+        };
+        let obj = t.to_cleaned_object(false).expect("should work");
+        let map = obj.into_btree_string_map().expect("should be map");
+        // Empty arrays should be removed
+        assert!(!map.contains_key("addPublicKeys"));
+        assert!(!map.contains_key("disablePublicKeys"));
+    }
+
+    #[test]
+    fn test_from_value_map() {
+        let t = make_update_v0();
+        let obj = t.to_object(false).expect("should work");
+        let map = obj.into_btree_string_map().expect("should be map");
+        let restored = IdentityUpdateTransitionV0::from_value_map(
+            map,
+            crate::version::PlatformVersion::latest(),
+        )
+        .expect("should work");
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn test_get_list_empty() {
+        use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
+        let mut val = Value::Map(vec![]);
+        let result: Result<Vec<IdentityPublicKeyInCreationV0>, _> =
+            get_list(&mut val, "nonexistent");
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_remove_integer_list_or_default_empty() {
+        let mut val = Value::Map(vec![]);
+        let result: Result<Vec<u32>, _> = remove_integer_list_or_default(&mut val, "nonexistent");
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+    }
+}
+
 /// if the property isn't present the empty list is returned. If property is defined, the function
 /// might return some serialization-related errors
 fn remove_integer_list_or_default<T>(

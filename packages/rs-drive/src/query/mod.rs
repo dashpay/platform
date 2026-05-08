@@ -1931,17 +1931,42 @@ impl<'a> DriveDocumentQuery<'a> {
             .iter()
             .filter_map(|field| self.internal_clauses.equal_clauses.get(field.name.as_str()))
             .collect();
-        let (last_clause, last_clause_is_range, subquery_clause) =
-            match &self.internal_clauses.in_clause {
-                None => match &self.internal_clauses.range_clause {
-                    None => (ordered_clauses.last().copied(), false, None),
-                    Some(where_clause) => (Some(where_clause), true, None),
-                },
-                Some(in_clause) => match &self.internal_clauses.range_clause {
-                    None => (Some(in_clause), true, None),
-                    Some(range_clause) => (Some(in_clause), true, Some(range_clause)),
-                },
-            };
+        let (last_clause, last_clause_is_range, subquery_clause) = match &self
+            .internal_clauses
+            .in_clause
+        {
+            None => match &self.internal_clauses.range_clause {
+                None => (ordered_clauses.last().copied(), false, None),
+                Some(where_clause) => (Some(where_clause), true, None),
+            },
+            Some(in_clause) => match &self.internal_clauses.range_clause {
+                None => (Some(in_clause), true, None),
+                Some(range_clause) => {
+                    // Both an `in` clause and a range clause are present.
+                    // The outer path query must operate on the field that
+                    // appears *earlier* (closer to the index root) in the
+                    // chosen index, and the other clause becomes the leaf
+                    // subquery. Without this ordering, a query like
+                    // `status > 0 AND transactionIndex in [..]` on an index
+                    // `[status, transactionIndex]` builds a path that
+                    // terminates at the `status` subtree while the primary
+                    // query iterates `transactionIndex` keys, silently
+                    // returning []. See issue #2409.
+                    let position_of = |field: &str| -> Option<usize> {
+                        index
+                            .properties
+                            .iter()
+                            .position(|p| p.name.as_str() == field)
+                    };
+                    let in_pos = position_of(in_clause.field.as_str());
+                    let range_pos = position_of(range_clause.field.as_str());
+                    match (in_pos, range_pos) {
+                        (Some(i), Some(r)) if i > r => (Some(range_clause), true, Some(in_clause)),
+                        _ => (Some(in_clause), true, Some(range_clause)),
+                    }
+                }
+            },
+        };
 
         // We need to get the terminal indexes unused by clauses.
         let left_over_index_properties = index
@@ -2001,7 +2026,7 @@ impl<'a> DriveDocumentQuery<'a> {
                         })
                         .as_ref(),
                     first_index,
-                    None,
+                    Some(&self.order_by),
                     platform_version,
                 )?
                 .expect("Index must have left over properties if no last clause")

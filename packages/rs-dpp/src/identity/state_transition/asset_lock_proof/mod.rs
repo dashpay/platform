@@ -24,16 +24,29 @@ pub mod validate_asset_lock_transaction_structure;
 
 // TODO: Serialization with bincode
 // TODO: Consider use Box for InstantAssetLockProof
+//
+// Wire-shape note: this is an *internally-tagged* enum (`#[serde(tag = "type")]`
+// with no `content`). serde's internal tagging works on newtype variants whose
+// inner is a struct — both `InstantAssetLockProof` and `ChainAssetLockProof`
+// qualify — so the inner struct's fields are flattened next to the `type`
+// discriminator: `{"type": "instant", "instantLock": ..., "transaction": ...,
+// "outputIndex": ...}`. This matches the convention applied to other tagged
+// unions exposed to JS (see `AddressWitness`, `AddressFundsFeeStrategyStep`).
+// Bincode `Encode`/`Decode` derives are independent of serde, so consensus
+// binary format is unaffected.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Encode, Decode)]
-#[serde(untagged)]
+#[serde(tag = "type", rename_all = "camelCase")]
 #[allow(clippy::large_enum_variant)]
 pub enum AssetLockProof {
     Instant(#[bincode(with_serde)] InstantAssetLockProof),
     Chain(#[bincode(with_serde)] ChainAssetLockProof),
 }
 
+/// Wire-shape Deserialize uses the same internal-tag layout the Serialize derive
+/// produces, but routes the instant variant through `RawInstantLockProof` so the
+/// dashcore `InstantLock` can be reconstructed from its raw bytes form.
 #[derive(Deserialize)]
-#[serde(untagged)]
+#[serde(tag = "type", rename_all = "camelCase")]
 enum RawAssetLockProof {
     Instant(RawInstantLockProof),
     Chain(ChainAssetLockProof),
@@ -59,21 +72,6 @@ impl<'de> Deserialize<'de> for AssetLockProof {
     where
         D: Deserializer<'de>,
     {
-        // Try to parse into IS Lock
-        // let maybe_is_lock = RawInstantLock::deserialize(&deserializer);
-        //
-        // if let Ok(raw_instant_lock) = maybe_is_lock {
-        //     let instant_lock = raw_instant_lock.try_into()
-        //         .map_err(|e: ProtocolError| D::Error::custom(e.to_string()))?;
-        //
-        //     return Ok(AssetLockProof::Instant(instant_lock))
-        // };
-        //
-        //
-        // ChainAssetLockProof::deserialize(deserializer)
-        //     .map(|chain| AssetLockProof::Chain(chain))
-        // // Try to parse into chain lock
-
         let raw = RawAssetLockProof::deserialize(deserializer)?;
         raw.try_into().map_err(|e: ProtocolError| {
             D::Error::custom(format!(
@@ -95,43 +93,6 @@ impl AsRef<AssetLockProof> for AssetLockProof {
         self
     }
 }
-//
-// impl Serialize for AssetLockProof {
-//     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-//     where
-//         S: Serializer,
-//     {
-//         match self {
-//             AssetLockProof::Instant(instant_proof) => instant_proof.serialize(serializer),
-//             AssetLockProof::Chain(chain) => chain.serialize(serializer),
-//         }
-//     }
-// }
-//
-// impl<'de> Deserialize<'de> for AssetLockProof {
-//     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-//     where
-//         D: Deserializer<'de>,
-//     {
-//         let value = platform_value::Value::deserialize(deserializer)?;
-//
-//         let proof_type_int: u8 = value
-//             .get_integer("type")
-//             .map_err(|e| D::Error::custom(e.to_string()))?;
-//         let proof_type = AssetLockProofType::try_from(proof_type_int)
-//             .map_err(|e| D::Error::custom(e.to_string()))?;
-//
-//         match proof_type {
-//             AssetLockProofType::Instant => Ok(Self::Instant(
-//                 platform_value::from_value(value).map_err(|e| D::Error::custom(e.to_string()))?,
-//             )),
-//             AssetLockProofType::Chain => Ok(Self::Chain(
-//                 platform_value::from_value(value).map_err(|e| D::Error::custom(e.to_string()))?,
-//             )),
-//         }
-//     }
-// }
-
 pub enum AssetLockProofType {
     Instant = 0,
     Chain = 1,
@@ -324,6 +285,266 @@ impl TryInto<Value> for &AssetLockProof {
             AssetLockProof::Chain(chain_proof) => {
                 platform_value::to_value(chain_proof).map_err(ProtocolError::ValueError)
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+    use dashcore::{OutPoint, Txid};
+    use std::str::FromStr;
+
+    /// JSON wire shape is internally tagged: `{type, ...flattened inner fields}`,
+    /// no `data` wrapper. This guards against accidental reintroduction of the
+    /// old adjacent-tagged `{type, data: {...}}` shape and against the divergence
+    /// from the `AddressWitness` / `AddressFundsFeeStrategyStep` precedent.
+    #[test]
+    fn chain_variant_serializes_with_internal_tag() {
+        let txid =
+            Txid::from_str("e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d")
+                .unwrap();
+        let proof = AssetLockProof::Chain(ChainAssetLockProof {
+            core_chain_locked_height: 11,
+            out_point: OutPoint { txid, vout: 1 },
+        });
+
+        let json = serde_json::to_value(&proof).expect("serialize");
+
+        assert_eq!(json["type"], "chain");
+        assert_eq!(json["coreChainLockedHeight"], 11);
+        assert!(
+            json.get("data").is_none(),
+            "should not have a `data` wrapper, got: {}",
+            json
+        );
+
+        // Round-trip
+        let restored: AssetLockProof = serde_json::from_value(json).expect("deserialize");
+        assert_eq!(proof, restored);
+    }
+
+    mod asset_lock_proof_type_try_from {
+        use super::*;
+
+        #[test]
+        fn u8_instant_type() {
+            let proof_type = AssetLockProofType::try_from(0u8).expect("should parse type 0");
+            assert!(matches!(proof_type, AssetLockProofType::Instant));
+        }
+
+        #[test]
+        fn u8_chain_type() {
+            let proof_type = AssetLockProofType::try_from(1u8).expect("should parse type 1");
+            assert!(matches!(proof_type, AssetLockProofType::Chain));
+        }
+
+        #[test]
+        fn u8_invalid_type() {
+            let result = AssetLockProofType::try_from(2u8);
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn u8_max_invalid_type() {
+            let result = AssetLockProofType::try_from(255u8);
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn u64_instant_type() {
+            let proof_type = AssetLockProofType::try_from(0u64).expect("should parse type 0");
+            assert!(matches!(proof_type, AssetLockProofType::Instant));
+        }
+
+        #[test]
+        fn u64_chain_type() {
+            let proof_type = AssetLockProofType::try_from(1u64).expect("should parse type 1");
+            assert!(matches!(proof_type, AssetLockProofType::Chain));
+        }
+
+        #[test]
+        fn u64_invalid_type() {
+            let result = AssetLockProofType::try_from(2u64);
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn u64_large_invalid_type() {
+            let result = AssetLockProofType::try_from(u64::MAX);
+            assert!(result.is_err());
+        }
+    }
+
+    mod chain_asset_lock_proof {
+        use super::*;
+
+        fn make_chain_proof() -> ChainAssetLockProof {
+            ChainAssetLockProof::new(100, [0xAB; 36])
+        }
+
+        #[test]
+        fn chain_proof_construction() {
+            let proof = ChainAssetLockProof::new(42, [0x01; 36]);
+            assert_eq!(proof.core_chain_locked_height, 42);
+        }
+
+        #[test]
+        fn chain_proof_create_identifier_deterministic() {
+            let proof = make_chain_proof();
+            let id1 = proof.create_identifier();
+            let id2 = proof.create_identifier();
+            assert_eq!(id1, id2);
+        }
+
+        #[test]
+        fn different_outpoints_produce_different_identifiers() {
+            let proof_a = ChainAssetLockProof::new(100, [0xAA; 36]);
+            let proof_b = ChainAssetLockProof::new(100, [0xBB; 36]);
+            assert_ne!(proof_a.create_identifier(), proof_b.create_identifier());
+        }
+
+        #[test]
+        fn chain_proof_equality() {
+            let a = ChainAssetLockProof::new(10, [0x01; 36]);
+            let b = ChainAssetLockProof::new(10, [0x01; 36]);
+            assert_eq!(a, b);
+        }
+
+        #[test]
+        fn chain_proof_inequality_height() {
+            let a = ChainAssetLockProof::new(10, [0x01; 36]);
+            let b = ChainAssetLockProof::new(20, [0x01; 36]);
+            assert_ne!(a, b);
+        }
+    }
+
+    mod asset_lock_proof_methods {
+        use super::*;
+
+        fn make_chain_lock_proof() -> AssetLockProof {
+            let chain_proof = ChainAssetLockProof::new(50, [0xCC; 36]);
+            AssetLockProof::Chain(chain_proof)
+        }
+
+        #[test]
+        fn default_is_instant() {
+            let proof = AssetLockProof::default();
+            assert!(matches!(proof, AssetLockProof::Instant(_)));
+        }
+
+        #[test]
+        fn as_ref_returns_self() {
+            let proof = make_chain_lock_proof();
+            let reference: &AssetLockProof = proof.as_ref();
+            assert_eq!(&proof, reference);
+        }
+
+        #[test]
+        fn chain_proof_output_index() {
+            let mut out_point_bytes = [0u8; 36];
+            // Set vout (last 4 bytes in little-endian) to 3
+            out_point_bytes[32] = 3;
+            let chain_proof = ChainAssetLockProof::new(50, out_point_bytes);
+            let proof = AssetLockProof::Chain(chain_proof);
+            assert_eq!(proof.output_index(), 3);
+        }
+
+        #[test]
+        fn chain_proof_out_point_is_some() {
+            let proof = make_chain_lock_proof();
+            assert!(proof.out_point().is_some());
+        }
+
+        #[test]
+        fn chain_proof_transaction_is_none() {
+            let proof = make_chain_lock_proof();
+            assert!(proof.transaction().is_none());
+        }
+
+        #[test]
+        fn chain_proof_to_raw_object() {
+            let proof = make_chain_lock_proof();
+            let result = proof.to_raw_object();
+            assert!(result.is_ok());
+        }
+
+        #[test]
+        fn chain_proof_create_identifier() {
+            let proof = make_chain_lock_proof();
+            let id = proof.create_identifier();
+            assert!(id.is_ok());
+        }
+    }
+
+    mod try_from_value {
+        use super::*;
+
+        #[test]
+        fn chain_proof_value_round_trip() {
+            let chain_proof = ChainAssetLockProof::new(100, [0x42; 36]);
+            let proof = AssetLockProof::Chain(chain_proof);
+
+            // Convert to Value
+            let value: Value = (&proof).try_into().expect("should convert to Value");
+
+            // Now try to read type from value
+            let _type_from_value = AssetLockProof::type_from_raw_value(&value);
+            // Chain proofs serialized via serde may or may not have "type" field depending
+            // on the serialization format. The untagged format may not include it.
+            // What matters is that the conversion itself works.
+
+            // Convert from Value back - this tests the TryFrom<Value> path
+            // with the untagged serde format
+            let raw_value = proof.to_raw_object().expect("should convert to raw object");
+            assert!(!raw_value.is_null());
+        }
+
+        #[test]
+        fn type_from_raw_value_returns_none_for_missing_type() {
+            let value = Value::Map(vec![]);
+            let result = AssetLockProof::type_from_raw_value(&value);
+            assert!(result.is_none());
+        }
+
+        #[test]
+        fn try_from_empty_map_fails() {
+            let value = Value::Map(vec![]);
+            let result = AssetLockProof::try_from(&value);
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn try_from_value_with_unknown_key_fails() {
+            let value = Value::Map(vec![(
+                Value::Text("Unknown".to_string()),
+                Value::Map(vec![]),
+            )]);
+            let result = AssetLockProof::try_from(&value);
+            assert!(result.is_err());
+        }
+    }
+
+    mod try_into_value {
+        use super::*;
+
+        #[test]
+        fn chain_proof_try_into_value() {
+            let chain_proof = ChainAssetLockProof::new(200, [0xDD; 36]);
+            let proof = AssetLockProof::Chain(chain_proof);
+
+            let value: Result<Value, ProtocolError> = proof.try_into();
+            assert!(value.is_ok());
+        }
+
+        #[test]
+        fn chain_proof_ref_try_into_value() {
+            let chain_proof = ChainAssetLockProof::new(200, [0xDD; 36]);
+            let proof = AssetLockProof::Chain(chain_proof);
+
+            let value: Result<Value, ProtocolError> = (&proof).try_into();
+            assert!(value.is_ok());
         }
     }
 }

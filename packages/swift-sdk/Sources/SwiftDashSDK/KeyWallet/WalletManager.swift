@@ -3,13 +3,13 @@ import DashSDKFFI
 
 /// Swift wrapper for wallet manager that manages multiple wallets
 public class WalletManager {
-    internal let handle: UnsafeMutablePointer<FFIWalletManager>
-    internal let network: KeyWalletNetwork
+    private let handle: UnsafeMutablePointer<FFIWalletManager>
+    internal let network: Network
     private let ownsHandle: Bool
 
     /// Create a new standalone wallet manager
     /// Note: Consider using SPVClient.getWalletManager() instead if you have an SPV client
-    public init(network: KeyWalletNetwork = .mainnet,) throws {
+    public init(network: Network = .mainnet,) throws {
         var error = FFIError()
       guard let managerHandle = wallet_manager_create(network.ffiValue, &error) else {
             defer {
@@ -43,7 +43,7 @@ public class WalletManager {
         }
 
         self.handle = handle
-        self.network = KeyWalletNetwork(ffiNetwork: network)
+        self.network = Network(ffiNetwork: network)
         self.ownsHandle = false
     }
 
@@ -364,7 +364,18 @@ public class WalletManager {
                                   contextDetails: TransactionContextDetails,
                                   updateStateIfFound: Bool = true) throws -> Bool {
         var error = FFIError()
-        var ffiContext = contextDetails.toFFI()
+        // Build FFITransactionContext from TransactionContextDetails
+        var ffiContext = FFITransactionContext()
+        ffiContext.context_type = FFITransactionContextType(rawValue: contextDetails.context.rawValue)
+        ffiContext.block_info.height = contextDetails.height
+        ffiContext.block_info.timestamp = contextDetails.timestamp
+        if let hash = contextDetails.blockHash, hash.count == 32 {
+            hash.withUnsafeBytes { buf in
+                withUnsafeMutableBytes(of: &ffiContext.block_info.block_hash) { dst in
+                    dst.copyBytes(from: buf.prefix(32))
+                }
+            }
+        }
 
         let success = transactionData.withUnsafeBytes { txBytes in
             let txPtr = txBytes.bindMemory(to: UInt8.self).baseAddress
@@ -385,64 +396,6 @@ public class WalletManager {
         }
 
         return success
-    }
-
-    /// Build a signed transaction
-    /// - Parameters:
-    ///   - accIndex: The account index to use
-    ///   - outputs: The transaction outputs
-    /// - Returns: The signed transaction bytes and the fee
-    public func buildSignedTransaction(for wallet: HDWallet, accIndex: UInt32, outputs: [Transaction.Output]) throws -> (Data, UInt64) {
-        guard !outputs.isEmpty else {
-            throw KeyWalletError.invalidInput("Transaction must have at least one output")
-        }
-
-        var error = FFIError()
-        var txBytesPtr: UnsafeMutablePointer<UInt8>?
-        var txLen: size_t = 0
-
-        var fee: UInt64 = 0
-
-        guard let wallet = try self.getWallet(id: wallet.walletId) else {
-            throw KeyWalletError.walletError("Wallet not found in manager")
-        }
-
-        let ffiOutputs = outputs.map { $0.toFFI() }
-
-        let success = ffiOutputs.withUnsafeBufferPointer { outputsPtr in
-            wallet_build_and_sign_transaction(
-                self.handle,
-                wallet.ffiHandle,
-                accIndex,
-                outputsPtr.baseAddress,
-                outputs.count,
-                1000,
-                &fee,
-                &txBytesPtr,
-                &txLen,
-                &error)
-        }
-
-        defer {
-            if error.message != nil {
-                error_message_free(error.message)
-            }
-            for _ in ffiOutputs {
-              // TODO: Memory leak, FFI doesnt expose a way to free the address
-            }
-            if let ptr = txBytesPtr {
-                transaction_bytes_free(ptr)
-            }
-        }
-
-        guard success, let ptr = txBytesPtr else {
-            throw KeyWalletError(ffiError: error)
-        }
-
-        // Copy the transaction data before freeing
-        let txData = Data(bytes: ptr, count: txLen)
-
-        return (txData, fee)
     }
 
     // MARK: - Block Height Management

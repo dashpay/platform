@@ -14,6 +14,10 @@ use crate::state_transition::StateTransitionFieldTypes;
 
 pub type ShieldFromAssetLockTransitionLatest = ShieldFromAssetLockTransitionV0;
 
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
+#[cfg(feature = "value-conversion")]
+use crate::serialization::ValueConvertible;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use derive_more::From;
@@ -37,8 +41,13 @@ use serde::{Deserialize, Serialize};
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),
-    serde(tag = "$version")
+    serde(tag = "$formatVersion")
 )]
+#[cfg_attr(
+    all(feature = "json-conversion", feature = "serde-conversion"),
+    derive(JsonConvertible)
+)]
+#[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[platform_version_path_bounds(
     "dpp.state_transition_serialization_versions.shield_from_asset_lock_state_transition"
