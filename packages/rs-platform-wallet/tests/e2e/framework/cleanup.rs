@@ -49,11 +49,56 @@ pub fn cleanup_dust_gate(version: &PlatformVersion) -> Credits {
 /// Default per-step timeout for cleanup polls.
 pub const CLEANUP_STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
+/// Outcome of a single wallet sweep — used by [`sweep_orphans`] /
+/// [`teardown_one`] to decide whether to drop the registry entry or
+/// retain it as `Failed` for next-run retry. QA-V26-006 — prior to
+/// this struct every helper returned `Ok(())` after logging a warn,
+/// so a broadcast failure looked identical to "nothing to sweep" and
+/// the registry was purged unconditionally on the happy-path branch
+/// — silently leaking the funds.
+#[derive(Debug, Default)]
+pub struct SweepReport {
+    /// Sub-sweeps that attempted a broadcast and succeeded
+    /// (transition built, signed, broadcast Ok'd by the SDK).
+    pub broadcasts_succeeded: u32,
+    /// Sub-sweeps that attempted a broadcast and the SDK / chain
+    /// rejected it. Each entry is a one-line description with the
+    /// seed-hash + step name embedded for grep-ability.
+    pub broadcast_failures: Vec<String>,
+    /// `true` once at least one broadcast attempt succeeded — used
+    /// by [`sweep_orphans`] to keep the "swept_with_broadcast"
+    /// metric distinct from the "skipped, no funds" cohort.
+    pub had_funds_to_recover: bool,
+}
+
+impl SweepReport {
+    /// Did any sub-sweep attempt a broadcast that the SDK / chain
+    /// rejected? Used to decide whether the registry entry should
+    /// be removed (clean) or transitioned to `Failed` (retry next
+    /// run).
+    pub fn has_failures(&self) -> bool {
+        !self.broadcast_failures.is_empty()
+    }
+}
+
+/// Outcome buckets for the post-sweep summary log on
+/// [`sweep_orphans`]. Distinguishes "successfully drained" from
+/// "skipped, nothing to do" from "tried and failed" — operators
+/// reading the log no longer have to assume `count = N` means N
+/// wallets actually landed funds back at the bank.
+#[derive(Debug, Default)]
+struct OrphanSweepSummary {
+    swept_with_broadcast: u32,
+    skipped_no_funds: u32,
+    failed_retained: u32,
+}
+
 /// Sweep wallets left over from prior (likely panicked) runs.
 /// For each registry entry: reconstruct the wallet, sync, drain to
-/// the bank if above [`min_input_amount`], then drop the entry.
-/// Per-entry failures mark the entry [`EntryStatus::Failed`] for
-/// next-run retry; the loop never aborts.
+/// the bank if above [`min_input_amount`], then drop the entry IFF
+/// every sub-sweep that attempted a broadcast succeeded. Any
+/// broadcast failure flips the entry to [`EntryStatus::Failed`] and
+/// retains it for next-run retry — the loop never aborts. (QA-V26-006)
 pub async fn sweep_orphans(
     manager: &Arc<PlatformWalletManager<NoPlatformPersistence>>,
     bank: &BankWallet,
@@ -70,10 +115,15 @@ pub async fn sweep_orphans(
         "sweeping orphan test wallets from prior runs"
     );
 
-    let mut swept = 0usize;
+    let mut summary = OrphanSweepSummary::default();
     for (hash, entry) in orphans {
         match sweep_one(manager, bank, bank_identity, &hash, &entry, network).await {
-            Ok(()) => {
+            Ok(report) if !report.has_failures() => {
+                if report.had_funds_to_recover {
+                    summary.swept_with_broadcast += 1;
+                } else {
+                    summary.skipped_no_funds += 1;
+                }
                 if let Err(err) = registry.remove(&hash) {
                     tracing::warn!(
                         wallet_id = %hex::encode(hash),
@@ -81,19 +131,44 @@ pub async fn sweep_orphans(
                         "swept funds but failed to drop registry entry"
                     );
                 }
-                swept += 1;
+            }
+            Ok(report) => {
+                tracing::error!(
+                    wallet_id = %hex::encode(hash),
+                    failure_count = report.broadcast_failures.len(),
+                    failures = ?report.broadcast_failures,
+                    "orphan sweep had broadcast failures; flipping registry entry to \
+                     Failed for next-run retry — funds remain stranded on this seed"
+                );
+                if let Err(err) = registry.set_status(&hash, EntryStatus::Failed) {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(hash),
+                        error = %err,
+                        "failed to set registry status to Failed"
+                    );
+                }
+                summary.failed_retained += 1;
             }
             Err(err) => {
-                tracing::warn!(
+                tracing::error!(
                     wallet_id = %hex::encode(hash),
                     error = %err,
-                    "sweep failed; entry retained for next-run retry"
+                    "orphan sweep aborted with hard error; entry retained as Failed \
+                     for next-run retry"
                 );
                 let _ = registry.set_status(&hash, EntryStatus::Failed);
+                summary.failed_retained += 1;
             }
         }
     }
-    Ok(swept)
+    tracing::info!(
+        target: "platform_wallet::e2e::cleanup",
+        swept_with_broadcast = summary.swept_with_broadcast,
+        skipped_no_funds = summary.skipped_no_funds,
+        failed_retained = summary.failed_retained,
+        "orphan sweep summary"
+    );
+    Ok(summary.swept_with_broadcast as usize)
 }
 
 async fn sweep_one(
@@ -103,7 +178,7 @@ async fn sweep_one(
     hash: &WalletSeedHash,
     entry: &RegistryEntry,
     network: Network,
-) -> FrameworkResult<()> {
+) -> FrameworkResult<SweepReport> {
     let seed_bytes: [u8; 64] = parse_seed_hex(&entry.seed_hex)?;
     let wallet = manager
         .create_wallet_from_seed_bytes(
@@ -132,8 +207,15 @@ async fn sweep_one(
     let platform_version = PlatformVersion::latest();
     let dust_gate = min_input_amount(platform_version);
     let total = wallet.platform().total_credits().await;
+    let mut report = SweepReport::default();
     if total >= dust_gate {
-        sweep_platform_addresses(&wallet, &signer, bank.primary_receive_address()).await?;
+        sweep_platform_addresses(
+            &wallet,
+            &signer,
+            bank.primary_receive_address(),
+            &mut report,
+        )
+        .await?;
     } else {
         tracing::debug!(
             wallet_id = %hex::encode(hash),
@@ -142,8 +224,8 @@ async fn sweep_one(
             "orphan platform total below protocol min_input_amount; skipping"
         );
     }
-    sweep_identities_with_seed(&wallet, &seed_bytes, network, bank_identity).await?;
-    sweep_core_addresses(&wallet, bank).await?;
+    sweep_identities_with_seed(&wallet, &seed_bytes, network, bank_identity, &mut report).await?;
+    sweep_core_addresses(&wallet, bank, &mut report).await?;
     sweep_unused_core_asset_locks(&wallet).await?;
     sweep_shielded(&wallet).await?;
 
@@ -157,12 +239,17 @@ async fn sweep_one(
             "manager unregister failed after sweep; wallet remains tracked"
         );
     }
-    Ok(())
+    Ok(report)
 }
 
-/// Per-test teardown: drain back to bank, drop the registry entry,
-/// and unregister from the manager. Best-effort — failures retain
-/// the entry so the next startup's [`sweep_orphans`] retries.
+/// Per-test teardown: drain back to bank, drop the registry entry
+/// IFF every sub-sweep that attempted a broadcast succeeded, then
+/// unregister from the manager. Any broadcast failure flips the
+/// registry entry to [`EntryStatus::Failed`] and retains it so the
+/// next startup's [`sweep_orphans`] retries. (QA-V26-006 — prior to
+/// this the registry was removed unconditionally on the happy-path
+/// branch even when an inner best-effort sweep silently logged-and-
+/// continued, leaking the funds permanently.)
 pub async fn teardown_one(
     manager: &Arc<PlatformWalletManager<NoPlatformPersistence>>,
     bank: &BankWallet,
@@ -174,11 +261,13 @@ pub async fn teardown_one(
     let platform_version = PlatformVersion::latest();
     let dust_gate = min_input_amount(platform_version);
     let total = test_wallet.total_credits().await;
+    let mut report = SweepReport::default();
     if total >= dust_gate {
         sweep_platform_addresses(
             test_wallet.platform_wallet(),
             test_wallet.address_signer(),
             bank.primary_receive_address(),
+            &mut report,
         )
         .await?;
     } else {
@@ -194,11 +283,46 @@ pub async fn teardown_one(
         &test_wallet.seed_bytes(),
         bank.network(),
         bank_identity,
+        &mut report,
     )
     .await?;
-    sweep_core_addresses(test_wallet.platform_wallet(), bank).await?;
+    sweep_core_addresses(test_wallet.platform_wallet(), bank, &mut report).await?;
     sweep_unused_core_asset_locks(test_wallet.platform_wallet()).await?;
     sweep_shielded(test_wallet.platform_wallet()).await?;
+
+    if report.has_failures() {
+        tracing::error!(
+            target: "platform_wallet::e2e::cleanup",
+            wallet_id = %hex::encode(test_wallet.id()),
+            failure_count = report.broadcast_failures.len(),
+            failures = ?report.broadcast_failures,
+            "teardown had broadcast failures; flipping registry entry to Failed for \
+             next-run sweep_orphans retry — funds remain stranded on this seed"
+        );
+        if let Err(err) = registry.set_status(&test_wallet.id(), EntryStatus::Failed) {
+            tracing::warn!(
+                target: "platform_wallet::e2e::cleanup",
+                wallet_id = %hex::encode(test_wallet.id()),
+                error = %err,
+                "failed to set registry status to Failed after broadcast failure"
+            );
+        }
+        // Best-effort manager unregister still happens — the wallet
+        // is no longer useful in-process even if its on-chain state
+        // is dirty. Return Ok so tests that already passed don't
+        // retroactively fail because of a sweep race; the loud
+        // `error!` above + the persisted `Failed` registry entry
+        // surface the leak to the operator and to next-run sweep.
+        if let Err(err) = manager.remove_wallet(&test_wallet.id()).await {
+            tracing::warn!(
+                target: "platform_wallet::e2e::cleanup",
+                wallet_id = %hex::encode(test_wallet.id()),
+                error = %err,
+                "manager unregister failed after teardown-with-failures"
+            );
+        }
+        return Ok(());
+    }
 
     // Drop the registry entry first so an unregister failure
     // doesn't leak it; the wallet has no balance left to recover.
@@ -245,6 +369,7 @@ async fn sweep_platform_addresses<S>(
     wallet: &Arc<PlatformWallet>,
     signer: &S,
     bank_addr: &PlatformAddress,
+    report: &mut SweepReport,
 ) -> FrameworkResult<()>
 where
     S: Signer<PlatformAddress> + Send + Sync,
@@ -305,6 +430,7 @@ where
         "sweep_platform_addresses: ReduceOutput(0) sweep"
     );
 
+    report.had_funds_to_recover = true;
     match wallet
         .platform()
         .transfer(
@@ -317,7 +443,9 @@ where
         )
         .await
     {
-        Ok(_) => {}
+        Ok(_) => {
+            report.broadcasts_succeeded = report.broadcasts_succeeded.saturating_add(1);
+        }
         Err(err) => {
             tracing::warn!(
                 target: "platform_wallet::e2e::cleanup",
@@ -326,6 +454,11 @@ where
                 "sweep_platform_addresses: broadcast failed (residual may be below sweep fee); \
                  retaining registry entry for sweep_orphans retry"
             );
+            report.broadcast_failures.push(format!(
+                "platform[{}]: {}",
+                hex::encode(wallet.wallet_id()),
+                err
+            ));
         }
     }
     Ok(())
@@ -399,6 +532,7 @@ async fn sweep_identities_with_seed(
     seed_bytes: &[u8; 64],
     network: Network,
     bank_identity: &BankIdentity,
+    report: &mut SweepReport,
 ) -> FrameworkResult<()> {
     // Phase 1 — discovery walk.
     for identity_index in 0..IDENTITY_DISCOVERY_GAP {
@@ -486,6 +620,7 @@ async fn sweep_identities_with_seed(
             continue;
         }
 
+        report.had_funds_to_recover = true;
         match wallet
             .identity()
             .transfer_credits_with_external_signer(
@@ -507,6 +642,7 @@ async fn sweep_identities_with_seed(
                     bank_identity_id = %bank_identity.id,
                     "identity sweep: drained credits to bank identity"
                 );
+                report.broadcasts_succeeded = report.broadcasts_succeeded.saturating_add(1);
             }
             Err(err) => {
                 tracing::warn!(
@@ -518,6 +654,10 @@ async fn sweep_identities_with_seed(
                     error = %err,
                     "identity sweep: CreditTransfer failed; entry retained"
                 );
+                report.broadcast_failures.push(format!(
+                    "identity[{} idx={}]: {}",
+                    identity_id, identity_index, err
+                ));
             }
         }
     }
@@ -560,6 +700,7 @@ const IDENTITY_SWEEP_FEE_RESERVE: Credits = 30_000_000;
 async fn sweep_core_addresses(
     wallet: &Arc<PlatformWallet>,
     bank: &BankWallet,
+    report: &mut SweepReport,
 ) -> FrameworkResult<()> {
     let confirmed = wallet.balance().confirmed();
     if confirmed <= CORE_SWEEP_DUST_FLOOR {
@@ -589,6 +730,7 @@ async fn sweep_core_addresses(
     // the operator-known location.
     let bank_core_addr = bank.primary_core_receive_address().await?;
 
+    report.had_funds_to_recover = true;
     match core_send(wallet, &bank_core_addr, amount).await {
         Ok(txid) => {
             tracing::info!(
@@ -599,14 +741,15 @@ async fn sweep_core_addresses(
                 bank_core_addr = %bank_core_addr,
                 "core sweep: drained Core duffs to bank"
             );
+            report.broadcasts_succeeded = report.broadcasts_succeeded.saturating_add(1);
             Ok(())
         }
-        // Drain-class errors are expected when a prior sweep step (e.g.
-        // identity-credit drain) already mutated the Core balance to
-        // zero or below the coin-selection floor. Mirror the
-        // `sweep_platform_addresses` pattern: log a warn, return Ok so
-        // the per-test `teardown_one` doesn't panic, and rely on
-        // `sweep_orphans` to retry on a future run if needed.
+        // Drain-class errors fire when a prior sweep step (or a sibling
+        // run already drained the address) leaves no UTXOs. That's a
+        // benign "nothing to sweep" rather than a real failure — log
+        // and return Ok WITHOUT recording a broadcast failure on the
+        // report, otherwise we'd flip the registry to Failed for a
+        // wallet that's actually clean.
         Err(err) if is_core_drain_class(&err) => {
             tracing::warn!(
                 target: "platform_wallet::e2e::cleanup",
@@ -628,7 +771,12 @@ async fn sweep_core_addresses(
                 error = %err,
                 "core sweep: broadcast failed with non-drain error; entry retained"
             );
-            Err(err)
+            report.broadcast_failures.push(format!(
+                "core[{}]: {}",
+                hex::encode(wallet.wallet_id()),
+                err
+            ));
+            Ok(())
         }
     }
 }
@@ -745,5 +893,52 @@ mod tests {
         let plan = build_sweep_plan(&candidates, pv);
         assert!(plan.inputs.is_empty());
         assert!(plan.skipped_dust.is_empty());
+    }
+
+    /// Pin the [`SweepReport`] contract — `has_failures` must reflect
+    /// the `broadcast_failures` vec. Pre-QA-V26-006 the helpers
+    /// returned `Ok(())` after logging a warn, so a broadcast failure
+    /// looked identical to a clean sweep and the registry was purged
+    /// regardless. The new contract is: any non-empty
+    /// `broadcast_failures` ⇒ `has_failures()` ⇒ `sweep_orphans` /
+    /// `teardown_one` retain the entry as Failed.
+    #[test]
+    fn sweep_report_has_failures_tracks_broadcast_failures() {
+        let mut report = SweepReport::default();
+        assert!(!report.has_failures(), "default report is clean");
+        report
+            .broadcast_failures
+            .push("identity[X idx=0]: foo".into());
+        assert!(
+            report.has_failures(),
+            "any broadcast failure flips the flag"
+        );
+    }
+
+    /// Pin the "had_funds_to_recover vs broadcasts_succeeded"
+    /// distinction. A wallet with funds whose every sweep step
+    /// succeeded must report both flags; a wallet with funds whose
+    /// every step failed must report `had_funds_to_recover=true`
+    /// AND `has_failures()=true` AND `broadcasts_succeeded=0`. This
+    /// is what `sweep_orphans` keys on to bucket
+    /// `swept_with_broadcast` vs `failed_retained`.
+    #[test]
+    fn sweep_report_buckets_broadcasts_correctly() {
+        let clean = SweepReport {
+            had_funds_to_recover: true,
+            broadcasts_succeeded: 2,
+            ..Default::default()
+        };
+        assert!(!clean.has_failures());
+        assert!(clean.had_funds_to_recover);
+
+        let leaky = SweepReport {
+            had_funds_to_recover: true,
+            broadcast_failures: vec!["platform[X]: bar".into()],
+            ..Default::default()
+        };
+        assert!(leaky.has_failures());
+        assert_eq!(leaky.broadcasts_succeeded, 0);
+        assert!(leaky.had_funds_to_recover);
     }
 }
