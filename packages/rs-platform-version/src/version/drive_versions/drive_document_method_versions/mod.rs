@@ -12,6 +12,7 @@ pub struct DriveDocumentMethodVersions {
     pub update: DriveDocumentUpdateMethodVersions,
     pub estimation_costs: DriveDocumentEstimationCostsMethodVersions,
     pub index_uniqueness: DriveDocumentIndexUniquenessMethodVersions,
+    pub primary_key_tree_type: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

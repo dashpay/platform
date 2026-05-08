@@ -84,7 +84,7 @@ jobs:
 
       - name: Restore test suite local network data to speed up dashmate local network tests
         id: local-network-data
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             ${{ env.HOME }}/.dashmate

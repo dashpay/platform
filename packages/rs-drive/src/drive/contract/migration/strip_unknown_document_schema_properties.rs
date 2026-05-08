@@ -12,8 +12,12 @@ use grovedb_path::SubtreePath;
 
 impl Drive {
     /// Iterates every data contract in state, checks each document type schema for
-    /// top-level properties not listed in the v1 document meta-schema, removes them,
-    /// and re-serializes the contract if anything changed.
+    /// top-level properties that pre-v12 contracts were not permitted to declare
+    /// (i.e. anything outside `ALLOWED_DOCUMENT_SCHEMA_PRE_V12_PROPERTIES`), removes
+    /// them, and re-serializes the contract if anything changed. This includes
+    /// v12-introduced flags such as `documentsCountable` / `rangeCountable`, which
+    /// the v2 parser would otherwise revive on already-stored contracts and
+    /// reinterpret as a count tree mismatched with the underlying `NormalTree`.
     ///
     /// For historical contracts, all stored revisions are cleaned (not just the latest).
     ///
