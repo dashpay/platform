@@ -1,6 +1,7 @@
 //! DashPay payment recording and send-to-contact flows.
 
 use dpp::prelude::Identifier;
+use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
@@ -223,7 +224,15 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                     current_height,
                     |utxo| {
                         for account in info.core_wallet.accounts.all_accounts() {
-                            if let Some(path) = account.address_derivation_path(&utxo.address) {
+                            // Address pools live on the keys variant
+                            // after the funds/keys split; the funds
+                            // account composes a keys account, and
+                            // `keys_account()` exposes it for both
+                            // `ManagedAccountRef` variants.
+                            if let Some(path) = account
+                                .keys_account()
+                                .address_derivation_path(&utxo.address)
+                            {
                                 if let Ok(key) = wallet.derive_private_key(&path) {
                                     return Some(key);
                                 }

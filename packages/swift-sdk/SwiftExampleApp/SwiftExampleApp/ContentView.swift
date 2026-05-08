@@ -13,6 +13,7 @@ struct ContentView: View {
     let onRetry: () -> Void
 
     @EnvironmentObject var walletManager: PlatformWalletManager
+    @EnvironmentObject var walletManagerStore: WalletManagerStore
     @EnvironmentObject var appUIState: AppUIState
     @EnvironmentObject var platformState: AppState
     @Environment(\.modelContext) private var modelContext
@@ -427,8 +428,24 @@ struct ContentView: View {
             entry.network ?? metadata?.resolvedNetworks.first ?? platformState.currentNetwork
         let restoredBirthHeight = metadata?.birthHeight
 
+        // Route recovery to the manager for the wallet's original
+        // network — not the active manager. The Rust side stamps
+        // `wallet.network = self.sdk.network` at registration time,
+        // so creating a regtest wallet through the testnet manager
+        // would persist the row as testnet. `backgroundManager`
+        // lazy-builds the per-network manager (and its SDK) without
+        // changing the user's currently visible network.
+        let targetManager: PlatformWalletManager
         do {
-            let managed = try walletManager.createWallet(
+            targetManager = try walletManagerStore.backgroundManager(for: restoredNetwork)
+        } catch {
+            recoveryError = "Failed to prepare \(restoredNetwork.displayName) manager "
+                + "for \"\(entry.displayName)\": \(error.localizedDescription)"
+            return false
+        }
+
+        do {
+            let managed = try targetManager.createWallet(
                 mnemonic: mnemonic,
                 network: restoredNetwork,
                 name: restoredName
@@ -437,7 +454,32 @@ struct ContentView: View {
             let descriptor = FetchDescriptor<PersistentWallet>(
                 predicate: #Predicate { $0.walletId == walletIdMatch }
             )
-            if let row = try? modelContext.fetch(descriptor).first {
+
+            // Cross-context propagation: the row we just created
+            // landed in the target manager's background context,
+            // not in the main context that drives every `@Query`
+            // consumer in the UI. SwiftData merges sibling-context
+            // saves through `NSPersistentStoreRemoteChange`
+            // notifications, but that pipeline is asynchronous —
+            // an immediate `fetch` on the main context may still
+            // miss the row, in which case the post-recovery
+            // `isImported` / metadata flush is skipped *and* no
+            // main-context save fires, so `@Query` observers
+            // never re-evaluate. The wallet then "doesn't appear"
+            // until the next app launch when the main context is
+            // built fresh against disk. Retry a few times with a
+            // short yield between attempts so the merge has a
+            // chance to settle before we move on.
+            var row: PersistentWallet? = nil
+            for attempt in 0..<10 {
+                row = try? modelContext.fetch(descriptor).first
+                if row != nil { break }
+                if attempt < 9 {
+                    try? await Task.sleep(nanoseconds: 50_000_000)
+                }
+            }
+
+            if let row {
                 row.isImported = true
                 if row.walletDescription == nil {
                     row.walletDescription = restoredDescription

@@ -79,13 +79,19 @@ impl Drive {
         // SumTree containing: notes (CommitmentTree), permanent nullifiers (ProvableCountTree),
         // total balance (SumItem), anchors (NormalTree), anchors-by-height (NormalTree),
         // recent nullifiers (CountSumTree), compacted nullifiers (NormalTree),
-        // expiration time (NormalTree), most recent anchor (Item)
-        // 9 elements total (7 subtrees + 2 items) → balanced Merk depth = ceil(log2(9)) = 4
+        // expiration time (NormalTree).
+        // 8 elements total (7 subtrees + 1 item) → balanced Merk depth = ceil(log2(8)) = 3.
+        //
+        // The retired `SHIELDED_MOST_RECENT_ANCHOR_KEY = 7` slot used
+        // to add a second `Item` entry; the most-recent anchor is
+        // now derived from the highest-block-height entry in the
+        // anchors-by-height subtree, so the pool layer is one item
+        // smaller than before.
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path(shielded_credit_pool_path()),
             EstimatedLayerInformation {
                 tree_type: TreeType::SumTree,
-                estimated_layer_count: EstimatedLevel(4, false),
+                estimated_layer_count: EstimatedLevel(3, false),
                 estimated_layer_sizes: Mix {
                     subtrees_size: Some((
                         1,
@@ -99,13 +105,13 @@ impl Drive {
                         None,
                         7, // 7 subtrees: notes, permanent nullifiers, anchors, anchors-by-height, recent nullifiers, compacted nullifiers, expiration time
                     )),
-                    items_size: Some((1, 32, None, 2)), // 2 items: total balance (SumItem), most recent anchor (Item)
+                    items_size: Some((1, 8, None, 1)), // 1 item: total balance (SumItem, i64 = 8 bytes)
                     references_size: None,
                 },
             },
         );
 
-        // Notes tree: [AddressBalances, "s", 1]
+        // Notes tree: [AddressBalances, "s", 128]
         // CommitmentTree - stores notes (cmx||encrypted_note items + Sinsemilla frontier)
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path(shielded_credit_pool_notes_path()),
@@ -116,7 +122,7 @@ impl Drive {
             },
         );
 
-        // Nullifiers tree: [AddressBalances, "s", 2]
+        // Nullifiers tree: [AddressBalances, "s", 64]
         // ProvableCountTree - stores spent nullifiers (32-byte key -> empty item)
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path(shielded_credit_pool_nullifiers_path()),
@@ -127,7 +133,7 @@ impl Drive {
             },
         );
 
-        // Anchors tree: [AddressBalances, "s", 6]
+        // Anchors tree: [AddressBalances, "s", 192]
         // NormalTree - stores anchor_bytes -> block_height_be
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path(shielded_credit_pool_anchors_path()),
@@ -138,7 +144,7 @@ impl Drive {
             },
         );
 
-        // Anchors-by-height tree: [AddressBalances, "s", 8]
+        // Anchors-by-height tree: [AddressBalances, "s", 96]
         // NormalTree - stores block_height_be -> anchor_bytes (reverse index for pruning)
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path(shielded_credit_pool_anchors_by_height_path()),
