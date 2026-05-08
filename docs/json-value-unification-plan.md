@@ -1,9 +1,9 @@
 # JSON / Value Conversion Unification Plan
 
-**Status**: passes 1 + 2 + tag-shape convention sweep **complete** as of commit `91b16e40df` (May 2026).
+**Status**: passes 1 + 2 + tag-shape convention sweep + Phase D (steps 1–9) **complete** as of commit `8e94f38e68` (May 2026).
 **Scope**: `packages/rs-dpp/` (canonical surface) + `packages/wasm-dpp2/` (downstream consumers).
 
-## Progress (2026-05-06)
+## Progress (2026-05-09)
 
 | Pass | Goal | Status |
 |---|---|---|
@@ -12,9 +12,9 @@
 | 2.5 | Wire-shape test convention (`json!`/`platform_value!` literals) across all round-trip tests | ✅ done — ~85 tests upgraded |
 | 2.6 | Apply `tag = "$formatVersion"` / `tag = "type"` convention to top-level versioned and discriminated enums | ✅ done locally; gated on 2 open dashcore PRs |
 | 2.7 | Tag-shape convention sweep — flatten every `tag = "type", content = "data"` adjacent enum to internal tagging; apply `$`-prefix discriminator rule | ✅ done — 7/7 enums migrated, zero adjacent-tagged enums remain |
-| 2.8 | Broader `#[json_safe_fields]` rollout — apply to V0 transition leaves and base structs | ✅ done — 11 V0 structs + base transitions + DocumentBaseTransition wrapper |
-| 3 | Deprecate non-canonical mechanisms (§3.11 of this doc) | ⬜ not started |
-| 4 | wasm-dpp2 migration `_serde!` → `_inner!` | ⬜ not started |
+| 2.8 | Broader `#[json_safe_fields]` rollout — apply to V0 transition leaves and base structs | ✅ done — 11 V0 structs + base transitions + DocumentBaseTransition wrapper. Step 9 added 5 more (address transitions); BatchTransition family deferred. |
+| 3 | Deprecate non-canonical mechanisms (§3.11 of this doc) | 🟡 in progress — Phase D steps 1–9 done; steps 10–11 remain |
+| 4 | wasm-dpp2 migration `_serde!` → `_inner!` | ⬜ not started — re-survey needed (step 9 audit found no actual blockers there) |
 | 5 | Delete `wasm-dpp` legacy crate | ⬜ blocked on team decision |
 
 ### Final test count (May 2026)
@@ -214,11 +214,13 @@ These are the bug / risk findings that must be addressed before or during the mi
 
 **Plan impact**: keep `DataContract` and its V0/V1 inner types in the **KEEP-AS-EXCEPTION** bucket. Document the version-dispatch pattern so it's not silently broken by future migration.
 
-#### Critical-5: `to_canonical_object` sorts keys (signature-load-bearing)
+#### Critical-5: `to_canonical_object` sorts keys (signature-load-bearing)  ✅ FALSIFIED
 
-`state_transition/traits/state_transition_value_convert.rs:25,33,39`: canonical-form methods sort map keys alphabetically. `serde_json::to_value` and `platform_value::to_value` preserve declaration order. This divergence is **load-bearing for signing** — sig hashes depend on key order.
+**Was**: `state_transition/traits/state_transition_value_convert.rs:25,33,39`: canonical-form methods sort map keys alphabetically, assumed to be load-bearing for signing because the JSON canonical-object would feed into the signing pre-image.
 
-**Plan impact**: canonical-form methods stay (`KEEP-AS-EXCEPTION`). Migration must not collapse them into the default trait surface.
+**Audit (May 2026, Phase D step 9)**: signing uses **bincode** via the `PlatformSignable` derive (`signable_bytes()`), not the JSON canonical-object methods. The `to_canonical_object` / `to_canonical_cleaned_object` methods had **zero production callers** — only their own tautological tests. The whole sorted-keys-for-signing apparatus was vestigial JS-DPP-era scaffolding that never became the Rust signing pre-image.
+
+**Outcome**: deleted both `StateTransitionValueConvert` and `StateTransitionJsonConvert` traits entirely (commit `8e94f38e68`). No `KEEP-AS-EXCEPTION` needed. See §3.11 step 9.
 
 ---
 
@@ -228,8 +230,8 @@ Merged from both passes (broad agent labels A1-A17 + deep agent labels A1-A16 re
 
 | Trait | Location | Used by | Differs from canonical | Decision |
 |---|---|---|---|---|
-| `StateTransitionValueConvert<'a>` | `state_transition/traits/state_transition_value_convert.rs:9` | 28 outer enums + ~37 V0/V1 inner structs (~70 files) | `skip_signature` paths, `clean_recursive`, `to_canonical_object` (sorts keys), `from_value_map`, injects `$version` for outer | **MERGE** — keep `to_canonical_*` and `skip_signature` on a `SignableValueConvertible: ValueConvertible` extension. V0/V1 inner structs migrate to plain canonical. |
-| `StateTransitionJsonConvert<'a>` | `state_transition/traits/state_transition_json_convert.rs:14` | Same 28 enums | Thin shim atop value-convert; `to_object` then `try_into JsonValue` (or `try_into_validating_json`) | **MERGE** with above; becomes a 5-line helper on the extension trait. |
+| ~~`StateTransitionValueConvert<'a>`~~ | ~~`state_transition/traits/state_transition_value_convert.rs:9`~~ | (deleted) | (vestigial — `to_canonical_*` had zero production callers; signing uses bincode) | ✅ **DELETED** in commit `8e94f38e68` — Phase D step 9. |
+| ~~`StateTransitionJsonConvert<'a>`~~ | ~~`state_transition/traits/state_transition_json_convert.rs:14`~~ | (deleted) | Thin shim atop value-convert | ✅ **DELETED** alongside A1 — Phase D step 9. |
 | `DataContractJsonConversionMethodsV0` | `data_contract/conversion/json/v0/mod.rs:5` (impl `…/json/mod.rs:10`, V0 `data_contract/v0/conversion/json.rs:11`, V1 `…/v1/conversion/json.rs:12`) | `DataContract`, V0, V1 | Routes via `DataContractInSerializationFormat`; adds `to_validating_json`, `full_validation` flag | **KEEP-AS-EXCEPTION** — version-dispatch + format-routing. Optional: rename methods to `to_json_versioned` to avoid shadowing canonical. |
 | `DataContractValueConversionMethodsV0` | `data_contract/conversion/value/v0/mod.rs:5` | Same | Same as above for `Value`; identifier-path replacement on input | **KEEP-AS-EXCEPTION** — same rationale. |
 | `DataContractCborConversionMethodsV0` | `data_contract/conversion/cbor/v0/mod.rs:6` | Same | CBOR-only (out of J/V scope) | **KEEP** — out of scope. |
@@ -305,9 +307,9 @@ Merged from both passes (broad agent labels A1-A17 + deep agent labels A1-A16 re
 - `document/serialization_traits/{json_conversion,platform_value_conversion,cbor_conversion,platform_serialization_conversion}/[v0/]mod.rs` — A10-A14 declarations + outer impls.
 - `document/v0/{json_conversion,platform_value_conversion,cbor_conversion}.rs` — V0 impls.
 - `document/extended_document/{mod.rs,serde_serialize.rs,v0/{json_conversion,platform_value_conversion}.rs}` — extended-document specific.
-- `state_transition/abstract_state_transition.rs` — `state_transition_helpers` free functions.
-- `state_transition/traits/state_transition_{value,json}_convert.rs` — A1, A2.
-- `state_transition/state_transitions/**/{json_conversion,value_conversion}.rs` — per-transition impls (~70 files).
+- ~~`state_transition/abstract_state_transition.rs`~~ — `state_transition_helpers` free functions. ✅ Deleted in step 9 (commit `8e94f38e68`).
+- ~~`state_transition/traits/state_transition_{value,json}_convert.rs`~~ — A1, A2. ✅ Deleted in step 9.
+- ~~`state_transition/state_transitions/**/{json_conversion,value_conversion}.rs`~~ — per-transition impls (~70 files). ✅ Deleted in step 9.
 - `identity/state_transition/asset_lock_proof/{mod.rs,instant/instant_asset_lock_proof.rs,chain/chain_asset_lock_proof.rs}` — manual serde + inherent.
 
 ### 3.6 Subtle / hidden mechanisms (the deep agent's catch)
@@ -395,7 +397,9 @@ What's blocked from deletion by which downstream crate.
 
 #### Affected-type total
 
-~50 outer types + ~40 V0/V1 inner ≈ **90 affected types** on non-canonical paths today. Sits alongside the 58 on canonical (per inventory §1) — so **~60% of conversion-affected types are non-canonical**.
+**Pre-Phase D (initial scan)**: ~50 outer types + ~40 V0/V1 inner ≈ **90 affected types** on non-canonical paths. Sat alongside the 58 on canonical (per inventory §1) — ~60% non-canonical.
+
+**Post-Phase D steps 1–9 (May 2026)**: most of the non-canonical surface is gone. Identity family (4 traits) deleted, Document family (2 traits) reduced to 1 helper each, AssetLockProof / ExtendedDocument migrated to canonical, state-transition family (2 traits + 68 impl files) deleted entirely. Remaining non-canonical: DataContract family (KEEP-AS-EXCEPTION by design) + a handful of asymmetric helpers (`AddressWitness`, `ContestedIndexFieldMatch` — step 11) + the legacy wasm-dpp crate's call sites (minimum-touch policy, scheduled for removal). Estimated **~10–15 affected types** still on non-canonical paths.
 
 ### 3.11 Proposed deprecation order
 
@@ -541,8 +545,12 @@ Ordered to fix bugs first, then easy wins, then long-pole work. Each step gates 
 
    **Net for step 6**: ~−132 lines of asymmetric / dead code.
 
-7. **ExtendedDocument refactor (C1)**:
-   - After G1 fix: switch to `#[serde(tag = "$version")]` enum derive, implement `JsonConvertible`. Trim the 10+ inherent passthrough methods. **Unblocks** wasm-dpp2 `ExtendedDocument` wrapper.
+7. **ExtendedDocument refactor (C1)** ✅ DONE in commit `95554c8a7d`.
+   - Deleted broken manual `serde_serialize.rs` (had `version` ↔ `$version` mismatch + missing `data_contract` field).
+   - Outer enum uses `#[serde(tag = "$extendedFormatVersion")]` — distinct from inner Document's `$formatVersion`. Wire shape carries both keys (envelope and inner version dimensions).
+   - `JsonConvertible` + `ValueConvertible` derived. Round-trip tests in `extended_document/mod.rs::json_convertible_tests` (json + value, both passing).
+   - Companion `Bytes32::deserialize` dual-visitor fix for `$entropy` round-trip through `ContentDeserializer`.
+   - **Critical-3 resolved**.
 
 8. **Document-family canonical migration** (A10, A11) ✅ DONE — Slice A
    in commit `678121acea`, Slice B in the follow-up commit on this
@@ -811,9 +819,11 @@ The five Critical findings in §3.0 are real but most surface naturally during P
 - ⬜ Document any per-type test divergences in this plan
 
 ### Phase D — Deprecate non-canonical mechanisms
-- ⬜ For each "DELETE" mechanism: replace callers, then remove
-- ⬜ For each "MERGE" mechanism: fold behaviour into canonical trait
-- ⬜ For each "KEEP-AS-EXCEPTION" mechanism: document why
+Status by step (see §3.11 below for full step list):
+- ✅ **Steps 1–9** complete — pure-delegation deletions, `to_cleaned_object` skip, `disabled_at` skip-serializing, Identity-family canonical, AssetLockProof, ExtendedDocument refactor (C1), Document family A10/A11, state-transition trait deletion.
+- ⬜ **Step 10** — DataContract family (KEEP-AS-EXCEPTION, optional rename pass).
+- ⬜ **Step 11** — `AddressWitness` / `ContestedIndexFieldMatch` manual-impl refactor.
+- ⬜ **Follow-up** — `BatchTransitionV0`/`V1` `#[json_safe_fields]` deferred at step 9 (needs `DocumentTransition` / `BatchedTransition` sub-tree to implement `JsonSafeFields` first).
 
 ### Phase E — WASM cleanup (wasm-dpp2 only — wasm-dpp legacy is left alone)
 - ✅ **Phase 1** — migrated 15 `_serde!` callers wrapping rs-dpp domain types

@@ -5,8 +5,6 @@ use state_transitions::document::batch_transition::batched_transition::document_
 use std::collections::BTreeMap;
 use std::ops::RangeInclusive;
 
-pub use abstract_state_transition::state_transition_helpers;
-
 use platform_value::{BinaryData, Identifier};
 pub use state_transition_types::*;
 
@@ -21,7 +19,6 @@ use dashcore::signer::double_sha;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_version::version::{PlatformVersion, ProtocolVersion, ALL_VERSIONS, LATEST_VERSION};
 
-mod abstract_state_transition;
 #[cfg(any(
     feature = "state-transition-signing",
     feature = "state-transition-validation"
