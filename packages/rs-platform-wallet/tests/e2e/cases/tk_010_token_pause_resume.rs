@@ -28,6 +28,7 @@ use crate::framework::tokens::{
     mint_to, setup_with_token_and_two_identities, token_balance_of, token_is_paused_of,
     DEFAULT_TK_FUNDING, DEFAULT_TOKEN_POSITION,
 };
+use crate::framework::wait::wait_for_token_predicate;
 
 const MINT_AMOUNT: u64 = 1_000;
 /// Initial peer seed (owner mints this amount to peer pre-pause) so
@@ -116,11 +117,26 @@ async fn tk_010_token_pause_blocks_transfers_then_resume_restores() {
         .await
         .expect("pause emergency action");
 
-    // Wave G's `token_is_paused_of` must flip to true.
-    let paused_after = token_is_paused_of(ctx, contract_id, position)
-        .await
-        .expect("paused flag post-pause");
-    assert!(paused_after, "token must report paused after pause action");
+    // QA-V28-404 — the pause state-transition lands on whichever DAPI
+    // node served the broadcast; the next read may round-robin onto a
+    // sibling that hasn't applied it yet (surrounding log:
+    // `received height is outdated ... tolerance 1`). Poll
+    // `token_is_paused_of == true` with a 3-success streak so we don't
+    // assert against a still-lagging replica.
+    wait_for_token_predicate(
+        "token_is_paused_of == true (post-pause)",
+        || async {
+            match token_is_paused_of(ctx, contract_id, position).await {
+                Ok(true) => Ok(Some(true)),
+                Ok(false) => Ok(None),
+                Err(err) => Err(err),
+            }
+        },
+        3,
+        STEP_TIMEOUT,
+    )
+    .await
+    .expect("token must report paused after pause action");
 
     // Step 3: owner transfer must be rejected with a "token is paused"
     // typed error. We match on the consensus-error error display string;
@@ -155,13 +171,23 @@ async fn tk_010_token_pause_blocks_transfers_then_resume_restores() {
         .await
         .expect("resume emergency action");
 
-    let paused_resumed = token_is_paused_of(ctx, contract_id, position)
-        .await
-        .expect("paused flag post-resume");
-    assert!(
-        !paused_resumed,
-        "token must report not-paused after resume action"
-    );
+    // Same propagation gate as the pause assertion above — wait for a
+    // 3-success streak of `paused == false` so a lagging replica can't
+    // sink the test.
+    wait_for_token_predicate(
+        "token_is_paused_of == false (post-resume)",
+        || async {
+            match token_is_paused_of(ctx, contract_id, position).await {
+                Ok(false) => Ok(Some(())),
+                Ok(true) => Ok(None),
+                Err(err) => Err(err),
+            }
+        },
+        3,
+        STEP_TIMEOUT,
+    )
+    .await
+    .expect("token must report not-paused after resume action");
 
     // Step 5: owner retries the transfer; succeeds.
     let retry_builder = TokenTransferTransitionBuilder::new(
@@ -200,8 +226,6 @@ async fn tk_010_token_pause_blocks_transfers_then_resume_restores() {
     // TODO(spec-drift): once SDK's EmergencyActionResult exposes
     // actual_fee, assert pause_fee > 0 and resume_fee > 0 per
     // TEST_SPEC.md TK-010.
-
-    let _ = STEP_TIMEOUT; // currently unused — kept for future wait_for_token_balance hooks.
 
     s.setup.setup_guard.teardown().await.expect("teardown");
 }

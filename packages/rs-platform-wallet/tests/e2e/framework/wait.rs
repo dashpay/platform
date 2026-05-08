@@ -1150,3 +1150,101 @@ pub async fn wait_for_data_contract_visible(
         tokio::time::sleep(std::cmp::min(remaining, next_sleep)).await;
     }
 }
+
+/// Poll an async `fetch` closure until it returns
+/// `Ok(Some(value))` on `consecutive_successes` back-to-back observations
+/// separated by [`CHAIN_CONFIRMED_SUCCESS_GAP`], biasing the gate toward
+/// sampling distinct DAPI replicas.
+///
+/// **Why this exists (Marvin QA-V28-404 — TK-010 / TK-011):** a token
+/// state-transition (pause, mint, set-price) broadcasts and lands on
+/// whichever DAPI node served it; the very next read can round-robin onto
+/// a sibling that hasn't applied the transition yet — surrounding logs
+/// show `received height is outdated: expected ..., received ..., tolerance 1`.
+/// The standard fix elsewhere in the harness (`wait_for_data_contract_visible`,
+/// `wait_for_identity_visible_to_platform`) gates on a streak of successful
+/// fetches; this helper does the same for arbitrary token-shape predicates
+/// (`token_is_paused_of`, `token_balance_of`, `token_pricing_of`).
+///
+/// `fetch` is `FnMut() -> Future<FrameworkResult<Option<T>>>`. Return
+/// `Ok(Some(value))` to record a streak hit; `Ok(None)` and `Err(_)` both
+/// reset the streak (the error is logged at `debug` so transient DAPI
+/// failures don't spam). Setting `consecutive_successes = 0` is treated
+/// as `1`. Returns the most recent satisfying value on success;
+/// [`FrameworkError::Cleanup`] on timeout, with `description` echoed in
+/// the error message so operators can correlate with the broadcast log.
+pub async fn wait_for_token_predicate<F, Fut, T>(
+    description: &str,
+    mut fetch: F,
+    consecutive_successes: u32,
+    timeout: Duration,
+) -> FrameworkResult<T>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = FrameworkResult<Option<T>>>,
+{
+    let required = consecutive_successes.max(1);
+    let start = Instant::now();
+    let deadline = start + timeout;
+    let mut streak: u32 = 0;
+
+    loop {
+        let mut hit = false;
+        match fetch().await {
+            Ok(Some(value)) => {
+                streak = streak.saturating_add(1);
+                hit = true;
+                tracing::debug!(
+                    target: "platform_wallet::e2e::wait",
+                    description,
+                    streak,
+                    required,
+                    "token predicate satisfied"
+                );
+                if streak >= required {
+                    tracing::info!(
+                        target: "platform_wallet::e2e::wait",
+                        description,
+                        streak,
+                        required,
+                        elapsed = ?start.elapsed(),
+                        "token propagation gate cleared"
+                    );
+                    return Ok(value);
+                }
+            }
+            Ok(None) => {
+                streak = 0;
+                tracing::debug!(
+                    target: "platform_wallet::e2e::wait",
+                    description,
+                    "token predicate not yet satisfied; resetting streak"
+                );
+            }
+            Err(err) => {
+                streak = 0;
+                tracing::debug!(
+                    target: "platform_wallet::e2e::wait",
+                    description,
+                    error = %err,
+                    "fetch failed during wait_for_token_predicate; resetting streak"
+                );
+            }
+        }
+
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(FrameworkError::Cleanup(format!(
+                "wait_for_token_predicate({description}) timed out after {timeout:?} \
+                 (required={required} streak_at_timeout={streak})"
+            )));
+        }
+
+        let next_sleep = if hit && streak < required {
+            CHAIN_CONFIRMED_SUCCESS_GAP
+        } else {
+            BACKSTOP_WAKE_INTERVAL
+        };
+        tokio::time::sleep(std::cmp::min(remaining, next_sleep)).await;
+    }
+}
