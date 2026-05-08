@@ -358,15 +358,24 @@ impl<'a> DriveDocumentCountQuery<'a> {
                     ))
                 })?;
 
+                // `In` is set-membership: serialize each value to the canonical
+                // index key and dedupe before forking. Without this, a query
+                // like `age in [30, 30]` would visit and sum the same subtree
+                // twice (Codex review finding #3).
+                let mut seen_keys: BTreeSet<Vec<u8>> = BTreeSet::new();
                 let mut total: u64 = 0;
                 for v in values {
-                    let mut new_path = current_path.clone();
-                    new_path.push(prop.name.as_bytes().to_vec());
-                    new_path.push(self.document_type.serialize_value_for_key(
+                    let serialized = self.document_type.serialize_value_for_key(
                         prop.name.as_str(),
                         v,
                         platform_version,
-                    )?);
+                    )?;
+                    if !seen_keys.insert(serialized.clone()) {
+                        continue;
+                    }
+                    let mut new_path = current_path.clone();
+                    new_path.push(prop.name.as_bytes().to_vec());
+                    new_path.push(serialized);
                     total = total.saturating_add(self.expand_paths_and_count(
                         drive,
                         new_path,
@@ -508,14 +517,24 @@ impl<'a> DriveDocumentCountQuery<'a> {
                     ))
                 })?;
 
+                // Same dedup as in `expand_paths_and_count`: serialize each
+                // value to the canonical index key and skip duplicates.
+                // Without this, a duplicated `In` value on the prefix would
+                // visit the same prefix subtree twice and double its
+                // contribution to the merged split counts.
+                let mut seen_keys: BTreeSet<Vec<u8>> = BTreeSet::new();
                 for v in values {
-                    let mut new_path = current_path.clone();
-                    new_path.push(prop.name.as_bytes().to_vec());
-                    new_path.push(self.document_type.serialize_value_for_key(
+                    let serialized = self.document_type.serialize_value_for_key(
                         prop.name.as_str(),
                         v,
                         platform_version,
-                    )?);
+                    )?;
+                    if !seen_keys.insert(serialized.clone()) {
+                        continue;
+                    }
+                    let mut new_path = current_path.clone();
+                    new_path.push(prop.name.as_bytes().to_vec());
+                    new_path.push(serialized);
                     self.expand_split_prefix_paths(
                         drive,
                         new_path,
@@ -1296,5 +1315,120 @@ mod tests {
         for entry in &results {
             assert!(entry.count > 0, "filtered split entries should be > 0");
         }
+    }
+
+    /// Codex review finding #3: an `In` clause with duplicate values used to
+    /// double-count by recursing once per array element. The fix dedupes
+    /// branches by serialized key before summing.
+    #[test]
+    fn test_count_query_in_operator_dedupes_duplicate_values() {
+        let (drive, data_contract) = setup_drive_and_contract();
+        let platform_version = PlatformVersion::latest();
+
+        insert_person_doc(&drive, &data_contract, [1u8; 32], "Alice", "M", "Smith", 30);
+        insert_person_doc(&drive, &data_contract, [2u8; 32], "Bob", "M", "Smith", 30);
+        insert_person_doc(&drive, &data_contract, [3u8; 32], "Carol", "M", "Smith", 40);
+
+        let document_type = data_contract
+            .document_type_for_name("person")
+            .expect("expected document type");
+
+        // age IN [30, 30, 30] — set semantics: should count age=30 once = 2 docs.
+        let in_clause = WhereClause {
+            field: "age".to_string(),
+            operator: WhereOperator::In,
+            value: Value::Array(vec![Value::U64(30), Value::U64(30), Value::U64(30)]),
+        };
+
+        let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+            document_type.indexes(),
+            std::slice::from_ref(&in_clause),
+        )
+        .expect("expected to find countable index for In on age");
+
+        let query = DriveDocumentCountQuery {
+            document_type,
+            contract_id: data_contract.id().to_buffer(),
+            document_type_name: "person".to_string(),
+            index,
+            where_clauses: vec![in_clause],
+            split_by_property: None,
+        };
+
+        let results = query
+            .execute_no_proof(&drive, None, platform_version)
+            .expect("expected query to succeed");
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(
+            results[0].count, 2,
+            "expected count of 2 (age=30, set semantics — duplicates collapsed)"
+        );
+    }
+
+    /// Codex review finding #4: a `unique: true, countable: true` index used to
+    /// allegedly return 0 because `fetch_count_at_path` would read a Reference
+    /// instead of a CountTree element. We assert the correct count semantics
+    /// (1 per matching unique tuple, summed under partial prefixes) so a
+    /// regression here surfaces immediately.
+    #[test]
+    fn test_count_query_unique_countable_index_returns_correct_count() {
+        let (drive, data_contract) = setup_drive_and_contract();
+        let platform_version = PlatformVersion::latest();
+
+        // 3 distinct (firstName, middleName, lastName) tuples — the unique
+        // countable index `(firstName, middleName, lastName)` stores a
+        // Reference at key [0] under the final value level.
+        insert_person_doc(&drive, &data_contract, [1u8; 32], "Alice", "M", "Smith", 30);
+        insert_person_doc(&drive, &data_contract, [2u8; 32], "Alice", "N", "Smith", 31);
+        insert_person_doc(&drive, &data_contract, [3u8; 32], "Bob", "O", "Jones", 32);
+
+        let document_type = data_contract
+            .document_type_for_name("person")
+            .expect("expected document type");
+
+        // Pick the unique countable 3-property index by matching its full prefix.
+        let where_clauses = vec![
+            WhereClause {
+                field: "firstName".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("Alice".to_string()),
+            },
+            WhereClause {
+                field: "middleName".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("M".to_string()),
+            },
+            WhereClause {
+                field: "lastName".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("Smith".to_string()),
+            },
+        ];
+
+        let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+            document_type.indexes(),
+            &where_clauses,
+        )
+        .expect("expected to find a countable index covering all 3 properties");
+
+        let query = DriveDocumentCountQuery {
+            document_type,
+            contract_id: data_contract.id().to_buffer(),
+            document_type_name: "person".to_string(),
+            index,
+            where_clauses,
+            split_by_property: None,
+        };
+
+        let results = query
+            .execute_no_proof(&drive, None, platform_version)
+            .expect("expected query to succeed");
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(
+            results[0].count, 1,
+            "exact match on a unique countable index should be 1, not 0"
+        );
     }
 }

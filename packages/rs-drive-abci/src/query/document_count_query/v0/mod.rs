@@ -117,7 +117,15 @@ impl<C> Platform<C> {
                     &self.config.drive,
                 ));
 
-            drive_query.limit = None;
+            // Cap the proof at u16::MAX matching documents. The proof
+            // verifier returns the count by deserializing every document in
+            // the proof, so an unbounded query would force the server to
+            // materialize and the client to verify an arbitrarily large set
+            // of documents purely to learn their count. Until count-tree
+            // proofs are implemented, callers that need exact counts on
+            // larger result sets should use `prove=false` with a covering
+            // countable index.
+            drive_query.limit = Some(u16::MAX);
 
             let proof =
                 match drive_query.execute_with_proof(&self.drive, None, None, platform_version) {

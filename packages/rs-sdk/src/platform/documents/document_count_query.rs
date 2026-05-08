@@ -81,7 +81,18 @@ impl<'a> TryFrom<&'a DocumentCountQuery> for DriveDocumentQuery<'a> {
     type Error = Error;
 
     fn try_from(query: &'a DocumentCountQuery) -> Result<Self, Self::Error> {
-        (&query.document_query).try_into()
+        // Force the underlying DriveDocumentQuery to be unbounded.
+        //
+        // The proof verifier counts documents from the verified proof, so
+        // any limit set on the wrapped DocumentQuery would silently cap the
+        // returned count. The server-side count handler also runs with no
+        // limit, so the client must match. Without this, callers (e.g. the
+        // WASM SDK, which defaults DocumentQuery.limit to 100) would see
+        // a count truncated at their pagination limit instead of the actual
+        // total.
+        let mut drive_query: DriveDocumentQuery = (&query.document_query).try_into()?;
+        drive_query.limit = None;
+        Ok(drive_query)
     }
 }
 

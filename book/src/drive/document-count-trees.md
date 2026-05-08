@@ -143,6 +143,8 @@ When `prove=true`, drive-abci returns a standard `DriveDocumentQuery` proof of t
 - For total counts the aggregation is `documents.len() as u64` ([`packages/rs-drive-proof-verifier/src/proof/document_count.rs`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive-proof-verifier/src/proof/document_count.rs)).
 - For split counts the aggregation walks each verified document, reads `properties.get(split_property)`, encodes the value via `document_type.serialize_value_for_key(split_property, value, platform_version)` so the byte keys line up with what the no-prove path produces, and increments the per-key counter ([`packages/rs-drive-proof-verifier/src/proof/document_split_count.rs`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive-proof-verifier/src/proof/document_split_count.rs)).
 
+Because the prove path materializes documents, drive-abci caps it at `u16::MAX` matching documents per request as a defensive bound on response size; result sets larger than that need a covering countable index and `prove=false`. The SDK side (`DocumentCountQuery`/`DocumentSplitCountQuery` → `DriveDocumentQuery`) explicitly clears the underlying `DocumentQuery.limit` so the verifier counts every document in the proof rather than truncating at the caller's pagination limit.
+
 Aggregation needs the split-property name, but `DriveDocumentQuery` does not carry it. The proof verifier exposes a dedicated entry point that takes it explicitly:
 
 ```rust

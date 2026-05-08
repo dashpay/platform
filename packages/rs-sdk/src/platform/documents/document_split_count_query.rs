@@ -67,7 +67,12 @@ impl<'a> TryFrom<&'a DocumentSplitCountQuery> for DriveDocumentQuery<'a> {
     type Error = Error;
 
     fn try_from(query: &'a DocumentSplitCountQuery) -> Result<Self, Self::Error> {
-        (&query.document_query).try_into()
+        // Force the underlying DriveDocumentQuery to be unbounded so the
+        // proof-verifier aggregation sees every matching document. See the
+        // matching note on `DocumentCountQuery`'s impl for the rationale.
+        let mut drive_query: DriveDocumentQuery = (&query.document_query).try_into()?;
+        drive_query.limit = None;
+        Ok(drive_query)
     }
 }
 

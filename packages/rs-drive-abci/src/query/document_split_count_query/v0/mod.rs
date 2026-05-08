@@ -139,7 +139,9 @@ impl<C> Platform<C> {
                     &self.config.drive,
                 ));
 
-            drive_query.limit = None;
+            // Same defensive cap as on the total-count handler; see the
+            // matching note there.
+            drive_query.limit = Some(u16::MAX);
 
             let proof =
                 match drive_query.execute_with_proof(&self.drive, None, None, platform_version) {
