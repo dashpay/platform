@@ -1,5 +1,5 @@
 #[cfg(feature = "serde-conversion")]
-use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, PartialEq, PartialOrd, Clone, Eq)]
 #[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
@@ -21,11 +21,7 @@ use crate::data_contract::errors::DataContractError::RegexError;
 use platform_value::{Value, ValueMap};
 use rand::distributions::{Alphanumeric, DistString};
 use regex::Regex;
-#[cfg(feature = "serde-conversion")]
-use serde::de::{VariantAccess, Visitor};
 use std::cmp::Ordering;
-#[cfg(feature = "serde-conversion")]
-use std::fmt;
 use std::sync::OnceLock;
 use std::{collections::BTreeMap, convert::TryFrom};
 
@@ -54,15 +50,39 @@ impl TryFrom<u8> for ContestedIndexResolution {
 
 #[repr(u8)]
 #[derive(Debug)]
+#[cfg_attr(
+    feature = "serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "snake_case")
+)]
 pub enum ContestedIndexFieldMatch {
     Regex(LazyRegex),
     PositiveIntegerMatch(u128),
 }
 
 #[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(from = "String", into = "String")
+)]
 pub struct LazyRegex {
     regex: OnceLock<Regex>,
     regex_str: String,
+}
+
+#[cfg(feature = "serde-conversion")]
+impl From<String> for LazyRegex {
+    fn from(regex_str: String) -> Self {
+        LazyRegex::new(regex_str)
+    }
+}
+
+#[cfg(feature = "serde-conversion")]
+impl From<LazyRegex> for String {
+    fn from(value: LazyRegex) -> Self {
+        value.regex_str
+    }
 }
 
 impl LazyRegex {
@@ -86,101 +106,13 @@ impl LazyRegex {
     }
 }
 
-#[cfg(feature = "serde-conversion")]
-impl Serialize for ContestedIndexFieldMatch {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match *self {
-            ContestedIndexFieldMatch::Regex(ref regex) => serializer.serialize_newtype_variant(
-                "ContestedIndexFieldMatch",
-                0,
-                "Regex",
-                regex.as_str(),
-            ),
-            ContestedIndexFieldMatch::PositiveIntegerMatch(ref num) => serializer
-                .serialize_newtype_variant(
-                    "ContestedIndexFieldMatch",
-                    1,
-                    "PositiveIntegerMatch",
-                    num,
-                ),
-        }
-    }
-}
-
-#[cfg(feature = "serde-conversion")]
-impl<'de> Deserialize<'de> for ContestedIndexFieldMatch {
-    fn deserialize<D>(deserializer: D) -> Result<ContestedIndexFieldMatch, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        #[serde(field_identifier, rename_all = "snake_case")]
-        enum Field {
-            Regex,
-            PositiveIntegerMatch,
-        }
-
-        struct FieldVisitor;
-
-        impl Visitor<'_> for FieldVisitor {
-            type Value = Field;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("`regex` or `positive_integer_match`")
-            }
-
-            fn visit_str<E>(self, value: &str) -> Result<Field, E>
-            where
-                E: de::Error,
-            {
-                match value {
-                    "regex" => Ok(Field::Regex),
-                    "positive_integer_match" => Ok(Field::PositiveIntegerMatch),
-                    _ => Err(de::Error::unknown_variant(
-                        value,
-                        &["regex", "positive_integer_match"],
-                    )),
-                }
-            }
-        }
-
-        struct ContestedIndexFieldMatchVisitor;
-
-        impl<'de> Visitor<'de> for ContestedIndexFieldMatchVisitor {
-            type Value = ContestedIndexFieldMatch;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("enum ContestedIndexFieldMatch")
-            }
-
-            fn visit_enum<V>(self, visitor: V) -> Result<ContestedIndexFieldMatch, V::Error>
-            where
-                V: de::EnumAccess<'de>,
-            {
-                match visitor.variant()? {
-                    (Field::Regex, v) => {
-                        let regex_str: String = v.newtype_variant()?;
-
-                        Ok(ContestedIndexFieldMatch::Regex(LazyRegex::new(regex_str)))
-                    }
-                    (Field::PositiveIntegerMatch, v) => {
-                        let num: u128 = v.newtype_variant()?;
-                        Ok(ContestedIndexFieldMatch::PositiveIntegerMatch(num))
-                    }
-                }
-            }
-        }
-
-        deserializer.deserialize_enum(
-            "ContestedIndexFieldMatch",
-            &["regex", "positive_integer_match"],
-            ContestedIndexFieldMatchVisitor,
-        )
-    }
-}
+// Manual Serialize/Deserialize impls deleted in Phase D step 11.
+// The previous custom Serialize emitted PascalCase variant tags
+// (`{"Regex": ...}`) while the custom Deserialize expected snake_case
+// (`{"regex": ...}`) — non-round-trippable. The replacement uses serde
+// `rename_all = "snake_case"` for consistent snake_case in both
+// directions. `LazyRegex` round-trips as a plain string via
+// `serde(from = "String", into = "String")` above.
 
 #[allow(clippy::non_canonical_partial_ord_impl)]
 impl PartialOrd for ContestedIndexFieldMatch {
@@ -1550,5 +1482,62 @@ mod json_convertible_tests {
         let json = original.to_json().expect("to_json");
         let recovered = ContestedIndexResolution::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
+    }
+
+    // --- ContestedIndexFieldMatch (Phase D step 11) ---
+    // Wire shape: externally-tagged enum with snake_case variant tags.
+    //   `{"regex": "<pattern>"}` -> Regex(LazyRegex)
+    //   `{"positive_integer_match": <u128>}` -> PositiveIntegerMatch
+    // LazyRegex serializes as the bare regex string via
+    // `serde(from = "String", into = "String")`.
+
+    #[test]
+    fn json_round_trip_contested_index_field_match_regex() {
+        use crate::serialization::JsonConvertible;
+        let original = ContestedIndexFieldMatch::Regex(LazyRegex::new("^dash$".to_string()));
+        let json = original.to_json().expect("to_json");
+        assert_eq!(json, serde_json::json!({ "regex": "^dash$" }));
+        let recovered = ContestedIndexFieldMatch::from_json(json).expect("from_json");
+        match recovered {
+            ContestedIndexFieldMatch::Regex(r) => assert_eq!(r.as_str(), "^dash$"),
+            other => panic!("expected Regex, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn json_round_trip_contested_index_field_match_positive_integer() {
+        use crate::serialization::JsonConvertible;
+        let original = ContestedIndexFieldMatch::PositiveIntegerMatch(42);
+        let json = original.to_json().expect("to_json");
+        assert_eq!(json, serde_json::json!({ "positive_integer_match": 42 }));
+        let recovered = ContestedIndexFieldMatch::from_json(json).expect("from_json");
+        match recovered {
+            ContestedIndexFieldMatch::PositiveIntegerMatch(n) => assert_eq!(n, 42),
+            other => panic!("expected PositiveIntegerMatch, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn value_round_trip_contested_index_field_match_regex() {
+        use crate::serialization::ValueConvertible;
+        let original = ContestedIndexFieldMatch::Regex(LazyRegex::new("[a-z]+".to_string()));
+        let value = original.to_object().expect("to_object");
+        let recovered = ContestedIndexFieldMatch::from_object(value).expect("from_object");
+        match recovered {
+            ContestedIndexFieldMatch::Regex(r) => assert_eq!(r.as_str(), "[a-z]+"),
+            other => panic!("expected Regex, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn value_round_trip_contested_index_field_match_positive_integer() {
+        use crate::serialization::ValueConvertible;
+        let original = ContestedIndexFieldMatch::PositiveIntegerMatch(u128::MAX);
+        let value = original.to_object().expect("to_object");
+        let recovered = ContestedIndexFieldMatch::from_object(value).expect("from_object");
+        match recovered {
+            ContestedIndexFieldMatch::PositiveIntegerMatch(n) => assert_eq!(n, u128::MAX),
+            other => panic!("expected PositiveIntegerMatch, got {:?}", other),
+        }
     }
 }

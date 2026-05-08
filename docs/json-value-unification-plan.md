@@ -704,8 +704,13 @@ Ordered to fix bugs first, then easy wins, then long-pole work. Each step gates 
 10. **DataContract family last** (A3, A4):
     - Likely **KEEP-AS-EXCEPTION**. Optional: rename methods to `to_json_versioned` / `from_json_versioned` so they don't visually conflict with canonical. Document the version-dispatch pattern.
 
-11. **AddressWitness, ContestedIndexFieldMatch refactor**:
-    - Try replacing manual impls with `serde` attributes; gate on byte-for-byte parity tests.
+11. **AddressWitness, ContestedIndexFieldMatch refactor** ✅ DONE (May 2026, this branch).
+
+    - **`AddressWitness`** (`address_funds/witness.rs`): replaced ~115 lines of manual Serialize/Deserialize with `#[serde(tag = "type")]` internal tagging. Variants get explicit `rename = "p2pkh"` / `rename = "p2sh"` (the camelCase rule is ambiguous for `P2pkh`/`P2sh`). The `redeem_script` field gets explicit `rename = "redeemScript"`. **Behavior change**: `MAX_P2SH_SIGNATURES` no longer enforced on the JSON/Value deserialize path — only the bincode `Decode` impl checks it (which is the load-bearing wire format). The existing 4 round-trip tests in `json_convertible_tests` (P2PKH/P2SH × JSON/Value) keep passing — wire-shape unchanged.
+
+    - **`ContestedIndexFieldMatch`** (`data_contract/document_type/index/mod.rs`): replaced ~95 lines of manual Serialize/Deserialize with `#[serde(rename_all = "snake_case")]` externally-tagged enum. `LazyRegex` gets `serde(from = "String", into = "String")` so it round-trips as a bare string. **Bug fix**: the previous custom Serialize emitted `{"Regex": ...}` while custom Deserialize expected `{"regex": ...}` — non-round-trippable. New impl is consistently snake_case in both directions. No production callers identified (data-contract loading uses an unrelated Value-walking `regexPattern` path). Added 4 round-trip + wire-shape parity tests.
+
+    Net: ~−210 lines, both types now go through pure serde derive.
 
 12. **wasm-dpp legacy crate** — **minimum-touch policy**:
     - Legacy, scheduled for removal but not now.
@@ -822,8 +827,10 @@ The five Critical findings in §3.0 are real but most surface naturally during P
 Status by step (see §3.11 below for full step list):
 - ✅ **Steps 1–9** complete — pure-delegation deletions, `to_cleaned_object` skip, `disabled_at` skip-serializing, Identity-family canonical, AssetLockProof, ExtendedDocument refactor (C1), Document family A10/A11, state-transition trait deletion.
 - ✅ **Step 9 follow-up** complete — BatchTransition family `#[json_safe_fields]` rolled out (May 2026): attribute applied to `BatchTransitionV0` / `BatchTransitionV1` + 8 sub-transition V0 inners (`DocumentDeleteTransitionV0`, `TokenFreeze` / `Unfreeze` / `DestroyFrozenFunds` / `Claim` / `EmergencyAction` / `ConfigUpdate` / `SetPriceForDirectPurchase`). Manual `JsonSafeFields` impls added in `safe_fields.rs` for the wrapper enums (`DocumentTransition`, `TokenTransition`, `BatchedTransition`) plus 4 sub-types (`TokenEmergencyAction`, `TokenDistributionType`, `TokenPricingSchedule`, `TokenConfigurationChangeItem` — last 2 use the documented escape-hatch pattern alongside `TokenEvent`).
+- ✅ **Step 11** — `AddressWitness` / `ContestedIndexFieldMatch` manual-impl refactor (May 2026). Both types replaced custom Serialize/Deserialize impls with serde derives. Round-trip + wire-shape parity tests added.
+  - `AddressWitness`: `#[serde(tag = "type")]` internal tagging with explicit `rename = "p2pkh"` / `rename = "p2sh"` on variants. Field rename `redeem_script` → `redeemScript`. **Behavior change**: `MAX_P2SH_SIGNATURES` no longer enforced on the JSON/Value deserialize path — only on bincode (the load-bearing wire format). Documented in the type's doc comment. Net: ~−115 lines.
+  - `ContestedIndexFieldMatch`: `#[serde(rename_all = "snake_case")]` externally-tagged enum. `LazyRegex` round-trips as a bare string via `serde(from = "String", into = "String")`. **Behavior change**: previous Serialize emitted `{"Regex": ...}` (PascalCase) while Deserialize expected `{"regex": ...}` (snake_case) — non-round-trippable. New impl is consistently snake_case in both directions. No production callers identified — production data-contract loading uses the unrelated Value-walking `regexPattern` path. Net: ~−95 lines.
 - ⬜ **Step 10** — DataContract family (KEEP-AS-EXCEPTION, optional rename pass).
-- ⬜ **Step 11** — `AddressWitness` / `ContestedIndexFieldMatch` manual-impl refactor.
 
 ### Phase E — WASM cleanup (wasm-dpp2 only — wasm-dpp legacy is left alone)
 - ✅ **Phase 1** — migrated 15 `_serde!` callers wrapping rs-dpp domain types
