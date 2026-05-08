@@ -536,6 +536,8 @@ export interface PrepareDocumentCreateOptions {
   identityKey: IdentityPublicKey;
   /** Signer containing the private key for the identity key. */
   signer: IdentitySigner;
+  /** Optional token payment agreement for document types with tokenCost.create. */
+  tokenPaymentInfo?: DocumentTokenPaymentInfo;
   /** Optional settings (retries, timeouts, userFeeIncrease). */
   settings?: PutSettings;
 }
@@ -613,6 +615,7 @@ impl WasmSdk {
         // Extract settings from options
         let settings =
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
+        let token_payment_info = try_from_options_optional_token_payment_info(&options)?;
 
         // Build and sign the state transition without broadcasting
         let state_transition = build_document_create_or_replace_transition(
@@ -620,6 +623,7 @@ impl WasmSdk {
             &document_type,
             Some(entropy_array),
             &identity_key,
+            token_payment_info,
             &signer,
             self.inner_sdk(),
             settings,
@@ -662,6 +666,8 @@ export interface PrepareDocumentReplaceOptions {
   identityKey: IdentityPublicKey;
   /** Signer containing the private key for the identity key. */
   signer: IdentitySigner;
+  /** Optional token payment agreement for document types with tokenCost.replace. */
+  tokenPaymentInfo?: DocumentTokenPaymentInfo;
   /** Optional settings (retries, timeouts, userFeeIncrease). */
   settings?: PutSettings;
 }
@@ -718,6 +724,7 @@ impl WasmSdk {
         // Extract settings from options
         let settings =
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
+        let token_payment_info = try_from_options_optional_token_payment_info(&options)?;
 
         // Build and sign the state transition without broadcasting
         let state_transition = build_document_create_or_replace_transition(
@@ -725,6 +732,7 @@ impl WasmSdk {
             &document_type,
             None, // entropy not needed for replace
             &identity_key,
+            token_payment_info,
             &signer,
             self.inner_sdk(),
             settings,
@@ -774,6 +782,8 @@ export interface PrepareDocumentDeleteOptions {
   identityKey: IdentityPublicKey;
   /** Signer containing the private key for the identity key. */
   signer: IdentitySigner;
+  /** Optional token payment agreement for document types with tokenCost.delete. */
+  tokenPaymentInfo?: DocumentTokenPaymentInfo;
   /** Optional settings (retries, timeouts, userFeeIncrease). */
   settings?: PutSettings;
 }
@@ -853,6 +863,7 @@ impl WasmSdk {
         // Extract settings from options
         let settings =
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
+        let token_payment_info = try_from_options_optional_token_payment_info(&options)?;
 
         // Build the delete transition using the builder's sign method (which does NOT broadcast)
         let builder = DocumentDeleteTransitionBuilder::new(
@@ -861,6 +872,12 @@ impl WasmSdk {
             document_id,
             owner_id,
         );
+
+        let builder = if let Some(token_payment_info) = token_payment_info {
+            builder.with_token_payment_info(token_payment_info)
+        } else {
+            builder
+        };
 
         let builder = if let Some(s) = settings {
             builder.with_settings(s)
@@ -1280,11 +1297,13 @@ impl WasmSdk {
 ///
 /// Any error after bumping the identity-contract nonce refreshes the nonce cache,
 /// mirroring rs-sdk's refresh-on-broadcast-failure idea for this prepare-path failure.
+#[allow(clippy::too_many_arguments)]
 async fn build_document_create_or_replace_transition(
     document: &Document,
     document_type: &DocumentType,
     document_state_transition_entropy: Option<[u8; 32]>,
     identity_public_key: &IdentityPublicKey,
+    token_payment_info: Option<TokenPaymentInfo>,
     signer: &IdentitySignerWasm,
     sdk: &dash_sdk::Sdk,
     settings: Option<dash_sdk::platform::transition::put_settings::PutSettings>,
@@ -1311,7 +1330,7 @@ async fn build_document_create_or_replace_transition(
             identity_public_key,
             new_identity_contract_nonce,
             put_settings.user_fee_increase.unwrap_or_default(),
-            None, // token_payment_info
+            token_payment_info,
             signer,
             sdk.version(),
             put_settings.state_transition_creation_options,
@@ -1339,7 +1358,7 @@ async fn build_document_create_or_replace_transition(
             identity_public_key,
             new_identity_contract_nonce,
             put_settings.user_fee_increase.unwrap_or_default(),
-            None, // token_payment_info
+            token_payment_info,
             signer,
             sdk.version(),
             put_settings.state_transition_creation_options,

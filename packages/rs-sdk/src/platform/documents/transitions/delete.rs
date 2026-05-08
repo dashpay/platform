@@ -123,6 +123,8 @@ impl DocumentDeleteTransitionBuilder {
     ///
     /// * `Self` - The updated builder
     pub fn with_settings(mut self, settings: PutSettings) -> Self {
+        self.user_fee_increase = settings.user_fee_increase;
+        self.state_transition_creation_options = settings.state_transition_creation_options;
         self.settings = Some(settings);
         self
     }
@@ -217,6 +219,48 @@ impl DocumentDeleteTransitionBuilder {
 pub enum DocumentDeleteResult {
     /// Document deletion confirmed (document no longer exists).
     Deleted(Identifier),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::platform::transition::put_settings::PutSettings;
+    use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
+    use dpp::tests::fixtures::get_data_contract_fixture;
+    use dpp::version::PlatformVersion;
+
+    #[test]
+    fn with_settings_propagates_signed_transition_fields() {
+        let settings = PutSettings {
+            user_fee_increase: Some(42),
+            state_transition_creation_options: Some(StateTransitionCreationOptions::default()),
+            ..Default::default()
+        };
+        let data_contract = get_data_contract_fixture(
+            None,
+            Default::default(),
+            PlatformVersion::latest().protocol_version,
+        )
+        .data_contract_owned();
+
+        let builder = DocumentDeleteTransitionBuilder::new(
+            Arc::new(data_contract),
+            "niceDocument".to_string(),
+            Identifier::default(),
+            Identifier::default(),
+        )
+        .with_settings(settings);
+
+        assert_eq!(
+            builder.settings.map(|settings| settings.user_fee_increase),
+            Some(settings.user_fee_increase)
+        );
+        assert_eq!(builder.user_fee_increase, settings.user_fee_increase);
+        assert_eq!(
+            builder.state_transition_creation_options,
+            settings.state_transition_creation_options
+        );
+    }
 }
 
 impl Sdk {
