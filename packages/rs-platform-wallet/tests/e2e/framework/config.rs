@@ -242,7 +242,7 @@ fn load_e2e_env() {
         if candidate.exists() {
             match dotenvy::from_path(candidate) {
                 Ok(()) => {
-                    tracing::debug!(
+                    tracing::info!(
                         target: "platform_wallet::e2e::config",
                         path = %candidate.display(),
                         "loaded e2e .env"
