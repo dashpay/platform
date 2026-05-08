@@ -107,7 +107,7 @@ mod tests {
         });
 
         Transaction {
-            version: 0,
+            version: 3,
             lock_time: 0,
             input: inputs,
             output: vec![burn_output],

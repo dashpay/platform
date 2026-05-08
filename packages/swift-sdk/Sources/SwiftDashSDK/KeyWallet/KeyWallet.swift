@@ -22,10 +22,6 @@ import Foundation
 /// let mnemonic = try Mnemonic.generate()
 /// let wallet = try Wallet(mnemonic: mnemonic, network: .testnet)
 ///
-/// // Get a receive address
-/// let managed = try ManagedWallet(wallet: wallet)
-/// let address = try managed.getNextReceiveAddress(wallet: wallet)
-///
 /// // Check wallet balance
 /// let balance = try wallet.getBalance()
 /// print("Confirmed: \(balance.confirmed), Unconfirmed: \(balance.unconfirmed)")
@@ -49,7 +45,6 @@ public class KeyWallet {
 // Re-export all public types for convenience
 public typealias KeyWalletWallet = Wallet
 public typealias KeyWalletAccount = Account
-public typealias KeyWalletManagedWallet = ManagedWallet
 public typealias KeyWalletManager = WalletManager
 public typealias KeyWalletMnemonic = Mnemonic
 public typealias KeyWalletTransaction = Transaction
