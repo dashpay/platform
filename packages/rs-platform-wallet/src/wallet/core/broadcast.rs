@@ -245,7 +245,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                     .check_core_transaction(&tx, TransactionContext::Mempool, wallet, true, true)
                     .await;
                 if !check_result.is_relevant {
-                    // CMT-004: own-built tx unrecognised by our checker — internal invariant
+                    // Own-built tx unrecognised by our checker is an internal invariant
                     // violation, not a transient. Stable event field for operator alerting.
                     tracing::error!(
                         target: "platform_wallet::broadcast",
