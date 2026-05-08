@@ -24,7 +24,7 @@ use super::bank::{BankWallet, CrossCheckResult};
 use super::bank_identity::{self, BankIdentity};
 use super::cleanup;
 use super::config::{self, BankCoreGateSource, Config};
-use super::registry::PersistentTestWalletRegistry;
+use super::registry::{EntryStatus, PersistentTestWalletRegistry};
 use super::sdk;
 use super::spv;
 use super::wait;
@@ -349,8 +349,7 @@ impl E2eContext {
             Some(spv_runtime)
         };
 
-        // Panics on under-funded balance — see `BankWallet::load`.
-        let bank = BankWallet::load(&manager, &config).await?;
+        let mut bank = BankWallet::load(&manager, &config).await?;
 
         // Bank Core (Layer-1) funding gate. Marvin's QA-001 — first
         // cold-cache run on testnet walks ~1.47M compact filters from
@@ -542,21 +541,56 @@ impl E2eContext {
 
         let registry = PersistentTestWalletRegistry::open(workdir.join("test_wallets.json"))?;
 
-        // Best-effort startup sweep; failures don't abort init.
+        // Capture pre-sweep registry stats so `assert_floor` can name them
+        // in its panic message if the bank is still under-funded after sweep.
+        let pre_sweep_orphans = registry.list_orphans();
+        let pre_sweep_total = pre_sweep_orphans.len();
+        let pre_sweep_failed = pre_sweep_orphans
+            .iter()
+            .filter(|(_, e)| e.status == EntryStatus::Failed)
+            .count();
+
+        // Best-effort startup sweep. Runs BEFORE the floor check so orphan
+        // funds can flow back to the bank before we assert it's funded
+        // (QA-V26-007). Failures don't abort init.
         let network = bank.network();
-        match cleanup::sweep_orphans(&manager, &bank, &bank_identity, &registry, network).await {
-            Ok(0) => {}
-            Ok(n) => tracing::info!(
-                target: "platform_wallet::e2e::harness",
-                count = n,
-                "startup sweep recovered orphan wallets from prior runs"
-            ),
-            Err(err) => tracing::warn!(
+        let sweep_recovered =
+            match cleanup::sweep_orphans(&manager, &bank, &bank_identity, &registry, network).await
+            {
+                Ok(0) => 0_usize,
+                Ok(n) => {
+                    tracing::info!(
+                        target: "platform_wallet::e2e::harness",
+                        count = n,
+                        "startup sweep recovered orphan wallets from prior runs"
+                    );
+                    n
+                }
+                Err(err) => {
+                    tracing::warn!(
+                        target: "platform_wallet::e2e::harness",
+                        error = %err,
+                        "startup sweep encountered errors; continuing"
+                    );
+                    0
+                }
+            };
+
+        // Re-read the bank's balance after the sweep so the floor check
+        // counts any credits just swept back. `sync_and_refresh_floor`
+        // also updates `bank_floor_satisfied` so the token-suite gate
+        // reflects the post-sweep state rather than the load-time snapshot
+        // (QA-V26-007). If still under-funded after sweep, panic with a
+        // message that names sweep stats so operators know what ran.
+        if let Err(err) = bank.sync_and_refresh_floor().await {
+            tracing::warn!(
                 target: "platform_wallet::e2e::harness",
                 error = %err,
-                "startup sweep encountered errors; continuing"
-            ),
+                "post-sweep bank resync failed; floor check uses pre-sweep balance"
+            );
         }
+        bank.assert_floor(&config, sweep_recovered, pre_sweep_total, pre_sweep_failed)
+            .await;
 
         // Successful build — ownership of the runtime now lives on
         // the returned `E2eContext`. Clear `IN_FLIGHT_SPV` so the

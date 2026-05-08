@@ -194,12 +194,11 @@ impl std::fmt::Debug for BankWallet {
 }
 
 impl BankWallet {
-    /// Load the bank from its BIP-39 mnemonic, sync once, and check
-    /// the balance covers [`Config::min_bank_credits`].
+    /// Load the bank from its BIP-39 mnemonic and sync once.
     ///
-    /// Under-funded balances PANIC with a "top up at <address>"
-    /// pointer; surfacing one clear actionable failure beats burying
-    /// it under per-test "insufficient balance" errors.
+    /// Does NOT enforce the minimum-credit floor — call
+    /// [`Self::assert_floor`] after [`sweep_orphans`] so the sweep can
+    /// recover stranded funds before the floor check fires (QA-V26-007).
     pub async fn load(
         manager: &Arc<PlatformWalletManager<NoPlatformPersistence>>,
         config: &Config,
@@ -257,20 +256,6 @@ impl BankWallet {
         .await?;
 
         let total = wallet.platform().total_credits().await;
-        if total < config.min_bank_credits {
-            // Under-funded bank is a hard operator error — panic here
-            // with the actionable top-up pointer so every test in the
-            // suite fails with the same clear message instead of each
-            // one independently surfacing "insufficient balance" after
-            // wasting setup time (QA-910b).
-            let address_bech32m = primary_receive_address.to_bech32m_string(network);
-            panic!(
-                "Bank under-funded: have {balance}M credits, need at least {required}M.\n  \
-                 Top up Platform address: {address_bech32m}",
-                balance = total / 1_000_000,
-                required = config.min_bank_credits / 1_000_000,
-            );
-        }
         let bank_floor_satisfied = total >= EXPECTED_TOKEN_SUITE_FLOOR;
         if !bank_floor_satisfied {
             let address_bech32m = primary_receive_address.to_bech32m_string(network);
@@ -289,7 +274,7 @@ impl BankWallet {
             address = %primary_receive_address.to_bech32m_string(network),
             balance = total,
             network = %network,
-            "Bank wallet ready",
+            "Bank wallet loaded",
         );
 
         let signer = make_platform_signer(&seed_bytes, network)?;
@@ -300,6 +285,50 @@ impl BankWallet {
             primary_receive_address,
             bank_floor_satisfied,
         })
+    }
+
+    /// Assert the bank has enough credits to run the test suite.
+    ///
+    /// Panics with an operator-actionable message if the current
+    /// cached balance is below `min_bank_credits`. Call this AFTER
+    /// [`sweep_orphans`] and a fresh [`Self::sync_balances`] so
+    /// recovered orphan funds are counted (QA-V26-007).
+    ///
+    /// `sweep_recovered` is the number of orphan wallets successfully
+    /// swept; `registry_total` and `registry_failed` are used to enrich
+    /// the panic message when the balance is still below floor after
+    /// sweep so operators know whether the sweep had anything to drain.
+    pub async fn assert_floor(
+        &self,
+        config: &Config,
+        sweep_recovered: usize,
+        registry_total: usize,
+        registry_failed: usize,
+    ) {
+        let network = self.wallet.sdk().network;
+        let total = self.wallet.platform().total_credits().await;
+        if total >= config.min_bank_credits {
+            return;
+        }
+        let address_bech32m = self.primary_receive_address.to_bech32m_string(network);
+        if sweep_recovered > 0 || registry_total > 0 {
+            panic!(
+                "Bank under-funded after sweep recovery: have {balance}M credits, need at least {required}M.\n  \
+                 Sweep recovered {sweep_recovered} orphan wallets; registry had {registry_total} entries \
+                 ({registry_failed} Failed, {removed} removed).\n  \
+                 Top up Platform address: {address_bech32m}",
+                balance = total / 1_000_000,
+                required = config.min_bank_credits / 1_000_000,
+                removed = registry_total.saturating_sub(registry_failed),
+            );
+        } else {
+            panic!(
+                "Bank under-funded: have {balance}M credits, need at least {required}M.\n  \
+                 Top up Platform address: {address_bech32m}",
+                balance = total / 1_000_000,
+                required = config.min_bank_credits / 1_000_000,
+            );
+        }
     }
 
     /// 64-byte BIP-39 seed used to derive both the bank's address keys
@@ -471,6 +500,22 @@ impl BankWallet {
             exit_ns,
         });
         result
+    }
+
+    /// Resync balances and refresh the cached `bank_floor_satisfied` flag.
+    ///
+    /// Called after [`sweep_orphans`] so the token-suite floor reflects
+    /// the post-sweep balance rather than the stale load-time snapshot
+    /// (QA-V26-007).
+    pub async fn sync_and_refresh_floor(&mut self) -> FrameworkResult<()> {
+        self.wallet
+            .platform()
+            .sync_balances(None)
+            .await
+            .map_err(wallet_err)?;
+        let total = self.wallet.platform().total_credits().await;
+        self.bank_floor_satisfied = total >= EXPECTED_TOKEN_SUITE_FLOOR;
+        Ok(())
     }
 
     /// Resync the bank's balances.
