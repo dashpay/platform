@@ -182,6 +182,9 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         // network resolves that race exactly as it does on `v3.1-dev`
         // today, but neither caller corrupts local state on a transient
         // broadcast failure.
+        // Post-broadcast hook must mark consumed UTXOs spent on every
+        // standard-tx account collection (BIP44 + BIP32). Pinned by
+        // `cr_004_legacy_bip32_utxo_update_after_spend` (dash-evo-tool#845).
         {
             let mut wm = self.wallet_manager.write().await;
             let (wallet, info) =
