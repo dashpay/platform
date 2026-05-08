@@ -146,6 +146,92 @@ impl PlatformAddressWallet {
         Ok(cs)
     }
 
+    /// Transfer credits with an explicit "change address" override.
+    ///
+    /// Companion to [`Self::transfer`] that surfaces the implicit
+    /// "where does the residual go?" decision as a first-class
+    /// parameter (PA-001b).
+    ///
+    /// Override semantics:
+    /// - `output_change_address: None` — passthrough to [`Self::transfer`];
+    ///   residual stays on the input addresses under the existing implicit-change
+    ///   behaviour.
+    /// - `output_change_address: Some(change_addr)` — every input is spent in
+    ///   full, and `change_addr` is added as an extra output absorbing
+    ///   `Σ inputs − Σ user_outputs`. The protocol's `Σ inputs == Σ outputs`
+    ///   invariant holds because the change output exactly balances the surplus.
+    ///
+    /// The change branch requires [`InputSelection::Explicit`] or
+    /// [`InputSelection::ExplicitWithNonces`]: the caller declares inputs and
+    /// their consumption explicitly, which is the only shape where "consume
+    /// the entire input balance" is unambiguous — auto-selection trims to a
+    /// covering prefix and has no concept of a residual to route. The map's
+    /// values must equal the full balances the caller wants consumed; the
+    /// wrapper sums them and assigns the surplus to `change_addr`.
+    ///
+    /// # Errors
+    ///
+    /// [`PlatformWalletError::AddressOperation`] when the change branch is
+    /// requested with [`InputSelection::Auto`], when `change_addr` already
+    /// appears in `user_outputs` (would merge silently), or when
+    /// `Σ inputs ≤ Σ user_outputs` (no surplus to route).
+    #[allow(clippy::too_many_arguments)] // mirrors `transfer` plus the change-address override; a builder would obscure PA-001b's additive surface.
+    pub async fn transfer_with_change_address<S: Signer<PlatformAddress> + Send + Sync>(
+        &self,
+        account_index: u32,
+        input_selection: InputSelection,
+        user_outputs: BTreeMap<PlatformAddress, Credits>,
+        output_change_address: Option<PlatformAddress>,
+        fee_strategy: AddressFundsFeeStrategy,
+        platform_version: Option<&PlatformVersion>,
+        address_signer: &S,
+    ) -> Result<PlatformAddressChangeSet, PlatformWalletError> {
+        let Some(change_addr) = output_change_address else {
+            return self
+                .transfer(
+                    account_index,
+                    input_selection,
+                    user_outputs,
+                    fee_strategy,
+                    platform_version,
+                    address_signer,
+                )
+                .await;
+        };
+
+        let (input_sum, augmented_selection) = match input_selection {
+            InputSelection::Explicit(ref inputs) => (
+                inputs.values().copied().sum::<Credits>(),
+                InputSelection::Explicit(inputs.clone()),
+            ),
+            InputSelection::ExplicitWithNonces(ref inputs) => (
+                inputs.values().map(|(_n, c)| *c).sum::<Credits>(),
+                InputSelection::ExplicitWithNonces(inputs.clone()),
+            ),
+            InputSelection::Auto => {
+                return Err(PlatformWalletError::AddressOperation(
+                    "output_change_address: Some(_) requires InputSelection::Explicit \
+                     or ExplicitWithNonces — the auto-selector trims inputs to a covering \
+                     prefix and has no concept of a residual to route to a change address"
+                        .to_string(),
+                ));
+            }
+        };
+
+        let outputs_with_change =
+            augment_outputs_with_change(user_outputs, change_addr, input_sum)?;
+
+        self.transfer(
+            account_index,
+            augmented_selection,
+            outputs_with_change,
+            fee_strategy,
+            platform_version,
+            address_signer,
+        )
+        .await
+    }
+
     /// Dispatch to the strategy-specific selector. Returned map values are the
     /// **consumed amount per address**; protocol enforces `Σ inputs == Σ outputs`.
     /// Supported strategies: `[DeductFromInput(0)]`, `[ReduceOutput(0)]`.
@@ -726,6 +812,37 @@ fn select_inputs_reduce_output(
     Ok(selected)
 }
 
+/// Augment `user_outputs` with an explicit change output absorbing the
+/// surplus `Σ inputs − Σ user_outputs`. Validates the three error cases
+/// `transfer_with_change_address` rejects before dispatching to `transfer`:
+/// duplicate change address, no surplus, and (defensively) underflow.
+fn augment_outputs_with_change(
+    mut user_outputs: BTreeMap<PlatformAddress, Credits>,
+    change_addr: PlatformAddress,
+    input_sum: Credits,
+) -> Result<BTreeMap<PlatformAddress, Credits>, PlatformWalletError> {
+    if user_outputs.contains_key(&change_addr) {
+        return Err(PlatformWalletError::AddressOperation(format!(
+            "output_change_address {change_addr:?} already appears in user_outputs; \
+             refusing to silently merge a change-output amount into a caller-declared \
+             output. Pick a fresh change_addr.",
+        )));
+    }
+    let user_output_sum: Credits = user_outputs.values().copied().sum();
+    if input_sum <= user_output_sum {
+        return Err(PlatformWalletError::AddressOperation(format!(
+            "output_change_address: Some(_) requires Σ inputs ({input_sum}) > \
+             Σ user_outputs ({user_output_sum}); no surplus to route as change. \
+             Drop output_change_address or grow the input map.",
+        )));
+    }
+    // Saturating arithmetic mirrors the file-wide policy; total credit supply
+    // is far below `u64::MAX`, and the guard above already rules out underflow.
+    let change_amount = input_sum.saturating_sub(user_output_sum);
+    user_outputs.insert(change_addr, change_amount);
+    Ok(user_outputs)
+}
+
 fn format_address(addr: &PlatformAddress) -> String {
     match addr {
         PlatformAddress::P2pkh(hash) => format!("p2pkh({})", hex::encode(hash)),
@@ -1105,5 +1222,66 @@ mod auto_select_tests {
         assert!(
             detect_no_selectable_inputs(no_funds.iter().copied(), &outputs, min_input).is_none()
         );
+    }
+
+    /// PA-001b: the change-address override must add exactly one extra output
+    /// absorbing `Σ inputs − Σ user_outputs`, leaving `Σ inputs == Σ outputs`
+    /// so the protocol's structural invariant still holds.
+    #[test]
+    fn augment_outputs_with_change_adds_residual_output() {
+        let user_target = p2pkh(0x22);
+        let change_addr = p2pkh(0x33);
+        let user_outputs = outputs_for(user_target, 5_000_000);
+        let outputs =
+            augment_outputs_with_change(user_outputs, change_addr, 60_000_000).expect("augment");
+        assert_eq!(outputs.len(), 2);
+        assert_eq!(outputs.get(&user_target), Some(&5_000_000));
+        assert_eq!(
+            outputs.get(&change_addr),
+            Some(&55_000_000),
+            "change output must absorb exactly the surplus"
+        );
+        let output_sum: Credits = outputs.values().sum();
+        assert_eq!(
+            output_sum, 60_000_000,
+            "Σ outputs must equal input sum (Σ inputs == Σ outputs invariant)"
+        );
+    }
+
+    /// PA-001b: the override must reject a `change_addr` that already appears
+    /// in the caller's user outputs to prevent a silent merge.
+    #[test]
+    fn augment_outputs_with_change_rejects_duplicate_address() {
+        let target = p2pkh(0x44);
+        let user_outputs = outputs_for(target, 5_000_000);
+        let err = augment_outputs_with_change(user_outputs, target, 60_000_000)
+            .expect_err("change_addr equal to user output must be rejected");
+        match err {
+            PlatformWalletError::AddressOperation(msg) => {
+                assert!(
+                    msg.contains("already appears in user_outputs"),
+                    "unexpected message: {msg}"
+                );
+            }
+            other => panic!("expected AddressOperation, got {other:?}"),
+        }
+    }
+
+    /// PA-001b: when `Σ user_outputs ≥ Σ inputs` there is no surplus to route.
+    /// The wrapper must reject rather than emit a zero-credit (or underflowing)
+    /// change output.
+    #[test]
+    fn augment_outputs_with_change_rejects_no_surplus() {
+        let target = p2pkh(0x55);
+        let change_addr = p2pkh(0x66);
+        let user_outputs = outputs_for(target, 60_000_000);
+        let err = augment_outputs_with_change(user_outputs, change_addr, 60_000_000)
+            .expect_err("equal sums must be rejected: nothing to route as change");
+        match err {
+            PlatformWalletError::AddressOperation(msg) => {
+                assert!(msg.contains("no surplus"), "unexpected message: {msg}");
+            }
+            other => panic!("expected AddressOperation, got {other:?}"),
+        }
     }
 }
