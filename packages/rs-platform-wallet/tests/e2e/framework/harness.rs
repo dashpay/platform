@@ -47,6 +47,14 @@ const SPV_READY_TIMEOUT: Duration = Duration::from_secs(180);
 /// floor.
 const BANK_CORE_GATE_MIN_DUFFS: u64 = 1;
 
+/// Tolerance (credits) for the bank Platform balance cross-check between
+/// the harness wallet cache and an independent DAPI fetch (QA-V28-410).
+/// Strict equality flagged sub-tDASH drift as MISMATCH, suppressing the
+/// OK log even when the harness was healthy. 1 tDASH (1e8 credits) is
+/// well above observed DAPI replica drift but small enough that any real
+/// accounting bug still trips the MISMATCH branch.
+const BANK_CROSS_CHECK_TOLERANCE_CREDITS: i64 = 100_000_000;
+
 /// Process-shared singleton populated on first
 /// [`E2eContext::init`].
 static CTX: OnceCell<E2eContext> = OnceCell::const_new();
@@ -575,11 +583,14 @@ impl E2eContext {
                 dpp::address_funds::PlatformAddress::P2sh(hash) => hex::encode(hash),
             };
             let nonce = result.nonce.unwrap_or(0);
-            if result.harness_credits == result.independent_credits {
+            let drift = (result.harness_credits as i64 - result.independent_credits as i64).abs();
+            if drift <= BANK_CROSS_CHECK_TOLERANCE_CREDITS {
                 tracing::info!(
                     target: "platform_wallet::e2e::bank",
                     harness_credits = result.harness_credits,
                     independent_credits = result.independent_credits,
+                    drift,
+                    tolerance = BANK_CROSS_CHECK_TOLERANCE_CREDITS,
                     addr_bech32 = %addr_bech32,
                     addr_hash160 = %addr_hex,
                     nonce,
@@ -590,12 +601,15 @@ impl E2eContext {
                     target: "platform_wallet::e2e::bank",
                     harness_credits = result.harness_credits,
                     independent_credits = result.independent_credits,
+                    drift,
+                    tolerance = BANK_CROSS_CHECK_TOLERANCE_CREDITS,
                     addr_bech32 = %addr_bech32,
                     addr_hash160 = %addr_hex,
                     nonce,
                     "bank Platform balance MISMATCH between harness cache and \
-                     independent DAPI fetch — possible DAPI replica lag (#3611); \
-                     harness balance is the authoritative value for funding gates"
+                     independent DAPI fetch — drift exceeds tolerance; possible \
+                     DAPI replica lag (#3611) or accounting bug. Harness balance \
+                     is the authoritative value for funding gates"
                 );
             }
             Some(result)
