@@ -26,6 +26,21 @@ describe('Document State Transitions', function describeDocumentStateTransitions
   let client: sdk.WasmSdk;
   const testData = wasmFunctionalTestRequirements();
   const waitForPlatform = async (ms = 2000) => new Promise((resolve) => { setTimeout(resolve, ms); });
+  const reloadPreparedStateTransition = (st) => {
+    const bytes = st.toBytes();
+    const restoredBatch = sdk.BatchTransition.fromBase64(Buffer.from(bytes).toString('base64'));
+    const restoredStateTransition = restoredBatch.toStateTransition();
+
+    expect(Buffer.from(restoredStateTransition.toBytes())).to.deep.equal(Buffer.from(bytes));
+
+    return restoredStateTransition;
+  };
+  const broadcastPreparedStateTransition = async (st) => {
+    const restored = reloadPreparedStateTransition(st);
+    await client.broadcastStateTransition(restored);
+    await client.waitForResponse(restored);
+    return restored;
+  };
   const getSingleTokenBalance = async (identityId: string, tokenId: string) => {
     const balances = await client.getIdentityTokenBalances(identityId, [tokenId]);
     return balances.get(tokenId);
@@ -357,16 +372,6 @@ describe('Document State Transitions', function describeDocumentStateTransitions
       return inner;
     }
 
-    function reloadPreparedBatchStateTransition(st) {
-      const bytes = st.toBytes();
-      const restoredBatch = sdk.BatchTransition.fromBase64(Buffer.from(bytes).toString('base64'));
-      const restoredStateTransition = restoredBatch.toStateTransition();
-
-      expect(Buffer.from(restoredStateTransition.toBytes())).to.deep.equal(Buffer.from(bytes));
-
-      return restoredStateTransition;
-    }
-
     it('prepareDocumentCreate produces a Create batched transition', async () => {
       expect(testContractId).to.exist();
       const { signer, identityKey } = createTestSignerAndKey(sdk, 1, 2);
@@ -494,7 +499,7 @@ describe('Document State Transitions', function describeDocumentStateTransitions
         signer,
       });
 
-      const restored = reloadPreparedBatchStateTransition(prepared);
+      const restored = reloadPreparedStateTransition(prepared);
 
       await client.broadcastStateTransition(restored);
       await client.waitForResponse(restored);
@@ -874,6 +879,101 @@ describe('Document State Transitions', function describeDocumentStateTransitions
       expect(await getSingleTokenBalance(testData.identityId2, tokenPaidTokenId)).to.equal(26n);
       expect(await getSingleTokenBalance(testData.identityId3, tokenPaidTokenId)).to.equal(47n);
       expect(await getSingleTokenBalance(testData.identityId, tokenPaidTokenId)).to.equal(927n);
+    });
+
+    it('should prepare, broadcast, replace, and delete token-priced documents with tokenPaymentInfo', async () => {
+      expect(tokenPaidContractId).to.exist();
+      expect(tokenPaidTokenId).to.exist();
+
+      const { signer: sellerDocSigner, identityKey: sellerDocKey } = createTestSignerAndKey(sdk, 2, 2);
+      const sellerBalanceBefore = await getSingleTokenBalance(testData.identityId2, tokenPaidTokenId);
+      const ownerBalanceBefore = await getSingleTokenBalance(testData.identityId, tokenPaidTokenId);
+
+      const listingTitle = `Prepared token paid listing ${Date.now()}`;
+      const preparedDocument = new sdk.Document({
+        properties: { title: listingTitle },
+        documentTypeName: 'tokenPaidListing',
+        revision: 1,
+        dataContractId: tokenPaidContractId,
+        ownerId: testData.identityId2,
+      });
+
+      const preparedCreate = await client.prepareDocumentCreate({
+        document: preparedDocument,
+        identityKey: sellerDocKey,
+        signer: sellerDocSigner,
+        tokenPaymentInfo: makeTokenPaymentInfo(5n),
+      });
+
+      await broadcastPreparedStateTransition(preparedCreate);
+
+      expect(await getSingleTokenBalance(testData.identityId2, tokenPaidTokenId)).to.equal(sellerBalanceBefore - 5n);
+      expect(await getSingleTokenBalance(testData.identityId, tokenPaidTokenId)).to.equal(ownerBalanceBefore + 5n);
+
+      await waitForPlatform();
+
+      const createdPreparedDocument = await client.getDocument(
+        tokenPaidContractId,
+        'tokenPaidListing',
+        preparedDocument.id,
+      );
+      expect(createdPreparedDocument).to.exist();
+      expect(createdPreparedDocument.properties.title).to.equal(listingTitle);
+
+      const replacedTitle = `${listingTitle} updated`;
+      const replaceDocument = new sdk.Document({
+        properties: { title: replacedTitle },
+        documentTypeName: 'tokenPaidListing',
+        revision: 2,
+        dataContractId: tokenPaidContractId,
+        ownerId: testData.identityId2,
+        id: preparedDocument.id,
+      });
+
+      const preparedReplace = await client.prepareDocumentReplace({
+        document: replaceDocument,
+        identityKey: sellerDocKey,
+        signer: sellerDocSigner,
+        tokenPaymentInfo: makeTokenPaymentInfo(4n),
+      });
+
+      await broadcastPreparedStateTransition(preparedReplace);
+
+      expect(await getSingleTokenBalance(testData.identityId2, tokenPaidTokenId)).to.equal(sellerBalanceBefore - 9n);
+      expect(await getSingleTokenBalance(testData.identityId, tokenPaidTokenId)).to.equal(ownerBalanceBefore + 9n);
+
+      await waitForPlatform();
+
+      const replacedPreparedDocument = await client.getDocument(
+        tokenPaidContractId,
+        'tokenPaidListing',
+        preparedDocument.id,
+      );
+      expect(replacedPreparedDocument).to.exist();
+      expect(replacedPreparedDocument.properties.title).to.equal(replacedTitle);
+
+      const preparedDelete = await client.prepareDocumentDelete({
+        document: {
+          id: preparedDocument.id,
+          ownerId: testData.identityId2,
+          dataContractId: tokenPaidContractId,
+          documentTypeName: 'tokenPaidListing',
+        },
+        identityKey: sellerDocKey,
+        signer: sellerDocSigner,
+        tokenPaymentInfo: makeTokenPaymentInfo(1n),
+      });
+
+      await broadcastPreparedStateTransition(preparedDelete);
+
+      expect(await getSingleTokenBalance(testData.identityId2, tokenPaidTokenId)).to.equal(sellerBalanceBefore - 10n);
+      expect(await getSingleTokenBalance(testData.identityId, tokenPaidTokenId)).to.equal(ownerBalanceBefore + 10n);
+
+      await waitForPlatform();
+
+      await expect(
+        client.getDocument(tokenPaidContractId, 'tokenPaidListing', preparedDocument.id),
+      ).to.be.rejected();
     });
   });
 });

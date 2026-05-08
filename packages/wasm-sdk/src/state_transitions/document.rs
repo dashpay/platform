@@ -18,15 +18,18 @@
 //!
 //! ## Nonce consumption
 //!
-//! Every successful `prepareDocument*` call fetches a fresh identity-contract nonce
-//! and advances it on the node. The signed state transition embeds that nonce and
-//! is the **only** form that can be broadcast for it — a later `prepareDocument*`
-//! call for the same (identity, contract) pair will consume a different nonce.
+//! Every successful `prepareDocument*` call resolves the next identity-contract nonce
+//! for this SDK instance and advances its local nonce cache. If that cache is empty
+//! or stale, the SDK may first fetch the current nonce from Platform. The signed state
+//! transition embeds that nonce, but Platform state is not mutated until the transition
+//! is actually broadcast and processed.
 //!
 //! Only call `prepareDocument*` when you intend to broadcast the returned transition
 //! (or persist the bytes and retry broadcasting that exact transition). Discarding a
-//! prepared transition leaks the consumed nonce. If you need a "dry run" with no
-//! side effects on the node, do not use the prepare API.
+//! prepared transition leaves this SDK instance's local nonce cache ahead until it is
+//! refreshed, but it does not reserve or consume the nonce remotely on Platform. If
+//! you need a "dry run" with no local nonce-cache side effects in this SDK instance,
+//! do not use the prepare API.
 
 use crate::error::WasmSdkError;
 use crate::sdk::WasmSdk;
@@ -564,9 +567,11 @@ impl WasmSdk {
     /// idempotent retry behavior — on timeout, you can rebroadcast the exact same
     /// signed transition instead of creating a new one with a new nonce.
     ///
-    /// **Nonce consumption:** A successful call consumes (advances) the identity-contract
-    /// nonce. Only call this when you intend to broadcast / persist-and-retry the returned
-    /// transition — discarding it leaks the nonce. See module docs for details.
+    /// **Nonce consumption:** A successful call advances this SDK instance's local
+    /// identity-contract nonce cache and embeds that nonce in the signed transition.
+    /// Platform state is not mutated until broadcast/processing. Only call this when
+    /// you intend to broadcast / persist-and-retry the returned transition. See module
+    /// docs for details.
     ///
     /// @param options - Creation options including document, identity key, and signer
     /// @returns The signed StateTransition ready for broadcasting
@@ -687,9 +692,11 @@ impl WasmSdk {
     /// **not** broadcast or wait for a response. See `prepareDocumentCreate` for
     /// the full two-phase usage pattern.
     ///
-    /// **Nonce consumption:** A successful call consumes (advances) the identity-contract
-    /// nonce. Only call this when you intend to broadcast / persist-and-retry the returned
-    /// transition — discarding it leaks the nonce. See module docs for details.
+    /// **Nonce consumption:** A successful call advances this SDK instance's local
+    /// identity-contract nonce cache and embeds that nonce in the signed transition.
+    /// Platform state is not mutated until broadcast/processing. Only call this when
+    /// you intend to broadcast / persist-and-retry the returned transition. See module
+    /// docs for details.
     ///
     /// @param options - Replace options including document, identity key, and signer
     /// @returns The signed StateTransition ready for broadcasting
@@ -803,9 +810,11 @@ impl WasmSdk {
     /// **not** broadcast or wait for a response. See `prepareDocumentCreate` for
     /// the full two-phase usage pattern.
     ///
-    /// **Nonce consumption:** A successful call consumes (advances) the identity-contract
-    /// nonce. Only call this when you intend to broadcast / persist-and-retry the returned
-    /// transition — discarding it leaks the nonce. See module docs for details.
+    /// **Nonce consumption:** A successful call advances this SDK instance's local
+    /// identity-contract nonce cache and embeds that nonce in the signed transition.
+    /// Platform state is not mutated until broadcast/processing. Only call this when
+    /// you intend to broadcast / persist-and-retry the returned transition. See module
+    /// docs for details.
     ///
     /// @param options - Delete options including document identifiers, identity key, and signer
     /// @returns The signed StateTransition ready for broadcasting
