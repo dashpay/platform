@@ -669,6 +669,19 @@ fn balance_explicit_inputs(
 /// to observe the new identity on chain.
 const DEFAULT_IDENTITY_VISIBILITY_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Hard cap on the per-test [`SetupGuard::Drop`] sweep (QA-V28-402).
+/// Prior to this, a `std::thread::spawn(...).join()` could block the
+/// dropping (often panicking) test thread indefinitely when the freshly
+/// built sweep runtime contended with the main test runtime for shared
+/// async locks (funding mutex / SPV runtime). At `--test-threads=8`
+/// every thread parked in `futex_wait_queue`, requiring SIGKILL. The
+/// timeout fires inside the sweep's tokio runtime — tokio's mutexes and
+/// the timer driver are futures-aware, so even when the sweep future is
+/// pending on a contended lock the timer still resolves and surfaces
+/// `Elapsed`. The dropped sweep registers as a best-effort failure;
+/// next-run [`super::cleanup::sweep_orphans`] retries.
+const DROP_SWEEP_TIMEOUT: Duration = Duration::from_secs(20);
+
 /// A registered identity returned by
 /// [`TestWallet::register_identity_from_addresses`].
 ///
@@ -911,7 +924,8 @@ fn wallet_err(err: PlatformWalletError) -> FrameworkError {
 /// Synchronous bridge for the [`SetupGuard::Drop`] per-test sweep.
 ///
 /// Spawns a dedicated OS thread, builds a fresh current-thread tokio
-/// runtime there, and `block_on`s [`super::cleanup::teardown_one`].
+/// runtime there, and `block_on`s [`super::cleanup::teardown_one`]
+/// wrapped in [`tokio::time::timeout`] (cap [`DROP_SWEEP_TIMEOUT`]).
 /// Joins the thread before returning so the dropping thread's stack
 /// (which owns `*test_wallet`) outlives the sweep.
 ///
@@ -928,6 +942,15 @@ fn wallet_err(err: PlatformWalletError) -> FrameworkError {
 /// — the future never crosses a thread boundary; only the
 /// inputs (a `&'static E2eContext` reference and a `usize` address)
 /// do, and both are trivially `Send`.
+///
+/// Why the timeout (QA-V28-402): the fresh runtime contends with the
+/// main test runtime for shared async locks (funding mutex, SPV
+/// runtime, manager state). When the dropping thread is the panicking
+/// one, the main runtime can't make forward progress on its in-flight
+/// holders while it sits in `join()` — every test thread parks in
+/// `futex_wait_queue`. The timeout aborts the sweep future deterministically
+/// so `join()` always returns, and an unswept wallet falls through to
+/// next-run [`super::cleanup::sweep_orphans`].
 ///
 /// `test_wallet_addr` is `&self.test_wallet as *const TestWallet`
 /// round-tripped through `usize` so it can cross the
@@ -947,14 +970,25 @@ fn drop_sweep_one(ctx: &'static E2eContext, test_wallet_addr: usize) -> Framewor
             // dropping `SetupGuard` on that thread's stack) is alive
             // and stationary throughout.
             let test_wallet: &TestWallet = unsafe { &*(test_wallet_addr as *const TestWallet) };
-            super::cleanup::teardown_one(
-                ctx.manager(),
-                ctx.bank(),
-                ctx.bank_identity(),
-                ctx.registry(),
-                test_wallet,
+            match tokio::time::timeout(
+                DROP_SWEEP_TIMEOUT,
+                super::cleanup::teardown_one(
+                    ctx.manager(),
+                    ctx.bank(),
+                    ctx.bank_identity(),
+                    ctx.registry(),
+                    test_wallet,
+                ),
             )
             .await
+            {
+                Ok(result) => result,
+                Err(_) => Err(FrameworkError::Cleanup(format!(
+                    "drop sweep timed out after {:?}; registry entry retained \
+                     for next-run sweep_orphans",
+                    DROP_SWEEP_TIMEOUT
+                ))),
+            }
         })
     });
     match join.join() {
@@ -967,7 +1001,9 @@ fn drop_sweep_one(ctx: &'static E2eContext, test_wallet_addr: usize) -> Framewor
 
 /// Synchronous bridge for the end-of-suite [`super::cleanup::sweep_orphans`]
 /// pass. Same rationale as [`drop_sweep_one`] — fresh current-thread
-/// runtime on a dedicated OS thread sidesteps rust-lang/rust#100013.
+/// runtime on a dedicated OS thread sidesteps rust-lang/rust#100013, and
+/// [`DROP_SWEEP_TIMEOUT`] caps the in-runtime sweep so a contended lock
+/// can never wedge `join()` (QA-V28-402).
 fn drop_sweep_orphans(ctx: &'static E2eContext) -> FrameworkResult<usize> {
     let join = std::thread::spawn(move || -> FrameworkResult<usize> {
         let rt = tokio::runtime::Builder::new_current_thread()
@@ -976,14 +1012,25 @@ fn drop_sweep_orphans(ctx: &'static E2eContext) -> FrameworkResult<usize> {
             .map_err(|e| FrameworkError::Cleanup(format!("drop sweep_orphans runtime: {e}")))?;
         rt.block_on(async move {
             let network = ctx.bank().network();
-            super::cleanup::sweep_orphans(
-                ctx.manager(),
-                ctx.bank(),
-                ctx.bank_identity(),
-                ctx.registry(),
-                network,
+            match tokio::time::timeout(
+                DROP_SWEEP_TIMEOUT,
+                super::cleanup::sweep_orphans(
+                    ctx.manager(),
+                    ctx.bank(),
+                    ctx.bank_identity(),
+                    ctx.registry(),
+                    network,
+                ),
             )
             .await
+            {
+                Ok(result) => result,
+                Err(_) => Err(FrameworkError::Cleanup(format!(
+                    "drop sweep_orphans timed out after {:?}; orphans deferred \
+                     to next-run startup sweep",
+                    DROP_SWEEP_TIMEOUT
+                ))),
+            }
         })
     });
     match join.join() {
