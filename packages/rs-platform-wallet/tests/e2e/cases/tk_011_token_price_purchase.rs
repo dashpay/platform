@@ -16,6 +16,7 @@
 //! the credit landing in the owner's account).
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use dash_sdk::platform::tokens::builders::purchase::TokenDirectPurchaseTransitionBuilder;
 use dash_sdk::platform::tokens::builders::set_price::TokenChangeDirectPurchasePriceTransitionBuilder;
@@ -29,11 +30,13 @@ use crate::framework::tokens::{
     mint_to, setup_with_token_and_two_identities, token_balance_of, token_pricing_of,
     DEFAULT_TK_FUNDING, DEFAULT_TOKEN_POSITION,
 };
+use crate::framework::wait::wait_for_token_predicate;
 
 const MINT_AMOUNT: u64 = 1_000;
 const PRICE_PER_TOKEN: u64 = 1_000;
 const PURCHASE_AMOUNT: u64 = 10;
 const TOTAL_AGREED_PRICE: u64 = 10_000;
+const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 #[ignore = "requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access; run with `cargo test -- --ignored`"]
@@ -70,13 +73,28 @@ async fn tk_011_set_price_and_direct_purchase_round_trip() {
         .await
         .expect("owner mint to self");
 
-    let owner_token_pre = token_balance_of(ctx, contract_id, position, owner.id)
-        .await
-        .expect("owner token balance pre-purchase");
+    // QA-V28-405 — the mint state-transition lands on whichever DAPI
+    // node served the broadcast; the immediate `token_balance_of` can
+    // round-robin onto a sibling that hasn't applied it yet and read
+    // `0` for a freshly-deployed contract. Gate on a 3-success streak
+    // of `balance == MINT_AMOUNT` before the assertion.
+    let owner_token_pre = wait_for_token_predicate(
+        "owner token_balance_of == MINT_AMOUNT (post-mint)",
+        || async {
+            match token_balance_of(ctx, contract_id, position, owner.id).await {
+                Ok(b) if b == MINT_AMOUNT => Ok(Some(b)),
+                Ok(_) => Ok(None),
+                Err(err) => Err(err),
+            }
+        },
+        3,
+        STEP_TIMEOUT,
+    )
+    .await
+    .expect("owner balance must equal the freshly-minted amount on a fresh contract");
     assert_eq!(
         owner_token_pre, MINT_AMOUNT,
-        "owner balance must equal the freshly-minted amount on a fresh contract \
-         (got {owner_token_pre})"
+        "wait_for_token_predicate returned a non-matching balance ({owner_token_pre})"
     );
 
     let buyer_token_pre = token_balance_of(ctx, contract_id, position, buyer.id)

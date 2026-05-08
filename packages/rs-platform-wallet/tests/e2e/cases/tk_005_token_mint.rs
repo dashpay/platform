@@ -67,13 +67,10 @@ async fn tk_005_token_mint() {
         );
         return;
     }
-    let setup = setup_with_token_contract_with_step_timeout(
-        ctx,
-        DEFAULT_TK_FUNDING,
-        SETUP_STEP_TIMEOUT,
-    )
-    .await
-    .expect("setup_with_token_contract");
+    let setup =
+        setup_with_token_contract_with_step_timeout(ctx, DEFAULT_TK_FUNDING, SETUP_STEP_TIMEOUT)
+            .await
+            .expect("setup_with_token_contract");
 
     let contract_id = setup.contract_id;
     let position = setup.token_position;
