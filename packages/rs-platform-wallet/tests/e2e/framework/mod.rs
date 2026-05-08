@@ -256,8 +256,31 @@ pub async fn setup_with_n_identities(
     n: u32,
     funding_per: dpp::fee::Credits,
 ) -> FrameworkResult<MultiIdentitySetupGuard> {
-    use std::time::Duration;
+    setup_with_n_identities_with_step_timeout(n, funding_per, DEFAULT_SETUP_STEP_TIMEOUT).await
+}
 
+/// Default per-step propagation budget used by [`setup_with_n_identities`]
+/// and the token-suite `setup_with_token_*` helpers. Sized for the common
+/// case (per-identity funding under a few-hundred-million credits clearing
+/// inside ~30 s); raise it via [`setup_with_n_identities_with_step_timeout`]
+/// when a single test is known to need a larger budget — typically the
+/// "transfer multiple billions of credits while seven sibling guards
+/// compete on the bank under `--test-threads=8`" shape that TK-005 hits.
+pub const DEFAULT_SETUP_STEP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Per-test override of [`setup_with_n_identities`]'s propagation budget.
+///
+/// Each waiter inside the per-identity loop (the local `wait_for_balance`,
+/// the strong chain-confirmed gate, and the identity-visibility gate) uses
+/// `step_timeout` independently. Raising it lets a single test (e.g.
+/// TK-005's high-credit funding under contention) survive without softening
+/// the global default — keeping a tight default surfaces genuinely-stuck
+/// tests in the majority of cases.
+pub async fn setup_with_n_identities_with_step_timeout(
+    n: u32,
+    funding_per: dpp::fee::Credits,
+    step_timeout: std::time::Duration,
+) -> FrameworkResult<MultiIdentitySetupGuard> {
     use super::framework::wait::{
         wait_for_address_known_to_platform, wait_for_balance, wait_for_identity_visible_to_platform,
     };
@@ -288,13 +311,7 @@ pub async fn setup_with_n_identities(
             .bank()
             .fund_address(&funding_addr, bank_amount)
             .await?;
-        wait_for_balance(
-            &base.test_wallet,
-            &funding_addr,
-            bank_amount,
-            Duration::from_secs(60),
-        )
-        .await?;
+        wait_for_balance(&base.test_wallet, &funding_addr, bank_amount, step_timeout).await?;
 
         // QA-802 — `wait_for_balance` already runs a 2-success chain-confirmed
         // gate, but Marvin's TK-007 / ID-007 timeline shows the streak
@@ -307,7 +324,7 @@ pub async fn setup_with_n_identities(
             base.ctx.sdk(),
             &funding_addr,
             bank_amount,
-            Duration::from_secs(60),
+            step_timeout,
         )
         .await?;
 
@@ -322,13 +339,8 @@ pub async fn setup_with_n_identities(
         // a sibling that hasn't replicated the new identity yet. A
         // 2-success visibility gate on `Identity::fetch` mirrors the
         // existing `wait_for_data_contract_visible` pattern from QA-802.
-        wait_for_identity_visible_to_platform(
-            base.ctx.sdk(),
-            registered.id,
-            Duration::from_secs(60),
-            2,
-        )
-        .await?;
+        wait_for_identity_visible_to_platform(base.ctx.sdk(), registered.id, step_timeout, 2)
+            .await?;
 
         identities.push(registered);
     }

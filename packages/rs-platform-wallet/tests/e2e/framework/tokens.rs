@@ -408,8 +408,29 @@ pub async fn setup_with_token_contract(
     ctx: &E2eContext,
     owner_funding: dpp::fee::Credits,
 ) -> FrameworkResult<TokenSetup> {
+    setup_with_token_contract_with_step_timeout(
+        ctx,
+        owner_funding,
+        super::DEFAULT_SETUP_STEP_TIMEOUT,
+    )
+    .await
+}
+
+/// Per-test override of [`setup_with_token_contract`]'s propagation budget.
+///
+/// Routes through [`super::setup_with_n_identities_with_step_timeout`] so
+/// each waiter inside the identity-bootstrap loop honours `step_timeout`.
+/// TK-005 — the only test that funds 35 B credits in a single hop — uses
+/// this entry point with a 120 s budget; the 60 s default remains in force
+/// for every other token-suite caller.
+pub async fn setup_with_token_contract_with_step_timeout(
+    ctx: &E2eContext,
+    owner_funding: dpp::fee::Credits,
+    step_timeout: Duration,
+) -> FrameworkResult<TokenSetup> {
     let _ = ctx;
-    let setup_guard = setup_with_n_identities(1, owner_funding).await?;
+    let setup_guard =
+        super::setup_with_n_identities_with_step_timeout(1, owner_funding, step_timeout).await?;
     let owner = setup_guard
         .identities
         .first()
