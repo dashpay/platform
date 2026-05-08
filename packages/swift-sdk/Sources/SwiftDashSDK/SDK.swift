@@ -52,13 +52,10 @@ public final class SDK: @unchecked Sendable {
   public private(set) var handle: UnsafeMutablePointer<SDKHandle>?
 
   /// The network this SDK instance is connected to
-  public private(set) var network: Network = DashSDKNetwork(rawValue: 1) // Default to testnet
+  public private(set) var network: Network = .testnet
 
   /// Identities operations
   public lazy var identities = Identities(sdk: self)
-
-  /// Contracts operations
-  public lazy var contracts = Contracts(sdk: self)
 
   /// Address operations (balance, nonce queries)
   public lazy var addresses = Addresses(sdk: self)
@@ -145,7 +142,7 @@ public final class SDK: @unchecked Sendable {
     if let override = UserDefaults.standard.string(forKey: "platformDAPIAddresses"), !override.isEmpty {
       return override
     }
-    return "http://127.0.0.1:1443"
+    return "http://127.0.0.1:2443"
   }
 
   /// Create a new SDK instance with trusted setup
@@ -154,39 +151,37 @@ public final class SDK: @unchecked Sendable {
   /// data contracts from trusted HTTP endpoints instead of requiring proof verification.
   /// This is suitable for mobile applications where proof verification would be resource-intensive.
   public init(network: Network) throws {
-    print("🔵 SDK.init: Creating SDK with network: \(network)")
     var config = DashSDKConfig()
-
-    // Map network - in C enums, Swift imports them as raw values
-    config.network = network
-    print("🔵 SDK.init: Network config set to: \(config.network)")
-
-    // Default to SDK-provided addresses; may override below
+    config.network = network.ffiValue
     config.dapi_addresses = nil
-
     config.skip_asset_lock_proof_verification = false
     config.request_retry_count = 1
     config.request_timeout_ms = 8000 // 8 seconds
 
-    // Create SDK with trusted setup
-    print("🔵 SDK.init: Creating SDK with trusted setup...")
+    // Create SDK with trusted setup — Rust side auto-detects local/regtest
+    // and uses the quorum sidecar at localhost:22444 instead of remote endpoints.
+    //
+    // Regtest has no remote DAPI defaults on the Rust side, so it
+    // *must* be constructed with a local DAPI address regardless of
+    // the user-facing `useDockerSetup` toggle. Without this, building
+    // a regtest SDK from a context where the toggle has been
+    // auto-disabled (e.g. orphan-mnemonic recovery routing wallets to
+    // their original network from a non-regtest active state) fails
+    // with `DAPI addresses not available for network: Regtest` and
+    // the recovery loop stalls.
     let result: DashSDKResult
-    // Force local DAPI regardless of selected network when enabled
-    let forceLocal = UserDefaults.standard.bool(forKey: "useLocalhostPlatform")
+    let forceLocal = network == .regtest
+        || UserDefaults.standard.bool(forKey: "useDockerSetup")
     if forceLocal {
       let localAddresses = Self.platformDAPIAddresses
-      print("🔵 SDK.init: Using local DAPI addresses: \(localAddresses)")
       result = localAddresses.withCString { addressesCStr -> DashSDKResult in
         var mutableConfig = config
         mutableConfig.dapi_addresses = addressesCStr
-        print("🔵 SDK.init: Calling dash_sdk_create_trusted...")
         return dash_sdk_create_trusted(&mutableConfig)
       }
     } else {
-      print("🔵 SDK.init: Using default network addresses")
       result = dash_sdk_create_trusted(&config)
     }
-    print("🔵 SDK.init: dash_sdk_create_trusted returned")
 
     // Check for errors
     if result.error != nil {
@@ -323,21 +318,6 @@ public final class SDK: @unchecked Sendable {
   //     return true
   // }
 
-  /// Get an identity by ID
-  @MainActor
-  public func getIdentity(id: String) async throws -> Identity? {
-    // This would call the C function to get identity
-    // For now, return nil as placeholder
-    return nil
-  }
-
-  /// Get a data contract by ID
-  @MainActor
-  public func getDataContract(id: String) async throws -> DataContract? {
-    // This would call the C function to get data contract
-    // For now, return nil as placeholder
-    return nil
-  }
 }
 
 /// SDK Status information
@@ -428,27 +408,6 @@ public class Identities {
 
   init(sdk: SDK) {
     self.sdk = sdk
-  }
-
-  /// Get an identity by ID
-  public func get(id: String) throws -> Identity? {
-    guard let sdk = sdk, sdk.handle != nil else {
-      throw SDKError.invalidState("SDK not initialized")
-    }
-
-    // TODO: Call C function to get identity
-    // For now, return nil
-    return nil
-  }
-
-  /// Get an identity by ID using Data
-  public func get(id: Data) throws -> Identity? {
-    guard id.count == 32 else {
-      throw SDKError.invalidParameter("Identity ID must be exactly 32 bytes")
-    }
-
-    // Convert Data to hex string for now
-    return try get(id: id.toHexString())
   }
 
   /// Get a single identity balance
@@ -605,25 +564,5 @@ public class Identities {
   // Helper function to convert bytes to hex string
   private func bytesToHex(_ bytes: [UInt8]) -> String {
     return bytes.map { String(format: "%02x", $0) }.joined()
-  }
-}
-
-/// Contracts operations
-public class Contracts {
-  private weak var sdk: SDK?
-
-  init(sdk: SDK) {
-    self.sdk = sdk
-  }
-
-  /// Get a data contract by ID
-  public func get(id: String) throws -> DataContract? {
-    guard let sdk = sdk, sdk.handle != nil else {
-      throw SDKError.invalidState("SDK not initialized")
-    }
-
-    // TODO: Call C function to get data contract
-    // For now, return nil
-    return nil
   }
 }

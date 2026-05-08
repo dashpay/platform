@@ -4,12 +4,12 @@ import DashSDKFFI
 /// Swift wrapper for wallet manager that manages multiple wallets
 public class WalletManager {
     private let handle: UnsafeMutablePointer<FFIWalletManager>
-    internal let network: KeyWalletNetwork
+    internal let network: Network
     private let ownsHandle: Bool
 
     /// Create a new standalone wallet manager
     /// Note: Consider using SPVClient.getWalletManager() instead if you have an SPV client
-    public init(network: KeyWalletNetwork = .mainnet,) throws {
+    public init(network: Network = .mainnet,) throws {
         var error = FFIError()
       guard let managerHandle = wallet_manager_create(network.ffiValue, &error) else {
             defer {
@@ -43,7 +43,7 @@ public class WalletManager {
         }
 
         self.handle = handle
-        self.network = KeyWalletNetwork(ffiNetwork: network)
+        self.network = Network(ffiNetwork: network)
         self.ownsHandle = false
     }
 
@@ -364,7 +364,18 @@ public class WalletManager {
                                   contextDetails: TransactionContextDetails,
                                   updateStateIfFound: Bool = true) throws -> Bool {
         var error = FFIError()
-        var ffiContext = contextDetails.toFFI()
+        // Build FFITransactionContext from TransactionContextDetails
+        var ffiContext = FFITransactionContext()
+        ffiContext.context_type = FFITransactionContextType(rawValue: contextDetails.context.rawValue)
+        ffiContext.block_info.height = contextDetails.height
+        ffiContext.block_info.timestamp = contextDetails.timestamp
+        if let hash = contextDetails.blockHash, hash.count == 32 {
+            hash.withUnsafeBytes { buf in
+                withUnsafeMutableBytes(of: &ffiContext.block_info.block_hash) { dst in
+                    dst.copyBytes(from: buf.prefix(32))
+                }
+            }
+        }
 
         let success = transactionData.withUnsafeBytes { txBytes in
             let txPtr = txBytes.bindMemory(to: UInt8.self).baseAddress
@@ -477,9 +488,9 @@ public class WalletManager {
     /// - Parameters:
     ///   - walletId: The wallet ID
     /// - Returns: The managed account collection
-    public func getManagedAccountCollection(walletId: Data) throws -> ManagedAccountCollection {
+    public func getManagedAccountCollection(walletId: Data) -> ManagedAccountCollection? {
         guard walletId.count == 32 else {
-            throw KeyWalletError.invalidInput("Wallet ID must be exactly 32 bytes")
+            return nil
         }
 
         var error = FFIError()
@@ -496,10 +507,94 @@ public class WalletManager {
         }
 
         guard let collection = collectionHandle else {
-            throw KeyWalletError(ffiError: error)
+            return nil
         }
 
         return ManagedAccountCollection(handle: collection, manager: self)
+    }
+
+    /// Ensure a wallet has a DIP-17 Platform Payment account created.
+    /// If it already exists, this is a no-op.
+    ///
+    /// - Parameters:
+    ///   - walletId: The wallet ID (32 bytes)
+    ///   - accountIndex: Account index (default 0)
+    ///   - keyClass: Key class (default 0 = receive)
+    public func ensurePlatformPaymentAccount(
+        walletId: Data,
+        accountIndex: UInt32 = 0,
+        keyClass: UInt32 = 0
+    ) throws {
+        guard let wallet = try getWallet(id: walletId) else {
+            throw KeyWalletError.notFound("Wallet not found")
+        }
+
+        // Check if the account already exists
+        guard let collection = getManagedAccountCollection(walletId: walletId) else {
+            throw KeyWalletError.notFound("Account collection not found")
+        }
+        if collection.getPlatformPaymentAccount(accountIndex: accountIndex, keyClass: keyClass) != nil {
+            return // Already exists
+        }
+
+        // Create the platform payment account
+        try wallet.addPlatformPaymentAccount(accountIndex: accountIndex, keyClass: keyClass)
+    }
+
+    /// Get platform payment addresses for a wallet, suitable for BLAST sync.
+    ///
+    /// Returns (derivation index, address key bytes) tuples from the platform
+    /// payment account's address pool.
+    ///
+    /// - Parameters:
+    ///   - walletId: The wallet ID (32 bytes)
+    ///   - accountIndex: Account index (default 0)
+    ///   - keyClass: Key class (default 0 = receive)
+    /// - Returns: Array of (index, key) tuples for BLAST sync, or empty if no platform account.
+    public func getPlatformAddresses(
+        walletId: Data,
+        accountIndex: UInt32 = 0,
+        keyClass: UInt32 = 0
+    ) throws -> [(index: UInt32, key: Data)] {
+        guard let collection = getManagedAccountCollection(walletId: walletId) else {
+            return []
+        }
+
+        guard let platformAccount = collection.getPlatformPaymentAccount(
+            accountIndex: accountIndex, keyClass: keyClass
+        ) else {
+            return []
+        }
+
+        guard let pool = platformAccount.getAddressPool() else {
+            return []
+        }
+
+        // Get all generated addresses from the pool
+        let addresses = try pool.getAddresses(from: 0, to: 0) // 0,0 = all addresses
+        return addresses.compactMap { info in
+            // Convert scriptPubKey to GroveDB storage key via Rust FFI
+            var outKey = Data(count: 21)
+            var outKeyLen: UInt32 = 21 // capacity of outKey buffer
+            let success = info.scriptPubKey.withUnsafeBytes { scriptBuffer -> Bool in
+                guard let scriptBase = scriptBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
+                    return false
+                }
+                return outKey.withUnsafeMutableBytes { keyBuffer -> Bool in
+                    guard let keyBase = keyBuffer.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
+                        return false
+                    }
+                    return dash_sdk_script_to_platform_address_key(
+                        scriptBase,
+                        UInt32(info.scriptPubKey.count),
+                        keyBase,
+                        &outKeyLen
+                    )
+                }
+            }
+            guard success, outKeyLen > 0 else { return nil }
+            return (index: info.index, key: outKey.prefix(Int(outKeyLen)))
+        }
     }
 
     internal var ffiHandle: UnsafeMutablePointer<FFIWalletManager> { handle }

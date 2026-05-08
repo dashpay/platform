@@ -257,3 +257,149 @@ impl<C> Platform<C> {
         Ok(QueryValidationResult::new_with_data(response))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::tests::setup_platform;
+    use dpp::dashcore::Network;
+
+    #[test]
+    fn test_query_contested_resource_vote_state_invalid_contract_id() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetContestedResourceVoteStateRequestV0 {
+            contract_id: vec![0; 8],
+            document_type_name: "x".to_string(),
+            index_name: "x".to_string(),
+            index_values: vec![],
+            result_type: 0,
+            allow_include_locked_and_abstaining_vote_tally: false,
+            start_at_identifier_info: None,
+            count: None,
+            prove: false,
+        };
+
+        let result = platform
+            .query_contested_resource_vote_state_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)] if msg.contains("contract_id must be a valid identifier")
+        ));
+    }
+
+    #[test]
+    fn test_query_contested_resource_vote_state_contract_not_found() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetContestedResourceVoteStateRequestV0 {
+            contract_id: vec![0; 32],
+            document_type_name: "x".to_string(),
+            index_name: "x".to_string(),
+            index_values: vec![],
+            result_type: 0,
+            allow_include_locked_and_abstaining_vote_tally: false,
+            start_at_identifier_info: None,
+            count: None,
+            prove: false,
+        };
+
+        let result = platform
+            .query_contested_resource_vote_state_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::Query(QuerySyntaxError::DataContractNotFound(_))]
+        ));
+    }
+
+    #[test]
+    fn test_query_contested_resource_vote_state_contract_not_found_prove() {
+        // Exercises the prove branch dispatch when the contract is missing.
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetContestedResourceVoteStateRequestV0 {
+            contract_id: vec![0; 32],
+            document_type_name: "x".to_string(),
+            index_name: "x".to_string(),
+            index_values: vec![],
+            result_type: 0,
+            allow_include_locked_and_abstaining_vote_tally: false,
+            start_at_identifier_info: None,
+            count: None,
+            prove: true,
+        };
+
+        let result = platform
+            .query_contested_resource_vote_state_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        // The contract-not-found check fires before the prove split, so this
+        // still returns a DataContractNotFound error.
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::Query(QuerySyntaxError::DataContractNotFound(_))]
+        ));
+    }
+
+    /// NOTE: the `count` guards on lines 132-142 are not reachable here
+    /// without a valid 32-byte `contract_id` + an existing contract, so
+    /// these two tests deliberately pin validation **ordering** — i.e.
+    /// that `contract_id.try_into()` fires before the count checks. They
+    /// both assert the same `InvalidArgument("contract_id …")` message.
+    #[test]
+    fn test_query_contested_resource_vote_state_invalid_contract_id_runs_before_count_zero() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetContestedResourceVoteStateRequestV0 {
+            contract_id: vec![0; 8],
+            document_type_name: "x".to_string(),
+            index_name: "x".to_string(),
+            index_values: vec![],
+            result_type: 0,
+            allow_include_locked_and_abstaining_vote_tally: false,
+            start_at_identifier_info: None,
+            count: Some(0),
+            prove: false,
+        };
+
+        let result = platform
+            .query_contested_resource_vote_state_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)] if msg.contains("contract_id must be a valid identifier")
+        ));
+    }
+
+    #[test]
+    fn test_query_contested_resource_vote_state_invalid_contract_id_runs_before_count_over_u16() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetContestedResourceVoteStateRequestV0 {
+            contract_id: vec![0; 8],
+            document_type_name: "x".to_string(),
+            index_name: "x".to_string(),
+            index_values: vec![],
+            result_type: 0,
+            allow_include_locked_and_abstaining_vote_tally: false,
+            start_at_identifier_info: None,
+            count: Some((u16::MAX as u32) + 1),
+            prove: false,
+        };
+
+        let result = platform
+            .query_contested_resource_vote_state_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        // Same `contract_id` error as above — confirms validation ordering.
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)] if msg.contains("contract_id must be a valid identifier")
+        ));
+    }
+}

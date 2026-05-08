@@ -1,5 +1,5 @@
-// Mock implementation of Swift Dash SDK for testing
-// This provides mock implementations of all the C functions
+// Test-only C mock implementation of SwiftDashSDK FFI, linked by SwiftTests/Package.swift target `SwiftDashSDKMock`.
+// Used by SwiftTests unit tests to exercise Swift wrapper behavior without depending on a real Rust backend.
 
 #include "SwiftDashSDK.h"
 #include <stdlib.h>
@@ -75,7 +75,7 @@ enum SwiftDashSwiftDashNetwork swift_dash_sdk_get_network(const struct SwiftDash
 }
 
 const char *swift_dash_sdk_get_version(void) {
-    return "2.0.0-mock";
+    return strdup("2.0.0-mock");
 }
 
 struct SwiftDashSwiftDashSDKConfig swift_dash_sdk_config_mainnet(void) {

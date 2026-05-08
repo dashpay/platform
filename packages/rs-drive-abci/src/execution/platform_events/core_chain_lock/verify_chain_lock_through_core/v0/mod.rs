@@ -25,7 +25,7 @@ where
             let best_chain_locked_height = self.core_rpc.submit_chain_lock(chain_lock)?;
             Ok(if best_chain_locked_height >= given_chain_lock_height {
                 (true, Some(CoreSyncStatus::Done))
-            } else if best_chain_locked_height - given_chain_lock_height
+            } else if given_chain_lock_height - best_chain_locked_height
                 <= platform_version
                     .drive_abci
                     .methods
@@ -41,3 +41,9 @@ where
         }
     }
 }
+
+// Tests removed: all 4 tests only exercised mock wiring by calling methods directly on
+// MockCoreRPCLike, never invoking the production method `verify_chain_lock_through_core_v0`.
+// The production method requires a Platform<C> whose `core_rpc` has mock expectations
+// configured before construction, which is impractical for isolated unit tests.
+// Real integration coverage belongs in higher-level tests.

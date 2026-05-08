@@ -234,6 +234,54 @@ public class ManagedAccountCollection {
         return managed_account_collection_has_provider_platform_keys(handle)
     }
 
+    // MARK: - Platform Payment Accounts
+
+    /// Whether there are any platform payment accounts in this collection.
+    public var hasPlatformPaymentAccounts: Bool {
+        managed_account_collection_has_platform_payment_accounts(handle)
+    }
+
+    /// The number of platform payment accounts in this collection.
+    public var platformPaymentCount: UInt32 {
+        managed_account_collection_platform_payment_count(handle)
+    }
+
+    /// Get a platform payment account by account index and key class.
+    /// - Parameters:
+    ///   - accountIndex: The account index (hardened).
+    ///   - keyClass: The key class level in the derivation path (typically 0).
+    /// - Returns: The managed platform account, or nil if it does not exist.
+    public func getPlatformPaymentAccount(accountIndex: UInt32, keyClass: UInt32) -> ManagedPlatformAccount? {
+        guard let accountHandle = managed_account_collection_get_platform_payment_account(
+            handle, accountIndex, keyClass
+        ) else {
+            return nil
+        }
+        return ManagedPlatformAccount(handle: accountHandle)
+    }
+
+    /// Get all platform payment account keys from this collection.
+    /// - Returns: Array of account key identifiers (account index + key class).
+    public func getPlatformPaymentKeys() -> [PlatformPaymentAccountKey] {
+        var keysPtr: UnsafeMutablePointer<FFIPlatformPaymentAccountKey>?
+        var count: Int = 0
+
+        let success = managed_account_collection_get_platform_payment_keys(handle, &keysPtr, &count)
+
+        guard success, let ptr = keysPtr, count > 0 else {
+            return []
+        }
+
+        defer {
+            managed_account_collection_free_platform_payment_keys(ptr, count)
+        }
+
+        return (0..<count).map { i in
+            let ffiKey = ptr[i]
+            return PlatformPaymentAccountKey(account: ffiKey.account, keyClass: ffiKey.key_class)
+        }
+    }
+
     // MARK: - Summary
 
     /// Get a summary of all accounts in this collection

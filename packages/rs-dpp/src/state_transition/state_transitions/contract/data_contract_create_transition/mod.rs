@@ -272,4 +272,161 @@ mod test {
         assert!(!data.state_transition.is_document_state_transition());
         assert!(!data.state_transition.is_identity_state_transition());
     }
+
+    #[test]
+    fn should_roundtrip_via_from_object() {
+        let data = get_test_data();
+
+        // Convert to object and back
+        let mut obj = StateTransitionValueConvert::to_object(&data.state_transition, false)
+            .expect("to_object should succeed");
+
+        // Add the protocol version field for from_object
+        obj.insert(STATE_TRANSITION_PROTOCOL_VERSION.to_string(), Value::U16(0))
+            .expect("insert should succeed");
+
+        let restored = <DataContractCreateTransition as StateTransitionValueConvert>::from_object(
+            obj,
+            LATEST_PLATFORM_VERSION,
+        )
+        .expect("from_object should succeed");
+
+        assert_eq!(data.state_transition, restored);
+    }
+
+    #[test]
+    fn should_roundtrip_via_from_value_map() {
+        let data = get_test_data();
+
+        let obj = StateTransitionValueConvert::to_object(&data.state_transition, false)
+            .expect("to_object should succeed");
+
+        let mut map = obj
+            .into_btree_string_map()
+            .expect("should convert to btree map");
+        map.insert(STATE_TRANSITION_PROTOCOL_VERSION.to_string(), Value::U16(0));
+
+        let restored =
+            <DataContractCreateTransition as StateTransitionValueConvert>::from_value_map(
+                map,
+                LATEST_PLATFORM_VERSION,
+            )
+            .expect("from_value_map should succeed");
+
+        assert_eq!(data.state_transition, restored);
+    }
+
+    #[test]
+    fn should_validate_estimated_fee_with_sufficient_balance() {
+        use crate::state_transition::StateTransitionEstimatedFeeValidation;
+        use crate::state_transition::StateTransitionIdentityEstimatedFeeValidation;
+
+        let data = get_test_data();
+        let fee = data
+            .state_transition
+            .calculate_min_required_fee(LATEST_PLATFORM_VERSION)
+            .expect("fee calculation should succeed");
+
+        // With sufficient balance, validation should pass
+        let result = data
+            .state_transition
+            .validate_estimated_fee(fee + 1000, LATEST_PLATFORM_VERSION)
+            .expect("validation should succeed");
+        assert!(result.is_valid());
+    }
+
+    #[test]
+    fn should_validate_estimated_fee_with_insufficient_balance() {
+        use crate::state_transition::StateTransitionIdentityEstimatedFeeValidation;
+
+        let data = get_test_data();
+
+        // With zero balance, validation should fail
+        let result = data
+            .state_transition
+            .validate_estimated_fee(0, LATEST_PLATFORM_VERSION)
+            .expect("validation should succeed");
+        assert!(!result.is_valid());
+    }
+
+    #[test]
+    fn should_create_from_created_data_contract() {
+        let created_data_contract = get_data_contract_fixture(None, 0, 1);
+
+        let transition = DataContractCreateTransition::try_from_platform_versioned(
+            created_data_contract.clone(),
+            LATEST_PLATFORM_VERSION,
+        )
+        .expect("should create transition from created data contract");
+
+        assert_eq!(
+            transition.identity_nonce(),
+            created_data_contract.identity_nonce()
+        );
+    }
+
+    #[test]
+    fn should_create_state_transition_from_created_data_contract() {
+        let created_data_contract = get_data_contract_fixture(None, 0, 1);
+
+        let st = StateTransition::try_from_platform_versioned(
+            created_data_contract,
+            LATEST_PLATFORM_VERSION,
+        )
+        .expect("should create state transition from created data contract");
+
+        match st {
+            StateTransition::DataContractCreate(_) => {}
+            _ => panic!("expected DataContractCreate"),
+        }
+    }
+
+    #[test]
+    fn v0_should_roundtrip_via_from_object() {
+        let data = get_test_data();
+        match &data.state_transition {
+            DataContractCreateTransition::V0(v0) => {
+                let obj = v0.to_object(false).expect("to_object should succeed");
+
+                let restored =
+                    DataContractCreateTransitionV0::from_object(obj, LATEST_PLATFORM_VERSION)
+                        .expect("from_object should succeed");
+
+                assert_eq!(*v0, restored);
+            }
+        }
+    }
+
+    #[test]
+    fn v0_should_roundtrip_via_from_value_map() {
+        let data = get_test_data();
+        match &data.state_transition {
+            DataContractCreateTransition::V0(v0) => {
+                let obj = v0.to_object(false).expect("to_object should succeed");
+                let map = obj
+                    .into_btree_string_map()
+                    .expect("should convert to btree map");
+
+                let restored =
+                    DataContractCreateTransitionV0::from_value_map(map, LATEST_PLATFORM_VERSION)
+                        .expect("from_value_map should succeed");
+
+                assert_eq!(*v0, restored);
+            }
+        }
+    }
+
+    #[test]
+    fn v0_should_create_from_created_data_contract() {
+        let created_data_contract = get_data_contract_fixture(None, 5, 1);
+
+        let v0 = DataContractCreateTransitionV0::try_from_platform_versioned(
+            created_data_contract,
+            LATEST_PLATFORM_VERSION,
+        )
+        .expect("should create v0 from created data contract");
+
+        assert_eq!(v0.identity_nonce, 5);
+        assert_eq!(v0.user_fee_increase, 0);
+    }
 }

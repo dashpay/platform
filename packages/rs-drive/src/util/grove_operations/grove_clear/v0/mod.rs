@@ -71,3 +71,111 @@ impl Drive {
         result
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::util::test_helpers::setup::setup_drive;
+    use grovedb::{Element, TreeType};
+    use grovedb_path::SubtreePath;
+    use platform_version::version::PlatformVersion;
+
+    #[test]
+    fn test_grove_clear_empty_subtree() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+        let tx = drive.grove.start_transaction();
+
+        drive
+            .grove_insert_empty_tree(
+                SubtreePath::empty(),
+                b"root",
+                TreeType::NormalTree,
+                Some(&tx),
+                None,
+                &mut vec![],
+                &pv.drive,
+            )
+            .expect("expected to insert root tree");
+
+        // Clear empty subtree should succeed
+        drive
+            .grove_clear_v0([b"root".as_slice()].as_slice().into(), Some(&tx), &pv.drive)
+            .expect("expected operation to succeed");
+    }
+
+    #[test]
+    fn test_grove_clear_with_items() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+        let tx = drive.grove.start_transaction();
+
+        drive
+            .grove_insert_empty_tree(
+                SubtreePath::empty(),
+                b"root",
+                TreeType::NormalTree,
+                Some(&tx),
+                None,
+                &mut vec![],
+                &pv.drive,
+            )
+            .expect("expected to insert root tree");
+
+        // Insert some items
+        drive
+            .grove
+            .insert(
+                &[b"root".as_slice()],
+                b"key1",
+                Element::new_item(b"val1".to_vec()),
+                None,
+                Some(&tx),
+                &pv.drive.grove_version,
+            )
+            .unwrap()
+            .expect("expected to insert element");
+
+        drive
+            .grove
+            .insert(
+                &[b"root".as_slice()],
+                b"key2",
+                Element::new_item(b"val2".to_vec()),
+                None,
+                Some(&tx),
+                &pv.drive.grove_version,
+            )
+            .unwrap()
+            .expect("expected to insert element");
+
+        // Clear subtree with items should succeed
+        drive
+            .grove_clear_v0([b"root".as_slice()].as_slice().into(), Some(&tx), &pv.drive)
+            .expect("expected operation to succeed");
+
+        // Verify the items are actually gone
+        let result1 = drive
+            .grove
+            .get_raw_optional(
+                [b"root".as_slice()].as_slice().into(),
+                b"key1",
+                Some(&tx),
+                &pv.drive.grove_version,
+            )
+            .unwrap()
+            .expect("expected to query element");
+        assert!(result1.is_none(), "key1 should be gone after clear");
+
+        let result2 = drive
+            .grove
+            .get_raw_optional(
+                [b"root".as_slice()].as_slice().into(),
+                b"key2",
+                Some(&tx),
+                &pv.drive.grove_version,
+            )
+            .unwrap()
+            .expect("expected to query element");
+        assert!(result2.is_none(), "key2 should be gone after clear");
+    }
+}

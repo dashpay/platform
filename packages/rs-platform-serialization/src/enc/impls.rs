@@ -596,3 +596,242 @@ where
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::needless_borrows_for_generic_args)]
+mod tests {
+    use super::*;
+    use bincode::config;
+    use platform_version::version::PlatformVersion;
+
+    fn cfg() -> impl bincode::config::Config {
+        config::standard().with_big_endian().with_no_limit()
+    }
+
+    fn pv() -> &'static PlatformVersion {
+        PlatformVersion::first()
+    }
+
+    /// Helper to encode and then decode, verifying round-trip.
+    fn round_trip<T>(value: T) -> T
+    where
+        T: PlatformVersionEncode + crate::PlatformVersionedDecode,
+    {
+        let encoded = crate::platform_encode_to_vec(value, cfg(), pv()).unwrap();
+        crate::platform_versioned_decode_from_slice(&encoded, cfg(), pv()).unwrap()
+    }
+
+    // -----------------------------------------------------------------------
+    // Slice encode: u8 optimization vs generic path
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn encode_u8_slice_optimization() {
+        // Exercise the TypeId::of::<u8>() fast path in [T] encode via Vec
+        let data: Vec<u8> = vec![1, 2, 3, 4, 5];
+        let encoded = crate::platform_encode_to_vec(&data, cfg(), pv()).unwrap();
+        let decoded: Vec<u8> =
+            crate::platform_versioned_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(decoded, data);
+    }
+
+    #[test]
+    fn encode_non_u8_slice() {
+        // Exercise the generic (non-u8) path in [T] encode
+        let data: Vec<u32> = vec![100, 200, 300];
+        let encoded = crate::platform_encode_to_vec(&data, cfg(), pv()).unwrap();
+        let decoded: Vec<u32> =
+            crate::platform_versioned_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(decoded, data);
+    }
+
+    #[test]
+    fn encode_empty_slice() {
+        let data: &[u8] = &[];
+        let encoded = crate::platform_encode_to_vec(data, cfg(), pv()).unwrap();
+        let decoded: Vec<u8> =
+            crate::platform_versioned_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert!(decoded.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // Array encode
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn encode_array_u32() {
+        let value: [u32; 3] = [10, 20, 30];
+        assert_eq!(round_trip(value), value);
+    }
+
+    #[test]
+    fn encode_array_single_element() {
+        let value: [u64; 1] = [42];
+        assert_eq!(round_trip(value), value);
+    }
+
+    // -----------------------------------------------------------------------
+    // Option encode
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn encode_option_some() {
+        let value: Option<i32> = Some(-42);
+        assert_eq!(round_trip(value), value);
+    }
+
+    #[test]
+    fn encode_option_none() {
+        let value: Option<i32> = None;
+        assert_eq!(round_trip(value), value);
+    }
+
+    // -----------------------------------------------------------------------
+    // Result encode
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn encode_result_ok() {
+        let value: Result<u32, u8> = Ok(42);
+        assert_eq!(round_trip(value), value);
+    }
+
+    #[test]
+    fn encode_result_err() {
+        let value: Result<u32, u8> = Err(1);
+        assert_eq!(round_trip(value), value);
+    }
+
+    // -----------------------------------------------------------------------
+    // Cell / RefCell encode
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn encode_cell() {
+        let value = Cell::new(77u32);
+        let encoded = crate::platform_encode_to_vec(&value, cfg(), pv()).unwrap();
+        let decoded: u32 =
+            crate::platform_versioned_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(decoded, 77);
+    }
+
+    #[test]
+    fn encode_refcell() {
+        let value = RefCell::new(88u16);
+        let encoded = crate::platform_encode_to_vec(&value, cfg(), pv()).unwrap();
+        let decoded: u16 =
+            crate::platform_versioned_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(decoded, 88);
+    }
+
+    #[test]
+    fn encode_refcell_already_borrowed_returns_error() {
+        let value = RefCell::new(42u32);
+        let _borrow = value.borrow_mut(); // hold a mutable borrow
+        let result = crate::platform_encode_to_vec(&value, cfg(), pv());
+        assert!(result.is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // str encode
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn encode_str() {
+        let value = "hello platform";
+        let encoded = crate::platform_encode_to_vec(value, cfg(), pv()).unwrap();
+        let decoded: String =
+            crate::platform_versioned_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(decoded, value);
+    }
+
+    // -----------------------------------------------------------------------
+    // Reference encode
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn encode_ref() {
+        let value: u32 = 42;
+        let encoded = crate::platform_encode_to_vec(&value, cfg(), pv()).unwrap();
+        let decoded: u32 =
+            crate::platform_versioned_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(decoded, value);
+    }
+
+    // -----------------------------------------------------------------------
+    // Tuple encode
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn encode_tuple_1() {
+        let value: (u32,) = (42,);
+        assert_eq!(round_trip(value), value);
+    }
+
+    #[test]
+    fn encode_tuple_2() {
+        let value: (u32, i8) = (42, -1);
+        assert_eq!(round_trip(value), value);
+    }
+
+    #[test]
+    fn encode_tuple_3() {
+        let value: (u8, u16, u32) = (1, 2, 3);
+        assert_eq!(round_trip(value), value);
+    }
+
+    #[test]
+    fn encode_tuple_4() {
+        let value: (u8, u16, u32, u64) = (1, 2, 3, 4);
+        assert_eq!(round_trip(value), value);
+    }
+
+    #[test]
+    fn encode_tuple_5() {
+        let value: (u8, u16, u32, u64, bool) = (1, 2, 3, 4, true);
+        assert_eq!(round_trip(value), value);
+    }
+
+    // -----------------------------------------------------------------------
+    // Duration / Range / RangeInclusive / Bound
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn encode_duration() {
+        let value = Duration::new(60, 500_000_000);
+        assert_eq!(round_trip(value), value);
+    }
+
+    #[test]
+    fn encode_range() {
+        let value = 10u32..20u32;
+        assert_eq!(round_trip(value.clone()), value);
+    }
+
+    #[test]
+    fn encode_range_inclusive() {
+        let value = 10u32..=20u32;
+        assert_eq!(round_trip(value.clone()), value);
+    }
+
+    #[test]
+    fn encode_bound_unbounded() {
+        use core::ops::Bound;
+        let value: Bound<u32> = Bound::Unbounded;
+        assert_eq!(round_trip(value), value);
+    }
+
+    #[test]
+    fn encode_bound_included() {
+        use core::ops::Bound;
+        let value: Bound<u32> = Bound::Included(5);
+        assert_eq!(round_trip(value), value);
+    }
+
+    #[test]
+    fn encode_bound_excluded() {
+        use core::ops::Bound;
+        let value: Bound<u32> = Bound::Excluded(5);
+        assert_eq!(round_trip(value), value);
+    }
+}

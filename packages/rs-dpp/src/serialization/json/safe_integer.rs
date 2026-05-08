@@ -507,4 +507,280 @@ mod tests {
         let restored: Versioned = serde_json::from_value(json).unwrap();
         assert_eq!(v, restored);
     }
+
+    // --- Additional edge-case tests for json_safe_option_i64 ---
+
+    #[test]
+    fn option_i64_some_safe_value_stays_number() {
+        let t = TestOptionI64 { value: Some(1000) };
+        let json = serde_json::to_value(&t).unwrap();
+        assert!(json["value"].is_number());
+        assert_eq!(json["value"].as_i64().unwrap(), 1000);
+
+        let restored: TestOptionI64 = serde_json::from_value(json).unwrap();
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn option_i64_some_unsafe_positive_becomes_string() {
+        // JS_MAX_SAFE_INTEGER + 1 as i64
+        let unsafe_val = (JS_MAX_SAFE_INTEGER + 1) as i64;
+        let t = TestOptionI64 {
+            value: Some(unsafe_val),
+        };
+        let json = serde_json::to_value(&t).unwrap();
+        assert!(json["value"].is_string());
+
+        let restored: TestOptionI64 = serde_json::from_value(json).unwrap();
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn option_i64_some_unsafe_negative_becomes_string() {
+        // -(JS_MAX_SAFE_INTEGER) - 1 is below the safe boundary
+        let unsafe_neg = -(JS_MAX_SAFE_INTEGER as i64) - 1;
+        let t = TestOptionI64 {
+            value: Some(unsafe_neg),
+        };
+        let json = serde_json::to_value(&t).unwrap();
+        assert!(json["value"].is_string());
+
+        let restored: TestOptionI64 = serde_json::from_value(json).unwrap();
+        assert_eq!(t, restored);
+    }
+
+    // --- Boundary tests ---
+
+    #[test]
+    fn u64_exactly_at_max_safe_integer_round_trip() {
+        let t = TestU64 {
+            value: JS_MAX_SAFE_INTEGER,
+        };
+        let json = serde_json::to_value(&t).unwrap();
+        assert!(json["value"].is_number());
+
+        let restored: TestU64 = serde_json::from_value(json).unwrap();
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn u64_one_above_max_safe_integer_round_trip() {
+        let t = TestU64 {
+            value: JS_MAX_SAFE_INTEGER + 1,
+        };
+        let json = serde_json::to_value(&t).unwrap();
+        assert!(json["value"].is_string());
+        assert_eq!(
+            json["value"].as_str().unwrap(),
+            (JS_MAX_SAFE_INTEGER + 1).to_string()
+        );
+
+        let restored: TestU64 = serde_json::from_value(json).unwrap();
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn i64_exactly_at_positive_safe_boundary_stays_number() {
+        let t = TestI64 {
+            value: JS_MAX_SAFE_INTEGER as i64,
+        };
+        let json = serde_json::to_value(&t).unwrap();
+        assert!(json["value"].is_number());
+
+        let restored: TestI64 = serde_json::from_value(json).unwrap();
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn i64_one_above_positive_safe_boundary_becomes_string() {
+        let t = TestI64 {
+            value: JS_MAX_SAFE_INTEGER as i64 + 1,
+        };
+        let json = serde_json::to_value(&t).unwrap();
+        assert!(json["value"].is_string());
+
+        let restored: TestI64 = serde_json::from_value(json).unwrap();
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn i64_exactly_at_negative_safe_boundary_stays_number() {
+        let t = TestI64 {
+            value: -(JS_MAX_SAFE_INTEGER as i64),
+        };
+        let json = serde_json::to_value(&t).unwrap();
+        assert!(json["value"].is_number());
+
+        let restored: TestI64 = serde_json::from_value(json).unwrap();
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn i64_one_below_negative_safe_boundary_becomes_string() {
+        let t = TestI64 {
+            value: -(JS_MAX_SAFE_INTEGER as i64) - 1,
+        };
+        let json = serde_json::to_value(&t).unwrap();
+        assert!(json["value"].is_string());
+
+        let restored: TestI64 = serde_json::from_value(json).unwrap();
+        assert_eq!(t, restored);
+    }
+
+    // --- Zero and negative value tests ---
+
+    #[test]
+    fn u64_zero_stays_number() {
+        let t = TestU64 { value: 0 };
+        let json = serde_json::to_value(&t).unwrap();
+        assert!(json["value"].is_number());
+        assert_eq!(json["value"].as_u64().unwrap(), 0);
+
+        let restored: TestU64 = serde_json::from_value(json).unwrap();
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn i64_zero_stays_number() {
+        let t = TestI64 { value: 0 };
+        let json = serde_json::to_value(&t).unwrap();
+        assert!(json["value"].is_number());
+        assert_eq!(json["value"].as_i64().unwrap(), 0);
+
+        let restored: TestI64 = serde_json::from_value(json).unwrap();
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn i64_negative_one_stays_number() {
+        let t = TestI64 { value: -1 };
+        let json = serde_json::to_value(&t).unwrap();
+        assert!(json["value"].is_number());
+
+        let restored: TestI64 = serde_json::from_value(json).unwrap();
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn option_i64_zero_round_trip() {
+        let t = TestOptionI64 { value: Some(0) };
+        let json = serde_json::to_value(&t).unwrap();
+        assert!(json["value"].is_number());
+
+        let restored: TestOptionI64 = serde_json::from_value(json).unwrap();
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn option_u64_zero_round_trip() {
+        let t = TestOptionU64 { value: Some(0) };
+        let json = serde_json::to_value(&t).unwrap();
+        assert!(json["value"].is_number());
+
+        let restored: TestOptionU64 = serde_json::from_value(json).unwrap();
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn option_u64_at_max_safe_integer_stays_number() {
+        let t = TestOptionU64 {
+            value: Some(JS_MAX_SAFE_INTEGER),
+        };
+        let json = serde_json::to_value(&t).unwrap();
+        assert!(json["value"].is_number());
+
+        let restored: TestOptionU64 = serde_json::from_value(json).unwrap();
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn option_u64_above_max_safe_integer_becomes_string() {
+        let t = TestOptionU64 {
+            value: Some(JS_MAX_SAFE_INTEGER + 1),
+        };
+        let json = serde_json::to_value(&t).unwrap();
+        assert!(json["value"].is_string());
+
+        let restored: TestOptionU64 = serde_json::from_value(json).unwrap();
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn option_i64_at_positive_safe_boundary_stays_number() {
+        let t = TestOptionI64 {
+            value: Some(JS_MAX_SAFE_INTEGER as i64),
+        };
+        let json = serde_json::to_value(&t).unwrap();
+        assert!(json["value"].is_number());
+
+        let restored: TestOptionI64 = serde_json::from_value(json).unwrap();
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn option_i64_above_positive_safe_boundary_becomes_string() {
+        let t = TestOptionI64 {
+            value: Some(JS_MAX_SAFE_INTEGER as i64 + 1),
+        };
+        let json = serde_json::to_value(&t).unwrap();
+        assert!(json["value"].is_string());
+
+        let restored: TestOptionI64 = serde_json::from_value(json).unwrap();
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn option_i64_at_negative_safe_boundary_stays_number() {
+        let t = TestOptionI64 {
+            value: Some(-(JS_MAX_SAFE_INTEGER as i64)),
+        };
+        let json = serde_json::to_value(&t).unwrap();
+        assert!(json["value"].is_number());
+
+        let restored: TestOptionI64 = serde_json::from_value(json).unwrap();
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn option_i64_below_negative_safe_boundary_becomes_string() {
+        let t = TestOptionI64 {
+            value: Some(-(JS_MAX_SAFE_INTEGER as i64) - 1),
+        };
+        let json = serde_json::to_value(&t).unwrap();
+        assert!(json["value"].is_string());
+
+        let restored: TestOptionI64 = serde_json::from_value(json).unwrap();
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn platform_value_option_i64_none_round_trip() {
+        let t = TestOptionI64 { value: None };
+        let pv = platform_value::to_value(&t).unwrap();
+        let restored: TestOptionI64 = platform_value::from_value(pv).unwrap();
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn platform_value_option_u64_none_round_trip() {
+        let t = TestOptionU64 { value: None };
+        let pv = platform_value::to_value(&t).unwrap();
+        let restored: TestOptionU64 = platform_value::from_value(pv).unwrap();
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn u64_deserialize_from_string_number() {
+        // Deserialize a string-encoded number (even one that fits in a number)
+        let json = serde_json::json!({"value": "42"});
+        let restored: TestU64 = serde_json::from_value(json).unwrap();
+        assert_eq!(restored.value, 42);
+    }
+
+    #[test]
+    fn i64_deserialize_from_string_number() {
+        let json = serde_json::json!({"value": "-12345"});
+        let restored: TestI64 = serde_json::from_value(json).unwrap();
+        assert_eq!(restored.value, -12345);
+    }
 }

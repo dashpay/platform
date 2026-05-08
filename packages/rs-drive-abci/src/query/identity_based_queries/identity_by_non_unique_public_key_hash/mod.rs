@@ -67,3 +67,51 @@ impl<C> Platform<C> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::tests::setup_platform;
+    use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::GetIdentityByNonUniquePublicKeyHashRequestV0;
+    use dpp::dashcore::Network;
+
+    #[test]
+    fn test_query_identity_by_non_unique_public_key_hash_with_none_version() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetIdentityByNonUniquePublicKeyHashRequest { version: None };
+
+        let result = platform
+            .query_identity_by_non_unique_public_key_hash(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::DecodingError(msg)] if msg.contains("could not decode identity by public key non unique hash query")
+        ));
+    }
+
+    #[test]
+    fn test_query_identity_by_non_unique_public_key_hash_with_valid_v0_version() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetIdentityByNonUniquePublicKeyHashRequest {
+            version: Some(RequestVersion::V0(
+                GetIdentityByNonUniquePublicKeyHashRequestV0 {
+                    public_key_hash: vec![0; 20],
+                    start_after: None,
+                    prove: false,
+                },
+            )),
+        };
+
+        let result = platform
+            .query_identity_by_non_unique_public_key_hash(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.is_valid());
+
+        let response = result.data.expect("expected response data");
+        assert!(matches!(response.version, Some(ResponseVersion::V0(_))));
+    }
+}

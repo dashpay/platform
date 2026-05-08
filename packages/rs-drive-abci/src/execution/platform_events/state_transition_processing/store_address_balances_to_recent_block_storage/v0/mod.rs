@@ -46,3 +46,43 @@ where
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::block::epoch::Epoch;
+    use std::collections::BTreeMap;
+
+    /// Calling `store_address_balances_to_recent_block_storage_v0` with an
+    /// empty balance map must be a no-op that succeeds. This covers the
+    /// simplest path through the thin wrapper and proves it doesn't
+    /// accidentally require any particular pre-existing drive structure.
+    #[test]
+    fn v0_empty_map_returns_ok() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 42,
+            core_height: 10,
+            epoch: Epoch::default(),
+        };
+
+        let empty_map: BTreeMap<PlatformAddress, CreditOperation> = BTreeMap::new();
+
+        platform
+            .store_address_balances_to_recent_block_storage_v0(
+                &empty_map,
+                &block_info,
+                &transaction,
+                platform_version,
+            )
+            .expect("storing an empty map must succeed");
+    }
+}

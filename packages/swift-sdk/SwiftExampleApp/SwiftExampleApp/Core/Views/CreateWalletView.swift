@@ -1,11 +1,12 @@
 import SwiftUI
+import SwiftData
 import SwiftDashSDK
 
 struct CreateWalletView: View {
     @Environment(\.dismiss) var dismiss
     @Environment(\.modelContext) private var modelContext
-    @EnvironmentObject var walletService: WalletService
-    @EnvironmentObject var unifiedAppState: UnifiedAppState
+    @EnvironmentObject var walletManager: PlatformWalletManager
+    @EnvironmentObject var platformState: AppState
 
     @State private var walletLabel: String = ""
     @State private var showImportOption: Bool = false
@@ -34,13 +35,21 @@ struct CreateWalletView: View {
         case mnemonic
     }
 
-    var currentNetwork: AppNetwork {
-        unifiedAppState.platformState.currentNetwork
+    var currentNetwork: Network {
+        platformState.currentNetwork
     }
 
     // Only show devnet option if currently on devnet
     var shouldShowDevnet: Bool {
         currentNetwork == .devnet
+    }
+
+    // Mirror of the devnet rule: regtest is a developer-only
+    // network and the toggle would clutter the create screen on
+    // mainnet/testnet. Showing it only when the active network is
+    // regtest also matches the wallet-info network picker pattern.
+    var shouldShowRegtest: Bool {
+        currentNetwork == .regtest
     }
 
     var body: some View {
@@ -50,6 +59,7 @@ struct CreateWalletView: View {
                     .textInputAutocapitalization(.words)
                     .focused($focusedField, equals: .walletName)
                     .submitLabel(.next)
+                    .accessibilityIdentifier("createWallet.walletNameField")
                     .onSubmit {
                         focusedField = .pin
                     }
@@ -96,6 +106,23 @@ struct CreateWalletView: View {
                         }
                         .toggleStyle(CheckboxToggleStyle())
                     }
+
+                    // Mirror Devnet's gating: only render the local
+                    // (regtest) toggle when the user is actually on
+                    // regtest. Without this row there's no path to
+                    // create a regtest wallet from the active-network
+                    // creation flow.
+                    if shouldShowRegtest {
+                        Toggle(isOn: $createForRegtest) {
+                            HStack {
+                                Image(systemName: "network")
+                                    .foregroundColor(.purple)
+                                Text("Local (Regtest)")
+                                    .font(.body)
+                            }
+                        }
+                        .toggleStyle(CheckboxToggleStyle())
+                    }
                 }
                 .padding(.vertical, 4)
             } header: {
@@ -113,6 +140,7 @@ struct CreateWalletView: View {
                         .textContentType(.oneTimeCode)
                         .autocorrectionDisabled()
                         .focused($focusedField, equals: .pin)
+                        .accessibilityIdentifier("createWallet.pinField")
                 }
 
                 HStack {
@@ -123,6 +151,7 @@ struct CreateWalletView: View {
                         .textContentType(.oneTimeCode)
                         .autocorrectionDisabled()
                         .focused($focusedField, equals: .confirmPin)
+                        .accessibilityIdentifier("createWallet.confirmPinField")
                 }
             } header: {
                 Text("Security")
@@ -181,6 +210,7 @@ struct CreateWalletView: View {
                     onCreateTapped()
                 }
                 .disabled(!canCreateWallet)
+                .accessibilityIdentifier("createWallet.createButton")
             }
         }
         .disabled(isCreating)
@@ -221,7 +251,16 @@ struct CreateWalletView: View {
     }
 
     private var hasNetworkSelected: Bool {
-        createForMainnet || createForTestnet || createForDevnet
+        // Mirror the same visibility gates used when building
+        // `selectedNetworks` below — without this, a stale
+        // `createForRegtest`/`createForDevnet` flag set by
+        // `setupInitialNetworkSelection()` could leave the Create
+        // button enabled while `selectedNetworks` ends up empty,
+        // surfacing a `"No network selected"` error after the tap.
+        createForMainnet ||
+        createForTestnet ||
+        (createForDevnet && shouldShowDevnet) ||
+        (createForRegtest && shouldShowRegtest)
     }
 
     private func setupInitialNetworkSelection() {
@@ -253,7 +292,7 @@ struct CreateWalletView: View {
         }
     }
 
-    private func createWallet(using mnemonic: String?) {
+    private func createWallet(using mnemonic: String) {
         guard !walletLabel.isEmpty,
               walletPin == confirmPin,
               walletPin.count >= 4 && walletPin.count <= 6 else {
@@ -270,38 +309,107 @@ struct CreateWalletView: View {
             do {
                 print("=== STARTING WALLET CREATION ===")
 
-                let mnemonic: String? = (showImportOption ? importMnemonic : mnemonic)
-                print("Has mnemonic: \(mnemonic != nil)")
+                let mnemonicPhrase = (showImportOption ? importMnemonic : mnemonic)
                 print("PIN length: \(walletPin.count)")
                 print("Import option enabled: \(showImportOption)")
 
                 // Determine primary network to create the wallet in (SDK enforces unique wallet per mnemonic)
-                let selectedNetworks: [AppNetwork] = [
-                    createForMainnet ? AppNetwork.mainnet : nil,
-                    createForTestnet ? AppNetwork.testnet : nil,
-                    (createForDevnet && shouldShowDevnet) ? AppNetwork.devnet : nil,
+                let selectedNetworks: [Network] = [
+                    createForMainnet ? Network.mainnet : nil,
+                    createForTestnet ? Network.testnet : nil,
+                    (createForDevnet && shouldShowDevnet) ? Network.devnet : nil,
+                    (createForRegtest && shouldShowRegtest) ? Network.regtest : nil,
                 ].compactMap { $0 }
 
-                guard let primaryNetwork = selectedNetworks.first else {
-                    throw WalletError.walletError("No network selected")
+                guard let platformNetwork = selectedNetworks.first else {
+                    struct MissingNetwork: LocalizedError {
+                        var errorDescription: String? { "No network selected" }
+                    }
+                    throw MissingNetwork()
                 }
 
-                // Create exactly one wallet in the SDK; do not append network to label
-                _ = try await walletService.createWallet(
-                    label: walletLabel,
-                    mnemonic: mnemonic,
-                    pin: walletPin,
-                    isImport: showImportOption
-                )
-
-                // Update wallet.networks bitfield to reflect all user selections
-                try? modelContext.save()
-
-                print("=== WALLET CREATION SUCCESS - Created 1 wallet for \(primaryNetwork.displayName) ===")
-
-                await MainActor.run {
+                // Create exactly one wallet via PlatformWalletManager.
+                // The Rust-side wallet creation emits
+                // `persistWalletMetadata` + `setWalletName`, which
+                // the persister callback translates into a
+                // `PersistentWallet` SwiftData row — no separate
+                // HDWallet mirror to maintain. We only have to
+                // patch `isImported` after-the-fact because that
+                // flag is UI-cosmetic and the persister doesn't
+                // know about it.
+                try await MainActor.run {
+                    let managed = try walletManager.createWallet(
+                        mnemonic: mnemonicPhrase,
+                        network: platformNetwork,
+                        name: walletLabel
+                    )
+                    // Persist the mnemonic in the iOS Keychain keyed
+                    // by walletId so multiple wallets coexist and the
+                    // recovery flow can enumerate all of them on
+                    // launch. Best-effort — failure here doesn't
+                    // block wallet creation.
+                    let storage = WalletStorage()
+                    do {
+                        try storage.storeMnemonic(
+                            mnemonicPhrase,
+                            for: managed.walletId
+                        )
+                    } catch {
+                        SDKLogger.error(
+                            "Failed to persist mnemonic to keychain: \(error.localizedDescription)"
+                        )
+                    }
+                    // Stamp the `isImported` flag on the
+                    // just-created PersistentWallet row. The
+                    // persister callback runs synchronously from
+                    // `walletManager.createWallet` via the
+                    // background context; SwiftData's
+                    // `autosaveEnabled = true` on that context
+                    // propagates the row into the main context
+                    // before this fetch runs. If the row somehow
+                    // isn't there yet, the flag stays `false`
+                    // (the default on `PersistentWallet`) — a
+                    // cosmetic miss, not a correctness issue.
+                    let walletIdMatch = managed.walletId
+                    let descriptor = FetchDescriptor<PersistentWallet>(
+                        predicate: #Predicate { $0.walletId == walletIdMatch }
+                    )
+                    let row = try? modelContext.fetch(descriptor).first
+                    if let row = row {
+                        row.isImported = showImportOption
+                        try? modelContext.save()
+                    }
+                    // Mirror the user-typed name + the networks the
+                    // user explicitly ticked + the SPV-tip-derived
+                    // birth height into the keychain alongside the
+                    // mnemonic. Read back by the orphan-mnemonic
+                    // recovery flow so a wipe + reinstall restores
+                    // the original label / networks / birth height
+                    // instead of resurrecting the wallet on testnet
+                    // with a synthetic genesis.
+                    //
+                    // `selectedNetworks` carries every network the
+                    // user ticked even though `walletManager` only
+                    // currently consumes the first; persisting the
+                    // full list now means the multi-network TODO on
+                    // the Rust side won't need a metadata migration.
+                    do {
+                        let metadata = WalletKeychainMetadata(
+                            name: walletLabel,
+                            walletDescription: nil,
+                            networks: selectedNetworks.map { $0.networkName },
+                            birthHeight: row?.birthHeight
+                        )
+                        try storage.setMetadata(metadata, for: managed.walletId)
+                    } catch {
+                        SDKLogger.error(
+                            "Failed to persist wallet metadata to keychain: \(error.localizedDescription)"
+                        )
+                    }
                     dismiss()
                 }
+
+                print("=== WALLET CREATION SUCCESS - Created 1 wallet for \(platformNetwork.displayName) ===")
             } catch {
                 print("=== WALLET CREATION ERROR ===")
                 print("Error: \(error)")

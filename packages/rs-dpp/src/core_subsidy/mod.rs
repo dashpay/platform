@@ -16,11 +16,10 @@ pub trait NetworkCoreSubsidy {
 impl NetworkCoreSubsidy for Network {
     fn core_subsidy_halving_interval(&self) -> u32 {
         match self {
-            Network::Dash => 210240,
+            Network::Mainnet => 210240,
             Network::Testnet => 210240,
             Network::Devnet => 210240,
             Network::Regtest => 150,
-            _ => 210240,
         }
     }
 }

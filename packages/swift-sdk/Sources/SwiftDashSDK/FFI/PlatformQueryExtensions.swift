@@ -1197,6 +1197,40 @@ extension SDK {
         return try processJSONResult(result)
     }
 
+    /// Derive the canonical platform token id for `(contractId, position)`.
+    ///
+    /// This bridges `dash_dpp::tokens::calculate_token_id` over FFI — the
+    /// formula is a protocol constant (`double_sha256("dash_token" ||
+    /// contract_id || u16_be(position))`), not something Swift should
+    /// mirror. Returns base58.
+    ///
+    /// Pure CPU work (a hash) — `nonisolated` and `throws` only, no
+    /// `async` and no SDK handle. Safe to call from any actor.
+    public nonisolated func calculateTokenId(
+        contractId: String,
+        position: UInt16
+    ) throws -> String {
+        let result = contractId.withCString { cId in
+            dash_sdk_calculate_token_id(cId, position)
+        }
+
+        if let error = result.error {
+            let errorMessage = error.pointee.message != nil
+                ? String(cString: error.pointee.message!)
+                : "Unknown error"
+            dash_sdk_error_free(error)
+            throw SDKError.internalError(errorMessage)
+        }
+
+        guard let dataPtr = result.data else {
+            throw SDKError.notFound("No data returned")
+        }
+
+        let string: String = String(cString: dataPtr.assumingMemoryBound(to: CChar.self))
+        dash_sdk_string_free(dataPtr)
+        return string
+    }
+
     /// Get token perpetual distribution last claim
     public func getTokenPerpetualDistributionLastClaim(identityId: String, tokenId: String) async throws -> [String: Any] {
         guard let handle = handle else {

@@ -253,3 +253,256 @@ impl<'a> TryFrom<&'a RequestProcessProposal> for BlockProposal<'a> {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tenderdash_abci::proto::google::protobuf::Timestamp;
+
+    fn valid_timestamp() -> Timestamp {
+        Timestamp {
+            seconds: 1_700_000,
+            nanos: 500_000,
+        }
+    }
+
+    fn valid_prepare_proposal() -> RequestPrepareProposal {
+        RequestPrepareProposal {
+            max_tx_bytes: 1024,
+            txs: vec![vec![1, 2, 3]],
+            local_last_commit: None,
+            misbehavior: vec![],
+            height: 10,
+            time: Some(valid_timestamp()),
+            next_validators_hash: vec![0u8; 32],
+            round: 1,
+            core_chain_locked_height: 500,
+            proposer_pro_tx_hash: vec![0xAAu8; 32],
+            proposed_app_version: 5,
+            version: Some(Consensus { block: 1, app: 2 }),
+            quorum_hash: vec![0xBBu8; 32],
+        }
+    }
+
+    fn valid_process_proposal() -> RequestProcessProposal {
+        RequestProcessProposal {
+            txs: vec![vec![4, 5, 6]],
+            proposed_last_commit: None,
+            misbehavior: vec![],
+            hash: vec![0xCCu8; 32],
+            height: 20,
+            time: Some(valid_timestamp()),
+            next_validators_hash: vec![0u8; 32],
+            round: 2,
+            core_chain_locked_height: 600,
+            core_chain_lock_update: None,
+            proposer_pro_tx_hash: vec![0xDDu8; 32],
+            proposed_app_version: 7,
+            version: Some(Consensus { block: 1, app: 3 }),
+            quorum_hash: vec![0xEEu8; 32],
+        }
+    }
+
+    // ---- BlockProposal from RequestPrepareProposal ----
+
+    #[test]
+    fn prepare_proposal_valid_conversion() {
+        let req = valid_prepare_proposal();
+        let proposal = BlockProposal::try_from(&req).expect("should succeed");
+
+        assert_eq!(proposal.height, 10);
+        assert_eq!(proposal.round, 1);
+        assert_eq!(proposal.core_chain_locked_height, 500);
+        assert_eq!(proposal.proposed_app_version, 5);
+        assert_eq!(proposal.proposer_pro_tx_hash, [0xAAu8; 32]);
+        assert_eq!(proposal.validator_set_quorum_hash, [0xBBu8; 32]);
+        assert!(proposal.block_hash.is_none()); // prepare proposal has no block hash
+        assert!(proposal.core_chain_lock_update.is_none()); // always None for prepare
+        assert_eq!(proposal.raw_state_transitions.len(), 1);
+        assert_eq!(proposal.consensus_versions.block, 1);
+        assert_eq!(proposal.consensus_versions.app, 2);
+    }
+
+    #[test]
+    fn prepare_proposal_missing_version_fails() {
+        let mut req = valid_prepare_proposal();
+        req.version = None;
+        let result = BlockProposal::try_from(&req);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn prepare_proposal_missing_time_fails() {
+        let mut req = valid_prepare_proposal();
+        req.time = None;
+        let result = BlockProposal::try_from(&req);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn prepare_proposal_invalid_proposer_pro_tx_hash_size_fails() {
+        let mut req = valid_prepare_proposal();
+        req.proposer_pro_tx_hash = vec![0u8; 31]; // wrong size
+        let result = BlockProposal::try_from(&req);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn prepare_proposal_invalid_quorum_hash_size_fails() {
+        let mut req = valid_prepare_proposal();
+        req.quorum_hash = vec![0u8; 33]; // wrong size
+        let result = BlockProposal::try_from(&req);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn prepare_proposal_empty_txs() {
+        let mut req = valid_prepare_proposal();
+        req.txs = vec![];
+        let proposal = BlockProposal::try_from(&req).expect("should succeed");
+        assert!(proposal.raw_state_transitions.is_empty());
+    }
+
+    // ---- BlockProposal from RequestProcessProposal ----
+
+    #[test]
+    fn process_proposal_valid_conversion() {
+        let req = valid_process_proposal();
+        let proposal = BlockProposal::try_from(&req).expect("should succeed");
+
+        assert_eq!(proposal.height, 20);
+        assert_eq!(proposal.round, 2);
+        assert_eq!(proposal.core_chain_locked_height, 600);
+        assert_eq!(proposal.proposed_app_version, 7);
+        assert_eq!(proposal.proposer_pro_tx_hash, [0xDDu8; 32]);
+        assert_eq!(proposal.validator_set_quorum_hash, [0xEEu8; 32]);
+        assert_eq!(proposal.block_hash, Some([0xCCu8; 32]));
+        assert!(proposal.core_chain_lock_update.is_none());
+        assert_eq!(proposal.raw_state_transitions.len(), 1);
+    }
+
+    #[test]
+    fn process_proposal_missing_version_fails() {
+        let mut req = valid_process_proposal();
+        req.version = None;
+        let result = BlockProposal::try_from(&req);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn process_proposal_missing_time_fails() {
+        let mut req = valid_process_proposal();
+        req.time = None;
+        let result = BlockProposal::try_from(&req);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn process_proposal_invalid_proposer_hash_size_fails() {
+        let mut req = valid_process_proposal();
+        req.proposer_pro_tx_hash = vec![0u8; 10]; // wrong size
+        let result = BlockProposal::try_from(&req);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn process_proposal_invalid_quorum_hash_size_fails() {
+        let mut req = valid_process_proposal();
+        req.quorum_hash = vec![0u8; 64]; // wrong size
+        let result = BlockProposal::try_from(&req);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn process_proposal_invalid_block_hash_size_fails() {
+        let mut req = valid_process_proposal();
+        req.hash = vec![0u8; 16]; // wrong size
+        let result = BlockProposal::try_from(&req);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn process_proposal_with_core_chain_lock_update() {
+        let mut req = valid_process_proposal();
+        req.core_chain_lock_update = Some(CoreChainLock {
+            core_block_height: 700,
+            core_block_hash: vec![0xFFu8; 32],
+            signature: vec![0xABu8; 96],
+        });
+        let proposal = BlockProposal::try_from(&req).expect("should succeed");
+        assert!(proposal.core_chain_lock_update.is_some());
+        let cl = proposal.core_chain_lock_update.unwrap();
+        assert_eq!(cl.block_height, 700);
+    }
+
+    #[test]
+    fn process_proposal_with_invalid_chain_lock_signature_size_fails() {
+        let mut req = valid_process_proposal();
+        req.core_chain_lock_update = Some(CoreChainLock {
+            core_block_height: 700,
+            core_block_hash: vec![0xFFu8; 32],
+            signature: vec![0xABu8; 48], // wrong size, should be 96
+        });
+        let result = BlockProposal::try_from(&req);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn process_proposal_with_invalid_chain_lock_hash_size_fails() {
+        let mut req = valid_process_proposal();
+        req.core_chain_lock_update = Some(CoreChainLock {
+            core_block_height: 700,
+            core_block_hash: vec![0xFFu8; 16], // wrong size
+            signature: vec![0xABu8; 96],
+        });
+        let result = BlockProposal::try_from(&req);
+        assert!(result.is_err());
+    }
+
+    // ---- Debug formatting ----
+
+    #[test]
+    fn block_proposal_debug_format() {
+        let req = valid_prepare_proposal();
+        let proposal = BlockProposal::try_from(&req).expect("should succeed");
+        let debug_str = format!("{:?}", proposal);
+        assert!(debug_str.contains("BlockProposal"));
+        assert!(debug_str.contains("height: 10"));
+        assert!(debug_str.contains("round: 1"));
+        assert!(debug_str.contains("core_chain_locked_height: 500"));
+    }
+
+    #[test]
+    fn block_proposal_debug_with_block_hash() {
+        let req = valid_process_proposal();
+        let proposal = BlockProposal::try_from(&req).expect("should succeed");
+        let debug_str = format!("{:?}", proposal);
+        assert!(debug_str.contains("block_hash"));
+        // block_hash should be hex-encoded
+        assert!(debug_str.contains("cccccc"));
+    }
+
+    // ---- Block time calculation ----
+
+    #[test]
+    fn prepare_proposal_block_time_ms_calculated_correctly() {
+        let mut req = valid_prepare_proposal();
+        req.time = Some(Timestamp {
+            seconds: 1000,
+            nanos: 500_000_000, // 500ms
+        });
+        let proposal = BlockProposal::try_from(&req).expect("should succeed");
+        assert_eq!(proposal.block_time_ms, 1_000_500);
+    }
+
+    #[test]
+    fn process_proposal_block_time_ms_calculated_correctly() {
+        let mut req = valid_process_proposal();
+        req.time = Some(Timestamp {
+            seconds: 2000,
+            nanos: 250_000_000, // 250ms
+        });
+        let proposal = BlockProposal::try_from(&req).expect("should succeed");
+        assert_eq!(proposal.block_time_ms, 2_000_250);
+    }
+}

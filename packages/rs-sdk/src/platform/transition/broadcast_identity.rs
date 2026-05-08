@@ -87,7 +87,8 @@ pub(crate) trait BroadcastRequestForNewIdentity<T: TransportRequest, S: Signer<I
     /// # Error Handling
     /// This method propagates any errors encountered during the signing or conversion process.
     /// These are returned as [`Error`] instances.
-    fn broadcast_request_for_new_identity(
+    #[allow(async_fn_in_trait)]
+    async fn broadcast_request_for_new_identity(
         &self,
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &PrivateKey,
@@ -99,7 +100,7 @@ pub(crate) trait BroadcastRequestForNewIdentity<T: TransportRequest, S: Signer<I
 impl<S: Signer<IdentityPublicKey>>
     BroadcastRequestForNewIdentity<proto::BroadcastStateTransitionRequest, S> for Identity
 {
-    fn broadcast_request_for_new_identity(
+    async fn broadcast_request_for_new_identity(
         &self,
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &PrivateKey,
@@ -114,7 +115,8 @@ impl<S: Signer<IdentityPublicKey>>
             &NativeBlsModule,
             0,
             platform_version,
-        )?;
+        )
+        .await?;
         ensure_valid_state_transition_structure(&identity_create_transition, platform_version)?;
         let request = identity_create_transition.broadcast_request_for_state_transition()?;
         Ok((identity_create_transition, request))

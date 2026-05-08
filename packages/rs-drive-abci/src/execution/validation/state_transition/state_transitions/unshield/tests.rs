@@ -1,9 +1,11 @@
 #[cfg(test)]
+#[allow(clippy::module_inception)]
 mod tests {
     use crate::execution::validation::state_transition::state_transitions::shielded_common::compute_platform_sighash;
     use crate::execution::validation::state_transition::state_transitions::test_helpers::{
-        create_dummy_serialized_action, insert_anchor_into_state, insert_dummy_encrypted_notes,
-        insert_nullifier_into_state, process_transition, set_pool_total_balance, setup_platform,
+        create_dummy_serialized_action, get_proving_key, insert_anchor_into_state,
+        insert_dummy_encrypted_notes, insert_nullifier_into_state, process_transition,
+        serialize_authorized_bundle_i64, set_pool_total_balance, setup_platform,
     };
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
     use assert_matches::assert_matches;
@@ -95,17 +97,16 @@ mod tests {
 
         #[test]
         fn test_too_many_actions_returns_error() {
-            // NOTE: We call validate_structure directly because 101 actions (~41KB)
-            // exceeds max_state_transition_size (20KB) before the actions count check
-            // can trigger. This means ShieldedTooManyActionsError is effectively
-            // unreachable through the normal pipeline.
+            // NOTE: We call validate_structure directly to exercise the
+            // max_shielded_transition_actions check in isolation, without
+            // depending on the full transition-processing pipeline.
             use dpp::state_transition::StateTransitionStructureValidation;
 
             let platform_version = PlatformVersion::latest();
 
-            // 101 actions exceeds max_shielded_transition_actions (100)
+            // 17 actions exceeds max_shielded_transition_actions (16)
             let actions: Vec<SerializedAction> =
-                (0..101).map(|_| create_dummy_serialized_action()).collect();
+                (0..17).map(|_| create_dummy_serialized_action()).collect();
 
             let transition = UnshieldTransitionV0 {
                 output_address: create_output_address(),
@@ -319,47 +320,11 @@ mod tests {
     mod proof_verification {
         use super::*;
         use grovedb_commitment_tree::{
-            Anchor, Authorized as OrchardAuthorized, Builder, Bundle, BundleType,
-            ClientMemoryCommitmentTree, DashMemo, ExtractedNoteCommitment, FullViewingKey,
-            MerklePath, Note, NoteValue, Position, ProvingKey, RandomSeed, Retention, Rho, Scope,
-            SpendAuthorizingKey, SpendingKey,
+            Anchor, Builder, BundleType, ClientMemoryCommitmentTree, DashMemo,
+            ExtractedNoteCommitment, FullViewingKey, MerklePath, Note, NoteValue, Position,
+            RandomSeed, Retention, Rho, Scope, SpendAuthorizingKey, SpendingKey,
         };
         use rand::rngs::OsRng;
-        use std::sync::OnceLock;
-
-        static TEST_PROVING_KEY: OnceLock<ProvingKey> = OnceLock::new();
-        fn get_proving_key() -> &'static ProvingKey {
-            TEST_PROVING_KEY.get_or_init(ProvingKey::build)
-        }
-
-        fn serialize_authorized_bundle(
-            bundle: &Bundle<OrchardAuthorized, i64, DashMemo>,
-        ) -> (Vec<SerializedAction>, i64, [u8; 32], Vec<u8>, [u8; 64]) {
-            let actions: Vec<SerializedAction> = bundle
-                .actions()
-                .iter()
-                .map(|action| {
-                    let enc = action.encrypted_note();
-                    let mut encrypted_note = Vec::with_capacity(216);
-                    encrypted_note.extend_from_slice(&enc.epk_bytes);
-                    encrypted_note.extend_from_slice(enc.enc_ciphertext.as_ref());
-                    encrypted_note.extend_from_slice(&enc.out_ciphertext);
-                    SerializedAction {
-                        nullifier: action.nullifier().to_bytes(),
-                        rk: <[u8; 32]>::from(action.rk()),
-                        cmx: action.cmx().to_bytes(),
-                        encrypted_note,
-                        cv_net: action.cv_net().to_bytes(),
-                        spend_auth_sig: <[u8; 64]>::from(action.authorization()),
-                    }
-                })
-                .collect();
-            let value_balance = *bundle.value_balance();
-            let anchor = bundle.anchor().to_bytes();
-            let proof = bundle.authorization().proof().as_ref().to_vec();
-            let binding_sig = <[u8; 64]>::from(bundle.authorization().binding_signature());
-            (actions, value_balance, anchor, proof, binding_sig)
-        }
 
         #[test]
         fn test_invalid_proof_returns_shielded_proof_error() {
@@ -442,7 +407,7 @@ mod tests {
 
             // --- Extract serialized fields ---
             let (actions, value_balance, anchor_bytes, proof_bytes, binding_sig) =
-                serialize_authorized_bundle(&bundle);
+                serialize_authorized_bundle_i64(&bundle);
 
             // value_balance should be 499,995,000 (500M spent - 5K output)
             assert_eq!(value_balance, 499_995_000);
@@ -498,10 +463,13 @@ mod tests {
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
+            // DPP structure validation now catches this before proof verification
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
+                    ConsensusError::BasicError(BasicError::ShieldedEncryptedNoteSizeMismatchError(
+                        _
+                    ))
                 )]
             );
         }
@@ -514,47 +482,11 @@ mod tests {
     mod security_audit {
         use super::*;
         use grovedb_commitment_tree::{
-            Anchor, Authorized as OrchardAuthorized, Builder, Bundle, BundleType,
-            ClientMemoryCommitmentTree, DashMemo, ExtractedNoteCommitment, FullViewingKey,
-            MerklePath, Note, NoteValue, Position, ProvingKey, RandomSeed, Retention, Rho, Scope,
-            SpendAuthorizingKey, SpendingKey,
+            Anchor, Builder, BundleType, ClientMemoryCommitmentTree, DashMemo,
+            ExtractedNoteCommitment, FullViewingKey, MerklePath, Note, NoteValue, Position,
+            RandomSeed, Retention, Rho, Scope, SpendAuthorizingKey, SpendingKey,
         };
         use rand::rngs::OsRng;
-        use std::sync::OnceLock;
-
-        static TEST_PROVING_KEY: OnceLock<ProvingKey> = OnceLock::new();
-        fn get_proving_key() -> &'static ProvingKey {
-            TEST_PROVING_KEY.get_or_init(ProvingKey::build)
-        }
-
-        fn serialize_authorized_bundle(
-            bundle: &Bundle<OrchardAuthorized, i64, DashMemo>,
-        ) -> (Vec<SerializedAction>, i64, [u8; 32], Vec<u8>, [u8; 64]) {
-            let actions: Vec<SerializedAction> = bundle
-                .actions()
-                .iter()
-                .map(|action| {
-                    let enc = action.encrypted_note();
-                    let mut encrypted_note = Vec::with_capacity(216);
-                    encrypted_note.extend_from_slice(&enc.epk_bytes);
-                    encrypted_note.extend_from_slice(enc.enc_ciphertext.as_ref());
-                    encrypted_note.extend_from_slice(&enc.out_ciphertext);
-                    SerializedAction {
-                        nullifier: action.nullifier().to_bytes(),
-                        rk: <[u8; 32]>::from(action.rk()),
-                        cmx: action.cmx().to_bytes(),
-                        encrypted_note,
-                        cv_net: action.cv_net().to_bytes(),
-                        spend_auth_sig: <[u8; 64]>::from(action.authorization()),
-                    }
-                })
-                .collect();
-            let value_balance = *bundle.value_balance();
-            let anchor = bundle.anchor().to_bytes();
-            let proof = bundle.authorization().proof().as_ref().to_vec();
-            let binding_sig = <[u8; 64]>::from(bundle.authorization().binding_signature());
-            (actions, value_balance, anchor, proof, binding_sig)
-        }
 
         /// Build a valid Orchard bundle for unshield tests (spend > output).
         /// The `output_address` and `unshielding_amount` are bound to the sighash so that
@@ -607,7 +539,7 @@ mod tests {
             let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
             let bundle = proven.apply_signatures(rng, sighash, &[ask]).unwrap();
 
-            serialize_authorized_bundle(&bundle)
+            serialize_authorized_bundle_i64(&bundle)
         }
 
         /// AUDIT REGRESSION: Mutating value_balance is now caught by BatchValidator.
@@ -760,47 +692,11 @@ mod tests {
         use dpp::state_transition::unshield_transition::accessors::UnshieldTransitionAccessorsV0;
         use drive::drive::Drive;
         use grovedb_commitment_tree::{
-            Authorized as OrchardAuthorized, Builder, Bundle, BundleType,
-            ClientMemoryCommitmentTree, DashMemo, ExtractedNoteCommitment, FullViewingKey, Note,
-            NoteValue, Position, ProvingKey, RandomSeed, Retention, Rho, Scope,
+            Builder, BundleType, ClientMemoryCommitmentTree, DashMemo, ExtractedNoteCommitment,
+            FullViewingKey, Note, NoteValue, Position, RandomSeed, Retention, Rho, Scope,
             SpendAuthorizingKey, SpendingKey,
         };
         use rand::rngs::OsRng;
-        use std::sync::OnceLock;
-
-        static TEST_PROVING_KEY: OnceLock<ProvingKey> = OnceLock::new();
-        fn get_proving_key() -> &'static ProvingKey {
-            TEST_PROVING_KEY.get_or_init(ProvingKey::build)
-        }
-
-        fn serialize_authorized_bundle(
-            bundle: &Bundle<OrchardAuthorized, i64, DashMemo>,
-        ) -> (Vec<SerializedAction>, i64, [u8; 32], Vec<u8>, [u8; 64]) {
-            let actions: Vec<SerializedAction> = bundle
-                .actions()
-                .iter()
-                .map(|action| {
-                    let enc = action.encrypted_note();
-                    let mut encrypted_note = Vec::with_capacity(216);
-                    encrypted_note.extend_from_slice(&enc.epk_bytes);
-                    encrypted_note.extend_from_slice(enc.enc_ciphertext.as_ref());
-                    encrypted_note.extend_from_slice(&enc.out_ciphertext);
-                    SerializedAction {
-                        nullifier: action.nullifier().to_bytes(),
-                        rk: <[u8; 32]>::from(action.rk()),
-                        cmx: action.cmx().to_bytes(),
-                        encrypted_note,
-                        cv_net: action.cv_net().to_bytes(),
-                        spend_auth_sig: <[u8; 64]>::from(action.authorization()),
-                    }
-                })
-                .collect();
-            let value_balance = *bundle.value_balance();
-            let anchor = bundle.anchor().to_bytes();
-            let proof = bundle.authorization().proof().as_ref().to_vec();
-            let binding_sig = <[u8; 64]>::from(bundle.authorization().binding_signature());
-            (actions, value_balance, anchor, proof, binding_sig)
-        }
 
         #[test]
         fn test_unshield_prove_and_verify_nullifiers_and_address() {
@@ -865,7 +761,7 @@ mod tests {
 
             // --- Extract serialized fields ---
             let (actions, value_balance, anchor_bytes, proof_bytes, binding_sig) =
-                serialize_authorized_bundle(&bundle);
+                serialize_authorized_bundle_i64(&bundle);
 
             // value_balance should be 499,995,000 (500M spent - 5K output)
             assert_eq!(value_balance, 499_995_000);

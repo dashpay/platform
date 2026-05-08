@@ -144,3 +144,177 @@ impl Drive {
         Ok(drive_operations)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::prelude::Identifier;
+    use dpp::version::PlatformVersion;
+
+    fn setup_token_with_supply(initial_supply: u64) -> (crate::drive::Drive, [u8; 32], BlockInfo) {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let block_info = BlockInfo::default();
+        let token_id = [1u8; 32];
+        let contract_id = Identifier::from([3u8; 32]);
+
+        drive
+            .create_token_trees(
+                contract_id,
+                0,
+                token_id,
+                false,
+                false,
+                &block_info,
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to create token trees");
+
+        if initial_supply > 0 {
+            drive
+                .add_to_token_total_supply(
+                    token_id,
+                    initial_supply,
+                    false,
+                    false,
+                    true,
+                    &block_info,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to seed supply");
+        }
+
+        (drive, token_id, block_info)
+    }
+
+    #[test]
+    fn should_remove_from_existing_total_supply() {
+        let platform_version = PlatformVersion::latest();
+        let (drive, token_id, block_info) = setup_token_with_supply(1000);
+
+        drive
+            .remove_from_token_total_supply_v0(
+                token_id,
+                300,
+                &block_info,
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to remove from total supply");
+
+        let supply = drive
+            .fetch_token_total_supply(token_id, None, platform_version)
+            .expect("expected to fetch supply");
+        assert_eq!(supply, Some(700));
+    }
+
+    #[test]
+    fn should_remove_to_exact_zero() {
+        let platform_version = PlatformVersion::latest();
+        let (drive, token_id, block_info) = setup_token_with_supply(500);
+
+        drive
+            .remove_from_token_total_supply_v0(
+                token_id,
+                500,
+                &block_info,
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to remove to zero");
+
+        let supply = drive
+            .fetch_token_total_supply(token_id, None, platform_version)
+            .expect("expected to fetch supply");
+        assert_eq!(supply, Some(0));
+    }
+
+    #[test]
+    fn should_error_on_underflow() {
+        let platform_version = PlatformVersion::latest();
+        let (drive, token_id, block_info) = setup_token_with_supply(100);
+
+        let result = drive.remove_from_token_total_supply_v0(
+            token_id,
+            200,
+            &block_info,
+            true,
+            None,
+            platform_version,
+        );
+
+        assert!(
+            result.is_err(),
+            "expected CorruptedDriveState underflow error"
+        );
+    }
+
+    #[test]
+    fn should_estimate_costs_without_mutating_state_when_apply_false() {
+        // Exercise the estimated_costs_only_with_layer_info branch and the
+        // u64::MAX placeholder path inside operations_v0.
+        let platform_version = PlatformVersion::latest();
+        let (drive, token_id, block_info) = setup_token_with_supply(5_000);
+
+        let app_hash_before = drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("expected root hash");
+
+        let fees = drive
+            .remove_from_token_total_supply_v0(
+                token_id,
+                100,
+                &block_info,
+                false, // apply=false -> estimation branch
+                None,
+                platform_version,
+            )
+            .expect("expected estimation to succeed");
+
+        let app_hash_after = drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("expected root hash");
+
+        assert_eq!(app_hash_before, app_hash_after);
+        assert!(fees.processing_fee > 0);
+
+        // Supply unchanged
+        let supply = drive
+            .fetch_token_total_supply(token_id, None, platform_version)
+            .expect("expected to fetch supply");
+        assert_eq!(supply, Some(5_000));
+    }
+
+    #[test]
+    fn should_error_when_removing_from_non_existent_token() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let block_info = BlockInfo::default();
+        let token_id = [42u8; 32];
+
+        // Never created the token tree — supply entry missing
+        let result = drive.remove_from_token_total_supply_v0(
+            token_id,
+            10,
+            &block_info,
+            true,
+            None,
+            platform_version,
+        );
+
+        assert!(
+            result.is_err(),
+            "expected CorruptedDriveState when token supply missing"
+        );
+    }
+}

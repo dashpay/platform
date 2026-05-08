@@ -2,7 +2,6 @@
 
 use dash_sdk::dpp::address_funds::PlatformAddress;
 use dash_sdk::dpp::dashcore::secp256k1::SecretKey;
-use dash_sdk::dpp::dashcore::Network;
 use dash_sdk::dpp::dashcore::PrivateKey;
 use dash_sdk::dpp::fee::Credits;
 use dash_sdk::dpp::prelude::Identity;
@@ -14,9 +13,8 @@ use crate::address::transitions::AddressSigner;
 use crate::identity::helpers::convert_put_settings;
 use crate::sdk::SDKWrapper;
 use crate::types::{
-    dash_sdk_address_info_map_free, DashSDKAddressInfoEntry, DashSDKAddressInfoMap,
-    DashSDKAddressTransferInput, DashSDKPutSettings, DashSDKResultDataType, IdentityHandle,
-    SDKHandle,
+    DashSDKAddressInfoEntry, DashSDKAddressInfoMap, DashSDKAddressTransferInput,
+    DashSDKPutSettings, DashSDKResultDataType, IdentityHandle, SDKHandle,
 };
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 
@@ -52,7 +50,11 @@ pub unsafe extern "C" fn dash_sdk_identity_top_up_from_addresses(
     inputs_count: usize,
     put_settings: *const DashSDKPutSettings,
 ) -> DashSDKResult {
-    // Wrap in catch_unwind for panic safety
+    // SAFETY: catch_unwind is kept intentionally despite `panic = "abort"` in the release profile.
+    // With panic=abort, catch_unwind is optimized away (zero cost). But keeping it:
+    // 1. Acts as a safety net if the panic strategy is ever changed (e.g., for debugging)
+    // 2. Documents the intent that panics must not cross this FFI boundary
+    // 3. Follows defense-in-depth for FFI safety
     let result = panic::catch_unwind(AssertUnwindSafe(|| {
         dash_sdk_identity_top_up_from_addresses_inner(
             sdk_handle,
@@ -159,8 +161,9 @@ unsafe fn dash_sdk_identity_top_up_from_addresses_inner(
             }
         };
 
-        // Create PrivateKey (network doesn't matter for signing)
-        let private_key = PrivateKey::new(secret_key, Network::Testnet);
+        // Create PrivateKey (network doesn't matter for signing — `PrivateKey`
+        // only carries it through to WIF encoding, which we never invoke here).
+        let private_key = PrivateKey::new(secret_key, wrapper.sdk.network);
 
         signer.add_key(&address, private_key);
         input_map.insert(address, input.amount);
@@ -181,10 +184,9 @@ unsafe fn dash_sdk_identity_top_up_from_addresses_inner(
             let entries: Vec<DashSDKAddressInfoEntry> = address_infos
                 .iter()
                 .map(|(address, info_opt)| {
-                    let address_bytes = address.to_bytes();
+                    let address_bytes = address.to_bytes().into_boxed_slice();
                     let address_len = address_bytes.len();
-                    let address_ptr = address_bytes.as_ptr() as *mut u8;
-                    std::mem::forget(address_bytes);
+                    let address_ptr = Box::into_raw(address_bytes) as *mut u8;
 
                     // Handle Option<AddressInfo>
                     let (nonce, balance) = match info_opt {
@@ -241,7 +243,10 @@ pub unsafe extern "C" fn dash_sdk_identity_top_up_from_addresses_result_free(
 ) {
     if !result.is_null() {
         let result = Box::from_raw(result);
-        // Free the address info map using the function from types.rs
-        dash_sdk_address_info_map_free(&result.address_info_map as *const _ as *mut _);
+        // Free the address info map entries inline — do NOT call
+        // dash_sdk_address_info_map_free here because that calls Box::from_raw
+        // on the map pointer, but the map is an embedded field (not a separate
+        // heap allocation), which would cause a double-free / heap corruption.
+        crate::types::free_address_info_map_entries(&result.address_info_map);
     }
 }

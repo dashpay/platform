@@ -177,7 +177,7 @@ impl DocumentCreateTransitionActionStateValidationV1 for DocumentCreateTransitio
                         // The week might be more or less, as it's a versioned parameter
                         let time_ms_since_start = block_info.time_ms.checked_sub(start_block.time_ms).ok_or(Error::Drive(drive::error::Error::Drive(DriveError::CorruptedDriveState(format!("it makes no sense that the start block time {} is before our current block time {}", start_block.time_ms, block_info.time_ms)))))?;
                         let join_time_allowed = match platform.config.network {
-                            Network::Dash => platform_version.dpp.validation.voting.allow_other_contenders_time_mainnet_ms,
+                            Network::Mainnet => platform_version.dpp.validation.voting.allow_other_contenders_time_mainnet_ms,
                             _ => platform_version.dpp.validation.voting.allow_other_contenders_time_testing_ms
                         };
                         if time_ms_since_start > join_time_allowed {

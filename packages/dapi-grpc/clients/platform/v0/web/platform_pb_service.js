@@ -505,6 +505,15 @@ Platform.getShieldedAnchors = {
   responseType: platform_pb.GetShieldedAnchorsResponse
 };
 
+Platform.getMostRecentShieldedAnchor = {
+  methodName: "getMostRecentShieldedAnchor",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetMostRecentShieldedAnchorRequest,
+  responseType: platform_pb.GetMostRecentShieldedAnchorResponse
+};
+
 Platform.getShieldedPoolState = {
   methodName: "getShieldedPoolState",
   service: Platform,
@@ -2245,6 +2254,37 @@ PlatformClient.prototype.getShieldedAnchors = function getShieldedAnchors(reques
     callback = arguments[1];
   }
   var client = grpc.unary(Platform.getShieldedAnchors, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getMostRecentShieldedAnchor = function getMostRecentShieldedAnchor(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getMostRecentShieldedAnchor, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,

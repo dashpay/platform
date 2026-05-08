@@ -499,6 +499,15 @@ type PlatformgetShieldedAnchors = {
   readonly responseType: typeof platform_pb.GetShieldedAnchorsResponse;
 };
 
+type PlatformgetMostRecentShieldedAnchor = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetMostRecentShieldedAnchorRequest;
+  readonly responseType: typeof platform_pb.GetMostRecentShieldedAnchorResponse;
+};
+
 type PlatformgetShieldedPoolState = {
   readonly methodName: string;
   readonly service: typeof Platform;
@@ -610,6 +619,7 @@ export class Platform {
   static readonly getRecentCompactedAddressBalanceChanges: PlatformgetRecentCompactedAddressBalanceChanges;
   static readonly getShieldedEncryptedNotes: PlatformgetShieldedEncryptedNotes;
   static readonly getShieldedAnchors: PlatformgetShieldedAnchors;
+  static readonly getMostRecentShieldedAnchor: PlatformgetMostRecentShieldedAnchor;
   static readonly getShieldedPoolState: PlatformgetShieldedPoolState;
   static readonly getShieldedNullifiers: PlatformgetShieldedNullifiers;
   static readonly getNullifiersTrunkState: PlatformgetNullifiersTrunkState;
@@ -1144,6 +1154,15 @@ export class PlatformClient {
   getShieldedAnchors(
     requestMessage: platform_pb.GetShieldedAnchorsRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetShieldedAnchorsResponse|null) => void
+  ): UnaryResponse;
+  getMostRecentShieldedAnchor(
+    requestMessage: platform_pb.GetMostRecentShieldedAnchorRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetMostRecentShieldedAnchorResponse|null) => void
+  ): UnaryResponse;
+  getMostRecentShieldedAnchor(
+    requestMessage: platform_pb.GetMostRecentShieldedAnchorRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetMostRecentShieldedAnchorResponse|null) => void
   ): UnaryResponse;
   getShieldedPoolState(
     requestMessage: platform_pb.GetShieldedPoolStateRequest,

@@ -17,6 +17,7 @@ use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, Plat
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
+#[cfg_attr(feature = "json-conversion", crate::serialization::json_safe_fields)]
 #[derive(
     Debug,
     Clone,
@@ -37,6 +38,10 @@ pub struct ShieldTransitionV0 {
     /// Address inputs funding the shield (address -> nonce + max contribution).
     /// The total across all inputs must cover |value_balance| + fees.
     /// Excess credits remain in the source addresses.
+    #[cfg_attr(
+        feature = "json-conversion",
+        serde(with = "crate::address_funds::serde_helpers::address_input_map")
+    )]
     pub inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
     /// Orchard actions (spend-output pairs)
     pub actions: Vec<SerializedAction>,
@@ -47,10 +52,6 @@ pub struct ShieldTransitionV0 {
     /// Halo2 proof bytes
     pub proof: Vec<u8>,
     /// RedPallas binding signature
-    #[cfg_attr(
-        feature = "serde-conversion",
-        serde(with = "crate::serialization::serde_bytes_64")
-    )]
     pub binding_signature: [u8; 64],
     /// Fee payment strategy
     pub fee_strategy: AddressFundsFeeStrategy,

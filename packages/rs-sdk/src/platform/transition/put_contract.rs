@@ -69,7 +69,8 @@ impl<S: Signer<IdentityPublicKey>> PutContract<S> for DataContract {
             signer,
             sdk.version(),
             None,
-        )?;
+        )
+        .await?;
         ensure_valid_state_transition_structure(&transition, sdk.version())?;
 
         transition.broadcast(sdk, settings).await?;

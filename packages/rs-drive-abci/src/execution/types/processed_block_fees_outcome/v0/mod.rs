@@ -35,3 +35,45 @@ impl fmt::Display for ProcessedBlockFeesOutcome {
         write!(f, "}}")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::execution::types::fees_in_pools::v0::FeesInPoolsV0;
+    use crate::execution::types::proposer_payouts::v0::ProposersPayouts;
+
+    #[test]
+    fn display_with_payouts_and_refunds() {
+        let outcome = ProcessedBlockFeesOutcome {
+            fees_in_pools: FeesInPoolsV0 {
+                processing_fees: 100,
+                storage_fees: 200,
+            },
+            payouts: Some(ProposersPayouts {
+                proposers_paid_count: 3,
+                paid_epoch_index: 5,
+            }),
+            refunded_epochs_count: Some(2),
+        };
+        let output = format!("{}", outcome);
+        assert!(output.contains("ProcessedBlockFeesOutcome"));
+        assert!(output.contains("fees_in_pools:"));
+        assert!(output.contains("proposers_paid_count: 3"));
+        assert!(output.contains("refunded_epochs_count: 2"));
+    }
+
+    #[test]
+    fn display_with_no_payouts_and_no_refunds() {
+        let outcome = ProcessedBlockFeesOutcome {
+            fees_in_pools: FeesInPoolsV0 {
+                processing_fees: 0,
+                storage_fees: 0,
+            },
+            payouts: None,
+            refunded_epochs_count: None,
+        };
+        let output = format!("{}", outcome);
+        assert!(output.contains("payouts: None"));
+        assert!(output.contains("refunded_epochs_count: None"));
+    }
+}

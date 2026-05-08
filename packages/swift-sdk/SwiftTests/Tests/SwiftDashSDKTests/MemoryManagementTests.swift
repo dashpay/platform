@@ -26,7 +26,6 @@ class MemoryManagementTests: XCTestCase {
     func testStringFreeWithNullPointer() {
         // Should not crash
         swift_dash_string_free(nil)
-        XCTAssertTrue(true, "String free with null pointer should not crash")
     }
 
     func testStringFreeWithValidPointer() {
@@ -44,7 +43,6 @@ class MemoryManagementTests: XCTestCase {
             swift_dash_string_free(version)
         }
 
-        XCTAssertTrue(true, "String free with valid pointer should not crash")
     }
 
     // MARK: - Error Memory Management Tests
@@ -52,7 +50,6 @@ class MemoryManagementTests: XCTestCase {
     func testErrorFreeWithNullPointer() {
         // Should not crash
         swift_dash_error_free(nil)
-        XCTAssertTrue(true, "Error free with null pointer should not crash")
     }
 
     func testErrorFreeWithValidPointer() {
@@ -71,7 +68,6 @@ class MemoryManagementTests: XCTestCase {
             swift_dash_error_free(error)
         }
 
-        XCTAssertTrue(true, "Error free with valid pointer should not crash")
     }
 
     // MARK: - Binary Data Memory Management Tests
@@ -79,7 +75,6 @@ class MemoryManagementTests: XCTestCase {
     func testBinaryDataFreeWithNullPointer() {
         // Should not crash
         swift_dash_binary_data_free(nil)
-        XCTAssertTrue(true, "Binary data free with null pointer should not crash")
     }
 
     // MARK: - Info Structure Memory Management Tests
@@ -87,31 +82,26 @@ class MemoryManagementTests: XCTestCase {
     func testIdentityInfoFreeWithNullPointer() {
         // Should not crash
         swift_dash_identity_info_free(nil)
-        XCTAssertTrue(true, "Identity info free with null pointer should not crash")
     }
 
     func testDataContractInfoFreeWithNullPointer() {
         // Should not crash
         swift_dash_data_contract_info_free(nil)
-        XCTAssertTrue(true, "Data contract info free with null pointer should not crash")
     }
 
     func testDocumentInfoFreeWithNullPointer() {
         // Should not crash
         swift_dash_document_info_free(nil)
-        XCTAssertTrue(true, "Document info free with null pointer should not crash")
     }
 
     func testTransferCreditsResultFreeWithNullPointer() {
         // Should not crash
         swift_dash_transfer_credits_result_free(nil)
-        XCTAssertTrue(true, "Transfer credits result free with null pointer should not crash")
     }
 
     func testTokenInfoFreeWithNullPointer() {
         // Should not crash
         swift_dash_token_info_free(nil)
-        XCTAssertTrue(true, "Token info free with null pointer should not crash")
     }
 
     // MARK: - Signer Memory Management Tests
@@ -119,7 +109,6 @@ class MemoryManagementTests: XCTestCase {
     func testSignerFreeWithNullPointer() {
         // Should not crash
         swift_dash_signer_free(nil)
-        XCTAssertTrue(true, "Signer free with null pointer should not crash")
     }
 
     func testSignerCreateAndFree() {
@@ -142,7 +131,6 @@ class MemoryManagementTests: XCTestCase {
             swift_dash_signer_free(signer)
         }
 
-        XCTAssertTrue(true, "Signer create and free should not crash")
     }
 
     // MARK: - Bytes Memory Management Tests
@@ -150,7 +138,6 @@ class MemoryManagementTests: XCTestCase {
     func testBytesFreeWithNullPointer() {
         // Should not crash
         swift_dash_bytes_free(nil, 0)
-        XCTAssertTrue(true, "Bytes free with null pointer should not crash")
     }
 
     func testBytesFreeWithValidPointer() {
@@ -169,7 +156,6 @@ class MemoryManagementTests: XCTestCase {
             swift_dash_bytes_free(bytes, size)
         }
 
-        XCTAssertTrue(true, "Bytes free with valid pointer should not crash")
     }
 
     // MARK: - SDK Handle Memory Management Tests
@@ -177,7 +163,6 @@ class MemoryManagementTests: XCTestCase {
     func testSDKDestroyWithNullHandle() {
         // Should not crash
         swift_dash_sdk_destroy(nil)
-        XCTAssertTrue(true, "SDK destroy with null handle should not crash")
     }
 
     func testMultipleSDKCreateAndDestroy() {
@@ -199,7 +184,6 @@ class MemoryManagementTests: XCTestCase {
             swift_dash_sdk_destroy(sdk)
         }
 
-        XCTAssertTrue(true, "Multiple SDK create and destroy should not crash")
     }
 
     // MARK: - Memory Leak Prevention Tests
@@ -210,48 +194,39 @@ class MemoryManagementTests: XCTestCase {
             return
         }
 
-        // Test various operations that allocate memory and ensure proper cleanup
+        // Stress-test allocation paths to catch memory leaks.
+        // 100 iterations per path is enough to surface leaks without
+        // making the test suite slow.
+        let iterations = 100
 
-        // 1. Test string allocation and cleanup
-        for _ in 0..<10 {
+        for _ in 0..<iterations {
+            // 1. String allocation and cleanup
             let version = swift_dash_sdk_get_version()
             if let version = version {
                 swift_dash_string_free(version)
             }
-        }
 
-        // 2. Test error allocation and cleanup
-        for _ in 0..<10 {
+            // 2. Error allocation and cleanup
             let result = swift_dash_identity_create(sdk, nil, 0)
             if let error = result.error {
                 swift_dash_error_free(error)
             }
-        }
 
-        // 3. Test token supply allocation and cleanup
-        for _ in 0..<10 {
+            // 3. Token supply allocation and cleanup
             let supply = swift_dash_token_get_total_supply(sdk, "test_contract")
             if let supply = supply {
                 swift_dash_string_free(supply)
             }
         }
 
-        XCTAssertTrue(true, "Memory leak prevention tests completed")
     }
 
     // MARK: - Double Free Protection Tests
 
-    func testDoubleFreeProtection() {
-        // These tests verify that double-freeing doesn't crash the application
-
-        // Test double string free
-        let version = swift_dash_sdk_get_version()
-        if let version = version {
-            swift_dash_string_free(version)
-            // Second free - should be safe
-            swift_dash_string_free(version)
-        }
-
-        XCTAssertTrue(true, "Double free protection test completed")
+    func testDoubleFreeProtection() throws {
+        // Double-free is undefined behavior in C and cannot be safely tested.
+        // If the SDK needs to support double-free safety, the free function
+        // must accept a pointer-to-pointer and set it to NULL after freeing.
+        throw XCTSkip("Double-free protection requires API changes to test safely")
     }
 }

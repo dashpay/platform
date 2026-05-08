@@ -35,6 +35,10 @@ pub struct IdentityCreditWithdrawalTransitionV0 {
     pub identity_id: Identifier,
     pub amount: u64,
     pub core_fee_per_byte: u32,
+    #[cfg_attr(
+        feature = "serde-conversion",
+        serde(with = "crate::withdrawal::pooling_serde")
+    )]
     pub pooling: Pooling,
     pub output_script: CoreScript,
     pub nonce: IdentityNonce,
@@ -285,5 +289,193 @@ mod test {
             signature: [0; 65].to_vec().into(),
         };
         test_identity_credit_withdrawal_transition(transition);
+    }
+
+    fn make_withdrawal_v0() -> super::IdentityCreditWithdrawalTransitionV0 {
+        super::IdentityCreditWithdrawalTransitionV0 {
+            identity_id: Identifier::random(),
+            amount: 100_000,
+            core_fee_per_byte: 1,
+            pooling: Pooling::Never,
+            output_script: CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
+            nonce: 5,
+            user_fee_increase: 2,
+            signature_public_key_id: 1,
+            signature: [0u8; 65].to_vec().into(),
+        }
+    }
+
+    #[test]
+    fn test_default() {
+        let t = super::IdentityCreditWithdrawalTransitionV0::default();
+        assert_eq!(t.amount, 0);
+        assert_eq!(t.nonce, 0);
+        assert_eq!(t.core_fee_per_byte, 0);
+    }
+
+    #[test]
+    fn test_state_transition_like_v0() {
+        use crate::state_transition::{
+            StateTransitionLike, StateTransitionOwned, StateTransitionType,
+        };
+        let t = make_withdrawal_v0();
+        assert_eq!(
+            t.state_transition_type(),
+            StateTransitionType::IdentityCreditWithdrawal
+        );
+        assert_eq!(t.state_transition_protocol_version(), 0);
+        assert_eq!(t.modified_data_ids(), vec![t.identity_id]);
+        assert_eq!(t.owner_id(), t.identity_id);
+    }
+
+    #[test]
+    fn test_unique_identifiers_v0() {
+        use crate::state_transition::StateTransitionLike;
+        let t = make_withdrawal_v0();
+        let ids = t.unique_identifiers();
+        assert_eq!(ids.len(), 1);
+        assert!(!ids[0].is_empty());
+    }
+
+    #[test]
+    fn test_identity_signed_v0() {
+        use crate::identity::{Purpose, SecurityLevel};
+        use crate::state_transition::StateTransitionIdentitySigned;
+        let mut t = make_withdrawal_v0();
+        assert_eq!(t.signature_public_key_id(), 1);
+        t.set_signature_public_key_id(42);
+        assert_eq!(t.signature_public_key_id(), 42);
+        let security = t.security_level_requirement(Purpose::TRANSFER);
+        assert_eq!(security, vec![SecurityLevel::CRITICAL]);
+        let purpose = t.purpose_requirement();
+        assert_eq!(purpose, vec![Purpose::TRANSFER]);
+    }
+
+    #[test]
+    fn test_user_fee_increase_v0() {
+        use crate::state_transition::StateTransitionHasUserFeeIncrease;
+        let mut t = make_withdrawal_v0();
+        assert_eq!(t.user_fee_increase(), 2);
+        t.set_user_fee_increase(99);
+        assert_eq!(t.user_fee_increase(), 99);
+    }
+
+    #[test]
+    fn test_single_signed_v0() {
+        use crate::state_transition::StateTransitionSingleSigned;
+        use platform_value::BinaryData;
+        let mut t = make_withdrawal_v0();
+        assert_eq!(t.signature().len(), 65);
+        t.set_signature(BinaryData::new(vec![1, 2, 3]));
+        assert_eq!(t.signature().as_slice(), &[1, 2, 3]);
+        t.set_signature_bytes(vec![4, 5]);
+        assert_eq!(t.signature().as_slice(), &[4, 5]);
+    }
+
+    #[test]
+    fn test_into_state_transition_v0() {
+        use crate::state_transition::StateTransition;
+        let t = make_withdrawal_v0();
+        let st: StateTransition = t.into();
+        match st {
+            StateTransition::IdentityCreditWithdrawal(_) => {}
+            _ => panic!("expected IdentityCreditWithdrawal"),
+        }
+    }
+
+    #[test]
+    fn test_value_conversion_roundtrip_v0() {
+        use crate::state_transition::StateTransitionValueConvert;
+        use crate::version::LATEST_PLATFORM_VERSION;
+        let t = make_withdrawal_v0();
+        let obj = t.to_object(false).expect("to_object should work");
+        let restored =
+            super::IdentityCreditWithdrawalTransitionV0::from_object(obj, LATEST_PLATFORM_VERSION)
+                .expect("from_object should work");
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn test_to_cleaned_object_v0() {
+        use crate::state_transition::StateTransitionValueConvert;
+        let t = make_withdrawal_v0();
+        let obj = t.to_cleaned_object(false).expect("should work");
+        assert!(obj.is_map());
+    }
+
+    #[test]
+    fn test_to_canonical_cleaned_object_v0() {
+        use crate::state_transition::StateTransitionValueConvert;
+        let t = make_withdrawal_v0();
+        let obj = t.to_canonical_cleaned_object(false).expect("should work");
+        assert!(obj.is_map());
+    }
+
+    #[test]
+    fn test_from_value_map_v0() {
+        use crate::state_transition::StateTransitionValueConvert;
+        use crate::version::LATEST_PLATFORM_VERSION;
+        let t = make_withdrawal_v0();
+        let obj = t.to_object(false).expect("to_object should work");
+        let map = obj.into_btree_string_map().expect("should be a map");
+        let restored = super::IdentityCreditWithdrawalTransitionV0::from_value_map(
+            map,
+            LATEST_PLATFORM_VERSION,
+        )
+        .expect("should work");
+        assert_eq!(t, restored);
+    }
+
+    #[test]
+    fn test_to_object_skip_signature_removes_signature() {
+        use crate::state_transition::StateTransitionValueConvert;
+        let t = make_withdrawal_v0();
+        let obj = t.to_object(true).expect("should work");
+        let map = obj.into_btree_string_map().expect("should be a map");
+        assert!(!map.contains_key("signature"));
+    }
+
+    #[test]
+    fn test_to_cleaned_object_skip_signature() {
+        use crate::state_transition::StateTransitionValueConvert;
+        let t = make_withdrawal_v0();
+        let obj = t.to_cleaned_object(true).expect("should work");
+        let map = obj.into_btree_string_map().expect("should be a map");
+        assert!(!map.contains_key("signature"));
+    }
+
+    #[test]
+    fn test_to_canonical_cleaned_object_skip_signature() {
+        use crate::state_transition::StateTransitionValueConvert;
+        let t = make_withdrawal_v0();
+        let obj = t.to_canonical_cleaned_object(true).expect("should work");
+        let map = obj.into_btree_string_map().expect("should be a map");
+        assert!(!map.contains_key("signature"));
+    }
+
+    #[test]
+    fn test_pooling_roundtrip_never() {
+        use crate::state_transition::StateTransitionValueConvert;
+        use crate::version::LATEST_PLATFORM_VERSION;
+        let mut t = make_withdrawal_v0();
+        t.pooling = Pooling::Never;
+        let obj = t.to_object(false).expect("to_object");
+        let restored =
+            super::IdentityCreditWithdrawalTransitionV0::from_object(obj, LATEST_PLATFORM_VERSION)
+                .expect("from_object");
+        assert_eq!(restored.pooling, Pooling::Never);
+    }
+
+    #[test]
+    fn test_pooling_roundtrip_standard() {
+        use crate::state_transition::StateTransitionValueConvert;
+        use crate::version::LATEST_PLATFORM_VERSION;
+        let mut t = make_withdrawal_v0();
+        t.pooling = Pooling::Standard;
+        let obj = t.to_object(false).expect("to_object");
+        let restored =
+            super::IdentityCreditWithdrawalTransitionV0::from_object(obj, LATEST_PLATFORM_VERSION)
+                .expect("from_object");
+        assert_eq!(restored.pooling, Pooling::Standard);
     }
 }

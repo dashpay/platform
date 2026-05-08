@@ -381,11 +381,11 @@ COPY --parents \
     packages/rs-platform-wallet-ffi \
     packages/rs-drive-abci \
     packages/rs-dapi \
+    packages/rs-dash-async \
     packages/rs-dash-event-bus \
     packages/dashpay-contract \
     packages/withdrawals-contract \
     packages/masternode-reward-shares-contract \
-    packages/feature-flags-contract \
     packages/dpns-contract \
     packages/wallet-utils-contract \
     packages/token-history-contract \
@@ -405,9 +405,11 @@ COPY --parents \
     packages/rs-dapi-client \
     packages/rs-sdk \
     packages/rs-sdk-ffi \
+    packages/rs-unified-sdk-ffi \
     packages/check-features \
     packages/dash-platform-balance-checker \
     packages/wasm-sdk \
+    packages/rs-scripts \
     /platform/
 
 RUN --mount=type=secret,id=AWS \
@@ -471,6 +473,7 @@ COPY --parents \
     packages/dapi-grpc \
     packages/rs-dash-platform-macros \
     packages/rs-dapi \
+    packages/rs-dash-async \
     packages/rs-dash-event-bus \
     packages/rs-dpp \
     packages/rs-dpp-json-convertible-derive \
@@ -490,7 +493,6 @@ COPY --parents \
     packages/keyword-search-contract \
     packages/withdrawals-contract \
     packages/masternode-reward-shares-contract \
-    packages/feature-flags-contract \
     packages/dpns-contract \
     packages/data-contracts \
     packages/strategy-tests \
@@ -509,9 +511,11 @@ COPY --parents \
     packages/rs-dapi-client \
     packages/rs-sdk \
     packages/rs-sdk-ffi \
+    packages/rs-unified-sdk-ffi \
     packages/check-features \
     packages/dash-platform-balance-checker \
     packages/wasm-sdk \
+    packages/rs-scripts \
     /platform/
 
 RUN mkdir /artifacts
@@ -588,6 +592,7 @@ COPY --parents \
     rust-toolchain.toml \
     .cargo \
     packages/rs-dapi \
+    packages/rs-dash-async \
     packages/rs-dash-event-bus \
     packages/rs-dpp \
     packages/rs-dpp-json-convertible-derive \
@@ -599,6 +604,7 @@ COPY --parents \
     packages/rs-platform-versioning \
     packages/rs-platform-value-convertible \
     packages/rs-platform-wallet-ffi \
+    packages/rs-unified-sdk-ffi \
     packages/rs-json-schema-compatibility-validator \
     # Common
     packages/wasm-dpp \
@@ -609,7 +615,6 @@ COPY --parents \
     packages/token-history-contract \
     packages/keyword-search-contract \
     packages/masternode-reward-shares-contract \
-    packages/feature-flags-contract \
     packages/dpns-contract \
     packages/data-contracts \
     packages/dapi-grpc \
@@ -735,7 +740,6 @@ COPY --from=build-dashmate-helper /platform/packages/token-history-contract pack
 COPY --from=build-dashmate-helper /platform/packages/keyword-search-contract packages/keyword-search-contract
 COPY --from=build-dashmate-helper /platform/packages/withdrawals-contract packages/withdrawals-contract
 COPY --from=build-dashmate-helper /platform/packages/masternode-reward-shares-contract packages/masternode-reward-shares-contract
-COPY --from=build-dashmate-helper /platform/packages/feature-flags-contract packages/feature-flags-contract
 COPY --from=build-dashmate-helper /platform/packages/dpns-contract packages/dpns-contract
 COPY --from=build-dashmate-helper /platform/packages/data-contracts packages/data-contracts
 COPY --from=build-dashmate-helper /platform/packages/wasm-dpp packages/wasm-dpp
@@ -831,6 +835,7 @@ COPY --parents \
     packages/rs-platform-wallet-ffi \
     packages/rs-drive-abci \
     packages/rs-dapi \
+    packages/rs-dash-async \
     packages/rs-dash-event-bus \
     packages/dashpay-contract \
     packages/wallet-utils-contract \
@@ -838,7 +843,6 @@ COPY --parents \
     packages/keyword-search-contract \
     packages/withdrawals-contract \
     packages/masternode-reward-shares-contract \
-    packages/feature-flags-contract \
     packages/dpns-contract \
     packages/data-contracts \
     packages/strategy-tests \
@@ -854,10 +858,12 @@ COPY --parents \
     packages/rs-dapi-client \
     packages/rs-sdk \
     packages/rs-sdk-ffi \
+    packages/rs-unified-sdk-ffi \
     packages/rs-platform-wallet \
     packages/check-features \
     packages/dash-platform-balance-checker \
     packages/wasm-sdk \
+    packages/rs-scripts \
     /platform/
 
 RUN mkdir /artifacts

@@ -1,214 +1,88 @@
 import SwiftUI
+import SwiftData
 import SwiftDashSDK
 
+/// DPNS contest detail screen.
+///
+/// Drives off the platform-wallet path
+/// (`ManagedPlatformWallet.fetchContestVoteState`) which returns a
+/// typed `ContestVoteState` instead of the stringly-typed
+/// `[String: Any]` dict the view used to parse by hand. That kills
+/// the prior regex-based vote-tally extraction (the old SDK path
+/// surfaced votes as Rust `Debug` strings like
+/// `"ResourceVote { vote_choice: TowardsIdentity(...), strength: 1 }"`)
+/// and lets the view render straight off strongly-typed fields.
+///
+/// The `contestInfo` dict is still accepted on the init to preserve
+/// the navigation-link callers, but the view no longer reads from
+/// it — fresh state comes from the wallet path on appear + on
+/// pull-to-refresh.
 struct ContestDetailView: View {
     let contestName: String
+    /// Legacy `[String: Any]` payload from callers that predate the
+    /// wallet-path migration. Kept for call-site compatibility but
+    /// unused — the view reads everything off `voteState`.
     let contestInfo: [String: Any]
+    /// Identity viewing the contest. Used both for "You" badging on
+    /// the viewer's own contender row and for the wallet-path
+    /// lookup filter.
     let currentIdentityId: String
 
     @EnvironmentObject var appState: AppState
-    @State private var contenders: [(id: String, votes: String, isCurrentIdentity: Bool)] = []
-    @State private var abstainVotes: Int? = nil
-    @State private var lockVotes: Int? = nil
-    @State private var endTime: Date? = nil
+    @EnvironmentObject var walletManager: PlatformWalletManager
+    @Query private var identities: [PersistentIdentity]
+
+    @State private var voteState: ContestVoteState?
     @State private var isRefreshing = false
+    @State private var errorMessage: String?
+
+    /// Current identity's 32-byte id, parsed from the base58 input
+    /// parameter once. `nil` if the caller passed an unparseable id.
+    private var currentIdentityData: Data? {
+        Data.identifier(fromBase58: currentIdentityId)
+    }
+
+    /// Contenders sorted by vote tally descending (ties broken by
+    /// identity id). The Rust-side `contest_vote_state` returns them
+    /// ascending by identity id, so we sort here.
+    private var sortedContenders: [ContestContender] {
+        guard let state = voteState else { return [] }
+        return state.contenders.sorted { lhs, rhs in
+            if lhs.voteTally != rhs.voteTally {
+                return lhs.voteTally > rhs.voteTally
+            }
+            return lhs.identityId.toHexString() < rhs.identityId.toHexString()
+        }
+    }
 
     var body: some View {
         List {
-            // Show refresh indicator if refreshing
-            if isRefreshing {
+            if isRefreshing && voteState == nil {
                 HStack {
                     Spacer()
                     ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle())
-                    Text("Refreshing...")
+                    Text("Loading contest…")
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .padding(.leading, 8)
                     Spacer()
                 }
                 .padding(.vertical, 8)
+            } else if let errorMessage = errorMessage, voteState == nil {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .foregroundColor(.orange)
+                    Text(errorMessage)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.vertical, 8)
             }
 
-            // Contest Header
-            Section("Contest Information") {
-                HStack {
-                    Label("Name", systemImage: "at")
-                    Spacer()
-                    Text(contestName)
-                        .font(.headline)
-                        .foregroundColor(.blue)
-                }
+            contestHeaderSection
+            contendersSection
+            voteSummarySection
 
-                if let hasWinner = contestInfo["hasWinner"] as? Bool {
-                    HStack {
-                        Label("Status", systemImage: "flag.fill")
-                        Spacer()
-                        if hasWinner {
-                            Text("Resolved")
-                                .foregroundColor(.green)
-                        } else {
-                            Text("Voting Ongoing")
-                                .foregroundColor(.orange)
-                        }
-                    }
-                }
-
-                if let endTime = endTime {
-                    HStack {
-                        Label("Voting Ends", systemImage: "clock")
-                        Spacer()
-                        VStack(alignment: .trailing, spacing: 2) {
-                            Text(endTime, style: .relative)
-                                .font(.caption)
-                                .foregroundColor(.orange)
-                            Text(endTime, format: .dateTime.month().day().hour().minute())
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-
-                    // Show time remaining as progress if contest is active
-                    if let hasWinner = contestInfo["hasWinner"] as? Bool, !hasWinner {
-                        VStack(spacing: 4) {
-                            GeometryReader { geometry in
-                                ZStack(alignment: .leading) {
-                                    Rectangle()
-                                        .fill(Color.gray.opacity(0.2))
-                                        .frame(height: 4)
-                                        .cornerRadius(2)
-
-                                    Rectangle()
-                                        .fill(timeRemainingColor(for: endTime))
-                                        .frame(width: progressWidth(for: endTime, in: geometry.size.width), height: 4)
-                                        .cornerRadius(2)
-                                        .animation(.easeInOut, value: endTime)
-                                }
-                            }
-                            .frame(height: 4)
-
-                            Text(timeRemainingText(for: endTime))
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                        .padding(.top, 4)
-                    }
-                }
-            }
-
-            // Contenders Section
-            Section("Contenders") {
-                // Show special message if this is a newly registered contest
-                // Check: only one contender, it's us, AND the contest was started very recently
-                if contenders.count == 1 && contenders.first?.isCurrentIdentity == true {
-                    // Calculate how long the contest has been running
-                    let totalDuration: TimeInterval = appState.currentNetwork == .mainnet ?
-                        (14 * 24 * 60 * 60) : // 14 days for mainnet
-                        (90 * 60) // 90 minutes for testnet
-
-                    let timeRemaining = endTime?.timeIntervalSinceNow ?? 0
-                    let elapsedTime = totalDuration - timeRemaining
-
-                    // Only show "newly registered" if less than 5% of total time has elapsed
-                    // For testnet (90 min): show if less than 4.5 minutes elapsed
-                    // For mainnet (14 days): show if less than ~17 hours elapsed
-                    let isNewlyRegistered = elapsedTime < (totalDuration * 0.05)
-
-                    if isNewlyRegistered {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Image(systemName: "sparkles")
-                                    .foregroundColor(.yellow)
-                                Text("Newly Registered Contest")
-                                    .font(.headline)
-                                    .foregroundColor(.primary)
-                            }
-                            Text("You just started this contest! Other users can join as contenders until the halfway point.")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        .padding(.vertical, 4)
-                    } else {
-                        // Show a different message for contests where you're the only contender but it's not new
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Image(systemName: "person.fill")
-                                    .foregroundColor(.blue)
-                                Text("Only Contender")
-                                    .font(.headline)
-                                    .foregroundColor(.primary)
-                            }
-                            Text("You are currently the only contender for this name. Other users can still join until the halfway point.")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        .padding(.vertical, 4)
-                    }
-                }
-
-                ForEach(contenders, id: \.id) { contender in
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            if contender.isCurrentIdentity {
-                                Label("You", systemImage: "person.fill")
-                                    .font(.caption)
-                                    .foregroundColor(.blue)
-                            }
-                            Text(contender.id)
-                                .font(.system(.caption, design: .monospaced))
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                        }
-
-                        HStack {
-                            Label("Votes", systemImage: "hand.thumbsup.fill")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Spacer()
-                            Text(formatVotes(contender.votes))
-                                .font(.caption)
-                                .foregroundColor(.primary)
-                        }
-                    }
-                    .padding(.vertical, 4)
-                }
-            }
-
-            // Vote Tallies Section - Always show to give complete picture
-            Section("Vote Summary") {
-                HStack {
-                    Label("Abstain Votes", systemImage: "minus.circle")
-                        .foregroundColor(.gray)
-                    Spacer()
-                    Text("\(abstainVotes ?? 0)")
-                        .font(.headline)
-                        .foregroundColor(abstainVotes ?? 0 > 0 ? .orange : .secondary)
-                }
-
-                HStack {
-                    Label("Lock Votes", systemImage: "lock.fill")
-                        .foregroundColor(.red)
-                    Spacer()
-                    Text("\(lockVotes ?? 0)")
-                        .font(.headline)
-                        .foregroundColor(lockVotes ?? 0 > 0 ? .red : .secondary)
-                }
-
-                // Add a divider and total vote count
-                Divider()
-
-                HStack {
-                    Label("Total Votes", systemImage: "sum")
-                        .foregroundColor(.primary)
-                        .font(.headline)
-                    Spacer()
-                    Text("\(getTotalVotes())")
-                        .font(.headline)
-                        .foregroundColor(.primary)
-                }
-            }
-
-            // Info Section
             Section {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("About Contested Names")
@@ -225,128 +99,248 @@ struct ContestDetailView: View {
         .refreshable {
             await refreshVoteState()
         }
-        .onAppear {
-            parseContestInfo()
+        .task {
+            if voteState == nil {
+                await refreshVoteState()
+            }
         }
     }
 
-    private func parseContestInfo() {
-        // Parse contenders
-        if let contendersArray = contestInfo["contenders"] as? [[String: Any]] {
-            contenders = contendersArray.compactMap { contenderDict in
-                guard let id = contenderDict["identifier"] as? String,
-                      let votes = contenderDict["votes"] as? String else {
-                    return nil
+    // MARK: - Sections
+
+    @ViewBuilder
+    private var contestHeaderSection: some View {
+        Section("Contest Information") {
+            HStack {
+                Label("Name", systemImage: "at")
+                Spacer()
+                Text(contestName)
+                    .font(.headline)
+                    .foregroundColor(.blue)
+            }
+
+            if let state = voteState {
+                HStack {
+                    Label("Status", systemImage: "flag.fill")
+                    Spacer()
+                    switch state.winner {
+                    case .none:
+                        if state.endTime.timeIntervalSinceNow > 0 {
+                            Text("Voting Ongoing")
+                                .foregroundColor(.orange)
+                        } else {
+                            // End time passed but winner hasn't been
+                            // written yet — Platform resolution lags
+                            // the timestamp by a few blocks.
+                            Text("Awaiting Resolution")
+                                .foregroundColor(.orange)
+                        }
+                    case .wonByIdentity:
+                        Text("Resolved")
+                            .foregroundColor(.green)
+                    case .locked:
+                        Text("Locked")
+                            .foregroundColor(.red)
+                    }
                 }
 
-                let isCurrentIdentity = contenderDict["isQueriedIdentity"] as? Bool ?? false ||
-                                       id == currentIdentityId
+                HStack {
+                    Label("Voting Ends", systemImage: "clock")
+                    Spacer()
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(state.endTime, style: .relative)
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                        Text(state.endTime, format: .dateTime.month().day().hour().minute())
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
 
-                return (id: id, votes: votes, isCurrentIdentity: isCurrentIdentity)
+                if case .none = state.winner {
+                    VStack(spacing: 4) {
+                        GeometryReader { geometry in
+                            ZStack(alignment: .leading) {
+                                Rectangle()
+                                    .fill(Color.gray.opacity(0.2))
+                                    .frame(height: 4)
+                                    .cornerRadius(2)
+
+                                Rectangle()
+                                    .fill(timeRemainingColor(for: state.endTime))
+                                    .frame(
+                                        width: progressWidth(
+                                            for: state.endTime,
+                                            in: geometry.size.width
+                                        ),
+                                        height: 4
+                                    )
+                                    .cornerRadius(2)
+                                    .animation(.easeInOut, value: state.endTime)
+                            }
+                        }
+                        .frame(height: 4)
+
+                        Text(timeRemainingText(for: state.endTime))
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.top, 4)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var contendersSection: some View {
+        Section("Contenders") {
+            if let state = voteState {
+                // Newly-registered vs single-contender messaging —
+                // shown only when the viewer is the sole contender.
+                if sortedContenders.count == 1,
+                   let only = sortedContenders.first,
+                   only.identityId == currentIdentityData {
+                    singleContenderBanner(endTime: state.endTime)
+                }
+
+                if sortedContenders.isEmpty {
+                    Text("No contenders yet")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } else {
+                    ForEach(sortedContenders) { contender in
+                        contenderRow(contender)
+                    }
+                }
+            } else if !isRefreshing {
+                Text("Contenders unavailable")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var voteSummarySection: some View {
+        Section("Vote Summary") {
+            let abstain = voteState?.abstainVotes ?? 0
+            let lock = voteState?.lockVotes ?? 0
+            let total = voteState?.totalVotes ?? 0
+
+            HStack {
+                Label("Abstain Votes", systemImage: "minus.circle")
+                    .foregroundColor(.gray)
+                Spacer()
+                Text("\(abstain)")
+                    .font(.headline)
+                    .foregroundColor(abstain > 0 ? .orange : .secondary)
             }
 
-            // Sort contenders by vote count (if we can parse them)
-            contenders.sort { first, second in
-                // Try to extract numeric vote count for sorting
-                let firstVotes = extractVoteCount(from: first.votes)
-                let secondVotes = extractVoteCount(from: second.votes)
-                return firstVotes > secondVotes
+            HStack {
+                Label("Lock Votes", systemImage: "lock.fill")
+                    .foregroundColor(.red)
+                Spacer()
+                Text("\(lock)")
+                    .font(.headline)
+                    .foregroundColor(lock > 0 ? .red : .secondary)
+            }
+
+            Divider()
+
+            HStack {
+                Label("Total Votes", systemImage: "sum")
+                    .foregroundColor(.primary)
+                    .font(.headline)
+                Spacer()
+                Text("\(total)")
+                    .font(.headline)
+                    .foregroundColor(.primary)
             }
         }
-
-        // Parse vote tallies
-        abstainVotes = contestInfo["abstainVotes"] as? Int
-        lockVotes = contestInfo["lockVotes"] as? Int
-
-        // Parse end time (milliseconds since epoch)
-        // Check for various numeric types since it could be stored as UInt64, Double, or Int
-        if let endTimeMillis = contestInfo["endTime"] as? UInt64 {
-            endTime = Date(timeIntervalSince1970: Double(endTimeMillis) / 1000.0)
-        } else if let endTimeMillis = contestInfo["endTime"] as? Double {
-            endTime = Date(timeIntervalSince1970: endTimeMillis / 1000.0)
-        } else if let endTimeMillis = contestInfo["endTime"] as? Int {
-            endTime = Date(timeIntervalSince1970: Double(endTimeMillis) / 1000.0)
-        }
-
-        // Debug logging
-        print("🔵 Contest endTime parsing - contestInfo[endTime]: \(String(describing: contestInfo["endTime"])), parsed date: \(String(describing: endTime))")
     }
 
-    private func formatVotes(_ votesString: String) -> String {
-        // The votes string comes in format like "ResourceVote { vote_choice: TowardsIdentity(...), strength: 1 }"
-        // Try to extract the strength value
-        if let strengthRange = votesString.range(of: "strength: "),
-           let endRange = votesString[strengthRange.upperBound...].range(of: " }") {
-            let strengthValue = String(votesString[strengthRange.upperBound..<endRange.lowerBound])
-            return "\(strengthValue) vote\(strengthValue == "1" ? "" : "s")"
-        }
+    @ViewBuilder
+    private func singleContenderBanner(endTime: Date) -> some View {
+        let totalDuration: TimeInterval = appState.currentNetwork == .mainnet
+            ? (14 * 24 * 60 * 60)       // 14 days for mainnet
+            : (90 * 60)                 // 90 minutes for testnet
+        let timeRemaining = endTime.timeIntervalSinceNow
+        let elapsedTime = totalDuration - timeRemaining
+        // Less than 5% elapsed → "newly registered"; past that →
+        // "you're still the only contender".
+        let isNewlyRegistered = elapsedTime < (totalDuration * 0.05)
 
-        // If we can't parse it, just show a simplified version
-        if votesString.contains("TowardsIdentity") {
-            return "Supporting"
-        } else if votesString.contains("Abstain") {
-            return "Abstain"
-        } else if votesString.contains("Lock") {
-            return "Lock"
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: isNewlyRegistered ? "sparkles" : "person.fill")
+                    .foregroundColor(isNewlyRegistered ? .yellow : .blue)
+                Text(isNewlyRegistered ? "Newly Registered Contest" : "Only Contender")
+                    .font(.headline)
+            }
+            Text(
+                isNewlyRegistered
+                    ? "You just started this contest. Other users can join as contenders until the halfway point."
+                    : "You are currently the only contender for this name. Other users can still join until the halfway point."
+            )
+            .font(.caption)
+            .foregroundColor(.secondary)
         }
-
-        return "Unknown"
+        .padding(.vertical, 4)
     }
 
-    private func extractVoteCount(from votesString: String) -> Int {
-        // Try to extract the strength value as an integer
-        if let strengthRange = votesString.range(of: "strength: "),
-           let endRange = votesString[strengthRange.upperBound...].range(of: " }") {
-            let strengthValue = String(votesString[strengthRange.upperBound..<endRange.lowerBound])
-            return Int(strengthValue) ?? 0
+    @ViewBuilder
+    private func contenderRow(_ contender: ContestContender) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                if contender.identityId == currentIdentityData {
+                    Label("You", systemImage: "person.fill")
+                        .font(.caption)
+                        .foregroundColor(.blue)
+                }
+                Text(contender.identityId.toHexString())
+                    .font(.system(.caption, design: .monospaced))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            HStack {
+                Label("Votes", systemImage: "hand.thumbsup.fill")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text("\(contender.voteTally) vote\(contender.voteTally == 1 ? "" : "s")")
+                    .font(.caption)
+                    .foregroundColor(.primary)
+            }
         }
-        return 0
+        .padding(.vertical, 4)
     }
 
-    private func getTotalVotes() -> Int {
-        // Sum up all votes: contender votes + abstain + lock
-        let contenderVotes = contenders.reduce(0) { total, contender in
-            total + extractVoteCount(from: contender.votes)
-        }
-        let abstain = abstainVotes ?? 0
-        let lock = lockVotes ?? 0
-        return contenderVotes + abstain + lock
-    }
+    // MARK: - Countdown helpers
 
     private func timeRemainingColor(for endTime: Date) -> Color {
         let timeRemaining = endTime.timeIntervalSinceNow
         let oneDay: TimeInterval = 24 * 60 * 60
 
-        if timeRemaining < 0 {
-            return .red // Expired
-        } else if timeRemaining < oneDay {
-            return .orange // Less than 24 hours
-        } else if timeRemaining < oneDay * 3 {
-            return .yellow // Less than 3 days
-        } else {
-            return .green // More than 3 days
-        }
+        if timeRemaining < 0 { return .red }
+        if timeRemaining < oneDay { return .orange }
+        if timeRemaining < oneDay * 3 { return .yellow }
+        return .green
     }
 
     private func progressWidth(for endTime: Date, in totalWidth: CGFloat) -> CGFloat {
-        // Get total duration based on network
-        let totalDuration: TimeInterval = appState.currentNetwork == .mainnet ?
-            (14 * 24 * 60 * 60) : // 14 days for mainnet
-            (90 * 60) // 90 minutes for testnet
+        let totalDuration: TimeInterval = appState.currentNetwork == .mainnet
+            ? (14 * 24 * 60 * 60)
+            : (90 * 60)
 
-        // Calculate elapsed time
         let timeRemaining = max(0, endTime.timeIntervalSinceNow)
         let elapsedTime = totalDuration - timeRemaining
-
-        // Calculate progress (how much time has passed)
         let progress = min(1.0, max(0, elapsedTime / totalDuration))
-
         return totalWidth * CGFloat(progress)
     }
 
     private func timeRemainingText(for endTime: Date) -> String {
         let timeRemaining = endTime.timeIntervalSinceNow
-
         if timeRemaining < 0 {
             return "Contest has ended"
         }
@@ -359,94 +353,49 @@ struct ContestDetailView: View {
         if let formattedTime = formatter.string(from: timeRemaining) {
             return "Time remaining: \(formattedTime)"
         }
-
         return "Contest ending soon"
     }
 
+    // MARK: - Refresh
+
+    /// Fetch a fresh `ContestVoteState` via the platform-wallet
+    /// path. `isRefreshing` gates both the header spinner (when we
+    /// have no state yet) and the `refreshable` sheet (when pulled
+    /// to refresh after initial load).
     private func refreshVoteState() async {
-        guard let sdk = appState.sdk else { return }
-
-        // Don't refresh if already refreshing
         guard !isRefreshing else { return }
-
-        await MainActor.run {
-            isRefreshing = true
+        guard let identityData = currentIdentityData else {
+            errorMessage = "Invalid identity id"
+            return
         }
 
+        // Look up the identity row via `@Query` and then hop the
+        // `wallet` relationship to get the owning wallet's raw id.
+        let identity = identities.first {
+            $0.identityId == identityData
+        }
+        guard let walletId = identity?.wallet?.walletId,
+              let wallet = walletManager.wallet(for: walletId) else {
+            errorMessage = "Identity not attached to a loaded wallet"
+            return
+        }
+
+        isRefreshing = true
+        defer { isRefreshing = false }
+
         do {
-            // Call the SDK to get the latest vote state for this contested name
-            let voteState = try await sdk.dpnsGetContestedVoteState(name: contestName, limit: 100)
-
-            await MainActor.run {
-                // Parse the updated vote state
-                var newContenders: [(id: String, votes: String, isCurrentIdentity: Bool)] = []
-
-                if let contendersArray = voteState["contenders"] as? [[String: Any]] {
-                    newContenders = contendersArray.compactMap { contenderDict in
-                        guard let id = contenderDict["identifier"] as? String,
-                              let votes = contenderDict["votes"] as? String else {
-                            return nil
-                        }
-
-                        let isCurrentIdentity = id == currentIdentityId
-
-                        return (id: id, votes: votes, isCurrentIdentity: isCurrentIdentity)
-                    }
-
-                    // Sort contenders by vote count
-                    newContenders.sort { first, second in
-                        let firstVotes = extractVoteCount(from: first.votes)
-                        let secondVotes = extractVoteCount(from: second.votes)
-                        return firstVotes > secondVotes
-                    }
-                }
-
-                // Update vote tallies
-                if let abstain = voteState["abstainVotes"] as? Int {
-                    abstainVotes = abstain
-                }
-                if let lock = voteState["lockVotes"] as? Int {
-                    lockVotes = lock
-                }
-
-                // Update contenders
-                contenders = newContenders
-
-                // Update the identity's contested info if we have access
-                if let identityIndex = appState.identities.firstIndex(where: { $0.idString == currentIdentityId }) {
-                    var updatedIdentity = appState.identities[identityIndex]
-
-                    // Update the contest info for this name
-                    var updatedContestInfo = updatedIdentity.contestedDpnsInfo[contestName] as? [String: Any] ?? [:]
-                    updatedContestInfo["contenders"] = voteState["contenders"]
-                    updatedContestInfo["abstainVotes"] = abstainVotes
-                    updatedContestInfo["lockVotes"] = lockVotes
-
-                    // Check if there's a winner
-                    if let winner = voteState["winner"] {
-                        updatedContestInfo["hasWinner"] = !(winner is NSNull)
-                    }
-
-                    updatedIdentity.contestedDpnsInfo[contestName] = updatedContestInfo
-                    appState.identities[identityIndex] = updatedIdentity
-
-                    // Persist the update
-                    appState.updateIdentityDPNSNames(
-                        id: updatedIdentity.id,
-                        dpnsNames: updatedIdentity.dpnsNames,
-                        contestedNames: updatedIdentity.contestedDpnsNames,
-                        contestedInfo: updatedIdentity.contestedDpnsInfo
-                    )
-                }
-
-                isRefreshing = false
+            let state = try await wallet.fetchContestVoteState(
+                identityId: identityData,
+                label: contestName
+            )
+            voteState = state
+            if state == nil {
+                errorMessage = "Contest no longer visible — it may have resolved or the identity stopped contending."
+            } else {
+                errorMessage = nil
             }
         } catch {
-            await MainActor.run {
-                isRefreshing = false
-                print("Failed to refresh vote state: \(error)")
-                // Could show an error alert here if desired
-            }
+            errorMessage = "Refresh failed: \(error.localizedDescription)"
         }
     }
 }

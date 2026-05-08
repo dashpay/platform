@@ -66,3 +66,44 @@ impl ContestedResourceVotesGivenByIdentityQuery {
         Ok((root_hash, voters))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::version::PlatformVersion;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn should_prove_and_verify_empty_identity_votes_given() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let identity_id = Identifier::random();
+
+        let query = ContestedResourceVotesGivenByIdentityQuery {
+            identity_id,
+            offset: None,
+            limit: Some(10),
+            start_at: None,
+            order_ascending: true,
+        };
+
+        let (proof, _) = query
+            .clone()
+            .execute_with_proof(&drive, None, None, platform_version)
+            .expect("expected to execute query with proof");
+
+        let contract_lookup_fn: &ContractLookupFn = &|_id| Ok(None);
+
+        let (_, votes): (_, BTreeMap<Identifier, ResourceVote>) = query
+            .verify_identity_votes_given_proof(
+                proof.as_slice(),
+                contract_lookup_fn,
+                platform_version,
+            )
+            .expect("expected proof verification to succeed");
+
+        assert!(votes.is_empty());
+    }
+}

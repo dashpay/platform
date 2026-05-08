@@ -11,7 +11,6 @@ import Foundation
 /// - Address pool management with gap limits
 /// - Transaction building and signing
 /// - Provider key generation for masternodes
-/// - BIP38 encryption/decryption
 /// - Multi-wallet management
 ///
 /// ## Usage Example:
@@ -22,10 +21,6 @@ import Foundation
 /// // Generate a new wallet
 /// let mnemonic = try Mnemonic.generate()
 /// let wallet = try Wallet(mnemonic: mnemonic, network: .testnet)
-///
-/// // Get a receive address
-/// let managed = try ManagedWallet(wallet: wallet)
-/// let address = try managed.getNextReceiveAddress(wallet: wallet)
 ///
 /// // Check wallet balance
 /// let balance = try wallet.getBalance()
@@ -50,10 +45,8 @@ public class KeyWallet {
 // Re-export all public types for convenience
 public typealias KeyWalletWallet = Wallet
 public typealias KeyWalletAccount = Account
-public typealias KeyWalletManagedWallet = ManagedWallet
 public typealias KeyWalletManager = WalletManager
 public typealias KeyWalletMnemonic = Mnemonic
 public typealias KeyWalletTransaction = Transaction
 public typealias KeyWalletAddress = Address
-// public typealias KeyWalletBIP38 = BIP38  // BIP38 functions not available in current FFI
 public typealias KeyWalletDerivation = KeyDerivation

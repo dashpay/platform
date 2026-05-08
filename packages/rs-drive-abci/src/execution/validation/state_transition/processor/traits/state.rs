@@ -234,3 +234,194 @@ impl StateTransitionStateValidation for StateTransition {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn make_data_contract_create_st() -> StateTransition {
+        use dpp::tests::fixtures::get_data_contract_fixture;
+        use platform_version::TryIntoPlatformVersioned;
+        let platform_version = platform_version::version::PlatformVersion::latest();
+        let created_data_contract =
+            get_data_contract_fixture(None, 1, platform_version.protocol_version);
+        let transition: dpp::state_transition::data_contract_create_transition::DataContractCreateTransition =
+            created_data_contract.try_into_platform_versioned(platform_version).unwrap();
+        transition.into()
+    }
+
+    fn make_data_contract_update_st() -> StateTransition {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::tests::fixtures::get_data_contract_fixture;
+        use platform_version::TryIntoPlatformVersioned;
+        let platform_version = platform_version::version::PlatformVersion::latest();
+        let created_data_contract =
+            get_data_contract_fixture(None, 1, platform_version.protocol_version);
+        let data_contract = created_data_contract.data_contract().clone();
+        let transition: dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition =
+            (data_contract, 2u64).try_into_platform_versioned(platform_version).unwrap();
+        transition.into()
+    }
+
+    use dpp::state_transition::batch_transition::BatchTransition;
+    use dpp::state_transition::batch_transition::BatchTransitionV0;
+    use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
+    use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+    use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
+    use dpp::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
+    use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+    use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
+    use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
+    use dpp::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
+    use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
+    use dpp::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
+    use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
+    use dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
+    use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
+    use dpp::state_transition::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
+    use dpp::state_transition::state_transitions::identity::identity_credit_transfer_to_addresses_transition::IdentityCreditTransferToAddressesTransition;
+    use dpp::state_transition::state_transitions::identity::identity_credit_transfer_to_addresses_transition::v0::IdentityCreditTransferToAddressesTransitionV0;
+    use dpp::state_transition::state_transitions::identity::identity_create_from_addresses_transition::IdentityCreateFromAddressesTransition;
+    use dpp::state_transition::state_transitions::identity::identity_create_from_addresses_transition::v0::IdentityCreateFromAddressesTransitionV0;
+    use dpp::state_transition::state_transitions::identity::identity_topup_from_addresses_transition::IdentityTopUpFromAddressesTransition;
+    use dpp::state_transition::state_transitions::identity::identity_topup_from_addresses_transition::v0::IdentityTopUpFromAddressesTransitionV0;
+    use dpp::state_transition::state_transitions::address_funds::address_funds_transfer_transition::AddressFundsTransferTransition;
+    use dpp::state_transition::state_transitions::address_funds::address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0;
+    use dpp::state_transition::state_transitions::address_funds::address_funding_from_asset_lock_transition::AddressFundingFromAssetLockTransition;
+    use dpp::state_transition::state_transitions::address_funds::address_funding_from_asset_lock_transition::v0::AddressFundingFromAssetLockTransitionV0;
+    use dpp::state_transition::state_transitions::address_funds::address_credit_withdrawal_transition::AddressCreditWithdrawalTransition;
+    use dpp::state_transition::state_transitions::address_funds::address_credit_withdrawal_transition::v0::AddressCreditWithdrawalTransitionV0;
+    use dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition;
+    use dpp::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0;
+
+    mod has_state_validation {
+        use super::*;
+
+        #[test]
+        fn should_return_true_for_transitions_with_state_validation() {
+            let transitions: Vec<(&str, StateTransition)> = vec![
+                (
+                    "IdentityCreateFromAddresses",
+                    StateTransition::IdentityCreateFromAddresses(
+                        IdentityCreateFromAddressesTransition::V0(
+                            IdentityCreateFromAddressesTransitionV0::default(),
+                        ),
+                    ),
+                ),
+                ("DataContractCreate", make_data_contract_create_st()),
+                (
+                    "IdentityCreate",
+                    StateTransition::IdentityCreate(IdentityCreateTransition::V0(
+                        IdentityCreateTransitionV0::default(),
+                    )),
+                ),
+                ("DataContractUpdate", make_data_contract_update_st()),
+                (
+                    "Batch",
+                    StateTransition::Batch(BatchTransition::V0(BatchTransitionV0::default())),
+                ),
+                (
+                    "IdentityUpdate",
+                    StateTransition::IdentityUpdate(IdentityUpdateTransition::V0(
+                        IdentityUpdateTransitionV0::default(),
+                    )),
+                ),
+                (
+                    "IdentityCreditTransfer",
+                    StateTransition::IdentityCreditTransfer(IdentityCreditTransferTransition::V0(
+                        IdentityCreditTransferTransitionV0::default(),
+                    )),
+                ),
+                (
+                    "MasternodeVote",
+                    StateTransition::MasternodeVote(MasternodeVoteTransition::V0(
+                        MasternodeVoteTransitionV0::default(),
+                    )),
+                ),
+            ];
+            for (name, st) in transitions {
+                assert!(
+                    st.has_state_validation(),
+                    "expected has_state_validation=true for {}",
+                    name
+                );
+            }
+        }
+
+        #[test]
+        fn should_return_false_for_transitions_without_state_validation() {
+            let transitions: Vec<(&str, StateTransition)> = vec![
+                (
+                    "AddressFundsTransfer",
+                    StateTransition::AddressFundsTransfer(AddressFundsTransferTransition::V0(
+                        AddressFundsTransferTransitionV0::default(),
+                    )),
+                ),
+                (
+                    "IdentityTopUp",
+                    StateTransition::IdentityTopUp(IdentityTopUpTransition::V0(
+                        IdentityTopUpTransitionV0::default(),
+                    )),
+                ),
+                (
+                    "AddressFundingFromAssetLock",
+                    StateTransition::AddressFundingFromAssetLock(
+                        AddressFundingFromAssetLockTransition::V0(
+                            AddressFundingFromAssetLockTransitionV0::default(),
+                        ),
+                    ),
+                ),
+                (
+                    "IdentityTopUpFromAddresses",
+                    StateTransition::IdentityTopUpFromAddresses(
+                        IdentityTopUpFromAddressesTransition::V0(
+                            IdentityTopUpFromAddressesTransitionV0::default(),
+                        ),
+                    ),
+                ),
+                (
+                    "IdentityCreditWithdrawal",
+                    StateTransition::IdentityCreditWithdrawal(
+                        IdentityCreditWithdrawalTransition::V0(
+                            IdentityCreditWithdrawalTransitionV0::default(),
+                        ),
+                    ),
+                ),
+                (
+                    "AddressCreditWithdrawal",
+                    StateTransition::AddressCreditWithdrawal(
+                        AddressCreditWithdrawalTransition::V0(
+                            AddressCreditWithdrawalTransitionV0::default(),
+                        ),
+                    ),
+                ),
+                (
+                    "IdentityCreditTransferToAddresses",
+                    StateTransition::IdentityCreditTransferToAddresses(
+                        IdentityCreditTransferToAddressesTransition::V0(
+                            IdentityCreditTransferToAddressesTransitionV0::default(),
+                        ),
+                    ),
+                ),
+                (
+                    "ShieldedTransfer",
+                    StateTransition::ShieldedTransfer(ShieldedTransferTransition::V0(
+                        ShieldedTransferTransitionV0 {
+                            actions: vec![],
+                            value_balance: 0,
+                            anchor: [0u8; 32],
+                            proof: vec![],
+                            binding_signature: [0u8; 64],
+                        },
+                    )),
+                ),
+            ];
+            for (name, st) in transitions {
+                assert!(
+                    !st.has_state_validation(),
+                    "expected has_state_validation=false for {}",
+                    name
+                );
+            }
+        }
+    }
+}

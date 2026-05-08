@@ -182,3 +182,115 @@ impl BlockStateInfoV0Methods for BlockStateInfo {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::execution::types::block_state_info::v0::BlockStateInfoV0;
+    use dpp::block::epoch::Epoch;
+
+    fn make_wrapper() -> BlockStateInfo {
+        BlockStateInfo::V0(BlockStateInfoV0 {
+            height: 10,
+            round: 2,
+            block_time_ms: 1_700_000_000_000,
+            previous_block_time_ms: Some(1_699_999_990_000),
+            proposer_pro_tx_hash: [1u8; 32],
+            core_chain_locked_height: 500,
+            block_hash: Some([0xAA; 32]),
+            app_hash: Some([0xBB; 32]),
+        })
+    }
+
+    #[test]
+    fn wrapper_getters_delegate_correctly() {
+        let info = make_wrapper();
+        assert_eq!(info.height(), 10);
+        assert_eq!(info.round(), 2);
+        assert_eq!(info.block_time_ms(), 1_700_000_000_000);
+        assert_eq!(info.previous_block_time_ms(), Some(1_699_999_990_000));
+        assert_eq!(info.proposer_pro_tx_hash(), [1u8; 32]);
+        assert_eq!(info.core_chain_locked_height(), 500);
+        assert_eq!(info.block_hash(), Some([0xAA; 32]));
+        assert_eq!(info.app_hash(), Some([0xBB; 32]));
+    }
+
+    #[test]
+    fn wrapper_setters_delegate_correctly() {
+        let mut info = make_wrapper();
+        info.set_height(20);
+        info.set_round(3);
+        info.set_block_time_ms(2_000_000_000_000);
+        info.set_previous_block_time_ms(None);
+        info.set_proposer_pro_tx_hash([2u8; 32]);
+        info.set_core_chain_locked_height(600);
+        info.set_block_hash(None);
+        info.set_app_hash(None);
+
+        assert_eq!(info.height(), 20);
+        assert_eq!(info.round(), 3);
+        assert_eq!(info.block_time_ms(), 2_000_000_000_000);
+        assert_eq!(info.previous_block_time_ms(), None);
+        assert_eq!(info.proposer_pro_tx_hash(), [2u8; 32]);
+        assert_eq!(info.core_chain_locked_height(), 600);
+        assert_eq!(info.block_hash(), None);
+        assert_eq!(info.app_hash(), None);
+    }
+
+    #[test]
+    fn wrapper_to_block_info() {
+        let info = make_wrapper();
+        let epoch = Epoch::new(1).unwrap();
+        let block_info = info.to_block_info(epoch);
+        assert_eq!(block_info.height, 10);
+        assert_eq!(block_info.core_height, 500);
+    }
+
+    #[test]
+    fn wrapper_next_block_to() {
+        let info = make_wrapper();
+        assert!(info.next_block_to(9, 500).unwrap());
+        assert!(!info.next_block_to(10, 500).unwrap());
+    }
+
+    #[test]
+    fn wrapper_matches_current_block() {
+        let info = make_wrapper();
+        assert!(info.matches_current_block(10, 2, [0xAA; 32]).unwrap());
+        assert!(!info.matches_current_block(11, 2, [0xAA; 32]).unwrap());
+    }
+
+    #[test]
+    fn wrapper_matches_expected_block_info() {
+        let info = make_wrapper();
+        assert!(info
+            .matches_expected_block_info(10, 2, 500, [1u8; 32], [0xAA; 32], [0xBB; 32])
+            .unwrap());
+        assert!(!info
+            .matches_expected_block_info(10, 2, 501, [1u8; 32], [0xAA; 32], [0xBB; 32])
+            .unwrap());
+    }
+
+    #[test]
+    fn from_v0_conversion() {
+        let v0 = BlockStateInfoV0 {
+            height: 1,
+            round: 0,
+            block_time_ms: 0,
+            previous_block_time_ms: None,
+            proposer_pro_tx_hash: [0u8; 32],
+            core_chain_locked_height: 0,
+            block_hash: None,
+            app_hash: None,
+        };
+        let info: BlockStateInfo = v0.into();
+        assert_eq!(info.height(), 1);
+    }
+
+    #[test]
+    fn equality_works() {
+        let a = make_wrapper();
+        let b = make_wrapper();
+        assert_eq!(a, b);
+    }
+}

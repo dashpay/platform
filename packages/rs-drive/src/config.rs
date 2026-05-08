@@ -203,7 +203,7 @@ impl Default for DriveConfig {
             grovedb_visualizer_address: default_grovedb_visualizer_address(),
             #[cfg(feature = "grovedbg")]
             grovedb_visualizer_enabled: false,
-            network: Network::Dash,
+            network: Network::Mainnet,
         }
     }
 }
@@ -211,7 +211,7 @@ impl Default for DriveConfig {
 impl DriveConfig {
     /// The default network type for mainnet
     pub fn default_network() -> Network {
-        Network::Dash
+        Network::Mainnet
     }
 
     /// The default testnet configuration

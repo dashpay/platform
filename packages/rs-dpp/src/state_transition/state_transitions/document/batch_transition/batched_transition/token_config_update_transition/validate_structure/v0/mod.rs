@@ -75,3 +75,180 @@ impl TokenConfigUpdateTransitionStructureValidationV0 for TokenConfigUpdateTrans
         Ok(SimpleConsensusValidationResult::default())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::group::GroupStateTransitionInfo;
+    use crate::state_transition::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
+    use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
+    use crate::state_transition::batch_transition::token_config_update_transition::TokenConfigUpdateTransitionV0;
+    use platform_value::Identifier;
+
+    fn make_base() -> TokenBaseTransition {
+        TokenBaseTransition::V0(TokenBaseTransitionV0 {
+            identity_contract_nonce: 1,
+            token_contract_position: 0,
+            data_contract_id: Identifier::default(),
+            token_id: Identifier::new([1u8; 32]),
+            using_group_info: None,
+        })
+    }
+
+    fn make_base_with_group(is_proposer: bool) -> TokenBaseTransition {
+        TokenBaseTransition::V0(TokenBaseTransitionV0 {
+            identity_contract_nonce: 1,
+            token_contract_position: 0,
+            data_contract_id: Identifier::default(),
+            token_id: Identifier::new([1u8; 32]),
+            using_group_info: Some(GroupStateTransitionInfo {
+                group_contract_position: 0,
+                action_id: Identifier::new([10u8; 32]),
+                action_is_proposer: is_proposer,
+            }),
+        })
+    }
+
+    fn platform_version() -> &'static PlatformVersion {
+        PlatformVersion::latest()
+    }
+
+    fn make_valid_config_update() -> TokenConfigUpdateTransition {
+        TokenConfigUpdateTransition::V0(TokenConfigUpdateTransitionV0 {
+            base: make_base(),
+            update_token_configuration_item: TokenConfigurationChangeItem::MaxSupply(Some(
+                1_000_000,
+            )),
+            public_note: None,
+        })
+    }
+
+    #[test]
+    fn valid_config_update_passes() {
+        let transition = make_valid_config_update();
+        let result = transition
+            .validate_structure_v0(platform_version())
+            .unwrap();
+        assert!(result.is_valid(), "expected no errors: {:?}", result.errors);
+    }
+
+    #[test]
+    fn no_change_config_returns_error() {
+        let transition = TokenConfigUpdateTransition::V0(TokenConfigUpdateTransitionV0 {
+            base: make_base(),
+            update_token_configuration_item:
+                TokenConfigurationChangeItem::TokenConfigurationNoChange,
+            public_note: None,
+        });
+        let result = transition
+            .validate_structure_v0(platform_version())
+            .unwrap();
+        assert_eq!(result.errors.len(), 1);
+        assert!(matches!(
+            &result.errors[0],
+            ConsensusError::BasicError(BasicError::InvalidTokenConfigUpdateNoChangeError(_))
+        ));
+    }
+
+    #[test]
+    fn perpetual_distribution_returns_unsupported_feature_error() {
+        let transition = TokenConfigUpdateTransition::V0(TokenConfigUpdateTransitionV0 {
+            base: make_base(),
+            update_token_configuration_item: TokenConfigurationChangeItem::PerpetualDistribution(
+                None,
+            ),
+            public_note: None,
+        });
+        let result = transition
+            .validate_structure_v0(platform_version())
+            .unwrap();
+        assert_eq!(result.errors.len(), 1);
+        assert!(matches!(
+            &result.errors[0],
+            ConsensusError::BasicError(BasicError::UnsupportedFeatureError(_))
+        ));
+    }
+
+    #[test]
+    fn public_note_too_big_returns_error() {
+        let transition = TokenConfigUpdateTransition::V0(TokenConfigUpdateTransitionV0 {
+            base: make_base(),
+            update_token_configuration_item: TokenConfigurationChangeItem::MaxSupply(Some(
+                1_000_000,
+            )),
+            public_note: Some("x".repeat(MAX_TOKEN_NOTE_LEN + 1)),
+        });
+        let result = transition
+            .validate_structure_v0(platform_version())
+            .unwrap();
+        assert_eq!(result.errors.len(), 1);
+        assert!(matches!(
+            &result.errors[0],
+            ConsensusError::BasicError(BasicError::InvalidTokenNoteTooBigError(_))
+        ));
+    }
+
+    #[test]
+    fn public_note_at_max_length_passes() {
+        let transition = TokenConfigUpdateTransition::V0(TokenConfigUpdateTransitionV0 {
+            base: make_base(),
+            update_token_configuration_item: TokenConfigurationChangeItem::MaxSupply(Some(
+                1_000_000,
+            )),
+            public_note: Some("x".repeat(MAX_TOKEN_NOTE_LEN)),
+        });
+        let result = transition
+            .validate_structure_v0(platform_version())
+            .unwrap();
+        assert!(result.is_valid(), "expected no errors: {:?}", result.errors);
+    }
+
+    #[test]
+    fn note_on_non_proposer_returns_error() {
+        let transition = TokenConfigUpdateTransition::V0(TokenConfigUpdateTransitionV0 {
+            base: make_base_with_group(false),
+            update_token_configuration_item: TokenConfigurationChangeItem::MaxSupply(Some(
+                1_000_000,
+            )),
+            public_note: Some("a valid note".to_string()),
+        });
+        let result = transition
+            .validate_structure_v0(platform_version())
+            .unwrap();
+        assert_eq!(result.errors.len(), 1);
+        assert!(matches!(
+            &result.errors[0],
+            ConsensusError::BasicError(BasicError::TokenNoteOnlyAllowedWhenProposerError(_))
+        ));
+    }
+
+    #[test]
+    fn note_on_proposer_passes() {
+        let transition = TokenConfigUpdateTransition::V0(TokenConfigUpdateTransitionV0 {
+            base: make_base_with_group(true),
+            update_token_configuration_item: TokenConfigurationChangeItem::MaxSupply(Some(
+                1_000_000,
+            )),
+            public_note: Some("a valid note".to_string()),
+        });
+        let result = transition
+            .validate_structure_v0(platform_version())
+            .unwrap();
+        assert!(result.is_valid(), "expected no errors: {:?}", result.errors);
+    }
+
+    #[test]
+    fn note_without_group_info_passes() {
+        let transition = TokenConfigUpdateTransition::V0(TokenConfigUpdateTransitionV0 {
+            base: make_base(),
+            update_token_configuration_item: TokenConfigurationChangeItem::MaxSupply(Some(
+                1_000_000,
+            )),
+            public_note: Some("a valid note".to_string()),
+        });
+        let result = transition
+            .validate_structure_v0(platform_version())
+            .unwrap();
+        assert!(result.is_valid(), "expected no errors: {:?}", result.errors);
+    }
+}

@@ -40,7 +40,8 @@ pub static TOKEN_ID_0: LazyLock<Identifier> =
 /// See `/packages/rs-drive-abci/src/execution/platform_events/initialization/create_genesis_state/mod.rs#L49`
 pub static TOKEN_ID_1: LazyLock<Identifier> =
     LazyLock::new(|| Identifier::new(calculate_token_id(&DATA_CONTRACT_ID.to_buffer(), 1)));
-/// The third token ID from the data contract above created by init chain for testing
+/// The third token ID from the data contract above created by init chain for testing.
+/// Has a pricing schedule and pre-programmed distributions (3 timestamps).
 /// See `/packages/rs-drive-abci/src/execution/platform_events/initialization/create_genesis_state/mod.rs#L49`
 pub static TOKEN_ID_2: LazyLock<Identifier> =
     LazyLock::new(|| Identifier::new(calculate_token_id(&DATA_CONTRACT_ID.to_buffer(), 2)));
