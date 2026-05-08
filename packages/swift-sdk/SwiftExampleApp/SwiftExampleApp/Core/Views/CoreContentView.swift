@@ -10,6 +10,7 @@ struct CoreContentView: View {
     @EnvironmentObject var shieldedService: ShieldedService
     @State private var showProofDetail = false
     @State private var masternodesEnabled: Bool = true
+    @State private var platformSyncExpanded: Bool = false
     // Progress values come from PlatformWalletManager (polled from FFI each second)
 
     /// All persisted platform addresses across every wallet. Summed
@@ -227,108 +228,122 @@ var body: some View {
                         }
                     }
 
-                    // Active addresses — count non-zero balance rows
-                    // across every wallet.
+                    // Chain tip height
                     HStack {
-                        Text("Active Addresses")
+                        Text("Chain Tip Height")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                         Spacer()
-                        Text("\(aggregateActiveAddressCount)")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                    }
-
-                    // Chain tip height
-                    if platformBalanceSyncService.chainTipHeight > 0 {
-                        HStack {
-                            Text("Chain Tip Height")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                            Spacer()
+                        if platformBalanceSyncService.chainTipHeight > 0 {
                             Text(formattedHeight(UInt32(platformBalanceSyncService.chainTipHeight)))
                                 .font(.subheadline)
                                 .fontWeight(.medium)
-                        }
-                    }
-
-                    // Sync checkpoint (from tree scan)
-                    if platformBalanceSyncService.checkpointHeight > 0 {
-                        HStack {
-                            Text("Sync Checkpoint")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                            Spacer()
-                            Text(formattedHeight(UInt32(platformBalanceSyncService.checkpointHeight)))
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-
-                    // Last known recent block (for compaction detection)
-                    HStack {
-                        Text("Last Recent Block")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        if platformBalanceSyncService.lastKnownRecentBlock > 0 {
-                            Text(formattedHeight(UInt32(platformBalanceSyncService.lastKnownRecentBlock)))
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
                         } else {
-                            Text("None found")
+                            Text("—")
                                 .font(.subheadline)
-                                .foregroundColor(.blue)
-                                .onTapGesture {
-                                    showProofDetail = true
-                                }
-                        }
-                    }
-
-                    // Block time
-                    if let blockTime = platformBalanceSyncService.lastSyncBlockTime {
-                        HStack {
-                            Text("Block Time")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                            Spacer()
-                            Text(AppDate.formatted(blockTime, dateStyle: .abbreviated, timeStyle: .omitted))
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Text(AppDate.formatted(blockTime, dateStyle: .omitted, timeStyle: .shortened))
-                                .font(.caption)
                                 .foregroundColor(.secondary)
                         }
                     }
 
-                    // Query counts since launch
-                    if platformBalanceSyncService.syncCountSinceLaunch > 0 {
-                        let svc = platformBalanceSyncService
-                        VStack(spacing: 4) {
+                    // Expandable details
+                    DisclosureGroup(isExpanded: $platformSyncExpanded) {
+                        VStack(spacing: 8) {
+                            // Active addresses — count non-zero balance rows
+                            // across every wallet.
                             HStack {
-                                Text("Queries Since Launch")
+                                Text("Active Addresses")
                                     .font(.subheadline)
                                     .foregroundColor(.secondary)
                                 Spacer()
-                                Text("\(svc.syncCountSinceLaunch) syncs")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
+                                Text("\(aggregateActiveAddressCount)")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
                             }
-                            HStack(spacing: 12) {
-                                QueryCountBadge(label: "Trunk", count: svc.totalTrunkQueries, color: .blue)
-                                QueryCountBadge(label: "Branch", count: svc.totalBranchQueries, color: .indigo)
-                                QueryCountBadge(label: "Compacted", count: svc.totalCompactedQueries, detail: svc.totalCompactedEntries, color: .orange)
-                                QueryCountBadge(label: "Recent", count: svc.totalRecentQueries, detail: svc.totalRecentEntries, color: .green)
+
+                            // Sync checkpoint (from tree scan)
+                            if platformBalanceSyncService.checkpointHeight > 0 {
+                                HStack {
+                                    Text("Sync Checkpoint")
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                    Spacer()
+                                    Text(formattedHeight(UInt32(platformBalanceSyncService.checkpointHeight)))
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+
+                            // Last known recent block (for compaction detection)
+                            HStack {
+                                Text("Last Recent Block")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                if platformBalanceSyncService.lastKnownRecentBlock > 0 {
+                                    Text(formattedHeight(UInt32(platformBalanceSyncService.lastKnownRecentBlock)))
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                } else {
+                                    Text("None found")
+                                        .font(.subheadline)
+                                        .foregroundColor(.blue)
+                                        .onTapGesture {
+                                            showProofDetail = true
+                                        }
+                                }
+                            }
+
+                            // Block time
+                            if let blockTime = platformBalanceSyncService.lastSyncBlockTime {
+                                HStack {
+                                    Text("Block Time")
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                    Spacer()
+                                    Text(AppDate.formatted(blockTime, dateStyle: .abbreviated, timeStyle: .omitted))
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    Text(AppDate.formatted(blockTime, dateStyle: .omitted, timeStyle: .shortened))
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+
+                            // Query counts since launch
+                            if platformBalanceSyncService.syncCountSinceLaunch > 0 {
+                                let svc = platformBalanceSyncService
+                                VStack(spacing: 4) {
+                                    HStack {
+                                        Text("Queries Since Launch")
+                                            .font(.subheadline)
+                                            .foregroundColor(.secondary)
+                                        Spacer()
+                                        Text("\(svc.syncCountSinceLaunch) syncs")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    HStack(spacing: 12) {
+                                        QueryCountBadge(label: "Trunk", count: svc.totalTrunkQueries, color: .blue)
+                                        QueryCountBadge(label: "Branch", count: svc.totalBranchQueries, color: .indigo)
+                                        QueryCountBadge(label: "Compacted", count: svc.totalCompactedQueries, detail: svc.totalCompactedEntries, color: .orange)
+                                        QueryCountBadge(label: "Recent", count: svc.totalRecentQueries, detail: svc.totalRecentEntries, color: .green)
+                                    }
+                                }
+                            }
+
+                            // Error display
+                            if let error = platformBalanceSyncService.lastError {
+                                Text(error)
+                                    .font(.caption)
+                                    .foregroundColor(.red)
+                                    .lineLimit(2)
                             }
                         }
-                    }
-
-                    // Error display
-                    if let error = platformBalanceSyncService.lastError {
-                        Text(error)
+                        .padding(.top, 4)
+                    } label: {
+                        Text(platformSyncExpanded ? "Hide details" : "Show details")
                             .font(.caption)
-                            .foregroundColor(.red)
-                            .lineLimit(2)
+                            .foregroundColor(.blue)
                     }
 
                     // Action buttons
