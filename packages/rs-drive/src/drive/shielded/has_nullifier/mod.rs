@@ -11,7 +11,7 @@ impl Drive {
     /// Checks whether a nullifier has already been spent in the shielded pool.
     ///
     /// Nullifiers are stored in the nullifiers tree at
-    /// `[AddressBalances, "s", [2]]`. Uses O(1) key lookup.
+    /// `[AddressBalances, "s", [64]]`. Uses O(1) key lookup.
     ///
     /// # Parameters
     /// - `nullifier`: The 32-byte nullifier to look up

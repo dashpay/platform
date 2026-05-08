@@ -10,7 +10,7 @@ impl Drive {
     /// Version 0 implementation of checking whether a nullifier exists.
     ///
     /// Performs an O(1) key lookup in the nullifiers tree at
-    /// `[AddressBalances, "s", [2]]`.
+    /// `[AddressBalances, "s", [64]]`.
     pub(in crate::drive) fn has_nullifier_v0(
         &self,
         nullifier: &[u8; 32],

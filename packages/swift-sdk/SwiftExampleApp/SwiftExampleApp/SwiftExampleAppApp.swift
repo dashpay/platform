@@ -107,6 +107,7 @@ struct SwiftExampleAppApp: App {
                 // PlatformWalletManager` consumers see the right
                 // network's manager without any view changes.
                 .environmentObject(walletManager)
+                .environmentObject(walletManagerStore)
                 .environmentObject(shieldedService)
                 .environmentObject(platformBalanceSyncService)
                 .environmentObject(transitionState)
@@ -264,6 +265,20 @@ struct SwiftExampleAppApp: App {
                     )
                 }
 
+                // Pre-warm per-network managers for any orphan
+                // mnemonic whose original network differs from
+                // the active one, so the orphan-recovery flow
+                // doesn't have to lazy-build them mid-session.
+                // SwiftData's @Query observers in the main
+                // context don't always reflect rows persisted
+                // through a `backgroundContext` that was
+                // created mid-session — pre-warming here means
+                // those backgrounds are wired up alongside the
+                // main context at launch and the recovered
+                // wallet appears in its correct tab on the same
+                // run instead of only after a relaunch.
+                preWarmOrphanNetworkManagers()
+
                 rebindWalletScopedServices()
             }
 
@@ -290,5 +305,44 @@ struct SwiftExampleAppApp: App {
             return csv.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
         }
         return ["127.0.0.1"]
+    }
+
+    /// Materialize a `PlatformWalletManager` for every network that
+    /// has an orphan keychain mnemonic, except the already-active
+    /// one. Used during bootstrap so the orphan-recovery flow has
+    /// pre-warmed managers when the user authorizes recovery —
+    /// avoids a SwiftData edge case where a mid-session-created
+    /// background `ModelContext` doesn't propagate writes back to
+    /// the launch-time main context's `@Query` observers.
+    @MainActor
+    private func preWarmOrphanNetworkManagers() {
+        let storage = WalletStorage()
+        let keychainIds = (try? storage.listWalletIdsWithMnemonic()) ?? []
+        guard !keychainIds.isEmpty else { return }
+
+        var orphanNetworks: Set<Network> = []
+        for walletId in keychainIds {
+            guard let metadata = (try? storage.metadata(for: walletId)) ?? nil,
+                  let resolved = metadata.resolvedNetworks.first
+            else { continue }
+            orphanNetworks.insert(resolved)
+        }
+
+        let active = platformState.currentNetwork
+        for network in orphanNetworks where network != active {
+            do {
+                _ = try walletManagerStore.backgroundManager(for: network)
+                SDKLogger.log(
+                    "🔥 Pre-warmed wallet manager for \(network.displayName) "
+                        + "(orphan recovery target)",
+                    minimumLevel: .medium
+                )
+            } catch {
+                SDKLogger.error(
+                    "Failed to pre-warm \(network.displayName) manager: "
+                        + error.localizedDescription
+                )
+            }
+        }
     }
 }

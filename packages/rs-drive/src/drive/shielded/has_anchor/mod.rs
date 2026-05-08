@@ -11,7 +11,7 @@ impl Drive {
     /// Checks whether a shielded pool anchor exists in the anchors tree.
     ///
     /// Anchors are stored as `anchor_bytes -> block_height_be` in
-    /// `[AddressBalances, "s", [6]]`. Uses O(1) key lookup.
+    /// `[AddressBalances, "s", [192]]`. Uses O(1) key lookup.
     ///
     /// # Parameters
     /// - `anchor`: The 32-byte anchor to look up
