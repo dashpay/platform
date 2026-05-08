@@ -2313,13 +2313,29 @@ Each question's answer changes the spec; numbered for reference.
 
 ## 7. Known Issues
 
-Tracked production bugs that affect test outcomes. Tests are `#[ignore]`d until
-the underlying production fix lands. Do not modify production code in this
-section — these are documentation entries only.
+Tracked production bugs and harness gaps that affect test outcomes. Tests are
+`#[ignore]`d in these cases — but **`#[ignore]` does NOT mean "never runs"**:
+
+- `cargo test` (default): ignored tests are **skipped**.
+- `cargo test -- --ignored`: runs **only** ignored tests. PA-004b, PA-009, and PA-010 execute under this flag and fail by design. Any failure mode other than the one documented per-entry below is a regression.
+
+Do not modify production code in this section — these are documentation entries only.
 
 ### V27-007 — `PlatformAddressWallet::transfer` ledger pollution (production bug)
 
-**Status**: tracked, fix deferred. Tests `pa_004b_sweep_below_dust_gate_no_broadcast` and `pa_009_cleanup_gate_tracks_platform_version_min_input_amount` are `#[ignore]` until production fix lands.
+**Status**: tracked, fix deferred. Tests `pa_004b_sweep_below_dust_gate_no_broadcast`
+and `pa_009_cleanup_gate_tracks_platform_version_min_input_amount` are `#[ignore]`'d
+with reason `"FAILING — production bug in PlatformAddressWallet::transfer pollutes local ledger with non-owned addresses. See TEST_SPEC.md (V27-007) and TODO comment below."` — they run under `cargo test -- --ignored` and fail by design until the production fix lands.
+
+**Expected failure mode** (PA-004b and PA-009): the `assert_eq!(addr_1_residual, TARGET_RESIDUAL, ...)` assertion panics because `total_credits()` returns the bank's full balance (~40.8 tDASH) instead of the wallet's actual residual (`TARGET_RESIDUAL = 1_000`). Any failure at a different assertion or with a different value is a regression.
+
+**PA-010 — harness gap** (`pa_010_bank_starvation_typed_error`): this test is also `#[ignore]`'d (`"BLOCKED — needs harness refactor: per-test bank instance (Bank::with_test_balance) OR injectable balance override on the singleton, plus a typed BankError::Underfunded variant. See spec status."`) and fails under `cargo test -- --ignored` by design — it always panics with:
+
+```
+PA-010 is BLOCKED on a harness refactor. The bank is a process-shared singleton (E2eContext.bank, OnceCell-backed); building a `with_test_balance(5_000_000)` underfunded instance for ONE test conflicts with that lifecycle. The current under-funded fail mode is also a generic AddressOperation error, not a typed BankError::Underfunded. See TEST_SPEC.md → PA-010 → **Status**.
+```
+
+This is a harness gap (not a production bug); fix path is tracked in the harness roadmap (Wave 4 / `Bank::with_test_balance` constructor). Any panic message other than the one above, or a failure that propagates past the `panic!` call, is a regression.
 
 **Bug**: `PlatformAddressWallet::transfer` at
 `packages/rs-platform-wallet/src/wallet/platform_addresses/transfer.rs:160` calls
@@ -2380,5 +2396,26 @@ itself reject addresses not in the pool (wider change in `key-wallet`).
 **Investigated**: Bilby read-only audit, 2026-05-08, agent ID `a2d81349f872a0c6a`.
 
 ---
+
+### V28-303 — PA-003 partial fix: deficit closed, contention timeout remains
+
+**Status**: partial. PA-003 (`pa_003_fee_scaling`) is NOT `#[ignore]`'d — it runs in the default `cargo test` cohort. However, it is not reliably green under concurrency.
+
+**What V28-303 did**: bumped `FUNDING_CREDITS` from 400M to 500M and `FUNDING_FLOOR` from 350M to 450M (`cases/pa_003_fee_scaling.rs`). This closed the "available 240,524,980 credits, required 250,000,000" deficit that caused a deterministic failure on the 5-output transfer leg: with 400M pre-fund, `addr_src` retained only ~200M after the 1-out transfer and five marker transfers, giving ~235M of reachable candidate balance against a 250M requirement. With 500M pre-fund, `addr_src` retains ≥300M post-setup and the auto-selector has comfortable headroom.
+
+**What V28-303 did NOT fix**: at `threads=8` (standard CI concurrency), the `wait_for_balance` call on funding confirmation hits the 60s deadline before the balance settles. Current observed failure mode:
+
+```
+wait_for_balance timed out after 60s — addr_src balance never reached FUNDING_FLOOR (450_000_000)
+```
+
+This is a contention symptom: eight concurrent tests competing for DAPI bandwidth and bank-wallet nonce slots delay the funding broadcast confirmation beyond the per-step `STEP_TIMEOUT = Duration::from_secs(60)`.
+
+**Claiming "V28-303 fixes PA-003" or "PA-003 first time passing" is wrong.** V28-303 narrows the failure surface (one deterministic failure mode removed) but does not green-light PA-003 in standard CI.
+
+**Real fix path**: QA-V28-403 — raise `STEP_TIMEOUT` per step (or use a dynamic deadline tied to observed DAPI latency under load). Until that lands, PA-003 may pass in low-concurrency or low-load runs and fail under the standard 8-thread CI tier.
+
+---
+
 
 <sub>Catalogued by Marvin (QA), with the resigned competence of someone who has read every line of this code twice. Edge-case expansion by Trillian, who knows that the difference between "tested" and "tested at the boundary" is the difference between "ships" and "ships back".</sub>
