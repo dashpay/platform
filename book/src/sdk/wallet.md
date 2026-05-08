@@ -29,91 +29,34 @@ Evo SDK — see [Wallet Utilities](../evo-sdk/wallet-utilities.md).
 
 ## Quick Start
 
-The example below is derived from `packages/rs-platform-wallet/examples/basic_usage.rs`.
-It uses a minimal no-op persister and event handler so you can run it without
-infrastructure.
+The shortest path to a working manager is three calls — provide a `Sdk`, a
+`PlatformWalletPersistence` implementation, and a `PlatformEventHandler`:
 
 ```rust
-use std::sync::Arc;
-use dash_sdk::Sdk;
-use key_wallet::wallet::initialization::WalletAccountCreationOptions;
-use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
-use key_wallet::Network;
-use platform_wallet::changeset::PlatformWalletPersistence;
-use platform_wallet::events::PlatformEventHandler;
-use platform_wallet::PlatformWalletManager;
+let sdk = Arc::new(Sdk::new_mock());
+let persister = Arc::new(NoopPersister);
+let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
 
-// 1. Implement PlatformWalletPersistence (no-op for illustration)
-struct NoopPersister;
-impl PlatformWalletPersistence for NoopPersister {
-    fn store(
-        &self,
-        _wallet_id: platform_wallet::wallet::platform_wallet::WalletId,
-        _changeset: platform_wallet::changeset::PlatformWalletChangeSet,
-    ) -> Result<(), platform_wallet::changeset::PersistenceError> {
-        Ok(())
-    }
-    fn flush(
-        &self,
-        _wallet_id: platform_wallet::wallet::platform_wallet::WalletId,
-    ) -> Result<(), platform_wallet::changeset::PersistenceError> {
-        Ok(())
-    }
-    fn load(
-        &self,
-    ) -> Result<platform_wallet::changeset::ClientStartState,
-               platform_wallet::changeset::PersistenceError> {
-        Ok(platform_wallet::changeset::ClientStartState::default())
-    }
-}
+let manager = PlatformWalletManager::new(sdk, persister, event_handler);
 
-// 2. Implement PlatformEventHandler (no-op for illustration)
-struct NoopEventHandler;
-impl platform_wallet::events::EventHandler for NoopEventHandler {}
-impl PlatformEventHandler for NoopEventHandler {}
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let sdk = Arc::new(Sdk::new_mock());
-    let persister = Arc::new(NoopPersister);
-    let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
-
-    // 3. Create the manager
-    let manager = PlatformWalletManager::new(sdk, persister, event_handler);
-
-    // 4. Create a wallet from seed bytes (or use create_wallet_from_mnemonic)
-    let seed_bytes = [0u8; 64];
-    let wallet = manager
-        .create_wallet_from_seed_bytes(
-            Network::Testnet,
-            seed_bytes,
-            WalletAccountCreationOptions::Default,
-        )
-        .await?;
-
-    println!("Wallet ID: {}", hex::encode(wallet.wallet_id()));
-
-    // 5. Read the lock-free balance
-    let bal = wallet.balance();
-    println!("confirmed={} unconfirmed={}", bal.confirmed(), bal.unconfirmed());
-
-    // 6. Derive a receive address
-    let addr = wallet.core().next_receive_address_for_account(0).await?;
-    println!("Receive address: {addr}");
-
-    // 7. Read wallet state under a read guard
-    {
-        let state = wallet.state().await;
-        println!("Birth height: {:?}", state.core_wallet.birth_height());
-        println!("Managed identities: {}", state.identity_manager.identity_count());
-    }
-
-    Ok(())
-}
+let wallet = manager
+    .create_wallet_from_seed_bytes(
+        Network::Testnet,
+        [0u8; 64],
+        WalletAccountCreationOptions::Default,
+    )
+    .await?;
 ```
 
+For the full runnable program — including no-op `PlatformWalletPersistence` and
+`PlatformEventHandler` impls, balance reads, address derivation, and a `state()`
+guard walk-through — see
+[`packages/rs-platform-wallet/examples/basic_usage.rs`][basic_usage_quickstart].
+
+[basic_usage_quickstart]: https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-platform-wallet/examples/basic_usage.rs
+
 Production code replaces `Sdk::new_mock()` with a real `SdkBuilder` configuration
-(see [Builder Pattern](builder-pattern.md)) and replaces `NoopPersister` with a
+(see [Builder Pattern](builder-pattern.md)) and replaces the no-op persister with a
 database-backed implementation of `PlatformWalletPersistence`.
 
 ## Core Types
@@ -174,7 +117,7 @@ the lifecycle of asset lock transactions (the on-ramp from UTXO to Platform cred
 **Reading state:** Use `wallet.state().await` to acquire a read guard that derefs to
 `PlatformWalletInfo`.
 
-**Lock-free balance:** `wallet.balance()` returns `Arc<WalletBalance>` without
+**Lock-free balance:** `wallet.balance()` returns `&Arc<WalletBalance>` without
 acquiring any lock. It is updated by the SPV event handler after each block. Use it
 for UI rendering where you cannot await.
 
@@ -308,13 +251,16 @@ phases — **register**, **top up**, and **withdraw** — each exposed as a meth
 - **Register** converts a UTXO into an asset lock transaction that funds a new
   identity on Platform. The asset lock is created, signed, and broadcast on the Core
   chain; the Platform state transition is sent to DAPI once the asset lock is
-  confirmed. See `register_identity`, `register_identity_with_funding`, and
-  `register_identity_with_funding_external_signer`.
-- **Top up** locks another UTXO and adds credits to an existing identity. See
-  `top_up_identity` and `top_up_identity_with_funding`.
+  confirmed. See `register_identity_with_funding_external_signer` (recommended);
+  the internal-signer variants `register_identity` and `register_identity_with_funding`
+  are being phased out.
+- **Top up** locks another UTXO and adds credits to an existing identity. The
+  internal-signer variants `top_up_identity` and `top_up_identity_with_funding` are
+  being phased out in favour of the external-signer flow.
 - **Withdraw** creates a Platform state transition that returns credits to the Core
-  chain as Dash. See `withdraw_credits`, `withdraw_credits_with_external_signer`,
-  and `withdraw_credits_with_signer`.
+  chain as Dash. See `withdraw_credits_with_external_signer` (recommended); the
+  internal-signer variants `withdraw_credits` and `withdraw_credits_with_signer` are
+  being phased out.
 
 Each operation has a convenience variant that funds from wallet UTXOs and signs with
 the wallet's internal signer, plus an `_with_funding` / `_external_signer` variant
@@ -448,7 +394,7 @@ All functions return a `PlatformWalletFFIResult` status code. Check for
 `PLATFORM_WALLET_FFI_SUCCESS` before reading output parameters.
 
 The iOS Swift binding is built on top of this FFI layer and lives at
-`packages/swift-sdk/`. For build instructions, see
+`packages/swift-sdk/`. For build instructions, see the iOS build guide:
 [`packages/swift-sdk/BUILD_GUIDE_FOR_AI.md`](../../packages/swift-sdk/BUILD_GUIDE_FOR_AI.md).
 For the full FFI API surface and C header details, see the
 [`rs-platform-wallet-ffi` README](../../packages/rs-platform-wallet-ffi/README.md).
