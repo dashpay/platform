@@ -744,9 +744,18 @@ pub fn registry_entry_from_seed(seed: &[u8; 64], note: Option<String>) -> Regist
 /// Guard returned by [`super::setup`].
 ///
 /// Tests SHOULD call [`SetupGuard::teardown`] explicitly once
-/// they're done; the [`Drop`] impl is a panic-safety fallback that
-/// logs a warning and relies on the next-startup
-/// `cleanup::sweep_orphans` to recover funds.
+/// they're done. The [`Drop`] impl runs a best-effort async sweep
+/// for guards that were dropped without an explicit teardown — fires
+/// on test success, normal completion, AND panic-unwind (V27-004).
+/// Process abort / SIGKILL is unrecoverable; bootstrap
+/// [`super::cleanup::sweep_orphans`] covers that on the next run.
+///
+/// In addition, every drop atomically decrements
+/// [`E2eContext::active_guards`] (regardless of teardown path); the
+/// guard whose decrement observes a previous value of `1` fires an
+/// end-of-suite [`super::cleanup::sweep_orphans`] pass so any dust /
+/// retained-`Failed` entries surfaced by per-test sweeps get one final
+/// retry without waiting for the next process startup.
 pub struct SetupGuard {
     /// Process-shared context (`&'static` — `E2eContext::init`
     /// returns a singleton).
@@ -754,11 +763,30 @@ pub struct SetupGuard {
     /// Fresh-seed test wallet, already registered for cleanup.
     pub test_wallet: TestWallet,
     /// Set to `true` by a successful [`SetupGuard::teardown`] so
-    /// [`Drop`] skips its warning.
+    /// [`Drop`] skips the per-test sweep (the explicit call already
+    /// did it). The end-of-suite counter decrement still fires.
     pub(crate) teardown_called: bool,
 }
 
 impl SetupGuard {
+    /// Construct a freshly-set-up guard and atomically register it
+    /// with [`E2eContext::active_guards`].
+    ///
+    /// Increment fires AFTER the struct is fully constructed so a
+    /// panic earlier in `setup` (registry insert, wallet build,
+    /// etc.) doesn't leak a counter slot — symmetric with the
+    /// unconditional decrement in [`Drop`]. (V27-004)
+    pub(crate) fn new(ctx: &'static E2eContext, test_wallet: TestWallet) -> Self {
+        let guard = Self {
+            ctx,
+            test_wallet,
+            teardown_called: false,
+        };
+        ctx.active_guards
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        guard
+    }
+
     /// Sweep the test wallet's funds back to the bank and remove
     /// its registry entry.
     ///
@@ -783,12 +811,94 @@ impl SetupGuard {
 
 impl Drop for SetupGuard {
     fn drop(&mut self) {
+        // Per-test sweep — only when the test body didn't run
+        // [`SetupGuard::teardown`] itself (panic-unwind path, or a
+        // test that simply forgot).
+        //
+        // The async sweep is driven by [`drop_sweep_one`], which
+        // spawns a dedicated OS thread + fresh current-thread tokio
+        // runtime. This sidesteps two problems at once: (a) many e2e
+        // tests run under `tokio_shared_rt::test(shared)`'s default
+        // current-thread flavor where `tokio::task::block_in_place`
+        // panics, and (b) rust-lang/rust#100013 prevents the inferred
+        // sweep future from satisfying `Send + 'static` even though
+        // every captured type is `Sync`. See `drop_sweep_one`'s
+        // module-level docs for the full reasoning.
+        //
+        // The bridge is wrapped in [`std::panic::catch_unwind`] with
+        // [`AssertUnwindSafe`]: a panic inside the sweep WHILE we're
+        // already unwinding (e.g. `Drop` fired by a panicking test)
+        // would otherwise abort the process. `AssertUnwindSafe` is
+        // correct here — sweep failures only log; the
+        // partially-modified state (registry, manager) is already
+        // designed to tolerate next-run retry.
         if !self.teardown_called {
-            tracing::warn!(
-                wallet_id = %hex::encode(self.test_wallet.id()),
-                "SetupGuard dropped without explicit teardown — wallet will be \
-                 swept on next test process startup"
+            let wallet_id = self.test_wallet.id();
+            let ctx: &'static E2eContext = self.ctx;
+            let test_wallet_ptr: *const TestWallet = &self.test_wallet;
+            let test_wallet_addr = test_wallet_ptr as usize;
+            let unwind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                drop_sweep_one(ctx, test_wallet_addr)
+            }));
+            match unwind {
+                Ok(Ok(())) => tracing::debug!(
+                    target: "platform_wallet::e2e::wallet_factory",
+                    wallet_id = %hex::encode(wallet_id),
+                    "SetupGuard::Drop: per-test sweep completed"
+                ),
+                Ok(Err(err)) => tracing::warn!(
+                    target: "platform_wallet::e2e::wallet_factory",
+                    wallet_id = %hex::encode(wallet_id),
+                    error = %err,
+                    "SetupGuard::Drop: per-test sweep returned error; registry \
+                     entry retained for next-run sweep_orphans"
+                ),
+                Err(_) => tracing::error!(
+                    target: "platform_wallet::e2e::wallet_factory",
+                    wallet_id = %hex::encode(wallet_id),
+                    "SetupGuard::Drop: per-test sweep panicked; suppressed via \
+                     catch_unwind to avoid double-panic abort. Registry entry \
+                     retained for next-run sweep_orphans"
+                ),
+            }
+        }
+
+        // Counter decrement runs unconditionally — including the
+        // explicit-teardown path — so the last in-flight guard always
+        // fires the end-of-suite sweep. `fetch_sub(AcqRel)` returns
+        // the *previous* value atomically: exactly one thread observes
+        // `prev == 1`, so the end-of-suite sweep fires exactly once.
+        // Same `catch_unwind` wrapping as above — see that block's
+        // rationale.
+        let prev = self
+            .ctx
+            .active_guards
+            .fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+        if prev == 1 {
+            let ctx: &'static E2eContext = self.ctx;
+            tracing::info!(
+                target: "platform_wallet::e2e::wallet_factory",
+                "last SetupGuard dropped — firing end-of-suite sweep_orphans"
             );
+            let unwind =
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop_sweep_orphans(ctx)));
+            match unwind {
+                Ok(Ok(n)) => tracing::info!(
+                    target: "platform_wallet::e2e::wallet_factory",
+                    swept = n,
+                    "end-of-suite sweep_orphans completed"
+                ),
+                Ok(Err(err)) => tracing::warn!(
+                    target: "platform_wallet::e2e::wallet_factory",
+                    error = %err,
+                    "end-of-suite sweep_orphans returned error"
+                ),
+                Err(_) => tracing::error!(
+                    target: "platform_wallet::e2e::wallet_factory",
+                    "end-of-suite sweep_orphans panicked; suppressed via \
+                     catch_unwind to avoid double-panic abort"
+                ),
+            }
         }
     }
 }
@@ -796,6 +906,92 @@ impl Drop for SetupGuard {
 /// `PlatformWalletError` → framework error envelope.
 fn wallet_err(err: PlatformWalletError) -> FrameworkError {
     FrameworkError::Wallet(err.to_string())
+}
+
+/// Synchronous bridge for the [`SetupGuard::Drop`] per-test sweep.
+///
+/// Spawns a dedicated OS thread, builds a fresh current-thread tokio
+/// runtime there, and `block_on`s [`super::cleanup::teardown_one`].
+/// Joins the thread before returning so the dropping thread's stack
+/// (which owns `*test_wallet`) outlives the sweep.
+///
+/// Why a hand-rolled thread instead of [`dash_async::block_on`]:
+/// `block_on` requires the future to be `Send + 'static` (so it can
+/// hand it to either `tokio::task::spawn` on a multi-thread runtime
+/// or to a freshly-spawned worker thread). The future returned by
+/// `teardown_one` borrows `&PlatformWalletManager`, `&SimpleSigner`,
+/// etc. through a chain of accessors, and rust-lang/rust#100013
+/// ("implementation of `Send` is not general enough") prevents the
+/// auto-trait analysis from concluding `Send` even though every
+/// underlying type is `Sync`. Driving the future from a fresh
+/// current-thread runtime side-steps the `Send` requirement entirely
+/// — the future never crosses a thread boundary; only the
+/// inputs (a `&'static E2eContext` reference and a `usize` address)
+/// do, and both are trivially `Send`.
+///
+/// `test_wallet_addr` is `&self.test_wallet as *const TestWallet`
+/// round-tripped through `usize` so it can cross the
+/// `std::thread::spawn` `Send + 'static` boundary. Dereferenced
+/// exactly once on the worker thread; the dropping thread is blocked
+/// in `join()` for the duration so the wallet cannot move.
+fn drop_sweep_one(ctx: &'static E2eContext, test_wallet_addr: usize) -> FrameworkResult<()> {
+    let join = std::thread::spawn(move || -> FrameworkResult<()> {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| FrameworkError::Cleanup(format!("drop sweep runtime: {e}")))?;
+        rt.block_on(async move {
+            // SAFETY: the dropping thread that called this helper is
+            // blocked in `join()` for the entire body, so the
+            // `TestWallet` at `test_wallet_addr` (owned by the
+            // dropping `SetupGuard` on that thread's stack) is alive
+            // and stationary throughout.
+            let test_wallet: &TestWallet = unsafe { &*(test_wallet_addr as *const TestWallet) };
+            super::cleanup::teardown_one(
+                ctx.manager(),
+                ctx.bank(),
+                ctx.bank_identity(),
+                ctx.registry(),
+                test_wallet,
+            )
+            .await
+        })
+    });
+    match join.join() {
+        Ok(result) => result,
+        Err(_) => Err(FrameworkError::Cleanup(
+            "drop sweep worker thread panicked".into(),
+        )),
+    }
+}
+
+/// Synchronous bridge for the end-of-suite [`super::cleanup::sweep_orphans`]
+/// pass. Same rationale as [`drop_sweep_one`] — fresh current-thread
+/// runtime on a dedicated OS thread sidesteps rust-lang/rust#100013.
+fn drop_sweep_orphans(ctx: &'static E2eContext) -> FrameworkResult<usize> {
+    let join = std::thread::spawn(move || -> FrameworkResult<usize> {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| FrameworkError::Cleanup(format!("drop sweep_orphans runtime: {e}")))?;
+        rt.block_on(async move {
+            let network = ctx.bank().network();
+            super::cleanup::sweep_orphans(
+                ctx.manager(),
+                ctx.bank(),
+                ctx.bank_identity(),
+                ctx.registry(),
+                network,
+            )
+            .await
+        })
+    });
+    match join.join() {
+        Ok(result) => result,
+        Err(_) => Err(FrameworkError::Cleanup(
+            "drop sweep_orphans worker thread panicked".into(),
+        )),
+    }
 }
 
 /// Generate the address at DIP-17 slot-0 of (account=0, key_class=0)

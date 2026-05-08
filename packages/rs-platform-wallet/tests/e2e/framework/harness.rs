@@ -11,6 +11,7 @@
 
 use std::fs::File;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex as StdMutex, Once};
 use std::time::Duration;
 
@@ -183,6 +184,15 @@ pub struct E2eContext {
     /// state — the same balance that `assert_floor` evaluates. On fetch
     /// error `independent_credits = 0` with a `warn` logged.
     pub bank_balance_cross_check: Option<CrossCheckResult>,
+    /// Live count of outstanding [`super::SetupGuard`] instances.
+    /// Incremented in [`super::setup`] and decremented in
+    /// [`super::SetupGuard`]'s `Drop`. The guard whose decrement
+    /// observes a previous value of `1` is the last in-flight test —
+    /// it fires the end-of-suite [`cleanup::sweep_orphans`] pass so
+    /// dust + retained-`Failed` entries surfaced by per-test Drop
+    /// sweeps get one final retry without waiting for the next process
+    /// startup. (V27-004)
+    pub active_guards: AtomicUsize,
 }
 
 impl E2eContext {
@@ -615,6 +625,7 @@ impl E2eContext {
             cancel_token,
             wait_hub,
             bank_balance_cross_check,
+            active_guards: AtomicUsize::new(0),
         })
     }
 }

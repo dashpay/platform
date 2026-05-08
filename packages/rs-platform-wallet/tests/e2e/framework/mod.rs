@@ -230,11 +230,10 @@ pub async fn setup() -> FrameworkResult<SetupGuard> {
     };
     ctx.registry().insert(test_wallet.id(), entry)?;
 
-    Ok(SetupGuard {
-        ctx,
-        test_wallet,
-        teardown_called: false,
-    })
+    // Constructor wires up the counter increment AFTER struct
+    // assembly so a pre-construction panic doesn't leak a slot —
+    // see [`SetupGuard::new`] / V27-004.
+    Ok(SetupGuard::new(ctx, test_wallet))
 }
 
 /// Multi-identity counterpart of [`setup`]. Builds a fresh test

@@ -49,13 +49,28 @@ pub fn cleanup_dust_gate(version: &PlatformVersion) -> Credits {
 /// Default per-step timeout for cleanup polls.
 pub const CLEANUP_STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
-/// Outcome of a single wallet sweep — used by [`sweep_orphans`] /
-/// [`teardown_one`] to decide whether to drop the registry entry or
-/// retain it as `Failed` for next-run retry. QA-V26-006 — prior to
-/// this struct every helper returned `Ok(())` after logging a warn,
-/// so a broadcast failure looked identical to "nothing to sweep" and
-/// the registry was purged unconditionally on the happy-path branch
-/// — silently leaking the funds.
+/// Best-effort sweep of a wallet's residual platform credits back to
+/// the bank.
+///
+/// Used by [`sweep_orphans`] / [`teardown_one`] to decide whether to
+/// drop the registry entry or retain it as `Failed` for next-run
+/// retry. The contract is:
+///
+/// - If residual is below the protocol's `min_input_amount` (the
+///   sweep-fee minimum), the dust is abandoned and the registry entry
+///   is removed — no recovery is possible without a bank top-up. The
+///   abandoned credit total is tracked in [`Self::dust_abandoned`] and
+///   surfaced in the post-sweep summary log. (V27-004 — accept-dust
+///   policy.)
+/// - If broadcast succeeds, the registry entry is removed.
+/// - If broadcast fails (transient), the registry entry is retained
+///   and marked [`EntryStatus::Failed`] so bootstrap [`sweep_orphans`]
+///   can retry on a future run.
+///
+/// QA-V26-006 — prior to this struct every helper returned `Ok(())`
+/// after logging a warn, so a broadcast failure looked identical to
+/// "nothing to sweep" and the registry was purged unconditionally on
+/// the happy-path branch — silently leaking the funds.
 #[derive(Debug, Default)]
 pub struct SweepReport {
     /// Sub-sweeps that attempted a broadcast and succeeded
@@ -69,6 +84,13 @@ pub struct SweepReport {
     /// by [`sweep_orphans`] to keep the "swept_with_broadcast"
     /// metric distinct from the "skipped, no funds" cohort.
     pub had_funds_to_recover: bool,
+    /// Total credits left behind on platform addresses whose balance
+    /// fell below `min_input_amount` (the protocol-level sweep-fee
+    /// minimum). The accept-dust policy (V27-004) drops the registry
+    /// entry rather than retaining it — bootstrap retry can't recover
+    /// dust without a bank top-up — so this counter is the only
+    /// surface for tracking how much was abandoned.
+    pub dust_abandoned: Credits,
 }
 
 impl SweepReport {
@@ -91,6 +113,12 @@ struct OrphanSweepSummary {
     swept_with_broadcast: u32,
     skipped_no_funds: u32,
     failed_retained: u32,
+    /// Σ of [`SweepReport::dust_abandoned`] across all swept entries.
+    /// Reported in the summary so operators see how much was left as
+    /// sub-fee residual — the only path through which credits are
+    /// silently dropped from the registry under the accept-dust
+    /// policy. (V27-004)
+    dust_abandoned_total: Credits,
 }
 
 /// Sweep wallets left over from prior (likely panicked) runs.
@@ -124,6 +152,9 @@ pub async fn sweep_orphans(
                 } else {
                     summary.skipped_no_funds += 1;
                 }
+                summary.dust_abandoned_total = summary
+                    .dust_abandoned_total
+                    .saturating_add(report.dust_abandoned);
                 if let Err(err) = registry.remove(&hash) {
                     tracing::warn!(
                         wallet_id = %hex::encode(hash),
@@ -166,6 +197,7 @@ pub async fn sweep_orphans(
         swept_with_broadcast = summary.swept_with_broadcast,
         skipped_no_funds = summary.skipped_no_funds,
         failed_retained = summary.failed_retained,
+        dust_abandoned_total = summary.dust_abandoned_total,
         "orphan sweep summary"
     );
     Ok(summary.swept_with_broadcast as usize)
@@ -216,12 +248,28 @@ async fn sweep_one(
             &mut report,
         )
         .await?;
+    } else if total > 0 {
+        // Accept-dust policy (V27-004): residual is below
+        // `min_input_amount`, so no transition we could build would
+        // satisfy the protocol's per-input floor. Tracking the
+        // abandoned amount on the report lets the summary log
+        // surface the leak; the registry entry is dropped by the
+        // caller (`sweep_orphans` / `teardown_one`) on the clean
+        // branch.
+        tracing::info!(
+            target: "platform_wallet::e2e::cleanup",
+            wallet_id = %hex::encode(hash),
+            dust = total,
+            min_input = dust_gate,
+            "orphan platform residual below sweep-fee minimum; abandoning dust"
+        );
+        report.dust_abandoned = report.dust_abandoned.saturating_add(total);
     } else {
         tracing::debug!(
             wallet_id = %hex::encode(hash),
             total,
             min_input = dust_gate,
-            "orphan platform total below protocol min_input_amount; skipping"
+            "orphan platform total is zero; skipping"
         );
     }
     sweep_identities_with_seed(&wallet, &seed_bytes, network, bank_identity, &mut report).await?;
@@ -270,12 +318,25 @@ pub async fn teardown_one(
             &mut report,
         )
         .await?;
+    } else if total > 0 {
+        // Accept-dust policy (V27-004): see the matching arm in
+        // [`sweep_one`]. Residual under `min_input_amount` is
+        // unrecoverable without a bank top-up, so we abandon it
+        // and drop the registry entry on the clean branch below.
+        tracing::info!(
+            target: "platform_wallet::e2e::cleanup",
+            wallet_id = %hex::encode(test_wallet.id()),
+            dust = total,
+            min_input = dust_gate,
+            "test wallet residual below sweep-fee minimum; abandoning dust"
+        );
+        report.dust_abandoned = report.dust_abandoned.saturating_add(total);
     } else {
         tracing::debug!(
             wallet_id = %hex::encode(test_wallet.id()),
             total,
             min_input = dust_gate,
-            "test wallet total below protocol min_input_amount; skipping platform sweep"
+            "test wallet total is zero; skipping platform sweep"
         );
     }
     sweep_identities_with_seed(
