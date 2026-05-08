@@ -1,14 +1,5 @@
 use platform_value::Value;
 
-/// Top-level property names introduced in protocol v12. Pre-v12 contracts
-/// could not legitimately use these keys, but raw schema bytes may contain
-/// them (the v0/v1 meta-schemas accept arbitrary booleans for these names).
-/// The v11→v12 migration must strip these from stored contracts so the v2
-/// parser does not revive them and reinterpret a `NormalTree` as a
-/// `CountTree` / `ProvableCountTree`.
-pub const V12_INTRODUCED_DOCUMENT_SCHEMA_TOP_LEVEL_PROPERTIES: &[&str] =
-    &["documentsCountable", "rangeCountable"];
-
 /// The set of top-level property names allowed on a document type schema object
 /// as defined by the v1 document meta-schema.
 ///
@@ -45,10 +36,10 @@ pub const ALLOWED_DOCUMENT_SCHEMA_V1_PROPERTIES: &[&str] = &[
 ];
 
 /// Top-level property names that pre-v12 contracts were permitted to declare.
-/// Equal to [`ALLOWED_DOCUMENT_SCHEMA_V1_PROPERTIES`] minus
-/// [`V12_INTRODUCED_DOCUMENT_SCHEMA_TOP_LEVEL_PROPERTIES`]. Used by the v11→v12
-/// migration so smuggled v12-introduced flags are stripped from stored pre-v12
-/// contracts before the v2 parser ever sees them.
+/// Equal to [`ALLOWED_DOCUMENT_SCHEMA_V1_PROPERTIES`] minus the v12-introduced
+/// flags (`documentsCountable`, `rangeCountable`). Used by the v11→v12 migration
+/// so smuggled v12-introduced flags are stripped from stored pre-v12 contracts
+/// before the v2 parser ever sees them.
 pub const ALLOWED_DOCUMENT_SCHEMA_PRE_V12_PROPERTIES: &[&str] = &[
     "type",
     "$schema",
@@ -77,8 +68,12 @@ pub const ALLOWED_DOCUMENT_SCHEMA_PRE_V12_PROPERTIES: &[&str] = &[
 ];
 
 /// Strips any top-level key from the document type schema `Value::Map` that
-/// is not in `allowed`. Returns `true` if any keys were removed.
-fn strip_to_allowlist(schema: &mut Value, allowed: &[&str]) -> bool {
+/// is not in [`ALLOWED_DOCUMENT_SCHEMA_PRE_V12_PROPERTIES`]. This is the strip
+/// invoked by the v11→v12 protocol upgrade migration so unknown keys (including
+/// smuggled v12-introduced flags such as `documentsCountable` / `rangeCountable`)
+/// are removed from stored pre-v12 contracts. Returns `true` if any keys were
+/// removed.
+pub fn strip_unknown_properties_from_pre_v12_document_schema(schema: &mut Value) -> bool {
     let map = match schema {
         Value::Map(map) => map,
         _ => return false,
@@ -90,25 +85,9 @@ fn strip_to_allowlist(schema: &mut Value, allowed: &[&str]) -> bool {
             Value::Text(s) => s.as_str(),
             _ => return true, // keep non-string keys (shouldn't happen but safe)
         };
-        allowed.contains(&key_str)
+        ALLOWED_DOCUMENT_SCHEMA_PRE_V12_PROPERTIES.contains(&key_str)
     });
     map.len() != before
-}
-
-/// Strips any top-level key from the document type schema `Value::Map` that
-/// is not in [`ALLOWED_DOCUMENT_SCHEMA_V1_PROPERTIES`]. Returns `true` if any
-/// keys were removed.
-pub fn strip_unknown_properties_from_document_schema(schema: &mut Value) -> bool {
-    strip_to_allowlist(schema, ALLOWED_DOCUMENT_SCHEMA_V1_PROPERTIES)
-}
-
-/// Strips any top-level key from the document type schema `Value::Map` that
-/// is not in [`ALLOWED_DOCUMENT_SCHEMA_PRE_V12_PROPERTIES`]. This is the strip
-/// invoked by the v11→v12 protocol upgrade migration so smuggled
-/// v12-introduced flags are removed from stored pre-v12 contracts. Returns
-/// `true` if any keys were removed.
-pub fn strip_unknown_properties_from_pre_v12_document_schema(schema: &mut Value) -> bool {
-    strip_to_allowlist(schema, ALLOWED_DOCUMENT_SCHEMA_PRE_V12_PROPERTIES)
 }
 
 #[cfg(test)]
@@ -126,7 +105,7 @@ mod tests {
             "anotherUnknown": 42
         });
 
-        let changed = strip_unknown_properties_from_document_schema(&mut schema);
+        let changed = strip_unknown_properties_from_pre_v12_document_schema(&mut schema);
         assert!(changed);
 
         let map = schema.as_map().unwrap();
@@ -148,14 +127,14 @@ mod tests {
             "$comment": "test"
         });
 
-        let changed = strip_unknown_properties_from_document_schema(&mut schema);
+        let changed = strip_unknown_properties_from_pre_v12_document_schema(&mut schema);
         assert!(!changed);
     }
 
     #[test]
     fn handles_non_map_value() {
         let mut schema = Value::Text("not a map".to_string());
-        let changed = strip_unknown_properties_from_document_schema(&mut schema);
+        let changed = strip_unknown_properties_from_pre_v12_document_schema(&mut schema);
         assert!(!changed);
     }
 
@@ -184,56 +163,6 @@ mod tests {
         assert!(keys.contains(&"type"));
         assert!(keys.contains(&"properties"));
         assert!(keys.contains(&"additionalProperties"));
-    }
-
-    #[test]
-    fn pre_v12_strip_keeps_v12_flags_under_v1_strip() {
-        // The non-pre-v12 strip is for new v12 contracts: documentsCountable /
-        // rangeCountable must survive there.
-        let mut schema = platform_value!({
-            "type": "object",
-            "properties": {},
-            "additionalProperties": false,
-            "documentsCountable": true,
-            "rangeCountable": true,
-        });
-
-        let changed = strip_unknown_properties_from_document_schema(&mut schema);
-        assert!(!changed);
-    }
-
-    #[test]
-    fn pre_v12_allowlist_is_v1_minus_v12_introduced() {
-        let v1: std::collections::BTreeSet<&str> = ALLOWED_DOCUMENT_SCHEMA_V1_PROPERTIES
-            .iter()
-            .copied()
-            .collect();
-        let pre_v12: std::collections::BTreeSet<&str> = ALLOWED_DOCUMENT_SCHEMA_PRE_V12_PROPERTIES
-            .iter()
-            .copied()
-            .collect();
-        let v12_introduced: std::collections::BTreeSet<&str> =
-            V12_INTRODUCED_DOCUMENT_SCHEMA_TOP_LEVEL_PROPERTIES
-                .iter()
-                .copied()
-                .collect();
-
-        // pre_v12 ∪ v12_introduced == v1
-        let union: std::collections::BTreeSet<&str> =
-            pre_v12.union(&v12_introduced).copied().collect();
-        assert_eq!(
-            union, v1,
-            "pre-v12 allowlist + v12-introduced should equal the v1 allowlist"
-        );
-
-        // pre_v12 ∩ v12_introduced == ∅
-        let intersection: std::collections::BTreeSet<&str> =
-            pre_v12.intersection(&v12_introduced).copied().collect();
-        assert!(
-            intersection.is_empty(),
-            "pre-v12 allowlist must not contain v12-introduced properties: {:?}",
-            intersection
-        );
     }
 
     #[test]
