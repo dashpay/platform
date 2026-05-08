@@ -24,16 +24,29 @@ pub mod validate_asset_lock_transaction_structure;
 
 // TODO: Serialization with bincode
 // TODO: Consider use Box for InstantAssetLockProof
+//
+// Wire-shape note: this is an *internally-tagged* enum (`#[serde(tag = "type")]`
+// with no `content`). serde's internal tagging works on newtype variants whose
+// inner is a struct — both `InstantAssetLockProof` and `ChainAssetLockProof`
+// qualify — so the inner struct's fields are flattened next to the `type`
+// discriminator: `{"type": "instant", "instantLock": ..., "transaction": ...,
+// "outputIndex": ...}`. This matches the convention applied to other tagged
+// unions exposed to JS (see `AddressWitness`, `AddressFundsFeeStrategyStep`).
+// Bincode `Encode`/`Decode` derives are independent of serde, so consensus
+// binary format is unaffected.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Encode, Decode)]
-#[serde(untagged)]
+#[serde(tag = "type", rename_all = "camelCase")]
 #[allow(clippy::large_enum_variant)]
 pub enum AssetLockProof {
     Instant(#[bincode(with_serde)] InstantAssetLockProof),
     Chain(#[bincode(with_serde)] ChainAssetLockProof),
 }
 
+/// Wire-shape Deserialize uses the same internal-tag layout the Serialize derive
+/// produces, but routes the instant variant through `RawInstantLockProof` so the
+/// dashcore `InstantLock` can be reconstructed from its raw bytes form.
 #[derive(Deserialize)]
-#[serde(untagged)]
+#[serde(tag = "type", rename_all = "camelCase")]
 enum RawAssetLockProof {
     Instant(RawInstantLockProof),
     Chain(ChainAssetLockProof),
@@ -59,21 +72,6 @@ impl<'de> Deserialize<'de> for AssetLockProof {
     where
         D: Deserializer<'de>,
     {
-        // Try to parse into IS Lock
-        // let maybe_is_lock = RawInstantLock::deserialize(&deserializer);
-        //
-        // if let Ok(raw_instant_lock) = maybe_is_lock {
-        //     let instant_lock = raw_instant_lock.try_into()
-        //         .map_err(|e: ProtocolError| D::Error::custom(e.to_string()))?;
-        //
-        //     return Ok(AssetLockProof::Instant(instant_lock))
-        // };
-        //
-        //
-        // ChainAssetLockProof::deserialize(deserializer)
-        //     .map(|chain| AssetLockProof::Chain(chain))
-        // // Try to parse into chain lock
-
         let raw = RawAssetLockProof::deserialize(deserializer)?;
         raw.try_into().map_err(|e: ProtocolError| {
             D::Error::custom(format!(
@@ -95,43 +93,6 @@ impl AsRef<AssetLockProof> for AssetLockProof {
         self
     }
 }
-//
-// impl Serialize for AssetLockProof {
-//     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-//     where
-//         S: Serializer,
-//     {
-//         match self {
-//             AssetLockProof::Instant(instant_proof) => instant_proof.serialize(serializer),
-//             AssetLockProof::Chain(chain) => chain.serialize(serializer),
-//         }
-//     }
-// }
-//
-// impl<'de> Deserialize<'de> for AssetLockProof {
-//     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-//     where
-//         D: Deserializer<'de>,
-//     {
-//         let value = platform_value::Value::deserialize(deserializer)?;
-//
-//         let proof_type_int: u8 = value
-//             .get_integer("type")
-//             .map_err(|e| D::Error::custom(e.to_string()))?;
-//         let proof_type = AssetLockProofType::try_from(proof_type_int)
-//             .map_err(|e| D::Error::custom(e.to_string()))?;
-//
-//         match proof_type {
-//             AssetLockProofType::Instant => Ok(Self::Instant(
-//                 platform_value::from_value(value).map_err(|e| D::Error::custom(e.to_string()))?,
-//             )),
-//             AssetLockProofType::Chain => Ok(Self::Chain(
-//                 platform_value::from_value(value).map_err(|e| D::Error::custom(e.to_string()))?,
-//             )),
-//         }
-//     }
-// }
-
 pub enum AssetLockProofType {
     Instant = 0,
     Chain = 1,
@@ -333,6 +294,36 @@ mod tests {
     use super::*;
     use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
     use dashcore::{OutPoint, Txid};
+    use std::str::FromStr;
+
+    /// JSON wire shape is internally tagged: `{type, ...flattened inner fields}`,
+    /// no `data` wrapper. This guards against accidental reintroduction of the
+    /// old adjacent-tagged `{type, data: {...}}` shape and against the divergence
+    /// from the `AddressWitness` / `AddressFundsFeeStrategyStep` precedent.
+    #[test]
+    fn chain_variant_serializes_with_internal_tag() {
+        let txid =
+            Txid::from_str("e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d")
+                .unwrap();
+        let proof = AssetLockProof::Chain(ChainAssetLockProof {
+            core_chain_locked_height: 11,
+            out_point: OutPoint { txid, vout: 1 },
+        });
+
+        let json = serde_json::to_value(&proof).expect("serialize");
+
+        assert_eq!(json["type"], "chain");
+        assert_eq!(json["coreChainLockedHeight"], 11);
+        assert!(
+            json.get("data").is_none(),
+            "should not have a `data` wrapper, got: {}",
+            json
+        );
+
+        // Round-trip
+        let restored: AssetLockProof = serde_json::from_value(json).expect("deserialize");
+        assert_eq!(proof, restored);
+    }
 
     mod asset_lock_proof_type_try_from {
         use super::*;
@@ -499,7 +490,7 @@ mod tests {
             let value: Value = (&proof).try_into().expect("should convert to Value");
 
             // Now try to read type from value
-            let type_from_value = AssetLockProof::type_from_raw_value(&value);
+            let _type_from_value = AssetLockProof::type_from_raw_value(&value);
             // Chain proofs serialized via serde may or may not have "type" field depending
             // on the serialization format. The untagged format may not include it.
             // What matters is that the conversion itself works.

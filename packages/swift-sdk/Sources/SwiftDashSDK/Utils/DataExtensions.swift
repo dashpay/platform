@@ -97,4 +97,9 @@ extension Data {
     public func toHexString() -> String {
         return self.map { String(format: "%02x", $0) }.joined()
     }
+
+    /// Computed-property alias for [`toHexString()`].
+    public var hexString: String {
+        toHexString()
+    }
 }

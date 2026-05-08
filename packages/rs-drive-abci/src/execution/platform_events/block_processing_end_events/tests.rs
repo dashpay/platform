@@ -36,9 +36,9 @@ mod refund_tests {
 
     // There's a fee for the first document that a user creates on a contract as they add space
     // For the identity data contract nonce
-    fn setup_join_contract_document(
+    async fn setup_join_contract_document(
         platform: &TempPlatform<MockCoreRPCLike>,
-        profile: DocumentTypeRef,
+        profile: DocumentTypeRef<'_>,
         rng: &mut StdRng,
         identity: &Identity,
         key: &IdentityPublicKey,
@@ -84,6 +84,7 @@ mod refund_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let (mut fee_results, processed_block_fee_outcome) = process_state_transitions(
@@ -130,10 +131,10 @@ mod refund_tests {
         expected_user_balance_after_creation
     }
 
-    fn setup_initial_document(
+    async fn setup_initial_document(
         platform: &TempPlatform<MockCoreRPCLike>,
         dashpay: &DataContract,
-        profile: DocumentTypeRef,
+        profile: DocumentTypeRef<'_>,
         rng: &mut StdRng,
         identity: &Identity,
         key: &IdentityPublicKey,
@@ -142,7 +143,7 @@ mod refund_tests {
         // Let's make another document first just so the operations of joining a contract are out of the way
         // (A user pays to add some data to the state on the first time they make their first document for a contract)
         let user_credits_left =
-            setup_join_contract_document(platform, profile, rng, identity, key, signer);
+            setup_join_contract_document(platform, profile, rng, identity, key, signer).await;
 
         let platform_version = PlatformVersion::latest();
 
@@ -191,6 +192,7 @@ mod refund_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let (mut fee_results, _) = process_state_transitions(
@@ -260,8 +262,8 @@ mod refund_tests {
         (document, fee_result, expected_user_balance_after_creation)
     }
 
-    #[test]
-    fn test_document_refund_immediate() {
+    #[tokio::test]
+    async fn test_document_refund_immediate() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
@@ -303,7 +305,8 @@ mod refund_tests {
             &identity,
             &key,
             &signer,
-        );
+        )
+        .await;
 
         let documents_batch_delete_transition =
             BatchTransition::new_document_deletion_transition_from_document(
@@ -317,6 +320,7 @@ mod refund_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let (mut fee_results, _) = process_state_transitions(
@@ -365,8 +369,8 @@ mod refund_tests {
             expected_user_balance_after_deletion,
         );
     }
-    #[test]
-    fn test_document_refund_after_an_epoch() {
+    #[tokio::test]
+    async fn test_document_refund_after_an_epoch() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
@@ -406,7 +410,8 @@ mod refund_tests {
             &identity,
             &key,
             &signer,
-        );
+        )
+        .await;
 
         fast_forward_to_block(&platform, 1_200_000_000, 900, 42, 1, false); //next epoch
 
@@ -422,6 +427,7 @@ mod refund_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let platform_state = platform.state.load();
@@ -473,8 +479,8 @@ mod refund_tests {
         );
     }
 
-    #[test]
-    fn test_document_refund_after_a_year() {
+    #[tokio::test]
+    async fn test_document_refund_after_a_year() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
@@ -514,7 +520,8 @@ mod refund_tests {
             &identity,
             &key,
             &signer,
-        );
+        )
+        .await;
 
         fast_forward_to_block(&platform, 1_200_000_000, 900, 42, 40, false); //a year later
 
@@ -530,6 +537,7 @@ mod refund_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let platform_state = platform.state.load();
@@ -577,8 +585,8 @@ mod refund_tests {
         );
     }
 
-    #[test]
-    fn test_document_refund_after_25_years() {
+    #[tokio::test]
+    async fn test_document_refund_after_25_years() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
@@ -618,7 +626,8 @@ mod refund_tests {
             &identity,
             &key,
             &signer,
-        );
+        )
+        .await;
 
         fast_forward_to_block(&platform, 10_200_000_000, 9000, 42, 40 * 25, false); //25 years later
 
@@ -634,6 +643,7 @@ mod refund_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let platform_state = platform.state.load();
@@ -681,8 +691,8 @@ mod refund_tests {
         );
     }
 
-    #[test]
-    fn test_document_refund_after_50_years() {
+    #[tokio::test]
+    async fn test_document_refund_after_50_years() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
@@ -722,7 +732,8 @@ mod refund_tests {
             &identity,
             &key,
             &signer,
-        );
+        )
+        .await;
 
         fast_forward_to_block(&platform, 10_200_000_000, 9000, 42, 40 * 50, false); //50 years later
 
@@ -738,6 +749,7 @@ mod refund_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let platform_state = platform.state.load();
@@ -784,8 +796,8 @@ mod refund_tests {
         );
     }
 
-    #[test]
-    fn test_document_refund_after_10_epochs_on_different_fee_version_increasing_fees() {
+    #[tokio::test]
+    async fn test_document_refund_after_10_epochs_on_different_fee_version_increasing_fees() {
         let platform_version = PlatformVersion::latest();
         let platform_version_with_higher_fees = platform_version.clone();
 
@@ -827,7 +839,8 @@ mod refund_tests {
             &identity,
             &key,
             &signer,
-        );
+        )
+        .await;
 
         fast_forward_to_block(&platform, 1_200_000_000, 900, 42, 10, false); //next epoch
 
@@ -843,6 +856,7 @@ mod refund_tests {
                 &platform_version_with_higher_fees,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let mut platform_state = platform.state.load().clone().deref().clone();

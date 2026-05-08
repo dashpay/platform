@@ -236,3 +236,120 @@ impl<C> Platform<C> {
         Ok(QueryValidationResult::new_with_data(response))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::tests::setup_platform;
+    use dpp::dashcore::Network;
+
+    #[test]
+    fn test_query_contested_resources_invalid_contract_id() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetContestedResourcesRequestV0 {
+            contract_id: vec![0; 8],
+            document_type_name: "x".to_string(),
+            index_name: "x".to_string(),
+            start_index_values: vec![],
+            end_index_values: vec![],
+            start_at_value_info: None,
+            count: None,
+            order_ascending: true,
+            prove: false,
+        };
+
+        let result = platform
+            .query_contested_resources_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)] if msg.contains("contract_id must be a valid identifier")
+        ));
+    }
+
+    #[test]
+    fn test_query_contested_resources_contract_not_found() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetContestedResourcesRequestV0 {
+            contract_id: vec![0; 32],
+            document_type_name: "x".to_string(),
+            index_name: "x".to_string(),
+            start_index_values: vec![],
+            end_index_values: vec![],
+            start_at_value_info: None,
+            count: None,
+            order_ascending: true,
+            prove: false,
+        };
+
+        let result = platform
+            .query_contested_resources_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::Query(QuerySyntaxError::DataContractNotFound(_))]
+        ));
+    }
+
+    #[test]
+    fn test_query_contested_resources_contract_not_found_prove() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetContestedResourcesRequestV0 {
+            contract_id: vec![0; 32],
+            document_type_name: "x".to_string(),
+            index_name: "x".to_string(),
+            start_index_values: vec![],
+            end_index_values: vec![],
+            start_at_value_info: None,
+            count: None,
+            order_ascending: true,
+            prove: true,
+        };
+
+        let result = platform
+            .query_contested_resources_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        // Contract lookup runs before the prove/no-prove split.
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::Query(QuerySyntaxError::DataContractNotFound(_))]
+        ));
+    }
+
+    #[test]
+    fn test_query_contested_resources_short_contract_id_rejected() {
+        // Verify the InvalidArgument message for a too-short contract_id
+        // includes the "contested resources query" suffix specific to this
+        // endpoint.
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetContestedResourcesRequestV0 {
+            contract_id: vec![0; 31], // off-by-one short
+            document_type_name: "x".to_string(),
+            index_name: "x".to_string(),
+            start_index_values: vec![],
+            end_index_values: vec![],
+            start_at_value_info: None,
+            count: None,
+            order_ascending: true,
+            prove: false,
+        };
+
+        let result = platform
+            .query_contested_resources_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)]
+                if msg.contains("contract_id must be a valid identifier")
+                    && msg.contains("contested resources query")
+        ));
+    }
+}

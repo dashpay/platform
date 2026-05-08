@@ -667,6 +667,7 @@ impl DriveCost for OperationCost {
 }
 
 #[cfg(test)]
+#[allow(clippy::identity_op)]
 mod tests {
     use super::*;
     use grovedb_costs::storage_cost::removal::StorageRemovedBytes;

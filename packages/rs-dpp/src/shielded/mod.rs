@@ -99,6 +99,11 @@ pub struct OrchardBundleParams {
 /// All fields except `spend_auth_sig` are covered by the Orchard bundle commitment
 /// (BLAKE2b-256 per ZIP-244), which feeds into the platform sighash. The signatures
 /// and proof are verified separately and are not part of the commitment.
+/// `#[json_safe_fields]` auto-injects `#[serde(with = ...)]` on the byte fields:
+/// every `[u8; N]` → `serde_bytes` (const-generic), `Vec<u8>` → `serde_bytes_var`.
+/// Keeps the wire shape (Uint8Array in binary, base64 string in JSON) without
+/// per-field annotations.
+#[cfg_attr(feature = "json-conversion", crate::serialization::json_safe_fields)]
 #[derive(Debug, Clone, Encode, Decode, PartialEq)]
 #[cfg_attr(
     feature = "serde-conversion",
@@ -148,9 +153,5 @@ pub struct SerializedAction {
     /// value_balance, anchor, and any bound transparent fields). Verified against
     /// `rk` during batch validation. This prevents replay attacks — a valid
     /// signature from one transition cannot be reused in another.
-    #[cfg_attr(
-        feature = "serde-conversion",
-        serde(with = "crate::serialization::serde_bytes_64")
-    )]
     pub spend_auth_sig: [u8; 64],
 }

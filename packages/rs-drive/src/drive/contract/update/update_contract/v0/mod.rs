@@ -400,3 +400,214 @@ impl Drive {
         Ok(batch_operations)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::error::drive::DriveError;
+    use crate::error::Error;
+    use crate::util::storage_flags::StorageFlags;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+    use dpp::data_contract::config::v0::DataContractConfigSettersV0;
+    use dpp::data_contract::schema::DataContractSchemaMethodsV0;
+    use dpp::platform_value::platform_value;
+    use dpp::tests::fixtures::get_dashpay_contract_fixture;
+    use dpp::version::PlatformVersion;
+
+    /// Exercises the `if original_contract.config().readonly() { ... }` branch
+    /// inside `update_contract_operations_v0`. Note that the earlier readonly
+    /// check in `update_contract_v0`/`v1` (line 97-100) triggers on the
+    /// ORIGINAL fetched contract's readonly flag. PR #3516's
+    /// `test_update_contract_errors_on_changing_to_readonly` only covers the
+    /// "changing TO readonly" branch on a mutable original.
+    ///
+    /// This test covers a different branch: inserting a readonly contract
+    /// first, then attempting to update it. The `update_contract_v0`/`v1`
+    /// short-circuit at line 97 returns `UpdatingReadOnlyImmutableContract`.
+    /// This guards the in-storage readonly flag check path that differs from
+    /// `ChangingContractToReadOnly`.
+    #[test]
+    fn test_update_contract_v0_readonly_original_errors() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        // Insert a readonly contract first.
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        contract.config_mut().set_readonly(true);
+        contract.config_mut().set_can_be_deleted(true); // keep default flags
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("insert readonly contract");
+
+        // Attempt to update it — since it's readonly in storage, this should fail.
+        contract.increment_version();
+        let result = drive.update_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+            None,
+        );
+
+        assert!(
+            matches!(
+                result,
+                Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableContract(
+                    _
+                )))
+            ),
+            "Expected UpdatingReadOnlyImmutableContract, got: {:?}",
+            result
+        );
+    }
+
+    /// Exercises the `else` branch in `update_contract_operations_v0` where
+    /// the update introduces a NEW document type not present in the original
+    /// contract. That branch (lines ~334-376) performs:
+    /// - batch_insert_empty_tree(contract_documents_path, key=new_type_name)
+    /// - batch_insert_empty_tree(type_path, primary_key_tree[0])
+    /// - for each top-level index: batch_insert_empty_tree(type_path, index_name)
+    ///
+    /// PR #3516 test_update_contract_errors_on_changing_document_type_* tests
+    /// cover mutations of EXISTING document types only. No existing test
+    /// exercises adding an entirely new document type.
+    #[test]
+    fn test_update_contract_v0_adds_new_document_type_creates_trees() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("initial insert");
+
+        let original_type_count = contract.document_types().len();
+
+        // Add a brand-new document type that did NOT exist before.
+        let new_schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "label": {
+                    "type": "string",
+                    "position": 0,
+                    "maxLength": 50,
+                }
+            },
+            "additionalProperties": false,
+        });
+        contract
+            .set_document_schema(
+                "brandNewDocType",
+                new_schema,
+                true,
+                &mut vec![],
+                platform_version,
+            )
+            .expect("set new schema");
+        contract.increment_version();
+
+        // The update path will hit the `else` branch because "brandNewDocType"
+        // is not in the original's document_types map.
+        drive
+            .update_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("update with new doc type should succeed");
+
+        // Verify the new type is now present.
+        let fetched = drive
+            .get_contract_with_fetch_info(contract.id().to_buffer(), true, None, platform_version)
+            .expect("fetch")
+            .expect("contract exists");
+        assert_eq!(
+            fetched.contract.document_types().len(),
+            original_type_count + 1,
+            "updated contract should have one additional document type"
+        );
+        assert!(
+            fetched
+                .contract
+                .document_types()
+                .contains_key("brandNewDocType"),
+            "new document type must be present"
+        );
+    }
+
+    /// Exercises the `update_contract_v0/v1` apply=false path where the
+    /// contract ALREADY EXISTS in storage (unlike PR #3516's
+    /// `test_update_contract_apply_false_delegates_to_insert_on_missing_contract`
+    /// which uses a non-existent contract). When apply=false and the contract
+    /// exists, `update_contract_v0/v1` short-circuits to `insert_contract(apply=false)`
+    /// BEFORE the existing-contract fetch, so the estimation goes through
+    /// `insert_contract` rather than `update_contract_operations_v0`.
+    ///
+    /// This is a distinct test because the behavior is: update(apply=false)
+    /// on an existing contract returns insert-estimate semantics, not
+    /// update-estimate semantics. That's an important behavioral pin.
+    #[test]
+    fn test_update_contract_v0_apply_false_on_existing_contract_delegates_to_insert() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("insert original");
+
+        // update with apply=false should delegate to insert_contract(false),
+        // regardless of whether the contract already exists.
+        let fee = drive
+            .update_contract(
+                &contract,
+                BlockInfo::default(),
+                false,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("apply=false on existing should succeed via insert delegation");
+
+        assert!(fee.processing_fee > 0 || fee.storage_fee > 0);
+
+        // The original contract state should remain unchanged and fetchable.
+        let fetched = drive
+            .get_contract_with_fetch_info(contract.id().to_buffer(), false, None, platform_version)
+            .expect("fetch")
+            .expect("contract should still exist");
+        assert_eq!(fetched.contract.id(), contract.id());
+    }
+}

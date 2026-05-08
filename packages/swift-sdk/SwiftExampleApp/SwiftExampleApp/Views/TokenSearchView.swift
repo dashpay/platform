@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import SwiftDashSDK
 
 struct TokenSearchView: View {
     @Query private var allTokens: [PersistentToken]

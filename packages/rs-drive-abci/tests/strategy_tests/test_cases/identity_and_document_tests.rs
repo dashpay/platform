@@ -38,8 +38,8 @@ mod tests {
     use strategy_tests::transitions::create_state_transitions_for_identities;
     use strategy_tests::{IdentityInsertInfo, StartAddresses, StartIdentities, Strategy};
 
-    #[test]
-    fn run_chain_one_identity_in_solitude_first_protocol_version() {
+    #[tokio::test]
+    async fn run_chain_one_identity_in_solitude_first_protocol_version() {
         let platform_version = PlatformVersion::first();
         let strategy = NetworkStrategy {
             strategy: Strategy {
@@ -90,7 +90,8 @@ mod tests {
             .build_with_mock_rpc();
 
         let outcome =
-            run_chain_for_strategy(&mut platform, 2, strategy, config, 15, &mut None, &mut None);
+            run_chain_for_strategy(&mut platform, 2, strategy, config, 15, &mut None, &mut None)
+                .await;
 
         let balance = outcome
             .abci_app
@@ -107,8 +108,8 @@ mod tests {
         assert_eq!(balance, 99864012200)
     }
 
-    #[test]
-    fn run_chain_one_identity_in_solitude_latest_protocol_version() {
+    #[tokio::test]
+    async fn run_chain_one_identity_in_solitude_latest_protocol_version() {
         // This is different because in the root tree we added GroupActions
         //                                                                                DataContract_Documents 64
         //                                 /                                                                                                       \
@@ -170,7 +171,8 @@ mod tests {
             .build_with_mock_rpc();
 
         let outcome =
-            run_chain_for_strategy(&mut platform, 2, strategy, config, 15, &mut None, &mut None);
+            run_chain_for_strategy(&mut platform, 2, strategy, config, 15, &mut None, &mut None)
+                .await;
 
         let balance = outcome
             .abci_app
@@ -187,8 +189,8 @@ mod tests {
         assert_eq!(balance, 99864009940)
     }
 
-    #[test]
-    fn run_chain_insert_one_new_identity_per_block_with_block_signing() {
+    #[tokio::test]
+    async fn run_chain_insert_one_new_identity_per_block_with_block_signing() {
         drive_abci::logging::init_for_tests(LogLevel::Silent);
 
         let strategy = NetworkStrategy {
@@ -252,13 +254,14 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
 
         assert_eq!(outcome.identities.len(), 100);
     }
 
-    #[test]
-    fn run_chain_insert_one_new_identity_per_block_with_epoch_change() {
+    #[tokio::test]
+    async fn run_chain_insert_one_new_identity_per_block_with_epoch_change() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
                 start_contracts: vec![],
@@ -317,7 +320,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
         assert_eq!(outcome.identities.len(), 150);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -342,12 +346,12 @@ mod tests {
                     .unwrap()
                     .unwrap()
             ),
-            "975735252c11cea7ef3fbba86928077e37ebe1926972e6ae38e237ce0864100c".to_string()
+            "9d8167b295676ae3ca225170535c043fd8c5c919394ea708247206553a46cbed".to_string()
         )
     }
 
-    #[test]
-    fn run_chain_insert_one_new_identity_and_a_contract() {
+    #[tokio::test]
+    async fn run_chain_insert_one_new_identity_and_a_contract() {
         let platform_version = PlatformVersion::latest();
         let contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
@@ -405,7 +409,8 @@ mod tests {
             .build_with_mock_rpc();
 
         let outcome =
-            run_chain_for_strategy(&mut platform, 1, strategy, config, 15, &mut None, &mut None);
+            run_chain_for_strategy(&mut platform, 1, strategy, config, 15, &mut None, &mut None)
+                .await;
 
         for tx_results_per_block in outcome.state_transition_results_per_block.values() {
             for (state_transition, result) in tx_results_per_block {
@@ -442,8 +447,8 @@ mod tests {
             .expect("expected to get a contract");
     }
 
-    #[test]
-    fn run_chain_insert_one_new_identity_and_many_big_contracts() {
+    #[tokio::test]
+    async fn run_chain_insert_one_new_identity_and_many_big_contracts() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
                 start_contracts: vec![],
@@ -543,12 +548,13 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
     }
 
-    #[test]
     #[stack_size(4 * 1024 * 1024)]
-    fn run_chain_insert_one_new_identity_and_a_contract_with_updates() {
+    #[test]
+    async fn run_chain_insert_one_new_identity_and_a_contract_with_updates() {
         let platform_version = PlatformVersion::latest();
         let contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
@@ -640,7 +646,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
 
         outcome
             .abci_app
@@ -667,9 +674,9 @@ mod tests {
             .expect("expected to get a contract");
     }
 
-    #[test]
     #[stack_size(4 * 1024 * 1024)]
-    fn run_chain_insert_one_new_identity_per_block_and_one_new_document() {
+    #[test]
+    async fn run_chain_insert_one_new_identity_per_block_and_one_new_document() {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
@@ -754,12 +761,13 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
     }
 
-    #[test]
     #[stack_size(4 * 1024 * 1024)]
-    fn run_chain_insert_one_new_identity_per_block_and_a_document_with_epoch_change() {
+    #[test]
+    async fn run_chain_insert_one_new_identity_per_block_and_a_document_with_epoch_change() {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
@@ -846,7 +854,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
         assert_eq!(outcome.identities.len() as u64, block_count);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -856,9 +865,9 @@ mod tests {
         assert!(all_have_balances, "all masternodes should have a balance");
     }
 
-    #[test]
     #[stack_size(4 * 1024 * 1024)]
-    fn run_chain_insert_one_new_identity_per_block_document_insertions_and_deletions_with_epoch_change(
+    #[test]
+    async fn run_chain_insert_one_new_identity_per_block_document_insertions_and_deletions_with_epoch_change(
     ) {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
@@ -964,7 +973,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
         assert_eq!(outcome.identities.len() as u64, block_count);
         assert_eq!(outcome.masternode_identity_balances.len(), 20);
         let all_have_balances = outcome
@@ -993,8 +1003,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn run_chain_insert_one_new_identity_per_block_many_document_insertions_and_deletions_with_epoch_change(
+    #[tokio::test]
+    async fn run_chain_insert_one_new_identity_per_block_many_document_insertions_and_deletions_with_epoch_change(
     ) {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
@@ -1102,7 +1112,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
         assert_eq!(outcome.identities.len() as u64, block_count);
         assert_eq!(outcome.masternode_identity_balances.len(), 20);
         let all_have_balances = outcome
@@ -1112,8 +1123,8 @@ mod tests {
         assert!(all_have_balances, "all masternodes should have a balance");
     }
 
-    #[test]
-    fn run_chain_insert_one_new_identity_per_block_many_document_insertions_and_deletions_with_nonce_gaps_with_epoch_change(
+    #[tokio::test]
+    async fn run_chain_insert_one_new_identity_per_block_many_document_insertions_and_deletions_with_nonce_gaps_with_epoch_change(
     ) {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
@@ -1224,7 +1235,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
         assert_eq!(outcome.identities.len() as u64, block_count);
         assert_eq!(outcome.masternode_identity_balances.len(), 20);
         let all_have_balances = outcome
@@ -1234,8 +1246,8 @@ mod tests {
         assert!(all_have_balances, "all masternodes should have a balance");
     }
 
-    #[test]
-    fn run_chain_insert_one_new_identity_per_block_many_document_insertions_and_deletions_with_max_nonce_gaps_with_epoch_change(
+    #[tokio::test]
+    async fn run_chain_insert_one_new_identity_per_block_many_document_insertions_and_deletions_with_max_nonce_gaps_with_epoch_change(
     ) {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
@@ -1345,7 +1357,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
         for tx_results_per_block in outcome.state_transition_results_per_block.values() {
             for (state_transition, result) in tx_results_per_block {
                 assert_eq!(
@@ -1357,8 +1370,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn run_chain_insert_one_new_identity_per_block_many_document_insertions_and_deletions_with_higher_than_max_nonce_gaps_with_epoch_change(
+    #[tokio::test]
+    async fn run_chain_insert_one_new_identity_per_block_many_document_insertions_and_deletions_with_higher_than_max_nonce_gaps_with_epoch_change(
     ) {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
@@ -1468,7 +1481,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
         for tx_results_per_block in outcome.state_transition_results_per_block.values() {
             for (state_transition, _unused_result) in tx_results_per_block {
                 // We can't ever get a documents batch transition, because the proposer will remove it from a block
@@ -1477,9 +1491,9 @@ mod tests {
         }
     }
 
-    #[test]
     #[stack_size(4 * 1024 * 1024)]
-    fn run_chain_insert_many_new_identity_per_block_many_document_insertions_and_deletions_with_epoch_change(
+    #[test]
+    async fn run_chain_insert_many_new_identity_per_block_many_document_insertions_and_deletions_with_epoch_change(
     ) {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
@@ -1590,7 +1604,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
         assert_eq!(outcome.identities.len() as u64, 174);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
@@ -1620,9 +1635,9 @@ mod tests {
         );
     }
 
-    #[test]
     #[stack_size(4 * 1024 * 1024)]
-    fn run_chain_insert_many_new_identity_per_block_many_document_insertions_and_updates_with_epoch_change(
+    #[test]
+    async fn run_chain_insert_many_new_identity_per_block_many_document_insertions_and_updates_with_epoch_change(
     ) {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
@@ -1733,7 +1748,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
 
         let issues = outcome
             .abci_app
@@ -1755,9 +1771,9 @@ mod tests {
         );
     }
 
-    #[test]
     #[stack_size(4 * 1024 * 1024)]
-    fn run_chain_insert_many_document_updates_with_epoch_change() {
+    #[test]
+    async fn run_chain_insert_many_document_updates_with_epoch_change() {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
@@ -1815,6 +1831,7 @@ mod tests {
             &mut rng,
             platform_version,
         )
+        .await
         .into_iter()
         .map(|(identity, transition)| (identity, Some(transition)))
         .collect();
@@ -1891,7 +1908,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
 
         let issues = outcome
             .abci_app
@@ -1913,9 +1931,9 @@ mod tests {
         );
     }
 
-    #[test]
     #[stack_size(4 * 1024 * 1024)]
-    fn run_chain_insert_many_new_identity_per_block_many_document_insertions_updates_and_deletions_with_epoch_change(
+    #[test]
+    async fn run_chain_insert_many_new_identity_per_block_many_document_insertions_updates_and_deletions_with_epoch_change(
     ) {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
@@ -2042,7 +2060,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
         assert_eq!(outcome.identities.len() as u64, 72);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
@@ -2072,9 +2091,9 @@ mod tests {
         );
     }
 
-    #[test]
     #[stack_size(4 * 1024 * 1024)]
-    fn run_chain_insert_many_new_identity_per_block_many_document_insertions_updates_transfers_and_deletions_with_epoch_change(
+    #[test]
+    async fn run_chain_insert_many_new_identity_per_block_many_document_insertions_updates_transfers_and_deletions_with_epoch_change(
     ) {
         let platform_version = PlatformVersion::latest();
         let created_contract = json_document_to_created_contract(
@@ -2217,7 +2236,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
         assert_eq!(outcome.masternode_identity_balances.len(), 20);
     }
 }

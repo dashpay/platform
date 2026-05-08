@@ -74,3 +74,109 @@ impl<C> Platform<C> {
         Ok(QueryValidationResult::new_with_data(response))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::tests::setup_platform;
+    use dpp::dashcore::Network;
+
+    #[test]
+    fn empty_state_non_prove_returns_empty_entries() {
+        // With no compactions stored, the fetch returns an empty vector and the
+        // handler must wrap it in CompactedNullifierUpdateEntries with an empty
+        // list and populated metadata.
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetRecentCompactedNullifierChangesRequestV0 {
+            start_block_height: 0,
+            prove: false,
+        };
+
+        let result = platform
+            .query_recent_compacted_nullifier_changes_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty());
+        let response = result.data.expect("expected response data");
+        match response.result {
+            Some(
+                get_recent_compacted_nullifier_changes_response_v0::Result::CompactedNullifierUpdateEntries(
+                    entries,
+                ),
+            ) => {
+                assert!(
+                    entries.compacted_block_changes.is_empty(),
+                    "expected empty compacted block changes on a fresh platform"
+                );
+            }
+            other => panic!(
+                "expected CompactedNullifierUpdateEntries result, got {:?}",
+                other
+            ),
+        }
+        assert!(response.metadata.is_some());
+    }
+
+    #[test]
+    fn empty_state_prove_returns_proof_bytes() {
+        // The prove branch should produce non-empty proof bytes even for an
+        // empty shielded pool – the proof encodes the absence.
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetRecentCompactedNullifierChangesRequestV0 {
+            start_block_height: 0,
+            prove: true,
+        };
+
+        let result = platform
+            .query_recent_compacted_nullifier_changes_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty());
+        let response = result.data.expect("expected response data");
+        match response.result {
+            Some(get_recent_compacted_nullifier_changes_response_v0::Result::Proof(proof)) => {
+                assert!(
+                    !proof.grovedb_proof.is_empty(),
+                    "expected proof bytes for empty compacted pool"
+                );
+            }
+            other => panic!("expected Proof result, got {:?}", other),
+        }
+        assert!(response.metadata.is_some());
+    }
+
+    #[test]
+    fn large_start_block_height_returns_empty_entries() {
+        // Querying well beyond any stored block should return an empty list
+        // without error. This exercises the "start > everything" branch of the
+        // compacted nullifier fetch.
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetRecentCompactedNullifierChangesRequestV0 {
+            start_block_height: u64::MAX - 1,
+            prove: false,
+        };
+
+        let result = platform
+            .query_recent_compacted_nullifier_changes_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty());
+        let response = result.data.expect("expected response data");
+        match response.result {
+            Some(
+                get_recent_compacted_nullifier_changes_response_v0::Result::CompactedNullifierUpdateEntries(
+                    entries,
+                ),
+            ) => {
+                assert!(entries.compacted_block_changes.is_empty());
+            }
+            other => panic!(
+                "expected CompactedNullifierUpdateEntries result, got {:?}",
+                other
+            ),
+        }
+    }
+}

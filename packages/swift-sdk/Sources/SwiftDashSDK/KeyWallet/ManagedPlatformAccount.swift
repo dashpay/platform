@@ -46,9 +46,9 @@ public class ManagedPlatformAccount {
     // MARK: - Properties
 
     /// The network this account belongs to.
-    public var network: KeyWalletNetwork {
+    public var network: Network {
         let ffiNetwork = managed_platform_account_get_network(handle)
-        return KeyWalletNetwork(ffiNetwork: ffiNetwork)
+        return Network(ffiNetwork: ffiNetwork)
     }
 
     /// The account index (hardened).

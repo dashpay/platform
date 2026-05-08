@@ -72,6 +72,7 @@ pub struct DocumentTypeMethodVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DocumentTypeSchemaVersions {
+    pub document_type_schema: FeatureVersion,
     pub should_add_creator_id: FeatureVersion,
     pub enrich_with_base_schema: FeatureVersion,
     pub find_identifier_and_binary_paths: FeatureVersion,

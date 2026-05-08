@@ -3,7 +3,13 @@
 #![forbid(unsafe_code)]
 //#![deny(missing_docs)]
 #![allow(dead_code)]
+// `ProtocolError` is the Err type of hundreds of fns here; boxing it
+// would add indirection to every return. Removing the allow needs a
+// crate-wide error refactor.
 #![allow(clippy::result_large_err)]
+// Covers static-dispatch async trait methods; dyn-safe traits like
+// `Signer` still use `#[async_trait]` at their own declaration.
+#![allow(async_fn_in_trait)]
 
 extern crate core;
 

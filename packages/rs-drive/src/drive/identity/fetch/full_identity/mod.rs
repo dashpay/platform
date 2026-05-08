@@ -275,7 +275,6 @@ mod tests {
     }
 
     mod fetch_full_identity_with_transaction {
-        use super::*;
         use crate::config::DriveConfig;
         use crate::util::test_helpers::setup::setup_drive;
         use dpp::block::block_info::BlockInfo;

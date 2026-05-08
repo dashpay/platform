@@ -22,7 +22,7 @@ use platform_version::version::PlatformVersion;
 
 impl AddressFundingFromAssetLockTransitionMethodsV0 for AddressFundingFromAssetLockTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_asset_lock_with_signer<S: Signer<PlatformAddress>>(
+    async fn try_from_asset_lock_with_signer<S: Signer<PlatformAddress>>(
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &[u8],
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
@@ -59,10 +59,11 @@ impl AddressFundingFromAssetLockTransitionMethodsV0 for AddressFundingFromAssetL
         address_funding_transition.signature = signature.to_vec().into();
 
         // Sign with input witnesses
-        address_funding_transition.input_witnesses = inputs
-            .keys()
-            .map(|address| signer.sign_create_witness(address, &signable_bytes))
-            .collect::<Result<Vec<AddressWitness>, ProtocolError>>()?;
+        let mut input_witnesses: Vec<AddressWitness> = Vec::with_capacity(inputs.len());
+        for address in inputs.keys() {
+            input_witnesses.push(signer.sign_create_witness(address, &signable_bytes).await?);
+        }
+        address_funding_transition.input_witnesses = input_witnesses;
 
         tracing::debug!("try_from_asset_lock_with_signer: Successfully created transition");
         Ok(address_funding_transition.into())

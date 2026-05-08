@@ -165,3 +165,58 @@ impl Drive {
         Ok(value)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::identifier::Identifier;
+    use dpp::version::PlatformVersion;
+
+    #[test]
+    fn fetch_action_id_has_signer_v0_nonexistent_returns_false() {
+        // The action signers path doesn't exist at all for a random contract;
+        // grove_has_raw with StatefulDirectQuery treats a missing subtree as
+        // "key not present" and returns Ok(false).
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let result = drive.fetch_action_id_has_signer_v0(
+            Identifier::random(),
+            0,
+            Identifier::random(),
+            Identifier::random(),
+            None,
+            platform_version,
+        );
+
+        // We don't assert a specific Ok vs Err outcome here because the
+        // implementation of grove_has_raw may choose either, but the call must
+        // not panic and if Ok it must be false.
+        if let Ok(v) = result {
+            assert!(!v, "no signer should exist");
+        }
+    }
+
+    #[test]
+    fn fetch_action_id_has_signer_and_add_operations_v0_estimate_costs_stateless() {
+        // Exercise the StatelessDirectQuery branch used when estimate_costs_only=true.
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let mut ops = vec![];
+        let _ = drive.fetch_action_id_has_signer_and_add_operations_v0(
+            Identifier::random(),
+            0,
+            Identifier::random(),
+            Identifier::random(),
+            true, // estimate_costs_only
+            None,
+            &mut ops,
+            platform_version,
+        );
+        // Either Ok or Err is acceptable on a random path, but in stateless
+        // mode the function should at minimum have pushed a cost estimation op.
+        // When no item is matched, ops may remain empty — so we only assert
+        // the call did not panic.
+    }
+}

@@ -1,8 +1,8 @@
 //! DashPay contact request operations
 
 use crate::{
-    signer::VTableSigner, utils, DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError,
-    SDKHandle, SDKWrapper,
+    signer::{VTableSigner, VTableSignerRef},
+    utils, DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError, SDKHandle, SDKWrapper,
 };
 use dash_sdk::dpp::dashcore::secp256k1::{PublicKey, SecretKey};
 use dash_sdk::dpp::identity::{Identity, IdentityPublicKey};
@@ -559,10 +559,9 @@ pub unsafe extern "C" fn dash_sdk_dashpay_send_contact_request(
     let key_clone = (*key_arc).clone();
     std::mem::forget(key_arc);
 
-    // Get signer from handle
-    let signer_arc = Arc::from_raw(signer as *const VTableSigner);
-    let signer_clone = *signer_arc;
-    std::mem::forget(signer_arc);
+    // Get signer from handle (non-owning reference — the handle remains
+    // owned by the caller and is freed via `dash_sdk_signer_destroy`).
+    let signer_ref = VTableSignerRef(&*(signer as *const VTableSigner));
 
     // Create contact request input
     let contact_request_input = ContactRequestInput {
@@ -579,7 +578,7 @@ pub unsafe extern "C" fn dash_sdk_dashpay_send_contact_request(
     let send_input = SendContactRequestInput {
         contact_request: contact_request_input,
         identity_public_key: key_clone,
-        signer: signer_clone,
+        signer: signer_ref,
     };
 
     // Send contact request based on ECDH mode

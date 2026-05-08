@@ -88,9 +88,9 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_document_creation_transition_from_document<S: Signer<IdentityPublicKey>>(
+    async fn new_document_creation_transition_from_document<S: Signer<IdentityPublicKey>>(
         document: Document,
-        document_type: DocumentTypeRef,
+        document_type: DocumentTypeRef<'_>,
         entropy: [u8; 32],
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
@@ -120,7 +120,8 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
                     signer,
                     platform_version,
                     options,
-                )?,
+                )
+                .await?,
             ),
             1 => Ok(
                 BatchTransitionV1::new_document_creation_transition_from_document(
@@ -134,7 +135,8 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
                     signer,
                     platform_version,
                     options,
-                )?,
+                )
+                .await?,
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentsBatchTransition::new_created_from_document".to_string(),
@@ -145,9 +147,9 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_document_replacement_transition_from_document<S: Signer<IdentityPublicKey>>(
+    async fn new_document_replacement_transition_from_document<S: Signer<IdentityPublicKey>>(
         document: Document,
-        document_type: DocumentTypeRef,
+        document_type: DocumentTypeRef<'_>,
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
@@ -175,7 +177,8 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
                     signer,
                     platform_version,
                     options,
-                )?,
+                )
+                .await?,
             ),
             1 => Ok(
                 BatchTransitionV1::new_document_replacement_transition_from_document(
@@ -188,7 +191,8 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
                     signer,
                     platform_version,
                     options,
-                )?,
+                )
+                .await?,
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method:
@@ -201,9 +205,9 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_document_transfer_transition_from_document<S: Signer<IdentityPublicKey>>(
+    async fn new_document_transfer_transition_from_document<S: Signer<IdentityPublicKey>>(
         document: Document,
-        document_type: DocumentTypeRef,
+        document_type: DocumentTypeRef<'_>,
         recipient_owner_id: Identifier,
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
@@ -233,7 +237,8 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
                     signer,
                     platform_version,
                     options,
-                )?,
+                )
+                .await?,
             ),
             1 => Ok(
                 BatchTransitionV1::new_document_transfer_transition_from_document(
@@ -247,7 +252,8 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
                     signer,
                     platform_version,
                     options,
-                )?,
+                )
+                .await?,
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method:
@@ -260,9 +266,9 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_document_deletion_transition_from_document<S: Signer<IdentityPublicKey>>(
+    async fn new_document_deletion_transition_from_document<S: Signer<IdentityPublicKey>>(
         document: Document,
-        document_type: DocumentTypeRef,
+        document_type: DocumentTypeRef<'_>,
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
         user_fee_increase: UserFeeIncrease,
@@ -290,7 +296,8 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
                     signer,
                     platform_version,
                     options,
-                )?,
+                )
+                .await?,
             ),
             1 => Ok(
                 BatchTransitionV1::new_document_deletion_transition_from_document(
@@ -303,7 +310,8 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
                     signer,
                     platform_version,
                     options,
-                )?,
+                )
+                .await?,
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentsBatchTransition::new_document_deletion_transition_from_document"
@@ -315,9 +323,9 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_document_update_price_transition_from_document<S: Signer<IdentityPublicKey>>(
+    async fn new_document_update_price_transition_from_document<S: Signer<IdentityPublicKey>>(
         document: Document,
-        document_type: DocumentTypeRef,
+        document_type: DocumentTypeRef<'_>,
         price: Credits,
         identity_public_key: &IdentityPublicKey,
         identity_contract_nonce: IdentityNonce,
@@ -347,7 +355,8 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
                     signer,
                     platform_version,
                     options,
-                )?,
+                )
+                .await?,
             ),
             1 => Ok(
                 BatchTransitionV1::new_document_update_price_transition_from_document(
@@ -361,7 +370,8 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
                     signer,
                     platform_version,
                     options,
-                )?,
+                )
+                .await?,
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method:
@@ -374,9 +384,9 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_document_purchase_transition_from_document<S: Signer<IdentityPublicKey>>(
+    async fn new_document_purchase_transition_from_document<S: Signer<IdentityPublicKey>>(
         document: Document,
-        document_type: DocumentTypeRef,
+        document_type: DocumentTypeRef<'_>,
         new_owner_id: Identifier,
         price: Credits,
         identity_public_key: &IdentityPublicKey,
@@ -408,7 +418,8 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
                     signer,
                     platform_version,
                     options,
-                )?,
+                )
+                .await?,
             ),
             1 => Ok(
                 BatchTransitionV1::new_document_purchase_transition_from_document(
@@ -423,7 +434,8 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
                     signer,
                     platform_version,
                     options,
-                )?,
+                )
+                .await?,
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentsBatchTransition::new_document_purchase_transition_from_document"
@@ -437,7 +449,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransition {
 
 impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
     #[cfg(feature = "state-transition-signing")]
-    fn new_token_mint_transition<S: Signer<IdentityPublicKey>>(
+    async fn new_token_mint_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -485,6 +497,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
                     platform_version,
                     options,
                 )
+                .await
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentsBatchTransition::new_token_mint_transition".to_string(),
@@ -495,7 +508,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_token_burn_transition<S: Signer<IdentityPublicKey>>(
+    async fn new_token_burn_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -541,6 +554,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
                     platform_version,
                     options,
                 )
+                .await
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentsBatchTransition::new_token_burn_transition".to_string(),
@@ -551,7 +565,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_token_transfer_transition<S: Signer<IdentityPublicKey>>(
+    async fn new_token_transfer_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -602,6 +616,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
                     platform_version,
                     options,
                 )
+                .await
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentsBatchTransition::new_token_transfer_transition".to_string(),
@@ -612,7 +627,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_token_freeze_transition<S: Signer<IdentityPublicKey>>(
+    async fn new_token_freeze_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -659,6 +674,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
                     platform_version,
                     options,
                 )
+                .await
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentsBatchTransition::new_token_freeze_transition".to_string(),
@@ -669,7 +685,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_token_unfreeze_transition<S: Signer<IdentityPublicKey>>(
+    async fn new_token_unfreeze_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -716,6 +732,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
                     platform_version,
                     options,
                 )
+                .await
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentsBatchTransition::new_token_unfreeze_transition".to_string(),
@@ -726,7 +743,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_token_destroy_frozen_funds_transition<S: Signer<IdentityPublicKey>>(
+    async fn new_token_destroy_frozen_funds_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -773,6 +790,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
                     platform_version,
                     options,
                 )
+                .await
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentsBatchTransition::new_token_destroy_frozen_funds_transition"
@@ -784,7 +802,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_token_emergency_action_transition<S: Signer<IdentityPublicKey>>(
+    async fn new_token_emergency_action_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -831,6 +849,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
                     platform_version,
                     options,
                 )
+                .await
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentsBatchTransition::new_token_emergency_action_transition"
@@ -842,7 +861,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_token_config_update_transition<S: Signer<IdentityPublicKey>>(
+    async fn new_token_config_update_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -889,6 +908,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
                     platform_version,
                     options,
                 )
+                .await
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentsBatchTransition::new_token_config_update_transition".to_string(),
@@ -899,7 +919,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_token_claim_transition<S: Signer<IdentityPublicKey>>(
+    async fn new_token_claim_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -944,6 +964,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
                     platform_version,
                     options,
                 )
+                .await
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentsBatchTransition::new_token_claim_transition".to_string(),
@@ -955,7 +976,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
 
     #[cfg(feature = "state-transition-signing")]
     #[allow(clippy::too_many_arguments)]
-    fn new_token_change_direct_purchase_price_transition<S: Signer<IdentityPublicKey>>(
+    async fn new_token_change_direct_purchase_price_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -1002,6 +1023,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
                     platform_version,
                     options,
                 )
+                .await
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method:
@@ -1014,7 +1036,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_token_direct_purchase_transition<S: Signer<IdentityPublicKey>>(
+    async fn new_token_direct_purchase_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -1059,6 +1081,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransition {
                     platform_version,
                     options,
                 )
+                .await
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentsBatchTransition::new_token_direct_purchase_transition"

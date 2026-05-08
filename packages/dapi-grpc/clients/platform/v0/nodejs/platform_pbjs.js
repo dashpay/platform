@@ -1902,6 +1902,39 @@ $root.org = (function() {
                          */
 
                         /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getMostRecentShieldedAnchor}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getMostRecentShieldedAnchorCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse} [response] GetMostRecentShieldedAnchorResponse
+                         */
+
+                        /**
+                         * Calls getMostRecentShieldedAnchor.
+                         * @function getMostRecentShieldedAnchor
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetMostRecentShieldedAnchorRequest} request GetMostRecentShieldedAnchorRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getMostRecentShieldedAnchorCallback} callback Node-style callback called with the error, if any, and GetMostRecentShieldedAnchorResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getMostRecentShieldedAnchor = function getMostRecentShieldedAnchor(request, callback) {
+                            return this.rpcCall(getMostRecentShieldedAnchor, $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest, $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse, request, callback);
+                        }, "name", { value: "getMostRecentShieldedAnchor" });
+
+                        /**
+                         * Calls getMostRecentShieldedAnchor.
+                         * @function getMostRecentShieldedAnchor
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetMostRecentShieldedAnchorRequest} request GetMostRecentShieldedAnchorRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
                          * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getShieldedPoolState}.
                          * @memberof org.dash.platform.dapi.v0.Platform
                          * @typedef getShieldedPoolStateCallback
@@ -79559,6 +79592,7 @@ $root.org = (function() {
                              * @interface IGetRecentAddressBalanceChangesRequestV0
                              * @property {number|Long|null} [startHeight] GetRecentAddressBalanceChangesRequestV0 startHeight
                              * @property {boolean|null} [prove] GetRecentAddressBalanceChangesRequestV0 prove
+                             * @property {boolean|null} [startHeightExclusive] GetRecentAddressBalanceChangesRequestV0 startHeightExclusive
                              */
 
                             /**
@@ -79593,6 +79627,14 @@ $root.org = (function() {
                             GetRecentAddressBalanceChangesRequestV0.prototype.prove = false;
 
                             /**
+                             * GetRecentAddressBalanceChangesRequestV0 startHeightExclusive.
+                             * @member {boolean} startHeightExclusive
+                             * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest.GetRecentAddressBalanceChangesRequestV0
+                             * @instance
+                             */
+                            GetRecentAddressBalanceChangesRequestV0.prototype.startHeightExclusive = false;
+
+                            /**
                              * Creates a new GetRecentAddressBalanceChangesRequestV0 instance using the specified properties.
                              * @function create
                              * @memberof org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest.GetRecentAddressBalanceChangesRequestV0
@@ -79620,6 +79662,8 @@ $root.org = (function() {
                                     writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.startHeight);
                                 if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
                                     writer.uint32(/* id 2, wireType 0 =*/16).bool(message.prove);
+                                if (message.startHeightExclusive != null && Object.hasOwnProperty.call(message, "startHeightExclusive"))
+                                    writer.uint32(/* id 3, wireType 0 =*/24).bool(message.startHeightExclusive);
                                 return writer;
                             };
 
@@ -79659,6 +79703,9 @@ $root.org = (function() {
                                         break;
                                     case 2:
                                         message.prove = reader.bool();
+                                        break;
+                                    case 3:
+                                        message.startHeightExclusive = reader.bool();
                                         break;
                                     default:
                                         reader.skipType(tag & 7);
@@ -79701,6 +79748,9 @@ $root.org = (function() {
                                 if (message.prove != null && message.hasOwnProperty("prove"))
                                     if (typeof message.prove !== "boolean")
                                         return "prove: boolean expected";
+                                if (message.startHeightExclusive != null && message.hasOwnProperty("startHeightExclusive"))
+                                    if (typeof message.startHeightExclusive !== "boolean")
+                                        return "startHeightExclusive: boolean expected";
                                 return null;
                             };
 
@@ -79727,6 +79777,8 @@ $root.org = (function() {
                                         message.startHeight = new $util.LongBits(object.startHeight.low >>> 0, object.startHeight.high >>> 0).toNumber(true);
                                 if (object.prove != null)
                                     message.prove = Boolean(object.prove);
+                                if (object.startHeightExclusive != null)
+                                    message.startHeightExclusive = Boolean(object.startHeightExclusive);
                                 return message;
                             };
 
@@ -79750,6 +79802,7 @@ $root.org = (function() {
                                     } else
                                         object.startHeight = options.longs === String ? "0" : 0;
                                     object.prove = false;
+                                    object.startHeightExclusive = false;
                                 }
                                 if (message.startHeight != null && message.hasOwnProperty("startHeight"))
                                     if (typeof message.startHeight === "number")
@@ -79758,6 +79811,8 @@ $root.org = (function() {
                                         object.startHeight = options.longs === String ? $util.Long.prototype.toString.call(message.startHeight) : options.longs === Number ? new $util.LongBits(message.startHeight.low >>> 0, message.startHeight.high >>> 0).toNumber(true) : message.startHeight;
                                 if (message.prove != null && message.hasOwnProperty("prove"))
                                     object.prove = message.prove;
+                                if (message.startHeightExclusive != null && message.hasOwnProperty("startHeightExclusive"))
+                                    object.startHeightExclusive = message.startHeightExclusive;
                                 return object;
                             };
 
@@ -84892,6 +84947,885 @@ $root.org = (function() {
                         })();
 
                         return GetShieldedAnchorsResponse;
+                    })();
+
+                    v0.GetMostRecentShieldedAnchorRequest = (function() {
+
+                        /**
+                         * Properties of a GetMostRecentShieldedAnchorRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetMostRecentShieldedAnchorRequest
+                         * @property {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.IGetMostRecentShieldedAnchorRequestV0|null} [v0] GetMostRecentShieldedAnchorRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetMostRecentShieldedAnchorRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetMostRecentShieldedAnchorRequest.
+                         * @implements IGetMostRecentShieldedAnchorRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetMostRecentShieldedAnchorRequest=} [properties] Properties to set
+                         */
+                        function GetMostRecentShieldedAnchorRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetMostRecentShieldedAnchorRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.IGetMostRecentShieldedAnchorRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest
+                         * @instance
+                         */
+                        GetMostRecentShieldedAnchorRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetMostRecentShieldedAnchorRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetMostRecentShieldedAnchorRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetMostRecentShieldedAnchorRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetMostRecentShieldedAnchorRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest} GetMostRecentShieldedAnchorRequest instance
+                         */
+                        GetMostRecentShieldedAnchorRequest.create = function create(properties) {
+                            return new GetMostRecentShieldedAnchorRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetMostRecentShieldedAnchorRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetMostRecentShieldedAnchorRequest} message GetMostRecentShieldedAnchorRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetMostRecentShieldedAnchorRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetMostRecentShieldedAnchorRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetMostRecentShieldedAnchorRequest} message GetMostRecentShieldedAnchorRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetMostRecentShieldedAnchorRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetMostRecentShieldedAnchorRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest} GetMostRecentShieldedAnchorRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetMostRecentShieldedAnchorRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetMostRecentShieldedAnchorRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest} GetMostRecentShieldedAnchorRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetMostRecentShieldedAnchorRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetMostRecentShieldedAnchorRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetMostRecentShieldedAnchorRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetMostRecentShieldedAnchorRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest} GetMostRecentShieldedAnchorRequest
+                         */
+                        GetMostRecentShieldedAnchorRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetMostRecentShieldedAnchorRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest} message GetMostRecentShieldedAnchorRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetMostRecentShieldedAnchorRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetMostRecentShieldedAnchorRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetMostRecentShieldedAnchorRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetMostRecentShieldedAnchorRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest
+                             * @interface IGetMostRecentShieldedAnchorRequestV0
+                             * @property {boolean|null} [prove] GetMostRecentShieldedAnchorRequestV0 prove
+                             */
+
+                            /**
+                             * Constructs a new GetMostRecentShieldedAnchorRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest
+                             * @classdesc Represents a GetMostRecentShieldedAnchorRequestV0.
+                             * @implements IGetMostRecentShieldedAnchorRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.IGetMostRecentShieldedAnchorRequestV0=} [properties] Properties to set
+                             */
+                            function GetMostRecentShieldedAnchorRequestV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetMostRecentShieldedAnchorRequestV0 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0
+                             * @instance
+                             */
+                            GetMostRecentShieldedAnchorRequestV0.prototype.prove = false;
+
+                            /**
+                             * Creates a new GetMostRecentShieldedAnchorRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.IGetMostRecentShieldedAnchorRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0} GetMostRecentShieldedAnchorRequestV0 instance
+                             */
+                            GetMostRecentShieldedAnchorRequestV0.create = function create(properties) {
+                                return new GetMostRecentShieldedAnchorRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetMostRecentShieldedAnchorRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.IGetMostRecentShieldedAnchorRequestV0} message GetMostRecentShieldedAnchorRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetMostRecentShieldedAnchorRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 1, wireType 0 =*/8).bool(message.prove);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetMostRecentShieldedAnchorRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.IGetMostRecentShieldedAnchorRequestV0} message GetMostRecentShieldedAnchorRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetMostRecentShieldedAnchorRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetMostRecentShieldedAnchorRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0} GetMostRecentShieldedAnchorRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetMostRecentShieldedAnchorRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.prove = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetMostRecentShieldedAnchorRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0} GetMostRecentShieldedAnchorRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetMostRecentShieldedAnchorRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetMostRecentShieldedAnchorRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetMostRecentShieldedAnchorRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetMostRecentShieldedAnchorRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0} GetMostRecentShieldedAnchorRequestV0
+                             */
+                            GetMostRecentShieldedAnchorRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0();
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetMostRecentShieldedAnchorRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0} message GetMostRecentShieldedAnchorRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetMostRecentShieldedAnchorRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.prove = false;
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetMostRecentShieldedAnchorRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetMostRecentShieldedAnchorRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetMostRecentShieldedAnchorRequestV0;
+                        })();
+
+                        return GetMostRecentShieldedAnchorRequest;
+                    })();
+
+                    v0.GetMostRecentShieldedAnchorResponse = (function() {
+
+                        /**
+                         * Properties of a GetMostRecentShieldedAnchorResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetMostRecentShieldedAnchorResponse
+                         * @property {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.IGetMostRecentShieldedAnchorResponseV0|null} [v0] GetMostRecentShieldedAnchorResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetMostRecentShieldedAnchorResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetMostRecentShieldedAnchorResponse.
+                         * @implements IGetMostRecentShieldedAnchorResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetMostRecentShieldedAnchorResponse=} [properties] Properties to set
+                         */
+                        function GetMostRecentShieldedAnchorResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetMostRecentShieldedAnchorResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.IGetMostRecentShieldedAnchorResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse
+                         * @instance
+                         */
+                        GetMostRecentShieldedAnchorResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetMostRecentShieldedAnchorResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetMostRecentShieldedAnchorResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetMostRecentShieldedAnchorResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetMostRecentShieldedAnchorResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse} GetMostRecentShieldedAnchorResponse instance
+                         */
+                        GetMostRecentShieldedAnchorResponse.create = function create(properties) {
+                            return new GetMostRecentShieldedAnchorResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetMostRecentShieldedAnchorResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetMostRecentShieldedAnchorResponse} message GetMostRecentShieldedAnchorResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetMostRecentShieldedAnchorResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetMostRecentShieldedAnchorResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetMostRecentShieldedAnchorResponse} message GetMostRecentShieldedAnchorResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetMostRecentShieldedAnchorResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetMostRecentShieldedAnchorResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse} GetMostRecentShieldedAnchorResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetMostRecentShieldedAnchorResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetMostRecentShieldedAnchorResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse} GetMostRecentShieldedAnchorResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetMostRecentShieldedAnchorResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetMostRecentShieldedAnchorResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetMostRecentShieldedAnchorResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetMostRecentShieldedAnchorResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse} GetMostRecentShieldedAnchorResponse
+                         */
+                        GetMostRecentShieldedAnchorResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetMostRecentShieldedAnchorResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse} message GetMostRecentShieldedAnchorResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetMostRecentShieldedAnchorResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetMostRecentShieldedAnchorResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetMostRecentShieldedAnchorResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetMostRecentShieldedAnchorResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse
+                             * @interface IGetMostRecentShieldedAnchorResponseV0
+                             * @property {Uint8Array|null} [anchor] GetMostRecentShieldedAnchorResponseV0 anchor
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetMostRecentShieldedAnchorResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetMostRecentShieldedAnchorResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetMostRecentShieldedAnchorResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse
+                             * @classdesc Represents a GetMostRecentShieldedAnchorResponseV0.
+                             * @implements IGetMostRecentShieldedAnchorResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.IGetMostRecentShieldedAnchorResponseV0=} [properties] Properties to set
+                             */
+                            function GetMostRecentShieldedAnchorResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetMostRecentShieldedAnchorResponseV0 anchor.
+                             * @member {Uint8Array} anchor
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0
+                             * @instance
+                             */
+                            GetMostRecentShieldedAnchorResponseV0.prototype.anchor = $util.newBuffer([]);
+
+                            /**
+                             * GetMostRecentShieldedAnchorResponseV0 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0
+                             * @instance
+                             */
+                            GetMostRecentShieldedAnchorResponseV0.prototype.proof = null;
+
+                            /**
+                             * GetMostRecentShieldedAnchorResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0
+                             * @instance
+                             */
+                            GetMostRecentShieldedAnchorResponseV0.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetMostRecentShieldedAnchorResponseV0 result.
+                             * @member {"anchor"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetMostRecentShieldedAnchorResponseV0.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["anchor", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetMostRecentShieldedAnchorResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.IGetMostRecentShieldedAnchorResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0} GetMostRecentShieldedAnchorResponseV0 instance
+                             */
+                            GetMostRecentShieldedAnchorResponseV0.create = function create(properties) {
+                                return new GetMostRecentShieldedAnchorResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetMostRecentShieldedAnchorResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.IGetMostRecentShieldedAnchorResponseV0} message GetMostRecentShieldedAnchorResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetMostRecentShieldedAnchorResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.anchor != null && Object.hasOwnProperty.call(message, "anchor"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.anchor);
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetMostRecentShieldedAnchorResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.IGetMostRecentShieldedAnchorResponseV0} message GetMostRecentShieldedAnchorResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetMostRecentShieldedAnchorResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetMostRecentShieldedAnchorResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0} GetMostRecentShieldedAnchorResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetMostRecentShieldedAnchorResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.anchor = reader.bytes();
+                                        break;
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetMostRecentShieldedAnchorResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0} GetMostRecentShieldedAnchorResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetMostRecentShieldedAnchorResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetMostRecentShieldedAnchorResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetMostRecentShieldedAnchorResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.anchor != null && message.hasOwnProperty("anchor")) {
+                                    properties.result = 1;
+                                    if (!(message.anchor && typeof message.anchor.length === "number" || $util.isString(message.anchor)))
+                                        return "anchor: buffer expected";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetMostRecentShieldedAnchorResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0} GetMostRecentShieldedAnchorResponseV0
+                             */
+                            GetMostRecentShieldedAnchorResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0();
+                                if (object.anchor != null)
+                                    if (typeof object.anchor === "string")
+                                        $util.base64.decode(object.anchor, message.anchor = $util.newBuffer($util.base64.length(object.anchor)), 0);
+                                    else if (object.anchor.length >= 0)
+                                        message.anchor = object.anchor;
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetMostRecentShieldedAnchorResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0} message GetMostRecentShieldedAnchorResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetMostRecentShieldedAnchorResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.anchor != null && message.hasOwnProperty("anchor")) {
+                                    object.anchor = options.bytes === String ? $util.base64.encode(message.anchor, 0, message.anchor.length) : options.bytes === Array ? Array.prototype.slice.call(message.anchor) : message.anchor;
+                                    if (options.oneofs)
+                                        object.result = "anchor";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetMostRecentShieldedAnchorResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetMostRecentShieldedAnchorResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetMostRecentShieldedAnchorResponseV0;
+                        })();
+
+                        return GetMostRecentShieldedAnchorResponse;
                     })();
 
                     v0.GetShieldedPoolStateRequest = (function() {

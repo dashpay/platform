@@ -12,6 +12,7 @@ import { StateTransitionsFacade } from './state-transitions/facade.js';
 import { SystemFacade } from './system/facade.js';
 import { GroupFacade } from './group/facade.js';
 import { VotingFacade } from './voting/facade.js';
+import { ShieldedFacade } from './shielded/facade.js';
 
 export interface ConnectionOptions {
   version?: number;
@@ -52,6 +53,7 @@ export class EvoSDK {
   public system!: SystemFacade;
   public group!: GroupFacade;
   public voting!: VotingFacade;
+  public shielded!: ShieldedFacade;
   constructor(options: EvoSDKOptions = {}) {
     // Apply defaults while preserving any future connection options
     const { network = 'testnet', trusted = false, addresses, ...connection } = options;
@@ -69,6 +71,7 @@ export class EvoSDK {
     this.system = new SystemFacade(this);
     this.group = new GroupFacade(this);
     this.voting = new VotingFacade(this);
+    this.shielded = new ShieldedFacade(this);
   }
 
   get wasm(): wasm.WasmSdk {
@@ -209,5 +212,6 @@ export { StateTransitionsFacade } from './state-transitions/facade.js';
 export { SystemFacade } from './system/facade.js';
 export { GroupFacade } from './group/facade.js';
 export { VotingFacade } from './voting/facade.js';
+export { ShieldedFacade } from './shielded/facade.js';
 export { wallet } from './wallet/functions.js';
 export * from './wasm.js';
