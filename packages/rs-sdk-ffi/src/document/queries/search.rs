@@ -7,6 +7,7 @@ use dash_sdk::dpp::document::serialization_traits::DocumentPlatformValueMethodsV
 use dash_sdk::dpp::document::Document;
 use dash_sdk::dpp::platform_value::Value;
 use dash_sdk::dpp::prelude::DataContract;
+use dash_sdk::dpp::serialization::ValueConvertible;
 use dash_sdk::drive::query::{OrderClause, WhereClause, WhereOperator};
 use dash_sdk::platform::{DocumentQuery, FetchMany};
 use serde::{Deserialize, Serialize};

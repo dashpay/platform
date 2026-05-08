@@ -102,7 +102,7 @@ impl DataContractWasm {
 
         let platform_version = PlatformVersion::first();
 
-        DataContract::from_value(
+        DataContract::from_value_versioned(
             raw_parameters.with_serde_to_platform_value()?,
             !skip_validation,
             platform_version,
@@ -328,7 +328,7 @@ impl DataContractWasm {
     pub fn to_object(&self) -> Result<JsValue, JsValue> {
         let platform_version = PlatformVersion::first();
 
-        let value = self.inner.to_value(platform_version).with_js_error()?;
+        let value = self.inner.to_value_versioned(platform_version).with_js_error()?;
 
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
 
@@ -372,7 +372,7 @@ impl DataContractWasm {
     pub fn to_json(&self) -> Result<JsValue, JsValue> {
         let platform_version = PlatformVersion::first();
 
-        let json = self.inner.to_json(platform_version).with_js_error()?;
+        let json = self.inner.to_json_versioned(platform_version).with_js_error()?;
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         with_js_error!(json.serialize(&serializer))
     }

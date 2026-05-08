@@ -13,7 +13,7 @@ pub const DATA_CONTRACT_IDENTIFIER_FIELDS_V0: [&str; 2] =
     [property_names::ID, property_names::OWNER_ID];
 
 impl DataContractValueConversionMethodsV0 for DataContractV1 {
-    fn from_value(
+    fn from_value_versioned(
         mut value: Value,
         full_validation: bool,
         platform_version: &PlatformVersion,
@@ -47,7 +47,7 @@ impl DataContractValueConversionMethodsV0 for DataContractV1 {
                 )
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "DataContractV1::from_value".to_string(),
+                method: "DataContractV1::from_value_versioned".to_string(),
                 known_versions: vec![0, 1],
                 received: version
                     .parse()
@@ -56,7 +56,10 @@ impl DataContractValueConversionMethodsV0 for DataContractV1 {
         }
     }
 
-    fn to_value(&self, platform_version: &PlatformVersion) -> Result<Value, ProtocolError> {
+    fn to_value_versioned(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Value, ProtocolError> {
         let data_contract_data =
             DataContractInSerializationFormat::try_from_platform_versioned(self, platform_version)?;
 
@@ -66,7 +69,10 @@ impl DataContractValueConversionMethodsV0 for DataContractV1 {
         Ok(value)
     }
 
-    fn into_value(self, platform_version: &PlatformVersion) -> Result<Value, ProtocolError> {
+    fn into_value_versioned(
+        self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Value, ProtocolError> {
         let data_contract_data =
             DataContractInSerializationFormat::try_from_platform_versioned(self, platform_version)?;
 

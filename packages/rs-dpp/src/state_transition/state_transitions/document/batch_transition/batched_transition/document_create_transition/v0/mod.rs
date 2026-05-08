@@ -579,7 +579,7 @@ mod test {
         ]);
         let documents = Value::from([("test", test_document)]);
         DataContract::V0(
-            DataContractV0::from_value(
+            DataContractV0::from_value_versioned(
                 Value::from([
                     ("$id", Value::Identifier([0_u8; 32])),
                     ("id", Value::Identifier([0_u8; 32])),

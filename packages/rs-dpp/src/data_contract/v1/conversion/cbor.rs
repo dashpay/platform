@@ -37,11 +37,11 @@ impl DataContractCborConversionMethodsV0 for DataContractV1 {
         let data_contract_value: Value =
             Value::try_from(data_contract_cbor_value).map_err(ProtocolError::ValueError)?;
 
-        Self::from_value(data_contract_value, full_validation, platform_version)
+        Self::from_value_versioned(data_contract_value, full_validation, platform_version)
     }
 
     fn to_cbor(&self, platform_version: &PlatformVersion) -> Result<Vec<u8>, ProtocolError> {
-        let value = self.to_value(platform_version)?;
+        let value = self.to_value_versioned(platform_version)?;
 
         let mut buf: Vec<u8> = Vec::new();
 

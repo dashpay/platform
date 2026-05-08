@@ -13,7 +13,7 @@
 | 2.6 | Apply `tag = "$formatVersion"` / `tag = "type"` convention to top-level versioned and discriminated enums | ✅ done locally; gated on 2 open dashcore PRs |
 | 2.7 | Tag-shape convention sweep — flatten every `tag = "type", content = "data"` adjacent enum to internal tagging; apply `$`-prefix discriminator rule | ✅ done — 7/7 enums migrated, zero adjacent-tagged enums remain |
 | 2.8 | Broader `#[json_safe_fields]` rollout — apply to V0 transition leaves and base structs | ✅ done — 11 V0 structs + base transitions + DocumentBaseTransition wrapper. Step 9 added 5 more (address transitions). Step 9 follow-up rolled out the BatchTransition family: V0/V1 + 8 sub-transition V0 inners + 7 manual JsonSafeFields impls (3 wrapper enums + 4 sub-types). |
-| 3 | Deprecate non-canonical mechanisms (§3.11 of this doc) | 🟡 in progress — Phase D steps 1–9 done; steps 10–11 remain |
+| 3 | Deprecate non-canonical mechanisms (§3.11 of this doc) | ✅ done for non-DataContract types — Phase D steps 1–11 complete (DataContract family stays KEEP-AS-EXCEPTION with renamed `_versioned` methods + Critical-4 pin tests) |
 | 4 | wasm-dpp2 migration `_serde!` → `_inner!` | ⬜ not started — re-survey needed (step 9 audit found no actual blockers there) |
 | 5 | Delete `wasm-dpp` legacy crate | ⬜ blocked on team decision |
 
@@ -701,8 +701,17 @@ Ordered to fix bugs first, then easy wins, then long-pole work. Each step gates 
    `cargo check -p drive -p wasm-dpp -p wasm-dpp2 -p dash-sdk -p drive-abci
    --tests` clean.
 
-10. **DataContract family last** (A3, A4):
-    - Likely **KEEP-AS-EXCEPTION**. Optional: rename methods to `to_json_versioned` / `from_json_versioned` so they don't visually conflict with canonical. Document the version-dispatch pattern.
+10. **DataContract family last** (A3, A4) ✅ DONE (May 2026, this branch).
+
+    Three-piece landing:
+
+    - **Critical-4 pinned in tests** (`data_contract/conversion/serde/mod.rs::data_contract_serde_pins_critical_4`): 3 regression tests snapshot current behavior so future refactors can't silently change the impurity. (a) JSON round-trip works at the current platform version; (b) `Serialize` produces byte-equivalent output to `DataContractInSerializationFormat::serialize` at current version (proves it's a thin format-routing wrapper, not a custom shape); (c) `Deserialize` rejects a contract with an `indices` entry referencing a nonexistent property (proves the hardcoded `full_validation = true` runs). Module-level doc on `conversion/serde/mod.rs` explains the rationale.
+
+    - **Methods renamed** with the `_versioned` suffix to disambiguate from canonical: `to_json` → `to_json_versioned`, `from_json` → `from_json_versioned`, `to_value` → `to_value_versioned`, `from_value` → `from_value_versioned`, `into_value` → `into_value_versioned`. `to_validating_json` kept (no clash). All ~26 call sites updated across rs-dpp / rs-drive / rs-drive-abci / wasm-dpp / wasm-dpp2 / dash-sdk / rs-sdk-ffi.
+
+    - **KEEP-AS-EXCEPTION rationale documented** at the trait definitions (`conversion/json/v0/mod.rs`, `conversion/value/v0/mod.rs`) and at the outer enum (`data_contract/mod.rs`). The traits stay because `DataContract` is a versioned enum routed through `DataContractInSerializationFormat`; both the platform version and `full_validation` flag are inputs to the conversion that canonical `JsonConvertible` / `ValueConvertible` (with their parameter-free signatures) cannot express. Cross-references this plan and the Critical-4 finding.
+
+    Net: 3601 dpp lib tests pass (was 3598; +3 from new Critical-4 pin tests). The rename does NOT add canonical traits to `DataContract` itself — that remains intentionally absent. The rename UNBLOCKS adding canonical traits in the future if we choose to (no longer ambiguous), but doesn't do so.
 
 11. **AddressWitness, ContestedIndexFieldMatch refactor** ✅ DONE (May 2026, this branch).
 
@@ -827,10 +836,13 @@ The five Critical findings in §3.0 are real but most surface naturally during P
 Status by step (see §3.11 below for full step list):
 - ✅ **Steps 1–9** complete — pure-delegation deletions, `to_cleaned_object` skip, `disabled_at` skip-serializing, Identity-family canonical, AssetLockProof, ExtendedDocument refactor (C1), Document family A10/A11, state-transition trait deletion.
 - ✅ **Step 9 follow-up** complete — BatchTransition family `#[json_safe_fields]` rolled out (May 2026): attribute applied to `BatchTransitionV0` / `BatchTransitionV1` + 8 sub-transition V0 inners (`DocumentDeleteTransitionV0`, `TokenFreeze` / `Unfreeze` / `DestroyFrozenFunds` / `Claim` / `EmergencyAction` / `ConfigUpdate` / `SetPriceForDirectPurchase`). Manual `JsonSafeFields` impls added in `safe_fields.rs` for the wrapper enums (`DocumentTransition`, `TokenTransition`, `BatchedTransition`) plus 4 sub-types (`TokenEmergencyAction`, `TokenDistributionType`, `TokenPricingSchedule`, `TokenConfigurationChangeItem` — last 2 use the documented escape-hatch pattern alongside `TokenEvent`).
+- ✅ **Step 10** — DataContract family rename pass + Critical-4 behavior pinning (May 2026). Three pieces:
+  1. **Critical-4 pinned in tests** (`data_contract/conversion/serde/mod.rs::data_contract_serde_pins_critical_4`): 3 regression tests snapshotting the current behavior — round-trip through `serde_json`, `Serialize` matches `DataContractInSerializationFormat::serialize` at current version, and `Deserialize` rejects an invalid schema (proving the hardcoded `full_validation = true` runs). Module-level doc explains the impurity rationale.
+  2. **Methods renamed** to disambiguate from canonical `JsonConvertible` / `ValueConvertible`: `to_json` → `to_json_versioned`, `from_json` → `from_json_versioned`, `to_value` → `to_value_versioned`, `from_value` → `from_value_versioned`, `into_value` → `into_value_versioned`. `to_validating_json` kept (no clash). All ~26 call sites across rs-dpp / rs-drive / rs-drive-abci / wasm-dpp / wasm-dpp2 / dash-sdk / rs-sdk-ffi updated.
+  3. **KEEP-AS-EXCEPTION rationale documented** at the trait definitions (`conversion/json/v0/mod.rs`, `conversion/value/v0/mod.rs`) and at the `DataContract` enum (`data_contract/mod.rs:112-120`). Cross-references the unification plan and Critical-4.
 - ✅ **Step 11** — `AddressWitness` / `ContestedIndexFieldMatch` manual-impl refactor (May 2026). Both types replaced custom Serialize/Deserialize impls with serde derives. Round-trip + wire-shape parity tests added.
   - `AddressWitness`: `#[serde(tag = "type")]` internal tagging with explicit `rename = "p2pkh"` / `rename = "p2sh"` on variants. Field rename `redeem_script` → `redeemScript`. **Behavior change**: `MAX_P2SH_SIGNATURES` no longer enforced on the JSON/Value deserialize path — only on bincode (the load-bearing wire format). Documented in the type's doc comment. Net: ~−115 lines.
   - `ContestedIndexFieldMatch`: `#[serde(rename_all = "camelCase")]` externally-tagged enum. `LazyRegex` round-trips as a bare string via `serde(from = "String", into = "String")`. **Bug fix**: previous Serialize emitted `{"Regex": ...}` (PascalCase) while Deserialize expected `{"regex": ...}` (snake_case) — non-round-trippable. New impl is consistently camelCase in both directions, matching the codebase's JSON wire-shape convention. No production callers identified — production data-contract loading uses the unrelated Value-walking `regexPattern` path. Net: ~−95 lines.
-- ⬜ **Step 10** — DataContract family (KEEP-AS-EXCEPTION, optional rename pass).
 
 ### Phase E — WASM cleanup (wasm-dpp2 only — wasm-dpp legacy is left alone)
 - ✅ **Phase 1** — migrated 15 `_serde!` callers wrapping rs-dpp domain types

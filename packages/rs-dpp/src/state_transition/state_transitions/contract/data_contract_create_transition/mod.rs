@@ -228,11 +228,11 @@ mod test {
 
         assert_eq!(
             data_contract
-                .to_json(LATEST_PLATFORM_VERSION)
+                .to_json_versioned(LATEST_PLATFORM_VERSION)
                 .expect("conversion to object shouldn't fail"),
             data.created_data_contract
                 .data_contract()
-                .to_json(LATEST_PLATFORM_VERSION)
+                .to_json_versioned(LATEST_PLATFORM_VERSION)
                 .expect("conversion to object shouldn't fail")
         );
     }

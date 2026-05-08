@@ -9,7 +9,7 @@ use crate::ProtocolError;
 use platform_value::Value;
 
 impl DataContractValueConversionMethodsV0 for DataContract {
-    fn from_value(
+    fn from_value_versioned(
         raw_object: Value,
         full_validation: bool,
         platform_version: &PlatformVersion,
@@ -19,31 +19,43 @@ impl DataContractValueConversionMethodsV0 for DataContract {
             .contract_versions
             .contract_structure_version
         {
-            0 => Ok(
-                DataContractV0::from_value(raw_object, full_validation, platform_version)?.into(),
-            ),
-            1 => Ok(
-                DataContractV1::from_value(raw_object, full_validation, platform_version)?.into(),
-            ),
+            0 => Ok(DataContractV0::from_value_versioned(
+                raw_object,
+                full_validation,
+                platform_version,
+            )?
+            .into()),
+            1 => Ok(DataContractV1::from_value_versioned(
+                raw_object,
+                full_validation,
+                platform_version,
+            )?
+            .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "DataContract::from_object".to_string(),
+                method: "DataContract::from_value_versioned".to_string(),
                 known_versions: vec![0, 1],
                 received: version,
             }),
         }
     }
 
-    fn to_value(&self, platform_version: &PlatformVersion) -> Result<Value, ProtocolError> {
+    fn to_value_versioned(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Value, ProtocolError> {
         match self {
-            DataContract::V0(v0) => v0.to_value(platform_version),
-            DataContract::V1(v1) => v1.to_value(platform_version),
+            DataContract::V0(v0) => v0.to_value_versioned(platform_version),
+            DataContract::V1(v1) => v1.to_value_versioned(platform_version),
         }
     }
 
-    fn into_value(self, platform_version: &PlatformVersion) -> Result<Value, ProtocolError> {
+    fn into_value_versioned(
+        self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Value, ProtocolError> {
         match self {
-            DataContract::V0(v0) => v0.into_value(platform_version),
-            DataContract::V1(v1) => v1.into_value(platform_version),
+            DataContract::V0(v0) => v0.into_value_versioned(platform_version),
+            DataContract::V1(v1) => v1.into_value_versioned(platform_version),
         }
     }
 }

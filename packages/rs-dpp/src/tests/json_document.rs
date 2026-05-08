@@ -72,7 +72,7 @@ pub fn json_document_to_contract(
 ) -> Result<DataContract, ProtocolError> {
     let value = json_document_to_json_value(path)?;
 
-    DataContract::from_json(value, full_validation, platform_version)
+    DataContract::from_json_versioned(value, full_validation, platform_version)
 }
 
 #[cfg(all(
@@ -111,7 +111,7 @@ pub fn json_document_to_contract_with_ids(
 ) -> Result<DataContract, ProtocolError> {
     let value = json_document_to_json_value(path)?;
 
-    let mut contract = DataContract::from_json(value, full_validation, platform_version)?;
+    let mut contract = DataContract::from_json_versioned(value, full_validation, platform_version)?;
 
     if let Some(id) = id {
         contract.set_id(id);

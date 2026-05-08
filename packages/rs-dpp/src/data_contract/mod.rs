@@ -110,12 +110,12 @@ pub enum DataContract {
 }
 
 // Note: DataContract intentionally does NOT implement JsonConvertible / ValueConvertible.
-// It exposes version-aware `to_json(&PlatformVersion)` / `from_json(JsonValue, &PlatformVersion, ...)`
-// via DataContractJsonConversionMethodsV0 / DataContractValueConversionMethodsV0 — those methods
+// It exposes version-aware `to_json_versioned(&PlatformVersion)` /
+// `from_json_versioned(JsonValue, bool, &PlatformVersion)` via
+// DataContractJsonConversionMethodsV0 / DataContractValueConversionMethodsV0 — those methods
 // route serialization through DataContractInSerializationFormat to preserve the active platform
-// version. Adding the canonical traits here would shadow the version-aware methods (E0034 ambiguity
-// at every call site that passes a PlatformVersion). Per the unification plan §3.11 step 10, the
-// proper fix is renaming the legacy methods to `*_versioned` first; that's a separate task.
+// version. The `_versioned` suffix disambiguates from canonical `JsonConvertible::to_json` /
+// `from_json` (which take no `PlatformVersion`); see the unification plan §3.11 step 10.
 // `DataContractInSerializationFormat` (the underlying serialization shape) DOES implement the
 // canonical traits — see `data_contract/serialized_version/mod.rs`.
 

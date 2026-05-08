@@ -624,7 +624,7 @@ mod tests {
         });
 
         // first we need to deserialize the contract
-        let contract = DataContract::from_value(contract, false, platform_version)
+        let contract = DataContract::from_value_versioned(contract, false, platform_version)
             .expect("expected data contract");
 
         drive

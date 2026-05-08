@@ -113,13 +113,13 @@ impl DataContractFactoryV0 {
             .contract_versions
             .contract_structure_version
         {
-            0 => Ok(DataContractV0::from_value(
+            0 => Ok(DataContractV0::from_value_versioned(
                 data_contract_object,
                 full_validation,
                 platform_version,
             )?
             .into()),
-            1 => Ok(DataContractV1::from_value(
+            1 => Ok(DataContractV1::from_value_versioned(
                 data_contract_object,
                 full_validation,
                 platform_version,
@@ -231,7 +231,7 @@ mod tests {
 
         let raw_data_contract = created_data_contract
             .data_contract()
-            .to_value(platform_version)
+            .to_value_versioned(platform_version)
             .unwrap();
 
         let factory = DataContractFactoryV0::new(platform_version.protocol_version);
@@ -356,7 +356,7 @@ mod tests {
             platform_version,
         )
         .unwrap()
-        .to_value(platform_version)
+        .to_value_versioned(platform_version)
         .unwrap();
 
         assert_eq!(raw_data_contract, contract_value);

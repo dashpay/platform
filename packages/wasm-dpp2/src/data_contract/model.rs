@@ -250,7 +250,7 @@ impl DataContractWasm {
             .map_err(|err| WasmDppError::serialization(err.to_string()))?;
 
         let data_contract =
-            DataContract::from_value(contract_value, opts.full_validation, &platform_version)?;
+            DataContract::from_value_versioned(contract_value, opts.full_validation, &platform_version)?;
 
         let data_contract_with_tokens = match data_contract {
             DataContract::V0(v0) => DataContract::from(v0),
@@ -275,7 +275,7 @@ impl DataContractWasm {
         let json_value = serialization::js_value_to_json(&value.into())?;
 
         let contract =
-            DataContract::from_json(json_value, full_validation, &platform_version.into())?;
+            DataContract::from_json_versioned(json_value, full_validation, &platform_version.into())?;
 
         Ok(DataContractWasm(contract))
     }
@@ -292,7 +292,7 @@ impl DataContractWasm {
         let platform_value: Value = serialization::platform_value_from_object(&value)?;
 
         let contract =
-            DataContract::from_value(platform_value, full_validation, &platform_version.into())
+            DataContract::from_value_versioned(platform_value, full_validation, &platform_version.into())
                 .map_err(WasmDppError::from)?;
 
         Ok(DataContractWasm(contract))
@@ -368,7 +368,7 @@ impl DataContractWasm {
     ) -> WasmDppResult<DataContractObjectJs> {
         let platform_version = PlatformVersionWasm::try_from(platform_version)?;
 
-        let value = self.0.clone().to_value(&platform_version.into())?;
+        let value = self.0.clone().to_value_versioned(&platform_version.into())?;
         let js_value = serialization::platform_value_to_object(&value)?;
         Ok(js_value.into())
     }
@@ -586,7 +586,7 @@ impl DataContractWasm {
     ) -> WasmDppResult<DataContractJSONJs> {
         let platform_version = PlatformVersionWasm::try_from(platform_version)?;
 
-        let json = self.0.to_json(&platform_version.into())?;
+        let json = self.0.to_json_versioned(&platform_version.into())?;
         let js_value = serialization::json_value_to_js(&json)?;
         Ok(js_value.into())
     }

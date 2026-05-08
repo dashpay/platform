@@ -9,17 +9,20 @@ use serde_json::Value as JsonValue;
 use std::convert::TryInto;
 
 impl DataContractJsonConversionMethodsV0 for DataContractV1 {
-    fn from_json(
+    fn from_json_versioned(
         json_value: JsonValue,
         full_validation: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        Self::from_value(json_value.into(), full_validation, platform_version)
+        Self::from_value_versioned(json_value.into(), full_validation, platform_version)
     }
 
     /// Returns Data Contract as a JSON Value
-    fn to_json(&self, platform_version: &PlatformVersion) -> Result<JsonValue, ProtocolError> {
-        self.to_value(platform_version)?
+    fn to_json_versioned(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<JsonValue, ProtocolError> {
+        self.to_value_versioned(platform_version)?
             .try_into()
             .map_err(ProtocolError::ValueError)
 
@@ -31,7 +34,7 @@ impl DataContractJsonConversionMethodsV0 for DataContractV1 {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<JsonValue, ProtocolError> {
-        self.to_value(platform_version)?
+        self.to_value_versioned(platform_version)?
             .try_into_validating_json()
             .map_err(ProtocolError::ValueError)
     }

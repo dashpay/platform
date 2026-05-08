@@ -7342,7 +7342,7 @@ mod tests {
             },
         });
 
-        let contract = DataContract::from_value(contract_value, false, platform_version)
+        let contract = DataContract::from_value_versioned(contract_value, false, platform_version)
             .expect("should create a contract from cbor");
 
         drive

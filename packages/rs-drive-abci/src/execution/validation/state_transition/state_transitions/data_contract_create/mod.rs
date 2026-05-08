@@ -3903,8 +3903,8 @@ mod tests {
 
             // Convert the contract back to Value so we can mutate its fields
             let mut contract_value = data_contract
-                .to_value(PlatformVersion::latest())
-                .expect("to_value failed");
+                .to_value_versioned(PlatformVersion::latest())
+                .expect("to_value_versioned failed");
 
             // Insert 21 keywords to exceed the max limit
             let mut excessive_keywords: Vec<Value> = vec![];
@@ -3915,7 +3915,7 @@ mod tests {
 
             // Build a new DataContract from the mutated Value
             let data_contract_with_excessive_keywords =
-                DataContract::from_value(contract_value, true, platform_version)
+                DataContract::from_value_versioned(contract_value, true, platform_version)
                     .expect("failed to create DataContract from Value");
 
             // Create the DataContractCreateTransition
@@ -3986,8 +3986,8 @@ mod tests {
 
             // Convert to Value to mutate fields
             let mut contract_value = data_contract
-                .to_value(PlatformVersion::latest())
-                .expect("to_value failed");
+                .to_value_versioned(PlatformVersion::latest())
+                .expect("to_value_versioned failed");
 
             // Insert some duplicates
             let duplicated_keywords = vec!["keyword1", "keyword2", "keyword2"];
@@ -4000,7 +4000,7 @@ mod tests {
 
             // Build a new DataContract from the mutated Value
             let data_contract_with_duplicates =
-                DataContract::from_value(contract_value, true, platform_version)
+                DataContract::from_value_versioned(contract_value, true, platform_version)
                     .expect("failed to create DataContract from Value");
 
             // Create the DataContractCreateTransition
@@ -4071,15 +4071,15 @@ mod tests {
 
             // Convert to Value for mutation
             let mut contract_value = data_contract
-                .to_value(PlatformVersion::latest())
-                .expect("to_value failed");
+                .to_value_versioned(PlatformVersion::latest())
+                .expect("to_value_versioned failed");
 
             // Insert a keyword with length < 3
             contract_value["keywords"] = Value::Array(vec![Value::Text("hi".to_string())]);
 
             // Build a new DataContract
             let data_contract_invalid =
-                DataContract::from_value(contract_value, true, platform_version)
+                DataContract::from_value_versioned(contract_value, true, platform_version)
                     .expect("failed to create DataContract");
 
             // Create DataContractCreateTransition
@@ -4144,15 +4144,15 @@ mod tests {
             .expect("expected to load contract");
 
             let mut contract_value = data_contract
-                .to_value(platform_version)
-                .expect("to_value failed");
+                .to_value_versioned(platform_version)
+                .expect("to_value_versioned failed");
 
             // Create a 51-char keyword
             let too_long_keyword = "x".repeat(51);
             contract_value["keywords"] = Value::Array(vec![Value::Text(too_long_keyword)]);
 
             let data_contract_invalid =
-                DataContract::from_value(contract_value, true, platform_version)
+                DataContract::from_value_versioned(contract_value, true, platform_version)
                     .expect("failed to create DataContract");
 
             let data_contract_create_transition =
@@ -4218,8 +4218,8 @@ mod tests {
 
             // Convert to Value so we can adjust fields if needed
             let mut contract_value = data_contract
-                .to_value(PlatformVersion::latest())
-                .expect("to_value failed");
+                .to_value_versioned(PlatformVersion::latest())
+                .expect("to_value_versioned failed");
 
             // Insert a valid set of keywords: all distinct, fewer than 20
             let valid_keywords = vec!["key1", "key2", "key3"];
@@ -4232,7 +4232,7 @@ mod tests {
 
             // Build a new DataContract from the mutated Value
             let data_contract_valid =
-                DataContract::from_value(contract_value, true, platform_version)
+                DataContract::from_value_versioned(contract_value, true, platform_version)
                     .expect("failed to create DataContract from Value");
 
             // Create the DataContractCreateTransition
@@ -4386,8 +4386,8 @@ mod tests {
             .expect("expected to load contract");
 
             let mut contract_value = data_contract
-                .to_value(PlatformVersion::latest())
-                .expect("to_value failed");
+                .to_value_versioned(PlatformVersion::latest())
+                .expect("to_value_versioned failed");
 
             // Ensure the `keywords` array is not empty so that Drive will attempt
             // to create the description documents.
@@ -4411,7 +4411,7 @@ mod tests {
             contract_value["description"] = Value::Text("hi".to_string()); // < 3 chars
 
             let data_contract_invalid =
-                DataContract::from_value(contract_value, true, platform_version)
+                DataContract::from_value_versioned(contract_value, true, platform_version)
                     .expect("failed to create DataContract from Value");
 
             let transition = DataContractCreateTransition::new_from_data_contract(
@@ -4469,7 +4469,7 @@ mod tests {
             contract_value["description"] = Value::Text(too_long);
 
             let data_contract_invalid =
-                DataContract::from_value(contract_value, true, platform_version)
+                DataContract::from_value_versioned(contract_value, true, platform_version)
                     .expect("failed to create DataContract");
 
             let transition = DataContractCreateTransition::new_from_data_contract(
@@ -4525,7 +4525,7 @@ mod tests {
                 Value::Text("A perfectly valid description.".to_string());
 
             let data_contract_valid =
-                DataContract::from_value(contract_value, true, platform_version)
+                DataContract::from_value_versioned(contract_value, true, platform_version)
                     .expect("failed to create DataContract");
 
             let transition = DataContractCreateTransition::new_from_data_contract(

@@ -8,7 +8,7 @@ use crate::ProtocolError;
 use serde_json::Value as JsonValue;
 
 impl DataContractJsonConversionMethodsV0 for DataContract {
-    fn from_json(
+    fn from_json_versioned(
         json_value: JsonValue,
         full_validation: bool,
         platform_version: &PlatformVersion,
@@ -21,24 +21,33 @@ impl DataContractJsonConversionMethodsV0 for DataContract {
             .contract_versions
             .contract_structure_version
         {
-            0 => Ok(
-                DataContractV0::from_json(json_value, full_validation, platform_version)?.into(),
-            ),
-            1 => Ok(
-                DataContractV1::from_json(json_value, full_validation, platform_version)?.into(),
-            ),
+            0 => Ok(DataContractV0::from_json_versioned(
+                json_value,
+                full_validation,
+                platform_version,
+            )?
+            .into()),
+            1 => Ok(DataContractV1::from_json_versioned(
+                json_value,
+                full_validation,
+                platform_version,
+            )?
+            .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "DataContract::from_json".to_string(),
+                method: "DataContract::from_json_versioned".to_string(),
                 known_versions: vec![0, 1],
                 received: version,
             }),
         }
     }
 
-    fn to_json(&self, platform_version: &PlatformVersion) -> Result<JsonValue, ProtocolError> {
+    fn to_json_versioned(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<JsonValue, ProtocolError> {
         match self {
-            DataContract::V0(v0) => v0.to_json(platform_version),
-            DataContract::V1(v1) => v1.to_json(platform_version),
+            DataContract::V0(v0) => v0.to_json_versioned(platform_version),
+            DataContract::V1(v1) => v1.to_json_versioned(platform_version),
         }
     }
 
@@ -209,10 +218,10 @@ mod tests {
             }
         });
 
-        let result = DataContract::from_json(contract, true, platform_version);
+        let result = DataContract::from_json_versioned(contract, true, platform_version);
         assert!(
             result.is_ok(),
-            "Stepwise with string keys should be accepted by from_json"
+            "Stepwise with string keys should be accepted by from_json_versioned"
         );
     }
 
@@ -361,10 +370,10 @@ mod tests {
             }
         });
 
-        let result = DataContract::from_json(contract, true, platform_version);
+        let result = DataContract::from_json_versioned(contract, true, platform_version);
         assert!(
             result.is_ok(),
-            "PreProgrammed with string timestamp keys should be accepted by from_json"
+            "PreProgrammed with string timestamp keys should be accepted by from_json_versioned"
         );
     }
 }
