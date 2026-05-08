@@ -60,18 +60,11 @@ impl DocumentPlatformValueMethodsV0<'_> for ExtendedDocumentV0 {
         Ok(map)
     }
 
-    fn into_value(self) -> Result<Value, ProtocolError> {
-        Ok(self.into_map_value()?.into())
-    }
-
-    fn to_object(&self) -> Result<Value, ProtocolError> {
-        Ok(self.to_map_value()?.into())
-    }
-
     fn from_platform_value(
         document_value: Value,
         _platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
+        // Legacy-shape ingest — accepts un-tagged ExtendedDocument values.
         Ok(platform_value::from_value(document_value)?)
     }
 }

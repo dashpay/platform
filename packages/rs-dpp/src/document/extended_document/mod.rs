@@ -354,12 +354,13 @@ impl ExtendedDocument {
 
     /// Convert the extended document to a JSON object.
     ///
-    /// This function is a passthrough to the `to_json` method.
+    /// Routes through canonical `JsonConvertible::to_json` (Phase D step
+    /// 8 slice A). `platform_version` is accepted for API compatibility
+    /// but isn't load-bearing — the canonical path uses serde directly.
     #[cfg(feature = "json-conversion")]
-    pub fn to_json(&self, platform_version: &PlatformVersion) -> Result<JsonValue, ProtocolError> {
-        match self {
-            ExtendedDocument::V0(v0) => v0.to_json(platform_version),
-        }
+    pub fn to_json(&self, _platform_version: &PlatformVersion) -> Result<JsonValue, ProtocolError> {
+        use crate::serialization::JsonConvertible;
+        JsonConvertible::to_json(self)
     }
 
     /// Convert the extended document to a pretty JSON object.

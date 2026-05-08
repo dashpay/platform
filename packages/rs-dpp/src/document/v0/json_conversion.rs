@@ -1,7 +1,5 @@
 use crate::document::fields::property_names;
-use crate::document::serialization_traits::{
-    DocumentJsonMethodsV0, DocumentPlatformValueMethodsV0,
-};
+use crate::document::serialization_traits::DocumentJsonMethodsV0;
 use crate::document::DocumentV0;
 use crate::util::json_value::JsonValueExt;
 use crate::ProtocolError;
@@ -97,11 +95,6 @@ impl DocumentJsonMethodsV0<'_> for DocumentV0 {
             })?;
 
         Ok(value)
-    }
-
-    fn to_json(&self, _platform_version: &PlatformVersion) -> Result<JsonValue, ProtocolError> {
-        self.to_object()
-            .map(|v| v.try_into().map_err(ProtocolError::ValueError))?
     }
 
     fn from_json_value<S, E>(
@@ -230,11 +223,11 @@ mod tests {
 
     #[test]
     fn to_json_includes_id_and_owner_id() {
-        let platform_version = PlatformVersion::latest();
+        // DocumentV0 doesn't derive `JsonConvertible` (only the outer
+        // `Document` enum does). Tests use `serde_json::to_value` directly
+        // for the canonical serde shape.
         let doc = make_minimal_document_v0();
-        let json = doc
-            .to_json(platform_version)
-            .expect("to_json should succeed");
+        let json: JsonValue = serde_json::to_value(&doc).expect("to_value should succeed");
         let obj = json.as_object().expect("should be an object");
         assert!(
             obj.contains_key(property_names::ID),
@@ -248,11 +241,8 @@ mod tests {
 
     #[test]
     fn to_json_represents_none_timestamps_as_null() {
-        let platform_version = PlatformVersion::latest();
         let doc = make_minimal_document_v0();
-        let json = doc
-            .to_json(platform_version)
-            .expect("to_json should succeed");
+        let json: JsonValue = serde_json::to_value(&doc).expect("to_value should succeed");
         let obj = json.as_object().expect("should be an object");
 
         // to_json serializes via serde, so None fields appear as null
@@ -387,9 +377,8 @@ mod tests {
 
             let crate::document::Document::V0(doc_v0) = &document;
 
-            let json_val = doc_v0
-                .to_json(platform_version)
-                .expect("to_json should succeed");
+            let json_val: JsonValue =
+                serde_json::to_value(doc_v0).expect("to_value should succeed");
 
             let recovered = DocumentV0::from_json_value::<String, _>(json_val, platform_version)
                 .expect("from_json_value should succeed");

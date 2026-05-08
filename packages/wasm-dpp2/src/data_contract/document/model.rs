@@ -13,6 +13,11 @@ use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
 use dpp::document::serialization_traits::{
     DocumentJsonMethodsV0, DocumentPlatformConversionMethodsV0, DocumentPlatformValueMethodsV0,
 };
+// `DocumentPlatformValueMethodsV0` is brought in for `to_map_value` /
+// `into_map_value` (the methods that stayed after Phase D step 8 slice A);
+// `DocumentJsonMethodsV0` for `from_json_value` (legacy-shape JSON ingest).
+// Canonical `to_object` / `to_json` / `from_object` come from `ValueConvertible`
+// / `JsonConvertible` imported inline at the call sites.
 use dpp::document::{Document, DocumentV0, DocumentV0Getters, DocumentV0Setters};
 use dpp::identifier::Identifier;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
@@ -545,7 +550,11 @@ impl DocumentWasm {
             })
         });
 
-        // Create Document from remaining fields
+        // Use the legacy-shape ingest `from_platform_value` since JS
+        // callers may construct objects without the canonical
+        // `$formatVersion` tag (matches `from_json_value` symmetric
+        // semantic). Canonical `ValueConvertible::from_object` would
+        // require the tag.
         let document = Document::from_platform_value(Value::Map(map), &platform_version)?;
 
         Ok(DocumentWasm::new(
@@ -560,11 +569,14 @@ impl DocumentWasm {
     #[wasm_bindgen(js_name = "toJSON")]
     pub fn to_json(
         &self,
-        platform_version: PlatformVersionLikeJs,
+        _platform_version: PlatformVersionLikeJs,
     ) -> WasmDppResult<DocumentJSONJs> {
-        let platform_version: PlatformVersion = platform_version.try_into()?;
-        // Get document fields as JSON
-        let mut json_value = self.document.to_json(&platform_version)?;
+        // Canonical `JsonConvertible::to_json` after Phase D step 8 slice A.
+        // The legacy `to_json(&self, &PlatformVersion)` was a 1:1 canonical
+        // equivalent. `platform_version` stays in the JS API for SDK
+        // consistency.
+        use dpp::serialization::JsonConvertible;
+        let mut json_value = self.document.to_json()?;
 
         // Serialize wrapper fields using serde and merge into document JSON
         let wrapper_json =

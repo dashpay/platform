@@ -30,18 +30,6 @@ impl DocumentJsonMethodsV0<'_> for ExtendedDocumentV0 {
         Ok(json)
     }
 
-    fn to_json(&self, platform_version: &PlatformVersion) -> Result<JsonValue, ProtocolError> {
-        let mut json = self.document.to_json(platform_version)?;
-        let value_mut = json.as_object_mut().unwrap();
-        let contract = self.data_contract.to_json(platform_version)?;
-        value_mut.insert(property_names::DATA_CONTRACT.to_owned(), contract);
-        value_mut.insert(
-            property_names::DOCUMENT_TYPE_NAME.to_owned(),
-            self.document_type_name.clone().into(),
-        );
-        Ok(json)
-    }
-
     fn from_json_value<S, E>(
         document_value: JsonValue,
         platform_version: &PlatformVersion,
@@ -50,6 +38,8 @@ impl DocumentJsonMethodsV0<'_> for ExtendedDocumentV0 {
         for<'de> S: Deserialize<'de> + TryInto<Identifier, Error = E>,
         E: Into<ProtocolError>,
     {
+        // Legacy-shape JSON ingest — accepts un-tagged values via the
+        // `from_platform_value` legacy ingest path.
         Self::from_platform_value(document_value.into(), platform_version)
     }
 }

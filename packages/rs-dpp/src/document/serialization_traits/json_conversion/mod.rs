@@ -11,7 +11,9 @@ use serde_json::Value as JsonValue;
 use std::convert::TryInto;
 
 impl DocumentJsonMethodsV0<'_> for Document {
-    /// Convert the document to JSON with identifiers using bytes.
+    /// Validating-JSON shape: bs58 string identifiers + binary fields as
+    /// JSON arrays of u8. Used by JSON Schema validators that don't
+    /// accept base64 string encodings.
     fn to_json_with_identifiers_using_bytes(
         &self,
         platform_version: &PlatformVersion,
@@ -21,14 +23,9 @@ impl DocumentJsonMethodsV0<'_> for Document {
         }
     }
 
-    /// Convert the document to a JSON value.
-    fn to_json(&self, platform_version: &PlatformVersion) -> Result<JsonValue, ProtocolError> {
-        match self {
-            Document::V0(v0) => v0.to_json(platform_version),
-        }
-    }
-
-    /// Create a document from a JSON value.
+    /// Legacy-shape ingest: generic over identifier deserialization type
+    /// (`String` for bs58 / `Vec<u8>` for raw), manually parses each
+    /// system field, and accepts JSON without a `$formatVersion` tag.
     fn from_json_value<S, E>(
         document_value: JsonValue,
         platform_version: &PlatformVersion,

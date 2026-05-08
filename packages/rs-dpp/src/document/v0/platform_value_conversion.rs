@@ -14,18 +14,13 @@ impl DocumentPlatformValueMethodsV0<'_> for DocumentV0 {
         Ok(platform_value::to_value(self)?.into_btree_string_map()?)
     }
 
-    fn into_value(self) -> Result<Value, ProtocolError> {
-        Ok(platform_value::to_value(self)?)
-    }
-
-    fn to_object(&self) -> Result<Value, ProtocolError> {
-        Ok(platform_value::to_value(self)?)
-    }
-
     fn from_platform_value(
         document_value: Value,
         _platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
+        // Legacy-shape ingest: deserialize directly into V0 (no
+        // `$formatVersion` required, unlike canonical
+        // `ValueConvertible::from_object` on the outer Document enum).
         Ok(platform_value::from_value(document_value)?)
     }
 }
@@ -35,7 +30,6 @@ mod tests {
     use super::*;
     use crate::document::property_names;
     use platform_value::Identifier;
-    use platform_version::version::PlatformVersion;
 
     fn minimal_doc() -> DocumentV0 {
         DocumentV0 {
@@ -123,60 +117,10 @@ mod tests {
         assert_eq!(from_ref, from_owned);
     }
 
-    // ================================================================
-    //  to_object / into_value: produce a Value::Map
-    // ================================================================
-
-    #[test]
-    fn to_object_returns_a_map_value() {
-        let doc = full_doc();
-        let v = doc.to_object().expect("to_object");
-        assert!(v.is_map(), "Expected a Value::Map, got {:?}", v);
-    }
-
-    #[test]
-    fn into_value_consumes_and_returns_a_map_value() {
-        let doc = full_doc();
-        let v = doc.into_value().expect("into_value");
-        assert!(v.is_map(), "Expected a Value::Map, got {:?}", v);
-    }
-
-    // ================================================================
-    //  from_platform_value round-trip: to_object -> from_platform_value
-    // ================================================================
-
-    #[test]
-    fn from_platform_value_round_trip_preserves_all_fields() {
-        let platform_version = PlatformVersion::latest();
-        let doc = full_doc();
-        let v = doc.to_object().expect("to_object");
-        let recovered = DocumentV0::from_platform_value(v, platform_version)
-            .expect("from_platform_value should succeed");
-        assert_eq!(doc, recovered);
-    }
-
-    #[test]
-    fn from_platform_value_round_trip_with_minimal_fields() {
-        let platform_version = PlatformVersion::latest();
-        let doc = minimal_doc();
-        let v = doc.to_object().expect("to_object");
-        let recovered = DocumentV0::from_platform_value(v, platform_version)
-            .expect("from_platform_value should succeed");
-        assert_eq!(doc, recovered);
-    }
-
-    // ================================================================
-    //  from_platform_value error path: non-map Value should fail
-    // ================================================================
-
-    #[test]
-    fn from_platform_value_with_non_map_value_returns_error() {
-        let platform_version = PlatformVersion::latest();
-        let bad = Value::Text("not a document".to_string());
-        let result = DocumentV0::from_platform_value(bad, platform_version);
-        assert!(
-            result.is_err(),
-            "from_platform_value with a non-map Value should fail"
-        );
-    }
+    // After Phase D step 8 slice A, the `to_object` / `into_value` /
+    // `from_platform_value` tests on this V0 inner moved to the outer
+    // `Document` enum's canonical-trait round-trip tests in
+    // `serialization_traits/platform_value_conversion/mod.rs`. The
+    // `to_map_value` / `into_map_value` tests stay because those are
+    // the methods this trait still defines.
 }

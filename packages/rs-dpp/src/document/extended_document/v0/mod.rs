@@ -394,9 +394,22 @@ impl ExtendedDocumentV0 {
     /// Returns a `ProtocolError` if there is an error converting the document to pretty JSON.
     pub fn to_pretty_json(
         &self,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<JsonValue, ProtocolError> {
-        let mut value = self.document.to_json(platform_version)?;
+        // Inline what the legacy `Document::to_json` body did
+        // (`to_object()?.try_into()`) — goes through platform_value as an
+        // intermediate, which is what the JSON-Schema-validating shape
+        // expects (base64 strings for nested binary, bs58 strings for
+        // identifiers). Canonical `JsonConvertible::to_json` would go
+        // directly via serde_json (one-step), which produces a slightly
+        // different shape due to Critical-1 (is_human_readable divergence).
+        use crate::serialization::ValueConvertible;
+        use std::convert::TryInto;
+        let mut value: JsonValue = self
+            .document
+            .to_object()?
+            .try_into()
+            .map_err(ProtocolError::ValueError)?;
         let value_mut = value.as_object_mut().unwrap();
         value_mut.insert(
             property_names::DOCUMENT_TYPE_NAME.to_string(),
@@ -1270,24 +1283,12 @@ mod tests {
     //  to_json / to_json_with_identifiers_using_bytes
     // ================================================================
 
-    #[test]
-    fn to_json_includes_type_and_data_contract() {
-        let platform_version = PlatformVersion::latest();
-        let (ext_doc, _) = make_extended_document(platform_version);
-
-        let json = ext_doc
-            .to_json(platform_version)
-            .expect("to_json should succeed");
-        let obj = json.as_object().expect("json object");
-        assert!(
-            obj.contains_key(property_names::DOCUMENT_TYPE_NAME),
-            "must contain $type"
-        );
-        assert!(
-            obj.contains_key(property_names::DATA_CONTRACT),
-            "must contain $dataContract"
-        );
-    }
+    // Note: the previous `to_json_includes_type_and_data_contract` test
+    // exercised the legacy `DocumentJsonMethodsV0::to_json` method on
+    // ExtendedDocumentV0, which was deleted in Phase D step 8 slice A
+    // (it duplicated canonical `JsonConvertible::to_json`). The
+    // canonical-trait round-trip is covered in
+    // `extended_document/mod.rs::json_convertible_tests`.
 
     #[test]
     fn to_json_with_identifiers_using_bytes_includes_type_and_contract() {
