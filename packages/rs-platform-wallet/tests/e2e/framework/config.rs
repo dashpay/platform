@@ -489,7 +489,6 @@ fn is_truthy_env(key: &str) -> bool {
     )
 }
 
-
 /// Parse a network string supporting the canonical dashcore names
 /// plus the test-harness `local` alias for regtest and an empty
 /// shorthand for testnet. Used only at [`Config`] construction;

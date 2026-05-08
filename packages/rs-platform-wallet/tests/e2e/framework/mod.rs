@@ -71,6 +71,7 @@ pub mod bank_identity;
 pub mod cleanup;
 pub mod config;
 pub mod context_provider;
+pub mod gap_limit;
 pub mod harness;
 pub mod identities;
 pub mod registry;

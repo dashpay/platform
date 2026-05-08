@@ -5,6 +5,7 @@
 //! harness; `cases/` hosts `#[tokio_shared_rt::test(shared)]` entries.
 
 #![allow(dead_code, unused_imports)]
+#![allow(clippy::result_large_err)]
 
 // `tests/e2e.rs` is the integration-test crate root; explicit
 // `#[path]` keeps the on-disk layout grouped under `tests/e2e/`.
