@@ -1,34 +1,9 @@
-//! Per-wallet outpoint reservation set.
+//! Per-wallet outpoint reservation set for [`CoreWallet::send_to_addresses`](super::broadcast).
 //!
-//! Closes the same-UTXO concurrent-selection race in
-//! [`CoreWallet::send_to_addresses`](super::broadcast). Two callers racing
-//! for the same wallet take the write lock independently — between dropping
-//! that lock and finishing the network broadcast, neither has yet marked
-//! its inputs spent in `ManagedWalletInfo`. Without a reservation set, both
-//! select the same UTXOs and one must lose at the network layer with an
-//! opaque broadcast rejection.
-//!
-//! With this set, the **first** caller adds its selected outpoints to the
-//! reservations under the write lock; the **second** caller — also under
-//! the write lock — sees those outpoints filtered out of its spendable
-//! snapshot and short-circuits with a typed
-//! [`PlatformWalletError::NoSpendableInputs`](crate::PlatformWalletError)
-//! before ever touching the network.
-//!
-//! ## Lifetime
-//!
-//! Reservations are held by an RAII [`OutpointReservationGuard`]. On drop
-//! (success, error, or panic) the outpoints are released. A successful
-//! broadcast is reconciled by `check_core_transaction(Mempool, …)` *before*
-//! the guard drops, so the inputs transition from "reserved" to "spent" with
-//! no observable gap to other callers on the same wallet handle.
-//!
-//! ## Scope
-//!
-//! Reservations are **per-wallet-instance**. Multiple `PlatformWallet`s in
-//! the same process do not false-conflict; multiple processes sharing a
-//! wallet on disk are out of scope (the existing `tokio::sync::RwLock`
-//! already does not protect against that case).
+//! Closes the same-UTXO concurrent-selection race: the first caller reserves its selected
+//! outpoints under the write lock; subsequent callers filter them out and short-circuit with
+//! [`PlatformWalletError::NoSpendableInputs`](crate::PlatformWalletError) before hitting the
+//! network. Reservations are released by an RAII guard on success, error, or panic.
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
@@ -46,7 +21,6 @@ pub(crate) struct OutpointReservations {
 }
 
 impl OutpointReservations {
-    /// Create an empty reservation set.
     pub(crate) fn new() -> Self {
         Self::default()
     }
