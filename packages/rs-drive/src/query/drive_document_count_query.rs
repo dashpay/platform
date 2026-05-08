@@ -3,6 +3,8 @@ use std::collections::{BTreeMap, BTreeSet};
 #[cfg(feature = "server")]
 use crate::drive::Drive;
 #[cfg(feature = "server")]
+use crate::error::query::QuerySyntaxError;
+#[cfg(feature = "server")]
 use crate::error::Error;
 #[cfg(feature = "server")]
 use crate::util::grove_operations::DirectQueryType;
@@ -60,19 +62,44 @@ pub struct SplitCountEntry {
 }
 
 impl<'a> DriveDocumentCountQuery<'a> {
+    /// Returns `true` if the where-clause operator is one the count fast path
+    /// can serve via point-lookups in a CountTree.
+    ///
+    /// Today that's `Equal` (one path) and `In` (cartesian fork over the listed
+    /// values). Range operators (`>`, `<`, `Between*`, `StartsWith`) need a
+    /// boundary walk that the current PathQuery infrastructure cannot express;
+    /// callers detect those via [`Self::has_unsupported_operator`] and surface
+    /// an error instead of silently returning a wrong count.
+    fn is_indexable_for_count(op: WhereOperator) -> bool {
+        matches!(op, WhereOperator::Equal | WhereOperator::In)
+    }
+
+    /// Returns `true` if any where clause uses an operator the count fast path
+    /// cannot serve. Callers should treat this as a query-rejection signal.
+    pub fn has_unsupported_operator(where_clauses: &[WhereClause]) -> bool {
+        where_clauses
+            .iter()
+            .any(|wc| !Self::is_indexable_for_count(wc.operator))
+    }
+
     /// Finds a countable index whose properties form a prefix that matches the
-    /// equality where clauses. For a count query:
-    /// - All where clause fields must appear as a prefix of the index properties
-    /// - The index must have countable=true
+    /// indexable (Equal / In) where-clause fields. For a count query:
+    /// - All indexable where-clause fields must appear as a prefix of the index properties
+    /// - The index must have `countable = true`
+    /// - Returns `None` if any where clause uses an operator other than `Equal` / `In`
     /// - Among matching indexes, we prefer the one with the most properties
     ///   matched by where clauses (most specific)
     pub fn find_countable_index_for_where_clauses<'b>(
         indexes: &'b BTreeMap<String, Index>,
         where_clauses: &[WhereClause],
     ) -> Option<&'b Index> {
-        let equality_fields: BTreeSet<&str> = where_clauses
+        if Self::has_unsupported_operator(where_clauses) {
+            return None;
+        }
+
+        let indexable_fields: BTreeSet<&str> = where_clauses
             .iter()
-            .filter(|wc| wc.operator == WhereOperator::Equal)
+            .filter(|wc| Self::is_indexable_for_count(wc.operator))
             .map(|wc| wc.field.as_str())
             .collect();
 
@@ -83,22 +110,23 @@ impl<'a> DriveDocumentCountQuery<'a> {
                 continue;
             }
 
-            // Check that where clause equality fields form a prefix of the index properties.
+            // Check that the indexable where-clause fields form a prefix of
+            // the index properties.
             let mut prefix_len = 0;
             for prop in &index.properties {
-                if equality_fields.contains(prop.name.as_str()) {
+                if indexable_fields.contains(prop.name.as_str()) {
                     prefix_len += 1;
                 } else {
                     break;
                 }
             }
 
-            // All equality where clause fields must be consumed as a prefix
-            if prefix_len < equality_fields.len() {
+            // All indexable where-clause fields must be consumed as a prefix.
+            if prefix_len < indexable_fields.len() {
                 continue;
             }
 
-            // Prefer the index with the longest matching prefix (most specific)
+            // Prefer the index with the longest matching prefix (most specific).
             match &best_match {
                 None => best_match = Some((index, prefix_len)),
                 Some((_, best_len)) if prefix_len > *best_len => {
@@ -112,17 +140,22 @@ impl<'a> DriveDocumentCountQuery<'a> {
     }
 
     /// Finds a countable index where:
-    /// - The equality where clause fields form a prefix of the index properties
-    /// - The split_property is the next property after the covered prefix
-    /// - The index has countable=true
+    /// - The indexable (Equal / In) where-clause fields form a prefix of the index properties
+    /// - The `split_property` is the next property after the covered prefix
+    /// - The index has `countable = true`
+    /// - Returns `None` if any where clause uses an operator other than `Equal` / `In`
     pub fn find_countable_index_for_split<'b>(
         indexes: &'b BTreeMap<String, Index>,
         where_clauses: &[WhereClause],
         split_property: &str,
     ) -> Option<&'b Index> {
-        let equality_fields: BTreeSet<&str> = where_clauses
+        if Self::has_unsupported_operator(where_clauses) {
+            return None;
+        }
+
+        let indexable_fields: BTreeSet<&str> = where_clauses
             .iter()
-            .filter(|wc| wc.operator == WhereOperator::Equal)
+            .filter(|wc| Self::is_indexable_for_count(wc.operator))
             .map(|wc| wc.field.as_str())
             .collect();
 
@@ -131,21 +164,21 @@ impl<'a> DriveDocumentCountQuery<'a> {
                 continue;
             }
 
-            // Check that where clause equality fields form a prefix
+            // Check that indexable where-clause fields form a prefix.
             let mut prefix_len = 0;
             for prop in &index.properties {
-                if equality_fields.contains(prop.name.as_str()) {
+                if indexable_fields.contains(prop.name.as_str()) {
                     prefix_len += 1;
                 } else {
                     break;
                 }
             }
 
-            if prefix_len < equality_fields.len() {
+            if prefix_len < indexable_fields.len() {
                 continue;
             }
 
-            // The split property must be the next property after the prefix
+            // The split property must be the next property after the prefix.
             if let Some(next_prop) = index.properties.get(prefix_len) {
                 if next_prop.name == split_property {
                     return Some(index);
@@ -235,6 +268,10 @@ impl<'a> DriveDocumentCountQuery<'a> {
     }
 
     /// Executes the total count query, returning a single u64 count.
+    ///
+    /// Walks the index level-by-level, branching on `In` clauses (each value
+    /// adds a path) and falling through to [`Self::count_recursive`] for any
+    /// trailing index properties that have no matching where clause.
     #[cfg(feature = "server")]
     fn execute_total_count(
         &self,
@@ -242,59 +279,119 @@ impl<'a> DriveDocumentCountQuery<'a> {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<u64, Error> {
-        let drive_version = &platform_version.drive;
-
         // Build the base path: [DataContractDocuments, contract_id, 1, doc_type_name]
-        let mut path = vec![
+        let base_path = vec![
             vec![RootTree::DataContractDocuments as u8],
             self.contract_id.to_vec(),
             vec![1u8],
             self.document_type_name.as_bytes().to_vec(),
         ];
 
-        // Walk the index properties, pushing property keys and values for
-        // each equality where clause.
-        let mut covered_count = 0;
-        for prop in &self.index.properties {
-            let matching_clause = self
-                .where_clauses
-                .iter()
-                .find(|wc| wc.field == prop.name && wc.operator == WhereOperator::Equal);
+        self.expand_paths_and_count(drive, base_path, 0, transaction, platform_version)
+    }
 
-            if let Some(clause) = matching_clause {
-                // Push the index property key
-                path.push(prop.name.as_bytes().to_vec());
-                // Serialize and push the property value
-                let serialized_value = self.document_type.serialize_value_for_key(
+    /// Recursive helper for [`Self::execute_total_count`].
+    ///
+    /// Visits the index property at `prop_idx`. If a matching where clause is
+    /// found:
+    ///   - `Equal`  → extend the current path with `(prop_name, value)` and recurse.
+    ///   - `In`     → for each value in the clause's array, clone the path,
+    ///                extend with that value, recurse, and sum the per-branch
+    ///                counts. This is the cartesian fork.
+    ///   - anything else → unreachable; the index picker rejects the query.
+    /// If no clause matches the current property, hand off to
+    /// [`Self::count_recursive`] which sums all sub-counts at the remaining
+    /// levels.
+    #[cfg(feature = "server")]
+    fn expand_paths_and_count(
+        &self,
+        drive: &Drive,
+        current_path: Vec<Vec<u8>>,
+        prop_idx: usize,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<u64, Error> {
+        let drive_version = &platform_version.drive;
+
+        if prop_idx == self.index.properties.len() {
+            // All index properties resolved to a fixed key — O(1) read.
+            return Self::fetch_count_at_path(drive, &current_path, transaction, drive_version);
+        }
+
+        let prop = &self.index.properties[prop_idx];
+        let matching_clause = self.where_clauses.iter().find(|wc| wc.field == prop.name);
+
+        let Some(clause) = matching_clause else {
+            // No clause for this property. Walk all values at the remaining
+            // levels and sum.
+            let remaining = &self.index.properties[prop_idx..];
+            return Self::count_recursive(
+                drive,
+                current_path,
+                remaining,
+                transaction,
+                drive_version,
+            );
+        };
+
+        match clause.operator {
+            WhereOperator::Equal => {
+                let mut new_path = current_path;
+                new_path.push(prop.name.as_bytes().to_vec());
+                new_path.push(self.document_type.serialize_value_for_key(
                     prop.name.as_str(),
                     &clause.value,
                     platform_version,
-                )?;
-                path.push(serialized_value);
-                covered_count += 1;
-            } else {
-                break;
+                )?);
+                self.expand_paths_and_count(
+                    drive,
+                    new_path,
+                    prop_idx + 1,
+                    transaction,
+                    platform_version,
+                )
             }
-        }
+            WhereOperator::In => {
+                let values = clause.value.as_array().ok_or_else(|| {
+                    Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
+                        "In where-clause value must be an array",
+                    ))
+                })?;
 
-        if covered_count == self.index.properties.len() {
-            // All index properties are covered -- O(1) fetch of the single CountTree.
-            Self::fetch_count_at_path(drive, &path, transaction, drive_version)
-        } else {
-            // Not all properties covered. Iterate over remaining levels.
-            let remaining_properties = &self.index.properties[covered_count..];
-            Self::count_recursive(
-                drive,
-                path,
-                remaining_properties,
-                transaction,
-                drive_version,
-            )
+                let mut total: u64 = 0;
+                for v in values {
+                    let mut new_path = current_path.clone();
+                    new_path.push(prop.name.as_bytes().to_vec());
+                    new_path.push(self.document_type.serialize_value_for_key(
+                        prop.name.as_str(),
+                        v,
+                        platform_version,
+                    )?);
+                    total = total.saturating_add(self.expand_paths_and_count(
+                        drive,
+                        new_path,
+                        prop_idx + 1,
+                        transaction,
+                        platform_version,
+                    )?);
+                }
+                Ok(total)
+            }
+            _ => Err(Error::Query(
+                QuerySyntaxError::InvalidWhereClauseComponents(
+                    "count fast path supports only Equal and In where-clause operators",
+                ),
+            )),
         }
     }
 
     /// Executes a split count query, returning per-value counts for the
     /// split property.
+    ///
+    /// Walks the index prefix that precedes `split_by_property` level by
+    /// level, branching on `In` clauses. For each fully-resolved prefix,
+    /// runs the per-split-value sub-query (see [`Self::collect_split_at_prefix`])
+    /// and merges the results by split key, summing counts.
     #[cfg(feature = "server")]
     fn execute_split_count(
         &self,
@@ -302,52 +399,169 @@ impl<'a> DriveDocumentCountQuery<'a> {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<SplitCountEntry>, Error> {
-        let drive_version = &platform_version.drive;
         let split_property = self
             .split_by_property
             .as_deref()
             .expect("split_by_property must be Some when calling execute_split_count");
 
-        // Build the base path: [DataContractDocuments, contract_id, 1, doc_type_name]
-        let mut path = vec![
+        let split_prop_idx = self
+            .index
+            .properties
+            .iter()
+            .position(|p| p.name == split_property)
+            .unwrap_or(0);
+
+        let base_path = vec![
             vec![RootTree::DataContractDocuments as u8],
             self.contract_id.to_vec(),
             vec![1u8],
             self.document_type_name.as_bytes().to_vec(),
         ];
 
-        // Walk the index properties up to (but not including) the split property,
-        // pushing property keys and serialized values from the where clauses.
-        for prop in &self.index.properties {
-            if prop.name == split_property {
-                break;
-            }
+        let mut merged: BTreeMap<Vec<u8>, u64> = BTreeMap::new();
+        self.expand_split_prefix_paths(
+            drive,
+            base_path,
+            0,
+            split_prop_idx,
+            split_property,
+            transaction,
+            platform_version,
+            &mut merged,
+        )?;
 
-            let matching_clause = self
-                .where_clauses
-                .iter()
-                .find(|wc| wc.field == prop.name && wc.operator == WhereOperator::Equal);
+        Ok(merged
+            .into_iter()
+            .filter(|(_, count)| *count > 0)
+            .map(|(key, count)| SplitCountEntry { key, count })
+            .collect())
+    }
 
-            if let Some(clause) = matching_clause {
-                path.push(prop.name.as_bytes().to_vec());
-                let serialized_value = self.document_type.serialize_value_for_key(
+    /// Walks the index up to `split_prop_idx`, branching on `In`. At each
+    /// fully-resolved prefix, calls [`Self::collect_split_at_prefix`] to
+    /// gather the per-split-value counts, and accumulates them into `merged`.
+    #[cfg(feature = "server")]
+    #[allow(clippy::too_many_arguments)]
+    fn expand_split_prefix_paths(
+        &self,
+        drive: &Drive,
+        current_path: Vec<Vec<u8>>,
+        prop_idx: usize,
+        split_prop_idx: usize,
+        split_property: &str,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+        merged: &mut BTreeMap<Vec<u8>, u64>,
+    ) -> Result<(), Error> {
+        if prop_idx == split_prop_idx {
+            // Reached the split property level under this prefix. Run the
+            // per-split-value sub-query and merge entries by key.
+            return self.collect_split_at_prefix(
+                drive,
+                current_path,
+                split_prop_idx,
+                split_property,
+                transaction,
+                platform_version,
+                merged,
+            );
+        }
+
+        let prop = &self.index.properties[prop_idx];
+        let clause = self
+            .where_clauses
+            .iter()
+            .find(|wc| wc.field == prop.name)
+            .ok_or_else(|| {
+                // The index picker guarantees every property before the split
+                // property has a matching clause; missing one indicates a
+                // mis-picked index.
+                Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
+                    "split count: missing where clause for an index property preceding the split property",
+                ))
+            })?;
+
+        match clause.operator {
+            WhereOperator::Equal => {
+                let mut new_path = current_path;
+                new_path.push(prop.name.as_bytes().to_vec());
+                new_path.push(self.document_type.serialize_value_for_key(
                     prop.name.as_str(),
                     &clause.value,
                     platform_version,
-                )?;
-                path.push(serialized_value);
-            } else {
-                break;
+                )?);
+                self.expand_split_prefix_paths(
+                    drive,
+                    new_path,
+                    prop_idx + 1,
+                    split_prop_idx,
+                    split_property,
+                    transaction,
+                    platform_version,
+                    merged,
+                )
             }
-        }
+            WhereOperator::In => {
+                let values = clause.value.as_array().ok_or_else(|| {
+                    Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
+                        "In where-clause value must be an array",
+                    ))
+                })?;
 
-        // Now push the split property key name
+                for v in values {
+                    let mut new_path = current_path.clone();
+                    new_path.push(prop.name.as_bytes().to_vec());
+                    new_path.push(self.document_type.serialize_value_for_key(
+                        prop.name.as_str(),
+                        v,
+                        platform_version,
+                    )?);
+                    self.expand_split_prefix_paths(
+                        drive,
+                        new_path,
+                        prop_idx + 1,
+                        split_prop_idx,
+                        split_property,
+                        transaction,
+                        platform_version,
+                        merged,
+                    )?;
+                }
+                Ok(())
+            }
+            _ => Err(Error::Query(
+                QuerySyntaxError::InvalidWhereClauseComponents(
+                    "split count fast path supports only Equal and In where-clause operators",
+                ),
+            )),
+        }
+    }
+
+    /// Reads all per-value sub-counts for `split_property` under
+    /// `prefix_path`, summing per-key counts into `merged`. Mirrors the
+    /// original (pre-`In`-support) loop; factored out so the prefix-walk
+    /// recursion can call it once per resolved prefix.
+    #[cfg(feature = "server")]
+    #[allow(clippy::too_many_arguments)]
+    fn collect_split_at_prefix(
+        &self,
+        drive: &Drive,
+        prefix_path: Vec<Vec<u8>>,
+        split_prop_idx: usize,
+        split_property: &str,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+        merged: &mut BTreeMap<Vec<u8>, u64>,
+    ) -> Result<(), Error> {
+        let drive_version = &platform_version.drive;
+
+        // Push the split-property key onto the prefix to address the per-value
+        // subtree level.
+        let mut path = prefix_path;
         path.push(split_property.as_bytes().to_vec());
 
-        // Query all value subtrees at the split property level
         let mut query = Query::new();
         query.insert_all();
-
         let path_query = PathQuery::new(path.clone(), SizedQuery::new(query, None, None));
 
         let mut drive_operations = vec![];
@@ -369,27 +583,18 @@ impl<'a> DriveDocumentCountQuery<'a> {
                         | grovedb::Error::PathKeyNotFound(_)
                 ) =>
             {
-                return Ok(vec![]);
+                // No documents under this prefix; nothing to merge.
+                return Ok(());
             }
             Err(e) => return Err(e),
         };
 
         let key_elements = elements.to_key_elements();
-
         if key_elements.is_empty() {
-            return Ok(vec![]);
+            return Ok(());
         }
 
-        // Determine how many remaining index properties follow the split property
-        let split_prop_idx = self
-            .index
-            .properties
-            .iter()
-            .position(|p| p.name == split_property)
-            .unwrap_or(0);
         let remaining_properties = &self.index.properties[split_prop_idx + 1..];
-
-        let mut entries = Vec::new();
 
         for (key, _element) in key_elements {
             let mut value_path = path.clone();
@@ -407,12 +612,13 @@ impl<'a> DriveDocumentCountQuery<'a> {
                 )?
             };
 
-            if count > 0 {
-                entries.push(SplitCountEntry { key, count });
+            if count == 0 {
+                continue;
             }
+            *merged.entry(key).or_insert(0) += count;
         }
 
-        Ok(entries)
+        Ok(())
     }
 
     /// Fetches the CountTree element count at the given path.
@@ -524,12 +730,15 @@ mod tests {
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+    use dpp::document::{Document, DocumentV0};
+    use dpp::identifier::Identifier;
     use dpp::platform_value::Value;
     use dpp::tests::json_document::json_document_to_contract_with_ids;
     use dpp::version::PlatformVersion;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
     use std::borrow::Cow;
+    use std::collections::BTreeMap as StdBTreeMap;
 
     fn setup_drive_and_contract() -> (Drive, dpp::prelude::DataContract) {
         let drive = setup_drive_with_initial_state_structure(None);
@@ -597,6 +806,72 @@ mod tests {
                 )
                 .expect("expected to insert document");
         }
+    }
+
+    /// Inserts a person document with a controlled set of property values,
+    /// so tests can drive the count fast path with known firstName / age
+    /// values rather than relying on the random-document generator.
+    fn insert_person_doc(
+        drive: &Drive,
+        data_contract: &dpp::prelude::DataContract,
+        id: [u8; 32],
+        first_name: &str,
+        middle_name: &str,
+        last_name: &str,
+        age: u64,
+    ) {
+        let platform_version = PlatformVersion::latest();
+        let document_type = data_contract
+            .document_type_for_name("person")
+            .expect("expected document type");
+
+        let mut properties = StdBTreeMap::new();
+        properties.insert("firstName".to_string(), Value::Text(first_name.to_string()));
+        properties.insert(
+            "middleName".to_string(),
+            Value::Text(middle_name.to_string()),
+        );
+        properties.insert("lastName".to_string(), Value::Text(last_name.to_string()));
+        properties.insert("age".to_string(), Value::U64(age));
+
+        let document: Document = DocumentV0 {
+            id: Identifier::from(id),
+            owner_id: Identifier::from([0u8; 32]),
+            properties,
+            revision: None,
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+        }
+        .into();
+
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&document, storage_flags)),
+                        owner_id: None,
+                    },
+                    contract: data_contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to insert document");
     }
 
     #[test]
@@ -789,5 +1064,237 @@ mod tests {
             result.is_none(),
             "expected no countable index for non-existent split field"
         );
+    }
+
+    #[test]
+    fn test_has_unsupported_operator() {
+        let eq_clause = WhereClause {
+            field: "age".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::U64(30),
+        };
+        let in_clause = WhereClause {
+            field: "age".to_string(),
+            operator: WhereOperator::In,
+            value: Value::Array(vec![Value::U64(30), Value::U64(40)]),
+        };
+        let gt_clause = WhereClause {
+            field: "age".to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: Value::U64(20),
+        };
+
+        assert!(!DriveDocumentCountQuery::has_unsupported_operator(&[]));
+        assert!(!DriveDocumentCountQuery::has_unsupported_operator(&[
+            eq_clause.clone()
+        ]));
+        assert!(!DriveDocumentCountQuery::has_unsupported_operator(&[
+            in_clause.clone()
+        ]));
+        assert!(!DriveDocumentCountQuery::has_unsupported_operator(&[
+            eq_clause.clone(),
+            in_clause.clone()
+        ]));
+        assert!(DriveDocumentCountQuery::has_unsupported_operator(&[
+            gt_clause.clone()
+        ]));
+        assert!(DriveDocumentCountQuery::has_unsupported_operator(&[
+            eq_clause, gt_clause
+        ]));
+    }
+
+    #[test]
+    fn test_find_countable_index_rejects_unsupported_operator() {
+        let platform_version = PlatformVersion::latest();
+
+        let data_contract = json_document_to_contract_with_ids(
+            "tests/supporting_files/contract/family/family-contract-countable.json",
+            None,
+            None,
+            false,
+            platform_version,
+        )
+        .expect("expected to get json based contract");
+
+        let document_type = data_contract
+            .document_type_for_name("person")
+            .expect("expected document type");
+
+        let gt_clause = WhereClause {
+            field: "age".to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: Value::U64(20),
+        };
+
+        // Even though `age` exists as a countable index, GreaterThan disqualifies it
+        // for the count fast path; the picker must report this as "no usable index"
+        // so the handler turns it into a clear error.
+        assert!(
+            DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+                document_type.indexes(),
+                &[gt_clause.clone()],
+            )
+            .is_none()
+        );
+        assert!(DriveDocumentCountQuery::find_countable_index_for_split(
+            document_type.indexes(),
+            &[gt_clause],
+            "firstName",
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn test_count_query_total_count_with_in_operator() {
+        let (drive, data_contract) = setup_drive_and_contract();
+        let platform_version = PlatformVersion::latest();
+
+        // Three docs with age=30, two with age=40, one with age=50.
+        insert_person_doc(&drive, &data_contract, [1u8; 32], "Alice", "M", "Smith", 30);
+        insert_person_doc(&drive, &data_contract, [2u8; 32], "Bob", "M", "Smith", 30);
+        insert_person_doc(&drive, &data_contract, [3u8; 32], "Carol", "M", "Smith", 30);
+        insert_person_doc(&drive, &data_contract, [4u8; 32], "Dave", "M", "Smith", 40);
+        insert_person_doc(&drive, &data_contract, [5u8; 32], "Eve", "M", "Smith", 40);
+        insert_person_doc(&drive, &data_contract, [6u8; 32], "Frank", "M", "Smith", 50);
+
+        let document_type = data_contract
+            .document_type_for_name("person")
+            .expect("expected document type");
+
+        // age IN [30, 40] should count 5 documents (3 + 2).
+        let in_clause = WhereClause {
+            field: "age".to_string(),
+            operator: WhereOperator::In,
+            value: Value::Array(vec![Value::U64(30), Value::U64(40)]),
+        };
+
+        let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+            document_type.indexes(),
+            std::slice::from_ref(&in_clause),
+        )
+        .expect("expected to find countable index for In on age");
+
+        let query = DriveDocumentCountQuery {
+            document_type,
+            contract_id: data_contract.id().to_buffer(),
+            document_type_name: "person".to_string(),
+            index,
+            where_clauses: vec![in_clause],
+            split_by_property: None,
+        };
+
+        let results = query
+            .execute_no_proof(&drive, None, platform_version)
+            .expect("expected query to succeed");
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(
+            results[0].count, 5,
+            "expected count of 5 (age=30 has 3, age=40 has 2)"
+        );
+    }
+
+    #[test]
+    fn test_count_query_total_count_with_in_operator_no_matches() {
+        let (drive, data_contract) = setup_drive_and_contract();
+        let platform_version = PlatformVersion::latest();
+
+        insert_person_doc(&drive, &data_contract, [1u8; 32], "Alice", "M", "Smith", 30);
+        insert_person_doc(&drive, &data_contract, [2u8; 32], "Bob", "M", "Smith", 30);
+
+        let document_type = data_contract
+            .document_type_for_name("person")
+            .expect("expected document type");
+
+        // age IN [99, 100] - no matches.
+        let in_clause = WhereClause {
+            field: "age".to_string(),
+            operator: WhereOperator::In,
+            value: Value::Array(vec![Value::U64(99), Value::U64(100)]),
+        };
+
+        let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+            document_type.indexes(),
+            std::slice::from_ref(&in_clause),
+        )
+        .expect("expected to find countable index for In on age");
+
+        let query = DriveDocumentCountQuery {
+            document_type,
+            contract_id: data_contract.id().to_buffer(),
+            document_type_name: "person".to_string(),
+            index,
+            where_clauses: vec![in_clause],
+            split_by_property: None,
+        };
+
+        let results = query
+            .execute_no_proof(&drive, None, platform_version)
+            .expect("expected query to succeed");
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].count, 0, "expected count of 0 for unmatched In");
+    }
+
+    #[test]
+    fn test_count_query_split_with_in_prefix() {
+        let (drive, data_contract) = setup_drive_and_contract();
+        let platform_version = PlatformVersion::latest();
+
+        // firstName IN ["Alice", "Bob"] split by lastName
+        // Expected: Smith=3 (Alice+Alice+Bob), Jones=2 (Alice+Bob), Doe=1 (Carol — excluded)
+        insert_person_doc(&drive, &data_contract, [1u8; 32], "Alice", "M", "Smith", 30);
+        insert_person_doc(&drive, &data_contract, [2u8; 32], "Alice", "N", "Smith", 31);
+        insert_person_doc(&drive, &data_contract, [3u8; 32], "Bob", "M", "Smith", 32);
+        insert_person_doc(&drive, &data_contract, [4u8; 32], "Alice", "M", "Jones", 33);
+        insert_person_doc(&drive, &data_contract, [5u8; 32], "Bob", "M", "Jones", 34);
+        insert_person_doc(&drive, &data_contract, [6u8; 32], "Carol", "M", "Doe", 35);
+
+        let document_type = data_contract
+            .document_type_for_name("person")
+            .expect("expected document type");
+
+        let in_clause = WhereClause {
+            field: "firstName".to_string(),
+            operator: WhereOperator::In,
+            value: Value::Array(vec![
+                Value::Text("Alice".to_string()),
+                Value::Text("Bob".to_string()),
+            ]),
+        };
+
+        let index = DriveDocumentCountQuery::find_countable_index_for_split(
+            document_type.indexes(),
+            std::slice::from_ref(&in_clause),
+            "lastName",
+        )
+        .expect("expected to find countable index for In + split lastName");
+
+        let query = DriveDocumentCountQuery {
+            document_type,
+            contract_id: data_contract.id().to_buffer(),
+            document_type_name: "person".to_string(),
+            index,
+            where_clauses: vec![in_clause],
+            split_by_property: Some("lastName".to_string()),
+        };
+
+        let results = query
+            .execute_no_proof(&drive, None, platform_version)
+            .expect("expected query to succeed");
+
+        let total: u64 = results.iter().map(|e| e.count).sum();
+        assert_eq!(
+            total, 5,
+            "expected total of 5 (3 Smith + 2 Jones, Carol/Doe excluded)"
+        );
+        assert_eq!(
+            results.len(),
+            2,
+            "expected 2 split entries (Smith and Jones)"
+        );
+        for entry in &results {
+            assert!(entry.count > 0, "filtered split entries should be > 0");
+        }
     }
 }

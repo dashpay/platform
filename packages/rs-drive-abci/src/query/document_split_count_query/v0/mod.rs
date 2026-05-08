@@ -160,6 +160,18 @@ impl<C> Platform<C> {
                 metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
             }
         } else {
+            // Same operator restriction as the total-count fast path.
+            if DriveDocumentCountQuery::has_unsupported_operator(&all_where_clauses) {
+                return Ok(QueryValidationResult::new_with_error(
+                    QueryError::InvalidArgument(
+                        "split count query supports only `==` and `in` where-clause operators; \
+                         range operators (`>`, `<`, `between`, `startsWith`) are not yet \
+                         supported on the no-prove path"
+                            .to_string(),
+                    ),
+                ));
+            }
+
             // For no-prove path, use CountTree-based approach.
             // Find a countable index where the split property follows the where clause
             // properties in the index.
@@ -388,6 +400,228 @@ mod tests {
             result.errors.as_slice(),
             [QueryError::InvalidArgument(msg)] if msg == "split_count_by_index_property must not be empty"
         ));
+    }
+
+    fn serialize_where_clauses_to_cbor(where_clauses: Vec<Value>) -> Vec<u8> {
+        use ciborium::value::Value as CborValue;
+        let cbor: CborValue = TryInto::<CborValue>::try_into(Value::Array(where_clauses))
+            .expect("expected to convert where clauses to cbor value");
+        let mut out = Vec::new();
+        ciborium::ser::into_writer(&cbor, &mut out).expect("expected to serialize where clauses");
+        out
+    }
+
+    fn store_person_document(
+        platform: &crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
+        data_contract: &dpp::prelude::DataContract,
+        id: [u8; 32],
+        first_name: &str,
+        last_name: &str,
+        age: u64,
+        platform_version: &PlatformVersion,
+    ) {
+        use dpp::document::{Document, DocumentV0};
+        use std::collections::BTreeMap;
+
+        let document_type = data_contract
+            .document_type_for_name("person")
+            .expect("expected document type");
+
+        let mut properties = BTreeMap::new();
+        properties.insert("firstName".to_string(), Value::Text(first_name.to_string()));
+        properties.insert("lastName".to_string(), Value::Text(last_name.to_string()));
+        properties.insert("age".to_string(), Value::U64(age));
+
+        let document: Document = DocumentV0 {
+            id: Identifier::from(id),
+            owner_id: Identifier::from([0u8; 32]),
+            properties,
+            revision: None,
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+        }
+        .into();
+
+        store_document(
+            platform,
+            data_contract,
+            document_type,
+            &document,
+            platform_version,
+        );
+    }
+
+    #[test]
+    fn test_documents_split_count_with_in_prefix() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let platform_version = PlatformVersion::latest();
+
+        let data_contract = json_document_to_contract_with_ids(
+            "tests/supporting_files/contract/family/family-contract-countable.json",
+            None,
+            None,
+            false,
+            platform_version,
+        )
+        .expect("expected to get json based contract");
+
+        store_data_contract(&platform, &data_contract, version);
+
+        // firstName IN ["Alice", "Bob"] split by lastName.
+        // Smith=3 (Alice+Alice+Bob), Jones=2 (Alice+Bob); Carol/Doe excluded.
+        store_person_document(
+            &platform,
+            &data_contract,
+            [1u8; 32],
+            "Alice",
+            "Smith",
+            30,
+            platform_version,
+        );
+        store_person_document(
+            &platform,
+            &data_contract,
+            [2u8; 32],
+            "Alice",
+            "Smith",
+            31,
+            platform_version,
+        );
+        store_person_document(
+            &platform,
+            &data_contract,
+            [3u8; 32],
+            "Bob",
+            "Smith",
+            32,
+            platform_version,
+        );
+        store_person_document(
+            &platform,
+            &data_contract,
+            [4u8; 32],
+            "Alice",
+            "Jones",
+            33,
+            platform_version,
+        );
+        store_person_document(
+            &platform,
+            &data_contract,
+            [5u8; 32],
+            "Bob",
+            "Jones",
+            34,
+            platform_version,
+        );
+        store_person_document(
+            &platform,
+            &data_contract,
+            [6u8; 32],
+            "Carol",
+            "Doe",
+            35,
+            platform_version,
+        );
+
+        let where_clauses = vec![Value::Array(vec![
+            Value::Text("firstName".to_string()),
+            Value::Text("in".to_string()),
+            Value::Array(vec![
+                Value::Text("Alice".to_string()),
+                Value::Text("Bob".to_string()),
+            ]),
+        ])];
+
+        let request = GetDocumentsSplitCountRequestV0 {
+            data_contract_id: data_contract.id().to_vec(),
+            document_type: "person".to_string(),
+            r#where: serialize_where_clauses_to_cbor(where_clauses),
+            split_count_by_index_property: "lastName".to_string(),
+            prove: false,
+        };
+
+        let result = platform
+            .query_documents_split_count_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+
+        match result.data {
+            Some(GetDocumentsSplitCountResponseV0 {
+                result:
+                    Some(get_documents_split_count_response_v0::Result::SplitCounts(split_counts)),
+                metadata: Some(_),
+            }) => {
+                let total: u64 = split_counts.entries.iter().map(|e| e.count).sum();
+                assert_eq!(
+                    total, 5,
+                    "expected total of 5 (3 Smith + 2 Jones, Carol/Doe excluded)"
+                );
+                assert_eq!(
+                    split_counts.entries.len(),
+                    2,
+                    "expected 2 split entries (Smith and Jones)"
+                );
+                for entry in &split_counts.entries {
+                    assert!(entry.count > 0);
+                }
+            }
+            other => panic!("expected split counts result, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_documents_split_count_rejects_range_operator() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let platform_version = PlatformVersion::latest();
+
+        let data_contract = json_document_to_contract_with_ids(
+            "tests/supporting_files/contract/family/family-contract-countable.json",
+            None,
+            None,
+            false,
+            platform_version,
+        )
+        .expect("expected to get json based contract");
+
+        store_data_contract(&platform, &data_contract, version);
+
+        // [["age", ">=", 30]] — range operator, must be rejected on no-prove path.
+        let where_clauses = vec![Value::Array(vec![
+            Value::Text("age".to_string()),
+            Value::Text(">=".to_string()),
+            Value::U64(30),
+        ])];
+
+        let request = GetDocumentsSplitCountRequestV0 {
+            data_contract_id: data_contract.id().to_vec(),
+            document_type: "person".to_string(),
+            r#where: serialize_where_clauses_to_cbor(where_clauses),
+            split_count_by_index_property: "firstName".to_string(),
+            prove: false,
+        };
+
+        let result = platform
+            .query_documents_split_count_v0(request, &state, version)
+            .expect("expected query to return validation error");
+
+        assert!(
+            matches!(
+                result.errors.as_slice(),
+                [QueryError::InvalidArgument(msg)] if msg.contains("range operators") && msg.contains("not yet")
+            ),
+            "expected range-operator rejection, got {:?}",
+            result.errors
+        );
     }
 
     #[test]

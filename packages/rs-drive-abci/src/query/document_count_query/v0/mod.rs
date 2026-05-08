@@ -138,6 +138,22 @@ impl<C> Platform<C> {
                 metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
             }
         } else {
+            // The count fast path supports only Equal and In where-clause
+            // operators. Range operators (>, <, between, startsWith) need a
+            // boundary walk that the current count-tree path query model
+            // cannot express; surface that as a clear error rather than
+            // letting it fall through and silently drop the predicate.
+            if DriveDocumentCountQuery::has_unsupported_operator(&all_where_clauses) {
+                return Ok(QueryValidationResult::new_with_error(
+                    QueryError::InvalidArgument(
+                        "count query supports only `==` and `in` where-clause operators; \
+                         range operators (`>`, `<`, `between`, `startsWith`) are not yet \
+                         supported on the no-prove path"
+                            .to_string(),
+                    ),
+                ));
+            }
+
             // For no-prove path, use CountTree-based O(1) counting when possible.
             // Find a countable index that matches the where clause properties.
             let countable_index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
@@ -295,6 +311,210 @@ mod tests {
             }
             other => panic!("expected count result, got {:?}", other),
         }
+    }
+
+    fn serialize_where_clauses_to_cbor(where_clauses: Vec<Value>) -> Vec<u8> {
+        use ciborium::value::Value as CborValue;
+        let cbor: CborValue = TryInto::<CborValue>::try_into(Value::Array(where_clauses))
+            .expect("expected to convert where clauses to cbor value");
+        let mut out = Vec::new();
+        ciborium::ser::into_writer(&cbor, &mut out).expect("expected to serialize where clauses");
+        out
+    }
+
+    fn store_person_document(
+        platform: &crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
+        data_contract: &dpp::prelude::DataContract,
+        id: [u8; 32],
+        first_name: &str,
+        last_name: &str,
+        age: u64,
+        platform_version: &PlatformVersion,
+    ) {
+        use dpp::document::{Document, DocumentV0};
+        use std::collections::BTreeMap;
+
+        let document_type = data_contract
+            .document_type_for_name("person")
+            .expect("expected document type");
+
+        let mut properties = BTreeMap::new();
+        properties.insert("firstName".to_string(), Value::Text(first_name.to_string()));
+        properties.insert("lastName".to_string(), Value::Text(last_name.to_string()));
+        properties.insert("age".to_string(), Value::U64(age));
+
+        let document: Document = DocumentV0 {
+            id: Identifier::from(id),
+            owner_id: Identifier::from([0u8; 32]),
+            properties,
+            revision: None,
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+        }
+        .into();
+
+        store_document(
+            platform,
+            data_contract,
+            document_type,
+            &document,
+            platform_version,
+        );
+    }
+
+    #[test]
+    fn test_documents_count_with_in_operator() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let platform_version = PlatformVersion::latest();
+
+        let data_contract = json_document_to_contract_with_ids(
+            "tests/supporting_files/contract/family/family-contract-countable.json",
+            None,
+            None,
+            false,
+            platform_version,
+        )
+        .expect("expected to get json based contract");
+
+        store_data_contract(&platform, &data_contract, version);
+
+        // 3 docs with age=30, 2 with age=40, 1 with age=50.
+        store_person_document(
+            &platform,
+            &data_contract,
+            [1u8; 32],
+            "Alice",
+            "Smith",
+            30,
+            platform_version,
+        );
+        store_person_document(
+            &platform,
+            &data_contract,
+            [2u8; 32],
+            "Bob",
+            "Smith",
+            30,
+            platform_version,
+        );
+        store_person_document(
+            &platform,
+            &data_contract,
+            [3u8; 32],
+            "Carol",
+            "Smith",
+            30,
+            platform_version,
+        );
+        store_person_document(
+            &platform,
+            &data_contract,
+            [4u8; 32],
+            "Dave",
+            "Smith",
+            40,
+            platform_version,
+        );
+        store_person_document(
+            &platform,
+            &data_contract,
+            [5u8; 32],
+            "Eve",
+            "Smith",
+            40,
+            platform_version,
+        );
+        store_person_document(
+            &platform,
+            &data_contract,
+            [6u8; 32],
+            "Frank",
+            "Smith",
+            50,
+            platform_version,
+        );
+
+        // [["age", "in", [30, 40]]]
+        let where_clauses = vec![Value::Array(vec![
+            Value::Text("age".to_string()),
+            Value::Text("in".to_string()),
+            Value::Array(vec![Value::U64(30), Value::U64(40)]),
+        ])];
+
+        let request = GetDocumentsCountRequestV0 {
+            data_contract_id: data_contract.id().to_vec(),
+            document_type: "person".to_string(),
+            r#where: serialize_where_clauses_to_cbor(where_clauses),
+            prove: false,
+        };
+
+        let result = platform
+            .query_documents_count_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+
+        match result.data {
+            Some(GetDocumentsCountResponseV0 {
+                result: Some(get_documents_count_response_v0::Result::Count(count)),
+                metadata: Some(_),
+            }) => {
+                assert_eq!(count, 5, "expected count of 5 (3 age=30 + 2 age=40)");
+            }
+            other => panic!("expected count result, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_documents_count_rejects_range_operator() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let platform_version = PlatformVersion::latest();
+
+        let data_contract = json_document_to_contract_with_ids(
+            "tests/supporting_files/contract/family/family-contract-countable.json",
+            None,
+            None,
+            false,
+            platform_version,
+        )
+        .expect("expected to get json based contract");
+
+        store_data_contract(&platform, &data_contract, version);
+
+        // [["age", ">", 20]] — range operator, must be rejected on no-prove path.
+        let where_clauses = vec![Value::Array(vec![
+            Value::Text("age".to_string()),
+            Value::Text(">".to_string()),
+            Value::U64(20),
+        ])];
+
+        let request = GetDocumentsCountRequestV0 {
+            data_contract_id: data_contract.id().to_vec(),
+            document_type: "person".to_string(),
+            r#where: serialize_where_clauses_to_cbor(where_clauses),
+            prove: false,
+        };
+
+        let result = platform
+            .query_documents_count_v0(request, &state, version)
+            .expect("expected query to return validation error");
+
+        assert!(
+            matches!(
+                result.errors.as_slice(),
+                [QueryError::InvalidArgument(msg)] if msg.contains("range operators") && msg.contains("not yet")
+            ),
+            "expected range-operator rejection, got {:?}",
+            result.errors
+        );
     }
 
     #[test]
