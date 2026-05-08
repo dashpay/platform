@@ -146,16 +146,9 @@ impl PlatformAddressWallet {
         Ok(cs)
     }
 
-    /// Auto-select inputs balance-descending and dispatch to the
-    /// fee-strategy-specific helper. The returned map's values are the
-    /// **consumed amount per address** — the protocol enforces
-    /// `Σ inputs == Σ outputs`.
-    ///
-    /// Supported strategies:
-    /// - `[DeductFromInput(0)]` — fee deducted from input 0's remaining
-    ///   balance at chain time; selector reserves headroom.
-    /// - `[ReduceOutput(0)]` — fee taken from output 0's amount at chain
-    ///   time; selector skips input-side headroom.
+    /// Dispatch to the strategy-specific selector. Returned map values are the
+    /// **consumed amount per address**; protocol enforces `Σ inputs == Σ outputs`.
+    /// Supported strategies: `[DeductFromInput(0)]`, `[ReduceOutput(0)]`.
     async fn auto_select_inputs(
         &self,
         account_index: u32,
@@ -210,10 +203,8 @@ impl PlatformAddressWallet {
             min_input_amount,
         );
 
-        // When the candidate set is empty, classify why (funded-but-also-output
-        // addresses, sub-minimum aggregate, or both) and raise the typed
-        // `NoSelectableInputs` variant so callers get a precise diagnostic
-        // without parsing downstream message strings.
+        // Empty candidates: classify the cause and raise a typed diagnostic
+        // so callers don't parse downstream message strings.
         if candidates.is_empty() {
             if let Some(err) = detect_no_selectable_inputs(
                 address_balances.iter().copied(),
@@ -309,10 +300,8 @@ where
 }
 
 /// Classify why no candidate survived the filter. Returns `None` when no
-/// funded address exists at all, letting the caller fall through to the
-/// generic insufficient-balance path. Otherwise reports both failure shapes
-/// (funded-but-also-output, sub-minimum aggregate) in one variant; the
-/// `Display` rendering interpolates zero-valued fields naturally.
+/// funded address exists at all (caller falls through to generic
+/// insufficient-balance); otherwise reports both failure shapes in one variant.
 fn detect_no_selectable_inputs<I>(
     address_balances: I,
     outputs: &BTreeMap<PlatformAddress, Credits>,
@@ -473,15 +462,8 @@ fn select_inputs_deduct_from_input(
         )));
     };
 
-    // Phase 4: consume `fee_target_min` from the fee target, distribute the
-    // rest of `total_output` over the remaining prefix in caller order. Tail
-    // consumptions below `min_input_amount` get folded into the fee target —
-    // `validate_structure` would otherwise reject the transition with
-    // `InputBelowMinimumError`.
-    //
-    // Single-target fold-back is the simplest correct behaviour. Multi-peer
-    // redistribution is a defensible optimisation but adds combinatorial
-    // complexity for a borderline case; ship the simpler form first.
+    // Sub-minimum tail consumptions fold back into the fee target;
+    // `validate_structure` would otherwise reject `InputBelowMinimumError`.
     let mut fee_target_consumed = fee_target_min;
     let fee_target_max = fee_target_balance.saturating_sub(estimated_fee);
     let mut selected: BTreeMap<PlatformAddress, Credits> = BTreeMap::new();
@@ -639,11 +621,8 @@ fn select_inputs_reduce_output(
         )));
     }
 
-    // Phase 1.5: every prefix entry must clear `min_input_amount`. Phase 2
-    // sets `consumed = balance` for every non-last entry, so a sub-minimum
-    // candidate would silently produce an invalid transition. Production
-    // callers filter via `build_auto_select_candidates`; this is the
-    // module-internal guard for direct test/future-caller invocations.
+    // Module-internal guard for direct test/future-caller invocations;
+    // production callers pre-filter via `build_auto_select_candidates`.
     if let Some((bad_addr, bad_balance)) = prefix
         .iter()
         .find(|(_, balance)| *balance < min_input_amount)
@@ -672,11 +651,8 @@ fn select_inputs_reduce_output(
         selected.insert(*addr, consumed);
     }
 
-    // Phase 3: if the trim dropped the last entry below `min_input_amount`,
-    // lift it from a peer in balance-descending donor order. The donor must
-    // keep ≥ `min_input_amount` itself, so its balance must reach
-    // `min_input_amount + shift`. Largest peer first maximises the chance of
-    // meeting that threshold.
+    // Donor must keep ≥ `min_input_amount` itself, so its balance must reach
+    // `min_input_amount + shift`. Largest-peer-first maximises that chance.
     let last_addr = prefix[last_index].0;
     let last_consumed = selected[&last_addr];
     if last_consumed < min_input_amount && prefix.len() > 1 {
@@ -699,19 +675,12 @@ fn select_inputs_reduce_output(
             )));
         };
         let donor_consumed = selected[&donor_addr];
-        selected.insert(donor_addr, donor_consumed - shift);
-        selected.insert(last_addr, last_consumed + shift);
+        selected.insert(donor_addr, donor_consumed.saturating_sub(shift));
+        selected.insert(last_addr, last_consumed.saturating_add(shift));
     }
 
-    // Phase 4: ReduceOutput(0) takes the fee from output 0 at chain time;
-    // verify output 0 has enough to absorb it.
-    //
-    // KNOWN BUG — platform #3040 (https://github.com/dashpay/platform/issues/3040):
-    // `estimate_fee_for_inputs` returns only the static
-    // `state_transition_min_fees` floor. Chain-time fee includes storage +
-    // processing costs that scale with the actual operation set; for 1in/1out
-    // we've seen ~6.5M static vs ~14.94M real. Until #3040 is fixed, callers
-    // with small `output[0]` should prefer `[DeductFromInput(0)]`.
+    // TODO(platform#3040): replace with chain-time fee API. Static estimate
+    // can be ~2.3x below chain-time, leaving small `output[0]` at risk.
     let estimated_fee = PlatformAddressWallet::estimate_fee_for_inputs(
         selected.len(),
         output_count,
@@ -728,9 +697,8 @@ fn select_inputs_reduce_output(
         )));
     }
 
-    // Borderline warning for platform #3040: chain-time fees can exceed the
-    // static estimate by ~2.3x in practice. The 3x multiple is a heuristic
-    // safety band, not a proven boundary; revisit when #3040 is fixed.
+    // TODO(platform#3040): drop the heuristic 3x safety band once chain-time
+    // fee API lands; current ~2.3x observed gap is not a proven boundary.
     const REDUCE_OUTPUT_FEE_SAFETY_MULTIPLE: Credits = 3;
     let safe_threshold = estimated_fee.saturating_mul(REDUCE_OUTPUT_FEE_SAFETY_MULTIPLE);
     if output_0 < safe_threshold {
@@ -738,8 +706,9 @@ fn select_inputs_reduce_output(
             output_0,
             estimated_fee,
             safety_multiple = REDUCE_OUTPUT_FEE_SAFETY_MULTIPLE,
+            tracking_issue = "platform#3040",
             "[ReduceOutput(0)] output 0 ({} credits) is within {}x of the static estimated \
-             fee ({} credits); chain-time fee may exceed the static estimate (platform #3040), \
+             fee ({} credits); chain-time fee may exceed the static estimate (platform#3040), \
              risking on-chain rejection. Consider raising output 0 or switching to \
              [DeductFromInput(0)].",
             output_0,
