@@ -307,20 +307,13 @@ impl Drive {
                     &mut batch_operations,
                     &platform_version.drive,
                 )?,
-                TreeType::NormalTree => self.batch_insert_empty_tree(
+                _ => self.batch_insert_empty_tree(
                     type_path,
                     key_info,
                     storage_flags.as_ref(),
                     &mut batch_operations,
                     &platform_version.drive,
                 )?,
-                _ => {
-                    return Err(Error::Drive(
-                        crate::error::drive::DriveError::CorruptedCodeExecution(
-                            "primary_key_tree_type returned a tree variant unsupported by contract insert (only NormalTree / CountTree / ProvableCountTree are valid for primary-key trees)",
-                        ),
-                    ));
-                }
             }
 
             let mut index_cache: HashSet<&[u8]> = HashSet::new();
