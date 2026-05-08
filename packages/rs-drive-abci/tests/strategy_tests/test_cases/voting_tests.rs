@@ -585,31 +585,29 @@ mod tests {
 
         assert_eq!(contenders.len(), 2);
 
-        let first_contender = contenders.first().unwrap();
+        // Look up by identity id rather than vec position — see explanatory
+        // comment in the abstain-only test below.
+        let identity1_contender = contenders
+            .iter()
+            .find(|c| c.identifier == identity1_id.to_vec())
+            .expect("identity1 in contenders");
+        let identity2_contender = contenders
+            .iter()
+            .find(|c| c.identifier == identity2_id.to_vec())
+            .expect("identity2 in contenders");
 
-        let second_contender = contenders.last().unwrap();
+        assert_eq!(
+            identity1_contender.document.as_ref().map(hex::encode),
+            Some("0021278016512ff707d45a0aa8893a4b1ba67b08158b31bc2bda11a0addb8ab1f4341e6a8e6c01488a75104a8dbc73501ded5cd23abaf688349a8ab34b1157513201000700000187690895980000018769089598000001876908959800077175616e74756d077175616e74756d000464617368002101341e6a8e6c01488a75104a8dbc73501ded5cd23abaf688349a8ab34b115751320100".to_string())
+        );
 
-        // Brittle document-byte snapshots removed: the serialized document
-        // embeds the identity id, which derives from the asset-lock txid and
-        // shifts whenever the asset-lock fixture's wire format changes.
-        assert!(first_contender.document.is_some());
-        assert!(second_contender.document.is_some());
+        assert_eq!(
+            identity2_contender.document.as_ref().map(hex::encode),
+            Some("0010b1d465b94520e76daf018ee6b2740c871d51b7ce9690f60fc7a4a70f1bfd6f3a3c745d6c4d3b88ea52976eaab80dbaa77258885b7b6d8e1edfd00fed72414a01000700000187690895980000018769089598000001876908959800077175616e74756d077175616e74756d0004646173680021013a3c745d6c4d3b88ea52976eaab80dbaa77258885b7b6d8e1edfd00fed72414a0101".to_string())
+        );
 
-        // Contender ordering follows identifier sort, which depends on the
-        // asset-lock-derived identity ids. Compare as a set so the assertion
-        // is robust to those id shifts.
-        let mut got_ids = vec![
-            first_contender.identifier.clone(),
-            second_contender.identifier.clone(),
-        ];
-        got_ids.sort();
-        let mut want_ids = vec![identity1_id.to_vec(), identity2_id.to_vec()];
-        want_ids.sort();
-        assert_eq!(got_ids, want_ids);
-
-        assert_eq!(first_contender.vote_count, Some(0));
-
-        assert_eq!(second_contender.vote_count, Some(0));
+        assert_eq!(identity1_contender.vote_count, Some(0));
+        assert_eq!(identity2_contender.vote_count, Some(0));
     }
 
     #[stack_size(STACK_SIZE)]
