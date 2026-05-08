@@ -224,16 +224,28 @@ impl From<DapiClientError> for Error {
     }
 }
 
-/// Hard cap on the length of attacker-influenceable CBOR payloads we accept
+/// Hard cap on the length of attacker-influenceable CBOR payloads accepted
 /// before decoding the `drive-error-data-bin` gRPC metadata.
 ///
 /// gRPC metadata is conventionally bounded around 8 KiB; 64 KiB is comfortably
-/// above any legitimate payload while preventing pathological inputs (e.g.,
-/// deeply nested CBOR maps `a1 a1 a1 …`) from forcing unbounded recursion.
+/// above any legitimate payload. The cap bounds memory only — CBOR recursion
+/// depth is currently bounded by the Rust call stack via `catch_unwind`.
 ///
 /// TODO(CMT-004): `ciborium` does not yet expose a depth-limited reader; once
-/// upstream offers one, swap the size cap for a structural depth cap.
+/// upstream offers one, swap `catch_unwind` for a structural depth cap.
 const MAX_CBOR_INPUT_SIZE: usize = 65_536;
+
+// `ciborium 0.2` `from_reader` is fully recursive; deeply nested input
+// (e.g. `a1 a1 a1 …`) blows the stack. `catch_unwind` turns the unwinding
+// panic into `None` so a hostile peer cannot abort the worker. Aborts under
+// `panic = "abort"` are not caught.
+fn decode_cbor_value(bytes: &[u8]) -> Option<ciborium::Value> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        ciborium::from_reader::<ciborium::Value, _>(bytes).ok()
+    }))
+    .ok()
+    .flatten()
+}
 
 /// Extract the human-readable `message` field from CBOR-encoded `drive-error-data-bin` metadata.
 ///
@@ -258,7 +270,7 @@ fn extract_drive_error_message(bytes: &[u8]) -> Option<String> {
         );
         return None;
     }
-    let value: ciborium::Value = ciborium::from_reader(bytes).ok()?;
+    let value = decode_cbor_value(bytes)?;
     let map = value.as_map()?;
     for (key, val) in map {
         if key.as_text() == Some("message") {
@@ -556,6 +568,21 @@ mod tests {
             let sdk_error = Error::from(error);
 
             assert_matches!(sdk_error, Error::DapiClientError(_));
+        }
+
+        // Pathological CBOR: 60_000 nested single-pair-map openers (`0xA1`).
+        // The recursive ciborium decoder blows the stack; the catch_unwind
+        // guard must convert the panic into None instead of aborting.
+        #[test]
+        fn test_deeply_nested_cbor_does_not_overflow_stack() {
+            let payload = vec![0xA1u8; 60_000];
+            let result = std::thread::Builder::new()
+                .stack_size(2 * 1024 * 1024)
+                .spawn(move || super::extract_drive_error_message(&payload))
+                .expect("spawn thread")
+                .join()
+                .expect("thread did not abort");
+            assert!(result.is_none());
         }
     }
 }

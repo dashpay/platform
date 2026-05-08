@@ -175,17 +175,28 @@ impl Debug for TenderdashStatus {
     }
 }
 
-/// Hard cap on the length of attacker-influenceable CBOR payloads we accept
+/// Hard cap on the length of attacker-influenceable CBOR payloads accepted
 /// before decoding Tenderdash error data.
 ///
-/// Tenderdash responses are bounded by the upstream HTTP client, but no
-/// explicit size cap exists at this layer; 64 KiB is comfortably above any
-/// legitimate payload while preventing pathological CBOR from forcing
-/// unbounded recursion on the server side.
+/// 64 KiB is comfortably above any legitimate payload. The cap bounds memory
+/// only — CBOR recursion depth is currently bounded by the Rust call stack
+/// via `catch_unwind`.
 ///
 /// TODO(CMT-004): `ciborium` does not yet expose a depth-limited reader; once
-/// upstream offers one, swap the size cap for a structural depth cap.
+/// upstream offers one, swap `catch_unwind` for a structural depth cap.
 const MAX_CBOR_INPUT_SIZE: usize = 65_536;
+
+// `ciborium 0.2` `from_reader` is fully recursive; deeply nested input
+// (e.g. `a1 a1 a1 …`) blows the stack. `catch_unwind` turns the unwinding
+// panic into `None` so a hostile peer cannot abort the worker. Aborts under
+// `panic = "abort"` are not caught.
+fn decode_cbor_value(bytes: &[u8]) -> Option<ciborium::Value> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        ciborium::de::from_reader::<ciborium::Value, _>(bytes).ok()
+    }))
+    .ok()
+    .flatten()
+}
 
 /// Decode a potentially unpadded base64 string used by Tenderdash error payloads.
 ///
@@ -257,12 +268,10 @@ pub(super) fn decode_consensus_error(info_base64: String) -> Option<Vec<u8>> {
         return None;
     }
     tracing::trace!(hex = %hex::encode(&decoded_bytes), len = decoded_bytes.len(), "decode_consensus_error: base64 decoded bytes");
-    // CBOR-decode decoded_bytes
-    let raw_value: Value = ciborium::de::from_reader(decoded_bytes.as_slice())
-        .inspect_err(|e| {
-            tracing::debug!("Failed to decode drive error info from CBOR: {}", e);
-        })
-        .ok()?;
+    let raw_value: Value = decode_cbor_value(&decoded_bytes).or_else(|| {
+        tracing::debug!("Failed to decode drive error info from CBOR");
+        None
+    })?;
 
     tracing::trace!("Drive error info CBOR value: {:?}", raw_value);
 
@@ -321,7 +330,7 @@ fn decode_data_message(data: &str) -> Option<String> {
         return None;
     }
 
-    let raw_value: ciborium::Value = ciborium::de::from_reader(decoded_bytes.as_slice()).ok()?;
+    let raw_value = decode_cbor_value(&decoded_bytes)?;
 
     walk_cbor_for_key(&raw_value, &["message"]).and_then(|v| v.as_text().map(|s| s.to_string()))
 }
@@ -786,6 +795,21 @@ mod tests {
         };
         let b64 = base64::prelude::BASE64_STANDARD.encode(&cbor_bytes);
         assert!(super::decode_data_message(&b64).is_none());
+    }
+
+    // Pathological CBOR: 60_000 nested single-pair-map openers (`0xA1`).
+    // The recursive ciborium decoder blows the stack; the catch_unwind guard
+    // must convert the panic into None instead of aborting.
+    #[test]
+    fn decode_cbor_value_does_not_overflow_on_deep_nesting() {
+        let payload = vec![0xA1u8; 60_000];
+        let result = std::thread::Builder::new()
+            .stack_size(2 * 1024 * 1024)
+            .spawn(move || super::decode_cbor_value(&payload))
+            .expect("spawn thread")
+            .join()
+            .expect("thread did not abort");
+        assert!(result.is_none());
     }
 
     // -- Real-world DET log fixture tests --
