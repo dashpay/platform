@@ -26,15 +26,25 @@ impl OutpointReservations {
     }
 
     /// Test whether `outpoint` is currently reserved.
-    ///
-    /// Used by coin selection to filter out in-flight outpoints from the
-    /// spendable snapshot.
+    #[cfg(test)]
     pub(crate) fn contains(&self, outpoint: &OutPoint) -> bool {
         let guard = self
             .inner
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         guard.contains(outpoint)
+    }
+
+    /// Clone the current reservation set under a single lock acquisition.
+    ///
+    /// Callers filter spendable UTXOs against the returned snapshot to
+    /// avoid one mutex lock per candidate outpoint.
+    pub(crate) fn snapshot(&self) -> HashSet<OutPoint> {
+        let guard = self
+            .inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        guard.clone()
     }
 
     /// Reserve `outpoints`, returning an RAII guard that releases them on

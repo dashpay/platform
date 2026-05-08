@@ -79,13 +79,13 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             })?;
 
             // Snapshot spendable UTXOs minus any in-flight reservations from
-            // a concurrent `send_to_addresses` on this handle. Any outpoint
-            // already reserved is owned by another caller's still-pending
-            // broadcast and must not be selected here.
+            // a concurrent `send_to_addresses` on this handle. Single lock
+            // acquisition for the whole filter pass.
+            let reserved = self.reservations.snapshot();
             let spendable: Vec<_> = account
                 .spendable_utxos(current_height)
                 .into_iter()
-                .filter(|utxo| !self.reservations.contains(&utxo.outpoint))
+                .filter(|utxo| !reserved.contains(&utxo.outpoint))
                 .cloned()
                 .collect();
 
@@ -158,9 +158,9 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                     },
                 )
                 .map_err(|e| {
-                    // Map coin-selection failures to `NoSpendableInputs` so callers can
-                    // distinguish a race-loser from a network rejection. String-matching because
-                    // the underlying `SelectionError` is not exposed through `BuilderError`.
+                    // Map coin-selection failures to `NoSpendableInputs`. String-match pinned by
+                    // `builder_error_text_contract_for_no_inputs`.
+                    // TODO(typed-wrapper): drop once upstream exposes `SelectionError` typed.
                     let msg = e.to_string();
                     if msg.contains("Insufficient funds") || msg.contains("No UTXOs available") {
                         PlatformWalletError::NoSpendableInputs {
@@ -412,7 +412,6 @@ mod tests {
     // failure from B would mean the bug is still open.
 
     use std::collections::BTreeMap;
-    use std::time::Duration;
 
     use dashcore::hashes::Hash;
     use dashcore::{Address as DashAddress, OutPoint, TxOut};
@@ -425,19 +424,20 @@ mod tests {
     use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 
     /// Mock broadcaster that gates the broadcast on an external `Notify`.
-    /// Lets the test pin caller A inside its `await` while caller B
-    /// races for the wallet's write lock.
+    /// `entered` fires the moment `broadcast()` is awaited — by then the
+    /// caller has reserved its outpoints and dropped the wallet write lock.
     struct GatedBroadcaster {
         gate: Arc<Notify>,
+        entered: Arc<Notify>,
+        calls: AtomicUsize,
         succeed: bool,
     }
 
     #[async_trait]
     impl TransactionBroadcaster for GatedBroadcaster {
         async fn broadcast(&self, transaction: &Transaction) -> Result<Txid, PlatformWalletError> {
-            // Wait until the test signals the gate. Allows the test to
-            // observe the wallet state mid-broadcast (specifically: the
-            // reservation set populated, the input not yet marked spent).
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            self.entered.notify_one();
             self.gate.notified().await;
             if self.succeed {
                 Ok(transaction.txid())
@@ -569,11 +569,18 @@ mod tests {
 
         let (wm, wallet_id, recipient) = build_funded_wallet_manager(2_000_000);
         let gate = Arc::new(Notify::new());
-        let broadcaster: Arc<dyn TransactionBroadcaster> = Arc::new(GatedBroadcaster {
+        let entered = Arc::new(Notify::new());
+        let broadcaster = Arc::new(GatedBroadcaster {
             gate: Arc::clone(&gate),
+            entered: Arc::clone(&entered),
+            calls: AtomicUsize::new(0),
             succeed: true,
         });
-        let core = make_core_wallet_for_manager(wm, wallet_id, broadcaster);
+        let core = make_core_wallet_for_manager(
+            wm,
+            wallet_id,
+            Arc::clone(&broadcaster) as Arc<dyn TransactionBroadcaster>,
+        );
 
         let send_value = 100_000;
         let outputs_a = vec![(recipient.clone(), send_value)];
@@ -589,9 +596,9 @@ mod tests {
                 .await
         });
 
-        // Let A acquire the lock, reserve the outpoint, and block on the gate.
-        // Monotonic property: once A is inside the broadcast `await`, the reservation holds.
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        // Deterministic handshake: wait until A has reached the broadcast gate.
+        // By that point A has reserved the outpoint and dropped the wallet write lock.
+        entered.notified().await;
 
         // Caller B starts now. The wallet's only UTXO is reserved by A,
         // so B's spendable snapshot is empty → `NoSpendableInputs`.
@@ -622,6 +629,13 @@ mod tests {
         assert!(
             a_result.is_ok(),
             "A must succeed once its broadcast gate fires; got: {a_result:?}"
+        );
+
+        // Pin "loser never reached the network" directly: only A invoked the broadcaster.
+        assert_eq!(
+            broadcaster.calls.load(Ordering::SeqCst),
+            1,
+            "broadcaster must be called exactly once across both concurrent senders"
         );
     }
 
@@ -667,5 +681,34 @@ mod tests {
             }
             other => panic!("unexpected second call result: {other:?}"),
         }
+    }
+
+    /// Pins the upstream error text the production string-match in
+    /// `send_to_addresses` depends on. If `key-wallet` ever rephrases
+    /// "Insufficient funds" / "No UTXOs available", this test breaks
+    /// loudly so the matcher can be updated (or, ideally, replaced
+    /// with a typed `SelectionError` once upstream exposes it).
+    #[test]
+    fn builder_error_text_contract_for_no_inputs() {
+        use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionStrategy;
+        use key_wallet::wallet::managed_wallet_info::transaction_builder::TransactionBuilder;
+
+        let (_, _, recipient) = build_funded_wallet_manager(2_000_000);
+
+        let result = TransactionBuilder::new()
+            .add_output(&recipient, 100_000)
+            .expect("add_output")
+            .select_inputs(&[], SelectionStrategy::LargestFirst, 100, |_| None);
+
+        let err = match result {
+            Ok(_) => panic!("empty UTXO slice must fail coin selection"),
+            Err(e) => e,
+        };
+        let msg = err.to_string();
+        assert!(
+            msg.contains("Insufficient funds") || msg.contains("No UTXOs available"),
+            "production string-match in send_to_addresses depends on these tokens; \
+             got: {msg}"
+        );
     }
 }
