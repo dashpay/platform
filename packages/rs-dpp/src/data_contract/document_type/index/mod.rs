@@ -53,7 +53,7 @@ impl TryFrom<u8> for ContestedIndexResolution {
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),
-    serde(rename_all = "snake_case")
+    serde(rename_all = "camelCase")
 )]
 pub enum ContestedIndexFieldMatch {
     Regex(LazyRegex),
@@ -110,9 +110,9 @@ impl LazyRegex {
 // The previous custom Serialize emitted PascalCase variant tags
 // (`{"Regex": ...}`) while the custom Deserialize expected snake_case
 // (`{"regex": ...}`) — non-round-trippable. The replacement uses serde
-// `rename_all = "snake_case"` for consistent snake_case in both
-// directions. `LazyRegex` round-trips as a plain string via
-// `serde(from = "String", into = "String")` above.
+// `rename_all = "camelCase"` matching the rest of the codebase's
+// JSON wire-shape convention. `LazyRegex` round-trips as a plain
+// string via `serde(from = "String", into = "String")` above.
 
 #[allow(clippy::non_canonical_partial_ord_impl)]
 impl PartialOrd for ContestedIndexFieldMatch {
@@ -1485,9 +1485,10 @@ mod json_convertible_tests {
     }
 
     // --- ContestedIndexFieldMatch (Phase D step 11) ---
-    // Wire shape: externally-tagged enum with snake_case variant tags.
+    // Wire shape: externally-tagged enum with camelCase variant tags
+    // (matches codebase convention for JSON wire shapes).
     //   `{"regex": "<pattern>"}` -> Regex(LazyRegex)
-    //   `{"positive_integer_match": <u128>}` -> PositiveIntegerMatch
+    //   `{"positiveIntegerMatch": <u128>}` -> PositiveIntegerMatch
     // LazyRegex serializes as the bare regex string via
     // `serde(from = "String", into = "String")`.
 
@@ -1509,7 +1510,7 @@ mod json_convertible_tests {
         use crate::serialization::JsonConvertible;
         let original = ContestedIndexFieldMatch::PositiveIntegerMatch(42);
         let json = original.to_json().expect("to_json");
-        assert_eq!(json, serde_json::json!({ "positive_integer_match": 42 }));
+        assert_eq!(json, serde_json::json!({ "positiveIntegerMatch": 42 }));
         let recovered = ContestedIndexFieldMatch::from_json(json).expect("from_json");
         match recovered {
             ContestedIndexFieldMatch::PositiveIntegerMatch(n) => assert_eq!(n, 42),
