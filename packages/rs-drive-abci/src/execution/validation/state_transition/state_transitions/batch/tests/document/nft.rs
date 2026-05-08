@@ -1847,16 +1847,19 @@ mod nft_tests {
             .unwrap()
             .expect("expected to commit transaction");
 
-        assert_eq!(processing_result.invalid_paid_count(), 1);
+        // PROTOCOL_VERSION_12+ (issue #2867): the v1 `flatten` / `merge_many`
+        // aggregators return `data: None` when no per-transition input
+        // contributed, so a single-transition batch where the lone Purchase
+        // fails its price check now flows as `UnpaidConsensusError` (tx
+        // removed from block by prepare_proposal) instead of being recorded
+        // as a paid empty `BatchTransitionAction`.
+        assert_eq!(processing_result.invalid_unpaid_count(), 1);
+        assert_eq!(processing_result.invalid_paid_count(), 0);
 
         let result = processing_result.into_execution_results().remove(0);
 
-        let StateTransitionExecutionResult::PaidConsensusError {
-            error: consensus_error,
-            ..
-        } = result
-        else {
-            panic!("expected a paid consensus error");
+        let StateTransitionExecutionResult::UnpaidConsensusError(consensus_error) = result else {
+            panic!("expected an unpaid consensus error");
         };
         assert_eq!(consensus_error.to_string(), "5rJccTdtJfg6AxSKyrptWUug3PWjveEitTTLqBn9wHdk document can not be purchased for 35000000000, it's sale price is 50000000000 (in credits)");
     }
@@ -2355,16 +2358,19 @@ mod nft_tests {
             .unwrap()
             .expect("expected to commit transaction");
 
-        assert_eq!(processing_result.invalid_paid_count(), 1);
+        // PROTOCOL_VERSION_12+ (issue #2867): the v1 `flatten` / `merge_many`
+        // aggregators return `data: None` when no per-transition input
+        // contributed, so a single-transition batch where the lone Purchase
+        // hits `DocumentNotForSaleError` now flows as `UnpaidConsensusError`
+        // (tx removed from block by prepare_proposal) instead of being
+        // recorded as a paid empty `BatchTransitionAction`.
+        assert_eq!(processing_result.invalid_unpaid_count(), 1);
+        assert_eq!(processing_result.invalid_paid_count(), 0);
 
         let result = processing_result.into_execution_results().remove(0);
 
-        let StateTransitionExecutionResult::PaidConsensusError {
-            error: consensus_error,
-            ..
-        } = result
-        else {
-            panic!("expected a paid consensus error");
+        let StateTransitionExecutionResult::UnpaidConsensusError(consensus_error) = result else {
+            panic!("expected an unpaid consensus error");
         };
         assert_eq!(
             consensus_error.to_string(),
