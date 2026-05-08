@@ -2206,7 +2206,17 @@ public class PlatformWalletPersistenceHandler {
             let buf = UnsafeMutablePointer<ShieldedNoteRestoreFFI>.allocate(capacity: rows.count)
             allocation.entries = buf
             allocation.entriesCount = rows.count
-            for (idx, row) in rows.enumerated() {
+            // `written` is the next free slot in `buf`; we increment it
+            // only after a row's struct is fully populated, so the
+            // returned prefix `[0..written)` is contiguous initialized
+            // memory regardless of how many rows are skipped by the
+            // length guards below. Indexing by `rows.enumerated()`'s
+            // `idx` here would leave gaps when an early row is skipped
+            // and Rust would read uninitialized bytes off the
+            // `slice::from_raw_parts(ptr, count)` it builds in
+            // `FFIPersister::load`.
+            var written = 0
+            for row in rows {
                 guard row.walletId.count == 32 else { continue }
                 guard row.cmx.count == 32 else { continue }
                 guard row.nullifier.count == 32 else { continue }
@@ -2232,7 +2242,7 @@ public class PlatformWalletPersistenceHandler {
                         dst.copyMemory(from: src)
                     }
                 }
-                buf[idx] = ShieldedNoteRestoreFFI(
+                buf[written] = ShieldedNoteRestoreFFI(
                     wallet_id: walletIdTuple,
                     account_index: row.accountIndex,
                     position: row.position,
@@ -2244,12 +2254,13 @@ public class PlatformWalletPersistenceHandler {
                     note_data_ptr: UnsafePointer(noteDataBuf),
                     note_data_len: UInt(row.noteData.count)
                 )
-                allocation.entriesInitialized += 1
+                written += 1
+                allocation.entriesInitialized = written
             }
             let entriesPtr = UnsafePointer(buf)
             shieldedLoadAllocations[UnsafeRawPointer(entriesPtr)] = allocation
             resultEntries = entriesPtr
-            resultCount = allocation.entriesInitialized
+            resultCount = written
         }
         return (resultEntries, resultCount, resultErrored)
     }
@@ -2293,7 +2304,11 @@ public class PlatformWalletPersistenceHandler {
             )
             allocation.entries = buf
             allocation.entriesCount = rows.count
-            for (idx, row) in rows.enumerated() {
+            // Same `written`-counter pattern as `loadShieldedNotes`:
+            // skip malformed rows without leaving holes in the
+            // contiguous prefix Rust will read.
+            var written = 0
+            for row in rows {
                 guard row.walletId.count == 32 else { continue }
                 var walletIdTuple: FFIByteTuple32 = (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
                 row.walletId.withUnsafeBytes { src in
@@ -2301,7 +2316,7 @@ public class PlatformWalletPersistenceHandler {
                         dst.copyMemory(from: src)
                     }
                 }
-                buf[idx] = ShieldedSubwalletSyncStateFFI(
+                buf[written] = ShieldedSubwalletSyncStateFFI(
                     wallet_id: walletIdTuple,
                     account_index: row.accountIndex,
                     last_synced_index: row.lastSyncedIndex,
@@ -2309,12 +2324,13 @@ public class PlatformWalletPersistenceHandler {
                     nullifier_checkpoint_height: row.nullifierCheckpointHeight,
                     nullifier_checkpoint_timestamp: row.nullifierCheckpointTimestamp
                 )
-                allocation.entriesInitialized += 1
+                written += 1
+                allocation.entriesInitialized = written
             }
             let entriesPtr = UnsafePointer(buf)
             shieldedSyncStateLoadAllocations[UnsafeRawPointer(entriesPtr)] = allocation
             resultEntries = entriesPtr
-            resultCount = allocation.entriesInitialized
+            resultCount = written
         }
         return (resultEntries, resultCount, resultErrored)
     }

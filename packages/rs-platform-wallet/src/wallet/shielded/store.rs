@@ -23,7 +23,7 @@
 //! type doesn't implement serde — a bytes contract would force
 //! every caller through a serializer that doesn't exist.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error as StdError;
 use std::fmt;
 
@@ -100,6 +100,31 @@ pub trait ShieldedStore: Send + Sync {
     /// if a matching unspent note was found.
     fn mark_spent(&mut self, id: SubwalletId, nullifier: &[u8; 32]) -> Result<bool, Self::Error>;
 
+    /// Reserve `id`'s note with `nullifier` against an in-flight
+    /// spend so concurrent callers can't pick the same note.
+    /// Returns `true` if the nullifier was newly added to the
+    /// pending set, `false` if it was already pending.
+    ///
+    /// Pending state is **in-memory only** — it does not survive
+    /// a process restart. The crash-during-broadcast case is
+    /// reconciled by the next nullifier-sync pass after the
+    /// transition lands (or, on rejection, leaves the notes
+    /// observable as unspent again on the next launch).
+    ///
+    /// `unspent_notes` skips notes whose nullifier is in the
+    /// pending set, so a successful `mark_pending` immediately
+    /// removes the note from selection candidates.
+    fn mark_pending(&mut self, id: SubwalletId, nullifier: &[u8; 32]) -> Result<bool, Self::Error>;
+
+    /// Release the reservation taken by [`Self::mark_pending`].
+    /// Returns `true` if the nullifier was actually pending and
+    /// got removed; `false` is a no-op (paired clear from the
+    /// rollback path on a transition that never marked pending,
+    /// or a stale clear after the spend already promoted to
+    /// `mark_spent`).
+    fn clear_pending(&mut self, id: SubwalletId, nullifier: &[u8; 32])
+        -> Result<bool, Self::Error>;
+
     // ── Commitment tree (network-shared) ───────────────────────────────
 
     /// Append a note commitment to the shared tree.
@@ -163,6 +188,11 @@ pub(super) struct SubwalletState {
     pub last_synced_index: u64,
     /// `(height, timestamp)` from the most recent nullifier sync.
     pub nullifier_checkpoint: Option<(u64, u64)>,
+    /// Nullifiers of notes currently being spent in an in-flight
+    /// transition. Excluded from `unspent_notes()` so concurrent
+    /// callers can't double-select. In-memory only — never
+    /// persisted; the next sync after a crash reconciles state.
+    pub pending_nullifiers: BTreeSet<[u8; 32]>,
 }
 
 impl SubwalletState {
@@ -183,7 +213,11 @@ impl SubwalletState {
     }
 
     pub(super) fn unspent_notes(&self) -> Vec<ShieldedNote> {
-        self.notes.iter().filter(|n| !n.is_spent).cloned().collect()
+        self.notes
+            .iter()
+            .filter(|n| !n.is_spent && !self.pending_nullifiers.contains(&n.nullifier))
+            .cloned()
+            .collect()
     }
 
     pub(super) fn all_notes(&self) -> Vec<ShieldedNote> {
@@ -194,10 +228,28 @@ impl SubwalletState {
         if let Some(&idx) = self.nullifier_index.get(nullifier) {
             if !self.notes[idx].is_spent {
                 self.notes[idx].is_spent = true;
+                // Promotion implies the spend confirmed; drop any
+                // matching pending reservation. Idempotent — the
+                // common path already cleared pending in the
+                // spend-flow finalizer.
+                self.pending_nullifiers.remove(nullifier);
                 return true;
             }
         }
         false
+    }
+
+    /// Reserve `nullifier` against an in-flight spend. Returns
+    /// `true` if newly added.
+    pub(super) fn mark_pending(&mut self, nullifier: &[u8; 32]) -> bool {
+        self.pending_nullifiers.insert(*nullifier)
+    }
+
+    /// Release a reservation previously taken via `mark_pending`.
+    /// Returns `true` if a matching reservation was actually
+    /// removed.
+    pub(super) fn clear_pending(&mut self, nullifier: &[u8; 32]) -> bool {
+        self.pending_nullifiers.remove(nullifier)
     }
 }
 
@@ -270,6 +322,26 @@ impl ShieldedStore for InMemoryShieldedStore {
             .subwallets
             .get_mut(&id)
             .map(|sw| sw.mark_spent(nullifier))
+            .unwrap_or(false))
+    }
+
+    fn mark_pending(&mut self, id: SubwalletId, nullifier: &[u8; 32]) -> Result<bool, Self::Error> {
+        Ok(self
+            .subwallets
+            .entry(id)
+            .or_default()
+            .mark_pending(nullifier))
+    }
+
+    fn clear_pending(
+        &mut self,
+        id: SubwalletId,
+        nullifier: &[u8; 32],
+    ) -> Result<bool, Self::Error> {
+        Ok(self
+            .subwallets
+            .get_mut(&id)
+            .map(|sw| sw.clear_pending(nullifier))
             .unwrap_or(false))
     }
 

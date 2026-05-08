@@ -96,6 +96,26 @@ impl ShieldedStore for FileBackedShieldedStore {
             .unwrap_or(false))
     }
 
+    fn mark_pending(&mut self, id: SubwalletId, nullifier: &[u8; 32]) -> Result<bool, Self::Error> {
+        Ok(self
+            .subwallets
+            .entry(id)
+            .or_default()
+            .mark_pending(nullifier))
+    }
+
+    fn clear_pending(
+        &mut self,
+        id: SubwalletId,
+        nullifier: &[u8; 32],
+    ) -> Result<bool, Self::Error> {
+        Ok(self
+            .subwallets
+            .get_mut(&id)
+            .map(|sw| sw.clear_pending(nullifier))
+            .unwrap_or(false))
+    }
+
     fn append_commitment(&mut self, cmx: &[u8; 32], marked: bool) -> Result<(), Self::Error> {
         let retention: Retention<u32> = if marked {
             Retention::Marked
