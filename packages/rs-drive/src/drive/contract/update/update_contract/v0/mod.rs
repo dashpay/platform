@@ -348,27 +348,25 @@ impl Drive {
                     type_key.as_bytes(),
                 ];
 
-                // primary key tree
+                // primary key tree — pick the tree variant that matches the
+                // document type's countable flags. Pre-v12 contracts always
+                // have both flags false, so they fall through to NormalTree.
                 if document_type.range_countable() {
-                    // Use a ProvableCountTree for range countable support (implies countable)
-                    let path_items: Vec<Vec<u8>> = type_path.iter().map(|s| s.to_vec()).collect();
-                    batch_operations.push(
-                        LowLevelDriveOperation::for_known_path_key_empty_provable_count_tree(
-                            path_items,
-                            vec![0],
-                            storage_flags.as_ref().map(|flags| flags.as_ref()),
-                        ),
-                    );
+                    self.batch_insert_empty_provable_count_tree(
+                        type_path,
+                        KeyRef(&[0]),
+                        storage_flags.as_ref().map(|flags| flags.as_ref()),
+                        &mut batch_operations,
+                        drive_version,
+                    )?;
                 } else if document_type.documents_countable() {
-                    // Use a CountTree so total document count is available in O(1)
-                    let path_items: Vec<Vec<u8>> = type_path.iter().map(|s| s.to_vec()).collect();
-                    batch_operations.push(
-                        LowLevelDriveOperation::for_known_path_key_empty_count_tree(
-                            path_items,
-                            vec![0],
-                            storage_flags.as_ref().map(|flags| flags.as_ref()),
-                        ),
-                    );
+                    self.batch_insert_empty_count_tree(
+                        type_path,
+                        KeyRef(&[0]),
+                        storage_flags.as_ref().map(|flags| flags.as_ref()),
+                        &mut batch_operations,
+                        drive_version,
+                    )?;
                 } else {
                     self.batch_insert_empty_tree(
                         type_path,

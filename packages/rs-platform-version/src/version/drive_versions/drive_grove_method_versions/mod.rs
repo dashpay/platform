@@ -60,6 +60,8 @@ pub struct DriveGroveBatchMethodVersions {
     pub batch_delete_up_tree_while_empty: FeatureVersion,
     pub batch_refresh_reference: FeatureVersion,
     pub batch_insert_empty_sum_tree: FeatureVersion,
+    pub batch_insert_empty_count_tree: FeatureVersion,
+    pub batch_insert_empty_provable_count_tree: FeatureVersion,
     pub batch_move: FeatureVersion,
     pub batch_insert_item_with_sum_item_if_not_exists: FeatureVersion,
 }

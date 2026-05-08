@@ -284,27 +284,29 @@ impl Drive {
                 type_key.as_bytes(),
             ];
 
-            // primary key tree
+            // primary key tree — pick the tree variant that matches the document
+            // type's countable flags. Pre-v12 contracts always have both flags
+            // false, so they fall through to the plain NormalTree path.
+            let key_info = Key(vec![0]);
             if document_type.range_countable() {
-                // Use a ProvableCountTree for range countable support (implies countable)
-                let path_items: Vec<Vec<u8>> = type_path.iter().map(|s| s.to_vec()).collect();
-                batch_operations.push(
-                    LowLevelDriveOperation::for_known_path_key_empty_provable_count_tree(
-                        path_items,
-                        vec![0],
-                        storage_flags.as_ref(),
-                    ),
-                );
-            } else if document_type.documents_countable() {
-                // Use a CountTree so total document count is available in O(1)
-                let path_items: Vec<Vec<u8>> = type_path.iter().map(|s| s.to_vec()).collect();
-                batch_operations.push(LowLevelDriveOperation::for_known_path_key_empty_count_tree(
-                    path_items,
-                    vec![0],
+                // ProvableCountTree supports range-countable queries (implies countable).
+                self.batch_insert_empty_provable_count_tree(
+                    type_path,
+                    key_info,
                     storage_flags.as_ref(),
-                ));
+                    &mut batch_operations,
+                    &platform_version.drive,
+                )?;
+            } else if document_type.documents_countable() {
+                // CountTree gives O(1) total document count.
+                self.batch_insert_empty_count_tree(
+                    type_path,
+                    key_info,
+                    storage_flags.as_ref(),
+                    &mut batch_operations,
+                    &platform_version.drive,
+                )?;
             } else {
-                let key_info = Key(vec![0]);
                 self.batch_insert_empty_tree(
                     type_path,
                     key_info,
