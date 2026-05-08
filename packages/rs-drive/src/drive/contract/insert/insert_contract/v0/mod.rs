@@ -375,7 +375,7 @@ mod countable_e2e_tests {
     use dpp::platform_value::{platform_value, Value};
     use dpp::tests::utils::generate_random_identifier_struct;
     use dpp::version::PlatformVersion;
-    use grovedb::Element;
+    use grovedb::{Element, GroveDb, PathTrunkChunkQuery};
 
     const PROTOCOL_VERSION_V12: u32 = 12;
 
@@ -446,6 +446,19 @@ mod countable_e2e_tests {
             )
             .expect("expected grove_get_raw to succeed")
             .expect("primary key tree element should exist")
+    }
+
+    fn primary_key_tree_path(
+        contract: &dpp::prelude::DataContract,
+        document_type_name: &str,
+    ) -> Vec<Vec<u8>> {
+        vec![
+            vec![crate::drive::RootTree::DataContractDocuments as u8],
+            contract.id().as_bytes().to_vec(),
+            vec![1],
+            document_type_name.as_bytes().to_vec(),
+            vec![0],
+        ]
     }
 
     #[test]
@@ -686,6 +699,84 @@ mod countable_e2e_tests {
             }
             other => panic!("expected ProvableCountTree, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn range_countable_primary_key_tree_supports_trunk_proof() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let pv = PlatformVersion::latest();
+        let contract = build_widget_contract(false, true);
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("expected to apply contract");
+
+        let document_type = contract
+            .document_type_for_name("widget")
+            .expect("widget exists");
+
+        for seed in 1u64..=20 {
+            let document = document_type
+                .random_document(Some(seed), pv)
+                .expect("random document");
+
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&document, None)),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    pv,
+                    None,
+                )
+                .expect("expected to insert document");
+        }
+
+        let elem = read_primary_key_tree(&drive, &contract, "widget");
+        match elem {
+            Element::ProvableCountTree(_, count, _) => {
+                assert_eq!(count, 20, "provable count tree should track inserted docs");
+            }
+            other => panic!("expected ProvableCountTree, got {:?}", other),
+        }
+
+        let query = PathTrunkChunkQuery::new(primary_key_tree_path(&contract, "widget"), 3);
+        let proof = drive
+            .grove
+            .prove_trunk_chunk(&query, &pv.drive.grove_version)
+            .value
+            .expect("expected trunk proof call to succeed");
+        let (root_hash, result) =
+            GroveDb::verify_trunk_chunk_proof(&proof, &query, &pv.drive.grove_version)
+                .expect("expected trunk proof to verify");
+
+        assert_ne!(root_hash, [0u8; 32], "root hash should not be zero");
+        assert!(
+            !result.elements.is_empty(),
+            "trunk proof should return primary-key tree elements"
+        );
+        assert!(
+            result
+                .leaf_keys
+                .values()
+                .any(|leaf_info| leaf_info.count.is_some()),
+            "rangeCountable trunk proof should expose subtree counts"
+        );
     }
 
     /// Sanity: existing document fetch + count APIs still work for a CountTree
