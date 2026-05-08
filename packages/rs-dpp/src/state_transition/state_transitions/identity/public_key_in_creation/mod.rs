@@ -17,12 +17,10 @@ use serde::{Deserialize, Serialize};
 pub mod accessors;
 mod fields;
 #[cfg(feature = "json-conversion")]
-mod json_conversion;
 mod methods;
 mod types;
 pub mod v0;
 #[cfg(feature = "value-conversion")]
-mod value_conversion;
 mod version;
 
 #[cfg_attr(
@@ -380,78 +378,11 @@ mod test {
         assert_eq!(hash.len(), 20);
     }
 
-    #[test]
-    fn test_value_conversion_roundtrip() {
-        use crate::state_transition::StateTransitionValueConvert;
-        let key = make_master_key(0);
-        let v = StateTransitionValueConvert::to_object(&key, false).expect("to_object");
-        assert!(v.is_map());
-        let restored = <IdentityPublicKeyInCreation as StateTransitionValueConvert>::from_object(
-            v,
-            LATEST_PLATFORM_VERSION,
-        )
-        .expect("from_object");
-        assert_eq!(key, restored);
-    }
-
-    #[test]
-    fn test_value_conversion_unknown_version() {
-        use crate::state_transition::StateTransitionValueConvert;
-        use platform_value::Value;
-        let v = Value::from([("$version", Value::U16(255))]);
-        let result = <IdentityPublicKeyInCreation as StateTransitionValueConvert>::from_object(
-            v,
-            LATEST_PLATFORM_VERSION,
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_clean_value_unknown_version() {
-        use crate::state_transition::StateTransitionValueConvert;
-        use platform_value::Value;
-        let mut v = Value::from([("$version", Value::U8(255))]);
-        let result =
-            <IdentityPublicKeyInCreation as StateTransitionValueConvert>::clean_value(&mut v);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_to_canonical_object_inserts_version() {
-        use crate::state_transition::StateTransitionValueConvert;
-        let key = make_master_key(0);
-        let v = StateTransitionValueConvert::to_canonical_object(&key, false)
-            .expect("to_canonical_object");
-        let map = v
-            .into_btree_string_map()
-            .expect("canonical object should be a map");
-        assert!(map.contains_key("$version"));
-    }
-
-    #[test]
-    fn test_to_canonical_cleaned_object_inserts_version() {
-        use crate::state_transition::StateTransitionValueConvert;
-        let key = make_master_key(0);
-        let v = StateTransitionValueConvert::to_canonical_cleaned_object(&key, false)
-            .expect("to_canonical_cleaned_object");
-        let map = v.into_btree_string_map().expect("should be a map");
-        assert!(map.contains_key("$version"));
-    }
-
-    #[test]
-    fn test_from_value_map_roundtrip() {
-        use crate::state_transition::StateTransitionValueConvert;
-        let key = make_master_key(0);
-        let v = StateTransitionValueConvert::to_object(&key, false).expect("to_object");
-        let map = v.into_btree_string_map().expect("should be a map");
-        let restored =
-            <IdentityPublicKeyInCreation as StateTransitionValueConvert>::from_value_map(
-                map,
-                LATEST_PLATFORM_VERSION,
-            )
-            .expect("from_value_map");
-        assert_eq!(key, restored);
-    }
+    // Legacy `StateTransitionValueConvert` round-trip / canonical /
+    // unknown-version tests deleted in Phase D step 9. The canonical
+    // `JsonConvertible` / `ValueConvertible` round-trip is exercised on
+    // the outer enum derive (see `json_convertible_tests` below) — these
+    // tested methods that no longer exist.
 
     #[test]
     fn test_default_versioned_unknown() {

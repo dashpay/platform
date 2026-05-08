@@ -1,8 +1,6 @@
 #[cfg(feature = "json-conversion")]
-mod json_conversion;
 mod types;
 #[cfg(feature = "value-conversion")]
-mod value_conversion;
 mod version;
 
 use crate::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};

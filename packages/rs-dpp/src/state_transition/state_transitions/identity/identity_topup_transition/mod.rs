@@ -1,14 +1,12 @@
 pub mod accessors;
 pub mod fields;
 #[cfg(feature = "json-conversion")]
-mod json_conversion;
 pub mod methods;
 pub mod proved;
 mod state_transition_estimated_fee_validation;
 mod state_transition_like;
 pub mod v0;
 #[cfg(feature = "value-conversion")]
-mod value_conversion;
 mod version;
 
 #[cfg(feature = "json-conversion")]
@@ -101,10 +99,10 @@ mod test {
     use crate::state_transition::{
         StateTransitionEstimatedFeeValidation, StateTransitionHasUserFeeIncrease,
         StateTransitionLike, StateTransitionOwned, StateTransitionSingleSigned,
-        StateTransitionType, StateTransitionValueConvert,
+        StateTransitionType,
     };
     use crate::version::LATEST_PLATFORM_VERSION;
-    use platform_value::{BinaryData, Identifier, Value};
+    use platform_value::{BinaryData, Identifier};
 
     fn make_topup() -> IdentityTopUpTransition {
         IdentityTopUpTransition::V0(IdentityTopUpTransitionV0 {
@@ -183,23 +181,8 @@ mod test {
         assert!(fee > 0);
     }
 
-    #[test]
-    fn test_from_object_unknown_version() {
-        let value = Value::from([("$stateTransitionProtocolVersion", Value::U16(255))]);
-        let result = <IdentityTopUpTransition as StateTransitionValueConvert>::from_object(
-            value,
-            LATEST_PLATFORM_VERSION,
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_clean_value_unknown_version() {
-        let mut value = Value::from([("$stateTransitionProtocolVersion", Value::U8(255))]);
-        let result =
-            <IdentityTopUpTransition as StateTransitionValueConvert>::clean_value(&mut value);
-        assert!(result.is_err());
-    }
+    // Legacy `StateTransitionValueConvert` unknown-version tests deleted
+    // in Phase D step 9 — they tested methods that no longer exist.
 
     #[test]
     fn test_into_from_v0() {

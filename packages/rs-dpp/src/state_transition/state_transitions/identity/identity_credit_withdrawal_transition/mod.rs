@@ -8,14 +8,12 @@ pub mod accessors;
 pub mod fields;
 mod identity_signed;
 #[cfg(feature = "json-conversion")]
-mod json_conversion;
 pub mod methods;
 mod state_transition_estimated_fee_validation;
 mod state_transition_like;
 pub mod v0;
 pub mod v1;
 #[cfg(feature = "value-conversion")]
-mod value_conversion;
 mod version;
 
 use crate::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0Signable;
@@ -128,11 +126,11 @@ mod test {
     use crate::state_transition::{
         StateTransitionEstimatedFeeValidation, StateTransitionHasUserFeeIncrease,
         StateTransitionIdentityEstimatedFeeValidation, StateTransitionLike, StateTransitionOwned,
-        StateTransitionSingleSigned, StateTransitionType, StateTransitionValueConvert,
+        StateTransitionSingleSigned, StateTransitionType,
     };
     use crate::version::LATEST_PLATFORM_VERSION;
     use crate::withdrawal::Pooling;
-    use platform_value::{BinaryData, Identifier, Value};
+    use platform_value::{BinaryData, Identifier};
 
     fn make_withdrawal_v0() -> IdentityCreditWithdrawalTransition {
         IdentityCreditWithdrawalTransition::V0(IdentityCreditWithdrawalTransitionV0 {
@@ -267,66 +265,11 @@ mod test {
         assert_eq!(bin.len(), 2);
     }
 
-    #[test]
-    fn test_value_conversion_roundtrip_v0() {
-        let t = make_withdrawal_v0();
-        let obj = StateTransitionValueConvert::to_object(&t, false).expect("should work");
-        let restored =
-            <IdentityCreditWithdrawalTransition as StateTransitionValueConvert>::from_object(
-                obj,
-                LATEST_PLATFORM_VERSION,
-            )
-            .expect("should work");
-        assert_eq!(t, restored);
-    }
-
-    #[test]
-    fn test_value_conversion_roundtrip_v1() {
-        let t = make_withdrawal_v1();
-        let obj = StateTransitionValueConvert::to_object(&t, false).expect("should work");
-        let restored =
-            <IdentityCreditWithdrawalTransition as StateTransitionValueConvert>::from_object(
-                obj,
-                LATEST_PLATFORM_VERSION,
-            )
-            .expect("should work");
-        assert_eq!(t, restored);
-    }
-
-    #[test]
-    fn test_from_value_map_v0() {
-        let t = make_withdrawal_v0();
-        let obj = StateTransitionValueConvert::to_object(&t, false).expect("should work");
-        let map = obj.into_btree_string_map().expect("should be map");
-        let restored =
-            <IdentityCreditWithdrawalTransition as StateTransitionValueConvert>::from_value_map(
-                map,
-                LATEST_PLATFORM_VERSION,
-            )
-            .expect("should work");
-        assert_eq!(t, restored);
-    }
-
-    #[test]
-    fn test_from_object_unknown_version() {
-        let value = Value::from([("$stateTransitionProtocolVersion", Value::U16(255))]);
-        let result =
-            <IdentityCreditWithdrawalTransition as StateTransitionValueConvert>::from_object(
-                value,
-                LATEST_PLATFORM_VERSION,
-            );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_clean_value_unknown_version() {
-        let mut value = Value::from([("$stateTransitionProtocolVersion", Value::U8(255))]);
-        let result =
-            <IdentityCreditWithdrawalTransition as StateTransitionValueConvert>::clean_value(
-                &mut value,
-            );
-        assert!(result.is_err());
-    }
+    // Legacy `StateTransitionValueConvert` round-trip and
+    // unknown-version tests deleted in Phase D step 9. The canonical
+    // `JsonConvertible` / `ValueConvertible` round-trip is exercised on
+    // the outer enum derive (see `json_convertible_tests` below) — these
+    // tested methods that no longer exist.
 
     #[test]
     fn test_estimated_fee_sufficient() {

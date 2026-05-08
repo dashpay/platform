@@ -644,11 +644,54 @@ Ordered to fix bugs first, then easy wins, then long-pole work. Each step gates 
    with genuinely-distinct semantics from canonical (the BTreeMap
    shape view + the validating-JSON wire shape).
 
-9. **State-transition trait migration** (A1, A2 — long pole, ~70 files):
-   - Strategy: introduce `SignableValueConvertible: ValueConvertible` carrying `skip_signature` + `to_canonical_object` + `to_canonical_cleaned_object`.
-   - Migrate inner V0/V1 structs to plain canonical (their A1 impls were pure-serde).
-   - Keep A1/A2 only on outer enums where `$version` injection happens — those become §6-pattern manual impls.
-   - **Unblocks**: bulk of wasm-dpp2 state-transition wrappers (the `_serde!` → `_inner!` migration).
+9. **State-transition trait migration** (A1, A2) — ✅ DONE (May 2026, branch
+   `feat/json-convertible-address-transitions`).
+
+   Audit upended the original framing. Three findings reshaped the work:
+
+   - **Signing is bincode, not JSON canonical**. `signable_bytes()` from the
+     `PlatformSignable` derive is the actual signing pre-image. The
+     `to_canonical_object` / `to_canonical_cleaned_object` methods on A1
+     were vestigial JS-DPP-era scaffolding with **zero production callers**
+     — only their own tautological tests called them.
+   - **Outer enums already have canonical traits**. Phase C added
+     `JsonConvertible` + `ValueConvertible` derives to all transition outer
+     enums; A1/A2 were running in parallel doing the same work.
+   - **Cross-package use was tiny**. Only 2 wasm-dpp legacy files used
+     `to_cleaned_object`. wasm-dpp2 had zero A1/A2 callers — the "unblocks
+     24 wasm-dpp2 sites" framing was wrong.
+
+   Action taken (this commit):
+
+   - **Deleted A1 (`StateTransitionValueConvert`) + A2
+     (`StateTransitionJsonConvert`)** entirely — both trait files removed,
+     all 68 impl files (`value_conversion.rs` + `json_conversion.rs` per
+     transition × inner/outer × V0/V1) deleted.
+   - **Migrated 2 wasm-dpp legacy callers** to canonical
+     `ValueConvertible::to_object()` + manual signature path stripping for
+     the `skip_signature` case. Constructor calls switched to canonical
+     `from_object` with `$formatVersion` injection (insert-tag-then-canonical
+     pattern matching the Document migration).
+   - **Deleted 76 tautology tests** that exercised the removed methods. The
+     canonical `JsonConvertible` / `ValueConvertible` round-trip is exercised
+     on outer enum derives via `json_convertible_tests` / `value_convertible_tests`
+     modules.
+   - **Added `#[json_safe_fields]`** to the 5 V0 transition inner structs that
+     were missing it: `AddressCreditWithdrawalTransitionV0`,
+     `AddressFundingFromAssetLockTransitionV0`,
+     `AddressFundsTransferTransitionV0`,
+     `IdentityCreateFromAddressesTransitionV0`,
+     `IdentityTopUpFromAddressesTransitionV0`.
+   - **Deferred** `#[json_safe_fields]` on `BatchTransitionV0` and
+     `BatchTransitionV1` — they require `DocumentTransition` /
+     `BatchedTransition` (and their sub-transitions) to implement
+     `JsonSafeFields` first. Tracked as a follow-up for the BatchTransition
+     family migration.
+
+   Verification: `cargo test -p dpp --features all_features_without_client
+   --lib` passes 3594/3594 (was 3670; 76 deleted tautology tests).
+   `cargo check -p drive -p wasm-dpp -p wasm-dpp2 -p dash-sdk -p drive-abci
+   --tests` clean.
 
 10. **DataContract family last** (A3, A4):
     - Likely **KEEP-AS-EXCEPTION**. Optional: rename methods to `to_json_versioned` / `from_json_versioned` so they don't visually conflict with canonical. Document the version-dispatch pattern.
@@ -665,9 +708,9 @@ Ordered to fix bugs first, then easy wins, then long-pole work. Each step gates 
 
 ### Currently blocking `_serde!` → `_inner!` migration
 
-- Steps 5, 6, 7, 9 directly unblock the 24 `_serde!` call sites in wasm-dpp2.
-- Step 9 (state transitions) is the long pole and unblocks the most.
-- Steps 10 (DataContract) is intentionally exempt — wasm-dpp2 wrapper for DataContract should stay on the version-aware path.
+- Steps 5, 6, 7 directly unblock specific `_serde!` call sites in wasm-dpp2.
+- Step 9 turned out NOT to be a blocker (audit showed wasm-dpp2 had no A1/A2 callers). The remaining `_serde!` sites must be elsewhere — re-survey wasm-dpp2 to identify what actually still needs migration.
+- Step 10 (DataContract) is intentionally exempt — wasm-dpp2 wrapper for DataContract should stay on the version-aware path.
 
 ## 4. Asymmetric J/V types (from inventory §1, §5)
 

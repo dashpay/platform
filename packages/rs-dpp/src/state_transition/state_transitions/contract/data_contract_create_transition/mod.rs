@@ -2,13 +2,11 @@ pub mod accessors;
 mod fields;
 mod identity_signed;
 #[cfg(feature = "json-conversion")]
-mod json_conversion;
 pub mod methods;
 mod state_transition_estimated_fee_validation;
 mod state_transition_like;
 mod v0;
 #[cfg(feature = "value-conversion")]
-mod value_conversion;
 mod version;
 
 #[cfg(feature = "json-conversion")]
@@ -169,13 +167,10 @@ mod test {
     use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
     use crate::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
     use crate::state_transition::traits::StateTransitionLike;
-    use crate::state_transition::{
-        StateTransitionOwned, StateTransitionType, StateTransitionValueConvert,
-    };
+    use crate::state_transition::{StateTransitionOwned, StateTransitionType};
     use crate::tests::fixtures::get_data_contract_fixture;
 
     use crate::version::LATEST_PLATFORM_VERSION;
-    use platform_value::Value;
 
     pub(crate) struct TestData {
         pub(crate) state_transition: DataContractCreateTransition,
@@ -185,25 +180,11 @@ mod test {
     pub(crate) fn get_test_data() -> TestData {
         let created_data_contract = get_data_contract_fixture(None, 0, 1);
 
-        let state_transition =
-            <DataContractCreateTransition as StateTransitionValueConvert>::from_object(
-                Value::from([
-                    (STATE_TRANSITION_PROTOCOL_VERSION, Value::U16(0)),
-                    (
-                        IDENTITY_NONCE,
-                        Value::U64(created_data_contract.identity_nonce()),
-                    ),
-                    (
-                        DATA_CONTRACT,
-                        created_data_contract
-                            .data_contract()
-                            .to_value(LATEST_PLATFORM_VERSION)
-                            .unwrap(),
-                    ),
-                ]),
-                LATEST_PLATFORM_VERSION,
-            )
-            .expect("state transition should be created without errors");
+        let state_transition = DataContractCreateTransition::try_from_platform_versioned(
+            created_data_contract.clone(),
+            LATEST_PLATFORM_VERSION,
+        )
+        .expect("state transition should be created without errors");
 
         TestData {
             created_data_contract,
@@ -273,48 +254,11 @@ mod test {
         assert!(!data.state_transition.is_identity_state_transition());
     }
 
-    #[test]
-    fn should_roundtrip_via_from_object() {
-        let data = get_test_data();
-
-        // Convert to object and back
-        let mut obj = StateTransitionValueConvert::to_object(&data.state_transition, false)
-            .expect("to_object should succeed");
-
-        // Add the protocol version field for from_object
-        obj.insert(STATE_TRANSITION_PROTOCOL_VERSION.to_string(), Value::U16(0))
-            .expect("insert should succeed");
-
-        let restored = <DataContractCreateTransition as StateTransitionValueConvert>::from_object(
-            obj,
-            LATEST_PLATFORM_VERSION,
-        )
-        .expect("from_object should succeed");
-
-        assert_eq!(data.state_transition, restored);
-    }
-
-    #[test]
-    fn should_roundtrip_via_from_value_map() {
-        let data = get_test_data();
-
-        let obj = StateTransitionValueConvert::to_object(&data.state_transition, false)
-            .expect("to_object should succeed");
-
-        let mut map = obj
-            .into_btree_string_map()
-            .expect("should convert to btree map");
-        map.insert(STATE_TRANSITION_PROTOCOL_VERSION.to_string(), Value::U16(0));
-
-        let restored =
-            <DataContractCreateTransition as StateTransitionValueConvert>::from_value_map(
-                map,
-                LATEST_PLATFORM_VERSION,
-            )
-            .expect("from_value_map should succeed");
-
-        assert_eq!(data.state_transition, restored);
-    }
+    // Legacy `StateTransitionValueConvert` round-trip tests deleted in
+    // Phase D step 9. The canonical `JsonConvertible` / `ValueConvertible`
+    // round-trip is exercised on the outer enum derive — the legacy
+    // round-trip via `to_object(false)` + `from_object(value, pv)` was
+    // testing methods that no longer exist.
 
     #[test]
     fn should_validate_estimated_fee_with_sufficient_balance() {
@@ -381,40 +325,9 @@ mod test {
         }
     }
 
-    #[test]
-    fn v0_should_roundtrip_via_from_object() {
-        let data = get_test_data();
-        match &data.state_transition {
-            DataContractCreateTransition::V0(v0) => {
-                let obj = v0.to_object(false).expect("to_object should succeed");
-
-                let restored =
-                    DataContractCreateTransitionV0::from_object(obj, LATEST_PLATFORM_VERSION)
-                        .expect("from_object should succeed");
-
-                assert_eq!(*v0, restored);
-            }
-        }
-    }
-
-    #[test]
-    fn v0_should_roundtrip_via_from_value_map() {
-        let data = get_test_data();
-        match &data.state_transition {
-            DataContractCreateTransition::V0(v0) => {
-                let obj = v0.to_object(false).expect("to_object should succeed");
-                let map = obj
-                    .into_btree_string_map()
-                    .expect("should convert to btree map");
-
-                let restored =
-                    DataContractCreateTransitionV0::from_value_map(map, LATEST_PLATFORM_VERSION)
-                        .expect("from_value_map should succeed");
-
-                assert_eq!(*v0, restored);
-            }
-        }
-    }
+    // V0 legacy round-trip tests deleted in Phase D step 9 — they were
+    // exercising deleted `StateTransitionValueConvert` methods. Outer-enum
+    // canonical round-trip in `json_convertible_tests` covers correctness.
 
     #[test]
     fn v0_should_create_from_created_data_contract() {

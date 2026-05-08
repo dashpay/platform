@@ -1,12 +1,10 @@
 mod identity_signed;
 #[cfg(feature = "json-conversion")]
-mod json_conversion;
 mod state_transition_like;
 mod types;
 mod v0_methods;
 mod v1_methods;
 #[cfg(feature = "value-conversion")]
-mod value_conversion;
 mod version;
 
 use crate::identity::KeyID;
@@ -21,6 +19,9 @@ use platform_value::{BinaryData, Identifier};
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
+// `#[json_safe_fields]` deferred — needs `BatchedTransition` (and its
+// sub-transitions) to implement `JsonSafeFields` first. Tracked as
+// follow-up for the BatchTransition family migration.
 #[derive(Debug, Clone, PartialEq, Encode, Decode, PlatformSignable)]
 #[cfg_attr(
     feature = "serde-conversion",

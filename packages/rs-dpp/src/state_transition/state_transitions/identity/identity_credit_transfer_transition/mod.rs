@@ -2,13 +2,11 @@ pub mod accessors;
 pub mod fields;
 mod identity_signed;
 #[cfg(feature = "json-conversion")]
-mod json_conversion;
 pub mod methods;
 mod state_transition_estimated_fee_validation;
 mod state_transition_like;
 pub mod v0;
 #[cfg(feature = "value-conversion")]
-mod value_conversion;
 mod version;
 
 #[cfg(feature = "json-conversion")]
@@ -107,10 +105,10 @@ mod test {
     use crate::state_transition::{
         StateTransitionEstimatedFeeValidation, StateTransitionHasUserFeeIncrease,
         StateTransitionIdentityEstimatedFeeValidation, StateTransitionLike, StateTransitionOwned,
-        StateTransitionSingleSigned, StateTransitionType, StateTransitionValueConvert,
+        StateTransitionSingleSigned, StateTransitionType,
     };
     use crate::version::LATEST_PLATFORM_VERSION;
-    use platform_value::{BinaryData, Identifier, Value};
+    use platform_value::{BinaryData, Identifier};
 
     fn make_transfer() -> IdentityCreditTransferTransition {
         IdentityCreditTransferTransition::V0(IdentityCreditTransferTransitionV0 {
@@ -212,77 +210,11 @@ mod test {
         assert!(bin_paths.is_empty());
     }
 
-    #[test]
-    fn test_value_conversion_roundtrip() {
-        let transition = make_transfer();
-        let obj = StateTransitionValueConvert::to_object(&transition, false)
-            .expect("to_object should work");
-        let restored =
-            <IdentityCreditTransferTransition as StateTransitionValueConvert>::from_object(
-                obj,
-                LATEST_PLATFORM_VERSION,
-            )
-            .expect("from_object should work");
-        assert_eq!(transition, restored);
-    }
-
-    #[test]
-    fn test_from_value_map_roundtrip() {
-        let transition = make_transfer();
-        let obj = StateTransitionValueConvert::to_object(&transition, false)
-            .expect("to_object should work");
-        let map = obj.into_btree_string_map().expect("should convert to map");
-        let restored =
-            <IdentityCreditTransferTransition as StateTransitionValueConvert>::from_value_map(
-                map,
-                LATEST_PLATFORM_VERSION,
-            )
-            .expect("from_value_map should work");
-        assert_eq!(transition, restored);
-    }
-
-    #[test]
-    fn test_to_cleaned_object() {
-        let transition = make_transfer();
-        let obj = StateTransitionValueConvert::to_cleaned_object(&transition, false)
-            .expect("should work");
-        assert!(obj.is_map());
-    }
-
-    #[test]
-    fn test_to_canonical_cleaned_object() {
-        let transition = make_transfer();
-        let obj = StateTransitionValueConvert::to_canonical_cleaned_object(&transition, false)
-            .expect("should work");
-        assert!(obj.is_map());
-    }
-
-    #[test]
-    fn test_to_object_skip_signature() {
-        let transition = make_transfer();
-        let obj = StateTransitionValueConvert::to_object(&transition, true).expect("should work");
-        let map = obj.into_btree_string_map().expect("should be a map");
-        assert!(!map.contains_key("signature"));
-    }
-
-    #[test]
-    fn test_clean_value_unknown_version() {
-        let mut value = Value::from([("$stateTransitionProtocolVersion", Value::U8(255))]);
-        let result = <IdentityCreditTransferTransition as StateTransitionValueConvert>::clean_value(
-            &mut value,
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_from_object_unknown_version() {
-        let value = Value::from([("$stateTransitionProtocolVersion", Value::U16(255))]);
-        let result = <IdentityCreditTransferTransition as StateTransitionValueConvert>::from_object(
-            value,
-            LATEST_PLATFORM_VERSION,
-        );
-        assert!(result.is_err());
-    }
+    // Legacy `StateTransitionValueConvert` round-trip and
+    // unknown-version tests deleted in Phase D step 9. The canonical
+    // `JsonConvertible` / `ValueConvertible` round-trip is exercised on
+    // the outer enum derive (see `json_convertible_tests` below) — these
+    // tested methods that no longer exist.
 
     #[test]
     fn test_estimated_fee_validation_sufficient() {

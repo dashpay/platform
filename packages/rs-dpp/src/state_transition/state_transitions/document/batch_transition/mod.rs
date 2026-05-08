@@ -40,7 +40,6 @@ pub mod batched_transition;
 pub mod fields;
 mod identity_signed;
 #[cfg(feature = "json-conversion")]
-mod json_conversion;
 pub mod methods;
 pub mod resolvers;
 mod state_transition_estimated_fee_validation;
@@ -50,7 +49,6 @@ mod v1;
 #[cfg(feature = "validation")]
 mod validation;
 #[cfg(feature = "value-conversion")]
-mod value_conversion;
 mod version;
 
 use crate::state_transition::data_contract_update_transition::{

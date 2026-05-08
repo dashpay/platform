@@ -15,7 +15,9 @@ use dpp::state_transition::{
     StateTransitionIdentitySigned, StateTransitionOwned, StateTransitionSingleSigned,
 };
 
-use dpp::state_transition::{StateTransition, StateTransitionValueConvert};
+use dpp::serialization::ValueConvertible;
+use dpp::state_transition::StateTransition;
+use dpp::state_transition::StateTransitionFieldTypes;
 use dpp::version::PlatformVersion;
 use dpp::{state_transition::StateTransitionLike, ProtocolError};
 use serde::Serialize;
@@ -47,14 +49,24 @@ impl From<DataContractCreateTransitionWasm> for DataContractCreateTransition {
 impl DataContractCreateTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(value: JsValue) -> Result<DataContractCreateTransitionWasm, JsValue> {
-        let platform_value = PlatformVersion::first();
-
-        DataContractCreateTransition::from_object(
-            value.with_serde_to_platform_value()?,
-            platform_value,
-        )
-        .map(Into::into)
-        .with_js_error()
+        let mut raw = value.with_serde_to_platform_value()?;
+        // Canonical `ValueConvertible::from_object` dispatches by the enum's
+        // `$formatVersion` serde tag; legacy JS clients send the value
+        // un-tagged, so insert the tag for the only supported V0 variant.
+        if let dpp::platform_value::Value::Map(ref mut entries) = raw {
+            let has_tag = entries.iter().any(|(k, _)| {
+                matches!(k, dpp::platform_value::Value::Text(s) if s == "$formatVersion")
+            });
+            if !has_tag {
+                entries.push((
+                    dpp::platform_value::Value::Text("$formatVersion".to_string()),
+                    dpp::platform_value::Value::Text("0".to_string()),
+                ));
+            }
+        }
+        DataContractCreateTransition::from_object(raw)
+            .map(Into::into)
+            .with_js_error()
     }
 
     #[wasm_bindgen(js_name=getDataContract)]
@@ -187,10 +199,17 @@ impl DataContractCreateTransitionWasm {
 
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self, skip_signature: Option<bool>) -> Result<JsValue, JsValue> {
-        let serde_object = self
-            .0
-            .to_cleaned_object(skip_signature.unwrap_or(false))
-            .map_err(from_protocol_error)?;
+        let mut serde_object = self.0.to_object().map_err(from_protocol_error)?;
+
+        if skip_signature.unwrap_or(false) {
+            for path in
+                <DataContractCreateTransition as StateTransitionFieldTypes>::signature_property_paths()
+            {
+                serde_object
+                    .remove_values_matching_path(path)
+                    .map_err(|e| from_protocol_error(dpp::ProtocolError::ValueError(e)))?;
+            }
+        }
 
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
 
