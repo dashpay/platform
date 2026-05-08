@@ -6,6 +6,7 @@
 //! TEST_SPEC.md priorities (P1, P2, ID-, DP-, DPNS-, TK-, …) follow
 //! in subsequent PRs.
 
+pub mod cr_001_spv_mn_list_sync_readiness;
 pub mod cr_003_asset_lock_funded_registration;
 pub mod cr_004_legacy_bip32_utxo_update_after_spend;
 pub mod dpns_001_register_name;

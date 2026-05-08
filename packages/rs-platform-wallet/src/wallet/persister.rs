@@ -6,6 +6,9 @@
 
 use std::sync::Arc;
 
+use dashcore::Txid;
+use key_wallet::managed_account::transaction_record::TransactionRecord;
+
 use crate::changeset::{
     ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
@@ -37,6 +40,17 @@ impl WalletPersister {
 
     pub(crate) fn load(&self) -> Result<ClientStartState, PersistenceError> {
         self.inner.load()
+    }
+
+    /// Look up a single core transaction record by `txid`. Used by the
+    /// asset-lock proof flow to recover chainlocked records that the
+    /// in-memory map evicted (see
+    /// [`PlatformWalletPersistence::get_core_tx_record`]).
+    pub(crate) fn get_core_tx_record(
+        &self,
+        txid: &Txid,
+    ) -> Result<Option<TransactionRecord>, PersistenceError> {
+        self.inner.get_core_tx_record(self.wallet_id, txid)
     }
 }
 

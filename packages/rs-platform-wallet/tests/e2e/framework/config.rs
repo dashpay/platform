@@ -52,14 +52,13 @@ pub mod vars {
     /// that don't need Core duffs; any positive integer overrides the
     /// timeout (in seconds).
     pub const BANK_CORE_GATE: &str = "PLATFORM_WALLET_E2E_BANK_CORE_GATE";
-    /// Operator escape hatch: skip starting the SPV runtime and the
-    /// `wait_for_mn_list_synced` gate. Truthy values (`1` / `true` /
-    /// `yes` / `on`, case-insensitive) opt in. When set, Core-dependent
-    /// tests (CR-003 funded-asset-lock path, ID-007 Core-balance gates,
-    /// any helper that walks Core blocks) WILL fail; Platform-only
-    /// flows still run. Use this to keep the suite making progress when
-    /// testnet is in a ChainLock-cycle window that prevents mn-list
-    /// from advancing (rust-dashcore #470).
+    /// Operator escape hatch for SPV-gated cases (CR-001, anything
+    /// asserting on `SpvRuntime` post-conditions). When truthy
+    /// (`1` / `true` / `yes` / `on`, case-insensitive), the case body
+    /// skips with an informative log. The harness itself does NOT
+    /// read this flag — `E2eContext::build` always starts SPV; the
+    /// gate is consumed test-side via [`super::spv_disabled_from_env`].
+    /// See `TEST_SPEC.md` CR-001 for the SPEC-level reference.
     pub const DISABLE_SPV: &str = "PLATFORM_WALLET_E2E_DISABLE_SPV";
     /// Opt-in switch for FAILING-by-design tests that would otherwise
     /// pollute a `cargo test -- --ignored` run with their pinned
@@ -397,6 +396,34 @@ pub(crate) fn parse_truthy(raw: Option<&str>) -> bool {
         || trimmed.eq_ignore_ascii_case("on")
 }
 
+/// Returns `true` when [`vars::DISABLE_SPV`] is set to a truthy value
+/// (`1` / `true` / `yes` / `on`, case-insensitive, surrounding
+/// whitespace ignored). Any other value — including unset, empty, or
+/// unrecognised — returns `false`.
+///
+/// SPV-gated cases (e.g. CR-001) call this at the top of the test body
+/// and `return` early when it reports `true`, so the operator can opt
+/// out of SPV-only assertions without burning the cold-cache timeout.
+/// The harness itself never reads the flag: `E2eContext::build` always
+/// starts SPV.
+pub fn spv_disabled_from_env() -> bool {
+    is_truthy_env(vars::DISABLE_SPV)
+}
+
+/// Truthy-env helper shared by SPV-style boolean flags. Reads `key`
+/// from the process environment and returns `true` for `1` / `true` /
+/// `yes` / `on` (case-insensitive, trimmed); everything else — unset,
+/// empty, or unrecognised — returns `false`.
+fn is_truthy_env(key: &str) -> bool {
+    matches!(
+        std::env::var(key).ok().as_deref().map(str::trim),
+        Some(v) if v == "1"
+            || v.eq_ignore_ascii_case("true")
+            || v.eq_ignore_ascii_case("yes")
+            || v.eq_ignore_ascii_case("on")
+    )
+}
+
 /// Parse a network string supporting the canonical dashcore names
 /// plus the test-harness `local` alias for regtest and an empty
 /// shorthand for testnet. Used only at [`Config`] construction;
@@ -471,5 +498,39 @@ mod tests {
         let (timeout, src) = parse_bank_core_gate(Some("-1"));
         assert_eq!(timeout, Some(DEFAULT_BANK_CORE_GATE_TIMEOUT));
         assert_eq!(src, BankCoreGateSource::EnvInvalidFallback);
+    }
+
+    /// Process-wide env-var flag used to exercise [`is_truthy_env`].
+    /// Distinct from any production var so cargo-test parallelism with
+    /// the `from_env` callers can never collide. The truthy/falsy
+    /// matrix is exercised in a single test so the two halves don't
+    /// race over the same key under parallel cargo-test execution.
+    const TRUTHY_PROBE_VAR: &str = "PLATFORM_WALLET_E2E_TEST_TRUTHY_PROBE";
+
+    #[test]
+    fn is_truthy_env_matrix() {
+        // SAFETY: single-threaded — the probe key is unique to this
+        // test, so no parallel test can mutate it underneath us.
+        std::env::remove_var(TRUTHY_PROBE_VAR);
+        assert!(!is_truthy_env(TRUTHY_PROBE_VAR), "unset must be falsy");
+
+        for raw in [
+            "1", "true", "TRUE", "True", "yes", "Yes", "YES", "on", "ON", " on ", "  1\t",
+        ] {
+            std::env::set_var(TRUTHY_PROBE_VAR, raw);
+            assert!(
+                is_truthy_env(TRUTHY_PROBE_VAR),
+                "{raw:?} should be recognised as truthy"
+            );
+        }
+
+        for raw in ["", " ", "0", "false", "no", "off", "disabled", "abc"] {
+            std::env::set_var(TRUTHY_PROBE_VAR, raw);
+            assert!(
+                !is_truthy_env(TRUTHY_PROBE_VAR),
+                "{raw:?} must NOT be recognised as truthy"
+            );
+        }
+        std::env::remove_var(TRUTHY_PROBE_VAR);
     }
 }
