@@ -981,6 +981,168 @@ mod tests {
                 )] if e.additional_message() == "document type can not change the security level requirement for its updates: changing from MASTER to CRITICAL"
             );
         }
+
+        #[test]
+        fn should_return_invalid_result_when_documents_countable_is_changed() {
+            let platform_version = PlatformVersion::latest();
+            let data_contract_id = Identifier::random();
+            let document_type_name = "test";
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "test": {
+                        "type": "string",
+                        "position": 0,
+                    }
+                },
+                "documentsCountable": true,
+                "additionalProperties": false,
+            });
+
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
+            let old_document_type = DocumentType::try_from_schema(
+                data_contract_id,
+                1,
+                config.version(),
+                document_type_name,
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create old document type");
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "test": {
+                        "type": "string",
+                        "position": 0,
+                    }
+                },
+                "documentsCountable": false,
+                "additionalProperties": false,
+            });
+
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
+            let new_document_type = DocumentType::try_from_schema(
+                data_contract_id,
+                1,
+                config.version(),
+                document_type_name,
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create new document type");
+
+            let result = old_document_type
+                .as_ref()
+                .validate_config(new_document_type.as_ref());
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(
+                    StateError::DocumentTypeUpdateError(e)
+                )] if e.additional_message() == "document type can not change whether its documents are countable: changing from true to false"
+            );
+        }
+
+        #[test]
+        fn should_return_invalid_result_when_range_countable_is_changed() {
+            // documents_countable must remain equal across old/new so that
+            // validate_config reaches the range_countable check below it.
+            // Setting documentsCountable: true on both keeps the
+            // documents_countable() getter true regardless of range_countable.
+            let platform_version = PlatformVersion::latest();
+            let data_contract_id = Identifier::random();
+            let document_type_name = "test";
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "test": {
+                        "type": "string",
+                        "position": 0,
+                    }
+                },
+                "documentsCountable": true,
+                "rangeCountable": false,
+                "additionalProperties": false,
+            });
+
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
+            let old_document_type = DocumentType::try_from_schema(
+                data_contract_id,
+                1,
+                config.version(),
+                document_type_name,
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create old document type");
+
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "test": {
+                        "type": "string",
+                        "position": 0,
+                    }
+                },
+                "documentsCountable": true,
+                "rangeCountable": true,
+                "additionalProperties": false,
+            });
+
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
+            let new_document_type = DocumentType::try_from_schema(
+                data_contract_id,
+                1,
+                config.version(),
+                document_type_name,
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create new document type");
+
+            let result = old_document_type
+                .as_ref()
+                .validate_config(new_document_type.as_ref());
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(
+                    StateError::DocumentTypeUpdateError(e)
+                )] if e.additional_message() == "document type can not change whether it is range countable: changing from false to true"
+            );
+        }
     }
 
     mod validate_schema {
