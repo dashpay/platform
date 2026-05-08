@@ -294,11 +294,12 @@ impl<'a> DriveDocumentCountQuery<'a> {
     ///
     /// Visits the index property at `prop_idx`. If a matching where clause is
     /// found:
-    ///   - `Equal`  → extend the current path with `(prop_name, value)` and recurse.
-    ///   - `In`     → for each value in the clause's array, clone the path,
-    ///                extend with that value, recurse, and sum the per-branch
-    ///                counts. This is the cartesian fork.
-    ///   - anything else → unreachable; the index picker rejects the query.
+    /// - `Equal` → extend the current path with `(prop_name, value)` and recurse.
+    /// - `In` → for each value in the clause's array, clone the path, extend
+    ///   with that value, recurse, and sum the per-branch counts. This is the
+    ///   cartesian fork.
+    /// - anything else → unreachable; the index picker rejects the query.
+    ///
     /// If no clause matches the current property, hand off to
     /// [`Self::count_recursive`] which sums all sub-counts at the remaining
     /// levels.
@@ -1104,21 +1105,21 @@ mod tests {
         };
 
         assert!(!DriveDocumentCountQuery::has_unsupported_operator(&[]));
-        assert!(!DriveDocumentCountQuery::has_unsupported_operator(&[
-            eq_clause.clone()
-        ]));
-        assert!(!DriveDocumentCountQuery::has_unsupported_operator(&[
-            in_clause.clone()
-        ]));
+        assert!(!DriveDocumentCountQuery::has_unsupported_operator(
+            std::slice::from_ref(&eq_clause)
+        ));
+        assert!(!DriveDocumentCountQuery::has_unsupported_operator(
+            std::slice::from_ref(&in_clause)
+        ));
         assert!(!DriveDocumentCountQuery::has_unsupported_operator(&[
             eq_clause.clone(),
-            in_clause.clone()
+            in_clause.clone(),
         ]));
+        assert!(DriveDocumentCountQuery::has_unsupported_operator(
+            std::slice::from_ref(&gt_clause)
+        ));
         assert!(DriveDocumentCountQuery::has_unsupported_operator(&[
-            gt_clause.clone()
-        ]));
-        assert!(DriveDocumentCountQuery::has_unsupported_operator(&[
-            eq_clause, gt_clause
+            eq_clause, gt_clause,
         ]));
     }
 
@@ -1151,13 +1152,13 @@ mod tests {
         assert!(
             DriveDocumentCountQuery::find_countable_index_for_where_clauses(
                 document_type.indexes(),
-                &[gt_clause.clone()],
+                std::slice::from_ref(&gt_clause),
             )
             .is_none()
         );
         assert!(DriveDocumentCountQuery::find_countable_index_for_split(
             document_type.indexes(),
-            &[gt_clause],
+            std::slice::from_ref(&gt_clause),
             "firstName",
         )
         .is_none());

@@ -36,8 +36,8 @@ async fn test_mock_fetch_document_split_counts_returns_expected() {
         .expect("split counts should be present");
 
     assert_eq!(retrieved, expected);
-    assert_eq!(retrieved.0.get(&b"alice".to_vec()), Some(&3u64));
-    assert_eq!(retrieved.0.get(&b"bob".to_vec()), Some(&11u64));
+    assert_eq!(retrieved.0.get(b"alice".as_slice()), Some(&3u64));
+    assert_eq!(retrieved.0.get(b"bob".as_slice()), Some(&11u64));
 }
 
 #[tokio::test]
