@@ -268,6 +268,13 @@ impl BankWallet {
                  token tests may exhaust funds mid-run. \
                  Top up the Platform address to continue token testing."
             );
+        } else {
+            tracing::info!(
+                target: "platform_wallet::e2e::bank",
+                balance = total,
+                floor = EXPECTED_TOKEN_SUITE_FLOOR,
+                "bank floor satisfied"
+            );
         }
 
         tracing::info!(
