@@ -510,10 +510,15 @@ fn select_inputs_deduct_from_input(
 
     if residue_to_fee_target > 0 {
         let new_consumed = fee_target_consumed.saturating_add(residue_to_fee_target);
+        // Unreachable given Phase 3's headroom check; debug_assert surfaces a
+        // logic regression in test runs, the runtime Err keeps release safe.
+        debug_assert!(
+            new_consumed <= fee_target_max,
+            "fee target consumption {} exceeds max {} after residue fold",
+            new_consumed,
+            fee_target_max,
+        );
         if new_consumed > fee_target_max {
-            // Should be unreachable given Phase 3's headroom check, but
-            // guarded explicitly: silently shipping an invalid transition
-            // would be worse than a loud error here.
             return Err(PlatformWalletError::AddressOperation(format!(
                 "Cannot satisfy fee headroom after redistributing sub-minimum tail \
                  inputs: fee-target {} would consume {} (balance {}, max {}), leaving \
@@ -530,13 +535,18 @@ fn select_inputs_deduct_from_input(
 
     selected.insert(fee_target_addr, fee_target_consumed);
 
-    // Defensive post-check: production trusts the protocol-side
-    // `validate_structure` for the full audit, but a malformed Σ here would
-    // ship a guaranteed-rejected transition. Cheap enough to verify.
+    // Defensive post-checks: a malformed Σ or misaligned fee target would ship
+    // a guaranteed-rejected transition. debug_assert surfaces the regression in
+    // test runs; runtime Err keeps release builds safe.
     debug_assert_eq!(
         selected.values().copied().sum::<Credits>(),
         total_output,
         "Σ inputs must equal Σ outputs"
+    );
+    debug_assert_eq!(
+        selected.keys().next().copied(),
+        Some(fee_target_addr),
+        "fee target must be the BTreeMap index-0 (lex-smallest) entry",
     );
     if selected.keys().next().copied() != Some(fee_target_addr) {
         return Err(PlatformWalletError::AddressOperation(format!(
@@ -546,6 +556,10 @@ fn select_inputs_deduct_from_input(
             selected.keys().next().map(format_address),
         )));
     }
+    debug_assert!(
+        fee_target_balance.saturating_sub(fee_target_consumed) >= estimated_fee,
+        "fee target must retain ≥ estimated_fee for DeductFromInput(0)",
+    );
     if fee_target_balance.saturating_sub(fee_target_consumed) < estimated_fee {
         return Err(PlatformWalletError::AddressOperation(format!(
             "Internal selection error: fee target {} retains {} after consumption, \
