@@ -12,8 +12,9 @@
 //! - [`manager`] — top-level [`PlatformWalletManager`] (wallet
 //!   lifecycle, SPV start/stop, accessors).
 //! - [`wallet`] — the [`PlatformWallet`] aggregate plus the
-//!   sub-wallets that make it up: `core`, `identity`, `platform_addresses`,
-//!   `tokens`, `asset_lock`, and the optional `shielded` pool.
+//!   sub-wallets that make it up: `core`, `identity`, `platform_addresses`
+//!   (reached via [`PlatformWallet::platform`]), `tokens`, `asset_lock`,
+//!   and the optional `shielded` pool.
 //! - [`changeset`] — delta types persisted on every mutation; the apply
 //!   path replays them to rebuild in-memory state on startup.
 //! - [`broadcaster`] — pluggable [`TransactionBroadcaster`](broadcaster::TransactionBroadcaster)

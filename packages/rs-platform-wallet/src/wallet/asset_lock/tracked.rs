@@ -46,7 +46,7 @@ pub struct TrackedAssetLock {
     /// top-up of an existing identity (drives the derivation path the
     /// signer uses to redeem it).
     pub funding_type: AssetLockFundingType,
-    /// HD identity index this lock targets (BIP-9 inner key).
+    /// HD identity index this lock targets (DIP-9 inner key).
     pub identity_index: u32,
     /// Locked amount, in duffs.
     pub amount: u64,
