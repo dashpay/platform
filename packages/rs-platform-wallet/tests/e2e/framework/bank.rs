@@ -155,6 +155,10 @@ pub struct BankWallet {
     seed_bytes: [u8; 64],
     /// Cached for under-funded panic messages and log breadcrumbs.
     primary_receive_address: PlatformAddress,
+    /// `true` when the bank's Platform balance meets the token-suite
+    /// floor (`EXPECTED_TOKEN_SUITE_FLOOR`). Token tests check this at
+    /// startup and skip cleanly when `false` (QA-V26-003).
+    pub bank_floor_satisfied: bool,
 }
 
 impl std::fmt::Debug for BankWallet {
@@ -244,7 +248,8 @@ impl BankWallet {
                 required = config.min_bank_credits / 1_000_000,
             );
         }
-        if total < EXPECTED_TOKEN_SUITE_FLOOR {
+        let bank_floor_satisfied = total >= EXPECTED_TOKEN_SUITE_FLOOR;
+        if !bank_floor_satisfied {
             let address_bech32m = primary_receive_address.to_bech32m_string(network);
             tracing::warn!(
                 target: "platform_wallet::e2e::bank",
@@ -270,6 +275,7 @@ impl BankWallet {
             signer,
             seed_bytes,
             primary_receive_address,
+            bank_floor_satisfied,
         })
     }
 
@@ -303,6 +309,12 @@ impl BankWallet {
     /// Network the bank is operating against.
     pub fn network(&self) -> Network {
         self.wallet.sdk().network
+    }
+
+    /// `true` when the bank's Platform balance met the token-suite
+    /// floor at init time. Token tests skip cleanly when `false`.
+    pub fn bank_floor_satisfied(&self) -> bool {
+        self.bank_floor_satisfied
     }
 
     /// Fund `target` with `credits` from the bank's primary

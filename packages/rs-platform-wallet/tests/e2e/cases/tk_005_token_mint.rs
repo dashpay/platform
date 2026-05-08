@@ -46,6 +46,15 @@ async fn tk_005_token_mint() {
         .try_init();
 
     let ctx = E2eContext::init().await.expect("e2e ctx init");
+    if !ctx.bank_floor_satisfied() {
+        eprintln!(
+            "Skipping tk_005: bank Platform balance below 50B floor; refill {} to run token suite",
+            ctx.bank()
+                .primary_receive_address()
+                .to_bech32m_string(ctx.bank().network())
+        );
+        return;
+    }
     let setup = setup_with_token_contract(ctx, DEFAULT_TK_FUNDING)
         .await
         .expect("setup_with_token_contract");

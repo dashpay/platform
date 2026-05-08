@@ -32,6 +32,15 @@ async fn tk_005b_token_mint_to_other() {
         .try_init();
 
     let ctx = E2eContext::init().await.expect("e2e ctx init");
+    if !ctx.bank_floor_satisfied() {
+        eprintln!(
+            "Skipping tk_005b: bank Platform balance below 50B floor; refill {} to run token suite",
+            ctx.bank()
+                .primary_receive_address()
+                .to_bech32m_string(ctx.bank().network())
+        );
+        return;
+    }
     let two = setup_with_token_and_two_identities(ctx, DEFAULT_TK_FUNDING)
         .await
         .expect("setup_with_token_and_two_identities");

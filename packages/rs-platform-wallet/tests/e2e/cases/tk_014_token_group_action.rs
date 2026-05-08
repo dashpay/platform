@@ -73,6 +73,17 @@ async fn tk_014_token_group_action_mint_co_sign() {
         .with_test_writer()
         .try_init();
 
+    {
+        let floor_ctx = E2eContext::init().await.expect("init e2e context");
+        if !floor_ctx.bank_floor_satisfied() {
+            eprintln!(
+                "Skipping tk_014: bank Platform balance below 50B floor; refill {} to run token suite",
+                floor_ctx.bank().primary_receive_address().to_bech32m_string(floor_ctx.bank().network())
+            );
+            return;
+        }
+    }
+
     // Register three identities only — TK-014 needs a group-gated
     // contract that the framework's `setup_with_token_and_three_identities`
     // helper does not yet support, so we skip the helper's

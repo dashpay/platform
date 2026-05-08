@@ -63,6 +63,15 @@ async fn tk_001c_token_transfer_after_key_rotation() {
         .try_init();
 
     let ctx = E2eContext::init().await.expect("init e2e context");
+    if !ctx.bank_floor_satisfied() {
+        eprintln!(
+            "Skipping tk_001c: bank Platform balance below 50B floor; refill {} to run token suite",
+            ctx.bank()
+                .primary_receive_address()
+                .to_bech32m_string(ctx.bank().network())
+        );
+        return;
+    }
 
     let mut two = setup_with_token_and_two_identities(ctx, DEFAULT_TK_FUNDING)
         .await

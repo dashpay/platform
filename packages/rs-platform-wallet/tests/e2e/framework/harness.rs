@@ -234,6 +234,13 @@ impl E2eContext {
         &self.wait_hub
     }
 
+    /// `true` when the bank's Platform balance met the token-suite floor
+    /// (~50B credits) at init time. Token tests check this at startup and
+    /// skip cleanly when `false` (QA-V26-003).
+    pub fn bank_floor_satisfied(&self) -> bool {
+        self.bank.bank_floor_satisfied()
+    }
+
     async fn build() -> FrameworkResult<E2eContext> {
         // Install the panic hook before doing anything that can
         // panic — it's a no-op on subsequent calls. See
