@@ -1,36 +1,13 @@
 //! CR-004 — Legacy BIP32 account: balance + UTXO state updates after spend.
 //!
 //! Spec: `tests/e2e/TEST_SPEC.md` (### Core (CR) → CR-004).
-//! Pinned status: FAILING-by-design — the canonical contract for the
-//! post-broadcast UTXO mutation on `standard_bip32_accounts` is asserted
-//! end-to-end. Mirrors the bug surfaced by
+//! Status: ignored, env-gated via `PLATFORM_WALLET_E2E_RUN_FAILING_BY_DESIGN`.
+//! Pins the post-broadcast UTXO-mutation contract on
+//! `standard_bip32_accounts` against
 //! [dashpay/dash-evo-tool#845](https://github.com/dashpay/dash-evo-tool/issues/845):
-//! after a "send all" spend on the legacy BIP32 account, the wallet's
-//! local UTXO set is left stale and a follow-up
-//! [`CoreWallet::send_to_addresses`] fails with a coin-selection error
-//! ("No UTXOs available for selection") instead of a clean
-//! insufficient-funds path.
-//!
-//! Why FAILING-by-design and not WIRED:
-//! 1. The bug ships from a downstream consumer (DET v0.9.x). The test
-//!    pins the rs-platform-wallet contract so a future routing
-//!    regression in `key_wallet::ManagedWalletInfo::check_core_transaction`
-//!    that drops `StandardBIP32` from the standard-tx routing table is
-//!    caught here, not in dash-evo-tool's issue tracker.
-//! 2. The production fix lives behind the `wallet/core/broadcast.rs:185`
-//!    `check_core_transaction(Mempool, ...)` call site (now annotated with
-//!    a `TODO(CR-004)` breadcrumb). The downstream router currently DOES
-//!    iterate BIP32 (see `key_wallet::transaction_checking::transaction_router`
-//!    at the pinned revision — `StandardBIP32` is in
-//!    `get_relevant_account_types(TransactionType::Standard)`), but the
-//!    test exercises the contract end-to-end so any silent regression is
-//!    visible the moment a CI run flips status.
-//! 3. The harness does NOT yet expose
-//!    `CoreWallet::next_receive_address_for_bip32_account` (the BIP-44
-//!    sibling on `wallet/core/wallet.rs:59` has no BIP-32 counterpart);
-//!    the helper this test reaches for is implemented INLINE here. When
-//!    a parallel branch lifts that into the public surface, the inline
-//!    helper collapses to a one-line call.
+//! a "send all" on the legacy BIP32 account must drain the local UTXO
+//! set so a follow-up `send_to_addresses` fails cleanly on empty inputs
+//! rather than reselecting phantom UTXOs.
 
 use std::time::Duration;
 
@@ -110,11 +87,9 @@ async fn cr_004_legacy_bip32_utxo_update_after_spend() {
         .await
         .expect("setup (CR-004 — fresh-seeded test wallet with default account set)");
 
-    // Step 2: derive the legacy BIP32 account 0 receive address INLINE.
-    // `CoreWallet` has no `next_receive_address_for_bip32_account` helper
-    // today (see module docstring); we mirror the BIP-44 helper's shape
-    // (`packages/rs-platform-wallet/src/wallet/core/wallet.rs:59`) directly
-    // against `standard_bip32_accounts`.
+    // Step 2: derive the legacy BIP32 account 0 receive address inline.
+    // `CoreWallet` has no `next_receive_address_for_bip32_account` helper;
+    // mirror the BIP-44 sibling shape against `standard_bip32_accounts`.
     let bip32_recv_1 = next_receive_address_for_bip32_account(&s.test_wallet, 0)
         .await
         .expect("derive legacy BIP32 receive address (slot 1)");
@@ -219,12 +194,7 @@ async fn cr_004_legacy_bip32_utxo_update_after_spend() {
             vec![(sink.clone(), send_all)],
         )
         .await
-        .expect(
-            "send_to_addresses(BIP32Account, 0, send_all) — the legacy \
-             BIP32 broadcast path must succeed; failure here means the \
-             broadcast itself is broken, not the post-broadcast state \
-             update CR-004 actually pins.",
-        );
+        .expect("send_to_addresses(BIP32Account, 0, send_all) failed — broadcast path is broken");
     tracing::info!(
         target: "platform_wallet::e2e::cases::cr_004",
         txid = %tx.txid(),
@@ -254,18 +224,8 @@ async fn cr_004_legacy_bip32_utxo_update_after_spend() {
     );
     assert_eq!(
         bip32_count_post, 0,
-        "POST-pin violated (dash-evo-tool#845): legacy BIP-32 account \
-         0 has {bip32_count_post} spendable UTXOs after a `send_to_addresses` \
-         broadcast that consumed both inputs. The post-broadcast \
-         `check_core_transaction(Mempool, ...)` call at \
-         `wallet/core/broadcast.rs:185` must have marked the consumed \
-         UTXOs spent on `standard_bip32_accounts[0]`. If this fires, \
-         either (a) the routing in \
-         `key_wallet::transaction_checking::transaction_router::TransactionRouter::get_relevant_account_types(TransactionType::Standard)` \
-         dropped `StandardBIP32` (regression — the legacy DET 0.9.x \
-         path), or (b) the post-broadcast hook is being invoked but \
-         the `account_type_match` for BIP-32 has lost its mark-spent \
-         side effect."
+        "BIP-32 account 0 has {bip32_count_post} spendable UTXOs after send-all \
+         (dash-evo-tool#845 regression)"
     );
 
     // Step 7: re-attempt a Core transfer on the now-drained legacy
@@ -294,12 +254,7 @@ async fn cr_004_legacy_bip32_utxo_update_after_spend() {
                     || msg.to_lowercase().contains("no spendable")
                     || msg.to_lowercase().contains("coin selection")
                     || msg.to_lowercase().contains("insufficient"),
-                "POST-pin violated: second send_to_addresses on a drained \
-                 legacy BIP-32 account failed with TransactionBuild but \
-                 the message does NOT identify the empty-input cause: \
-                 {msg:?}. The contract requires a clean \
-                 'no spendable inputs' / 'insufficient' / coin-selection \
-                 message."
+                "TransactionBuild error does not name the empty-input cause: {msg:?}"
             );
             tracing::info!(
                 target: "platform_wallet::e2e::cases::cr_004",
@@ -308,21 +263,11 @@ async fn cr_004_legacy_bip32_utxo_update_after_spend() {
             );
         }
         Err(other) => {
-            panic!(
-                "POST-pin violated: second send_to_addresses on a drained \
-                 legacy BIP-32 account failed with {other:?} — expected \
-                 PlatformWalletError::TransactionBuild naming the empty \
-                 input set."
-            );
+            panic!("expected TransactionBuild on drained BIP-32 account, got {other:?}");
         }
         Ok(tx) => {
             panic!(
-                "POST-pin violated (dash-evo-tool#845): second \
-                 send_to_addresses on a drained legacy BIP-32 account \
-                 RETURNED Ok with txid {} — the wallet selected phantom \
-                 UTXOs that the post-broadcast hook should have marked \
-                 spent. This is the exact buggy path the upstream issue \
-                 reports.",
+                "drained BIP-32 account selected phantom UTXOs (dash-evo-tool#845): txid={}",
                 tx.txid()
             );
         }
@@ -344,8 +289,8 @@ async fn cr_004_legacy_bip32_utxo_update_after_spend() {
 }
 
 // ---------------------------------------------------------------------------
-// Inline helpers (lift to `framework/` when CR-004 graduates from
-// FAILING-by-design — see module docstring point 3).
+// Inline helpers — lift to `framework/` once a stable BIP-32 receive-address
+// derivation point lands on `CoreWallet`.
 // ---------------------------------------------------------------------------
 
 /// Derive the next unused receive address on the wallet's legacy BIP-32

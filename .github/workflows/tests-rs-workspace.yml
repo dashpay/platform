@@ -21,6 +21,53 @@ jobs:
         with:
           clean: false
 
+      - name: Free runner disk space
+        run: |
+          set -eo pipefail
+
+          echo "Disk before cleanup:"
+          df -h / "$GITHUB_WORKSPACE" "$RUNNER_TEMP" "${TMPDIR:-/tmp}" || true
+
+          RUNNER_ROOT=$(cd "$GITHUB_WORKSPACE/../../.." && pwd)
+          echo "Runner root: $RUNNER_ROOT"
+
+          if [ -d "$RUNNER_ROOT/_diag" ]; then
+            echo "Runner diagnostics before cleanup:"
+            du -sh "$RUNNER_ROOT/_diag" || true
+
+            find "$RUNNER_ROOT/_diag" -type f \( -name '*.log' -o -name '*.trace' \) -mtime +7 -print -exec rm -f {} + || true
+            find "$RUNNER_ROOT/_diag/blocks" "$RUNNER_ROOT/_diag/pages" -type f -mtime +2 -print -exec rm -f {} + 2>/dev/null || true
+
+            echo "Runner diagnostics after cleanup:"
+            du -sh "$RUNNER_ROOT/_diag" || true
+          fi
+
+          for dir in "$RUNNER_ROOT/_work/_temp" "${TMPDIR:-}"; do
+            if [ -n "$dir" ] && [ -d "$dir" ]; then
+              echo "Cleaning stale temp files in $dir"
+              find "$dir" -mindepth 1 -mtime +1 -print -exec rm -rf {} + 2>/dev/null || true
+            fi
+          done
+
+          for dir in target/llvm-cov-target target/nextest; do
+            if [ -d "$dir" ]; then
+              echo "Removing stale Rust test artifact cache: $dir"
+              du -sh "$dir" || true
+              rm -rf "$dir"
+            fi
+          done
+
+          AVAILABLE_KB=$(df -Pk "$GITHUB_WORKSPACE" | awk 'NR==2 {print $4}')
+          MIN_FREE_KB=$((80 * 1024 * 1024))
+          echo "Available workspace space: ${AVAILABLE_KB}KB"
+          if [ "${AVAILABLE_KB:-0}" -lt "$MIN_FREE_KB" ]; then
+            echo "Less than 80GB available; cleaning Rust target cache"
+            cargo clean || rm -rf target
+          fi
+
+          echo "Disk after cleanup:"
+          df -h / "$GITHUB_WORKSPACE" "$RUNNER_TEMP" "${TMPDIR:-/tmp}" || true
+
       - name: Clean target if too large
         run: |
           SIZE=$(du -sm target 2>/dev/null | cut -f1 || true)
@@ -205,7 +252,7 @@ jobs:
 
       - name: Upload coverage
         if: always()
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           files: lcov.info
           flags: rust
@@ -530,4 +577,3 @@ jobs:
             fi
           done
           echo "No immutable/append_only structure violations found"
-

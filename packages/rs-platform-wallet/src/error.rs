@@ -1,4 +1,5 @@
 use dpp::address_funds::PlatformAddress;
+use dpp::fee::Credits;
 use dpp::identifier::Identifier;
 use key_wallet::Network;
 
@@ -87,15 +88,17 @@ pub enum PlatformWalletError {
         gap_limit: u32,
     },
 
-    #[error("Arithmetic overflow on Credits in {context}")]
-    ArithmeticOverflow { context: String },
-
-    #[error(
-        "all funded addresses are also outputs of this transfer: {outputs:?}; \
-         either rotate to a fresh receive address or use \
-         InputSelection::Explicit and split the operation"
-    )]
-    OnlyOutputAddressesFunded { outputs: Vec<PlatformAddress> },
+    #[error("{}", format_no_selectable_inputs(funded_outputs, *sub_min_count, *sub_min_aggregate, *min_input_amount))]
+    NoSelectableInputs {
+        /// Funded addresses dropped by the input-equals-output filter.
+        funded_outputs: Vec<PlatformAddress>,
+        /// Number of addresses with a positive balance below `min_input_amount`.
+        sub_min_count: usize,
+        /// Aggregate of those sub-minimum balances.
+        sub_min_aggregate: Credits,
+        /// Per-input minimum from the active platform version.
+        min_input_amount: Credits,
+    },
 
     #[error("Platform address not found in wallet: {0}")]
     AddressNotFound(String),
@@ -160,6 +163,37 @@ pub enum PlatformWalletError {
 
     #[error("Shielded key derivation failed: {0}")]
     ShieldedKeyDerivation(String),
+}
+
+/// Render the `NoSelectableInputs` diagnostic, omitting whichever failure
+/// shape did not contribute (sub-min dust or funded-but-also-output) so
+/// operators don't see misleading zero-valued fields.
+fn format_no_selectable_inputs(
+    funded_outputs: &[PlatformAddress],
+    sub_min_count: usize,
+    sub_min_aggregate: Credits,
+    min_input_amount: Credits,
+) -> String {
+    let mut parts: Vec<String> = Vec::with_capacity(2);
+    if !funded_outputs.is_empty() {
+        parts.push(format!("funded_outputs={funded_outputs:?}"));
+    }
+    if sub_min_count > 0 {
+        parts.push(format!(
+            "sub_min_count={sub_min_count} sub_min_aggregate={sub_min_aggregate} credits"
+        ));
+    }
+    let body = if parts.is_empty() {
+        // Detector returns Some only when at least one shape applies; defensive.
+        "no funded inputs survived the auto-selection filter".to_string()
+    } else {
+        parts.join(" ")
+    };
+    format!(
+        "no selectable inputs for auto-selection: {body} \
+         (min_input_amount={min_input_amount}); rotate to a fresh receive address, \
+         consolidate funds, or use InputSelection::Explicit"
+    )
 }
 
 /// Check whether an SDK error indicates that an InstantSend lock proof was

@@ -51,7 +51,7 @@ pub const PLATFORM_V12: PlatformVersion = PlatformVersion {
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V1,
         state_transitions: STATE_TRANSITION_VERSIONS_V3,
-        contract_versions: CONTRACT_VERSIONS_V4, // changed: use v1 document meta-schema with additionalProperties: false
+        contract_versions: CONTRACT_VERSIONS_V4, // changed: try_from_schema v2 supports documentsCountable + v1 document meta-schema with additionalProperties: false
         document_versions: DOCUMENT_VERSIONS_V3,
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V2,

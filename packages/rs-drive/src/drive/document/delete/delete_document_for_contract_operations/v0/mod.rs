@@ -1,6 +1,7 @@
+use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
 use grovedb::batch::KeyInfoPath;
 
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 
 use dpp::data_contract::document_type::DocumentTypeRef;
 
@@ -109,8 +110,9 @@ impl Drive {
                 estimated_costs_only_with_layer_info,
                 &platform_version.drive,
             )?;
+            let primary_key_tree_type = document_type.primary_key_tree_type(platform_version)?;
             DirectQueryType::StatelessDirectQuery {
-                in_tree_type: TreeType::NormalTree,
+                in_tree_type: primary_key_tree_type,
                 query_target: QueryTargetValue(
                     document_type.estimated_size(platform_version)? as u32
                 ),

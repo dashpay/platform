@@ -182,18 +182,9 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         // network resolves that race exactly as it does on `v3.1-dev`
         // today, but neither caller corrupts local state on a transient
         // broadcast failure.
-        //
-        // TODO(CR-004 / dash-evo-tool#845): pin that this post-broadcast
-        // hook actually mutates `standard_bip32_accounts` UTXO state — not
-        // just `standard_bip44_accounts`. The downstream
-        // `key_wallet::ManagedWalletInfo::check_core_transaction` routes
-        // standard txs through both BIP32 and BIP44 collections via
-        // `TransactionRouter::get_relevant_account_types`, but if a future
-        // routing regression skips BIP32 (the "legacy" path DET v0.9.x
-        // wallets still rely on), this call will silently leave UTXOs
-        // marked spendable on `standard_bip32_accounts[0]`. The CR-004 e2e
-        // test pins the contract end-to-end; this comment names the call
-        // site so a reviewer chasing that test failure lands here directly.
+        // Post-broadcast hook must mark consumed UTXOs spent on every
+        // standard-tx account collection (BIP44 + BIP32). Pinned by
+        // `cr_004_legacy_bip32_utxo_update_after_spend` (dash-evo-tool#845).
         {
             let mut wm = self.wallet_manager.write().await;
             let (wallet, info) =

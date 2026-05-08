@@ -76,16 +76,14 @@ pub enum PlatformWalletFFIResultCode {
     ErrorInvalidIdentifier = 10,
     ErrorMemoryAllocation = 11,
     ErrorUtf8Conversion = 12,
-    /// A numeric operation on `Credits` would have overflowed.
-    /// Defensive — unreachable in practice given total Dash supply,
-    /// but surfaced distinctly so downstream telemetry can flag the
-    /// invariant break instead of treating it as a generic unknown.
+    /// Reserved code — currently unused. Kept to preserve numeric ABI for
+    /// downstream consumers that compiled against this enum.
     ErrorArithmeticOverflow = 13,
-    /// Auto-select had no candidate inputs because every funded
-    /// address in the account was also a destination output. Caller
-    /// must rotate to a fresh receive address or fall back to
-    /// `InputSelection::Explicit` and split the operation.
-    ErrorOnlyOutputAddressesFunded = 14,
+    /// Auto-select had no candidate inputs: every funded address was either
+    /// a destination output or below `min_input_amount`. Caller must rotate
+    /// to a fresh receive address, raise sub-min balances above the floor,
+    /// or fall back to `InputSelection::Explicit`.
+    ErrorNoSelectableInputs = 14,
 
     NotFound = 98, // Used exclusively for all the Option that are retuned as errors
     ErrorUnknown = 99,
@@ -172,11 +170,8 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
         // assigned a dedicated code yet — those still carry the
         // typed Display rendering as the message.
         let code = match &error {
-            PlatformWalletError::ArithmeticOverflow { .. } => {
-                PlatformWalletFFIResultCode::ErrorArithmeticOverflow
-            }
-            PlatformWalletError::OnlyOutputAddressesFunded { .. } => {
-                PlatformWalletFFIResultCode::ErrorOnlyOutputAddressesFunded
+            PlatformWalletError::NoSelectableInputs { .. } => {
+                PlatformWalletFFIResultCode::ErrorNoSelectableInputs
             }
             _ => PlatformWalletFFIResultCode::ErrorUnknown,
         };
@@ -401,44 +396,23 @@ mod tests {
         assert!(!r.message.is_null());
     }
 
-    /// QA-003: `ArithmeticOverflow` must map to its dedicated FFI code,
-    /// not flatten to `ErrorUnknown`. The Display message is preserved
-    /// so downstream observers retain the call-site context.
+    /// `NoSelectableInputs` maps to its dedicated FFI code (not flattened
+    /// to `ErrorUnknown`), and the typed Display rendering — including the
+    /// offending addresses — survives across the boundary.
     #[test]
-    fn arithmetic_overflow_maps_to_dedicated_code() {
-        let err = PlatformWalletError::ArithmeticOverflow {
-            context: "test-site".to_string(),
-        };
-        let rendered = err.to_string();
-        let result: PlatformWalletFFIResult = err.into();
-        assert_eq!(
-            result.code,
-            PlatformWalletFFIResultCode::ErrorArithmeticOverflow
-        );
-        assert!(!result.message.is_null());
-        let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
-            .to_string_lossy()
-            .into_owned();
-        assert_eq!(msg, rendered, "FFI message must equal Display");
-        assert!(msg.contains("test-site"), "context must survive: {msg}");
-    }
-
-    /// QA-003: `OnlyOutputAddressesFunded` must map to its dedicated
-    /// FFI code, not flatten to `ErrorUnknown`. The Display
-    /// interpolation of the outputs payload (QA-001) survives across
-    /// the boundary so callers without typed-error access can still
-    /// recover the offending addresses by parsing the message.
-    #[test]
-    fn only_output_addresses_funded_maps_to_dedicated_code() {
+    fn no_selectable_inputs_maps_to_dedicated_code() {
         use dpp::address_funds::PlatformAddress;
-        let err = PlatformWalletError::OnlyOutputAddressesFunded {
-            outputs: vec![PlatformAddress::P2pkh([0xAB; 20])],
+        let err = PlatformWalletError::NoSelectableInputs {
+            funded_outputs: vec![PlatformAddress::P2pkh([0xAB; 20])],
+            sub_min_count: 0,
+            sub_min_aggregate: 0,
+            min_input_amount: 1_000,
         };
         let rendered = err.to_string();
         let result: PlatformWalletFFIResult = err.into();
         assert_eq!(
             result.code,
-            PlatformWalletFFIResultCode::ErrorOnlyOutputAddressesFunded
+            PlatformWalletFFIResultCode::ErrorNoSelectableInputs
         );
         assert!(!result.message.is_null());
         let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
@@ -446,7 +420,7 @@ mod tests {
             .into_owned();
         assert_eq!(msg, rendered);
         assert!(
-            msg.contains("funded addresses"),
+            msg.contains("funded_outputs"),
             "Display payload must survive: {msg}"
         );
     }

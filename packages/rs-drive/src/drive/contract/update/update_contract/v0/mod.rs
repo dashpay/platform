@@ -1,3 +1,4 @@
+use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
 use crate::drive::{contract_documents_path, Drive};
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -348,14 +349,36 @@ impl Drive {
                     type_key.as_bytes(),
                 ];
 
-                // primary key tree
-                self.batch_insert_empty_tree(
-                    type_path,
-                    KeyRef(&[0]),
-                    storage_flags.as_ref().map(|flags| flags.as_ref()),
-                    &mut batch_operations,
-                    drive_version,
-                )?;
+                // primary key tree — route through the centralized
+                // primary_key_tree_type() so contract update, document inserts,
+                // deletes, and estimation paths all see the same tree-variant
+                // selection (under whichever drive method version is active).
+                match document_type
+                    .as_ref()
+                    .primary_key_tree_type(platform_version)?
+                {
+                    TreeType::ProvableCountTree => self.batch_insert_empty_provable_count_tree(
+                        type_path,
+                        KeyRef(&[0]),
+                        storage_flags.as_ref().map(|flags| flags.as_ref()),
+                        &mut batch_operations,
+                        drive_version,
+                    )?,
+                    TreeType::CountTree => self.batch_insert_empty_count_tree(
+                        type_path,
+                        KeyRef(&[0]),
+                        storage_flags.as_ref().map(|flags| flags.as_ref()),
+                        &mut batch_operations,
+                        drive_version,
+                    )?,
+                    _ => self.batch_insert_empty_tree(
+                        type_path,
+                        KeyRef(&[0]),
+                        storage_flags.as_ref().map(|flags| flags.as_ref()),
+                        &mut batch_operations,
+                        drive_version,
+                    )?,
+                }
 
                 let mut index_cache: HashSet<&[u8]> = HashSet::new();
                 // for each type we should insert the indices that are top level
@@ -381,17 +404,122 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
+    use crate::drive::{Drive, RootTree};
     use crate::error::drive::DriveError;
     use crate::error::Error;
+    use crate::util::grove_operations::DirectQueryType;
     use crate::util::storage_flags::StorageFlags;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
     use dpp::data_contract::config::v0::DataContractConfigSettersV0;
     use dpp::data_contract::schema::DataContractSchemaMethodsV0;
-    use dpp::platform_value::platform_value;
+    use dpp::platform_value::{platform_value, Value};
     use dpp::tests::fixtures::get_dashpay_contract_fixture;
     use dpp::version::PlatformVersion;
+    use grovedb::Element;
+
+    fn label_document_schema(documents_countable: bool, range_countable: bool) -> Value {
+        let mut schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "label": {
+                    "type": "string",
+                    "position": 0,
+                    "maxLength": 50,
+                }
+            },
+            "additionalProperties": false,
+        });
+
+        let schema_map = schema.as_map_mut().expect("schema should be a map");
+        if documents_countable {
+            schema_map.push((
+                Value::Text("documentsCountable".to_string()),
+                Value::Bool(true),
+            ));
+        }
+        if range_countable {
+            schema_map.push((Value::Text("rangeCountable".to_string()), Value::Bool(true)));
+        }
+
+        schema
+    }
+
+    fn update_contract_with_new_document_type(
+        document_type_name: &str,
+        new_schema: Value,
+    ) -> (Drive, dpp::prelude::DataContract, usize) {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("initial insert");
+
+        let original_type_count = contract.document_types().len();
+
+        contract
+            .set_document_schema(
+                document_type_name,
+                new_schema,
+                true,
+                &mut vec![],
+                platform_version,
+            )
+            .expect("set new schema");
+        contract.increment_version();
+
+        drive
+            .update_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("update with new doc type should succeed");
+
+        (drive, contract, original_type_count)
+    }
+
+    fn read_primary_key_tree(
+        drive: &Drive,
+        contract: &dpp::prelude::DataContract,
+        document_type_name: &str,
+    ) -> Element {
+        let platform_version = PlatformVersion::latest();
+        let contract_id = contract.id();
+        let path: [&[u8]; 4] = [
+            &[RootTree::DataContractDocuments as u8],
+            contract_id.as_bytes(),
+            &[1],
+            document_type_name.as_bytes(),
+        ];
+
+        drive
+            .grove_get_raw(
+                (&path).into(),
+                &[0],
+                DirectQueryType::StatefulDirectQuery,
+                None,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("expected grove_get_raw to succeed")
+            .expect("primary key tree element should exist")
+    }
 
     /// Exercises the `if original_contract.config().readonly() { ... }` branch
     /// inside `update_contract_operations_v0`. Note that the earlier readonly
@@ -462,60 +590,11 @@ mod tests {
     /// exercises adding an entirely new document type.
     #[test]
     fn test_update_contract_v0_adds_new_document_type_creates_trees() {
-        let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
-
-        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
-            .data_contract_owned();
-
-        drive
-            .apply_contract(
-                &contract,
-                BlockInfo::default(),
-                true,
-                StorageFlags::optional_default_as_cow(),
-                None,
-                platform_version,
-            )
-            .expect("initial insert");
-
-        let original_type_count = contract.document_types().len();
-
-        // Add a brand-new document type that did NOT exist before.
-        let new_schema = platform_value!({
-            "type": "object",
-            "properties": {
-                "label": {
-                    "type": "string",
-                    "position": 0,
-                    "maxLength": 50,
-                }
-            },
-            "additionalProperties": false,
-        });
-        contract
-            .set_document_schema(
-                "brandNewDocType",
-                new_schema,
-                true,
-                &mut vec![],
-                platform_version,
-            )
-            .expect("set new schema");
-        contract.increment_version();
-
-        // The update path will hit the `else` branch because "brandNewDocType"
-        // is not in the original's document_types map.
-        drive
-            .update_contract(
-                &contract,
-                BlockInfo::default(),
-                true,
-                None,
-                platform_version,
-                None,
-            )
-            .expect("update with new doc type should succeed");
+        let (drive, contract, original_type_count) = update_contract_with_new_document_type(
+            "brandNewDocType",
+            label_document_schema(false, false),
+        );
 
         // Verify the new type is now present.
         let fetched = drive
@@ -534,6 +613,54 @@ mod tests {
                 .contains_key("brandNewDocType"),
             "new document type must be present"
         );
+
+        let elem = read_primary_key_tree(&drive, &contract, "brandNewDocType");
+        assert!(
+            matches!(elem, Element::Tree(..)),
+            "new non-countable document type should use a NormalTree primary key tree, got {:?}",
+            elem
+        );
+    }
+
+    #[test]
+    fn test_update_contract_v0_adds_new_documents_countable_type_creates_count_tree() {
+        let (drive, contract, _) = update_contract_with_new_document_type(
+            "brandNewCountedDocType",
+            label_document_schema(true, false),
+        );
+
+        let elem = read_primary_key_tree(&drive, &contract, "brandNewCountedDocType");
+        match elem {
+            Element::CountTree(_, count, _) => {
+                assert_eq!(count, 0, "freshly created CountTree should have count 0");
+            }
+            other => panic!(
+                "new documentsCountable document type should use a CountTree primary key tree, got {:?}",
+                other
+            ),
+        }
+    }
+
+    #[test]
+    fn test_update_contract_v0_adds_new_range_countable_type_creates_provable_count_tree() {
+        let (drive, contract, _) = update_contract_with_new_document_type(
+            "brandNewRangeCountedDocType",
+            label_document_schema(false, true),
+        );
+
+        let elem = read_primary_key_tree(&drive, &contract, "brandNewRangeCountedDocType");
+        match elem {
+            Element::ProvableCountTree(_, count, _) => {
+                assert_eq!(
+                    count, 0,
+                    "freshly created ProvableCountTree should have count 0"
+                );
+            }
+            other => panic!(
+                "new rangeCountable document type should use a ProvableCountTree primary key tree, got {:?}",
+                other
+            ),
+        }
     }
 
     /// Exercises the `update_contract_v0/v1` apply=false path where the
