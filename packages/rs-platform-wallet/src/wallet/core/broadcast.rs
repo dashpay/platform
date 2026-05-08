@@ -32,6 +32,24 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// Uses key-wallet's [`TransactionBuilder`] for UTXO selection, fee
     /// estimation, and signing. Change is sent to the next internal address
     /// of the specified account.
+    ///
+    /// ## Race-safety against concurrent calls on the same wallet
+    ///
+    /// Coin selection consults a per-wallet **reservation set** (see
+    /// [`super::reservations`]) under the write lock. Selected outpoints
+    /// are reserved before the lock is dropped, so a second concurrent
+    /// caller — which acquires the write lock after this one — sees the
+    /// reserved outpoints filtered out of its spendable snapshot. If that
+    /// leaves the second caller with insufficient inputs, it short-circuits
+    /// with [`PlatformWalletError::NoSpendableInputs`] *before* touching
+    /// the network. The reservation is held until either:
+    ///
+    /// - broadcast succeeds → `check_core_transaction(Mempool, …)` marks
+    ///   the inputs spent under the second write lock, then the guard
+    ///   drops; the spent transition is observable to other callers with
+    ///   no gap, or
+    /// - any error path → the guard drops and the outpoints are released,
+    ///   so a retry can pick them up again.
     pub async fn send_to_addresses(
         &self,
         account_type: StandardAccountType,
@@ -47,7 +65,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             ));
         }
 
-        let (tx, xpub) = {
+        let (tx, xpub, _reservation) = {
             let mut wm = self.wallet_manager.write().await;
             let (wallet, info) = wm.get_wallet_and_info_mut(&self.wallet_id).ok_or_else(|| {
                 crate::error::PlatformWalletError::WalletNotFound(
@@ -76,11 +94,25 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 ))
             })?;
 
+            // Snapshot spendable UTXOs minus any in-flight reservations from
+            // a concurrent `send_to_addresses` on this handle. Any outpoint
+            // already reserved is owned by another caller's still-pending
+            // broadcast and must not be selected here.
             let spendable: Vec<_> = account
                 .spendable_utxos(current_height)
                 .into_iter()
+                .filter(|utxo| !self.reservations.contains(&utxo.outpoint))
                 .cloned()
                 .collect();
+
+            if spendable.is_empty() {
+                return Err(PlatformWalletError::NoSpendableInputs {
+                    context: format!(
+                        "{:?} account {} (all UTXOs reserved by in-flight transactions)",
+                        account_type, account_index
+                    ),
+                });
+            }
 
             let xpub = wallet_accounts
                 .get(&account_index)
@@ -141,7 +173,25 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                         None
                     },
                 )
-                .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
+                .map_err(|e| {
+                    // Insufficient/no-utxo errors from coin selection map
+                    // to the typed `NoSpendableInputs` variant so callers
+                    // can distinguish "race-loser" from "network rejected
+                    // my tx". `select_inputs` wraps the underlying
+                    // `SelectionError` in a `BuilderError`; we string-match
+                    // here because the typed wrapper is not exposed.
+                    let msg = e.to_string();
+                    if msg.contains("Insufficient funds") || msg.contains("No UTXOs available") {
+                        PlatformWalletError::NoSpendableInputs {
+                            context: format!(
+                                "{:?} account {} ({})",
+                                account_type, account_index, msg
+                            ),
+                        }
+                    } else {
+                        PlatformWalletError::TransactionBuild(msg)
+                    }
+                })?;
 
             let tx = builder
                 .build()
@@ -163,7 +213,18 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 return Err(PlatformWalletError::ConcurrentSpendConflict);
             }
 
-            (tx, xpub)
+            // Reserve the selected outpoints *before* releasing the write
+            // lock. The next caller acquiring the lock will see these
+            // outpoints filtered out and either select disjoint inputs or
+            // short-circuit with `NoSpendableInputs`.
+            //
+            // The guard is held until the end of the function: success
+            // path drops it after `check_core_transaction` has marked the
+            // inputs spent (no observable gap); error paths drop it on
+            // unwinding the `Result`, releasing the outpoints for retry.
+            let reservation = self.reservations.reserve(selected.into_iter().collect());
+
+            (tx, xpub, reservation)
         };
 
         // Broadcast first; if the network rejects we leave wallet state
@@ -177,11 +238,10 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
 
         // Now that the tx is in flight, register it as a mempool transaction
         // so subsequent callers see the inputs as spent and don't reselect
-        // them. The trade-off is that two callers racing between the lock
-        // drop above and the broadcast can both pick the same UTXOs; the
-        // network resolves that race exactly as it does on `v3.1-dev`
-        // today, but neither caller corrupts local state on a transient
-        // broadcast failure.
+        // them. The reservation guard above kept those inputs filtered out
+        // for concurrent callers throughout the broadcast `await`; this
+        // call transitions them from "reserved" to "spent" before the
+        // guard drops, so the spent state is observable with no gap.
         //
         // Broadcast-first semantics: by the time we get here the network has
         // already accepted the transaction, so the two warning paths below
@@ -271,6 +331,13 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 );
             }
         }
+
+        // Reservation guard drops here, releasing the outpoints. The
+        // `check_core_transaction` call above already marked them spent
+        // under the write lock — there is no observable gap during which
+        // both the reservation is gone and the spent state isn't yet
+        // visible.
+        drop(_reservation);
 
         Ok(tx)
     }
@@ -408,5 +475,288 @@ mod tests {
             1,
             "broadcaster must be called exactly once on a successful broadcast"
         );
+    }
+
+    // -----------------------------------------------------------------
+    // Race-closing tests: same-UTXO concurrent `send_to_addresses`.
+    //
+    // The audit (`/tmp/pr3585-race-audit.md`) captures the property:
+    // two callers A and B must not both broadcast against the same
+    // outpoint. The reservation set guarantees B short-circuits with
+    // `NoSpendableInputs` *before* hitting the network — never with a
+    // `TransactionBroadcast` failure (that would mean B reached the
+    // broadcaster, which is exactly the bug being closed).
+    // -----------------------------------------------------------------
+
+    use std::collections::BTreeMap;
+    use std::time::Duration;
+
+    use dashcore::hashes::Hash;
+    use dashcore::{Address as DashAddress, OutPoint, TxOut};
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use key_wallet::wallet::Wallet;
+    use key_wallet::Utxo;
+    use tokio::sync::Notify;
+
+    use crate::wallet::platform_wallet::PlatformWalletInfo;
+    use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+
+    /// Mock broadcaster that gates the broadcast on an external `Notify`.
+    /// Lets the test pin caller A inside its `await` while caller B
+    /// races for the wallet's write lock.
+    struct GatedBroadcaster {
+        gate: Arc<Notify>,
+        succeed: bool,
+    }
+
+    #[async_trait]
+    impl TransactionBroadcaster for GatedBroadcaster {
+        async fn broadcast(&self, transaction: &Transaction) -> Result<Txid, PlatformWalletError> {
+            // Wait until the test signals the gate. Allows the test to
+            // observe the wallet state mid-broadcast (specifically: the
+            // reservation set populated, the input not yet marked spent).
+            self.gate.notified().await;
+            if self.succeed {
+                Ok(transaction.txid())
+            } else {
+                Err(PlatformWalletError::TransactionBroadcast(
+                    "mock failure".to_string(),
+                ))
+            }
+        }
+    }
+
+    /// Always-failing mock broadcaster — used to assert that a failed
+    /// broadcast releases the reservation so a retry can pick up the
+    /// same UTXO.
+    struct FailingBroadcaster;
+
+    #[async_trait]
+    impl TransactionBroadcaster for FailingBroadcaster {
+        async fn broadcast(&self, _transaction: &Transaction) -> Result<Txid, PlatformWalletError> {
+            Err(PlatformWalletError::TransactionBroadcast(
+                "always fails".to_string(),
+            ))
+        }
+    }
+
+    /// Build a single-wallet `WalletManager` containing one BIP-44
+    /// account (index 0) funded with one large UTXO at the account's
+    /// first receive address. Returns the wallet manager handle, the
+    /// wallet id, and a recipient address (a separate derived address
+    /// in the same account — funding/sending to the same address is
+    /// not the property under test).
+    fn build_funded_wallet_manager(
+        utxo_value: u64,
+    ) -> (
+        Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        crate::wallet::platform_wallet::WalletId,
+        DashAddress,
+    ) {
+        let wallet = Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default)
+            .expect("test wallet");
+
+        let xpub = wallet
+            .accounts
+            .standard_bip44_accounts
+            .get(&0)
+            .expect("bip44 account 0")
+            .account_xpub;
+        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 0);
+
+        // Lift the synced height well past the UTXO height so the
+        // `min_confirmations >= 1` filter in coin selection accepts the
+        // UTXO. Without this, the UTXO appears in `spendable_utxos` (its
+        // own `is_spendable` check passes) but `select_coins_with_size`
+        // filters it out via the confirmation-count guard.
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface as _;
+        wallet_info.update_synced_height(100);
+
+        let funding_address = wallet_info
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&0)
+            .expect("managed bip44 account 0")
+            .next_receive_address(Some(&xpub), true)
+            .expect("derive receive address");
+
+        let outpoint = OutPoint::new(Txid::from_byte_array([7u8; 32]), 0);
+        let mut utxo = Utxo::new(
+            outpoint,
+            TxOut {
+                value: utxo_value,
+                script_pubkey: funding_address.script_pubkey(),
+            },
+            funding_address,
+            1,
+            false,
+        );
+        utxo.is_confirmed = true;
+        wallet_info
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&0)
+            .expect("managed bip44 account 0")
+            .utxos
+            .insert(outpoint, utxo);
+
+        let info = PlatformWalletInfo {
+            core_wallet: wallet_info,
+            balance: Arc::new(WalletBalance::new()),
+            identity_manager: crate::wallet::identity::IdentityManager::new(),
+            tracked_asset_locks: BTreeMap::new(),
+        };
+
+        let mut wm: WalletManager<PlatformWalletInfo> = WalletManager::new(Network::Testnet);
+        let wallet_id = wm.insert_wallet(wallet, info).expect("insert");
+
+        // Recipient — use the second receive address as a stable target.
+        let recipient = {
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.core_wallet
+                .accounts
+                .standard_bip44_accounts
+                .get_mut(&0)
+                .expect("acc")
+                .next_receive_address(Some(&xpub), true)
+                .expect("derive recipient")
+        };
+
+        (Arc::new(RwLock::new(wm)), wallet_id, recipient)
+    }
+
+    fn make_core_wallet_for_manager<B: TransactionBroadcaster + ?Sized>(
+        wm: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        wallet_id: crate::wallet::platform_wallet::WalletId,
+        broadcaster: Arc<B>,
+    ) -> CoreWallet<B> {
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        CoreWallet::new(
+            sdk,
+            wm,
+            wallet_id,
+            broadcaster,
+            Arc::new(WalletBalance::new()),
+        )
+    }
+
+    /// Race test — the headline property: two concurrent `send_to_addresses`
+    /// calls on the same wallet, against the same single spendable UTXO,
+    /// must yield exactly one network broadcast. The loser must short-circuit
+    /// with [`PlatformWalletError::NoSpendableInputs`] *before* hitting the
+    /// network — i.e. the loser's error must NOT be a `TransactionBroadcast`
+    /// failure (that would mean it reached the broadcaster, which is exactly
+    /// the bug we're closing).
+    #[tokio::test]
+    async fn concurrent_same_utxo_sends_resolve_via_reservation_set() {
+        use key_wallet::account::account_type::StandardAccountType;
+
+        let (wm, wallet_id, recipient) = build_funded_wallet_manager(2_000_000);
+        let gate = Arc::new(Notify::new());
+        let broadcaster: Arc<dyn TransactionBroadcaster> = Arc::new(GatedBroadcaster {
+            gate: Arc::clone(&gate),
+            succeed: true,
+        });
+        let core = make_core_wallet_for_manager(wm, wallet_id, broadcaster);
+
+        let send_value = 100_000;
+        let outputs_a = vec![(recipient.clone(), send_value)];
+        let outputs_b = vec![(recipient.clone(), send_value)];
+
+        // Spawn caller A. It will reserve the only spendable outpoint
+        // under the wallet write lock, drop the lock, and block on the
+        // broadcast `Notify`.
+        let core_a = core.clone();
+        let a_handle = tokio::spawn(async move {
+            core_a
+                .send_to_addresses(StandardAccountType::BIP44Account, 0, outputs_a)
+                .await
+        });
+
+        // Give A enough scheduler time to acquire the lock, build the
+        // tx, reserve the outpoint, and reach the gated broadcast.
+        // The property is monotonic — once A is in the broadcast
+        // `await`, the reservation is in place forever until the gate
+        // fires.
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        // Caller B starts now. The wallet's only UTXO is reserved by A,
+        // so B's spendable snapshot is empty → `NoSpendableInputs`.
+        let b_result = core
+            .send_to_addresses(StandardAccountType::BIP44Account, 0, outputs_b)
+            .await;
+
+        match &b_result {
+            Err(PlatformWalletError::NoSpendableInputs { context }) => {
+                assert!(
+                    context.contains("reserved")
+                        || context.contains("Insufficient")
+                        || context.contains("No UTXOs"),
+                    "B's NoSpendableInputs context should mention reservation \
+                     or insufficient/no-utxos; got: {context}"
+                );
+            }
+            other => panic!(
+                "B must short-circuit with NoSpendableInputs (the race-loser \
+                 must not reach the broadcaster); got: {other:?}"
+            ),
+        }
+
+        // Now release A's broadcast.
+        gate.notify_one();
+
+        let a_result = a_handle.await.expect("a task panicked");
+        assert!(
+            a_result.is_ok(),
+            "A must succeed once its broadcast gate fires; got: {a_result:?}"
+        );
+    }
+
+    /// On broadcast failure, the reservation must be released so the
+    /// caller can retry. This is the regression-tripwire for the
+    /// reservation guard's Drop semantics.
+    #[tokio::test]
+    async fn broadcast_failure_releases_reservation_for_retry() {
+        use key_wallet::account::account_type::StandardAccountType;
+
+        let (wm, wallet_id, recipient) = build_funded_wallet_manager(2_000_000);
+        let broadcaster: Arc<dyn TransactionBroadcaster> = Arc::new(FailingBroadcaster);
+        let core = make_core_wallet_for_manager(wm, wallet_id, broadcaster);
+
+        let outputs = vec![(recipient.clone(), 100_000)];
+
+        // First call fails at the broadcast step → guard drops →
+        // reservation released. The change-address index is also rolled
+        // back by virtue of #3585's peek-then-commit pattern.
+        let first = core
+            .send_to_addresses(StandardAccountType::BIP44Account, 0, outputs.clone())
+            .await;
+        assert!(
+            matches!(first, Err(PlatformWalletError::TransactionBroadcast(_))),
+            "first call must surface broadcast failure; got: {first:?}"
+        );
+
+        // Reservation set is now empty — verifiable through behaviour:
+        // a second call sees the same UTXO as spendable again. We
+        // can't broadcast successfully (broadcaster always fails) but
+        // the second call must reach the broadcaster, not short-circuit
+        // with `NoSpendableInputs` (which would mean the reservation
+        // leaked).
+        let second = core
+            .send_to_addresses(StandardAccountType::BIP44Account, 0, outputs)
+            .await;
+        match second {
+            Err(PlatformWalletError::TransactionBroadcast(_)) => {
+                // Expected — reservation released, coin selection
+                // succeeded, broadcaster rejected as designed.
+            }
+            Err(PlatformWalletError::NoSpendableInputs { .. }) => {
+                panic!(
+                    "reservation leaked after broadcast failure — second \
+                     call should have selected the released UTXO"
+                );
+            }
+            other => panic!("unexpected second call result: {other:?}"),
+        }
     }
 }

@@ -63,6 +63,12 @@ pub enum PlatformWalletError {
     #[error("Transaction builder selected an unavailable UTXO (concurrent spend); retry")]
     ConcurrentSpendConflict,
 
+    #[error(
+        "no spendable inputs available for {context} \
+         (other in-flight transactions reserved the wallet's UTXOs; retry once they confirm)"
+    )]
+    NoSpendableInputs { context: String },
+
     #[error("Asset lock proof waiting failed: {0}")]
     AssetLockProofWait(String),
 
