@@ -1,6 +1,7 @@
 pub mod balance;
 pub mod balance_handler;
 mod broadcast;
+mod reservations;
 pub mod wallet;
 
 pub use balance::WalletBalance;
