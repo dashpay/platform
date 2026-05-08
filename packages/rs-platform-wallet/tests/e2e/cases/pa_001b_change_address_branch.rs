@@ -4,14 +4,16 @@
 //!
 //! Drives [`PlatformAddressWallet::transfer_with_change_address`], the
 //! production accessor that surfaces the implicit "where does the
-//! residual go?" decision as a first-class parameter. The two
-//! sub-cases pin the two override branches:
+//! residual go?" decision as a first-class parameter. Two independent
+//! tests pin the two override branches:
 //!
-//! - `None`: residual stays implicitly on the input address (the
-//!   pre-existing behaviour exposed by [`PlatformAddressWallet::transfer`]).
-//! - `Some(change_addr)`: every input is fully spent and `change_addr`
-//!   absorbs `Σ inputs − Σ user_outputs`; the protocol's
-//!   `Σ inputs == Σ outputs` invariant still holds.
+//! - `pa_001b_change_address_branch_subcase_a` (`None`): residual stays
+//!   implicitly on the input address (the pre-existing behaviour exposed
+//!   by [`PlatformAddressWallet::transfer`]).
+//! - `pa_001b_change_address_branch_subcase_b` (`Some(change_addr)`):
+//!   every input is fully spent and `change_addr` absorbs
+//!   `Σ inputs − Σ user_outputs`; the protocol's `Σ inputs == Σ outputs`
+//!   invariant still holds.
 
 use std::collections::BTreeMap;
 use std::time::Duration;
@@ -19,7 +21,7 @@ use std::time::Duration;
 use crate::framework::prelude::*;
 use dpp::address_funds::PlatformAddress;
 use key_wallet::managed_account::platform_address::PlatformP2PKHAddress;
-use platform_wallet::wallet::platform_addresses::InputSelection;
+use platform_wallet::wallet::platform_addresses::{InputSelection, PlatformAddressWallet};
 
 /// Bank fund per test address. Sized well above the chain-time fee
 /// ceiling so the change branch's outputs both clear the fee target.
@@ -42,37 +44,28 @@ const TRANSFER_CREDITS: u64 = 30_000_000;
 const TRANSFER_FLOOR: u64 = 1_000_000;
 
 #[tokio_shared_rt::test(shared)]
-async fn pa_001b_change_address_branch() {
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info,platform_wallet=debug".into()),
-        )
-        .with_test_writer()
-        .try_init();
+async fn pa_001b_change_address_branch_subcase_a() {
+    init_tracing();
 
-    use platform_wallet::wallet::platform_addresses::PlatformAddressWallet;
-
-    // ---- Sub-case A: output_change_address = None -----------------
+    // Sub-case A: output_change_address = None.
     // Residual stays implicitly on the input address — the wrapper
-    // delegates straight to `transfer`, so addr_1 keeps the
-    // difference.
-    let s_a = setup().await.expect("e2e setup failed (sub-case A)");
-    let addr_1 = s_a
+    // delegates straight to `transfer`, so addr_1 keeps the difference.
+    let s = setup().await.expect("e2e setup failed (sub-case A)");
+    let addr_1 = s
         .test_wallet
         .next_unused_address()
         .await
         .expect("derive addr_1");
-    s_a.ctx
+    s.ctx
         .bank()
         .fund_address(&addr_1, FUNDING_CREDITS)
         .await
         .expect("bank.fund_address addr_1");
-    wait_for_balance(&s_a.test_wallet, &addr_1, FUNDING_FLOOR, STEP_TIMEOUT)
+    wait_for_balance(&s.test_wallet, &addr_1, FUNDING_FLOOR, STEP_TIMEOUT)
         .await
         .expect("addr_1 funding never observed");
 
-    let addr_2 = s_a
+    let addr_2 = s
         .test_wallet
         .next_unused_address()
         .await
@@ -85,8 +78,8 @@ async fn pa_001b_change_address_branch() {
     // (TRANSFER_CREDITS) and the un-declared residual stays on addr_1 implicitly.
     let inputs: BTreeMap<_, _> = std::iter::once((addr_1, TRANSFER_CREDITS)).collect();
 
-    let platform_a: &PlatformAddressWallet = s_a.test_wallet.platform_wallet().platform();
-    platform_a
+    let platform: &PlatformAddressWallet = s.test_wallet.platform_wallet().platform();
+    platform
         .transfer_with_change_address(
             default_account_index(),
             InputSelection::Explicit(inputs),
@@ -94,22 +87,22 @@ async fn pa_001b_change_address_branch() {
             None, // implicit-change branch
             default_fee_strategy_for_test(),
             Some(dpp::version::PlatformVersion::latest()),
-            s_a.test_wallet.address_signer(),
+            s.test_wallet.address_signer(),
         )
         .await
         .expect("transfer_with_change_address(None)");
 
-    wait_for_balance(&s_a.test_wallet, &addr_2, TRANSFER_FLOOR, STEP_TIMEOUT)
+    wait_for_balance(&s.test_wallet, &addr_2, TRANSFER_FLOOR, STEP_TIMEOUT)
         .await
         .expect("addr_2 transfer never observed");
 
-    s_a.test_wallet
+    s.test_wallet
         .sync_balances()
         .await
         .expect("post-transfer sync (None branch)");
-    let bal_a = s_a.test_wallet.balances().await;
-    let addr_1_post = bal_a.get(&addr_1).copied().unwrap_or(0);
-    let addr_2_post = bal_a.get(&addr_2).copied().unwrap_or(0);
+    let bal = s.test_wallet.balances().await;
+    let addr_1_post = bal.get(&addr_1).copied().unwrap_or(0);
+    let addr_2_post = bal.get(&addr_2).copied().unwrap_or(0);
     // None branch: Explicit({addr_1: TRANSFER_CREDITS}) declares only the shipped
     // amount. addr_2 receives TRANSFER_CREDITS; addr_1 keeps the undeclared
     // FUNDING_CREDITS − TRANSFER_CREDITS residual implicitly. Pin only the
@@ -123,22 +116,27 @@ async fn pa_001b_change_address_branch() {
         addr_1_post >= FUNDING_CREDITS - TRANSFER_CREDITS - 25_000_000,
         "None branch: residual must still sit on addr_1; got addr_1={addr_1_post}"
     );
-    s_a.teardown().await.expect("teardown sub-case A");
+    s.teardown().await.expect("teardown sub-case A");
+}
 
-    // ---- Sub-case B: output_change_address = Some(change_addr) ----
+#[tokio_shared_rt::test(shared)]
+async fn pa_001b_change_address_branch_subcase_b() {
+    init_tracing();
+
+    // Sub-case B: output_change_address = Some(change_addr).
     // Every input is fully spent; change_addr absorbs the residual.
-    let s_b = setup().await.expect("e2e setup failed (sub-case B)");
-    let src = s_b
+    let s = setup().await.expect("e2e setup failed (sub-case B)");
+    let src = s
         .test_wallet
         .next_unused_address()
         .await
         .expect("derive src");
-    s_b.ctx
+    s.ctx
         .bank()
         .fund_address(&src, FUNDING_CREDITS)
         .await
         .expect("bank.fund_address src");
-    wait_for_balance(&s_b.test_wallet, &src, FUNDING_FLOOR, STEP_TIMEOUT)
+    wait_for_balance(&s.test_wallet, &src, FUNDING_FLOOR, STEP_TIMEOUT)
         .await
         .expect("src funding never observed");
 
@@ -167,7 +165,7 @@ async fn pa_001b_change_address_branch() {
     // (DIP-17 path: `m/9'/coin'/17'/account'/key_class'/index` — there
     // is no BIP-44 change branch at this layer; the symptom is purely
     // a cursor-parking artefact, not a derivation collapse.)
-    let dest = s_b
+    let dest = s
         .test_wallet
         .next_unused_address()
         .await
@@ -176,8 +174,8 @@ async fn pa_001b_change_address_branch() {
         panic!("platform-payment account derives P2PKH only; got {dest:?}");
     };
     {
-        let wallet_id = s_b.test_wallet.platform_wallet().wallet_id();
-        let mut wm = s_b
+        let wallet_id = s.test_wallet.platform_wallet().wallet_id();
+        let mut wm = s
             .test_wallet
             .platform_wallet()
             .wallet_manager()
@@ -196,7 +194,7 @@ async fn pa_001b_change_address_branch() {
             "mark_platform_address_used(dest) returned false: dest missing from pool"
         );
     }
-    let change_addr = s_b
+    let change_addr = s
         .test_wallet
         .next_unused_address()
         .await
@@ -208,8 +206,8 @@ async fn pa_001b_change_address_branch() {
     let user_outputs: BTreeMap<_, _> = std::iter::once((dest, TRANSFER_CREDITS)).collect();
     let inputs: BTreeMap<_, _> = std::iter::once((src, FUNDING_CREDITS)).collect();
 
-    let platform_b: &PlatformAddressWallet = s_b.test_wallet.platform_wallet().platform();
-    platform_b
+    let platform: &PlatformAddressWallet = s.test_wallet.platform_wallet().platform();
+    platform
         .transfer_with_change_address(
             default_account_index(),
             InputSelection::Explicit(inputs),
@@ -217,23 +215,23 @@ async fn pa_001b_change_address_branch() {
             Some(change_addr),
             default_fee_strategy_for_test(),
             Some(dpp::version::PlatformVersion::latest()),
-            s_b.test_wallet.address_signer(),
+            s.test_wallet.address_signer(),
         )
         .await
         .expect("transfer_with_change_address(Some(change_addr))");
 
-    wait_for_balance(&s_b.test_wallet, &change_addr, TRANSFER_FLOOR, STEP_TIMEOUT)
+    wait_for_balance(&s.test_wallet, &change_addr, TRANSFER_FLOOR, STEP_TIMEOUT)
         .await
         .expect("change_addr never observed");
 
-    s_b.test_wallet
+    s.test_wallet
         .sync_balances()
         .await
         .expect("post-transfer sync (Some branch)");
-    let bal_b = s_b.test_wallet.balances().await;
-    let src_post = bal_b.get(&src).copied().unwrap_or(0);
-    let dest_post = bal_b.get(&dest).copied().unwrap_or(0);
-    let change_post = bal_b.get(&change_addr).copied().unwrap_or(0);
+    let bal = s.test_wallet.balances().await;
+    let src_post = bal.get(&src).copied().unwrap_or(0);
+    let dest_post = bal.get(&dest).copied().unwrap_or(0);
+    let change_post = bal.get(&change_addr).copied().unwrap_or(0);
 
     assert_eq!(
         src_post, 0,
@@ -249,7 +247,19 @@ async fn pa_001b_change_address_branch() {
          change={change_post}"
     );
 
-    s_b.teardown().await.expect("teardown sub-case B");
+    s.teardown().await.expect("teardown sub-case B");
+}
+
+/// Idempotent tracing init shared across the split sub-cases. `try_init`
+/// is a no-op if another test already installed a global subscriber.
+fn init_tracing() {
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "info,platform_wallet=debug".into()),
+        )
+        .with_test_writer()
+        .try_init();
 }
 
 /// DIP-17 default platform-payment account index (`0`). Inlined so
