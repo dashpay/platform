@@ -33,8 +33,6 @@ use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
 #[cfg(feature = "validation")]
 use crate::data_contract::validate_document::DataContractDocumentValidationMethodsV0;
-#[cfg(feature = "json-conversion")]
-use crate::document::serialization_traits::DocumentJsonMethodsV0;
 #[cfg(feature = "value-conversion")]
 use crate::document::serialization_traits::DocumentPlatformValueMethodsV0;
 use crate::document::serialization_traits::ExtendedDocumentPlatformConversionMethodsV0;
@@ -103,6 +101,31 @@ pub struct ExtendedDocumentV0 {
         serde(rename = "$tokenPaymentInfo")
     )]
     pub token_payment_info: Option<TokenPaymentInfo>,
+}
+
+/// Ensures a Document `Value::Map` carries the canonical
+/// `$formatVersion: "0"` tag before it's passed to canonical
+/// `Document::from_object` (which is `tag = "$formatVersion"`).
+///
+/// Used by ExtendedDocument's `from_trusted_platform_value` /
+/// `from_untrusted_platform_value` to accept legacy un-tagged shapes
+/// (DPNS / DashPay JSON test fixtures, untrusted JS user input via
+/// wasm-dpp legacy) and route them through the canonical deserializer.
+/// V0 is the only Document structure version, so unconditionally
+/// inserting `"0"` is correct today; if a future structure version is
+/// introduced, this helper needs to grow a version-selection step.
+#[cfg(feature = "value-conversion")]
+fn ensure_document_format_version(document_value: &mut Value) -> Result<(), ProtocolError> {
+    use platform_value::ValueMapHelper;
+    if let Value::Map(map) = document_value {
+        let has_tag = map
+            .iter()
+            .any(|(k, _)| k.as_text() == Some("$formatVersion"));
+        if !has_tag {
+            map.insert_string_key_value("$formatVersion".to_string(), Value::Text("0".to_string()));
+        }
+    }
+    Ok(())
 }
 
 impl ExtendedDocumentV0 {
@@ -269,9 +292,9 @@ impl ExtendedDocumentV0 {
     ///
     /// Returns a `ProtocolError` if there is an error processing the trusted platform value.
     pub fn from_trusted_platform_value(
-        document_value: Value,
+        mut document_value: Value,
         data_contract: DataContract,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let mut properties = document_value
             .clone()
@@ -291,7 +314,14 @@ impl ExtendedDocumentV0 {
             .remove_string(property_names::DOCUMENT_TYPE_NAME)
             .map_err(ProtocolError::ValueError)?;
 
-        let document = Document::from_platform_value(document_value, platform_version)?;
+        // Insert the canonical `$formatVersion` tag (Phase D step 8 slice
+        // B): the legacy `Document::from_platform_value` accepted
+        // un-tagged shapes, but it has been deleted. Untrusted user
+        // input lacks the tag, so we add it before routing through
+        // canonical `Document::from_object`.
+        ensure_document_format_version(&mut document_value)?;
+        use crate::serialization::ValueConvertible;
+        let document = Document::from_object(document_value)?;
 
         let data_contract_id = data_contract.id();
         let mut extended_document = Self {
@@ -327,7 +357,7 @@ impl ExtendedDocumentV0 {
     pub fn from_untrusted_platform_value(
         mut document_value: Value,
         data_contract: DataContract,
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let mut properties = document_value
             .clone()
@@ -364,7 +394,9 @@ impl ExtendedDocumentV0 {
             ReplacementType::BinaryBytes,
         )?;
 
-        let document = Document::from_platform_value(document_value, platform_version)?;
+        ensure_document_format_version(&mut document_value)?;
+        use crate::serialization::ValueConvertible;
+        let document = Document::from_object(document_value)?;
         let data_contract_id = data_contract.id();
         let mut extended_document = Self {
             data_contract,
@@ -559,7 +591,9 @@ mod tests {
     use super::*;
     use crate::data_contract::accessors::v0::DataContractV0Getters;
     use crate::data_contract::document_type::random_document::CreateRandomDocument;
-    use crate::document::serialization_traits::ExtendedDocumentPlatformConversionMethodsV0;
+    use crate::document::serialization_traits::{
+        DocumentJsonMethodsV0, ExtendedDocumentPlatformConversionMethodsV0,
+    };
     use crate::document::DocumentV0Getters;
     use crate::tests::json_document::json_document_to_contract;
     use platform_version::version::PlatformVersion;

@@ -1,13 +1,9 @@
 use crate::document::fields::property_names;
 use crate::document::serialization_traits::DocumentJsonMethodsV0;
 use crate::document::DocumentV0;
-use crate::util::json_value::JsonValueExt;
 use crate::ProtocolError;
-use platform_value::{Identifier, Value};
 use platform_version::version::PlatformVersion;
-use serde::Deserialize;
 use serde_json::{json, Value as JsonValue};
-use std::convert::TryInto;
 
 impl DocumentJsonMethodsV0<'_> for DocumentV0 {
     fn to_json_with_identifiers_using_bytes(
@@ -97,83 +93,13 @@ impl DocumentJsonMethodsV0<'_> for DocumentV0 {
         Ok(value)
     }
 
-    fn from_json_value<S, E>(
-        mut document_value: JsonValue,
-        _platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError>
-    where
-        for<'de> S: Deserialize<'de> + TryInto<Identifier, Error = E>,
-        E: Into<ProtocolError>,
-    {
-        let mut document = Self {
-            ..Default::default()
-        };
-
-        if let Ok(value) = document_value.remove(property_names::ID) {
-            if !value.is_null() {
-                let data: S = serde_json::from_value(value)?;
-                document.id = data.try_into().map_err(Into::into)?;
-            }
-        }
-        if let Ok(value) = document_value.remove(property_names::OWNER_ID) {
-            if !value.is_null() {
-                let data: S = serde_json::from_value(value)?;
-                document.owner_id = data.try_into().map_err(Into::into)?;
-            }
-        }
-        if let Ok(value) = document_value.remove(property_names::REVISION) {
-            document.revision = serde_json::from_value(value)?
-        }
-        if let Ok(value) = document_value.remove(property_names::CREATED_AT) {
-            document.created_at = serde_json::from_value(value)?
-        }
-        if let Ok(value) = document_value.remove(property_names::UPDATED_AT) {
-            document.updated_at = serde_json::from_value(value)?
-        }
-        if let Ok(value) = document_value.remove(property_names::CREATED_AT_BLOCK_HEIGHT) {
-            document.created_at_block_height = serde_json::from_value(value)?;
-        }
-        if let Ok(value) = document_value.remove(property_names::UPDATED_AT_BLOCK_HEIGHT) {
-            document.updated_at_block_height = serde_json::from_value(value)?;
-        }
-        if let Ok(value) = document_value.remove(property_names::CREATED_AT_CORE_BLOCK_HEIGHT) {
-            document.created_at_core_block_height = serde_json::from_value(value)?;
-        }
-        if let Ok(value) = document_value.remove(property_names::UPDATED_AT_CORE_BLOCK_HEIGHT) {
-            document.updated_at_core_block_height = serde_json::from_value(value)?;
-        }
-        if let Ok(value) = document_value.remove(property_names::TRANSFERRED_AT) {
-            document.transferred_at = serde_json::from_value(value)?;
-        }
-        if let Ok(value) = document_value.remove(property_names::TRANSFERRED_AT_BLOCK_HEIGHT) {
-            document.transferred_at_block_height = serde_json::from_value(value)?;
-        }
-        if let Ok(value) = document_value.remove(property_names::TRANSFERRED_AT_CORE_BLOCK_HEIGHT) {
-            document.transferred_at_core_block_height = serde_json::from_value(value)?;
-        }
-        if let Ok(value) = document_value.remove(property_names::CREATOR_ID) {
-            if !value.is_null() {
-                let data: S = serde_json::from_value(value)?;
-                document.creator_id = Some(data.try_into().map_err(Into::into)?);
-            }
-        }
-
-        let platform_value: Value = document_value.into();
-
-        document.properties = platform_value
-            .into_btree_string_map()
-            .map_err(ProtocolError::ValueError)?;
-        Ok(document)
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data_contract::accessors::v0::DataContractV0Getters;
-    use crate::data_contract::document_type::random_document::CreateRandomDocument;
     use crate::document::serialization_traits::DocumentJsonMethodsV0;
-    use crate::tests::json_document::json_document_to_contract;
+    use platform_value::{Identifier, Value};
     use platform_version::version::PlatformVersion;
     use std::collections::BTreeMap;
 
@@ -351,128 +277,13 @@ mod tests {
     }
 
     // ================================================================
-    //  from_json_value round-trip: to_json -> from_json_value
-    //  Uses String as the identifier deserialization type since
-    //  to_json produces base58 string identifiers.
+    //  Note: legacy `from_json_value` ingest tests were removed in
+    //  Phase D step 8 slice B alongside the deleted method itself. The
+    //  canonical JSON round-trip is exercised in
+    //  `document/v0/serialize.rs` and at the outer-Document level via
+    //  `JsonConvertible` (see `serialization::value_convertible` and
+    //  the `Document` impl in `serialization::json_convertible`).
     // ================================================================
-
-    #[test]
-    fn json_round_trip_with_random_dashpay_profile() {
-        let platform_version = PlatformVersion::latest();
-        let contract = json_document_to_contract(
-            "../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract.json",
-            false,
-            platform_version,
-        )
-        .expect("expected to load dashpay contract");
-
-        let document_type = contract
-            .document_type_for_name("profile")
-            .expect("expected profile document type");
-
-        for seed in 0..5u64 {
-            let document = document_type
-                .random_document(Some(seed), platform_version)
-                .expect("expected random document");
-
-            let crate::document::Document::V0(doc_v0) = &document;
-
-            let json_val: JsonValue =
-                serde_json::to_value(doc_v0).expect("to_value should succeed");
-
-            let recovered = DocumentV0::from_json_value::<String, _>(json_val, platform_version)
-                .expect("from_json_value should succeed");
-
-            assert_eq!(doc_v0.id, recovered.id, "id mismatch for seed {seed}");
-            assert_eq!(
-                doc_v0.owner_id, recovered.owner_id,
-                "owner_id mismatch for seed {seed}"
-            );
-            assert_eq!(
-                doc_v0.revision, recovered.revision,
-                "revision mismatch for seed {seed}"
-            );
-        }
-    }
-
-    // ================================================================
-    //  from_json_value extracts all system fields correctly
-    // ================================================================
-
-    #[test]
-    fn from_json_value_extracts_timestamps_and_revision() {
-        let platform_version = PlatformVersion::latest();
-        let id = Identifier::new([1u8; 32]);
-        let owner = Identifier::new([2u8; 32]);
-        let creator = Identifier::new([9u8; 32]);
-
-        let json_val = json!({
-            "$id": bs58::encode(id.to_buffer()).into_string(),
-            "$ownerId": bs58::encode(owner.to_buffer()).into_string(),
-            "$revision": 5,
-            "$createdAt": 1_000_000u64,
-            "$updatedAt": 2_000_000u64,
-            "$createdAtBlockHeight": 100u64,
-            "$updatedAtBlockHeight": 200u64,
-            "$createdAtCoreBlockHeight": 50u32,
-            "$updatedAtCoreBlockHeight": 60u32,
-            "$transferredAt": 3_000_000u64,
-            "$transferredAtBlockHeight": 300u64,
-            "$transferredAtCoreBlockHeight": 70u32,
-            "$creatorId": bs58::encode(creator.to_buffer()).into_string(),
-            "customProp": "hello"
-        });
-
-        let doc = DocumentV0::from_json_value::<String, _>(json_val, platform_version)
-            .expect("from_json_value should succeed");
-
-        assert_eq!(doc.id, id);
-        assert_eq!(doc.owner_id, owner);
-        assert_eq!(doc.revision, Some(5));
-        assert_eq!(doc.created_at, Some(1_000_000));
-        assert_eq!(doc.updated_at, Some(2_000_000));
-        assert_eq!(doc.created_at_block_height, Some(100));
-        assert_eq!(doc.updated_at_block_height, Some(200));
-        assert_eq!(doc.created_at_core_block_height, Some(50));
-        assert_eq!(doc.updated_at_core_block_height, Some(60));
-        assert_eq!(doc.transferred_at, Some(3_000_000));
-        assert_eq!(doc.transferred_at_block_height, Some(300));
-        assert_eq!(doc.transferred_at_core_block_height, Some(70));
-        assert_eq!(doc.creator_id, Some(creator));
-        // Custom property should be in properties map
-        assert_eq!(
-            doc.properties.get("customProp"),
-            Some(&Value::Text("hello".to_string()))
-        );
-    }
-
-    #[test]
-    fn from_json_value_handles_missing_optional_fields() {
-        let platform_version = PlatformVersion::latest();
-        let id = Identifier::new([3u8; 32]);
-        let owner = Identifier::new([4u8; 32]);
-        let json_val = json!({
-            "$id": bs58::encode(id.to_buffer()).into_string(),
-            "$ownerId": bs58::encode(owner.to_buffer()).into_string(),
-        });
-
-        let doc = DocumentV0::from_json_value::<String, _>(json_val, platform_version)
-            .expect("from_json_value should succeed with minimal fields");
-
-        assert_eq!(doc.id, id);
-        assert_eq!(doc.owner_id, owner);
-        assert_eq!(doc.revision, None);
-        assert_eq!(doc.created_at, None);
-        assert_eq!(doc.updated_at, None);
-        assert_eq!(doc.transferred_at, None);
-        assert_eq!(doc.created_at_block_height, None);
-        assert_eq!(doc.updated_at_block_height, None);
-        assert_eq!(doc.transferred_at_block_height, None);
-        assert_eq!(doc.created_at_core_block_height, None);
-        assert_eq!(doc.updated_at_core_block_height, None);
-        assert_eq!(doc.transferred_at_core_block_height, None);
-        assert_eq!(doc.creator_id, None);
-    }
 
     // ================================================================
     //  to_json_with_identifiers_using_bytes: minimal document has only
@@ -525,40 +336,6 @@ mod tests {
     }
 
     // ================================================================
-    //  from_json_value handles null creator_id by leaving it None.
-    // ================================================================
-
-    #[test]
-    fn from_json_value_with_null_creator_id_stays_none() {
-        let platform_version = PlatformVersion::latest();
-        let json_val = json!({
-            "$id": bs58::encode([1u8; 32]).into_string(),
-            "$ownerId": bs58::encode([2u8; 32]).into_string(),
-            "$creatorId": JsonValue::Null,
-        });
-        let doc = DocumentV0::from_json_value::<String, _>(json_val, platform_version)
-            .expect("from_json_value should succeed with null creator_id");
-        assert_eq!(doc.creator_id, None);
-    }
-
-    // ================================================================
-    //  from_json_value handles null id/owner by leaving them defaulted.
-    // ================================================================
-
-    #[test]
-    fn from_json_value_with_null_id_leaves_default() {
-        let platform_version = PlatformVersion::latest();
-        let json_val = json!({
-            "$id": JsonValue::Null,
-            "$ownerId": bs58::encode([2u8; 32]).into_string(),
-        });
-        let doc = DocumentV0::from_json_value::<String, _>(json_val, platform_version)
-            .expect("from_json_value should succeed with null $id");
-        // Default Identifier is all-zeros.
-        assert_eq!(doc.id, Identifier::new([0u8; 32]));
-    }
-
-    // ================================================================
     //  to_json_with_identifiers_using_bytes: multiple user-defined
     //  properties are all included.
     // ================================================================
@@ -595,38 +372,4 @@ mod tests {
         assert_eq!(obj.get("c").and_then(|v| v.as_bool()), Some(true));
     }
 
-    // ================================================================
-    //  from_json_value: an empty object produces a fully-defaulted doc
-    // ================================================================
-
-    #[test]
-    fn from_json_value_empty_object_returns_default_document() {
-        let platform_version = PlatformVersion::latest();
-        let doc = DocumentV0::from_json_value::<String, _>(json!({}), platform_version)
-            .expect("from_json_value should succeed with empty object");
-        assert_eq!(doc.id, Identifier::new([0u8; 32]));
-        assert_eq!(doc.owner_id, Identifier::new([0u8; 32]));
-        assert_eq!(doc.revision, None);
-        assert!(doc.properties.is_empty());
-    }
-
-    // ================================================================
-    //  from_json_value with creator_id
-    // ================================================================
-
-    #[test]
-    fn from_json_value_parses_creator_id() {
-        let platform_version = PlatformVersion::latest();
-        let creator = Identifier::new([0xCC; 32]);
-        let json_val = json!({
-            "$id": bs58::encode([1u8; 32]).into_string(),
-            "$ownerId": bs58::encode([2u8; 32]).into_string(),
-            "$creatorId": bs58::encode(creator.to_buffer()).into_string(),
-        });
-
-        let doc = DocumentV0::from_json_value::<String, _>(json_val, platform_version)
-            .expect("from_json_value with creator_id should succeed");
-
-        assert_eq!(doc.creator_id, Some(creator));
-    }
 }

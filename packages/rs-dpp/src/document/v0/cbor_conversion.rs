@@ -5,9 +5,7 @@ use crate::prelude::{BlockHeight, CoreBlockHeight, Revision};
 
 use crate::ProtocolError;
 
-use crate::document::serialization_traits::{
-    DocumentCborMethodsV0, DocumentPlatformValueMethodsV0,
-};
+use crate::document::serialization_traits::DocumentCborMethodsV0;
 use crate::document::v0::DocumentV0;
 use crate::version::PlatformVersion;
 use ciborium::Value as CborValue;

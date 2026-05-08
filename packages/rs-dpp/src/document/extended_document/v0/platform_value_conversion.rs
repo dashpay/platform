@@ -1,7 +1,6 @@
 use crate::document::extended_document::v0::ExtendedDocumentV0;
 use crate::document::property_names;
 use crate::document::serialization_traits::DocumentPlatformValueMethodsV0;
-use crate::version::PlatformVersion;
 use crate::ProtocolError;
 
 use platform_value::Value;
@@ -58,13 +57,5 @@ impl DocumentPlatformValueMethodsV0<'_> for ExtendedDocumentV0 {
         map.extend(self.properties().to_owned());
 
         Ok(map)
-    }
-
-    fn from_platform_value(
-        document_value: Value,
-        _platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError> {
-        // Legacy-shape ingest — accepts un-tagged ExtendedDocument values.
-        Ok(platform_value::from_value(document_value)?)
     }
 }

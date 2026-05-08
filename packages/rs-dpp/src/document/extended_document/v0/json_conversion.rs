@@ -1,16 +1,11 @@
 use crate::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
 use crate::document::extended_document::fields::property_names;
 use crate::document::extended_document::v0::ExtendedDocumentV0;
-use crate::document::serialization_traits::{
-    DocumentJsonMethodsV0, DocumentPlatformValueMethodsV0,
-};
+use crate::document::serialization_traits::DocumentJsonMethodsV0;
 
 use crate::ProtocolError;
-use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
-use serde::Deserialize;
 use serde_json::Value as JsonValue;
-use std::convert::TryInto;
 
 impl DocumentJsonMethodsV0<'_> for ExtendedDocumentV0 {
     fn to_json_with_identifiers_using_bytes(
@@ -28,18 +23,5 @@ impl DocumentJsonMethodsV0<'_> for ExtendedDocumentV0 {
             self.document_type_name.clone().into(),
         );
         Ok(json)
-    }
-
-    fn from_json_value<S, E>(
-        document_value: JsonValue,
-        platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError>
-    where
-        for<'de> S: Deserialize<'de> + TryInto<Identifier, Error = E>,
-        E: Into<ProtocolError>,
-    {
-        // Legacy-shape JSON ingest — accepts un-tagged values via the
-        // `from_platform_value` legacy ingest path.
-        Self::from_platform_value(document_value.into(), platform_version)
     }
 }

@@ -544,8 +544,10 @@ Ordered to fix bugs first, then easy wins, then long-pole work. Each step gates 
 7. **ExtendedDocument refactor (C1)**:
    - After G1 fix: switch to `#[serde(tag = "$version")]` enum derive, implement `JsonConvertible`. Trim the 10+ inherent passthrough methods. **Unblocks** wasm-dpp2 `ExtendedDocument` wrapper.
 
-8. **Document-family canonical migration** (A10, A11) ✅ Slice A DONE in
-   commit `678121acea`. Slice B (further work) deferred — see below.
+8. **Document-family canonical migration** (A10, A11) ✅ DONE — Slice A
+   in commit `678121acea`, Slice B in the follow-up commit on this
+   branch. Both legacy traits are now reduced to the single helper
+   each that has no canonical equivalent.
 
    ### Slice A — redundant-method deletion + clearer trait docs
 
@@ -590,31 +592,57 @@ Ordered to fix bugs first, then easy wins, then long-pole work. Each step gates 
    paths exercise this. Reverted that part of the migration; kept the
    method as legacy-shape ingest.
 
-   ### Slice B — wider migration ⬜ DEFERRED to a follow-up PR
+   ### Slice B — delete legacy ingest, migrate callers ✅ DONE
 
-   Possible further work, but not landing on this branch:
+   Slice A left the legacy ingest methods (`from_platform_value`,
+   `from_json_value`) in place because they accept un-tagged values
+   that canonical `from_object`/`from_json` would reject. Slice B
+   removes those by ensuring every call path either (a) emits the
+   `$formatVersion` tag, or (b) inserts it before delegating to
+   canonical. Net for slice B: legacy ingest entirely deleted from
+   rs-dpp.
 
-   - **wasm-dpp2 DocumentWasm.fromObject**: today calls
-     `Document::from_platform_value` (legacy ingest). Could be
-     migrated to canonical `Document::from_object` IF JS clients
-     always send canonical-tagged shapes — but the wasm-dpp2 wrapper
-     is part of the JS SDK surface and changing the contract is a
-     deliberate API decision.
+   - **wasm-dpp2 DocumentWasm.toObject** now emits
+     `$formatVersion: "0"` in the wrapper-built map. `fromObject` and
+     `fromJSON` route through canonical `ValueConvertible::from_object`
+     / `JsonConvertible::from_json`. The JS-facing wire shape gains
+     one explicit tag field; everything else stays the same.
 
-   - **rs-drive's `Document::from_platform_value`** call sites (4 in
-     `drive/document/update/mod.rs`) — all in test functions, all
-     constructing values via `platform_value!{}` macro literals
-     without `$formatVersion`. Could migrate by adding the tag to the
-     fixtures, but the legacy ingest is conceptually appropriate for
-     these test scenarios.
+   - **ExtendedDocumentV0's `from_trusted_platform_value` /
+     `from_untrusted_platform_value`** now insert `$formatVersion`
+     internally via the new `ensure_document_format_version` helper,
+     then delegate to canonical `Document::from_object`. The
+     ExtendedDocument API surface is unchanged; legacy un-tagged
+     fixtures keep working.
 
-   - **`to_map_value` API decision**: the plan suggested promoting
-     to a blanket impl on `ValueConvertible`-implementors. That
-     would be a workspace-wide API surface change. Alternative:
-     leave on the trait as documented helper.
+   - **wasm-dpp legacy crate** (`packages/wasm-dpp/src/document/mod.rs`)
+     uses the same insert-tag-then-canonical pattern — minimum-touch
+     fix consistent with the legacy-crate policy. JS surface is
+     unchanged.
 
-   Net for slice A: ~−170 lines of redundant code; trait surfaces now
-   only carry methods with genuinely-distinct semantics from canonical.
+   - **rs-drive test call sites** (4 in
+     `packages/rs-drive/src/drive/document/update/mod.rs` and 7 in
+     `packages/rs-drive/tests/query_tests.rs`) migrated to small local
+     `document_from_legacy_value` helpers that wrap the same
+     insert-tag-then-canonical pattern.
+
+   - **Deleted from `DocumentPlatformValueMethodsV0`**:
+     `from_platform_value(Value, &PlatformVersion)`. Outer Document,
+     DocumentV0, and ExtendedDocumentV0 impls all removed.
+
+   - **Deleted from `DocumentJsonMethodsV0`**: `from_json_value<S, E>`.
+     Outer Document, DocumentV0, and ExtendedDocumentV0 impls all
+     removed. Trait now contains just
+     `to_json_with_identifiers_using_bytes`.
+
+   - **`to_map_value` API decision**: deferred. The two surviving
+     methods (`to_map_value` / `into_map_value`) stay on the trait
+     as documented helpers; no blanket-impl promotion in this PR.
+
+   Total Phase D step 8 net: ~−170 lines (slice A) + further
+   simplification (slice B). Trait surfaces now only carry methods
+   with genuinely-distinct semantics from canonical (the BTreeMap
+   shape view + the validating-JSON wire shape).
 
 9. **State-transition trait migration** (A1, A2 — long pole, ~70 files):
    - Strategy: introduce `SignableValueConvertible: ValueConvertible` carrying `skip_signature` + `to_canonical_object` + `to_canonical_cleaned_object`.

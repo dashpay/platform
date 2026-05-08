@@ -63,8 +63,9 @@ use dpp::data_contract::config::v1::DataContractConfigSettersV1;
 use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::document::serialization_traits::{
-    DocumentCborMethodsV0, DocumentPlatformConversionMethodsV0, DocumentPlatformValueMethodsV0,
+    DocumentCborMethodsV0, DocumentPlatformConversionMethodsV0,
 };
+use dpp::serialization::ValueConvertible;
 use dpp::document::{DocumentV0Getters, DocumentV0Setters};
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::identity::TimestampMillis;
@@ -92,6 +93,27 @@ use drive::util::object_size_info::DocumentInfo::DocumentRefInfo;
 use drive::query::{WhereClause, WhereOperator};
 use drive::util::test_helpers;
 use drive::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+
+/// Build a `Document` from an un-tagged `platform_value::Value` (e.g.
+/// produced by `platform_value::to_value` over a serde-derived domain
+/// struct) by inserting `$formatVersion: "0"` and routing through
+/// canonical `ValueConvertible::from_object`. Replaces the deleted
+/// `Document::from_platform_value` ingest path.
+#[cfg(feature = "server")]
+fn document_from_legacy_value(mut value: Value) -> Document {
+    if let Value::Map(ref mut entries) = value {
+        let has_tag = entries
+            .iter()
+            .any(|(k, _)| matches!(k, Value::Text(s) if s == "$formatVersion"));
+        if !has_tag {
+            entries.push((
+                Value::Text("$formatVersion".to_string()),
+                Value::Text("0".to_string()),
+            ));
+        }
+    }
+    Document::from_object(value).expect("expected document from legacy value")
+}
 
 #[cfg(feature = "server")]
 #[derive(Serialize, Deserialize)]
@@ -565,7 +587,7 @@ fn test_serialization_and_deserialization() {
         let value = platform_value::to_value(domain).expect("expected value");
 
         let mut document =
-            Document::from_platform_value(value, platform_version).expect("expected value");
+            document_from_legacy_value(value);
         document.set_revision(Some(1));
         let serialized = <Document as DocumentPlatformConversionMethodsV0>::serialize(
             &document,
@@ -614,7 +636,7 @@ fn test_serialization_and_deserialization_with_null_values_should_fail_if_requir
 
     let value = platform_value::to_value(domain).expect("expected value");
     let mut document =
-        Document::from_platform_value(value, platform_version).expect("expected value");
+        document_from_legacy_value(value);
     document.set_revision(Some(1));
 
     <Document as DocumentPlatformConversionMethodsV0>::serialize(
@@ -666,7 +688,7 @@ fn test_serialization_and_deserialization_with_null_values() {
         .remove_optional_value("normalizedLabel")
         .expect("expected to remove null");
     let mut document =
-        Document::from_platform_value(value, platform_version).expect("expected value");
+        document_from_legacy_value(value);
     document.set_revision(Some(1));
     let serialized = DocumentPlatformConversionMethodsV0::serialize(
         &document,
@@ -821,7 +843,7 @@ pub fn add_domains_to_contract(
     for domain in domains {
         let value = platform_value::to_value(domain).expect("expected value");
         let document =
-            Document::from_platform_value(value, platform_version).expect("expected value");
+            document_from_legacy_value(value);
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
@@ -864,7 +886,7 @@ pub fn add_withdrawals_to_contract(
     for domain in withdrawals {
         let value = platform_value::to_value(domain).expect("expected value");
         let document =
-            Document::from_platform_value(value, platform_version).expect("expected value");
+            document_from_legacy_value(value);
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
@@ -5829,8 +5851,7 @@ mod tests {
         };
 
         let value0 = platform_value::to_value(domain0).expect("serialized domain");
-        let document0 = Document::from_platform_value(value0, platform_version)
-            .expect("document should be properly deserialized");
+        let document0 = document_from_legacy_value(value0);
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 

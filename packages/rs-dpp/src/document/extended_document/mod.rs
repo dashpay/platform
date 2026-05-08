@@ -11,8 +11,6 @@ use crate::ProtocolError;
 
 use crate::document::extended_document::v0::ExtendedDocumentV0;
 
-#[cfg(feature = "json-conversion")]
-use crate::document::serialization_traits::DocumentJsonMethodsV0;
 #[cfg(feature = "validation")]
 use crate::validation::SimpleConsensusValidationResult;
 use derive_more::From;
