@@ -177,10 +177,11 @@ pub struct E2eContext {
     /// events instead of fixed polling.
     pub wait_hub: Arc<WaitEventHub>,
     /// Independent DAPI cross-check of the bank's Platform balance,
-    /// captured once during framework init (QA-V26-005). `None` only
-    /// if the cross-check itself couldn't run (e.g. the bank didn't
-    /// load); on fetch error the result still holds
-    /// `independent_credits = 0` with a `warn` logged.
+    /// captured once per init AFTER the startup sweep and
+    /// `sync_and_refresh_floor` (QA-V26-005 / QA-V26-013). Both
+    /// `harness_credits` and `independent_credits` reflect post-sweep
+    /// state — the same balance that `assert_floor` evaluates. On fetch
+    /// error `independent_credits = 0` with a `warn` logged.
     pub bank_balance_cross_check: Option<CrossCheckResult>,
 }
 
@@ -484,49 +485,6 @@ impl E2eContext {
             );
         }
 
-        // Independent DAPI cross-check of the bank's Platform balance
-        // (QA-V26-005). A single proof-verified AddressInfo::fetch round-trip
-        // against testnet DAPI, completely bypassing the wallet/manager layer.
-        // Logged at info on agreement, warn on disagreement (e.g. DAPI
-        // replica lag per #3611). Never aborts init — a warning is enough.
-        let bank_balance_cross_check = {
-            let network = bank.network();
-            let result = bank.cross_check_balance(&sdk).await;
-            let addr_bech32 = result.address.to_bech32m_string(network);
-            let addr_hex = match &result.address {
-                dpp::address_funds::PlatformAddress::P2pkh(hash) => hex::encode(hash),
-                dpp::address_funds::PlatformAddress::P2sh(hash) => hex::encode(hash),
-            };
-            let nonce = result.nonce.unwrap_or(0);
-            // Tolerance: exact equality expected (both reads target the same
-            // chain state right after sync). Replica-lag on DAPI can cause
-            // a transient mismatch (see #3611); demote to warn, never abort.
-            if result.harness_credits == result.independent_credits {
-                tracing::info!(
-                    target: "platform_wallet::e2e::bank",
-                    harness_credits = result.harness_credits,
-                    independent_credits = result.independent_credits,
-                    addr_bech32 = %addr_bech32,
-                    addr_hash160 = %addr_hex,
-                    nonce,
-                    "═══ BANK PLATFORM BALANCE CROSS-CHECK OK (QA-V26-005) ═══"
-                );
-            } else {
-                tracing::warn!(
-                    target: "platform_wallet::e2e::bank",
-                    harness_credits = result.harness_credits,
-                    independent_credits = result.independent_credits,
-                    addr_bech32 = %addr_bech32,
-                    addr_hash160 = %addr_hex,
-                    nonce,
-                    "bank Platform balance MISMATCH between harness cache and \
-                     independent DAPI fetch — possible DAPI replica lag (#3611); \
-                     harness balance is the authoritative value for funding gates"
-                );
-            }
-            Some(result)
-        };
-
         // Resolve / register the bank identity BEFORE the orphan
         // sweep so [`cleanup::sweep_orphans`] has a valid sweep
         // destination on its very first invocation.
@@ -589,6 +547,50 @@ impl E2eContext {
                 "post-sweep bank resync failed; floor check uses pre-sweep balance"
             );
         }
+
+        // Independent DAPI cross-check of the bank's Platform balance
+        // (QA-V26-005 / QA-V26-013). Fires AFTER sync_and_refresh_floor so
+        // `harness_credits` reflects the post-sweep wallet cache — the same
+        // balance that assert_floor will evaluate. Firing pre-sweep (old
+        // location) used a stale load-time snapshot; the cross-check would
+        // agree with DAPI for well-funded banks (no mismatch → OK-only line)
+        // making it appear absent when filtered for the MISMATCH keyword
+        // (QA-V26-013). Never aborts init — warn is enough.
+        let bank_balance_cross_check = {
+            let network = bank.network();
+            let result = bank.cross_check_balance(&sdk).await;
+            let addr_bech32 = result.address.to_bech32m_string(network);
+            let addr_hex = match &result.address {
+                dpp::address_funds::PlatformAddress::P2pkh(hash) => hex::encode(hash),
+                dpp::address_funds::PlatformAddress::P2sh(hash) => hex::encode(hash),
+            };
+            let nonce = result.nonce.unwrap_or(0);
+            if result.harness_credits == result.independent_credits {
+                tracing::info!(
+                    target: "platform_wallet::e2e::bank",
+                    harness_credits = result.harness_credits,
+                    independent_credits = result.independent_credits,
+                    addr_bech32 = %addr_bech32,
+                    addr_hash160 = %addr_hex,
+                    nonce,
+                    "═══ BANK PLATFORM BALANCE CROSS-CHECK OK (QA-V26-005) ═══"
+                );
+            } else {
+                tracing::warn!(
+                    target: "platform_wallet::e2e::bank",
+                    harness_credits = result.harness_credits,
+                    independent_credits = result.independent_credits,
+                    addr_bech32 = %addr_bech32,
+                    addr_hash160 = %addr_hex,
+                    nonce,
+                    "bank Platform balance MISMATCH between harness cache and \
+                     independent DAPI fetch — possible DAPI replica lag (#3611); \
+                     harness balance is the authoritative value for funding gates"
+                );
+            }
+            Some(result)
+        };
+
         bank.assert_floor(&config, sweep_recovered, pre_sweep_total, pre_sweep_failed)
             .await;
 
