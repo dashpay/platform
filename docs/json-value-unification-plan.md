@@ -544,53 +544,77 @@ Ordered to fix bugs first, then easy wins, then long-pole work. Each step gates 
 7. **ExtendedDocument refactor (C1)**:
    - After G1 fix: switch to `#[serde(tag = "$version")]` enum derive, implement `JsonConvertible`. Trim the 10+ inherent passthrough methods. **Unblocks** wasm-dpp2 `ExtendedDocument` wrapper.
 
-8. **Document-family canonical migration** (A10, A11) ⬜ DEFERRED to a
-   follow-up PR.
+8. **Document-family canonical migration** (A10, A11) ✅ Slice A DONE in
+   commit `678121acea`. Slice B (further work) deferred — see below.
 
-   Audit (May 2026) confirmed the same dead-scaffolding pattern as
-   IdentityPublicKey for the version-dispatch methods, but the Document
-   family is **substantially more entangled** than the identity types
-   audited under step 5. Notably:
+   ### Slice A — redundant-method deletion + clearer trait docs
 
-   - **rs-drive consensus path involvement**:
-     `Document::from_platform_value(value, platform_version)` is called
-     in `packages/rs-drive/src/drive/document/update/mod.rs` at 4 call
-     sites within document-update validation. Migrating these requires
-     hash-equivalence verification against the storage / state-transition
-     signing paths.
-   - **`to_map_value` / `into_map_value`** return `BTreeMap<String, Value>`
-     (not `Value`) and are genuinely useful — the plan suggests
-     "promote to blanket impl on `ValueConvertible`-implementors", but
-     that's a workspace-wide API surface change that needs deliberation.
-   - **`from_json_value<S, E>`** has manual field-by-field ingest with
-     generic identifier deserialization, used by ExtendedDocument and JS
-     SDK paths. Genuinely different semantic from canonical.
-   - **`to_json_with_identifiers_using_bytes`** is the validating-JSON
-     shape used by JSON Schema validators. KEEP-AS-EXCEPTION.
+   Trimmed both legacy traits to just the methods with genuinely
+   different semantics from canonical:
 
-   Identified callers of legacy traits (production, non-test):
+   - **Deleted from `DocumentPlatformValueMethodsV0`** (1:1 canonical
+     equivalents): `to_object`, `into_value`. Their bodies were just
+     `platform_value::to_value(self)` — exactly what canonical
+     `ValueConvertible::to_object` / `into_object` produces.
 
-   | Site | Methods used |
-   |---|---|
-   | `wasm-dpp2/data_contract/document/model.rs` | `to_map_value`, `from_platform_value`, `from_json_value` |
-   | `rs-drive/drive/document/update/mod.rs` | `from_platform_value` (×4 in update validation) |
-   | `rs-dpp/document/extended_document/...` | `to_map_value`, `into_map_value`, `from_platform_value` (internal) |
+   - **Deleted from `DocumentJsonMethodsV0`** (1:1 canonical
+     equivalent): `to_json(&self, &PlatformVersion)`. Its body was
+     `self.to_object()?.try_into()` — same as canonical
+     `JsonConvertible::to_json`. The `&PlatformVersion` arg was unused.
 
-   Steps for the follow-up PR:
+   - **Kept** with expanded doc comments explaining their distinct
+     purpose:
+     - `to_map_value` / `into_map_value` (A11) — return
+       `BTreeMap<String, Value>`, used by ExtendedDocument and
+       wasm-dpp2 DocumentWasm to compose Document plus metadata.
+     - `from_platform_value(value, &platform_version)` (A11) —
+       **legacy-shape ingest**, accepts un-tagged Document values
+       (no `$formatVersion`). Symmetric with `from_json_value`.
+       Used by ExtendedDocument's `from_trusted_platform_value` /
+       `from_untrusted_platform_value` and DocumentWasm.fromObject
+       to ingest DPNS / DashPay legacy JSON fixtures and older
+       stored shapes that predate `#[serde(tag = "$formatVersion")]`.
+     - `to_json_with_identifiers_using_bytes` (A10) — validating-JSON
+       wire shape (bs58 string identifiers + binary fields as JSON
+       arrays of u8) for JSON Schema validators.
+     - `from_json_value<S, E>` (A10) — generic over identifier
+       deserialization type, accepts JSON without `$formatVersion`.
 
-   1. Audit each rs-drive caller for hash/signing-equivalence (does the
-      output Value get hashed? Does the deserialize route differ from
-      canonical for any actual on-disk data?).
-   2. Decide on `to_map_value` API: blanket impl on `ValueConvertible`,
-      free function in a helper module, or inherent method on Document.
-   3. Migrate wasm-dpp2 DocumentWasm and ExtendedDocument internal
-      consumers to canonical / chosen helpers.
-   4. Per-property tests on the ExtendedDocument round-trip (it has
-      already been hardened on this branch but its internal `to_map_value`
-      use makes it touchpoint-sensitive).
-   5. Delete `DocumentPlatformValueMethodsV0` trait once empty; trim
-      `DocumentJsonMethodsV0` to just the validating-JSON method
-      (`to_json_with_identifiers_using_bytes` and `from_json_value`).
+   **Audit course-correction**: my initial pass dismissed
+   `from_platform_value` as "dead scaffolding for hypothetical V1+",
+   reasoning that V0 ignored its `_platform_version` arg and the only
+   structure version is V0 today. That was wrong — the legacy method
+   accepts un-tagged shapes that canonical `ValueConvertible::from_object`
+   errors on (canonical requires `$formatVersion`). The DPNS test
+   fixture `document_dpns.json` and ExtendedDocument's legacy ingest
+   paths exercise this. Reverted that part of the migration; kept the
+   method as legacy-shape ingest.
+
+   ### Slice B — wider migration ⬜ DEFERRED to a follow-up PR
+
+   Possible further work, but not landing on this branch:
+
+   - **wasm-dpp2 DocumentWasm.fromObject**: today calls
+     `Document::from_platform_value` (legacy ingest). Could be
+     migrated to canonical `Document::from_object` IF JS clients
+     always send canonical-tagged shapes — but the wasm-dpp2 wrapper
+     is part of the JS SDK surface and changing the contract is a
+     deliberate API decision.
+
+   - **rs-drive's `Document::from_platform_value`** call sites (4 in
+     `drive/document/update/mod.rs`) — all in test functions, all
+     constructing values via `platform_value!{}` macro literals
+     without `$formatVersion`. Could migrate by adding the tag to the
+     fixtures, but the legacy ingest is conceptually appropriate for
+     these test scenarios.
+
+   - **`to_map_value` API decision**: the plan suggested promoting
+     to a blanket impl on `ValueConvertible`-implementors. That
+     would be a workspace-wide API surface change. Alternative:
+     leave on the trait as documented helper.
+
+   Net for slice A: ~−170 lines of redundant code; trait surfaces now
+   only carry methods with genuinely-distinct semantics from canonical.
 
 9. **State-transition trait migration** (A1, A2 — long pole, ~70 files):
    - Strategy: introduce `SignableValueConvertible: ValueConvertible` carrying `skip_signature` + `to_canonical_object` + `to_canonical_cleaned_object`.
