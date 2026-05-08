@@ -256,9 +256,11 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                     );
                 }
             } else {
-                // INTENTIONAL(CMT-005): log-only is sufficient until metrics
-                // infrastructure exists; see broadcast-first rationale above.
+                // Log-only: broadcast already succeeded; the wallet handle is stale and
+                // future sends will surface a clean `WalletNotFound` from the lookup above.
                 tracing::warn!(
+                    target: "platform_wallet::broadcast",
+                    event = "post_broadcast_wallet_missing",
                     wallet_id = %hex::encode(self.wallet_id),
                     txid = %tx.txid(),
                     "wallet missing during post-broadcast transaction registration"
