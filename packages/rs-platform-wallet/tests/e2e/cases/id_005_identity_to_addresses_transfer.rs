@@ -83,6 +83,9 @@ async fn id_005_identity_to_addresses_transfer() {
     // SDK's round-robin DAPI handle; without this gate the transfer can land
     // on a sibling replica that hasn't replicated the new identity yet and
     // panic with `Identity ... not found`.
+    // TODO(PR #3609): cross-replica visibility should be guaranteed by the
+    // wallet/SDK upstream — drop this gate once the SDK awaits replication
+    // before returning from `register_from_addresses`.
     wait_for_identity_visible_to_platform(s.ctx.sdk(), registered.id, STEP_TIMEOUT, 2)
         .await
         .expect("identity never reached cross-replica visibility");
