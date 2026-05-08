@@ -91,13 +91,11 @@ pub enum Error {
     #[error("Identity nonce not found on platform: {0}")]
     IdentityNonceNotFound(String),
 
-    /// Drive returned an internal error that was not classified as a consensus
-    /// error. Contains the decoded human-readable message from the
-    /// `drive-error-data-bin` gRPC metadata (CBOR → message extraction).
+    /// Drive returned an internal error that is not a consensus error.
     ///
-    /// This typically indicates a storage-level error (e.g., GroveDB constraint
-    /// violation) that bypassed the consensus validation layer. If pre-validation
-    /// is working correctly, these should be rare.
+    /// Contains the decoded human-readable message extracted from the
+    /// `drive-error-data-bin` gRPC metadata (CBOR map, `message` field).
+    /// Typically a storage-level failure (e.g., GroveDB constraint violation).
     #[error("Drive internal error: {0}")]
     DriveInternalError(String),
 
@@ -247,20 +245,15 @@ fn decode_cbor_value(bytes: &[u8]) -> Option<ciborium::Value> {
     .flatten()
 }
 
-/// Extract the human-readable `message` field from CBOR-encoded `drive-error-data-bin` metadata.
+/// Extract the `message` text from CBOR-encoded `drive-error-data-bin` metadata.
 ///
-/// The metadata contains a CBOR map with optional fields: `code`, `message`, `consensus_error`.
-/// Returns `Some(message)` if the CBOR decodes and contains a non-empty `message` string.
-///
-/// Inputs larger than [`MAX_CBOR_INPUT_SIZE`] are rejected unread to bound the
-/// memory and stack a malicious peer can force on the client.
-///
-/// INTENTIONAL(CMT-007): the CBOR walk is duplicated with `walk_cbor_for_key`
-/// at packages/rs-dapi/src/services/platform_service/error_mapping.rs. Keeping
-/// two implementations avoids introducing a shared crate solely for this
-/// single-key lookup; the two crates have different dependency surfaces. If you
-/// change the wire-format expectations here, MIRROR the change at the rs-dapi
-/// site so both sides of the boundary stay in sync.
+/// The metadata is a CBOR map with optional fields `code`, `message`,
+/// `consensus_error`. Returns `Some(message)` when a non-empty `message`
+/// text is present. Inputs larger than [`MAX_CBOR_INPUT_SIZE`] are rejected
+/// unread.
+//
+// MIRROR: keep in sync with `walk_cbor_for_key` in
+// packages/rs-dapi/src/services/platform_service/error_mapping.rs.
 fn extract_drive_error_message(bytes: &[u8]) -> Option<String> {
     if bytes.len() > MAX_CBOR_INPUT_SIZE {
         tracing::debug!(

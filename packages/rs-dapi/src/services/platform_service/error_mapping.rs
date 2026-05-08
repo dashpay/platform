@@ -216,13 +216,9 @@ pub(crate) fn base64_decode(input: &str) -> Option<Vec<u8>> {
 }
 
 /// Walk a nested CBOR map by following the provided key path.
-///
-/// INTENTIONAL(CMT-007): a single-key form of this walk is duplicated as
-/// `extract_drive_error_message` at packages/rs-sdk/src/error.rs. The two
-/// crates have different dependency surfaces; extracting a shared helper would
-/// require a new shared crate solely for this lookup. If you change the
-/// wire-format expectations here, MIRROR the change at the rs-sdk site so both
-/// sides of the boundary stay in sync.
+//
+// MIRROR: keep in sync with `extract_drive_error_message` in
+// packages/rs-sdk/src/error.rs.
 fn walk_cbor_for_key<'a>(data: &'a ciborium::Value, keys: &[&str]) -> Option<&'a ciborium::Value> {
     if keys.is_empty() {
         tracing::trace!(?data, "found value, returning");
@@ -311,10 +307,11 @@ pub(super) fn decode_consensus_error(info_base64: String) -> Option<Vec<u8>> {
     Some(serialized_error)
 }
 
-/// Try to decode a Tenderdash `data` field as base64 → CBOR and extract the
-/// human-readable `message` text.  Returns `None` if the string is not
-/// base64-encoded CBOR or does not contain a `message` key, allowing the
-/// caller to fall back to the raw string.
+/// Best-effort decode of a Tenderdash `data` field: base64 → CBOR map →
+/// `message` text. Returns `None` whenever any step fails (input is plain
+/// text, base64 of non-CBOR, or CBOR without a `message` key) so the caller
+/// can fall back to the raw string. The base64 step accepts any base64-
+/// shaped input; non-CBOR bytes are filtered out by the CBOR step.
 fn decode_data_message(data: &str) -> Option<String> {
     // Failure of either step is the expected fall-through for plain-text data
     // fields, so we deliberately do not log here — `base64_decode` is a pure
