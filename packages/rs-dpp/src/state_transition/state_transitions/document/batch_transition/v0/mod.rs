@@ -14,13 +14,13 @@ use bincode::{Decode, Encode};
 use platform_serialization_derive::PlatformSignable;
 
 use crate::prelude::UserFeeIncrease;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
 use platform_value::{BinaryData, Identifier};
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
-// `#[json_safe_fields]` deferred — needs `DocumentTransition` (and its
-// sub-transitions) to implement `JsonSafeFields` first. Tracked as
-// follow-up for the BatchTransition family migration.
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Debug, Clone, PartialEq, Encode, Decode, PlatformSignable)]
 #[cfg_attr(
     feature = "serde-conversion",

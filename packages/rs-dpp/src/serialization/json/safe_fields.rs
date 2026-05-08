@@ -117,9 +117,43 @@ impl JsonSafeFields
     for crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition
 {
 }
+// BatchTransition family wrappers — each variant's outer enum is itself
+// safe by induction (every V0 inner is `#[json_safe_fields]`-annotated;
+// the outer-enum manual `impl JsonConvertible` doesn't auto-impl
+// JsonSafeFields, so we declare it explicitly here).
+impl JsonSafeFields
+    for crate::state_transition::batch_transition::batched_transition::DocumentTransition
+{
+}
+impl JsonSafeFields
+    for crate::state_transition::batch_transition::batched_transition::TokenTransition
+{
+}
+impl JsonSafeFields
+    for crate::state_transition::batch_transition::batched_transition::BatchedTransition
+{
+}
 impl JsonSafeFields for crate::voting::vote_choices::resource_vote_choice::ResourceVoteChoice {}
 impl JsonSafeFields for crate::group::action_event::GroupActionEvent {}
 // TokenEvent contains u64 aliases (TokenAmount, Credits) in tuple variants that
 // `#[json_safe_fields]` can't auto-annotate. Developer takes responsibility for
 // JS-safe serialization of these fields. See token_event.rs for details.
 impl JsonSafeFields for crate::tokens::token_event::TokenEvent {}
+// `TokenEmergencyAction` is a unit-variant enum (Pause / Resume).
+impl JsonSafeFields for crate::tokens::emergency_action::TokenEmergencyAction {}
+// `TokenDistributionType` is a unit-variant enum.
+impl JsonSafeFields
+    for crate::data_contract::associated_token::token_distribution_key::TokenDistributionType
+{
+}
+// `TokenPricingSchedule` has tuple variants holding `Credits` (u64) and
+// `BTreeMap<TokenAmount, Credits>`. Same escape-hatch pattern as `TokenEvent`:
+// `#[json_safe_fields]` can't auto-annotate variant-internal u64s; developer
+// takes responsibility for JS-safe serialization at use sites.
+impl JsonSafeFields for crate::tokens::token_pricing_schedule::TokenPricingSchedule {}
+// `TokenConfigurationChangeItem` has tuple variants with `Option<TokenAmount>`
+// and `Option<GroupContractPosition>` (u64-shaped). Same escape-hatch pattern.
+impl JsonSafeFields
+    for crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem
+{
+}

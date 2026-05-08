@@ -12,7 +12,7 @@
 | 2.5 | Wire-shape test convention (`json!`/`platform_value!` literals) across all round-trip tests | ✅ done — ~85 tests upgraded |
 | 2.6 | Apply `tag = "$formatVersion"` / `tag = "type"` convention to top-level versioned and discriminated enums | ✅ done locally; gated on 2 open dashcore PRs |
 | 2.7 | Tag-shape convention sweep — flatten every `tag = "type", content = "data"` adjacent enum to internal tagging; apply `$`-prefix discriminator rule | ✅ done — 7/7 enums migrated, zero adjacent-tagged enums remain |
-| 2.8 | Broader `#[json_safe_fields]` rollout — apply to V0 transition leaves and base structs | ✅ done — 11 V0 structs + base transitions + DocumentBaseTransition wrapper. Step 9 added 5 more (address transitions); BatchTransition family deferred. |
+| 2.8 | Broader `#[json_safe_fields]` rollout — apply to V0 transition leaves and base structs | ✅ done — 11 V0 structs + base transitions + DocumentBaseTransition wrapper. Step 9 added 5 more (address transitions). Step 9 follow-up rolled out the BatchTransition family: V0/V1 + 8 sub-transition V0 inners + 7 manual JsonSafeFields impls (3 wrapper enums + 4 sub-types). |
 | 3 | Deprecate non-canonical mechanisms (§3.11 of this doc) | 🟡 in progress — Phase D steps 1–9 done; steps 10–11 remain |
 | 4 | wasm-dpp2 migration `_serde!` → `_inner!` | ⬜ not started — re-survey needed (step 9 audit found no actual blockers there) |
 | 5 | Delete `wasm-dpp` legacy crate | ⬜ blocked on team decision |
@@ -821,9 +821,9 @@ The five Critical findings in §3.0 are real but most surface naturally during P
 ### Phase D — Deprecate non-canonical mechanisms
 Status by step (see §3.11 below for full step list):
 - ✅ **Steps 1–9** complete — pure-delegation deletions, `to_cleaned_object` skip, `disabled_at` skip-serializing, Identity-family canonical, AssetLockProof, ExtendedDocument refactor (C1), Document family A10/A11, state-transition trait deletion.
+- ✅ **Step 9 follow-up** complete — BatchTransition family `#[json_safe_fields]` rolled out (May 2026): attribute applied to `BatchTransitionV0` / `BatchTransitionV1` + 8 sub-transition V0 inners (`DocumentDeleteTransitionV0`, `TokenFreeze` / `Unfreeze` / `DestroyFrozenFunds` / `Claim` / `EmergencyAction` / `ConfigUpdate` / `SetPriceForDirectPurchase`). Manual `JsonSafeFields` impls added in `safe_fields.rs` for the wrapper enums (`DocumentTransition`, `TokenTransition`, `BatchedTransition`) plus 4 sub-types (`TokenEmergencyAction`, `TokenDistributionType`, `TokenPricingSchedule`, `TokenConfigurationChangeItem` — last 2 use the documented escape-hatch pattern alongside `TokenEvent`).
 - ⬜ **Step 10** — DataContract family (KEEP-AS-EXCEPTION, optional rename pass).
 - ⬜ **Step 11** — `AddressWitness` / `ContestedIndexFieldMatch` manual-impl refactor.
-- ⬜ **Follow-up** — `BatchTransitionV0`/`V1` `#[json_safe_fields]` deferred at step 9 (needs `DocumentTransition` / `BatchedTransition` sub-tree to implement `JsonSafeFields` first).
 
 ### Phase E — WASM cleanup (wasm-dpp2 only — wasm-dpp legacy is left alone)
 - ✅ **Phase 1** — migrated 15 `_serde!` callers wrapping rs-dpp domain types
