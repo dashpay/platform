@@ -13,6 +13,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use bip39::Mnemonic as Bip39Mnemonic;
+use dash_sdk::platform::Fetch;
+use dash_sdk::query_types::AddressInfo;
+use dash_sdk::Sdk;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 use dpp::prelude::AddressNonce;
@@ -142,6 +145,26 @@ fn record_funding_mutex_entry(entry: FundingMutexHistoryEntry) {
         guard.pop_front();
     }
     guard.push_back(entry);
+}
+
+/// Result of an independent `AddressInfo::fetch` cross-check against
+/// the harness's wallet-cached Platform balance. Stored on
+/// [`super::harness::E2eContext`] for test introspection; logged at
+/// `info` (agreement) or `warn` (disagreement) during framework init
+/// (QA-V26-005).
+#[derive(Debug, Clone)]
+pub struct CrossCheckResult {
+    /// Balance read from the harness wallet cache (via
+    /// `wallet.platform().total_credits()`).
+    pub harness_credits: Credits,
+    /// Balance returned by a proof-verified `AddressInfo::fetch`
+    /// against DAPI — independent of the wallet/manager layer.
+    pub independent_credits: Credits,
+    /// The bank's primary Platform address (DIP-17 `m/9'/1'/17'/0'/0'/0`).
+    pub address: PlatformAddress,
+    /// Address nonce from the independent fetch (`None` if the address
+    /// had no on-chain record yet).
+    pub nonce: Option<AddressNonce>,
 }
 
 /// Bank wallet handle wrapping a synced `PlatformWallet` and its
@@ -465,6 +488,41 @@ impl BankWallet {
     /// view.
     pub async fn total_credits(&self) -> Credits {
         self.wallet.platform().total_credits().await
+    }
+
+    /// Independent balance cross-check via `AddressInfo::fetch` (QA-V26-005).
+    ///
+    /// Reads the bank's Platform-side balance through a single proof-verified
+    /// DAPI round-trip, bypassing the wallet/manager layer entirely. Call this
+    /// AFTER [`Self::sync_balances`] so `harness_credits` reflects a fresh
+    /// wallet-cache snapshot at the same point in time.
+    ///
+    /// Returns a [`CrossCheckResult`] containing both readings. The caller
+    /// is responsible for logging the comparison — see `harness.rs` for the
+    /// `info` / `warn` log sites.
+    pub async fn cross_check_balance(&self, sdk: &Sdk) -> CrossCheckResult {
+        let harness_credits = self.wallet.platform().total_credits().await;
+        let addr = self.primary_receive_address;
+        let fetch_result = AddressInfo::fetch(sdk, addr).await;
+        let (independent_credits, nonce) = match fetch_result {
+            Ok(Some(info)) => (info.balance, Some(info.nonce)),
+            Ok(None) => (0, None),
+            Err(err) => {
+                tracing::warn!(
+                    target: "platform_wallet::e2e::bank",
+                    error = %err,
+                    "bank balance cross-check: AddressInfo::fetch failed; \
+                     independent reading unavailable"
+                );
+                (0, None)
+            }
+        };
+        CrossCheckResult {
+            harness_credits,
+            independent_credits,
+            address: addr,
+            nonce,
+        }
     }
 
     /// Drain and return the [`FUNDING_MUTEX`] critical-section
