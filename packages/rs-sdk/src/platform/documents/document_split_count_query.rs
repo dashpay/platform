@@ -130,7 +130,12 @@ impl FromProof<DocumentSplitCountQuery> for DocumentSplitCounts {
     where
         Self: 'a,
     {
+        // Route through the split-property-aware helper rather than the
+        // generic FromProof<DriveDocumentQuery> impl, which deliberately
+        // returns an error to prevent silent empty results when the split
+        // property is unknown.
         let request: Self::Request = request.into();
+        let split_property = request.split_property.clone();
         let drive_query: DriveDocumentQuery =
             (&request)
                 .try_into()
@@ -141,8 +146,9 @@ impl FromProof<DocumentSplitCountQuery> for DocumentSplitCounts {
                     ),
                 })?;
 
-        <DocumentSplitCounts as FromProof<DriveDocumentQuery>>::maybe_from_proof_with_metadata(
+        DocumentSplitCounts::maybe_from_proof_with_split_property::<DriveDocumentQuery, _, _>(
             drive_query,
+            &split_property,
             response,
             network,
             platform_version,
