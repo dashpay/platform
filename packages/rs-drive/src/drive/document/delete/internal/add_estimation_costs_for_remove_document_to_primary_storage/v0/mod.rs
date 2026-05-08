@@ -1,8 +1,9 @@
+use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
 use grovedb::batch::KeyInfoPath;
 
 use grovedb::EstimatedLayerCount::PotentiallyAtMaxElements;
+use grovedb::EstimatedLayerInformation;
 use grovedb::EstimatedLayerSizes::AllItems;
-use grovedb::{EstimatedLayerInformation, TreeType};
 
 use dpp::data_contract::document_type::DocumentTypeRef;
 
@@ -64,10 +65,11 @@ impl Drive {
             None
         };
         let flags_size = StorageFlags::approximate_size(true, approximate_size);
+        let primary_key_tree_type = document_type.primary_key_tree_type(platform_version)?;
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path(primary_key_path),
             EstimatedLayerInformation {
-                tree_type: TreeType::NormalTree,
+                tree_type: primary_key_tree_type,
                 estimated_layer_count: PotentiallyAtMaxElements,
                 estimated_layer_sizes: AllItems(
                     DEFAULT_HASH_SIZE_U8,
