@@ -75,48 +75,17 @@ pub enum PlatformWalletError {
     AddressOperation(String),
 
     #[error(
-        "no selectable inputs for auto-selection: funded addresses {funded_outputs:?} all \
-         also appear as outputs of this transfer (rotate to a fresh receive address or use \
-         InputSelection::Explicit and split the operation)"
+        "no selectable inputs for auto-selection: funded_outputs={funded_outputs:?} \
+         sub_min_count={sub_min_count} sub_min_aggregate={sub_min_aggregate} credits \
+         (min_input_amount={min_input_amount}); rotate to a fresh receive address, \
+         consolidate funds, or use InputSelection::Explicit"
     )]
-    OnlyOutputAddressesFunded {
-        /// Addresses whose balance reaches `min_input_amount` but which
-        /// also appear as destination outputs and are therefore filtered
-        /// out by the protocol's input-equals-output rule.
+    NoSelectableInputs {
+        /// Funded addresses dropped by the input-equals-output filter.
         funded_outputs: Vec<PlatformAddress>,
-    },
-
-    #[error(
-        "no selectable inputs for auto-selection: {sub_min_count} address(es) hold an \
-         aggregate balance of {sub_min_aggregate} credits but each is below the per-input \
-         minimum {min_input_amount} (consolidate funds onto a single address before retrying)"
-    )]
-    AllInputsBelowMinimum {
-        /// Count of addresses whose individual balance is below
-        /// `min_input_amount` (aggregate is non-zero but no single
-        /// address can legally appear as an input).
+        /// Number of addresses with a positive balance below `min_input_amount`.
         sub_min_count: usize,
-        /// Aggregate balance stranded across `sub_min_count` addresses.
-        sub_min_aggregate: Credits,
-        /// Per-input minimum from the active platform version.
-        min_input_amount: Credits,
-    },
-
-    #[error(
-        "no selectable inputs for auto-selection: funded addresses {funded_outputs:?} all \
-         also appear as outputs of this transfer (rotate to a fresh receive address or use \
-         InputSelection::Explicit and split the operation); additionally, {sub_min_count} \
-         other address(es) hold an aggregate balance of {sub_min_aggregate} credits but each \
-         is below the per-input minimum {min_input_amount} (consolidate funds onto a single \
-         address before retrying)"
-    )]
-    NoSelectableInputsBoth {
-        /// Funded addresses filtered out by the input-equals-output rule.
-        funded_outputs: Vec<PlatformAddress>,
-        /// Count of addresses whose individual balance is below
-        /// `min_input_amount`.
-        sub_min_count: usize,
-        /// Aggregate balance stranded across `sub_min_count` addresses.
+        /// Aggregate of those sub-minimum balances.
         sub_min_aggregate: Credits,
         /// Per-input minimum from the active platform version.
         min_input_amount: Credits,
