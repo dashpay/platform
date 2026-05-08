@@ -6,6 +6,8 @@
 use crate::changeset::changeset::PlatformWalletChangeSet;
 use crate::changeset::client_start_state::ClientStartState;
 use crate::wallet::platform_wallet::WalletId;
+use dashcore::Txid;
+use key_wallet::managed_account::transaction_record::TransactionRecord;
 
 /// Errors returned by a [`PlatformWalletPersistence`] backend.
 ///
@@ -148,4 +150,48 @@ pub trait PlatformWalletPersistence: Send + Sync {
     /// already keyed by wallet id and the sub-changesets carry their own
     /// wallet attribution where needed.
     fn load(&self) -> Result<ClientStartState, PersistenceError>;
+
+    /// Look up a single core transaction record by `txid` for `wallet_id`.
+    ///
+    /// Used by the asset-lock proof flow to recover records that the
+    /// in-memory `transactions()` map has evicted. Upstream's
+    /// `keep-finalized-transactions` Cargo feature is OFF by default —
+    /// chainlocked records are dropped from the in-memory map and only
+    /// their txids are retained in `finalized_txids` for dedup. The
+    /// chain-lock height / block hash that an asset-lock proof needs is
+    /// no longer reachable through the wallet-info API, but the
+    /// persister received the full record on the last `store` call
+    /// before eviction, so it can answer this lookup.
+    ///
+    /// The default implementation returns `Ok(None)` — backwards
+    /// compatible for persisters that don't index records by txid (e.g.
+    /// [`NoPlatformPersistence`]). The asset-lock proof flow's hot path
+    /// (mempool / `InBlock` window) hits the in-memory map first, so a
+    /// `None` response from this method only matters for the rare race
+    /// where the first lookup happens after the chainlock-eviction
+    /// window. Persisters whose backing store keys records by txid
+    /// (`SqliteWalletPersister`, the SwiftData iOS persister) should
+    /// override.
+    ///
+    /// **Field contract.** Implementations are only required to
+    /// populate `txid` and `context` (with the `BlockInfo` inside
+    /// `InChainLockedBlock` / `InBlock` carrying real height + block
+    /// hash + timestamp). Other fields (`transaction`, `input_details`,
+    /// `output_details`, `account_type`, `transaction_type`,
+    /// `direction`, `net_amount`, `fee`, `label`) MAY be returned as
+    /// best-effort placeholders and MUST NOT be relied upon by callers.
+    /// The current consumer — the asset-lock proof flow — only reads
+    /// `context` and `height()` (which is
+    /// `context.block_info().map(|b| b.height)`). FFI-backed
+    /// implementations (e.g. the SwiftData iOS persister) take
+    /// advantage of this contract by emitting a synthetic record with a
+    /// placeholder transaction body, since reconstructing the full
+    /// `Transaction` over the C ABI is not free and isn't needed.
+    fn get_core_tx_record(
+        &self,
+        _wallet_id: WalletId,
+        _txid: &Txid,
+    ) -> Result<Option<TransactionRecord>, PersistenceError> {
+        Ok(None)
+    }
 }
