@@ -8,7 +8,7 @@
 //! once into [`Network`]; `p2p_port` is resolved against the
 //! network-specific default at construction time.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -215,23 +215,65 @@ impl Default for Config {
     }
 }
 
+/// Walk up from `start` looking for a `.claude` path component; if found,
+/// the parent of that component is the parent-repo root. Returns the
+/// `tests/.env` path under `packages/rs-platform-wallet/` in that root,
+/// or `/dev/null` (which never passes `.exists()`) when not found.
+fn find_parent_repo_env(start: &std::path::Path) -> PathBuf {
+    for ancestor in start.ancestors() {
+        let components: Vec<_> = ancestor.components().collect();
+        if let Some(idx) = components.iter().position(|c| c.as_os_str() == ".claude") {
+            let parent_root: PathBuf = components[..idx].iter().collect();
+            let candidate = parent_root.join("packages/rs-platform-wallet/tests/.env");
+            if candidate.exists() {
+                return candidate;
+            }
+        }
+    }
+    PathBuf::from("/dev/null")
+}
+
+/// Try each candidate path in order; load the first one that exists.
+fn load_e2e_env() {
+    let manifest_env = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/.env");
+    let parent_env = find_parent_repo_env(Path::new(env!("CARGO_MANIFEST_DIR")));
+
+    for candidate in [&manifest_env, &parent_env] {
+        if candidate.exists() {
+            match dotenvy::from_path(candidate) {
+                Ok(()) => {
+                    tracing::debug!(
+                        target: "platform_wallet::e2e::config",
+                        path = %candidate.display(),
+                        "loaded e2e .env"
+                    );
+                }
+                Err(err) => {
+                    tracing::warn!(
+                        target: "platform_wallet::e2e::config",
+                        path = %candidate.display(),
+                        ?err,
+                        "failed to load e2e .env (process env vars still apply)"
+                    );
+                }
+            }
+            return;
+        }
+    }
+
+    tracing::warn!(
+        target: "platform_wallet::e2e::config",
+        "no e2e .env found in any candidate location (process env vars still apply)"
+    );
+}
+
 impl Config {
     /// Load from environment variables, with `.env` at
     /// `${CARGO_MANIFEST_DIR}/tests/.env` as a CWD-independent
     /// fallback. `bank_mnemonic` is required; everything else
     /// resolves to its final value via the per-field defaults.
     pub fn from_env() -> FrameworkResult<Self> {
-        // Anchor the `.env` path at the crate's manifest dir so
-        // CWD doesn't change behaviour; a missing file is expected.
-        let path: String = env!("CARGO_MANIFEST_DIR").to_owned() + "/tests/.env";
-        if let Err(err) = dotenvy::from_path(&path) {
-            tracing::warn!(
-                target: "platform_wallet::e2e::config",
-                path = %path,
-                ?err,
-                "failed to load e2e .env (process env vars still apply)"
-            );
-        }
+        load_e2e_env();
 
         let bank_mnemonic = std::env::var(vars::BANK_MNEMONIC).map_err(|_| {
             FrameworkError::Bank(format!(
@@ -512,5 +554,47 @@ mod tests {
         let (timeout, src) = parse_bank_core_gate(Some("-1"));
         assert_eq!(timeout, Some(DEFAULT_BANK_CORE_GATE_TIMEOUT));
         assert_eq!(src, BankCoreGateSource::EnvInvalidFallback);
+    }
+
+    #[test]
+    fn find_parent_repo_env_no_claude_component_returns_dev_null() {
+        let result = find_parent_repo_env(std::path::Path::new("/usr/local/bin"));
+        assert_eq!(result, PathBuf::from("/dev/null"));
+    }
+
+    #[test]
+    fn find_parent_repo_env_with_claude_in_path_returns_candidate() {
+        use std::io::Write;
+
+        let tmp = tempfile::tempdir().expect("tempdir");
+        // Build a fake parent-repo tree under tmp: .claude/worktrees/agent-X/packages/...
+        let worktree_pkg = tmp
+            .path()
+            .join(".claude/worktrees/agent-test/packages/rs-platform-wallet");
+        std::fs::create_dir_all(&worktree_pkg).expect("create dirs");
+
+        // Create the parent-repo tests/.env that the function should find.
+        let parent_tests_env = tmp.path().join("packages/rs-platform-wallet/tests/.env");
+        std::fs::create_dir_all(parent_tests_env.parent().unwrap()).expect("create dirs");
+        std::fs::File::create(&parent_tests_env)
+            .expect("create .env")
+            .write_all(b"TEST=1\n")
+            .expect("write .env");
+
+        let result = find_parent_repo_env(&worktree_pkg);
+        assert_eq!(result, parent_tests_env);
+    }
+
+    #[test]
+    fn find_parent_repo_env_claude_present_but_no_env_file_returns_dev_null() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let worktree_pkg = tmp
+            .path()
+            .join(".claude/worktrees/agent-test/packages/rs-platform-wallet");
+        std::fs::create_dir_all(&worktree_pkg).expect("create dirs");
+        // No .env file created — should fall through to /dev/null.
+
+        let result = find_parent_repo_env(&worktree_pkg);
+        assert_eq!(result, PathBuf::from("/dev/null"));
     }
 }
