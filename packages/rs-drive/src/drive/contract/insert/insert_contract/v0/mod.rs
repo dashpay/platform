@@ -345,3 +345,405 @@ impl Drive {
         Ok(batch_operations)
     }
 }
+
+#[cfg(test)]
+mod countable_e2e_tests {
+    //! End-to-end coverage for `documentsCountable` / `rangeCountable`.
+    //!
+    //! These tests exercise the full feature path:
+    //!   - Build a v12 contract with the flag set in the schema.
+    //!   - Apply it to a real Drive (grovedb).
+    //!   - Read the primary-key tree element back from grove and assert the
+    //!     concrete tree variant (NormalTree / CountTree / ProvableCountTree)
+    //!     matches what the schema requested.
+    //!   - For the count variants, insert and delete documents and assert the
+    //!     tree's internal count moves accordingly.
+
+    use crate::drive::Drive;
+    use crate::util::grove_operations::DirectQueryType;
+    use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
+    use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+    use crate::util::storage_flags::StorageFlags;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+    use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+    use dpp::data_contract::DataContractFactory;
+    use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+    use dpp::document::DocumentV0Getters;
+    use dpp::platform_value::{platform_value, Value};
+    use dpp::tests::utils::generate_random_identifier_struct;
+    use dpp::version::PlatformVersion;
+    use grovedb::Element;
+
+    const PROTOCOL_VERSION_V12: u32 = 12;
+
+    /// Builds a v12 `DataContract` whose single `widget` document type has
+    /// `documentsCountable` / `rangeCountable` set to the requested values.
+    fn build_widget_contract(
+        documents_countable: bool,
+        range_countable: bool,
+    ) -> dpp::prelude::DataContract {
+        let factory =
+            DataContractFactory::new(PROTOCOL_VERSION_V12).expect("expected to create factory");
+
+        let mut document_schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "position": 0,
+                    "maxLength": 64,
+                }
+            },
+            "additionalProperties": false,
+        });
+        if documents_countable {
+            document_schema.as_map_mut().unwrap().push((
+                Value::Text("documentsCountable".to_string()),
+                Value::Bool(true),
+            ));
+        }
+        if range_countable {
+            document_schema
+                .as_map_mut()
+                .unwrap()
+                .push((Value::Text("rangeCountable".to_string()), Value::Bool(true)));
+        }
+
+        let schemas = platform_value!({ "widget": document_schema });
+        let owner_id = generate_random_identifier_struct();
+
+        factory
+            .create_with_value_config(owner_id, 0, schemas, None, None)
+            .expect("expected to create data contract")
+            .data_contract_owned()
+    }
+
+    /// Reads the primary-key tree element directly from grove and returns it.
+    fn read_primary_key_tree(
+        drive: &Drive,
+        contract: &dpp::prelude::DataContract,
+        document_type_name: &str,
+    ) -> Element {
+        let pv = PlatformVersion::latest();
+        let contract_id = contract.id();
+        let path: [&[u8]; 4] = [
+            &[crate::drive::RootTree::DataContractDocuments as u8],
+            contract_id.as_bytes(),
+            &[1],
+            document_type_name.as_bytes(),
+        ];
+        drive
+            .grove_get_raw(
+                (&path).into(),
+                &[0],
+                DirectQueryType::StatefulDirectQuery,
+                None,
+                &mut vec![],
+                &pv.drive,
+            )
+            .expect("expected grove_get_raw to succeed")
+            .expect("primary key tree element should exist")
+    }
+
+    #[test]
+    fn default_contract_creates_normal_tree_for_primary_key() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let pv = PlatformVersion::latest();
+        let contract = build_widget_contract(false, false);
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("expected to apply contract");
+
+        let elem = read_primary_key_tree(&drive, &contract, "widget");
+        assert!(
+            matches!(elem, Element::Tree(..)),
+            "default (non-countable) contract should use a NormalTree primary key tree, got {:?}",
+            elem
+        );
+    }
+
+    #[test]
+    fn documents_countable_contract_creates_count_tree_for_primary_key() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let pv = PlatformVersion::latest();
+        let contract = build_widget_contract(true, false);
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("expected to apply contract");
+
+        let elem = read_primary_key_tree(&drive, &contract, "widget");
+        match &elem {
+            Element::CountTree(_, count, _) => {
+                assert_eq!(*count, 0, "freshly inserted CountTree should have count 0");
+            }
+            other => panic!(
+                "documentsCountable contract should use a CountTree primary key tree, got {:?}",
+                other
+            ),
+        }
+
+        // Sanity: the parsed DocumentTypeV2 also reports the flag.
+        let dt = contract
+            .document_type_for_name("widget")
+            .expect("widget exists");
+        let dt_owned = dt.to_owned_document_type();
+        match dt_owned {
+            dpp::data_contract::document_type::DocumentType::V2(v2) => {
+                assert!(v2.documents_countable());
+                assert!(!v2.range_countable());
+            }
+            other => panic!("expected DocumentType::V2 on protocol v12, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn range_countable_contract_creates_provable_count_tree_for_primary_key() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let pv = PlatformVersion::latest();
+        let contract = build_widget_contract(false, true);
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("expected to apply contract");
+
+        let elem = read_primary_key_tree(&drive, &contract, "widget");
+        assert!(
+            matches!(elem, Element::ProvableCountTree(..)),
+            "rangeCountable contract should use a ProvableCountTree primary key tree, got {:?}",
+            elem
+        );
+
+        // rangeCountable implies documents_countable in the parser.
+        let dt = contract
+            .document_type_for_name("widget")
+            .expect("widget exists");
+        let dt_owned = dt.to_owned_document_type();
+        match dt_owned {
+            dpp::data_contract::document_type::DocumentType::V2(v2) => {
+                assert!(v2.range_countable());
+                assert!(v2.documents_countable());
+            }
+            other => panic!("expected DocumentType::V2 on protocol v12, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn count_tree_count_grows_and_shrinks_with_document_inserts_and_deletes() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let pv = PlatformVersion::latest();
+        let contract = build_widget_contract(true, false);
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("expected to apply contract");
+
+        let document_type = contract
+            .document_type_for_name("widget")
+            .expect("widget exists");
+
+        // Insert 3 documents.
+        let mut doc_ids = vec![];
+        for seed in 1u64..=3 {
+            let document = document_type
+                .random_document(Some(seed), pv)
+                .expect("random document");
+            doc_ids.push(document.id());
+
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&document, None)),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    pv,
+                    None,
+                )
+                .expect("expected to insert document");
+        }
+
+        let elem_after_inserts = read_primary_key_tree(&drive, &contract, "widget");
+        match elem_after_inserts {
+            Element::CountTree(_, count, _) => {
+                assert_eq!(count, 3, "count tree should track 3 inserted documents");
+            }
+            other => panic!("expected CountTree, got {:?}", other),
+        }
+
+        // Delete one.
+        drive
+            .delete_document_for_contract(
+                doc_ids[0],
+                &contract,
+                "widget",
+                BlockInfo::default(),
+                true,
+                None,
+                pv,
+                None,
+            )
+            .expect("expected to delete document");
+
+        let elem_after_delete = read_primary_key_tree(&drive, &contract, "widget");
+        match elem_after_delete {
+            Element::CountTree(_, count, _) => {
+                assert_eq!(count, 2, "count tree should drop to 2 after one delete");
+            }
+            other => panic!("expected CountTree, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn provable_count_tree_count_grows_with_document_inserts() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let pv = PlatformVersion::latest();
+        let contract = build_widget_contract(false, true);
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("expected to apply contract");
+
+        let document_type = contract
+            .document_type_for_name("widget")
+            .expect("widget exists");
+
+        for seed in 1u64..=5 {
+            let document = document_type
+                .random_document(Some(seed), pv)
+                .expect("random document");
+
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&document, None)),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    pv,
+                    None,
+                )
+                .expect("expected to insert document");
+        }
+
+        let elem = read_primary_key_tree(&drive, &contract, "widget");
+        match elem {
+            Element::ProvableCountTree(_, count, _) => {
+                assert_eq!(count, 5, "provable count tree should track 5 documents");
+            }
+            other => panic!("expected ProvableCountTree, got {:?}", other),
+        }
+    }
+
+    /// Sanity: existing document fetch + count APIs still work for a CountTree
+    /// contract — i.e. switching the underlying primary-key tree variant
+    /// does not break document iteration.
+    #[test]
+    fn count_tree_contract_supports_document_fetch() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let pv = PlatformVersion::latest();
+        let contract = build_widget_contract(true, false);
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("expected to apply contract");
+
+        let document_type = contract
+            .document_type_for_name("widget")
+            .expect("widget exists");
+
+        let document = document_type
+            .random_document(Some(42), pv)
+            .expect("random document");
+        let inserted_id = document.id();
+
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&document, None)),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                pv,
+                None,
+            )
+            .expect("expected to insert document");
+
+        let query =
+            crate::query::DriveDocumentQuery::all_items_query(&contract, document_type, None);
+        let (docs, _, _) = query
+            .execute_raw_results_no_proof(&drive, None, None, pv)
+            .expect("expected query to succeed");
+        assert_eq!(docs.len(), 1, "should fetch exactly the inserted document");
+        let decoded = dpp::document::Document::from_bytes(&docs[0], document_type, pv)
+            .expect("expected to decode document");
+        assert_eq!(decoded.id(), inserted_id);
+    }
+}
