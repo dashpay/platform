@@ -185,10 +185,11 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             let spendable_outpoints: BTreeSet<OutPoint> =
                 spendable.iter().map(|utxo| utxo.outpoint).collect();
             if !selected.is_subset(&spendable_outpoints) {
-                // INTENTIONAL(CMT-002): typed variant kept user-retryable for
-                // forward compatibility with cross-process concurrent-spend
-                // surfacing — even though today only builder regression hits.
-                return Err(PlatformWalletError::ConcurrentSpendConflict);
+                // Typed retryable variant: forward-compatible with cross-process
+                // concurrent-spend surfacing; today only a builder regression hits it.
+                return Err(PlatformWalletError::ConcurrentSpendConflict {
+                    selected: selected.into_iter().collect(),
+                });
             }
 
             // Reserve before releasing the lock so the next caller sees these outpoints
