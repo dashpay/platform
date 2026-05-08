@@ -1,3 +1,4 @@
+use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
 use crate::drive::{contract_documents_path, Drive};
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -9,7 +10,7 @@ use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
-use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 
@@ -348,33 +349,40 @@ impl Drive {
                     type_key.as_bytes(),
                 ];
 
-                // primary key tree — pick the tree variant that matches the
-                // document type's countable flags. Pre-v12 contracts always
-                // have both flags false, so they fall through to NormalTree.
-                if document_type.range_countable() {
-                    self.batch_insert_empty_provable_count_tree(
+                // primary key tree — route through the centralized
+                // primary_key_tree_type() so contract update, document inserts,
+                // deletes, and estimation paths all see the same tree-variant
+                // selection (under whichever drive method version is active).
+                match document_type
+                    .as_ref()
+                    .primary_key_tree_type(platform_version)?
+                {
+                    TreeType::ProvableCountTree => self.batch_insert_empty_provable_count_tree(
                         type_path,
                         KeyRef(&[0]),
                         storage_flags.as_ref().map(|flags| flags.as_ref()),
                         &mut batch_operations,
                         drive_version,
-                    )?;
-                } else if document_type.documents_countable() {
-                    self.batch_insert_empty_count_tree(
+                    )?,
+                    TreeType::CountTree => self.batch_insert_empty_count_tree(
                         type_path,
                         KeyRef(&[0]),
                         storage_flags.as_ref().map(|flags| flags.as_ref()),
                         &mut batch_operations,
                         drive_version,
-                    )?;
-                } else {
-                    self.batch_insert_empty_tree(
+                    )?,
+                    TreeType::NormalTree => self.batch_insert_empty_tree(
                         type_path,
                         KeyRef(&[0]),
                         storage_flags.as_ref().map(|flags| flags.as_ref()),
                         &mut batch_operations,
                         drive_version,
-                    )?;
+                    )?,
+                    _ => {
+                        return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                            "primary_key_tree_type returned a tree variant unsupported by contract update (only NormalTree / CountTree / ProvableCountTree are valid for primary-key trees)",
+                        )));
+                    }
                 }
 
                 let mut index_cache: HashSet<&[u8]> = HashSet::new();
