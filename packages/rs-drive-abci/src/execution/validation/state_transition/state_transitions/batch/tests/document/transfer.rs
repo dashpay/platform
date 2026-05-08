@@ -1123,17 +1123,15 @@ mod transfer_tests {
         assert_eq!(query_receiver_results.documents().len(), 0);
     }
 
-    /// Issue #2867 paired test (helper). Same scenario across protocol
-    /// versions: Transfer a non-existent document → all-failed batch.
-    /// v11 = `PaidConsensusError` with empty action (bug); v12 =
-    /// `UnpaidConsensusError` (architectural fix).
+    /// Helper for the paired transfer-of-missing-document test. Same scenario
+    /// at PROTOCOL_VERSION_11 (legacy bump-only fee) and PROTOCOL_VERSION_12
+    /// (fee covers fetch + validation work).
     async fn run_document_transfer_that_does_not_yet_exist_at_protocol_version(
         protocol_version: dpp::version::ProtocolVersion,
-        expected_unpaid_consensus: bool,
         expected_processing_fee: dpp::fee::Credits,
     ) {
-        let platform_version =
-            PlatformVersion::get(protocol_version).expect("expected platform version");
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let (mut platform, contract) = TestPlatformBuilder::new()
             .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
@@ -1259,29 +1257,17 @@ mod transfer_tests {
             .unwrap()
             .expect("expected to commit transaction");
 
-        if expected_unpaid_consensus {
-            assert_eq!(
-                processing_result.invalid_unpaid_count(),
-                1,
-                "PROTOCOL_VERSION_{}: must surface as UnpaidConsensusError",
-                protocol_version,
-            );
-            assert_eq!(processing_result.invalid_paid_count(), 0);
-        } else {
-            assert_eq!(
-                processing_result.invalid_paid_count(),
-                1,
-                "PROTOCOL_VERSION_{}: must preserve historical PaidConsensusError shape",
-                protocol_version,
-            );
-            assert_eq!(processing_result.invalid_unpaid_count(), 0);
-        }
+        assert_eq!(processing_result.invalid_paid_count(), 1);
+
+        assert_eq!(processing_result.invalid_unpaid_count(), 0);
 
         assert_eq!(processing_result.valid_count(), 0);
 
         assert_eq!(
             processing_result.aggregated_fees().processing_fee,
-            expected_processing_fee
+            expected_processing_fee,
+            "PROTOCOL_VERSION_{}: processing fee must match the version-specific baseline",
+            protocol_version,
         );
 
         let query_sender_results = platform
@@ -1300,25 +1286,22 @@ mod transfer_tests {
         assert_eq!(query_receiver_results.documents().len(), 0);
     }
 
-    /// PROTOCOL_VERSION_12+ (architectural fix active).
+    /// PROTOCOL_VERSION_12+: bump emission charges the user for the fetch
+    /// that ran before the failure.
     #[tokio::test]
     async fn test_document_transfer_that_does_not_yet_exist() {
         run_document_transfer_that_does_not_yet_exist_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            true, // architectural fix active
-            0,    // no fee charged on UnpaidConsensus
+            517400,
         )
         .await;
     }
 
-    /// PROTOCOL_VERSION_11: preserved historical buggy behavior.
+    /// PROTOCOL_VERSION_11: pre-fix bump-only fee. Pinned so v11 chain
+    /// history stays bit-for-bit reproducible.
     #[tokio::test]
     async fn test_document_transfer_that_does_not_yet_exist_protocol_version_11() {
-        run_document_transfer_that_does_not_yet_exist_at_protocol_version(
-            11, false, // bug preserved
-            36200, // pre-fix bump-only fee
-        )
-        .await;
+        run_document_transfer_that_does_not_yet_exist_at_protocol_version(11, 36200).await;
     }
 
     #[tokio::test]

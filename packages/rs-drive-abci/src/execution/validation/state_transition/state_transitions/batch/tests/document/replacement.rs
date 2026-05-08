@@ -509,30 +509,15 @@ mod replacement_tests {
         .await;
     }
 
-    /// Issue #2867 — paired test: same scenario at v11 (preserved buggy
-    /// behavior) and v12 (architectural fix). The Replace targets an
-    /// immutable doc type, so per-transition validation fails with no
-    /// fallback action.
-    ///
-    /// On PROTOCOL_VERSION_11 (`expected_unpaid_consensus = false`):
-    /// the deprecated `merge_many`/`flatten` aggregators wrap the empty
-    /// per-transition results as `Some(empty_vec)` → empty
-    /// `BatchTransitionAction` → `PaidConsensusError` is recorded with a
-    /// 41880 bump-only fee, but the bump action's drive op is empty so
-    /// nothing actually advances. Tx stays in the block.
-    ///
-    /// On PROTOCOL_VERSION_12+ (`expected_unpaid_consensus = true`):
-    /// `flatten_strict`/`merge_many_strict` return `data: None`, downstream
-    /// `process_validation_result_v0:241` routes to `UnpaidConsensusError`,
-    /// `prepare_proposal:223` removes the tx from the block. No fee charged,
-    /// no chain bloat.
-    async fn run_document_replace_on_immutable_doc_type_at_protocol_version(
+    /// Helper for the paired Replace-on-immutable-doc test. The same scenario
+    /// is exercised at PROTOCOL_VERSION_11 (legacy bump-only fee) and at
+    /// PROTOCOL_VERSION_12 (fee covers fetch + validation).
+    async fn run_document_replace_on_document_type_that_is_not_mutable_at_protocol_version(
         protocol_version: dpp::version::ProtocolVersion,
-        expected_unpaid_consensus: bool,
         expected_processing_fee: dpp::fee::Credits,
     ) {
-        let platform_version =
-            PlatformVersion::get(protocol_version).expect("expected platform version");
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let mut platform = TestPlatformBuilder::new()
             .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
@@ -666,64 +651,268 @@ mod replacement_tests {
             .unwrap()
             .expect("expected to commit transaction");
 
-        if expected_unpaid_consensus {
-            // PROTOCOL_VERSION_12+: architectural fix — strict aggregator
-            // surfaces the all-failed batch as data:None →
-            // UnpaidConsensusError → tx removed from block.
-            assert_eq!(
-                processing_result.invalid_unpaid_count(),
-                1,
-                "PROTOCOL_VERSION_{}: must surface as UnpaidConsensusError; \
-                 results: {:?}",
-                protocol_version,
-                processing_result.execution_results(),
-            );
-            assert_eq!(processing_result.invalid_paid_count(), 0);
-        } else {
-            // PROTOCOL_VERSION_11: preserved buggy behavior — empty action
-            // synthesised as PaidConsensusError, user charged for nothing.
-            assert_eq!(
-                processing_result.invalid_paid_count(),
-                1,
-                "PROTOCOL_VERSION_{}: must preserve historical \
-                 PaidConsensusError-with-empty-action shape; results: {:?}",
-                protocol_version,
-                processing_result.execution_results(),
-            );
-            assert_eq!(processing_result.invalid_unpaid_count(), 0);
-        }
+        assert_eq!(processing_result.invalid_paid_count(), 1);
+
+        assert_eq!(processing_result.invalid_unpaid_count(), 0);
+
         assert_eq!(processing_result.valid_count(), 0);
+
         assert_eq!(
             processing_result.aggregated_fees().processing_fee,
-            expected_processing_fee
+            expected_processing_fee,
+            "PROTOCOL_VERSION_{}: processing fee must match the version-specific baseline",
+            protocol_version,
         );
     }
 
-    /// PROTOCOL_VERSION_12+ (architectural fix active): all-failed Replace
-    /// batch surfaces as `UnpaidConsensusError`, no fee charged, tx will
-    /// be removed from the block by `prepare_proposal`. Issue #2867.
+    /// PROTOCOL_VERSION_12+: bump emission charges the user for the fetch +
+    /// structure validation that ran before the failure.
     #[tokio::test]
     async fn test_document_replace_on_document_type_that_is_not_mutable() {
-        run_document_replace_on_immutable_doc_type_at_protocol_version(
+        run_document_replace_on_document_type_that_is_not_mutable_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            true, // architectural fix active
-            0,    // no fee charged on UnpaidConsensus
+            445700,
         )
         .await;
     }
 
-    /// PROTOCOL_VERSION_11: preserved historical buggy behavior. Empty
-    /// `BatchTransitionAction` synthesised by the deprecated non-strict
-    /// aggregators → user pays the 41880 bump-only fee for no actual work.
-    /// Pinned so any accidental change to the deprecated aggregators
-    /// or v0 transformer surfaces here as a consensus break for v11.
+    /// PROTOCOL_VERSION_11: pre-fix bump-only fee (no charge for the fetch
+    /// + validation work). Pinned so v11 chain history stays bit-for-bit
+    /// reproducible.
     #[tokio::test]
     async fn test_document_replace_on_document_type_that_is_not_mutable_protocol_version_11() {
-        run_document_replace_on_immutable_doc_type_at_protocol_version(
-            11, false, // bug preserved: PaidConsensus with empty action
-            41880, // pre-fix bump-only fee
+        run_document_replace_on_document_type_that_is_not_mutable_at_protocol_version(11, 41880)
+            .await;
+    }
+
+    /// Pins the bump-emission contract on Replace's revision-mismatch path.
+    ///
+    /// Without the bump, a failed Replace returns errors-only with no action.
+    /// Fee accounting then charges the user (PaidConsensusError) but the
+    /// identity_contract_nonce in state never advances — the same exact bytes
+    /// can be re-broadcast indefinitely.
+    ///
+    /// The test asserts:
+    ///   1. After a Replace that fails `check_revision_is_bumped_by_one`, the
+    ///      stored contract nonce MUST advance past the submitted nonce.
+    ///   2. Re-submitting the same bytes through CheckTx FirstTimeCheck MUST
+    ///      be rejected with `InvalidIdentityNonceError`.
+    #[tokio::test]
+    async fn replayed_failed_replace_with_consumed_nonce_must_be_rejected_at_check_tx() {
+        use crate::execution::check_tx::CheckTxLevel;
+        use crate::execution::validation::state_transition::check_tx_verification::state_transition_to_execution_event_for_check_tx;
+        use crate::platform_types::platform::PlatformRef;
+        use dpp::serialization::PlatformDeserializable;
+        use dpp::state_transition::StateTransition;
+
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(437);
+
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.5));
+
+        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay_contract = dashpay.clone();
+
+        // Use the mutable `profile` doc type — same contract-and-doc-type that
+        // mainnet 35C0 was operating on (DPNS-like profile-replace flow).
+        let profile = dashpay_contract
+            .document_type_for_name("profile")
+            .expect("expected a profile document type");
+        assert!(profile.documents_mutable());
+
+        let entropy = Bytes32::random_with_rng(&mut rng);
+        let mut document = profile
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+        // Random fillers can produce a non-URI avatarUrl that fails JSON-schema
+        // validation on Create. Pin it to a valid URI like the sibling tests do.
+        document.set("avatarUrl", "http://test.com/bob.jpg".into());
+        document.set("displayName", "Original".into());
+
+        // 1) Create at nonce 2 — consumes nonce 2; doc lands at revision 1.
+        let create_transition = BatchTransition::new_document_creation_transition_from_document(
+            document.clone(),
+            profile,
+            entropy.0,
+            &key,
+            2,
+            0,
+            None,
+            &signer,
+            platform_version,
+            None,
         )
-        .await;
+        .await
+        .expect("expected to build create transition");
+
+        let create_serialized = create_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize create");
+
+        let transaction = platform.drive.grove.start_transaction();
+        let create_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![create_serialized],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process create");
+        assert_eq!(create_result.valid_count(), 1);
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit create");
+
+        let (post_create_nonce_raw, _) = platform
+            .drive
+            .fetch_identity_contract_nonce_with_fees(
+                identity.id().to_buffer(),
+                dashpay_contract.id().to_buffer(),
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch contract nonce after create");
+        let post_create_nonce =
+            post_create_nonce_raw.expect("contract nonce must be present after create");
+
+        // 2) Build a Replace at nonce 3 with revision 3. Doc is at revision
+        //    1, so check_revision_is_bumped_by_one_during_replace_v0 returns
+        //    InvalidDocumentRevisionError(Some(1), 3) and we hit the
+        //    failure-with-bump path in the transformer.
+        let mut altered_document = document.clone();
+        altered_document.set_revision(Some(3));
+        altered_document.set("displayName", "Out of order".into());
+
+        let replace_transition =
+            BatchTransition::new_document_replacement_transition_from_document(
+                altered_document,
+                profile,
+                &key,
+                3,
+                0,
+                None,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected to build replace transition");
+
+        let replace_serialized = replace_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize replace");
+
+        let transaction = platform.drive.grove.start_transaction();
+        let replace_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![replace_serialized.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process replace");
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit failed replace");
+
+        assert_eq!(
+            replace_result.invalid_paid_count(),
+            1,
+            "Replace must commit as invalid_paid (PaidConsensusError); execution_results={:?}",
+            replace_result.execution_results()
+        );
+        assert_eq!(replace_result.valid_count(), 0);
+
+        // 3) Direct invariant: the bump must have advanced the contract nonce
+        //    in state. If the stored nonce is still post-create, the bump
+        //    silently dropped — that is the bug.
+        let (post_replace_nonce_raw, _) = platform
+            .drive
+            .fetch_identity_contract_nonce_with_fees(
+                identity.id().to_buffer(),
+                dashpay_contract.id().to_buffer(),
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch contract nonce after failed replace");
+        let post_replace_nonce =
+            post_replace_nonce_raw.expect("contract nonce must be present after failed replace");
+
+        assert_ne!(
+            post_replace_nonce, post_create_nonce,
+            "failed Replace's bump action did not advance the contract \
+             nonce — stored nonce is still {:#x} (= post-create value), so \
+             the same serialized bytes can be replayed",
+            post_create_nonce
+        );
+
+        // 4) Re-submitting identical bytes through CheckTx FirstTimeCheck must
+        //    hit the nonce check first and reject.
+        let replayed_state_transition =
+            StateTransition::deserialize_from_bytes(&replace_serialized)
+                .expect("expected to deserialize replayed transition");
+
+        let platform_state = platform.state.load();
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
+
+        let check_tx_result = state_transition_to_execution_event_for_check_tx(
+            &platform_ref,
+            replayed_state_transition,
+            CheckTxLevel::FirstTimeCheck,
+            platform_version,
+        )
+        .expect("expected check_tx to not return an Err");
+
+        assert!(
+            !check_tx_result.is_valid(),
+            "CheckTx FirstTimeCheck must reject identical bytes after the \
+             failed-Replace bump consumed the nonce"
+        );
+        assert!(
+            check_tx_result.errors.iter().any(|e| matches!(
+                e,
+                ConsensusError::StateError(StateError::InvalidIdentityNonceError(_))
+            )),
+            "expected InvalidIdentityNonceError on replay; got {:?}",
+            check_tx_result.errors
+        );
     }
 
     #[tokio::test]

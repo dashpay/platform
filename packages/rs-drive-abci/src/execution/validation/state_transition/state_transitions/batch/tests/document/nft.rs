@@ -1847,19 +1847,16 @@ mod nft_tests {
             .unwrap()
             .expect("expected to commit transaction");
 
-        // PROTOCOL_VERSION_12+ (issue #2867): the v1 `flatten` / `merge_many`
-        // aggregators return `data: None` when no per-transition input
-        // contributed, so a single-transition batch where the lone Purchase
-        // fails its price check now flows as `UnpaidConsensusError` (tx
-        // removed from block by prepare_proposal) instead of being recorded
-        // as a paid empty `BatchTransitionAction`.
-        assert_eq!(processing_result.invalid_unpaid_count(), 1);
-        assert_eq!(processing_result.invalid_paid_count(), 0);
+        assert_eq!(processing_result.invalid_paid_count(), 1);
 
         let result = processing_result.into_execution_results().remove(0);
 
-        let StateTransitionExecutionResult::UnpaidConsensusError(consensus_error) = result else {
-            panic!("expected an unpaid consensus error");
+        let StateTransitionExecutionResult::PaidConsensusError {
+            error: consensus_error,
+            ..
+        } = result
+        else {
+            panic!("expected a paid consensus error");
         };
         assert_eq!(consensus_error.to_string(), "5rJccTdtJfg6AxSKyrptWUug3PWjveEitTTLqBn9wHdk document can not be purchased for 35000000000, it's sale price is 50000000000 (in credits)");
     }
@@ -2358,19 +2355,16 @@ mod nft_tests {
             .unwrap()
             .expect("expected to commit transaction");
 
-        // PROTOCOL_VERSION_12+ (issue #2867): the v1 `flatten` / `merge_many`
-        // aggregators return `data: None` when no per-transition input
-        // contributed, so a single-transition batch where the lone Purchase
-        // hits `DocumentNotForSaleError` now flows as `UnpaidConsensusError`
-        // (tx removed from block by prepare_proposal) instead of being
-        // recorded as a paid empty `BatchTransitionAction`.
-        assert_eq!(processing_result.invalid_unpaid_count(), 1);
-        assert_eq!(processing_result.invalid_paid_count(), 0);
+        assert_eq!(processing_result.invalid_paid_count(), 1);
 
         let result = processing_result.into_execution_results().remove(0);
 
-        let StateTransitionExecutionResult::UnpaidConsensusError(consensus_error) = result else {
-            panic!("expected an unpaid consensus error");
+        let StateTransitionExecutionResult::PaidConsensusError {
+            error: consensus_error,
+            ..
+        } = result
+        else {
+            panic!("expected a paid consensus error");
         };
         assert_eq!(
             consensus_error.to_string(),
@@ -2658,17 +2652,19 @@ mod nft_tests {
         assert_eq!(processing_result.aggregated_fees().processing_fee, 0);
     }
 
-    /// Issue #2867 paired test (helper). Same scenario across protocol
-    /// versions: SetPrice on a doc owned by someone else → all-failed
-    /// batch (ownership mismatch). v11 = `PaidConsensusError` with empty
-    /// action; v12 = `UnpaidConsensusError`.
+    /// Helper for the paired set-price-on-not-owned-document test.
+    ///
+    /// Same scenario at PROTOCOL_VERSION_11 (legacy bump-only fee) and
+    /// PROTOCOL_VERSION_12 (fee covers the fetch + ownership-mismatch
+    /// validation work that ran before the failure). Both versions land as
+    /// PaidConsensusError because the bump-emission patch makes the per-tx
+    /// failure produce a non-empty action on every version.
     async fn run_document_set_price_on_not_owned_document_at_protocol_version(
         protocol_version: dpp::version::ProtocolVersion,
-        expected_unpaid_consensus: bool,
         expected_processing_fee: dpp::fee::Credits,
     ) {
-        let platform_version =
-            PlatformVersion::get(protocol_version).expect("expected platform version");
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let (mut platform, contract) = TestPlatformBuilder::new()
             .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
@@ -2797,29 +2793,24 @@ mod nft_tests {
             .unwrap()
             .expect("expected to commit transaction");
 
-        if expected_unpaid_consensus {
-            assert_eq!(
-                processing_result.invalid_unpaid_count(),
-                1,
-                "PROTOCOL_VERSION_{}: must surface as UnpaidConsensusError",
-                protocol_version,
-            );
-            assert_eq!(processing_result.invalid_paid_count(), 0);
-        } else {
-            assert_eq!(
-                processing_result.invalid_paid_count(),
-                1,
-                "PROTOCOL_VERSION_{}: must preserve historical PaidConsensusError shape",
-                protocol_version,
-            );
-            assert_eq!(processing_result.invalid_unpaid_count(), 0);
-        }
-
+        // With the bump-emission fix from this PR active on every protocol
+        // version, the single-transition Purchase failure produces a
+        // BumpIdentityDataContractNonce action (non-empty), so both v11 and
+        // v12 land as PaidConsensusError; only the fee differs.
+        assert_eq!(
+            processing_result.invalid_paid_count(),
+            1,
+            "PROTOCOL_VERSION_{}: ownership-mismatch UpdatePrice must land as PaidConsensusError",
+            protocol_version,
+        );
+        assert_eq!(processing_result.invalid_unpaid_count(), 0);
         assert_eq!(processing_result.valid_count(), 0);
 
         assert_eq!(
             processing_result.aggregated_fees().processing_fee,
-            expected_processing_fee
+            expected_processing_fee,
+            "PROTOCOL_VERSION_{}: processing fee must match the version-specific baseline",
+            protocol_version,
         );
 
         let sender_documents_sql_string =
@@ -2850,25 +2841,22 @@ mod nft_tests {
         );
     }
 
-    /// PROTOCOL_VERSION_12+ (architectural fix active).
+    /// PROTOCOL_VERSION_12+: bump emission charges the user for the fetch +
+    /// ownership check that ran before the failure.
     #[tokio::test]
     async fn test_document_set_price_on_not_owned_document() {
         run_document_set_price_on_not_owned_document_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            true, // architectural fix active
-            0,    // no fee charged on UnpaidConsensus
+            571240,
         )
         .await;
     }
 
-    /// PROTOCOL_VERSION_11: preserved historical buggy behavior.
+    /// PROTOCOL_VERSION_11: pre-fix bump-only fee. Pinned so v11 chain
+    /// history stays bit-for-bit reproducible.
     #[tokio::test]
     async fn test_document_set_price_on_not_owned_document_protocol_version_11() {
-        run_document_set_price_on_not_owned_document_at_protocol_version(
-            11, false, // bug preserved
-            36200, // pre-fix bump-only fee
-        )
-        .await;
+        run_document_set_price_on_not_owned_document_at_protocol_version(11, 36200).await;
     }
 
     #[tokio::test]
