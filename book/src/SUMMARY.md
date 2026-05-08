@@ -59,6 +59,7 @@
 - [Batch Operations](drive/batch-operations.md)
 - [Cost Tracking](drive/cost-tracking.md)
 - [Finalize Tasks](drive/finalize-tasks.md)
+- [Document Count Trees](drive/document-count-trees.md)
 
 # Testing
 
