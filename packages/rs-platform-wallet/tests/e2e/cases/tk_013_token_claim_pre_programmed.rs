@@ -265,21 +265,38 @@ async fn tk_013_token_claim_from_pre_programmed_distribution() {
         .sdk()
         .token_claim(retry_builder, &owner.critical_key, owner.signer.as_ref())
         .await;
-    let err_text = match retry_result {
+    let retry_err = match retry_result {
         Ok(_) => panic!(
             "second claim against the same pre-programmed epoch must fail \
              — regression: payout was credited twice"
         ),
-        Err(err) => format!("{err}").to_lowercase(),
+        Err(err) => err,
+    };
+
+    // Typed-variant match: Drive raises
+    // `StateError::InvalidTokenClaimNoCurrentRewards` when the same
+    // pre-programmed epoch is claimed twice. We unwrap the SDK error
+    // to its consensus payload via the same shape `is_instant_lock_proof_invalid`
+    // uses (`StateTransitionBroadcastError.cause` /
+    // `Protocol(ConsensusError(...))`) so we don't depend on Display.
+    use dpp::consensus::state::state_error::StateError;
+    use dpp::consensus::ConsensusError;
+    let consensus_error: Option<&ConsensusError> = match &retry_err {
+        dash_sdk::Error::StateTransitionBroadcastError(broadcast_err) => {
+            broadcast_err.cause.as_ref()
+        }
+        dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(ce)) => Some(ce.as_ref()),
+        _ => None,
     };
     assert!(
-        err_text.contains("already claimed")
-            || err_text.contains("no claimable amount")
-            || err_text.contains("nothing to claim")
-            || err_text.contains("already paid")
-            || err_text.contains("alreadypaid"),
-        "second-claim error must reference the 'already claimed' / 'no claimable amount' \
-         class (observed: {err_text})"
+        matches!(
+            consensus_error,
+            Some(ConsensusError::StateError(
+                StateError::InvalidTokenClaimNoCurrentRewards(_),
+            )),
+        ),
+        "second-claim error must be `StateError::InvalidTokenClaimNoCurrentRewards` \
+         (observed: {retry_err:?})"
     );
 
     // Sanity: the failed retry must NOT have credited the owner a
