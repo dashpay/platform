@@ -2311,4 +2311,74 @@ Each question's answer changes the spec; numbered for reference.
 
 ---
 
+## 7. Known Issues
+
+Tracked production bugs that affect test outcomes. Tests are `#[ignore]`d until
+the underlying production fix lands. Do not modify production code in this
+section — these are documentation entries only.
+
+### V27-007 — `PlatformAddressWallet::transfer` ledger pollution (production bug)
+
+**Status**: tracked, fix deferred. Tests `pa_004b_sweep_below_dust_gate_no_broadcast` and `pa_009_cleanup_gate_tracks_platform_version_min_input_amount` are `#[ignore]` until production fix lands.
+
+**Bug**: `PlatformAddressWallet::transfer` at
+`packages/rs-platform-wallet/src/wallet/platform_addresses/transfer.rs:160` calls
+`account.set_address_credit_balance(p2pkh, funds.balance, key_source.as_ref())`
+for every address in the transition (inputs ∪ outputs), with no ownership check.
+When a wallet transfers to an externally-owned address (e.g., bank's primary
+receive address), the externally-owned post-balance gets staged into the source
+wallet's local `address_balances` ledger.
+
+**Symptom**: `wallet.total_credits()` after a transfer-to-external returns the
+external address's balance summed in. PA-004b/PA-009 see the bank's full
+~40.8 tDASH on what should be a dust-residual wallet → assertions panic.
+
+**Same unguarded primitive** also exists at:
+- `packages/rs-platform-wallet/src/wallet/platform_addresses/withdrawal.rs:141`
+- `packages/rs-platform-wallet/src/wallet/platform_addresses/fund_from_asset_lock.rs:129`
+
+Currently safe by caller behavior (those iterate only-owned addresses), but
+identical shape; defense-in-depth fix should apply there too.
+
+**Severity**:
+- **Tests**: HIGH — every `total_credits()` post-transfer-to-external is a false read.
+- **SDK consumers**: HIGH — anyone following `transfer → read total_credits` sees
+  inflated balances and could make wrong spend decisions.
+- **Production sweep path**: MEDIUM-LOW — sweep would build inputs against the
+  external address, but the source wallet can't sign for it; Drive rejects the
+  transition; error swallowed → no on-chain leak.
+
+**Fix sketch** (~6 LOC, do not apply in this PR):
+Filter the loop in `transfer.rs:145-160` so `set_address_credit_balance` is
+called only for addresses the source account owns:
+
+```rust
+for (addr, maybe_info) in address_infos.iter() {
+    let PlatformAddress::P2pkh(hash) = addr else { continue };
+    let p2pkh = PlatformP2PKHAddress::new(*hash);
+    // Skip addresses the source account doesn't own; address_infos covers
+    // inputs ∪ outputs and outputs we don't own must not pollute the local
+    // credit ledger.
+    if !account.address_balances.contains_key(&p2pkh)
+        && account.addresses.address_info_by_p2pkh(&p2pkh).is_none()
+    {
+        continue;
+    }
+    // ... existing set_address_credit_balance + changeset push
+}
+```
+
+Defense-in-depth: apply same filter at `withdrawal.rs:141` and
+`fund_from_asset_lock.rs:129`. Optionally make `set_address_credit_balance`
+itself reject addresses not in the pool (wider change in `key-wallet`).
+
+**Confirmation audit**:
+- Search for any aggregate that sums `total_credits()` across multiple wallets in the manager (production code, dashboards, telemetry) — would double-count.
+- Run e2e suite with the fix in place, verify PA-004b/PA-009 pass.
+- Add debug assertion in `set_address_credit_balance` that the address is in the pool — every callsite that violates would surface.
+
+**Investigated**: Bilby read-only audit, 2026-05-08, agent ID `a2d81349f872a0c6a`.
+
+---
+
 <sub>Catalogued by Marvin (QA), with the resigned competence of someone who has read every line of this code twice. Edge-case expansion by Trillian, who knows that the difference between "tested" and "tested at the boundary" is the difference between "ships" and "ships back".</sub>
