@@ -746,4 +746,121 @@ mod countable_e2e_tests {
             .expect("expected to decode document");
         assert_eq!(decoded.id(), inserted_id);
     }
+
+    /// Apply a contract with the given countable flags and return the fees
+    /// reported by `insert_contract`. Used to compare fee profiles across
+    /// the three primary-key tree variants.
+    fn fees_for_contract_with(
+        documents_countable: bool,
+        range_countable: bool,
+    ) -> dpp::fee::fee_result::FeeResult {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let pv = PlatformVersion::latest();
+        let contract = build_widget_contract(documents_countable, range_countable);
+        drive
+            .insert_contract(&contract, BlockInfo::default(), true, None, pv)
+            .expect("expected insert_contract to succeed and return fees")
+    }
+
+    /// Switching the primary-key tree variant from NormalTree to CountTree
+    /// changes the underlying grovedb element shape (CountTree carries an
+    /// extra count value). The reported fees must therefore differ — if they
+    /// don't, the contract insert path silently degraded back to the
+    /// NormalTree branch and the documentsCountable feature is dead.
+    #[test]
+    fn count_tree_contract_apply_produces_different_fees_than_normal_tree() {
+        let normal_fees = fees_for_contract_with(false, false);
+        let count_fees = fees_for_contract_with(true, false);
+
+        assert!(normal_fees.storage_fee > 0, "normal tree storage fee");
+        assert!(normal_fees.processing_fee > 0, "normal tree processing fee");
+        assert!(count_fees.storage_fee > 0, "count tree storage fee");
+        assert!(count_fees.processing_fee > 0, "count tree processing fee");
+
+        assert_ne!(
+            (normal_fees.storage_fee, normal_fees.processing_fee),
+            (count_fees.storage_fee, count_fees.processing_fee),
+            "documentsCountable: true must produce a different fee profile than the default \
+             NormalTree contract — equal fees mean the count-tree branch was never exercised"
+        );
+    }
+
+    /// Same invariant for the rangeCountable / ProvableCountTree branch:
+    /// switching from CountTree to ProvableCountTree changes both the grove
+    /// element type and the proof shape, so fees must differ.
+    #[test]
+    fn provable_count_tree_contract_apply_produces_different_fees_than_count_tree() {
+        let count_fees = fees_for_contract_with(true, false);
+        let provable_fees = fees_for_contract_with(false, true);
+
+        assert!(provable_fees.storage_fee > 0, "provable count storage fee");
+        assert!(
+            provable_fees.processing_fee > 0,
+            "provable count processing fee"
+        );
+
+        assert_ne!(
+            (count_fees.storage_fee, count_fees.processing_fee),
+            (provable_fees.storage_fee, provable_fees.processing_fee,),
+            "rangeCountable: true must produce a different fee profile than documentsCountable: \
+             true alone — equal fees mean the provable-count-tree branch was never exercised"
+        );
+    }
+
+    /// Document insert into a CountTree contract should produce positive fees
+    /// without error. This exercises the document-insert code paths
+    /// (add_document_for_contract_operations, primary-key-tree dispatch in
+    /// add_document_to_primary_storage) under the count-tree branch.
+    #[test]
+    fn document_insert_into_count_tree_produces_positive_fees() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let pv = PlatformVersion::latest();
+        let contract = build_widget_contract(true, false);
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("expected to apply contract");
+
+        let document_type = contract
+            .document_type_for_name("widget")
+            .expect("widget exists");
+        let document = document_type
+            .random_document(Some(7), pv)
+            .expect("random document");
+
+        let fee = drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&document, None)),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                pv,
+                None,
+            )
+            .expect("expected to insert document into count tree");
+
+        assert!(
+            fee.storage_fee > 0,
+            "document insert into a CountTree contract must produce a positive storage fee"
+        );
+        assert!(
+            fee.processing_fee > 0,
+            "document insert into a CountTree contract must produce a positive processing fee"
+        );
+    }
 }
