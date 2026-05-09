@@ -90,9 +90,15 @@ CF_EXTERN_C_BEGIN
 @class GetDataContractsResponse_DataContractEntry;
 @class GetDataContractsResponse_DataContracts;
 @class GetDataContractsResponse_GetDataContractsResponseV0;
+@class GetDocumentsCountRequest_GetDocumentsCountRequestV0;
+@class GetDocumentsCountResponse_GetDocumentsCountResponseV0;
 @class GetDocumentsRequest_GetDocumentsRequestV0;
 @class GetDocumentsResponse_GetDocumentsResponseV0;
 @class GetDocumentsResponse_GetDocumentsResponseV0_Documents;
+@class GetDocumentsSplitCountRequest_GetDocumentsSplitCountRequestV0;
+@class GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0;
+@class GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCountEntry;
+@class GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCounts;
 @class GetEpochsInfoRequest_GetEpochsInfoRequestV0;
 @class GetEpochsInfoResponse_GetEpochsInfoResponseV0;
 @class GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo;
@@ -2402,6 +2408,262 @@ GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV0_Documents : GPB
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *documentsArray;
 /** The number of items in @c documentsArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger documentsArray_Count;
+
+@end
+
+#pragma mark - GetDocumentsCountRequest
+
+typedef GPB_ENUM(GetDocumentsCountRequest_FieldNumber) {
+  GetDocumentsCountRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetDocumentsCountRequest_Version_OneOfCase) {
+  GetDocumentsCountRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDocumentsCountRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetDocumentsCountRequest : GPBMessage
+
+@property(nonatomic, readonly) GetDocumentsCountRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsCountRequest_GetDocumentsCountRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetDocumentsCountRequest_ClearVersionOneOfCase(GetDocumentsCountRequest *message);
+
+#pragma mark - GetDocumentsCountRequest_GetDocumentsCountRequestV0
+
+typedef GPB_ENUM(GetDocumentsCountRequest_GetDocumentsCountRequestV0_FieldNumber) {
+  GetDocumentsCountRequest_GetDocumentsCountRequestV0_FieldNumber_DataContractId = 1,
+  GetDocumentsCountRequest_GetDocumentsCountRequestV0_FieldNumber_DocumentType = 2,
+  GetDocumentsCountRequest_GetDocumentsCountRequestV0_FieldNumber_Where = 3,
+  GetDocumentsCountRequest_GetDocumentsCountRequestV0_FieldNumber_Prove = 4,
+};
+
+GPB_FINAL @interface GetDocumentsCountRequest_GetDocumentsCountRequestV0 : GPBMessage
+
+/** The ID of the data contract containing the documents */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *dataContractId;
+
+/** The type of document being requested */
+@property(nonatomic, readwrite, copy, null_resettable) NSString *documentType;
+
+/** CBOR-encoded where clauses for filtering */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *where;
+
+/** Flag to request a proof as the response */
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetDocumentsCountResponse
+
+typedef GPB_ENUM(GetDocumentsCountResponse_FieldNumber) {
+  GetDocumentsCountResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetDocumentsCountResponse_Version_OneOfCase) {
+  GetDocumentsCountResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDocumentsCountResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetDocumentsCountResponse : GPBMessage
+
+@property(nonatomic, readonly) GetDocumentsCountResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsCountResponse_GetDocumentsCountResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetDocumentsCountResponse_ClearVersionOneOfCase(GetDocumentsCountResponse *message);
+
+#pragma mark - GetDocumentsCountResponse_GetDocumentsCountResponseV0
+
+typedef GPB_ENUM(GetDocumentsCountResponse_GetDocumentsCountResponseV0_FieldNumber) {
+  GetDocumentsCountResponse_GetDocumentsCountResponseV0_FieldNumber_Count = 1,
+  GetDocumentsCountResponse_GetDocumentsCountResponseV0_FieldNumber_Proof = 2,
+  GetDocumentsCountResponse_GetDocumentsCountResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetDocumentsCountResponse_GetDocumentsCountResponseV0_Result_OneOfCase) {
+  GetDocumentsCountResponse_GetDocumentsCountResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDocumentsCountResponse_GetDocumentsCountResponseV0_Result_OneOfCase_Count = 1,
+  GetDocumentsCountResponse_GetDocumentsCountResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetDocumentsCountResponse_GetDocumentsCountResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetDocumentsCountResponse_GetDocumentsCountResponseV0_Result_OneOfCase resultOneOfCase;
+
+/** Total document count matching the query */
+@property(nonatomic, readwrite) uint64_t count;
+
+/** Cryptographic proof, if requested */
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+/** Metadata about the blockchain state */
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetDocumentsCountResponse_GetDocumentsCountResponseV0_ClearResultOneOfCase(GetDocumentsCountResponse_GetDocumentsCountResponseV0 *message);
+
+#pragma mark - GetDocumentsSplitCountRequest
+
+typedef GPB_ENUM(GetDocumentsSplitCountRequest_FieldNumber) {
+  GetDocumentsSplitCountRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetDocumentsSplitCountRequest_Version_OneOfCase) {
+  GetDocumentsSplitCountRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDocumentsSplitCountRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetDocumentsSplitCountRequest : GPBMessage
+
+@property(nonatomic, readonly) GetDocumentsSplitCountRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsSplitCountRequest_GetDocumentsSplitCountRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetDocumentsSplitCountRequest_ClearVersionOneOfCase(GetDocumentsSplitCountRequest *message);
+
+#pragma mark - GetDocumentsSplitCountRequest_GetDocumentsSplitCountRequestV0
+
+typedef GPB_ENUM(GetDocumentsSplitCountRequest_GetDocumentsSplitCountRequestV0_FieldNumber) {
+  GetDocumentsSplitCountRequest_GetDocumentsSplitCountRequestV0_FieldNumber_DataContractId = 1,
+  GetDocumentsSplitCountRequest_GetDocumentsSplitCountRequestV0_FieldNumber_DocumentType = 2,
+  GetDocumentsSplitCountRequest_GetDocumentsSplitCountRequestV0_FieldNumber_Where = 3,
+  GetDocumentsSplitCountRequest_GetDocumentsSplitCountRequestV0_FieldNumber_SplitCountByIndexProperty = 4,
+  GetDocumentsSplitCountRequest_GetDocumentsSplitCountRequestV0_FieldNumber_Prove = 5,
+};
+
+GPB_FINAL @interface GetDocumentsSplitCountRequest_GetDocumentsSplitCountRequestV0 : GPBMessage
+
+/** The ID of the data contract containing the documents */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *dataContractId;
+
+/** The type of document being requested */
+@property(nonatomic, readwrite, copy, null_resettable) NSString *documentType;
+
+/** CBOR-encoded where clauses for filtering */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *where;
+
+/** The index property to split counts by */
+@property(nonatomic, readwrite, copy, null_resettable) NSString *splitCountByIndexProperty;
+
+/** Flag to request a proof as the response */
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetDocumentsSplitCountResponse
+
+typedef GPB_ENUM(GetDocumentsSplitCountResponse_FieldNumber) {
+  GetDocumentsSplitCountResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetDocumentsSplitCountResponse_Version_OneOfCase) {
+  GetDocumentsSplitCountResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDocumentsSplitCountResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetDocumentsSplitCountResponse : GPBMessage
+
+@property(nonatomic, readonly) GetDocumentsSplitCountResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetDocumentsSplitCountResponse_ClearVersionOneOfCase(GetDocumentsSplitCountResponse *message);
+
+#pragma mark - GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0
+
+typedef GPB_ENUM(GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_FieldNumber) {
+  GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_FieldNumber_SplitCounts = 1,
+  GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_FieldNumber_Proof = 2,
+  GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_Result_OneOfCase) {
+  GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_Result_OneOfCase_SplitCounts = 1,
+  GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_Result_OneOfCase resultOneOfCase;
+
+/** Per-key counts */
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCounts *splitCounts;
+
+/** Cryptographic proof, if requested */
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+/** Metadata about the blockchain state */
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_ClearResultOneOfCase(GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0 *message);
+
+#pragma mark - GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCountEntry
+
+typedef GPB_ENUM(GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCountEntry_FieldNumber) {
+  GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCountEntry_FieldNumber_Key = 1,
+  GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCountEntry_FieldNumber_Count = 2,
+};
+
+/**
+ * A single entry: the key value and how many documents match
+ **/
+GPB_FINAL @interface GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCountEntry : GPBMessage
+
+/** The index property value */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *key;
+
+/** Number of documents with this key value */
+@property(nonatomic, readwrite) uint64_t count;
+
+@end
+
+#pragma mark - GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCounts
+
+typedef GPB_ENUM(GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCounts_FieldNumber) {
+  GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCounts_FieldNumber_EntriesArray = 1,
+};
+
+GPB_FINAL @interface GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCounts : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCountEntry*> *entriesArray;
+/** The number of items in @c entriesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger entriesArray_Count;
 
 @end
 

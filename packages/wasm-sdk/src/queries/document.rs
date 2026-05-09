@@ -6,10 +6,13 @@ use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::document::Document;
 use dash_sdk::dpp::platform_value::Value;
 use dash_sdk::dpp::prelude::Identifier;
+use dash_sdk::platform::documents::document_count_query::DocumentCountQuery;
 use dash_sdk::platform::documents::document_query::DocumentQuery;
+use dash_sdk::platform::documents::document_split_count_query::DocumentSplitCountQuery;
 use dash_sdk::platform::Fetch;
 use dash_sdk::platform::FetchMany;
 use drive::query::{OrderClause, WhereClause, WhereOperator};
+use drive_proof_verifier::{DocumentCount, DocumentSplitCounts};
 use js_sys::Map;
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
@@ -455,4 +458,103 @@ impl WasmSdk {
             proof,
         ))
     }
+
+    #[wasm_bindgen(js_name = "getDocumentsCount", unchecked_return_type = "bigint")]
+    pub async fn get_documents_count(&self, query: DocumentsQueryJs) -> Result<u64, WasmSdkError> {
+        let base_query = parse_documents_query(self, query).await?;
+        let count_query = DocumentCountQuery {
+            document_query: base_query,
+        };
+
+        let count = DocumentCount::fetch(self.as_ref(), count_query)
+            .await?
+            .map(|c| c.0)
+            .unwrap_or(0);
+
+        Ok(count)
+    }
+
+    #[wasm_bindgen(
+        js_name = "getDocumentsCountWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<bigint>"
+    )]
+    pub async fn get_documents_count_with_proof_info(
+        &self,
+        query: DocumentsQueryJs,
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
+        let base_query = parse_documents_query(self, query).await?;
+        let count_query = DocumentCountQuery {
+            document_query: base_query,
+        };
+
+        let (count_opt, metadata, proof) =
+            DocumentCount::fetch_with_metadata_and_proof(self.as_ref(), count_query, None).await?;
+        let count = count_opt.map(|c| c.0).unwrap_or(0);
+
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            JsValue::from(count),
+            metadata,
+            proof,
+        ))
+    }
+
+    #[wasm_bindgen(
+        js_name = "getDocumentsSplitCount",
+        unchecked_return_type = "Map<string, bigint>"
+    )]
+    pub async fn get_documents_split_count(
+        &self,
+        query: DocumentsQueryJs,
+        #[wasm_bindgen(js_name = "splitProperty")] split_property: String,
+    ) -> Result<Map, WasmSdkError> {
+        let base_query = parse_documents_query(self, query).await?;
+        let split_query = DocumentSplitCountQuery {
+            document_query: base_query,
+            split_property,
+        };
+
+        let splits = DocumentSplitCounts::fetch(self.as_ref(), split_query).await?;
+        Ok(split_counts_to_js_map(splits))
+    }
+
+    #[wasm_bindgen(
+        js_name = "getDocumentsSplitCountWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<string, bigint>>"
+    )]
+    pub async fn get_documents_split_count_with_proof_info(
+        &self,
+        query: DocumentsQueryJs,
+        #[wasm_bindgen(js_name = "splitProperty")] split_property: String,
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
+        let base_query = parse_documents_query(self, query).await?;
+        let split_query = DocumentSplitCountQuery {
+            document_query: base_query,
+            split_property,
+        };
+
+        let (splits_opt, metadata, proof) =
+            DocumentSplitCounts::fetch_with_metadata_and_proof(self.as_ref(), split_query, None)
+                .await?;
+        let map = split_counts_to_js_map(splits_opt);
+
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            map, metadata, proof,
+        ))
+    }
+}
+
+/// Convert an `Option<DocumentSplitCounts>` into a JS `Map<string, bigint>`.
+///
+/// Keys are hex-encoded so the JS side can match them against the
+/// platform-value-encoded property values returned in proofs. None →
+/// empty map.
+fn split_counts_to_js_map(splits: Option<DocumentSplitCounts>) -> Map {
+    let map = Map::new();
+    if let Some(DocumentSplitCounts(inner)) = splits {
+        for (key_bytes, count) in inner {
+            let key: JsValue = hex::encode(key_bytes).into();
+            map.set(&key, &JsValue::from(count));
+        }
+    }
+    map
 }
