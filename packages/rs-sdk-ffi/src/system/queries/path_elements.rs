@@ -162,6 +162,11 @@ fn get_path_elements(
                                 Element::DenseAppendOnlyFixedSizeTree(_, _, _) => {
                                     "dense_append_only_fixed_size_tree".to_string()
                                 }
+                                // `NonCounted` is a wrapper introduced in grovedb #654 that
+                                // makes its inner element contribute 0 to a parent count
+                                // tree's aggregate. For display purposes here we describe
+                                // it by its inner element's type rather than recursing.
+                                Element::NonCounted(_) => "non_counted".to_string(),
                             };
 
                             format!(
@@ -187,6 +192,7 @@ fn get_path_elements(
                                     Element::BulkAppendTree(_, _, _) => "bulk_append_tree",
                                     Element::DenseAppendOnlyFixedSizeTree(_, _, _) =>
                                         "dense_append_only_fixed_size_tree",
+                                    Element::NonCounted(_) => "non_counted",
                                 }
                             )
                         })
