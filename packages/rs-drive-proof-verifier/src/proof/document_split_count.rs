@@ -1,7 +1,7 @@
 use crate::error::MapGroveDbError;
 use crate::verify::verify_tenderdash_proof;
 use crate::{ContextProvider, Error, FromProof};
-use dapi_grpc::platform::v0::{GetDocumentsSplitCountResponse, Proof, ResponseMetadata};
+use dapi_grpc::platform::v0::{GetDocumentsCountResponse, Proof, ResponseMetadata};
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::dashcore::Network;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
@@ -36,7 +36,7 @@ where
     Q::Error: std::fmt::Display,
 {
     type Request = Q;
-    type Response = GetDocumentsSplitCountResponse;
+    type Response = GetDocumentsCountResponse;
 
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         _request: I,
@@ -58,7 +58,7 @@ where
 }
 
 impl DocumentSplitCounts {
-    /// Verify a `GetDocumentsSplitCount` proof and aggregate the verified
+    /// Verify a `GetDocumentsCount` proof and aggregate the verified
     /// documents into per-key counts using `split_property` as the grouping
     /// key.
     ///
@@ -80,11 +80,11 @@ impl DocumentSplitCounts {
         Q: TryInto<DriveDocumentQuery<'dq>> + Clone + 'dq,
         Q::Error: std::fmt::Display,
         I: Into<Q>,
-        O: Into<GetDocumentsSplitCountResponse>,
+        O: Into<GetDocumentsCountResponse>,
         Self: 'a,
     {
         let request: Q = request.into();
-        let response: GetDocumentsSplitCountResponse = response.into();
+        let response: GetDocumentsCountResponse = response.into();
 
         let drive_query: DriveDocumentQuery<'dq> =
             request

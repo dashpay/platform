@@ -8,7 +8,6 @@ use dash_sdk::dpp::platform_value::Value;
 use dash_sdk::dpp::prelude::Identifier;
 use dash_sdk::platform::documents::document_count_query::DocumentCountQuery;
 use dash_sdk::platform::documents::document_query::DocumentQuery;
-use dash_sdk::platform::documents::document_split_count_query::DocumentSplitCountQuery;
 use dash_sdk::platform::Fetch;
 use dash_sdk::platform::FetchMany;
 use drive::query::{OrderClause, WhereClause, WhereOperator};
@@ -498,6 +497,11 @@ impl WasmSdk {
         ))
     }
 
+    /// Per-key count map. Splitting is signalled by including an `in`
+    /// where-clause in the query: the field of that clause becomes the
+    /// split property and each value in the array becomes one entry.
+    /// Without an `in` clause this returns a one-entry map keyed by the
+    /// empty string (i.e., the total count).
     #[wasm_bindgen(
         js_name = "getDocumentsSplitCount",
         unchecked_return_type = "Map<string, bigint>"
@@ -505,15 +509,12 @@ impl WasmSdk {
     pub async fn get_documents_split_count(
         &self,
         query: DocumentsQueryJs,
-        #[wasm_bindgen(js_name = "splitProperty")] split_property: String,
     ) -> Result<Map, WasmSdkError> {
         let base_query = parse_documents_query(self, query).await?;
-        let split_query = DocumentSplitCountQuery {
+        let count_query = DocumentCountQuery {
             document_query: base_query,
-            split_property,
         };
-
-        let splits = DocumentSplitCounts::fetch(self.as_ref(), split_query).await?;
+        let splits = DocumentSplitCounts::fetch(self.as_ref(), count_query).await?;
         Ok(split_counts_to_js_map(splits))
     }
 
@@ -524,16 +525,13 @@ impl WasmSdk {
     pub async fn get_documents_split_count_with_proof_info(
         &self,
         query: DocumentsQueryJs,
-        #[wasm_bindgen(js_name = "splitProperty")] split_property: String,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         let base_query = parse_documents_query(self, query).await?;
-        let split_query = DocumentSplitCountQuery {
+        let count_query = DocumentCountQuery {
             document_query: base_query,
-            split_property,
         };
-
         let (splits_opt, metadata, proof) =
-            DocumentSplitCounts::fetch_with_metadata_and_proof(self.as_ref(), split_query, None)
+            DocumentSplitCounts::fetch_with_metadata_and_proof(self.as_ref(), count_query, None)
                 .await?;
         let map = split_counts_to_js_map(splits_opt);
 

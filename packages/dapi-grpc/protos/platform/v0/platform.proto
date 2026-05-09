@@ -38,8 +38,6 @@ service Platform {
   rpc getDocuments(GetDocumentsRequest) returns (GetDocumentsResponse);
   rpc getDocumentsCount(GetDocumentsCountRequest)
       returns (GetDocumentsCountResponse);
-  rpc getDocumentsSplitCount(GetDocumentsSplitCountRequest)
-      returns (GetDocumentsSplitCountResponse);
   rpc getIdentityByPublicKeyHash(GetIdentityByPublicKeyHashRequest)
       returns (GetIdentityByPublicKeyHashResponse);
   rpc getIdentityByNonUniquePublicKeyHash(
@@ -616,57 +614,68 @@ message GetDocumentsResponse {
 }
 
 
+// Unified count query.
+//
+// Mode is determined by the where clauses encoded in `where`:
+//   * No `In` clause and `return_distinct_counts_in_range` = false:
+//     total count of matching documents → response has a single
+//     `CountEntry` with empty `key`.
+//   * Exactly one `In` clause: per-value entries — one `CountEntry`
+//     for each value in the `In` array, each constrained by the
+//     other (`==`) clauses. At most one `In` per request; multiple
+//     `In` clauses are an InvalidArgument error.
+//   * A range clause (`>`, `<`, `between*`, `startsWith`) and
+//     `return_distinct_counts_in_range` = true: one `CountEntry`
+//     per distinct value within the range. Requires the index to
+//     have `range_countable: true` (see Indexes book chapter).
+//   * A range clause with `return_distinct_counts_in_range` = false:
+//     a single `CountEntry` (empty `key`) summing the range.
+//     Also requires `range_countable: true` on the index.
 message GetDocumentsCountRequest {
   message GetDocumentsCountRequestV0 {
-    bytes data_contract_id = 1; // The ID of the data contract containing the documents
-    string document_type = 2;  // The type of document being requested
-    bytes where = 3;           // CBOR-encoded where clauses for filtering
-    bool prove = 4;            // Flag to request a proof as the response
+    bytes data_contract_id = 1;
+    string document_type = 2;
+    bytes where = 3; // CBOR-encoded where clauses
+    // Default false (single sum). When true and a range clause is
+    // present, return per-distinct-value entries within the range.
+    bool return_distinct_counts_in_range = 4;
+    // Sort direction for split-mode entries (per-`In`-value or
+    // per-range-distinct-value). Defaults true (ascending by
+    // serialized key bytes). Ignored for total-count responses.
+    optional bool order_by_ascending = 5;
+    // Maximum number of entries to return on the no-prove path.
+    // Server clamps to its `max_query_limit` config. Unset →
+    // server default. Has no effect on total-count responses.
+    optional uint32 limit = 6;
+    // Pagination cursor for split mode: skip entries up to and
+    // including this serialized key. Pair with `limit` to walk
+    // large result sets in chunks.
+    optional bytes start_after_split_key = 7;
+    bool prove = 8;
   }
   oneof version { GetDocumentsCountRequestV0 v0 = 1; }
 }
 
 message GetDocumentsCountResponse {
   message GetDocumentsCountResponseV0 {
-    oneof result {
-      uint64 count = 1;  // Total document count matching the query
-      Proof proof = 2;   // Cryptographic proof, if requested
+    // A single entry: the splitting key value (empty for total
+    // count) and how many documents match.
+    message CountEntry {
+      bytes key = 1;
+      uint64 count = 2;
     }
-    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+
+    message CountResults {
+      repeated CountEntry entries = 1;
+    }
+
+    oneof result {
+      CountResults counts = 1;
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
   }
   oneof version { GetDocumentsCountResponseV0 v0 = 1; }
-}
-
-message GetDocumentsSplitCountRequest {
-  message GetDocumentsSplitCountRequestV0 {
-    bytes data_contract_id = 1; // The ID of the data contract containing the documents
-    string document_type = 2;  // The type of document being requested
-    bytes where = 3;           // CBOR-encoded where clauses for filtering
-    string split_count_by_index_property = 4; // The index property to split counts by
-    bool prove = 5;            // Flag to request a proof as the response
-  }
-  oneof version { GetDocumentsSplitCountRequestV0 v0 = 1; }
-}
-
-message GetDocumentsSplitCountResponse {
-  message GetDocumentsSplitCountResponseV0 {
-    // A single entry: the key value and how many documents match
-    message SplitCountEntry {
-      bytes key = 1;     // The index property value
-      uint64 count = 2;  // Number of documents with this key value
-    }
-
-    message SplitCounts {
-      repeated SplitCountEntry entries = 1;
-    }
-
-    oneof result {
-      SplitCounts split_counts = 1; // Per-key counts
-      Proof proof = 2;              // Cryptographic proof, if requested
-    }
-    ResponseMetadata metadata = 3; // Metadata about the blockchain state
-  }
-  oneof version { GetDocumentsSplitCountResponseV0 v0 = 1; }
 }
 
 message GetIdentityByPublicKeyHashRequest {

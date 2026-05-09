@@ -11,6 +11,7 @@ use dapi_grpc::platform::v0::get_documents_count_response::{
 use dpp::check_validation_result_with_data;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
 use dpp::validation::ValidationResult;
@@ -26,11 +27,28 @@ impl<C> Platform<C> {
             data_contract_id,
             document_type: document_type_name,
             r#where,
+            return_distinct_counts_in_range,
+            order_by_ascending: _,
+            limit: _,
+            start_after_split_key: _,
             prove,
         }: GetDocumentsCountRequestV0,
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetDocumentsCountResponseV0>, Error> {
+        // `return_distinct_counts_in_range` requires a range clause and a
+        // `range_countable` index. The dependencies (range_countable per-index
+        // property in dpp + NonCounted<*> element variants in grovedb) are
+        // not yet implemented; reject up front.
+        if return_distinct_counts_in_range {
+            return Ok(QueryValidationResult::new_with_error(
+                QueryError::InvalidArgument(
+                    "return_distinct_counts_in_range requires range_countable indexes \
+                     and grovedb NonCounted element variants; not yet supported"
+                        .to_string(),
+                ),
+            ));
+        }
         let contract_id: Identifier = check_validation_result_with_data!(data_contract_id
             .try_into()
             .map_err(|_| QueryError::InvalidArgument(
@@ -162,14 +180,119 @@ impl<C> Platform<C> {
                 ));
             }
 
-            // For no-prove path, use CountTree-based O(1) counting when possible.
-            // Find a countable index that matches the where clause properties.
-            let countable_index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
-                document_type.indexes(),
-                &all_where_clauses,
-            );
+            // Determine split mode from the where clauses. The unified count
+            // endpoint uses an `In` clause as the per-value split signal: at
+            // most one `In` is allowed per query, and the In's array becomes
+            // the entries in the response (one CountEntry per value, each
+            // computed as the count of docs matching that single value).
+            // No In clause → total count, single entry with empty key.
+            let in_clauses: Vec<&WhereClause> = all_where_clauses
+                .iter()
+                .filter(|wc| wc.operator == drive::query::WhereOperator::In)
+                .collect();
+            if in_clauses.len() > 1 {
+                return Ok(QueryValidationResult::new_with_error(
+                    QueryError::InvalidArgument(
+                        "count query supports at most one `in` where-clause; \
+                         the In carries the split property and only one split \
+                         dimension is supported per request"
+                            .to_string(),
+                    ),
+                ));
+            }
 
-            let count = if let Some(index) = countable_index {
+            let entries: Vec<get_documents_count_response_v0::CountEntry> = if let Some(in_clause) =
+                in_clauses.first().cloned()
+            {
+                // Per-In-value entries. Replace the In with an Equal on each
+                // listed value, ask rs-drive for the count of that single
+                // value, and emit a (serialized_value, count) entry. Same
+                // value-key encoding as the no-In code path produces (via
+                // `serialize_value_for_key`), so wire keys round-trip
+                // consistently between modes.
+                let in_values =
+                    check_validation_result_with_data!(in_clause.value.as_array().ok_or_else(
+                        || QueryError::Query(QuerySyntaxError::InvalidWhereClauseComponents(
+                            "In where-clause value must be an array",
+                        ))
+                    ));
+
+                let other_clauses: Vec<WhereClause> = all_where_clauses
+                    .iter()
+                    .filter(|wc| wc.operator != drive::query::WhereOperator::In)
+                    .cloned()
+                    .collect();
+
+                let mut entries = Vec::with_capacity(in_values.len());
+                let mut seen_keys: std::collections::BTreeSet<Vec<u8>> = Default::default();
+                for value in in_values {
+                    // Pre-serialize to use as the entry key AND dedupe so a
+                    // duplicated In value doesn't produce two entries.
+                    let key_bytes = document_type.serialize_value_for_key(
+                        in_clause.field.as_str(),
+                        value,
+                        platform_version,
+                    )?;
+                    if !seen_keys.insert(key_bytes.clone()) {
+                        continue;
+                    }
+
+                    let mut clauses_for_value = other_clauses.clone();
+                    clauses_for_value.push(WhereClause {
+                        field: in_clause.field.clone(),
+                        operator: drive::query::WhereOperator::Equal,
+                        value: value.clone(),
+                    });
+
+                    let countable_index =
+                        DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+                            document_type.indexes(),
+                            &clauses_for_value,
+                        );
+                    let Some(index) = countable_index else {
+                        return Ok(QueryValidationResult::new_with_error(
+                            QueryError::InvalidArgument(
+                                "count query requires a countable index on the document \
+                                 type that matches the where clause properties"
+                                    .to_string(),
+                            ),
+                        ));
+                    };
+
+                    let count_query = DriveDocumentCountQuery {
+                        document_type,
+                        contract_id: contract_id.to_buffer(),
+                        document_type_name: document_type_name.clone(),
+                        index,
+                        where_clauses: clauses_for_value,
+                        split_by_property: None,
+                    };
+                    let results =
+                        count_query.execute_no_proof(&self.drive, None, platform_version)?;
+                    let count = results.first().map_or(0, |entry| entry.count);
+
+                    entries.push(get_documents_count_response_v0::CountEntry {
+                        key: key_bytes,
+                        count,
+                    });
+                }
+                entries
+            } else {
+                // No In clause → total count. Single entry with empty key.
+                let countable_index =
+                    DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+                        document_type.indexes(),
+                        &all_where_clauses,
+                    );
+                let Some(index) = countable_index else {
+                    return Ok(QueryValidationResult::new_with_error(
+                        QueryError::InvalidArgument(
+                            "count query requires a countable index on the document type \
+                             that matches the where clause properties"
+                                .to_string(),
+                        ),
+                    ));
+                };
                 let count_query = DriveDocumentCountQuery {
                     document_type,
                     contract_id: contract_id.to_buffer(),
@@ -178,26 +301,17 @@ impl<C> Platform<C> {
                     where_clauses: all_where_clauses,
                     split_by_property: None,
                 };
-
                 let results = count_query.execute_no_proof(&self.drive, None, platform_version)?;
-
-                // For a total count query, execute_no_proof returns a single entry
-                // with an empty key and the total count.
-                results.first().map_or(0, |entry| entry.count)
-            } else {
-                // No countable index found. Return an error telling the caller
-                // that count queries require a countable index.
-                return Ok(QueryValidationResult::new_with_error(
-                    QueryError::InvalidArgument(
-                        "count query requires a countable index on the document type that \
-                         matches the where clause properties"
-                            .to_string(),
-                    ),
-                ));
+                vec![get_documents_count_response_v0::CountEntry {
+                    key: Vec::new(),
+                    count: results.first().map_or(0, |e| e.count),
+                }]
             };
 
             GetDocumentsCountResponseV0 {
-                result: Some(get_documents_count_response_v0::Result::Count(count)),
+                result: Some(get_documents_count_response_v0::Result::Counts(
+                    get_documents_count_response_v0::CountResults { entries },
+                )),
                 metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             }
         };
@@ -257,6 +371,10 @@ mod tests {
             data_contract_id: data_contract_id.to_vec(),
             document_type: document_type_name.to_string(),
             r#where: vec![],
+            return_distinct_counts_in_range: false,
+            order_by_ascending: None,
+            limit: None,
+            start_after_split_key: None,
             prove: false,
         };
 
@@ -268,10 +386,11 @@ mod tests {
 
         match result.data {
             Some(GetDocumentsCountResponseV0 {
-                result: Some(get_documents_count_response_v0::Result::Count(count)),
+                result: Some(get_documents_count_response_v0::Result::Counts(counts)),
                 metadata: Some(_),
             }) => {
-                assert_eq!(count, 5, "expected count of 5 documents");
+                let total: u64 = counts.entries.iter().map(|e| e.count).sum();
+                assert_eq!(total, 5, "expected count of 5 documents");
             }
             other => panic!("expected count result, got {:?}", other),
         }
@@ -301,6 +420,10 @@ mod tests {
             data_contract_id: data_contract_id.to_vec(),
             document_type: document_type_name.to_string(),
             r#where: vec![],
+            return_distinct_counts_in_range: false,
+            order_by_ascending: None,
+            limit: None,
+            start_after_split_key: None,
             prove: false,
         };
 
@@ -312,10 +435,11 @@ mod tests {
 
         match result.data {
             Some(GetDocumentsCountResponseV0 {
-                result: Some(get_documents_count_response_v0::Result::Count(count)),
+                result: Some(get_documents_count_response_v0::Result::Counts(counts)),
                 metadata: Some(_),
             }) => {
-                assert_eq!(count, 0, "expected count of 0 documents");
+                let total: u64 = counts.entries.iter().map(|e| e.count).sum();
+                assert_eq!(total, 0, "expected count of 0 documents");
             }
             other => panic!("expected count result, got {:?}", other),
         }
@@ -461,6 +585,10 @@ mod tests {
             data_contract_id: data_contract.id().to_vec(),
             document_type: "person".to_string(),
             r#where: serialize_where_clauses_to_cbor(where_clauses),
+            return_distinct_counts_in_range: false,
+            order_by_ascending: None,
+            limit: None,
+            start_after_split_key: None,
             prove: false,
         };
 
@@ -472,10 +600,11 @@ mod tests {
 
         match result.data {
             Some(GetDocumentsCountResponseV0 {
-                result: Some(get_documents_count_response_v0::Result::Count(count)),
+                result: Some(get_documents_count_response_v0::Result::Counts(counts)),
                 metadata: Some(_),
             }) => {
-                assert_eq!(count, 5, "expected count of 5 (3 age=30 + 2 age=40)");
+                let total: u64 = counts.entries.iter().map(|e| e.count).sum();
+                assert_eq!(total, 5, "expected count of 5 (3 age=30 + 2 age=40)");
             }
             other => panic!("expected count result, got {:?}", other),
         }
@@ -508,6 +637,10 @@ mod tests {
             data_contract_id: data_contract.id().to_vec(),
             document_type: "person".to_string(),
             r#where: serialize_where_clauses_to_cbor(where_clauses),
+            return_distinct_counts_in_range: false,
+            order_by_ascending: None,
+            limit: None,
+            start_after_split_key: None,
             prove: false,
         };
 
@@ -566,6 +699,10 @@ mod tests {
             data_contract_id: data_contract_id.to_vec(),
             document_type: document_type_name.to_string(),
             r#where: vec![],
+            return_distinct_counts_in_range: false,
+            order_by_ascending: None,
+            limit: None,
+            start_after_split_key: None,
             prove: true,
         };
 

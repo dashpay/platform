@@ -13,7 +13,6 @@ use dash_sdk::dpp::prelude::DataContract;
 use dash_sdk::drive::query::{WhereClause, WhereOperator};
 use dash_sdk::platform::documents::document_count_query::DocumentCountQuery;
 use dash_sdk::platform::documents::document_query::DocumentQuery;
-use dash_sdk::platform::documents::document_split_count_query::DocumentSplitCountQuery;
 use dash_sdk::platform::Fetch;
 use drive_proof_verifier::{DocumentCount, DocumentSplitCounts};
 use serde::{Deserialize, Serialize};
@@ -188,47 +187,40 @@ pub unsafe extern "C" fn dash_sdk_document_count(
 /// underlying split-count tree; iOS callers should hex-decode them and decode
 /// against the contract's index-property type if they need a typed key.
 ///
+/// Splitting is signalled by including an `in` clause in `where_json`: the
+/// field of that clause becomes the split property and each value in the
+/// array becomes one entry in the result.
+///
 /// # Safety
-/// - `sdk_handle`, `data_contract_handle`, `document_type`, and `split_property` must be valid, non-null pointers.
-/// - `document_type` and `split_property` must be NUL-terminated C strings valid for the duration of the call.
+/// - `sdk_handle`, `data_contract_handle`, and `document_type` must be valid, non-null pointers.
+/// - `document_type` must be a NUL-terminated C string valid for the duration of the call.
 /// - `where_json` may be null; if non-null it must be a NUL-terminated JSON string of `[{field, operator, value}]`.
+///   To get a per-value split, include exactly one `{operator: "in", ...}` clause.
 /// - On success, returns a heap-allocated C string pointer; caller must free it using SDK routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_document_split_count(
     sdk_handle: *const SDKHandle,
     data_contract_handle: *const DataContractHandle,
     document_type: *const c_char,
-    split_property: *const c_char,
     where_json: *const c_char,
 ) -> DashSDKResult {
-    if sdk_handle.is_null()
-        || data_contract_handle.is_null()
-        || document_type.is_null()
-        || split_property.is_null()
-    {
+    if sdk_handle.is_null() || data_contract_handle.is_null() || document_type.is_null() {
         return DashSDKResult::error(DashSDKError::new(
             DashSDKErrorCode::InvalidParameter,
-            "SDK handle, data contract handle, document type, or split property is null"
-                .to_string(),
+            "SDK handle, data contract handle, or document type is null".to_string(),
         ));
     }
 
     let wrapper = &*(sdk_handle as *const SDKWrapper);
     let data_contract = &*(data_contract_handle as *const DataContract);
 
-    let split_property_str = match CStr::from_ptr(split_property).to_str() {
-        Ok(s) => s.to_string(),
-        Err(e) => return DashSDKResult::error(FFIError::from(e).into()),
-    };
-
     let result: Result<String, FFIError> = wrapper.runtime.block_on(async {
         let base_query = build_base_query(data_contract, document_type, where_json)?;
-        let split_query = DocumentSplitCountQuery {
+        let count_query = DocumentCountQuery {
             document_query: base_query,
-            split_property: split_property_str,
         };
 
-        let split_counts = DocumentSplitCounts::fetch(&wrapper.sdk, split_query)
+        let split_counts = DocumentSplitCounts::fetch(&wrapper.sdk, count_query)
             .await
             .map_err(|e| FFIError::InternalError(format!("Failed to fetch split counts: {}", e)))?
             .map(|s| s.0)

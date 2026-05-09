@@ -24,8 +24,8 @@ use dpp::{
     data_contract::accessors::v0::DataContractV0Getters, platform_value::Value,
     prelude::DataContract, ProtocolError,
 };
-use drive::query::{DriveDocumentQuery, WhereClause};
-use drive_proof_verifier::{DocumentCount, FromProof};
+use drive::query::{DriveDocumentQuery, WhereClause, WhereOperator};
+use drive_proof_verifier::{DocumentCount, DocumentSplitCounts, FromProof};
 use rs_dapi_client::transport::{
     AppliedRequestSettings, BoxFuture, TransportError, TransportRequest,
 };
@@ -107,6 +107,10 @@ impl TryFrom<DocumentCountQuery> for GetDocumentsCountRequest {
                     data_contract_id: query.document_query.data_contract.id().to_vec(),
                     document_type: query.document_query.document_type_name.clone(),
                     r#where: where_bytes,
+                    return_distinct_counts_in_range: false,
+                    order_by_ascending: None,
+                    limit: None,
+                    start_after_split_key: None,
                     prove: true,
                 },
             )),
@@ -176,6 +180,91 @@ impl FromProof<DocumentCountQuery> for DocumentCount {
 }
 
 impl Fetch for DocumentCount {
+    type Request = DocumentCountQuery;
+}
+
+/// Per-key counts view of the unified count endpoint.
+///
+/// Backed by the same [`DocumentCountQuery`] as [`DocumentCount`]; the only
+/// difference is response shape — `DocumentSplitCounts` returns the full
+/// `entries` map keyed by the splitting property's serialized value, while
+/// `DocumentCount` returns the sum.
+///
+/// Splitting is signalled by an `In` where-clause on the request: the field
+/// of that clause becomes the split property and each value in the array
+/// becomes one entry in the result. Without an `In` clause the response is
+/// a single entry with empty key (i.e., the total count).
+impl FromProof<DocumentCountQuery> for DocumentSplitCounts {
+    type Request = DocumentCountQuery;
+    type Response = GetDocumentsCountResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), drive_proof_verifier::Error>
+    where
+        Self: 'a,
+    {
+        let request: Self::Request = request.into();
+
+        // The split property comes from the In clause's field name (if any).
+        // No In → no split; result is a single entry with empty key.
+        let split_property = request
+            .document_query
+            .where_clauses
+            .iter()
+            .find(|wc| wc.operator == WhereOperator::In)
+            .map(|wc| wc.field.clone());
+
+        let drive_query: DriveDocumentQuery =
+            (&request)
+                .try_into()
+                .map_err(|e| drive_proof_verifier::Error::RequestError {
+                    error: format!(
+                        "Failed to convert DocumentCountQuery to DriveDocumentQuery: {}",
+                        e
+                    ),
+                })?;
+
+        if let Some(split_property) = split_property {
+            DocumentSplitCounts::maybe_from_proof_with_split_property::<DriveDocumentQuery, _, _>(
+                drive_query,
+                &split_property,
+                response,
+                network,
+                platform_version,
+                provider,
+            )
+        } else {
+            // Total-count case: just count documents from the proof and
+            // return a single entry with empty key.
+            <DocumentCount as FromProof<DriveDocumentQuery>>::maybe_from_proof_with_metadata(
+                drive_query,
+                response,
+                network,
+                platform_version,
+                provider,
+            )
+            .map(|(opt, mtd, proof)| {
+                let map = opt
+                    .map(|DocumentCount(count)| {
+                        let mut m = std::collections::BTreeMap::new();
+                        if count > 0 {
+                            m.insert(Vec::new(), count);
+                        }
+                        m
+                    })
+                    .unwrap_or_default();
+                (Some(DocumentSplitCounts(map)), mtd, proof)
+            })
+        }
+    }
+}
+
+impl Fetch for DocumentSplitCounts {
     type Request = DocumentCountQuery;
 }
 
