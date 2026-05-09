@@ -47,8 +47,12 @@ impl CreatedDataContractV0 {
             .remove_integer(IDENTITY_NONCE)
             .map_err(ProtocolError::ValueError)?;
 
-        let data_contract =
-            DataContract::from_value_versioned(raw_data_contract, full_validation, platform_version)?;
+        let data_contract = if full_validation {
+            DataContract::from_value_validated(raw_data_contract, platform_version)?
+        } else {
+            platform_value::from_value::<DataContract>(raw_data_contract)
+                .map_err(ProtocolError::ValueError)?
+        };
 
         Ok(Self {
             data_contract,

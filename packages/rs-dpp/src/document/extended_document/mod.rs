@@ -562,7 +562,7 @@ mod test {
         ]);
         let documents = Value::from([("test", test_document)]);
 
-        DataContract::from_value_versioned(
+        DataContract::from_value_validated(
             Value::from([
                 ("protocolVersion", Value::U32(1)),
                 ("id", Value::Identifier([0_u8; 32])),
@@ -572,7 +572,6 @@ mod test {
                 ("documentSchemas", documents),
                 ("$formatVersion", Value::Text("0".to_string())),
             ]),
-            true,
             platform_version,
         )
         .unwrap()

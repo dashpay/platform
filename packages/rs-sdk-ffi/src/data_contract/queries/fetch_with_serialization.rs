@@ -1,6 +1,5 @@
 use crate::sdk::SDKWrapper;
 use crate::{DashSDKError, DashSDKErrorCode, DataContractHandle, FFIError, SDKHandle};
-use dash_sdk::dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
 use dash_sdk::dpp::data_contract::DataContractWithSerialization;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::platform::{Fetch, Identifier};
@@ -104,14 +103,12 @@ pub unsafe extern "C" fn dash_sdk_data_contract_fetch_with_serialization(
 
     match result {
         Ok(Some((contract, serialization))) => {
-            let platform_version = wrapper.sdk.version();
-
             // Always create a handle since we have the contract
             let handle = Some(Box::into_raw(Box::new(contract.clone())) as *mut DataContractHandle);
 
             // Prepare JSON if requested
             let json = if return_json {
-                match contract.to_json_versioned(platform_version) {
+                match serde_json::to_value(&contract) {
                     Ok(json_value) => match serde_json::to_string(&json_value) {
                         Ok(json_string) => match CString::new(json_string) {
                             Ok(c_str) => Some(c_str.into_raw()),

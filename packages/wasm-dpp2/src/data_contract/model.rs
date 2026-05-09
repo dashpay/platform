@@ -249,8 +249,12 @@ impl DataContractWasm {
             .set_value("documentSchemas", schema)
             .map_err(|err| WasmDppError::serialization(err.to_string()))?;
 
-        let data_contract =
-            DataContract::from_value_versioned(contract_value, opts.full_validation, &platform_version)?;
+        let data_contract = if opts.full_validation {
+            DataContract::from_value_validated(contract_value, &platform_version)?
+        } else {
+            dpp::platform_value::from_value::<DataContract>(contract_value)
+                .map_err(dpp::ProtocolError::ValueError)?
+        };
 
         let data_contract_with_tokens = match data_contract {
             DataContract::V0(v0) => DataContract::from(v0),
@@ -274,8 +278,12 @@ impl DataContractWasm {
 
         let json_value = serialization::js_value_to_json(&value.into())?;
 
-        let contract =
-            DataContract::from_json_versioned(json_value, full_validation, &platform_version.into())?;
+        let contract = if full_validation {
+            DataContract::from_json_validated(json_value, &platform_version.into())?
+        } else {
+            serde_json::from_value::<DataContract>(json_value)
+                .map_err(|e| dpp::ProtocolError::DecodingError(e.to_string()))?
+        };
 
         Ok(DataContractWasm(contract))
     }
@@ -291,9 +299,14 @@ impl DataContractWasm {
         let value: JsValue = value.into();
         let platform_value: Value = serialization::platform_value_from_object(&value)?;
 
-        let contract =
-            DataContract::from_value_versioned(platform_value, full_validation, &platform_version.into())
-                .map_err(WasmDppError::from)?;
+        let contract = if full_validation {
+            DataContract::from_value_validated(platform_value, &platform_version.into())
+                .map_err(WasmDppError::from)?
+        } else {
+            dpp::platform_value::from_value::<DataContract>(platform_value)
+                .map_err(dpp::ProtocolError::ValueError)
+                .map_err(WasmDppError::from)?
+        };
 
         Ok(DataContractWasm(contract))
     }
@@ -364,11 +377,10 @@ impl DataContractWasm {
     #[wasm_bindgen(js_name = "toObject")]
     pub fn to_object(
         &self,
-        #[wasm_bindgen(js_name = "platformVersion")] platform_version: PlatformVersionLikeJs,
+        #[wasm_bindgen(js_name = "platformVersion")] _platform_version: PlatformVersionLikeJs,
     ) -> WasmDppResult<DataContractObjectJs> {
-        let platform_version = PlatformVersionWasm::try_from(platform_version)?;
-
-        let value = self.0.clone().to_value_versioned(&platform_version.into())?;
+        let value =
+            dpp::platform_value::to_value(&self.0).map_err(dpp::ProtocolError::ValueError)?;
         let js_value = serialization::platform_value_to_object(&value)?;
         Ok(js_value.into())
     }
@@ -582,11 +594,10 @@ impl DataContractWasm {
     #[wasm_bindgen(js_name = "toJSON")]
     pub fn to_json(
         &self,
-        platform_version: PlatformVersionLikeJs,
+        _platform_version: PlatformVersionLikeJs,
     ) -> WasmDppResult<DataContractJSONJs> {
-        let platform_version = PlatformVersionWasm::try_from(platform_version)?;
-
-        let json = self.0.to_json_versioned(&platform_version.into())?;
+        let json = serde_json::to_value(&self.0)
+            .map_err(|e| dpp::ProtocolError::EncodingError(e.to_string()))?;
         let js_value = serialization::json_value_to_js(&json)?;
         Ok(js_value.into())
     }

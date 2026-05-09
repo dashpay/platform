@@ -1,20 +1,17 @@
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::serialized_version::property_names;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
-use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 use crate::data_contract::v0::DataContractV0;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::{ReplacementType, Value};
-use platform_version::TryFromPlatformVersioned;
 
 pub const DATA_CONTRACT_IDENTIFIER_FIELDS_V0: [&str; 2] =
     [property_names::ID, property_names::OWNER_ID];
 
 impl DataContractValueConversionMethodsV0 for DataContractV0 {
-    fn from_value_versioned(
+    fn from_value_validated(
         mut value: Value,
-        full_validation: bool,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         value.replace_at_paths(
@@ -29,44 +26,18 @@ impl DataContractValueConversionMethodsV0 for DataContractV0 {
 
                 DataContractV0::try_from_platform_versioned(
                     data_contract_data.into(),
-                    full_validation,
+                    true,
                     &mut vec![], // this is not used in consensus code
                     platform_version,
                 )
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "DataContractV0::from_value_versioned".to_string(),
+                method: "DataContractV0::from_value_validated".to_string(),
                 known_versions: vec![0],
                 received: version
                     .parse()
                     .map_err(|_| ProtocolError::Generic("Conversion error".to_string()))?,
             }),
         }
-    }
-
-    fn to_value_versioned(
-        &self,
-        platform_version: &PlatformVersion,
-    ) -> Result<Value, ProtocolError> {
-        let data_contract_data =
-            DataContractInSerializationFormat::try_from_platform_versioned(self, platform_version)?;
-
-        let value =
-            platform_value::to_value(data_contract_data).map_err(ProtocolError::ValueError)?;
-
-        Ok(value)
-    }
-
-    fn into_value_versioned(
-        self,
-        platform_version: &PlatformVersion,
-    ) -> Result<Value, ProtocolError> {
-        let data_contract_data =
-            DataContractInSerializationFormat::try_from_platform_versioned(self, platform_version)?;
-
-        let value =
-            platform_value::to_value(data_contract_data).map_err(ProtocolError::ValueError)?;
-
-        Ok(value)
     }
 }

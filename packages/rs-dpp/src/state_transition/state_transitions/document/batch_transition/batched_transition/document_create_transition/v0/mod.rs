@@ -579,7 +579,7 @@ mod test {
         ]);
         let documents = Value::from([("test", test_document)]);
         DataContract::V0(
-            DataContractV0::from_value_versioned(
+            DataContractV0::from_value_validated(
                 Value::from([
                     ("$id", Value::Identifier([0_u8; 32])),
                     ("id", Value::Identifier([0_u8; 32])),
@@ -589,7 +589,6 @@ mod test {
                     ("documentSchemas", documents),
                     ("ownerId", Value::Identifier([0_u8; 32])),
                 ]),
-                true,
                 LATEST_PLATFORM_VERSION,
             )
             .unwrap(),

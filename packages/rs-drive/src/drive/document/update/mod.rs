@@ -56,7 +56,6 @@ mod tests {
     use crate::util::test_helpers::setup_contract;
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
-    use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
     use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
     use dpp::document::document_methods::DocumentMethodsV0;
     use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
@@ -624,7 +623,7 @@ mod tests {
         });
 
         // first we need to deserialize the contract
-        let contract = DataContract::from_value_versioned(contract, false, platform_version)
+        let contract = platform_value::from_value::<DataContract>(contract)
             .expect("expected data contract");
 
         drive

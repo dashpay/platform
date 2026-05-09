@@ -110,12 +110,22 @@ pub enum DataContract {
 }
 
 // Note: DataContract intentionally does NOT implement JsonConvertible / ValueConvertible.
-// It exposes version-aware `to_json_versioned(&PlatformVersion)` /
-// `from_json_versioned(JsonValue, bool, &PlatformVersion)` via
-// DataContractJsonConversionMethodsV0 / DataContractValueConversionMethodsV0 — those methods
-// route serialization through DataContractInSerializationFormat to preserve the active platform
-// version. The `_versioned` suffix disambiguates from canonical `JsonConvertible::to_json` /
-// `from_json` (which take no `PlatformVersion`); see the unification plan §3.11 step 10.
+// Round-tripping goes through the manual `Serialize` / `Deserialize` impls in
+// `data_contract/conversion/serde/mod.rs`, which thread `DataContractInSerializationFormat`
+// at the *currently active* `PlatformVersion` (see Critical-4 doc there).
+//
+// The two version-aware conversion traits are:
+//   * `DataContractJsonConversionMethodsV0::from_json_validated` — opt-in JSON ingest with
+//     full schema validation (use on trust boundaries; non-validating reads should call
+//     `serde_json::from_value::<DataContract>` directly).
+//   * `DataContractValueConversionMethodsV0::from_value_validated` — same shape for
+//     `platform_value::Value`. Non-validating equivalent is
+//     `platform_value::from_value::<DataContract>`.
+//   * `DataContractJsonConversionMethodsV0::to_validating_json` — JSON output with binary
+//     fields rendered as arrays (for JSON-Schema validators that don't accept base64).
+//
+// For non-validating *serialization*, just use `serde_json::to_value(&dc)?` /
+// `platform_value::to_value(&dc)?` — the manual Serialize impl handles versioning.
 // `DataContractInSerializationFormat` (the underlying serialization shape) DOES implement the
 // canonical traits — see `data_contract/serialized_version/mod.rs`.
 

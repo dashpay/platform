@@ -60,7 +60,6 @@ use base64::Engine;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v1::DataContractConfigSettersV1;
-use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::document::serialization_traits::{
     DocumentCborMethodsV0, DocumentPlatformConversionMethodsV0,
@@ -7342,7 +7341,7 @@ mod tests {
             },
         });
 
-        let contract = DataContract::from_value_versioned(contract_value, false, platform_version)
+        let contract = platform_value::from_value::<DataContract>(contract_value)
             .expect("should create a contract from cbor");
 
         drive

@@ -159,12 +159,10 @@ impl OptionallyAssetLockProved for DataContractCreateTransition {}
 
 #[cfg(test)]
 mod test {
-    use crate::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
     use crate::data_contract::created_data_contract::CreatedDataContract;
 
     use super::*;
     use crate::data_contract::accessors::v0::DataContractV0Getters;
-    use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
     use crate::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
     use crate::state_transition::traits::StateTransitionLike;
     use crate::state_transition::{StateTransitionOwned, StateTransitionType};
@@ -227,12 +225,8 @@ mod test {
         .expect("to get data contract");
 
         assert_eq!(
-            data_contract
-                .to_json_versioned(LATEST_PLATFORM_VERSION)
-                .expect("conversion to object shouldn't fail"),
-            data.created_data_contract
-                .data_contract()
-                .to_json_versioned(LATEST_PLATFORM_VERSION)
+            serde_json::to_value(&data_contract).expect("conversion to object shouldn't fail"),
+            serde_json::to_value(data.created_data_contract.data_contract())
                 .expect("conversion to object shouldn't fail")
         );
     }
