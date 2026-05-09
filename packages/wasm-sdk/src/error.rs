@@ -1,5 +1,6 @@
 use dash_sdk::dpp::ProtocolError;
 use dash_sdk::{error::StateTransitionBroadcastError, Error as SdkError};
+use js_sys::Uint8Array;
 use rs_dapi_client::CanRetry;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_dpp2::error::WasmDppError;
@@ -31,6 +32,7 @@ pub enum WasmSdkErrorKind {
     Cancelled,
     StaleNode,
     StateTransitionBroadcastError,
+    WaitForStateTransitionResultFailedAfterBroadcast,
     NonceOverflow,
     IdentityNonceNotFound,
     DriveInternalError,
@@ -57,6 +59,8 @@ pub struct WasmSdkError {
     code: i32,
     /// Indicates if the operation can be retried safely.
     is_retriable: bool,
+    /// Raw transition hash for post-broadcast wait failures.
+    transition_hash: Option<Vec<u8>>,
 }
 
 // wasm-bindgen getters defined below in the second impl block
@@ -67,29 +71,43 @@ impl WasmSdkError {
         message: M,
         code: Option<i32>,
         is_retriable: bool,
+        transition_hash: Option<Vec<u8>>,
     ) -> Self {
         Self {
             kind,
             message: message.into(),
             code: code.unwrap_or(-1),
             is_retriable,
+            transition_hash,
         }
     }
 
     pub(crate) fn generic(message: impl Into<String>) -> Self {
-        Self::new(WasmSdkErrorKind::Generic, message, None, false)
+        Self::new(WasmSdkErrorKind::Generic, message, None, false, None)
     }
 
     pub(crate) fn invalid_argument(message: impl Into<String>) -> Self {
-        Self::new(WasmSdkErrorKind::InvalidArgument, message, None, false)
+        Self::new(
+            WasmSdkErrorKind::InvalidArgument,
+            message,
+            None,
+            false,
+            None,
+        )
     }
 
     pub(crate) fn serialization(message: impl Into<String>) -> Self {
-        Self::new(WasmSdkErrorKind::SerializationError, message, None, false)
+        Self::new(
+            WasmSdkErrorKind::SerializationError,
+            message,
+            None,
+            false,
+            None,
+        )
     }
 
     pub(crate) fn not_found(message: impl Into<String>) -> Self {
-        Self::new(WasmSdkErrorKind::NotFound, message, None, false)
+        Self::new(WasmSdkErrorKind::NotFound, message, None, false, None)
     }
 
     /// Construct a [`WasmSdkErrorKind::NotImplemented`] error for a
@@ -125,28 +143,35 @@ impl From<SdkError> for WasmSdkError {
         use SdkError::*;
         let retriable = err.can_retry();
         match err {
-            AlreadyExists(msg) => Self::new(WasmSdkErrorKind::AlreadyExists, msg, None, retriable),
-            Config(msg) => Self::new(WasmSdkErrorKind::Config, msg, None, retriable),
-            Drive(e) => Self::new(WasmSdkErrorKind::Drive, e.to_string(), None, retriable),
+            AlreadyExists(msg) => {
+                Self::new(WasmSdkErrorKind::AlreadyExists, msg, None, retriable, None)
+            }
+            Config(msg) => Self::new(WasmSdkErrorKind::Config, msg, None, retriable, None),
+            Drive(e) => Self::new(WasmSdkErrorKind::Drive, e.to_string(), None, retriable, None),
             DriveProofError(e, _proof, _block_info) => Self::new(
                 WasmSdkErrorKind::DriveProofError,
                 e.to_string(),
                 None,
                 retriable,
+                None,
             ),
-            Protocol(e) => Self::new(WasmSdkErrorKind::Protocol, e.to_string(), None, retriable),
-            Proof(e) => Self::new(WasmSdkErrorKind::Proof, e.to_string(), None, retriable),
+            Protocol(e) => {
+                Self::new(WasmSdkErrorKind::Protocol, e.to_string(), None, retriable, None)
+            }
+            Proof(e) => Self::new(WasmSdkErrorKind::Proof, e.to_string(), None, retriable, None),
             InvalidProvedResponse(msg) => Self::new(
                 WasmSdkErrorKind::InvalidProvedResponse,
                 msg,
                 None,
                 retriable,
+                None,
             ),
             DapiClientError(e) => Self::new(
                 WasmSdkErrorKind::DapiClientError,
                 e.to_string(),
                 None,
                 retriable,
+                None,
             ),
             #[cfg(feature = "mocks")]
             DapiMocksError(e) => Self::new(
@@ -154,43 +179,52 @@ impl From<SdkError> for WasmSdkError {
                 e.to_string(),
                 None,
                 retriable,
+                None,
             ),
-            CoreError(e) => Self::new(WasmSdkErrorKind::CoreError, e.to_string(), None, retriable),
+            CoreError(e) => {
+                Self::new(WasmSdkErrorKind::CoreError, e.to_string(), None, retriable, None)
+            }
             MerkleBlockError(e) => Self::new(
                 WasmSdkErrorKind::MerkleBlockError,
                 e.to_string(),
                 None,
                 retriable,
+                None,
             ),
             CoreClientError(e) => Self::new(
                 WasmSdkErrorKind::CoreClientError,
                 e.to_string(),
                 None,
                 retriable,
+                None,
             ),
             MissingDependency(kind, id) => Self::new(
                 WasmSdkErrorKind::MissingDependency,
                 format!("Required {} not found: {}", kind, id),
                 None,
                 retriable,
+                None,
             ),
             InvalidCreditTransfer(msg) => Self::new(
                 WasmSdkErrorKind::InvalidCreditTransfer,
                 msg,
                 None,
                 retriable,
+                None,
             ),
             TotalCreditsNotFound => Self::new(
                 WasmSdkErrorKind::TotalCreditsNotFound,
                 "Total credits in Platform are not found; it should never happen".to_string(),
                 None,
                 retriable,
+                None,
             ),
             EpochNotFound => Self::new(
                 WasmSdkErrorKind::EpochNotFound,
                 "No epoch found on Platform; it should never happen".to_string(),
                 None,
                 retriable,
+                None,
             ),
             TimeoutReached(duration, msg) => Self::new(
                 WasmSdkErrorKind::TimeoutReached,
@@ -201,17 +235,37 @@ impl From<SdkError> for WasmSdkError {
                 ),
                 None,
                 retriable,
+                None,
             ),
-            Generic(msg) => Self::new(WasmSdkErrorKind::Generic, msg, None, retriable),
+            Generic(msg) => Self::new(WasmSdkErrorKind::Generic, msg, None, retriable, None),
             ContextProviderError(e) => Self::new(
                 WasmSdkErrorKind::ContextProviderError,
                 e.to_string(),
                 None,
                 retriable,
+                None,
             ),
-            Cancelled(msg) => Self::new(WasmSdkErrorKind::Cancelled, msg, None, retriable),
-            StaleNode(e) => Self::new(WasmSdkErrorKind::StaleNode, e.to_string(), None, retriable),
+            Cancelled(msg) => {
+                Self::new(WasmSdkErrorKind::Cancelled, msg, None, retriable, None)
+            }
+            StaleNode(e) => {
+                Self::new(WasmSdkErrorKind::StaleNode, e.to_string(), None, retriable, None)
+            }
             StateTransitionBroadcastError(e) => WasmSdkError::from(e),
+            WaitForStateTransitionResultFailedAfterBroadcast {
+                transition_hash,
+                source,
+            } => Self::new(
+                WasmSdkErrorKind::WaitForStateTransitionResultFailedAfterBroadcast,
+                format!(
+                    "state transition broadcast succeeded for {} but waiting for the result failed: {}",
+                    hex::encode(transition_hash),
+                    source
+                ),
+                None,
+                retriable,
+                Some(transition_hash.to_vec()),
+            ),
             NonceOverflow(nonce) => Self::new(
                 WasmSdkErrorKind::NonceOverflow,
                 format!(
@@ -220,9 +274,16 @@ impl From<SdkError> for WasmSdkError {
                 ),
                 None,
                 false,
+                None,
             ),
             IdentityNonceNotFound(msg) => {
-                Self::new(WasmSdkErrorKind::IdentityNonceNotFound, msg, None, true)
+                Self::new(
+                    WasmSdkErrorKind::IdentityNonceNotFound,
+                    msg,
+                    None,
+                    true,
+                    None,
+                )
             }
             DriveInternalError(msg) => {
                 Self::new(WasmSdkErrorKind::DriveInternalError, msg, None, retriable)
@@ -232,13 +293,20 @@ impl From<SdkError> for WasmSdkError {
                 format!("no available addresses to retry, last error: {}", inner),
                 None,
                 retriable,
+                None,
             ),
         }
     }
 }
 impl From<ProtocolError> for WasmSdkError {
     fn from(err: ProtocolError) -> Self {
-        Self::new(WasmSdkErrorKind::Protocol, err.to_string(), None, false)
+        Self::new(
+            WasmSdkErrorKind::Protocol,
+            err.to_string(),
+            None,
+            false,
+            None,
+        )
     }
 }
 
@@ -249,6 +317,7 @@ impl From<StateTransitionBroadcastError> for WasmSdkError {
             err.to_string(),
             Some(err.code as i32),
             false,
+            None,
         )
     }
 }
@@ -264,7 +333,7 @@ impl From<WasmDppError> for WasmSdkError {
             WasmDppErrorKind::Conversion => WasmSdkErrorKind::SerializationError,
             WasmDppErrorKind::Generic => WasmSdkErrorKind::Generic,
         };
-        Self::new(kind, err.to_string(), None, false)
+        Self::new(kind, err.to_string(), None, false, None)
     }
 }
 
@@ -303,6 +372,9 @@ impl WasmSdkError {
             K::Cancelled => "Cancelled",
             K::StaleNode => "StaleNode",
             K::StateTransitionBroadcastError => "StateTransitionBroadcastError",
+            K::WaitForStateTransitionResultFailedAfterBroadcast => {
+                "WaitForStateTransitionResultFailedAfterBroadcast"
+            }
             K::NonceOverflow => "NonceOverflow",
             K::IdentityNonceNotFound => "IdentityNonceNotFound",
             K::DriveInternalError => "DriveInternalError",
@@ -330,5 +402,48 @@ impl WasmSdkError {
     #[wasm_bindgen(getter = "isRetriable")]
     pub fn is_retriable(&self) -> bool {
         self.is_retriable
+    }
+
+    /// Raw transition hash for post-broadcast wait failures.
+    #[wasm_bindgen(getter, js_name = "transitionHash")]
+    pub fn transition_hash(&self) -> Option<Uint8Array> {
+        self.transition_hash
+            .as_ref()
+            .map(|bytes| Uint8Array::from(bytes.as_slice()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{WasmSdkError, WasmSdkErrorKind};
+    use dash_sdk::Error as SdkError;
+    use std::time::Duration;
+
+    #[test]
+    fn wait_error_conversion_preserves_transition_hash_bytes() {
+        let transition_hash = [7_u8; 32];
+        let sdk_error = SdkError::WaitForStateTransitionResultFailedAfterBroadcast {
+            transition_hash,
+            source: Box::new(SdkError::TimeoutReached(
+                Duration::from_secs(1),
+                "timed out".to_string(),
+            )),
+        };
+
+        let wasm_error = WasmSdkError::from(sdk_error);
+
+        assert_eq!(
+            wasm_error.kind(),
+            WasmSdkErrorKind::WaitForStateTransitionResultFailedAfterBroadcast
+        );
+        assert_eq!(wasm_error.transition_hash, Some(transition_hash.to_vec()));
+        assert!(wasm_error.message().contains(&hex::encode(transition_hash)));
+    }
+
+    #[test]
+    fn unrelated_errors_do_not_set_transition_hash() {
+        let wasm_error = WasmSdkError::generic("boom");
+
+        assert_eq!(wasm_error.transition_hash, None);
     }
 }

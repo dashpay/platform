@@ -187,7 +187,7 @@ pub trait BroadcastStateTransition {
         &self,
         sdk: &Sdk,
         settings: Option<PutSettings>,
-    ) -> Result<T, Error>;
+    ) -> Result<StateTransitionResult<T>, Error>;
 }
 ```
 
@@ -197,7 +197,10 @@ Three methods, three use cases:
   transition. The response is always empty -- confirmation comes later.
 - **`wait_for_response`**: Poll until the transition is included in a block.
   Returns the proven result.
-- **`broadcast_and_wait`**: Combines both -- broadcast, then wait.
+- **`broadcast_and_wait`**: Combines both -- broadcast, then wait. It returns the
+  proven result bundled with the transition hash in `StateTransitionResult<T>`,
+  so callers can inspect `transition_hash()` or unwrap the inner value with
+  `into_inner()`.
 
 ### The Wait Mechanism
 

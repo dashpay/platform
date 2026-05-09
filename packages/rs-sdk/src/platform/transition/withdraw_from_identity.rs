@@ -7,6 +7,7 @@ use dpp::identity::{Identity, IdentityPublicKey};
 
 use crate::platform::transition::broadcast::BroadcastStateTransition;
 use crate::platform::transition::put_settings::PutSettings;
+use crate::platform::transition::state_transition_result::StateTransitionResult;
 use crate::platform::transition::validation::ensure_valid_state_transition_structure;
 use crate::{Error, Sdk};
 use dpp::state_transition::identity_credit_withdrawal_transition::methods::{
@@ -32,6 +33,18 @@ pub trait WithdrawFromIdentity {
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<u64, Error>;
+
+    #[allow(clippy::too_many_arguments)]
+    async fn withdraw_with_transition_hash<S: Signer<IdentityPublicKey> + Send>(
+        &self,
+        sdk: &Sdk,
+        address: Option<Address>,
+        amount: u64,
+        core_fee_per_byte: Option<u32>,
+        signing_withdrawal_key_to_use: Option<&IdentityPublicKey>,
+        signer: S,
+        settings: Option<PutSettings>,
+    ) -> Result<StateTransitionResult<u64>, Error>;
 }
 
 #[async_trait::async_trait]
@@ -46,6 +59,29 @@ impl WithdrawFromIdentity for Identity {
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<u64, Error> {
+        self.withdraw_with_transition_hash(
+            sdk,
+            address,
+            amount,
+            core_fee_per_byte,
+            signing_withdrawal_key_to_use,
+            signer,
+            settings,
+        )
+        .await
+        .map(StateTransitionResult::into_inner)
+    }
+
+    async fn withdraw_with_transition_hash<S: Signer<IdentityPublicKey> + Send>(
+        &self,
+        sdk: &Sdk,
+        address: Option<Address>,
+        amount: u64,
+        core_fee_per_byte: Option<u32>,
+        signing_withdrawal_key_to_use: Option<&IdentityPublicKey>,
+        signer: S,
+        settings: Option<PutSettings>,
+    ) -> Result<StateTransitionResult<u64>, Error> {
         let new_identity_nonce = sdk.get_identity_nonce(self.id(), true, settings).await?;
         let script = address.map(|address| CoreScript::new(address.script_pubkey()));
         let user_fee_increase = settings.and_then(|settings| settings.user_fee_increase);
@@ -66,16 +102,17 @@ impl WithdrawFromIdentity for Identity {
         .await?;
         ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
 
-        let result = state_transition
+        let response = state_transition
             .broadcast_and_wait::<StateTransitionProofResult>(sdk, settings)
-            .await?
-            .into_inner();
+            .await?;
+        let (result, transition_hash) = response.into_parts();
 
         match result {
             StateTransitionProofResult::VerifiedPartialIdentity(identity) => {
-                identity.balance.ok_or(Error::Generic(
+                let balance = identity.balance.ok_or(Error::Generic(
                     "expected an identity balance after withdrawal".to_string(),
-                ))
+                ))?;
+                Ok(StateTransitionResult::new(balance, transition_hash))
             }
             _ => Err(Error::Generic("proved a non identity".to_string())),
         }

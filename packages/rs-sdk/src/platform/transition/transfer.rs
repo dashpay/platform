@@ -3,6 +3,7 @@ use dpp::identity::accessors::IdentityGettersV0;
 
 use crate::platform::transition::broadcast::BroadcastStateTransition;
 use crate::platform::transition::put_settings::PutSettings;
+use crate::platform::transition::state_transition_result::StateTransitionResult;
 use crate::platform::transition::validation::ensure_valid_state_transition_structure;
 use crate::{Error, Sdk};
 use dpp::identity::signer::Signer;
@@ -33,6 +34,16 @@ pub trait TransferToIdentity: Waitable {
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<(u64, u64), Error>;
+
+    async fn transfer_credits_with_transition_hash<S: Signer<IdentityPublicKey> + Send>(
+        &self,
+        sdk: &Sdk,
+        to_identity_id: Identifier,
+        amount: u64,
+        signing_transfer_key_to_use: Option<&IdentityPublicKey>,
+        signer: S,
+        settings: Option<PutSettings>,
+    ) -> Result<StateTransitionResult<(u64, u64)>, Error>;
 }
 
 #[async_trait::async_trait]
@@ -46,6 +57,27 @@ impl TransferToIdentity for Identity {
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<(u64, u64), Error> {
+        self.transfer_credits_with_transition_hash(
+            sdk,
+            to_identity_id,
+            amount,
+            signing_transfer_key_to_use,
+            signer,
+            settings,
+        )
+        .await
+        .map(StateTransitionResult::into_inner)
+    }
+
+    async fn transfer_credits_with_transition_hash<S: Signer<IdentityPublicKey> + Send>(
+        &self,
+        sdk: &Sdk,
+        to_identity_id: Identifier,
+        amount: u64,
+        signing_transfer_key_to_use: Option<&IdentityPublicKey>,
+        signer: S,
+        settings: Option<PutSettings>,
+    ) -> Result<StateTransitionResult<(u64, u64)>, Error> {
         let new_identity_nonce = sdk.get_identity_nonce(self.id(), true, settings).await?;
         let user_fee_increase = settings.and_then(|settings| settings.user_fee_increase);
         let state_transition = IdentityCreditTransferTransition::try_from_identity(
@@ -62,10 +94,10 @@ impl TransferToIdentity for Identity {
         .await?;
         ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
 
-        let (sender, receiver): (PartialIdentity, PartialIdentity) = state_transition
+        let response = state_transition
             .broadcast_and_wait::<(PartialIdentity, PartialIdentity)>(sdk, settings)
-            .await?
-            .into_inner();
+            .await?;
+        let ((sender, receiver), transition_hash) = response.into_parts();
 
         let sender_balance = sender.balance.ok_or_else(|| {
             Error::Generic("expected an identity balance after transfer (sender)".to_string())
@@ -75,6 +107,9 @@ impl TransferToIdentity for Identity {
             Error::Generic("expected an identity balance after transfer (receiver)".to_string())
         })?;
 
-        Ok((sender_balance, receiver_balance))
+        Ok(StateTransitionResult::new(
+            (sender_balance, receiver_balance),
+            transition_hash,
+        ))
     }
 }

@@ -1,6 +1,8 @@
 use crate::platform::query::VoteQuery;
+use crate::platform::transition::broadcast::wrap_wait_error_after_broadcast;
 use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
 use crate::platform::transition::put_settings::PutSettings;
+use crate::platform::transition::state_transition_result::StateTransitionResult;
 use crate::platform::transition::validation::ensure_valid_state_transition_structure;
 use crate::platform::Fetch;
 use crate::{Error, Sdk};
@@ -38,6 +40,15 @@ pub trait PutVote<S: Signer<IdentityPublicKey>>: Waitable {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<Vote, Error>;
+
+    async fn put_to_platform_and_wait_for_response_with_transition_hash(
+        &self,
+        voter_pro_tx_hash: Identifier,
+        voting_public_key: &IdentityPublicKey,
+        sdk: &Sdk,
+        signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<StateTransitionResult<Vote>, Error>;
 }
 
 #[async_trait::async_trait]
@@ -87,6 +98,25 @@ impl<S: Signer<IdentityPublicKey>> PutVote<S> for Vote {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<Vote, Error> {
+        self.put_to_platform_and_wait_for_response_with_transition_hash(
+            voter_pro_tx_hash,
+            voting_public_key,
+            sdk,
+            signer,
+            settings,
+        )
+        .await
+        .map(StateTransitionResult::into_inner)
+    }
+
+    async fn put_to_platform_and_wait_for_response_with_transition_hash(
+        &self,
+        voter_pro_tx_hash: Identifier,
+        voting_public_key: &IdentityPublicKey,
+        sdk: &Sdk,
+        signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<StateTransitionResult<Vote>, Error> {
         let voting_identity_id = get_voting_identity_id(voter_pro_tx_hash, voting_public_key)?;
 
         let new_masternode_voting_nonce = sdk
@@ -109,6 +139,7 @@ impl<S: Signer<IdentityPublicKey>> PutVote<S> for Vote {
         )
         .await?;
         ensure_valid_state_transition_structure(&masternode_vote_transition, sdk.version())?;
+        let transition_hash = masternode_vote_transition.transaction_id()?;
         let request = masternode_vote_transition.broadcast_request_for_state_transition()?;
         // TODO: Implement retry logic
         let response_result = request
@@ -123,15 +154,20 @@ impl<S: Signer<IdentityPublicKey>> PutVote<S> for Vote {
                 return if e.to_string().contains("already exists") {
                     let vote =
                         Vote::fetch(sdk, VoteQuery::new(voter_pro_tx_hash, vote_poll_id)).await?;
-                    vote.ok_or(Error::Generic(
-                        "vote was proved to not exist but was said to exist".to_string(),
-                    ))
+                    vote.map(|vote| StateTransitionResult::new(vote, transition_hash))
+                        .ok_or(Error::Generic(
+                            "vote was proved to not exist but was said to exist".to_string(),
+                        ))
                 } else {
                     Err(e.into())
                 }
             }
         }
-        Self::wait_for_response(sdk, masternode_vote_transition, Some(settings)).await
+        let vote =
+            <Vote as Waitable>::wait_for_response(sdk, masternode_vote_transition, Some(settings))
+                .await
+                .map_err(|e| wrap_wait_error_after_broadcast(transition_hash, e))?;
+        Ok(StateTransitionResult::new(vote, transition_hash))
     }
 }
 

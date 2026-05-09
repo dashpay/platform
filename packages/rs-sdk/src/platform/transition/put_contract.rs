@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use crate::{Error, Sdk};
 
 use crate::platform::transition::put_settings::PutSettings;
+use crate::platform::transition::state_transition_result::StateTransitionResult;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -12,7 +13,7 @@ use dpp::state_transition::data_contract_create_transition::methods::DataContrac
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::state_transition::StateTransition;
 
-use super::broadcast::BroadcastStateTransition;
+use super::broadcast::{wrap_wait_error_after_broadcast, BroadcastStateTransition};
 use super::validation::ensure_valid_state_transition_structure;
 use super::waitable::Waitable;
 
@@ -37,6 +38,25 @@ pub trait PutContract<S: Signer<IdentityPublicKey>>: Waitable {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<DataContract, Error>;
+
+    async fn put_to_platform_and_wait_for_response_with_transition_hash(
+        &self,
+        sdk: &Sdk,
+        identity_public_key: IdentityPublicKey,
+        signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<StateTransitionResult<DataContract>, Error> {
+        let state_transition = self
+            .put_to_platform(sdk, identity_public_key, signer, settings)
+            .await?;
+        let transition_hash = state_transition.transaction_id()?;
+        let contract =
+            <DataContract as Waitable>::wait_for_response(sdk, state_transition, settings)
+                .await
+                .map_err(|e| wrap_wait_error_after_broadcast(transition_hash, e))?;
+
+        Ok(StateTransitionResult::new(contract, transition_hash))
+    }
 }
 
 #[async_trait::async_trait]

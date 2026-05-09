@@ -1,13 +1,8 @@
-use std::ops::Deref;
-
 /// Wrapper that bundles a state transition proof result with the transition hash.
 ///
 /// The transition hash (also known as the transaction ID) is computed deterministically
 /// from the serialized `StateTransition` before broadcast, so it does not depend on
 /// blockchain state and there is no race condition.
-///
-/// `StateTransitionResult<T>` implements `Deref<Target = T>`, so existing code that
-/// only needs the inner result can use it transparently.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StateTransitionResult<T> {
     inner: T,
@@ -33,6 +28,16 @@ impl<T> StateTransitionResult<T> {
         (self.inner, self.transition_hash)
     }
 
+    /// Borrows the inner result explicitly.
+    pub fn inner(&self) -> &T {
+        &self.inner
+    }
+
+    /// Mutably borrows the inner result explicitly.
+    pub fn inner_mut(&mut self) -> &mut T {
+        &mut self.inner
+    }
+
     /// Consumes this wrapper, returning just the inner result.
     pub fn into_inner(self) -> T {
         self.inner
@@ -47,11 +52,15 @@ impl<T> StateTransitionResult<T> {
     }
 }
 
-impl<T> Deref for StateTransitionResult<T> {
-    type Target = T;
+impl<T> AsRef<T> for StateTransitionResult<T> {
+    fn as_ref(&self) -> &T {
+        self.inner()
+    }
+}
 
-    fn deref(&self) -> &T {
-        &self.inner
+impl<T> AsMut<T> for StateTransitionResult<T> {
+    fn as_mut(&mut self) -> &mut T {
+        self.inner_mut()
     }
 }
 
@@ -94,10 +103,22 @@ mod tests {
     }
 
     #[test]
-    fn deref_exposes_inner_value() {
-        let result = StateTransitionResult::new(vec![1_u8, 2, 3], sample_hash());
+    fn inner_accessors_expose_inner_value() {
+        let mut result = StateTransitionResult::new(vec![1_u8, 2, 3], sample_hash());
 
-        assert_eq!(result.len(), 3);
-        assert_eq!(result[1], 2);
+        assert_eq!(result.inner().len(), 3);
+        result.inner_mut().push(4);
+
+        assert_eq!(result.into_inner(), vec![1_u8, 2, 3, 4]);
+    }
+
+    #[test]
+    fn as_ref_and_as_mut_delegate_to_inner() {
+        let mut result = StateTransitionResult::new(String::from("value"), sample_hash());
+
+        assert_eq!(result.as_ref(), "value");
+        result.as_mut().push('s');
+
+        assert_eq!(result.into_inner(), "values");
     }
 }

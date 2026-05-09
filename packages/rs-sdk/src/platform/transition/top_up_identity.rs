@@ -1,5 +1,6 @@
 use super::broadcast::BroadcastStateTransition;
 use super::put_settings::PutSettings;
+use super::state_transition_result::StateTransitionResult;
 use super::validation::ensure_valid_state_transition_structure;
 use super::waitable::Waitable;
 use crate::{Error, Sdk};
@@ -45,6 +46,14 @@ pub trait TopUpIdentity: Waitable {
     ) -> Result<u64, Error>
     where
         AS: dpp::key_wallet::signer::Signer + Send + Sync;
+
+    async fn top_up_identity_with_transition_hash(
+        &self,
+        sdk: &Sdk,
+        asset_lock_proof: AssetLockProof,
+        asset_lock_proof_private_key: &PrivateKey,
+        settings: Option<PutSettings>,
+    ) -> Result<StateTransitionResult<u64>, Error>;
 }
 
 #[async_trait::async_trait]
@@ -56,6 +65,23 @@ impl TopUpIdentity for Identity {
         asset_lock_proof_private_key: &PrivateKey,
         settings: Option<PutSettings>,
     ) -> Result<u64, Error> {
+        self.top_up_identity_with_transition_hash(
+            sdk,
+            asset_lock_proof,
+            asset_lock_proof_private_key,
+            settings,
+        )
+        .await
+        .map(StateTransitionResult::into_inner)
+    }
+
+    async fn top_up_identity_with_transition_hash(
+        &self,
+        sdk: &Sdk,
+        asset_lock_proof: AssetLockProof,
+        asset_lock_proof_private_key: &PrivateKey,
+        settings: Option<PutSettings>,
+    ) -> Result<StateTransitionResult<u64>, Error> {
         let user_fee_increase = settings
             .and_then(|s| s.user_fee_increase)
             .unwrap_or_default();
@@ -68,14 +94,16 @@ impl TopUpIdentity for Identity {
             None,
         )?;
         ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
-        let identity: PartialIdentity = state_transition
+        let response = state_transition
             .broadcast_and_wait::<PartialIdentity>(sdk, settings)
-            .await?
-            .into_inner();
+            .await?;
+        let (identity, transition_hash) = response.into_parts();
 
-        identity
+        let balance = identity
             .balance
-            .ok_or(Error::Generic("expected an identity balance".to_string()))
+            .ok_or(Error::Generic("expected an identity balance".to_string()))?;
+
+        Ok(StateTransitionResult::new(balance, transition_hash))
     }
 
     #[cfg(feature = "core_key_wallet")]
@@ -104,7 +132,10 @@ impl TopUpIdentity for Identity {
         )
         .await?;
         ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
-        let identity: PartialIdentity = state_transition.broadcast_and_wait(sdk, settings).await?;
+        let identity: PartialIdentity = state_transition
+            .broadcast_and_wait(sdk, settings)
+            .await?
+            .into_inner();
 
         identity
             .balance

@@ -62,6 +62,18 @@ pub trait BroadcastRequestForStateTransition: Send + Debug + Clone {
     fn wait_for_state_transition_result_request(
         &self,
     ) -> Result<WaitForStateTransitionResultRequest, Error>;
+
+    fn wait_for_state_transition_result_request_with_hash(
+        &self,
+        transition_hash: [u8; 32],
+    ) -> Result<WaitForStateTransitionResultRequest, Error> {
+        Ok(WaitForStateTransitionResultRequest {
+            version: Some(Version::V0(WaitForStateTransitionResultRequestV0 {
+                state_transition_hash: transition_hash.to_vec(),
+                prove: true,
+            })),
+        })
+    }
 }
 
 impl BroadcastRequestForStateTransition for StateTransition {
@@ -76,11 +88,82 @@ impl BroadcastRequestForStateTransition for StateTransition {
     fn wait_for_state_transition_result_request(
         &self,
     ) -> Result<WaitForStateTransitionResultRequest, Error> {
-        Ok(WaitForStateTransitionResultRequest {
-            version: Some(Version::V0(WaitForStateTransitionResultRequestV0 {
-                state_transition_hash: self.transaction_id()?.to_vec(),
-                prove: true,
-            })),
-        })
+        self.wait_for_state_transition_result_request_with_hash(self.transaction_id()?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::BroadcastRequestForStateTransition;
+    use crate::Error;
+    use base64::engine::general_purpose::STANDARD;
+    use base64::Engine;
+    use dapi_grpc::platform::v0::wait_for_state_transition_result_request::Version;
+    use dapi_grpc::platform::v0::BroadcastStateTransitionRequest;
+    use dpp::serialization::PlatformDeserializable;
+    use dpp::state_transition::StateTransition;
+    use std::fmt::{Debug, Formatter};
+
+    #[derive(Clone)]
+    struct TestTransition;
+
+    impl Debug for TestTransition {
+        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+            f.write_str("TestTransition")
+        }
+    }
+
+    impl BroadcastRequestForStateTransition for TestTransition {
+        fn broadcast_request_for_state_transition(
+            &self,
+        ) -> Result<BroadcastStateTransitionRequest, Error> {
+            Ok(BroadcastStateTransitionRequest {
+                state_transition: vec![],
+            })
+        }
+
+        fn wait_for_state_transition_result_request(
+            &self,
+        ) -> Result<dapi_grpc::platform::v0::WaitForStateTransitionResultRequest, Error> {
+            self.wait_for_state_transition_result_request_with_hash([1; 32])
+        }
+    }
+
+    #[test]
+    fn wait_request_with_hash_uses_precomputed_hash() {
+        let request = TestTransition
+            .wait_for_state_transition_result_request_with_hash([9; 32])
+            .expect("request should build");
+
+        let Some(Version::V0(v0)) = request.version else {
+            panic!("expected v0 request");
+        };
+
+        assert_eq!(v0.state_transition_hash, [9; 32]);
+        assert!(v0.prove);
+    }
+
+    #[test]
+    fn wait_request_for_state_transition_uses_transaction_id() {
+        const RAW_TRANSACTION_BASE64: &str = "AwADAAAAAAAAACEDeLqSkwVyfHvYThgegiZUvPu0+dU4kyd3PJKigGLC1spBH+wrzjjA/ZGZdQmUzpQyOiC3GyP2eBp8ga9cNlnIOkptMzAtfXPA2daH3xTqt25JQ+fZ6UKB3ypzTK3fOXaAATgAAQAAAgAAIQPoVeBC6iyS0jFV0Dly5WV0SEl6uDciQqqi4EATeUJutEEfAd6+/HbUM4FLS6+lNc6AH8vaD9lViiYny4GPsl/AlBxdr0WjJxxU/B0cNVH8kRMo+W6a+1iSN+NZS7MTyzmTHwACAAEDAAAhA6S0TKbm1a/xyrYMG+Y2odspJ1roL1TcoK9h552yE1VCQSA+KpHiQ8lDBseXI/1ZCMxEvu0qopdjDojaQ4FzaZMgUGfPBeXSfMbQGksLMNseKRBLob/g0DHJWqZAxSDOuAwZAfwAIQxGIDIHY9cjWxS0tJupeJuKMZwzFKmLxkU3NmqFTcFscilVAABBH9R3vwbfA3q5XJG4m4z87OAA1uG8wup915wGGKAxdEObXPSqIvPBWrHlGTf/Uymanc2cDH1uKdsniJyoORwauPBIqlz61/Kf9HDnubX4GoHRYdnb4WzE+Tdh+L39a2dN2A==";
+        let raw_transaction = STANDARD
+            .decode(RAW_TRANSACTION_BASE64)
+            .expect("base64 transition should decode");
+        let state_transition = StateTransition::deserialize_from_bytes(&raw_transaction)
+            .expect("state transition should deserialize");
+        let transaction_id = state_transition
+            .transaction_id()
+            .expect("transaction id should compute");
+
+        let request = state_transition
+            .wait_for_state_transition_result_request()
+            .expect("request should build");
+
+        let Some(Version::V0(v0)) = request.version else {
+            panic!("expected v0 request");
+        };
+
+        assert_eq!(v0.state_transition_hash, transaction_id.to_vec());
+        assert!(v0.prove);
     }
 }

@@ -9,11 +9,55 @@ use crate::settings::{parse_put_settings, PutSettingsJs};
 use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
 use dash_sdk::dpp::state_transition::StateTransition;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
+use js_sys::Uint8Array;
 use wasm_bindgen::prelude::*;
+use wasm_bindgen::JsCast;
 use wasm_dpp2::state_transitions::proof_result::{
     convert_proof_result, StateTransitionProofResultTypeJs,
 };
 use wasm_dpp2::StateTransitionWasm;
+
+#[wasm_bindgen(typescript_custom_section)]
+const BROADCAST_AND_WAIT_RESULT_TS: &str = r#"
+export interface BroadcastAndWaitResult {
+  result: StateTransitionProofResultType;
+  transitionHash: Uint8Array;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "BroadcastAndWaitResult")]
+    pub type BroadcastAndWaitResultJs;
+}
+
+#[wasm_bindgen(js_name = "BroadcastAndWaitResult")]
+pub struct BroadcastAndWaitResultWasm {
+    result: JsValue,
+    transition_hash: Vec<u8>,
+}
+
+impl BroadcastAndWaitResultWasm {
+    fn new(result: StateTransitionProofResultTypeJs, transition_hash: [u8; 32]) -> Self {
+        Self {
+            result: JsValue::from(result),
+            transition_hash: transition_hash.to_vec(),
+        }
+    }
+}
+
+#[wasm_bindgen(js_class = BroadcastAndWaitResult)]
+impl BroadcastAndWaitResultWasm {
+    #[wasm_bindgen(getter)]
+    pub fn result(&self) -> StateTransitionProofResultTypeJs {
+        self.result.clone().unchecked_into()
+    }
+
+    #[wasm_bindgen(getter, js_name = "transitionHash")]
+    pub fn transition_hash(&self) -> Uint8Array {
+        Uint8Array::from(self.transition_hash.as_slice())
+    }
+}
 
 #[wasm_bindgen]
 impl WasmSdk {
@@ -87,17 +131,18 @@ impl WasmSdk {
         &self,
         #[wasm_bindgen(js_name = "stateTransition")] state_transition: &StateTransitionWasm,
         settings: Option<PutSettingsJs>,
-    ) -> Result<StateTransitionProofResultTypeJs, WasmSdkError> {
+    ) -> Result<BroadcastAndWaitResultWasm, WasmSdkError> {
         let st: StateTransition = state_transition.into();
         let put_settings = parse_put_settings(settings)?;
 
         let result = st
             .broadcast_and_wait::<StateTransitionProofResult>(self.as_ref(), put_settings)
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast: {}", e)))?;
+            .map_err(WasmSdkError::from)?;
 
-        // TODO(#2953): The transition hash currently stops at the WASM/JS boundary here;
-        // propagate it through the JS-facing result type in the follow-up.
-        convert_proof_result(result.into_inner()).map_err(WasmSdkError::from)
+        let (proof_result, transition_hash) = result.into_parts();
+        let converted = convert_proof_result(proof_result).map_err(WasmSdkError::from)?;
+
+        Ok(BroadcastAndWaitResultWasm::new(converted, transition_hash))
     }
 }

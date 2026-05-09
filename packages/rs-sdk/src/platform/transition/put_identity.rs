@@ -1,7 +1,9 @@
 use crate::platform::transition::address_inputs::{fetch_inputs_with_nonce, nonce_inc};
 use crate::platform::transition::broadcast_identity::BroadcastRequestForNewIdentity;
 use crate::platform::transition::{
-    address_inputs::collect_address_infos_from_proof, broadcast::BroadcastStateTransition,
+    address_inputs::collect_address_infos_from_proof,
+    broadcast::{wrap_wait_error_after_broadcast, BroadcastStateTransition},
+    state_transition_result::StateTransitionResult,
 };
 use crate::{Error, Sdk};
 
@@ -99,6 +101,34 @@ pub trait PutIdentity<IS: Signer<IdentityPublicKey>>: Waitable {
     where
         Self: Sized,
         AS: dpp::key_wallet::signer::Signer + Send + Sync;
+
+    async fn put_to_platform_and_wait_for_response_with_transition_hash(
+        &self,
+        sdk: &Sdk,
+        asset_lock_proof: AssetLockProof,
+        asset_lock_proof_private_key: &PrivateKey,
+        signer: &IS,
+        settings: Option<PutSettings>,
+    ) -> Result<StateTransitionResult<Self>, Error>
+    where
+        Self: Sized,
+    {
+        let state_transition = self
+            .put_to_platform(
+                sdk,
+                asset_lock_proof,
+                asset_lock_proof_private_key,
+                signer,
+                settings,
+            )
+            .await?;
+        let transition_hash = state_transition.transaction_id()?;
+        let identity = Self::wait_for_response(sdk, state_transition, settings)
+            .await
+            .map_err(|e| wrap_wait_error_after_broadcast(transition_hash, e))?;
+
+        Ok(StateTransitionResult::new(identity, transition_hash))
+    }
 
     /// Creates an identity funded by Platform addresses using explicit nonces.
     ///

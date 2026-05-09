@@ -120,6 +120,16 @@ pub enum Error {
     #[error(transparent)]
     StateTransitionBroadcastError(#[from] StateTransitionBroadcastError),
 
+    /// Broadcasting succeeded, but waiting for the proved result failed afterwards.
+    #[error(
+        "state transition broadcast succeeded for {} but waiting for the result failed: {source}",
+        hex::encode(.transition_hash)
+    )]
+    WaitForStateTransitionResultFailedAfterBroadcast {
+        transition_hash: [u8; 32],
+        source: Box<Error>,
+    },
+
     /// All available addresses have been exhausted (banned due to errors).
     /// Contains the last meaningful error that caused addresses to be banned.
     #[error("no available addresses to retry, last error: {0}")]
@@ -343,6 +353,9 @@ impl CanRetry for Error {
         matches!(
             self,
             Error::StaleNode(..) | Error::TimeoutReached(_, _) | Error::Proof(_)
+        ) || matches!(
+            self,
+            Error::WaitForStateTransitionResultFailedAfterBroadcast { source, .. } if source.can_retry()
         )
     }
 
@@ -351,6 +364,10 @@ impl CanRetry for Error {
             self,
             Error::DapiClientError(DapiClientError::NoAvailableAddresses)
                 | Error::DapiClientError(DapiClientError::NoAvailableAddressesToRetry(_))
+        ) || matches!(
+            self,
+            Error::WaitForStateTransitionResultFailedAfterBroadcast { source, .. }
+                if source.is_no_available_addresses()
         )
     }
 }

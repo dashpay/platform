@@ -19,6 +19,173 @@ use rs_dapi_client::{DapiRequest, ExecutionError, InnerInto, IntoInner, RequestS
 use rs_dapi_client::{ExecutionResponse, WrapToExecutionResult};
 use tracing::{trace, warn};
 
+pub(crate) fn wrap_wait_error_after_broadcast(transition_hash: [u8; 32], source: Error) -> Error {
+    Error::WaitForStateTransitionResultFailedAfterBroadcast {
+        transition_hash,
+        source: Box::new(source),
+    }
+}
+
+async fn wait_for_response_with_hash<T: TryFrom<StateTransitionProofResult> + Send>(
+    state_transition: &StateTransition,
+    sdk: &Sdk,
+    settings: Option<PutSettings>,
+    transition_hash: [u8; 32],
+) -> Result<T, Error> {
+    trace!(
+        transaction_id = %hex::encode(transition_hash),
+        "wait: start"
+    );
+
+    let retry_settings = match settings {
+        Some(s) => sdk.dapi_client_settings.override_by(s.request_settings),
+        None => sdk.dapi_client_settings,
+    };
+
+    let factory = |request_settings: RequestSettings| async move {
+        trace!("wait: creating request");
+        let request = state_transition
+            .wait_for_state_transition_result_request_with_hash(transition_hash)
+            .map_err(|e| ExecutionError {
+                inner: e,
+                address: None,
+                retries: 0,
+            })?;
+
+        trace!("wait: executing request");
+        let response = request.execute(sdk, request_settings).await.inner_into()?;
+        trace!("wait: received response");
+
+        let grpc_response: &WaitForStateTransitionResultResponse = &response.inner;
+
+        let state_transition_broadcast_error = match &grpc_response.version {
+            Some(wait_for_state_transition_result_response::Version::V0(result)) => {
+                match &result.result {
+                    Some(wait_for_state_transition_result_response_v0::Result::Error(e)) => Some(e),
+                    _ => None,
+                }
+            }
+            None => None,
+        };
+
+        if let Some(e) = state_transition_broadcast_error {
+            warn!(error=?e, "wait: state transition broadcast error detected");
+            let state_transition_broadcast_error: StateTransitionBroadcastError =
+                StateTransitionBroadcastError::try_from(e.clone())
+                    .wrap_to_execution_result(&response)?
+                    .inner;
+
+            return Err(Error::from(state_transition_broadcast_error))
+                .wrap_to_execution_result(&response);
+        }
+
+        trace!("wait: extracting metadata");
+        let metadata = grpc_response
+            .metadata()
+            .wrap_to_execution_result(&response)?
+            .inner;
+        let block_info = block_info_from_metadata(metadata)
+            .wrap_to_execution_result(&response)?
+            .inner;
+        trace!(block_info = ?block_info, "wait: block info extracted");
+
+        trace!("wait: extracting proof");
+        let proof: &Proof = (*grpc_response)
+            .proof()
+            .wrap_to_execution_result(&response)?
+            .inner;
+        trace!(
+            proof_size = proof.grovedb_proof.len(),
+            "wait: proof extracted"
+        );
+
+        let context_provider = sdk.context_provider().ok_or(ExecutionError {
+            inner: Error::from(ContextProviderError::Config(
+                "Context provider not initialized".to_string(),
+            )),
+            address: Some(response.address.clone()),
+            retries: response.retries,
+        })?;
+
+        trace!("wait: verifying proof");
+        let (_, result) = match Drive::verify_state_transition_was_executed_with_proof(
+            state_transition,
+            &block_info,
+            proof.grovedb_proof.as_slice(),
+            &context_provider.as_contract_lookup_fn(sdk.version()),
+            sdk.version(),
+        ) {
+            Ok(r) => Ok(ExecutionResponse {
+                inner: r,
+                retries: response.retries,
+                address: response.address.clone(),
+            }),
+            Err(drive::error::Error::Proof(proof_error)) => Err(ExecutionError {
+                inner: Error::DriveProofError(proof_error, proof.grovedb_proof.clone(), block_info),
+                retries: response.retries,
+                address: Some(response.address.clone()),
+            }),
+            Err(e) => Err(ExecutionError {
+                inner: e.into(),
+                retries: response.retries,
+                address: Some(response.address.clone()),
+            }),
+        }?
+        .inner;
+
+        trace!("wait: proof verification successful");
+        trace!(result_variant = %result.to_string(), "wait: result variant");
+
+        let variant_name = result.to_string();
+        let conversion_result = T::try_from(result)
+            .map_err(|_| {
+                Error::InvalidProvedResponse(format!(
+                    "invalid proved response: cannot convert from {} to {}",
+                    variant_name,
+                    std::any::type_name::<T>(),
+                ))
+            })
+            .wrap_to_execution_result(&response);
+
+        match &conversion_result {
+            Ok(_) => trace!("wait: converted result to expected type"),
+            Err(e) => warn!(error = ?e, "wait: failed to convert result"),
+        }
+        conversion_result
+    };
+
+    let future = retry(sdk.address_list(), retry_settings, factory);
+    let wait_timeout = settings.and_then(|s| s.wait_timeout);
+
+    trace!(timeout = ?wait_timeout, "wait: starting retry mechanism");
+
+    match wait_timeout {
+        Some(timeout) => {
+            trace!(?timeout, "wait: waiting with timeout");
+            tokio::time::timeout(timeout, future)
+                .await
+                .map_err(|e| {
+                    warn!(?timeout, "wait: timeout reached");
+                    Error::TimeoutReached(
+                        timeout,
+                        format!(
+                            "Timeout waiting for result of {} (tx id: {}) affecting object {}: {:?}",
+                            state_transition.name(),
+                            hex::encode(transition_hash),
+                            state_transition.unique_identifiers().join(","),
+                            e
+                        ),
+                    )
+                })?
+                .into_inner()
+        }
+        None => {
+            trace!("wait: waiting without timeout");
+            future.await.into_inner()
+        }
+    }
+}
+
 #[async_trait::async_trait]
 pub trait BroadcastStateTransition {
     async fn broadcast(&self, sdk: &Sdk, settings: Option<PutSettings>) -> Result<(), Error>;
@@ -97,168 +264,8 @@ impl BroadcastStateTransition for StateTransition {
         sdk: &Sdk,
         settings: Option<PutSettings>,
     ) -> Result<T, Error> {
-        trace!(
-            transaction_id = %self
-                .transaction_id()
-                .map(hex::encode)
-                .unwrap_or("UNKNOWN".to_string()),
-            "wait: start"
-        );
-
-        let retry_settings = match settings {
-            Some(s) => sdk.dapi_client_settings.override_by(s.request_settings),
-            None => sdk.dapi_client_settings,
-        };
-
-        // prepare a factory that will generate closure which executes actual code
-        let factory = |request_settings: RequestSettings| async move {
-            trace!("wait: creating request");
-            let request = self
-                .wait_for_state_transition_result_request()
-                .map_err(|e| ExecutionError {
-                    inner: e,
-                    address: None,
-                    retries: 0,
-                })?;
-
-            trace!("wait: executing request");
-            let response = request.execute(sdk, request_settings).await.inner_into()?;
-            trace!("wait: received response");
-
-            let grpc_response: &WaitForStateTransitionResultResponse = &response.inner;
-
-            // We use match here to have a compilation error if a new version of the response is introduced
-            let state_transition_broadcast_error = match &grpc_response.version {
-                Some(wait_for_state_transition_result_response::Version::V0(result)) => {
-                    match &result.result {
-                        Some(wait_for_state_transition_result_response_v0::Result::Error(e)) => {
-                            Some(e)
-                        }
-                        _ => None,
-                    }
-                }
-                None => None,
-            };
-
-            if let Some(e) = state_transition_broadcast_error {
-                warn!(error=?e, "wait: state transition broadcast error detected");
-                let state_transition_broadcast_error: StateTransitionBroadcastError =
-                    StateTransitionBroadcastError::try_from(e.clone())
-                        .wrap_to_execution_result(&response)?
-                        .inner;
-
-                return Err(Error::from(state_transition_broadcast_error))
-                    .wrap_to_execution_result(&response);
-            }
-
-            trace!("wait: extracting metadata");
-            let metadata = grpc_response
-                .metadata()
-                .wrap_to_execution_result(&response)?
-                .inner;
-            let block_info = block_info_from_metadata(metadata)
-                .wrap_to_execution_result(&response)?
-                .inner;
-            trace!(block_info = ?block_info, "wait: block info extracted");
-
-            trace!("wait: extracting proof");
-            let proof: &Proof = (*grpc_response)
-                .proof()
-                .wrap_to_execution_result(&response)?
-                .inner;
-            trace!(
-                proof_size = proof.grovedb_proof.len(),
-                "wait: proof extracted"
-            );
-
-            let context_provider = sdk.context_provider().ok_or(ExecutionError {
-                inner: Error::from(ContextProviderError::Config(
-                    "Context provider not initialized".to_string(),
-                )),
-                address: Some(response.address.clone()),
-                retries: response.retries,
-            })?;
-
-            trace!("wait: verifying proof");
-            let (_, result) = match Drive::verify_state_transition_was_executed_with_proof(
-                self,
-                &block_info,
-                proof.grovedb_proof.as_slice(),
-                &context_provider.as_contract_lookup_fn(sdk.version()),
-                sdk.version(),
-            ) {
-                Ok(r) => Ok(ExecutionResponse {
-                    inner: r,
-                    retries: response.retries,
-                    address: response.address.clone(),
-                }),
-                Err(drive::error::Error::Proof(proof_error)) => Err(ExecutionError {
-                    inner: Error::DriveProofError(
-                        proof_error,
-                        proof.grovedb_proof.clone(),
-                        block_info,
-                    ),
-                    retries: response.retries,
-                    address: Some(response.address.clone()),
-                }),
-                Err(e) => Err(ExecutionError {
-                    inner: e.into(),
-                    retries: response.retries,
-                    address: Some(response.address.clone()),
-                }),
-            }?
-            .inner;
-
-            trace!("wait: proof verification successful");
-            trace!(result_variant = %result.to_string(), "wait: result variant");
-
-            let variant_name = result.to_string();
-            let conversion_result = T::try_from(result)
-                .map_err(|_| {
-                    Error::InvalidProvedResponse(format!(
-                        "invalid proved response: cannot convert from {} to {}",
-                        variant_name,
-                        std::any::type_name::<T>(),
-                    ))
-                })
-                .wrap_to_execution_result(&response);
-
-            match &conversion_result {
-                Ok(_) => trace!("wait: converted result to expected type"),
-                Err(e) => warn!(error = ?e, "wait: failed to convert result"),
-            }
-            conversion_result
-        };
-
-        let future = retry(sdk.address_list(), retry_settings, factory);
-        // run the future with or without timeout, depending on the settings
-        let wait_timeout = settings.and_then(|s| s.wait_timeout);
-
-        trace!(timeout = ?wait_timeout, "wait: starting retry mechanism");
-
-        match wait_timeout {
-            Some(timeout) => {
-                trace!(?timeout, "wait: waiting with timeout");
-                tokio::time::timeout(timeout, future)
-                    .await
-                    .map_err(|e| {
-                        warn!(?timeout, "wait: timeout reached");
-                        Error::TimeoutReached(
-                            timeout,
-                            format!("Timeout waiting for result of {} (tx id: {}) affecting object {}: {:?}",
-                            self.name(),
-                            self.transaction_id().map(hex::encode).unwrap_or("UNKNOWN".to_string()),
-                            self.unique_identifiers().join(","),
-                             e),
-                        )
-                    })?
-                    .into_inner()
-            }
-            None => {
-                trace!("wait: waiting without timeout");
-                future.await.into_inner()
-            }
-        }
+        let transition_hash = self.transaction_id()?;
+        wait_for_response_with_hash(self, sdk, settings, transition_hash).await
     }
 
     async fn broadcast_and_wait<T: TryFrom<StateTransitionProofResult> + Send>(
@@ -276,11 +283,56 @@ impl BroadcastStateTransition for StateTransition {
         trace!("broadcast_and_wait: step 1 - broadcasting");
         self.broadcast(sdk, settings).await?;
         trace!("broadcast_and_wait: step 2 - waiting for response");
-        let result = self.wait_for_response::<T>(sdk, settings).await;
+        let result = wait_for_response_with_hash(self, sdk, settings, transition_hash).await;
         match &result {
             Ok(_) => trace!("broadcast_and_wait: complete success"),
             Err(e) => warn!(error = ?e, "broadcast_and_wait: failed"),
         }
-        result.map(|inner| StateTransitionResult::new(inner, transition_hash))
+        result
+            .map(|inner| StateTransitionResult::new(inner, transition_hash))
+            .map_err(|e| wrap_wait_error_after_broadcast(transition_hash, e))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::wrap_wait_error_after_broadcast;
+    use crate::Error;
+    use base64::engine::general_purpose::STANDARD;
+    use base64::Engine;
+    use dpp::serialization::PlatformDeserializable;
+    use dpp::state_transition::StateTransition;
+    use rs_dapi_client::CanRetry;
+    use std::time::Duration;
+
+    fn sample_transition_hash() -> [u8; 32] {
+        const RAW_TRANSACTION_BASE64: &str = "AwADAAAAAAAAACEDeLqSkwVyfHvYThgegiZUvPu0+dU4kyd3PJKigGLC1spBH+wrzjjA/ZGZdQmUzpQyOiC3GyP2eBp8ga9cNlnIOkptMzAtfXPA2daH3xTqt25JQ+fZ6UKB3ypzTK3fOXaAATgAAQAAAgAAIQPoVeBC6iyS0jFV0Dly5WV0SEl6uDciQqqi4EATeUJutEEfAd6+/HbUM4FLS6+lNc6AH8vaD9lViiYny4GPsl/AlBxdr0WjJxxU/B0cNVH8kRMo+W6a+1iSN+NZS7MTyzmTHwACAAEDAAAhA6S0TKbm1a/xyrYMG+Y2odspJ1roL1TcoK9h552yE1VCQSA+KpHiQ8lDBseXI/1ZCMxEvu0qopdjDojaQ4FzaZMgUGfPBeXSfMbQGksLMNseKRBLob/g0DHJWqZAxSDOuAwZAfwAIQxGIDIHY9cjWxS0tJupeJuKMZwzFKmLxkU3NmqFTcFscilVAABBH9R3vwbfA3q5XJG4m4z87OAA1uG8wup915wGGKAxdEObXPSqIvPBWrHlGTf/Uymanc2cDH1uKdsniJyoORwauPBIqlz61/Kf9HDnubX4GoHRYdnb4WzE+Tdh+L39a2dN2A==";
+        let raw_transaction = STANDARD
+            .decode(RAW_TRANSACTION_BASE64)
+            .expect("base64 transition should decode");
+        let state_transition = StateTransition::deserialize_from_bytes(&raw_transaction)
+            .expect("state transition should deserialize");
+
+        state_transition
+            .transaction_id()
+            .expect("transaction id should compute")
+    }
+
+    #[test]
+    fn wait_error_after_broadcast_preserves_hash_and_retry_behavior() {
+        let source = Error::TimeoutReached(Duration::from_secs(1), "timed out".to_string());
+        let transition_hash = sample_transition_hash();
+        let error = wrap_wait_error_after_broadcast(transition_hash, source);
+
+        match error {
+            Error::WaitForStateTransitionResultFailedAfterBroadcast {
+                transition_hash: wrapped_transition_hash,
+                source,
+            } => {
+                assert_eq!(wrapped_transition_hash, transition_hash);
+                assert!(source.can_retry());
+            }
+            other => panic!("unexpected error variant: {other:?}"),
+        }
     }
 }

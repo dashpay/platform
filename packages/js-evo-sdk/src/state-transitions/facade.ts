@@ -27,7 +27,7 @@ export class StateTransitionsFacade {
   async broadcastAndWait(
     stateTransition: wasm.StateTransition,
     settings?: wasm.PutSettings,
-  ): Promise<wasm.StateTransitionProofResultType> {
+  ): Promise<wasm.BroadcastAndWaitResult> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.broadcastAndWait(stateTransition, settings);
   }

@@ -1,7 +1,9 @@
 use super::validation::ensure_valid_state_transition_structure;
 use super::waitable::Waitable;
+use crate::platform::transition::broadcast::wrap_wait_error_after_broadcast;
 use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
 use crate::platform::transition::put_settings::PutSettings;
+use crate::platform::transition::state_transition_result::StateTransitionResult;
 use crate::platform::Identifier;
 use crate::{Error, Sdk};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -44,6 +46,36 @@ pub trait TransferDocument<S: Signer<IdentityPublicKey>>: Waitable {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<Document, Error>;
+
+    #[allow(clippy::too_many_arguments)]
+    async fn transfer_document_to_identity_and_wait_for_response_with_transition_hash(
+        &self,
+        recipient_id: Identifier,
+        sdk: &Sdk,
+        document_type: DocumentType,
+        identity_public_key: IdentityPublicKey,
+        token_payment_info: Option<TokenPaymentInfo>,
+        signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<StateTransitionResult<Document>, Error> {
+        let state_transition = self
+            .transfer_document_to_identity(
+                recipient_id,
+                sdk,
+                document_type,
+                identity_public_key,
+                token_payment_info,
+                signer,
+                settings,
+            )
+            .await?;
+        let transition_hash = state_transition.transaction_id()?;
+        let document = <Document as Waitable>::wait_for_response(sdk, state_transition, settings)
+            .await
+            .map_err(|e| wrap_wait_error_after_broadcast(transition_hash, e))?;
+
+        Ok(StateTransitionResult::new(document, transition_hash))
+    }
 }
 
 #[async_trait::async_trait]
