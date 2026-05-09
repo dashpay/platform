@@ -625,6 +625,125 @@ fn test_count_query_in_operator_dedupes_duplicate_values() {
     );
 }
 
+/// Documents the grovedb semantic the count fast path relies on:
+/// what does a child element contribute to a parent `CountTree`'s count?
+///
+/// Per [`merk/src/element/tree_type.rs`](https://github.com/dashpay/grovedb/blob/8f25b20/merk/src/element/tree_type.rs)
+/// `get_feature_type`, a child inserted under a `TreeType::CountTree` parent
+/// is wrapped as `CountedMerkNode(self.count_value_or_default())`, and per
+/// [`grovedb-element/src/element/helpers.rs`](https://github.com/dashpay/grovedb/blob/8f25b20/grovedb-element/src/element/helpers.rs)
+/// `count_value_or_default` returns the child's stored count value for
+/// `CountTree` / `ProvableCountTree` / `CountSumTree` / `ProvableCountSumTree`
+/// variants and **`1` for everything else** — including an empty `Tree`.
+///
+/// So an empty `Tree` child counts as **1**, not 0. The CountTree's
+/// aggregated count is `local_value + left_subtree_count + right_subtree_count`
+/// (recursively).
+#[test]
+fn test_count_tree_aggregation_with_empty_child_subtrees() {
+    use grovedb::Element;
+    use grovedb_path::SubtreePath;
+
+    let drive = crate::util::test_helpers::setup::setup_drive(None);
+    let platform_version = PlatformVersion::latest();
+    let drive_version = &platform_version.drive;
+    let grove_version = &drive_version.grove_version;
+
+    let root: &[&[u8]] = &[];
+
+    // 1. Insert an empty CountTree at the root, key "ct".
+    drive
+        .grove
+        .insert(
+            SubtreePath::from(root),
+            b"ct",
+            Element::empty_count_tree(),
+            None,
+            None,
+            grove_version,
+        )
+        .unwrap()
+        .expect("insert empty count tree");
+
+    let read_count = |drive: &Drive| -> u64 {
+        let elem = drive
+            .grove
+            .get(SubtreePath::from(root), b"ct", None, grove_version)
+            .unwrap()
+            .expect("read count tree");
+        elem.count_value_or_default()
+    };
+
+    // Empty CountTree → count = 0 (no children at all).
+    assert_eq!(
+        read_count(&drive),
+        0,
+        "freshly created empty count tree should have count 0"
+    );
+
+    // 2. Insert an empty Tree (NormalTree) as a child of the CountTree.
+    let count_tree_path: &[&[u8]] = &[b"ct"];
+    drive
+        .grove
+        .insert(
+            SubtreePath::from(count_tree_path),
+            b"empty_subtree_a",
+            Element::empty_tree(),
+            None,
+            None,
+            grove_version,
+        )
+        .unwrap()
+        .expect("insert empty subtree under count tree");
+
+    // The empty Tree contributes 1 to the parent CountTree's count.
+    assert_eq!(
+        read_count(&drive),
+        1,
+        "an empty Tree child counts as 1 inside a CountTree"
+    );
+
+    // 3. Insert a second empty Tree → count = 2.
+    drive
+        .grove
+        .insert(
+            SubtreePath::from(count_tree_path),
+            b"empty_subtree_b",
+            Element::empty_tree(),
+            None,
+            None,
+            grove_version,
+        )
+        .unwrap()
+        .expect("insert second empty subtree");
+    assert_eq!(
+        read_count(&drive),
+        2,
+        "two empty Tree children count as 2 inside a CountTree"
+    );
+
+    // 4. Insert a non-tree Item child → count = 3 (each non-CountTree element
+    //    contributes 1, regardless of whether it's a Tree, an Item, or a
+    //    Reference).
+    drive
+        .grove
+        .insert(
+            SubtreePath::from(count_tree_path),
+            b"item",
+            Element::new_item(b"hello".to_vec()),
+            None,
+            None,
+            grove_version,
+        )
+        .unwrap()
+        .expect("insert item child");
+    assert_eq!(
+        read_count(&drive),
+        3,
+        "an Item child also contributes 1, same as an empty Tree"
+    );
+}
+
 /// Codex review finding #4: a `unique: true, countable: true` index used to
 /// allegedly return 0 because `fetch_count_at_path` would read a Reference
 /// instead of a CountTree element. We assert the correct count semantics
