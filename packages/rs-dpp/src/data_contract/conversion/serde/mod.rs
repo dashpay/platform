@@ -1,6 +1,6 @@
 //! Manual `Serialize` / `Deserialize` for the outer `DataContract` enum.
 //!
-//! # Critical-4: serde impurity (pinned by tests below)
+//! # Critical-4: platform-version coupling (pinned by tests below)
 //!
 //! Both impls call `PlatformVersion::get_version_or_current_or_latest(None)`,
 //! making serialization output *depend on a process-global thread-local-ish*
@@ -9,11 +9,20 @@
 //! routed through `DataContractInSerializationFormat`, and the format depends
 //! on the current platform.
 //!
-//! The Deserialize side additionally hardcodes `full_validation = true` —
-//! every JSON / Value / CBOR deserialize path runs full schema validation,
-//! regardless of whether the input was previously trusted. The hardcoded
-//! comment explains why: "when deserializing from json/platform_value/cbor
-//! we always want to validate (as this is not coming from the state)."
+//! # Validation policy: opt-in, not default
+//!
+//! The Deserialize impl does **not** run schema validation. Callers that
+//! need validation must use the explicit
+//! `DataContractJsonConversionMethodsV0::from_json_versioned(_, true, _)`
+//! / `from_value_versioned(_, true, _)` path, or call a separate
+//! validation step on the deserialized value.
+//!
+//! Why no-validation-by-default: most production callsites load DataContracts
+//! from already-validated storage and pay no schema-validation cost on read.
+//! Trust-but-verify boundaries (SDK ingest, gRPC handlers, JSON-fixture
+//! loaders) explicitly opt in by calling `from_*_versioned(_, true, _)`.
+//! This matches the broader convention that serde Deserialize means
+//! "structurally well-formed", not "semantically validated".
 //!
 //! **Why this is KEEP-AS-EXCEPTION**: the alternative (stateless serde) would
 //! require burning the platform version into the wire shape itself, which we
@@ -23,7 +32,8 @@
 //! `docs/json-value-unification-plan.md` §3.0 Critical-4.
 //!
 //! The `data_contract_serde_pins_critical_4` test module below pins this
-//! behavior so future refactors can't silently change it.
+//! behavior (no-validation-by-default + opt-in validation works) so future
+//! refactors can't silently change it.
 
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 use crate::prelude::DataContract;
@@ -55,10 +65,13 @@ impl<'de> Deserialize<'de> for DataContract {
         let serialization_format = DataContractInSerializationFormat::deserialize(deserializer)?;
         let current_version = PlatformVersion::get_version_or_current_or_latest(None)
             .map_err(|e| serde::de::Error::custom(e.to_string()))?;
-        // when deserializing from json/platform_value/cbor we always want to validate (as this is not coming from the state)
+        // No schema validation here — serde Deserialize means "structurally
+        // well-formed". Callers that need validation use the explicit
+        // `from_*_versioned(_, true, _)` path or call a separate validation
+        // step. See the module-level doc comment for the rationale.
         DataContract::try_from_platform_versioned(
             serialization_format,
-            true,
+            false,
             &mut vec![],
             current_version,
         )
@@ -127,27 +140,32 @@ mod data_contract_serde_pins_critical_4 {
         );
     }
 
-    /// PIN: `DataContract::deserialize` enforces full schema validation —
-    /// i.e., it hardcodes `full_validation = true` in its call to
-    /// `try_from_platform_versioned`. We exercise this by feeding a
-    /// well-formed `DataContractInSerializationFormat` whose document
-    /// schema is structurally invalid (an `indices` entry referencing a
-    /// nonexistent property). The format-level deserialize accepts it
-    /// (no validation there); the `DataContract::deserialize` path must
-    /// reject it (validation runs).
+    /// PIN: `DataContract::deserialize` does **not** run schema validation —
+    /// validation is opt-in via the explicit `from_json_versioned(_, true, _)`
+    /// path. We exercise this by feeding a structurally well-formed payload
+    /// whose document schema is semantically invalid (an `indices` entry
+    /// referencing a nonexistent property):
+    ///
+    /// - canonical `DataContract::deserialize` ACCEPTS the payload (no validation).
+    /// - explicit `DataContract::from_json_versioned(_, true, _)` REJECTS it
+    ///   (opt-in validation runs).
+    ///
+    /// If a future refactor flips canonical Deserialize back to validating-by-
+    /// default, this test will fail loudly. See module-level doc above for
+    /// the rationale.
     #[test]
-    fn data_contract_deserialize_rejects_invalid_schema_via_full_validation() {
+    fn data_contract_deserialize_does_not_validate_by_default() {
+        use crate::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
+
         // Build a valid contract, then mutate its JSON to make the schema
         // semantically invalid: declare an index over a property not in
-        // the schema's `properties` map. `DataContractInSerializationFormat`
-        // has no validation hook for this; only `try_from_platform_versioned`
-        // with `full_validation=true` catches it.
+        // the schema's `properties` map. Structurally well-formed JSON;
+        // only schema validation catches the issue.
         let created = get_data_contract_fixture(None, 0, 1);
         let original = created.data_contract().clone();
 
         let mut json = serde_json::to_value(&original).expect("to_json");
 
-        // Inject an index referencing a property the schema doesn't define.
         let document_schemas = json
             .get_mut("documentSchemas")
             .and_then(|v| v.as_object_mut())
@@ -156,9 +174,7 @@ mod data_contract_serde_pins_critical_4 {
             .iter_mut()
             .next()
             .expect("at least one document schema");
-        let schema_obj = first_schema
-            .as_object_mut()
-            .expect("schema is object");
+        let schema_obj = first_schema.as_object_mut().expect("schema is object");
         schema_obj.insert(
             "indices".to_string(),
             serde_json::json!([
@@ -170,22 +186,27 @@ mod data_contract_serde_pins_critical_4 {
             ]),
         );
 
-        // Format-level deserialize succeeds (no validation):
-        let format: DataContractInSerializationFormat =
-            serde_json::from_value(json.clone()).expect(
-                "format-level deserialize should accept structurally-valid input",
-            );
-        // Just to use the variable and prove the path runs:
-        let _ = format;
+        // Format-level deserialize succeeds (never validated).
+        let _: DataContractInSerializationFormat = serde_json::from_value(json.clone())
+            .expect("format-level deserialize should accept structurally-valid input");
 
-        // DataContract-level deserialize must reject it (validation):
-        let result: Result<DataContract, _> = serde_json::from_value(json);
+        // PIN: canonical Deserialize accepts the invalid schema.
+        let canonical_result: Result<DataContract, _> = serde_json::from_value(json.clone());
         assert!(
-            result.is_err(),
-            "DataContract::deserialize should reject contracts with invalid \
-             indices because Critical-4 hardcodes full_validation=true. If \
-             this passes, the validation behavior has been silently disabled \
-             and bypasses the documented invariant."
+            canonical_result.is_ok(),
+            "DataContract::deserialize should accept structurally-well-formed \
+             input without running schema validation. If this fails, the \
+             no-validation-by-default policy has been silently reverted."
+        );
+
+        // PIN: explicit opt-in validation rejects the same payload.
+        let validated_result =
+            DataContract::from_json_versioned(json, true, LATEST_PLATFORM_VERSION);
+        assert!(
+            validated_result.is_err(),
+            "DataContract::from_json_versioned(_, true, _) should reject \
+             contracts with invalid indices. If this passes, opt-in \
+             validation no longer runs."
         );
     }
 }
