@@ -744,6 +744,114 @@ fn test_count_tree_aggregation_with_empty_child_subtrees() {
     );
 }
 
+/// Sanity check that a contract using the new `IndexCountability::CountableAllowingOffset`
+/// variant — a string `"countableAllowingOffset"` in the JSON schema — loads,
+/// is recognized as countable by the picker, and answers a total-count query.
+///
+/// This exercises the full path: schema → `IndexCountability` enum → index
+/// picker → tree-type selection (`ProvableCountTree`) → fast-path read.
+#[test]
+fn test_countable_allowing_offset_variant_end_to_end() {
+    use dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
+    use dpp::data_contract::document_type::IndexCountability;
+
+    let drive = setup_drive_with_initial_state_structure(None);
+    let platform_version = PlatformVersion::latest();
+
+    // Hand-build a contract from JSON value so we can use the string form.
+    // family-contract-countable.json sits next door using "countable": true; this
+    // covers the CountableAllowingOffset variant via the string form and a
+    // single index for clarity.
+    let contract_json = serde_json::json!({
+        "$formatVersion": "0",
+        "id": "94zNLp7A1ZcYG3Egqf2YmQk4DQr9P8D543GwXyCJRz4",
+        "ownerId": "AcYUCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swLk6",
+        "version": 1,
+        "documentSchemas": {
+            "person": {
+                "type": "object",
+                "indices": [
+                    {
+                        "name": "byFirstName",
+                        "properties": [{ "firstName": "asc" }],
+                        "countable": "countableAllowingOffset"
+                    }
+                ],
+                "properties": {
+                    "firstName": {
+                        "type": "string",
+                        "maxLength": 50,
+                        "position": 0
+                    }
+                },
+                "required": ["firstName"],
+                "additionalProperties": false
+            }
+        }
+    });
+
+    let data_contract =
+        dpp::data_contract::DataContract::from_json(contract_json, false, platform_version)
+            .expect("expected to load contract with string-form countable");
+
+    let document_type = data_contract
+        .document_type_for_name("person")
+        .expect("expected document type");
+
+    // Confirm the schema parsed into the right enum variant.
+    let index = document_type
+        .indexes()
+        .values()
+        .next()
+        .expect("expected one index");
+    assert_eq!(
+        index.countable,
+        IndexCountability::CountableAllowingOffset,
+        "string \"countableAllowingOffset\" should parse as CountableAllowingOffset"
+    );
+    assert!(index.countable.allows_offset());
+
+    drive
+        .apply_contract(
+            &data_contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            platform_version,
+        )
+        .expect("expected to apply contract");
+
+    insert_random_documents(&drive, &data_contract, "person", 4, 700);
+
+    // The picker should still find this index — `is_countable()` covers both
+    // `Countable` and `CountableAllowingOffset`.
+    let picked = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+        document_type.indexes(),
+        &[],
+    )
+    .expect("expected picker to accept CountableAllowingOffset index");
+    assert_eq!(picked.countable, IndexCountability::CountableAllowingOffset);
+
+    let query = DriveDocumentCountQuery {
+        document_type,
+        contract_id: data_contract.id().to_buffer(),
+        document_type_name: "person".to_string(),
+        index: picked,
+        where_clauses: vec![],
+        split_by_property: None,
+    };
+
+    let results = query
+        .execute_no_proof(&drive, None, platform_version)
+        .expect("expected count query to succeed against ProvableCountTree");
+    assert_eq!(results.len(), 1);
+    assert_eq!(
+        results[0].count, 4,
+        "ProvableCountTree should report total count = 4"
+    );
+}
+
 /// Codex review finding #4: a `unique: true, countable: true` index used to
 /// allegedly return 0 because `fetch_count_at_path` would read a Reference
 /// instead of a CountTree element. We assert the correct count semantics

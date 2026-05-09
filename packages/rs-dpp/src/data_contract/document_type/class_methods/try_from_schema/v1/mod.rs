@@ -341,8 +341,12 @@ impl DocumentTypeV1 {
 
                         #[cfg(feature = "validation")]
                         if full_validation {
-                            // Countable indices are only supported starting from protocol version 12
-                            if index.countable && platform_version.protocol_version < 12 {
+                            // Countable indices are only supported starting from protocol version 12.
+                            // Both `Countable` and `CountableAllowingOffset` are gated together —
+                            // either form requires v12+ since it changes the GroveDB tree type.
+                            if index.countable.is_countable()
+                                && platform_version.protocol_version < 12
+                            {
                                 return Err(ProtocolError::ConsensusError(Box::new(
                                     UnsupportedFeatureError::new(
                                         "count index".to_string(),

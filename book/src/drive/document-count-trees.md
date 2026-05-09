@@ -302,9 +302,19 @@ Set on a single entry in the document type's `indices` array:
 
 With `byColor.countable: true` the `byColor` index's tree carries counts, so `GetDocumentsCount` with `where: [["color", "==", "red"]]` reaches the count via that index in O(1) instead of falling back to a scan. Without the flag, `find_countable_index_for_where_clauses` will skip this index and the count won't take the fast path.
 
+The `countable` field accepts three forms:
+
+| JSON value | Tree variant | Capabilities |
+|---|---|---|
+| `false` (or omitted, or `"notCountable"`) | `NormalTree` | No count fast path |
+| `true` (or `"countable"`) | `CountTree` | O(1) totals at the root |
+| `"countableAllowingOffset"` | `ProvableCountTree` | O(1) totals **plus** per-node counts that will enable future O(log n) range / offset queries on this index |
+
+The boolean `true` / `false` form is kept for back-compat with contracts written before the enum form was introduced; new contracts should prefer the explicit string variants for clarity, especially `"countableAllowingOffset"` when range/offset queries are wanted.
+
 A few notes about the index-level flag:
 
-- Adding `countable: true` increases storage cost — every insert and delete updates the index tree's count alongside the document. Don't sprinkle it on every index; opt in for the ones you'll actually count by.
+- Setting any countable variant increases storage cost — every insert and delete updates the index tree's count alongside the document. `"countableAllowingOffset"` costs more than plain `"countable"` (every internal node carries count metadata, not just the root). Don't sprinkle it on every index; opt in for the ones you'll actually count by, and use the cheaper variant unless you specifically need the offset capability.
 - The flag is on the *whole* index, not per-property. The index handles `count(*)` queries whose equality `where` clauses cover the index's properties **exactly**, in order. A `["color", "size"]` countable index gives you O(1) counts for `WHERE color = X AND size = Y` — but for `WHERE color = X` alone (only the leading prefix matched) the count is computed by walking every distinct-`size` bucket under `color = X` and summing their counts. That works and avoids document enumeration, but it scales with the cardinality of `size`, not constant time. If single-column `WHERE color = X` counts are a hot path, add a separate `["color"]` countable index.
 - Index-level countable is independent of the primary-key flags. You can have `documentsCountable: true` on the document type AND `countable: true` on a specific index — the first gives you fast totals, the second gives you fast filtered counts that match that index.
 

@@ -110,7 +110,7 @@ impl<'a> DriveDocumentCountQuery<'a> {
         let mut best_match: Option<(&Index, usize)> = None;
 
         for index in indexes.values() {
-            if !index.countable {
+            if !index.countable.is_countable() {
                 continue;
             }
 
@@ -164,7 +164,7 @@ impl<'a> DriveDocumentCountQuery<'a> {
             .collect();
 
         for index in indexes.values() {
-            if !index.countable {
+            if !index.countable.is_countable() {
                 continue;
             }
 

@@ -283,6 +283,50 @@ impl Default for ContestedIndexInformation {
     }
 }
 
+/// What countable operations the index's tree supports.
+///
+/// - `NotCountable` — plain `NormalTree`. Counts on this index require enumerating
+///   documents (no fast path).
+/// - `Countable` — `CountTree`. The total count of documents under any covering
+///   equality / `In` prefix is an O(1) read (or O(distinct values) for partial
+///   prefixes).
+/// - `CountableAllowingOffset` — `ProvableCountTree`. Same total-count semantics
+///   as `Countable`, plus every internal node carries the count of its left and
+///   right subtrees, so future range / offset queries (e.g. "the next 50 items
+///   starting after key X") will be answerable in O(log n) without enumerating.
+///
+/// `CountableAllowingOffset` is strictly more capable than `Countable` but also
+/// strictly more expensive (every node carries count metadata, not just the
+/// root). Pick `Countable` when you only need totals; pick
+/// `CountableAllowingOffset` when you also need range/offset queries on this
+/// index.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
+#[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde-conversion", serde(rename_all = "camelCase"))]
+pub enum IndexCountability {
+    /// The index uses a plain `NormalTree` and does not support count fast paths.
+    #[default]
+    NotCountable,
+    /// The index uses a `CountTree` — total counts are O(1) via the root count.
+    Countable,
+    /// The index uses a `ProvableCountTree` — same as `Countable` plus per-node
+    /// counts that enable future O(log n) range / offset queries.
+    CountableAllowingOffset,
+}
+
+impl IndexCountability {
+    /// Returns true if this index supports count fast paths (either variant).
+    pub fn is_countable(&self) -> bool {
+        !matches!(self, Self::NotCountable)
+    }
+
+    /// Returns true if this index uses the provable variant (per-node counts,
+    /// enabling future range / offset support).
+    pub fn allows_offset(&self) -> bool {
+        matches!(self, Self::CountableAllowingOffset)
+    }
+}
+
 // Indices documentation:  https://dashplatform.readme.io/docs/reference-data-contracts#document-indices
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
@@ -295,8 +339,9 @@ pub struct Index {
     pub null_searchable: bool,
     /// Contested indexes are useful when a resource is considered valuable
     pub contested_index: Option<ContestedIndexInformation>,
-    /// Enables countable operations on the index
-    pub countable: bool,
+    /// Whether and how the index supports count fast paths. See
+    /// [`IndexCountability`].
+    pub countable: IndexCountability,
 }
 
 impl Index {
@@ -471,7 +516,7 @@ impl TryFrom<&[(Value, Value)]> for Index {
         let mut name = None;
         let mut contested_index = None;
         let mut index_properties: Vec<IndexProperty> = Vec::new();
-        let mut countable = false;
+        let mut countable = IndexCountability::NotCountable;
 
         for (key_value, value_value) in index_type_value_map {
             let key = key_value.to_str()?;
@@ -589,11 +634,36 @@ impl TryFrom<&[(Value, Value)]> for Index {
                     contested_index = Some(contested_index_information);
                 }
                 "countable" => {
-                    countable = value_value
-                        .as_bool()
-                        .ok_or(DataContractError::ValueWrongType(
-                            "countable value must be a boolean".to_string(),
-                        ))?;
+                    // Accept either:
+                    //   - boolean: `true` → Countable, `false` → NotCountable.
+                    //     This preserves v0 contracts (whose meta-schema enforces
+                    //     `"type": "boolean"`) and any v1 contracts written before
+                    //     the enum form was introduced.
+                    //   - string: one of `"notCountable"`, `"countable"`,
+                    //     `"countableAllowingOffset"` (camelCase, matching the
+                    //     `IndexCountability` serde rename rule).
+                    countable = match value_value {
+                        Value::Bool(true) => IndexCountability::Countable,
+                        Value::Bool(false) => IndexCountability::NotCountable,
+                        Value::Text(s) => match s.as_str() {
+                            "notCountable" => IndexCountability::NotCountable,
+                            "countable" => IndexCountability::Countable,
+                            "countableAllowingOffset" => IndexCountability::CountableAllowingOffset,
+                            other => {
+                                return Err(DataContractError::ValueWrongType(format!(
+                                    "countable value must be a boolean or one of \
+                                     \"notCountable\" / \"countable\" / \
+                                     \"countableAllowingOffset\"; got {:?}",
+                                    other
+                                )))
+                            }
+                        },
+                        _ => {
+                            return Err(DataContractError::ValueWrongType(
+                                "countable value must be a boolean or a string".to_string(),
+                            ))
+                        }
+                    };
                 }
                 "properties" => {
                     let properties =
@@ -691,7 +761,7 @@ mod tests {
             unique,
             null_searchable: true,
             contested_index: None,
-            countable: false,
+            countable: IndexCountability::NotCountable,
         }
     }
 
