@@ -852,11 +852,17 @@ fn test_countable_allowing_offset_variant_end_to_end() {
     );
 }
 
-/// Codex review finding #4: a `unique: true, countable: true` index used to
-/// allegedly return 0 because `fetch_count_at_path` would read a Reference
-/// instead of a CountTree element. We assert the correct count semantics
-/// (1 per matching unique tuple, summed under partial prefixes) so a
-/// regression here surfaces immediately.
+/// On a unique index, the `countable` flag only affects storage for
+/// **null-bearing** index entries: when a document has any null value among
+/// the indexed properties, insertion goes through the count-tree branch
+/// (the same one non-unique indexes use). For all-non-null docs on a
+/// unique index, the terminal is a bare Reference at key `[0]` and the
+/// flag is a no-op — the count *value* still works correctly because
+/// grovedb's `Element::count_value_or_default()` returns 1 for non-CountTree
+/// elements (Reference falls into the `_ => 1` arm).
+///
+/// This test exercises the all-non-null path on a unique countable index
+/// and verifies the count comes back as 1 — confirming the no-op fallback.
 #[test]
 fn test_count_query_unique_countable_index_returns_correct_count() {
     let (drive, data_contract) = setup_drive_and_contract();
@@ -864,7 +870,8 @@ fn test_count_query_unique_countable_index_returns_correct_count() {
 
     // 3 distinct (firstName, middleName, lastName) tuples — the unique
     // countable index `(firstName, middleName, lastName)` stores a
-    // Reference at key [0] under the final value level.
+    // Reference at key [0] under the final value level (no count tree
+    // is created because all indexed fields are non-null).
     insert_person_doc(&drive, &data_contract, [1u8; 32], "Alice", "M", "Smith", 30);
     insert_person_doc(&drive, &data_contract, [2u8; 32], "Alice", "N", "Smith", 31);
     insert_person_doc(&drive, &data_contract, [3u8; 32], "Bob", "O", "Jones", 32);
@@ -914,6 +921,7 @@ fn test_count_query_unique_countable_index_returns_correct_count() {
     assert_eq!(results.len(), 1);
     assert_eq!(
         results[0].count, 1,
-        "exact match on a unique countable index should be 1, not 0"
+        "exact match on a unique countable index should be 1, not 0 \
+         (Reference at [0] returns count_value_or_default = 1)"
     );
 }

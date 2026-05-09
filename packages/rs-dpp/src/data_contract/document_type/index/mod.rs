@@ -300,6 +300,20 @@ impl Default for ContestedIndexInformation {
 /// root). Pick `Countable` when you only need totals; pick
 /// `CountableAllowingOffset` when you also need range/offset queries on this
 /// index.
+///
+/// **Note on `unique` indexes.** A unique index stores its terminal as a bare
+/// `Reference` at key `[0]` rather than wrapping it in a `CountTree`, so for
+/// documents whose indexed fields are *all* non-null the `countable` flag is a
+/// no-op at the storage level. It still does meaningful work for **null-bearing**
+/// entries: when a document has any null value among the indexed properties,
+/// insertion takes the same count-tree branch a non-unique index uses (because
+/// uniqueness can't be enforced on null), and the count tree at that path
+/// aggregates them. So `Countable` / `CountableAllowingOffset` on a unique index
+/// is meaningful exactly when at least one of the indexed properties is
+/// optional in the document schema. Counts on all-non-null exact matches still
+/// return the correct value (1 if present, 0 if not) because grovedb's
+/// `Element::count_value_or_default()` returns 1 for non-`CountTree` elements
+/// like `Reference`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
 #[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "serde-conversion", serde(rename_all = "camelCase"))]
