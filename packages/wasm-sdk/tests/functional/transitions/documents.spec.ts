@@ -372,6 +372,22 @@ describe('Document State Transitions', function describeDocumentStateTransitions
       return inner;
     }
 
+    async function expectPreparedRebroadcastToBeIdempotent(st) {
+      const restored = reloadPreparedStateTransition(st);
+
+      await client.broadcastStateTransition(restored);
+      await client.waitForResponse(restored);
+
+      try {
+        await client.broadcastStateTransition(restored);
+        await client.waitForResponse(restored);
+      } catch (e) {
+        expect(String(e?.message ?? e)).to.match(/already|duplicate|exists|known|cache/i);
+      }
+
+      await waitForPlatform();
+    }
+
     it('prepareDocumentCreate produces a Create batched transition', async () => {
       expect(testContractId).to.exist();
       const { signer, identityKey } = createTestSignerAndKey(sdk, 1, 2);
@@ -499,29 +515,78 @@ describe('Document State Transitions', function describeDocumentStateTransitions
         signer,
       });
 
-      const restored = reloadPreparedStateTransition(prepared);
-
-      await client.broadcastStateTransition(restored);
-      await client.waitForResponse(restored);
-      await new Promise((resolve) => { setTimeout(resolve, 2000); });
-
-      const created = await client.getDocument(testContractId, 'mutableNote', document.id);
-      expect(created).to.exist();
-
-      try {
-        await client.broadcastStateTransition(restored);
-      } catch (e) {
-        // Re-broadcasting the identical prepared ST is allowed to fail with a
-        // duplicate / already-known style error. The important assertion is
-        // that it does not create a second document effect.
-        expect(String(e?.message ?? e)).to.match(/already|duplicate|exists|known|cache/i);
-      }
-
-      await new Promise((resolve) => { setTimeout(resolve, 2000); });
+      await expectPreparedRebroadcastToBeIdempotent(prepared);
 
       const fetchedAgain = await client.getDocument(testContractId, 'mutableNote', document.id);
       expect(fetchedAgain).to.exist();
       expect(Buffer.from(fetchedAgain.id.toBytes())).to.deep.equal(Buffer.from(document.id.toBytes()));
+      expect(Number(fetchedAgain.revision)).to.equal(1);
+      expect(fetchedAgain.properties.message).to.equal(document.properties.message);
+    });
+
+    it('prepareDocumentReplace can be serialized, reloaded, broadcast, and re-broadcast without duplicating the replace effect', async () => {
+      expect(testContractId).to.exist();
+      const { signer, identityKey } = createTestSignerAndKey(sdk, 1, 2);
+
+      const seedDoc = new sdk.Document({
+        properties: { message: 'prepare replace rebroadcast seed' },
+        documentTypeName: 'mutableNote',
+        revision: 1,
+        dataContractId: testContractId,
+        ownerId: testData.identityId,
+      });
+      await client.documentCreate({ document: seedDoc, identityKey, signer });
+      await waitForPlatform();
+
+      const replaceDoc = new sdk.Document({
+        id: seedDoc.id,
+        properties: { message: 'prepare replace rebroadcast updated' },
+        documentTypeName: 'mutableNote',
+        revision: 2,
+        dataContractId: testContractId,
+        ownerId: testData.identityId,
+      });
+
+      const prepared = await client.prepareDocumentReplace({
+        document: replaceDoc,
+        identityKey,
+        signer,
+      });
+
+      await expectPreparedRebroadcastToBeIdempotent(prepared);
+
+      const fetchedAgain = await client.getDocument(testContractId, 'mutableNote', seedDoc.id);
+      expect(fetchedAgain).to.exist();
+      expect(Buffer.from(fetchedAgain.id.toBytes())).to.deep.equal(Buffer.from(seedDoc.id.toBytes()));
+      expect(Number(fetchedAgain.revision)).to.equal(2);
+      expect(fetchedAgain.properties.message).to.equal(replaceDoc.properties.message);
+    });
+
+    it('prepareDocumentDelete can be serialized, reloaded, broadcast, and re-broadcast without reviving the document', async () => {
+      expect(testContractId).to.exist();
+      const { signer, identityKey } = createTestSignerAndKey(sdk, 1, 2);
+
+      const seedDoc = new sdk.Document({
+        properties: { message: 'prepare delete rebroadcast seed' },
+        documentTypeName: 'mutableNote',
+        revision: 1,
+        dataContractId: testContractId,
+        ownerId: testData.identityId,
+      });
+      await client.documentCreate({ document: seedDoc, identityKey, signer });
+      await waitForPlatform();
+
+      const prepared = await client.prepareDocumentDelete({
+        document: seedDoc,
+        identityKey,
+        signer,
+      });
+
+      await expectPreparedRebroadcastToBeIdempotent(prepared);
+
+      await expect(
+        client.getDocument(testContractId, 'mutableNote', seedDoc.id),
+      ).to.be.rejected();
     });
   });
 

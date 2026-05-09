@@ -183,6 +183,136 @@ describe('prepareDocument* validation', function describePrepareDocumentValidati
     });
   });
 
+  describe('prepareDocumentDelete()', () => {
+    it('rejects when document is missing', async () => {
+      const { signer, identityKey } = buildSigner();
+
+      try {
+        await client.prepareDocumentDelete({ identityKey, signer });
+        expect.fail('expected prepareDocumentDelete to reject without document');
+      } catch (e) {
+        expect(e).to.be.instanceOf(sdk.WasmSdkError);
+        expect(e.name).to.equal('InvalidArgument');
+        expect(e.message).to.match(/document is required/i);
+      }
+    });
+
+    it('rejects when document is null', async () => {
+      const { signer, identityKey } = buildSigner();
+
+      try {
+        await client.prepareDocumentDelete({ document: null, identityKey, signer });
+        expect.fail('expected prepareDocumentDelete to reject null document');
+      } catch (e) {
+        expect(e).to.be.instanceOf(sdk.WasmSdkError);
+        expect(e.name).to.equal('InvalidArgument');
+        expect(e.message).to.match(/document is required/i);
+      }
+    });
+
+    it('rejects a plain object with no id', async () => {
+      const { signer, identityKey } = buildSigner();
+
+      try {
+        await client.prepareDocumentDelete({
+          document: {
+            ownerId: DUMMY_ID_2,
+            dataContractId: DUMMY_ID,
+            documentTypeName: 'note',
+          },
+          identityKey,
+          signer,
+        });
+        expect.fail('expected prepareDocumentDelete to reject missing id');
+      } catch (e) {
+        expect(e).to.be.instanceOf(sdk.WasmSdkError);
+        expect(e.name).to.equal('InvalidArgument');
+        expect(e.message).to.match(/id/i);
+      }
+    });
+
+    it('rejects a plain object with no ownerId', async () => {
+      const { signer, identityKey } = buildSigner();
+
+      try {
+        await client.prepareDocumentDelete({
+          document: {
+            id: DUMMY_ID,
+            dataContractId: DUMMY_ID,
+            documentTypeName: 'note',
+          },
+          identityKey,
+          signer,
+        });
+        expect.fail('expected prepareDocumentDelete to reject missing ownerId');
+      } catch (e) {
+        expect(e).to.be.instanceOf(sdk.WasmSdkError);
+        expect(e.name).to.equal('InvalidArgument');
+        expect(e.message).to.match(/ownerId/i);
+      }
+    });
+
+    it('rejects a plain object with no dataContractId', async () => {
+      const { signer, identityKey } = buildSigner();
+
+      try {
+        await client.prepareDocumentDelete({
+          document: {
+            id: DUMMY_ID,
+            ownerId: DUMMY_ID_2,
+            documentTypeName: 'note',
+          },
+          identityKey,
+          signer,
+        });
+        expect.fail('expected prepareDocumentDelete to reject missing dataContractId');
+      } catch (e) {
+        expect(e).to.be.instanceOf(sdk.WasmSdkError);
+        expect(e.name).to.equal('InvalidArgument');
+        expect(e.message).to.match(/dataContractId/i);
+      }
+    });
+
+    it('rejects a plain object with no documentTypeName', async () => {
+      const { signer, identityKey } = buildSigner();
+
+      try {
+        await client.prepareDocumentDelete({
+          document: {
+            id: DUMMY_ID,
+            ownerId: DUMMY_ID_2,
+            dataContractId: DUMMY_ID,
+          },
+          identityKey,
+          signer,
+        });
+        expect.fail('expected prepareDocumentDelete to reject missing documentTypeName');
+      } catch (e) {
+        expect(e).to.be.instanceOf(sdk.WasmSdkError);
+        expect(e.name).to.equal('InvalidArgument');
+        expect(e.message).to.match(/documentTypeName/i);
+      }
+    });
+
+    it('rejects a Document instance when identityKey has the wrong shape', async () => {
+      const { signer } = buildSigner();
+      const document = buildDocument({ revision: 1 });
+
+      try {
+        await client.prepareDocumentDelete({
+          document,
+          identityKey: {},
+          signer,
+        });
+        expect.fail('expected prepareDocumentDelete to reject invalid identityKey');
+      } catch (e) {
+        expect(e).to.be.instanceOf(sdk.WasmSdkError);
+        expect(e.name).to.equal('InvalidArgument');
+        expect(e.message).to.match(/identityKey/i);
+      }
+    });
+  });
+
   describe('documentCreate()/documentReplace()', () => {
     it('documentCreate rejects a document with revision 0', async () => {
       const { signer, identityKey } = buildSigner();

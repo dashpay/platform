@@ -1,18 +1,18 @@
+use crate::platform::Identifier;
 use crate::platform::transition::broadcast::BroadcastStateTransition;
 use crate::platform::transition::put_settings::PutSettings;
-use crate::platform::Identifier;
 use crate::{Error, Sdk};
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::{Document, INITIAL_REVISION};
-use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
+use dpp::identity::signer::Signer;
 use dpp::prelude::UserFeeIncrease;
-use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
-use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
-use dpp::state_transition::batch_transition::BatchTransition;
-use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
+use dpp::state_transition::batch_transition::BatchTransition;
+use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
+use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::tokens::token_payment_info::TokenPaymentInfo;
 use dpp::version::PlatformVersion;
 use std::sync::Arc;
@@ -123,8 +123,13 @@ impl DocumentDeleteTransitionBuilder {
     ///
     /// * `Self` - The updated builder
     pub fn with_settings(mut self, settings: PutSettings) -> Self {
-        self.user_fee_increase = settings.user_fee_increase;
-        self.state_transition_creation_options = settings.state_transition_creation_options;
+        if let Some(user_fee_increase) = settings.user_fee_increase {
+            self.user_fee_increase = Some(user_fee_increase);
+        }
+        if let Some(state_transition_creation_options) = settings.state_transition_creation_options
+        {
+            self.state_transition_creation_options = Some(state_transition_creation_options);
+        }
         self.settings = Some(settings);
         self
     }
@@ -259,6 +264,52 @@ mod tests {
         assert_eq!(
             builder.state_transition_creation_options,
             settings.state_transition_creation_options
+        );
+    }
+
+    #[test]
+    fn with_settings_preserves_explicit_fields_when_settings_values_are_none() {
+        let explicit_creation_options = StateTransitionCreationOptions::default();
+        let builder = DocumentDeleteTransitionBuilder::new(
+            Arc::new(
+                get_data_contract_fixture(
+                    None,
+                    Default::default(),
+                    PlatformVersion::latest().protocol_version,
+                )
+                .data_contract_owned(),
+            ),
+            "niceDocument".to_string(),
+            Identifier::default(),
+            Identifier::default(),
+        )
+        .with_user_fee_increase(42)
+        .with_state_transition_creation_options(explicit_creation_options)
+        .with_settings(PutSettings {
+            user_fee_increase: None,
+            state_transition_creation_options: None,
+            ..Default::default()
+        });
+
+        assert_eq!(builder.user_fee_increase, Some(42));
+        assert_eq!(
+            builder.state_transition_creation_options,
+            Some(explicit_creation_options)
+        );
+        assert!(builder.settings.is_some());
+        assert_eq!(
+            builder
+                .settings
+                .as_ref()
+                .and_then(|settings| settings.user_fee_increase),
+            None
+        );
+        assert_eq!(
+            builder
+                .settings
+                .as_ref()
+                .and_then(|settings| settings.state_transition_creation_options),
+            None
         );
     }
 }
