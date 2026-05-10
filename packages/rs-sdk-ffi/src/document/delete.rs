@@ -1,5 +1,6 @@
 //! Document deletion operations
 
+use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::prelude::{Identifier, UserFeeIncrease};
@@ -153,23 +154,68 @@ pub unsafe extern "C" fn dash_sdk_document_delete(
             builder = builder.with_state_transition_creation_options(options);
         }
 
-        let state_transition = builder
-            .sign(
-                &wrapper.sdk,
+        // Allocate the identity-contract nonce explicitly so any local
+        // pre-broadcast failure (sign/build or serialization) can be rolled
+        // back without leaving the rs-sdk nonce cache advanced past a nonce
+        // the network never observed. We do not broadcast in this prepared
+        // path, so all post-allocation failures here are local.
+        let contract_id_for_nonce = data_contract.id();
+        let identity_contract_nonce = wrapper
+            .sdk
+            .get_identity_contract_nonce(owner_identifier, contract_id_for_nonce, true, settings)
+            .await
+            .map_err(|e| {
+                FFIError::InternalError(format!(
+                    "Failed to allocate identity-contract nonce: {}",
+                    e
+                ))
+            })?;
+
+        let state_transition = match builder
+            .sign_with_nonce(
+                identity_contract_nonce,
                 identity_public_key,
                 signer,
                 wrapper.sdk.version(),
             )
             .await
-            .map_err(|e| {
-                FFIError::InternalError(format!("Failed to create delete transition: {}", e))
-            })?;
+        {
+            Ok(transition) => transition,
+            Err(e) => {
+                wrapper
+                    .sdk
+                    .rollback_identity_contract_nonce(
+                        owner_identifier,
+                        contract_id_for_nonce,
+                        identity_contract_nonce,
+                    )
+                    .await;
+                return Err(FFIError::InternalError(format!(
+                    "Failed to create delete transition: {}",
+                    e
+                )));
+            }
+        };
 
         // Serialize the state transition with bincode
         let config = bincode::config::standard();
-        let serialized = bincode::encode_to_vec(&state_transition, config).map_err(|e| {
-            FFIError::InternalError(format!("Failed to serialize state transition: {}", e))
-        })?;
+        let serialized = match bincode::encode_to_vec(&state_transition, config) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                wrapper
+                    .sdk
+                    .rollback_identity_contract_nonce(
+                        owner_identifier,
+                        contract_id_for_nonce,
+                        identity_contract_nonce,
+                    )
+                    .await;
+                return Err(FFIError::InternalError(format!(
+                    "Failed to serialize state transition: {}",
+                    e
+                )));
+            }
+        };
         debug!(
             size = serialized.len(),
             "[DOCUMENT DELETE] serialized transition size (bytes)"

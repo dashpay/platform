@@ -354,6 +354,18 @@ impl Sdk {
     /// This method broadcasts a document deletion transition to permanently remove
     /// a document from the platform. The result confirms the deletion.
     ///
+    /// # Nonce handling on local errors
+    ///
+    /// The identity-contract nonce is allocated explicitly before signing so
+    /// that **pre-broadcast** failures (sign/build error or local structure
+    /// validation error) can be rolled back via
+    /// [`Sdk::rollback_identity_contract_nonce`]. The local cache therefore
+    /// does not advance past a nonce the network never observed. Broadcast
+    /// failures are not rolled back here; they continue to rely on the
+    /// existing [`broadcast_and_wait`](crate::platform::transition::broadcast::BroadcastStateTransition::broadcast_and_wait)
+    /// refresh behavior because the network may already have observed the
+    /// nonce.
+    ///
     /// # Arguments
     ///
     /// * `delete_document_transition_builder` - Builder containing document deletion parameters
@@ -381,13 +393,48 @@ impl Sdk {
         let platform_version = self.version();
 
         let put_settings = delete_document_transition_builder.settings;
+        let owner_id = delete_document_transition_builder.owner_id;
+        let contract_id = delete_document_transition_builder.data_contract.id();
 
-        let state_transition = delete_document_transition_builder
-            .sign(self, signing_key, signer, platform_version)
+        // Allocate the identity-contract nonce explicitly so we can roll it
+        // back on pre-broadcast failures without leaving the local cache
+        // advanced past a nonce the network never observed.
+        let identity_contract_nonce = self
+            .get_identity_contract_nonce(owner_id, contract_id, true, put_settings)
             .await?;
 
-        ensure_valid_state_transition_structure(&state_transition, platform_version)?;
+        let state_transition = match delete_document_transition_builder
+            .sign_with_nonce(
+                identity_contract_nonce,
+                signing_key,
+                signer,
+                platform_version,
+            )
+            .await
+        {
+            Ok(transition) => transition,
+            Err(err) => {
+                self.rollback_identity_contract_nonce(
+                    owner_id,
+                    contract_id,
+                    identity_contract_nonce,
+                )
+                .await;
+                return Err(err);
+            }
+        };
 
+        if let Err(err) =
+            ensure_valid_state_transition_structure(&state_transition, platform_version)
+        {
+            self.rollback_identity_contract_nonce(owner_id, contract_id, identity_contract_nonce)
+                .await;
+            return Err(err);
+        }
+
+        // Broadcast: do NOT roll back on broadcast failure — the network may
+        // already have observed the nonce. broadcast_and_wait keeps the
+        // existing refresh behavior on its own failures.
         let proof_result = state_transition
             .broadcast_and_wait::<StateTransitionProofResult>(self, put_settings)
             .await?;

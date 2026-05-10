@@ -16,7 +16,7 @@ use dpp::state_transition::StateTransition;
 use dpp::tokens::token_payment_info::TokenPaymentInfo;
 
 fn is_document_replace_revision(revision: Option<u64>) -> bool {
-    revision.is_some_and(|rev| rev != INITIAL_REVISION)
+    revision.is_some_and(|rev| rev > INITIAL_REVISION)
 }
 
 /// Reject documents whose revision is `Some(0)` for the create-or-replace
@@ -210,6 +210,12 @@ pub async fn build_signed_document_create_or_replace_transition<S: Signer<Identi
 /// rejected here, mirroring the wasm-sdk's `prepareDocumentCreate` guard so
 /// native callers get the same precise behavior.
 ///
+/// `document_state_transition_entropy` is required on the create path: it
+/// uniquely determines the document id and must match the entropy used to
+/// derive the document's `id`. Callers that want id auto-generation should
+/// use [`build_signed_document_create_or_replace_transition`] directly, which
+/// still accepts `None` and falls back to RNG-derived entropy.
+///
 /// See [`build_signed_document_create_or_replace_transition`] for the local
 /// nonce-rollback semantics on build/sign/validation failures.
 #[allow(clippy::too_many_arguments)]
@@ -217,7 +223,7 @@ pub async fn build_signed_document_create_transition<S: Signer<IdentityPublicKey
     sdk: &Sdk,
     document: &Document,
     document_type: &DocumentType,
-    document_state_transition_entropy: Option<[u8; 32]>,
+    document_state_transition_entropy: [u8; 32],
     identity_public_key: &IdentityPublicKey,
     token_payment_info: Option<TokenPaymentInfo>,
     signer: &S,
@@ -228,7 +234,7 @@ pub async fn build_signed_document_create_transition<S: Signer<IdentityPublicKey
         sdk,
         document,
         document_type,
-        document_state_transition_entropy,
+        Some(document_state_transition_entropy),
         identity_public_key,
         token_payment_info,
         signer,
@@ -339,17 +345,52 @@ impl<S: Signer<IdentityPublicKey>> PutDocument<S> for Document {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error> {
-        let transition = build_signed_document_create_or_replace_transition(
-            sdk,
-            self,
-            &document_type,
-            document_state_transition_entropy,
-            &identity_public_key,
-            token_payment_info,
-            signer,
-            settings,
-        )
-        .await?;
+        // Route through the strict create/replace helpers so callers get the
+        // same fail-fast revision-vs-intent guarantees as the wasm-sdk
+        // `prepareDocumentCreate` / `prepareDocumentReplace` paths. The
+        // dispatch is driven by the document revision: unset or
+        // `INITIAL_REVISION` selects create; revisions strictly greater than
+        // `INITIAL_REVISION` select replace; `Some(0)` is rejected by the
+        // strict replace helper before any nonce allocation.
+        let transition = if self.revision().is_none() || self.revision() == Some(INITIAL_REVISION) {
+            // Create path: entropy is required. Reject `None` *before* we
+            // allocate a nonce so we never advance the cache for an
+            // attempt we know cannot succeed. We deliberately do NOT
+            // silently fall back to regenerating the document id — the
+            // caller's id must match the entropy they supplied.
+            let entropy = document_state_transition_entropy.ok_or_else(|| {
+                Error::Generic(
+                    "InvalidArgument: document_state_transition_entropy is required \
+                     when calling put_to_platform on the create path; supply the \
+                     32-byte entropy that was used to derive the document id"
+                        .to_string(),
+                )
+            })?;
+            build_signed_document_create_transition(
+                sdk,
+                self,
+                &document_type,
+                entropy,
+                &identity_public_key,
+                token_payment_info,
+                signer,
+                settings,
+            )
+            .await?
+        } else {
+            // Replace path: entropy is unused; the strict helper enforces
+            // `revision > INITIAL_REVISION`.
+            build_signed_document_replace_transition(
+                sdk,
+                self,
+                &document_type,
+                &identity_public_key,
+                token_payment_info,
+                signer,
+                settings,
+            )
+            .await?
+        };
 
         // response is empty for a broadcast, result comes from the stream wait for state transition result
         transition
@@ -450,6 +491,7 @@ mod tests {
     #[test]
     fn branch_selection_uses_revision_rules() {
         assert!(!is_document_replace_revision(None));
+        assert!(!is_document_replace_revision(Some(0)));
         assert!(!is_document_replace_revision(Some(INITIAL_REVISION)));
         assert!(is_document_replace_revision(Some(INITIAL_REVISION + 1)));
     }
@@ -540,5 +582,110 @@ mod tests {
 
         assert_eq!(resolved_entropy, provided_entropy);
         assert_eq!(resolved_document.id(), original_id);
+    }
+
+    /// Failing-signer used by the rollback test below to deterministically
+    /// fail signing **after** nonce allocation. Mirrors the nonce-cache test
+    /// pattern in `internal_cache::mod` (`rollback_decrements_when_cache_matches_allocated_nonce`).
+    #[derive(Debug)]
+    struct AlwaysFailingSigner;
+
+    #[async_trait::async_trait]
+    impl dpp::identity::signer::Signer<IdentityPublicKey> for AlwaysFailingSigner {
+        async fn sign(
+            &self,
+            _key: &IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<dpp::platform_value::BinaryData, dpp::ProtocolError> {
+            Err(dpp::ProtocolError::Generic(
+                "deliberate signing failure for rollback test".to_string(),
+            ))
+        }
+
+        async fn sign_create_witness(
+            &self,
+            _key: &IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<dpp::address_funds::AddressWitness, dpp::ProtocolError> {
+            unreachable!("not used by document create transition signing")
+        }
+
+        fn can_sign_with(&self, _key: &IdentityPublicKey) -> bool {
+            true
+        }
+    }
+
+    /// Pre-broadcast signing failure inside the strict create helper must
+    /// roll the identity-contract nonce back so the cache does not advance
+    /// past a nonce the network never observed. Asserting via "next
+    /// allocation reuses the rolled-back value" mirrors the rollback test
+    /// pattern in `internal_cache::mod` so future readers can map the two.
+    #[tokio::test]
+    async fn build_signed_document_create_rolls_back_nonce_on_signing_failure() {
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::identity::identity_public_key::{KeyType, Purpose, SecurityLevel};
+        use dpp::platform_value::BinaryData;
+        use drive_proof_verifier::types::IdentityContractNonceFetcher;
+
+        let document_type = test_document_type();
+        let contract_id = document_type.data_contract_id();
+        let entropy = [0u8; 32];
+        let document = test_document(None, Identifier::from([3; 32]));
+        let owner_id = document.owner_id();
+
+        // Build a key whose purpose / security level / enabled flag pass the
+        // BatchTransition pre-sign verification, so the failure happens
+        // inside `signer.sign` (i.e. *after* nonce allocation), not earlier.
+        let identity_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 0,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(vec![0u8; 33]),
+            disabled_at: None,
+        });
+
+        let mut sdk = crate::Sdk::new_mock();
+        sdk.mock()
+            .expect_fetch::<IdentityContractNonceFetcher, _>(
+                (owner_id, contract_id),
+                Some(IdentityContractNonceFetcher(10u64)),
+            )
+            .await
+            .expect("set IdentityContractNonceFetcher mock expectation");
+
+        let signer = AlwaysFailingSigner;
+
+        let err = build_signed_document_create_transition(
+            &sdk,
+            &document,
+            &document_type,
+            entropy,
+            &identity_key,
+            None,
+            &signer,
+            None,
+        )
+        .await
+        .expect_err("signer failure must surface so the helper can roll back the allocated nonce");
+
+        assert!(
+            err.to_string().contains("deliberate signing failure"),
+            "expected the signer's failure to surface, got: {err}"
+        );
+
+        // Cache was bumped from platform=10 to 11 during the failed attempt
+        // and then rolled back to 10. Re-allocating with bump_first=true
+        // must yield 11 again — proving the rolled-back nonce is reusable.
+        let next = sdk
+            .get_identity_contract_nonce(owner_id, contract_id, true, None)
+            .await
+            .expect("nonce allocation must succeed after rollback");
+        assert_eq!(
+            next, 11,
+            "rolled-back nonce should be reused by the next allocation"
+        );
     }
 }

@@ -664,7 +664,7 @@ impl WasmSdk {
             self.inner_sdk(),
             &document,
             &document_type,
-            Some(entropy_array),
+            entropy_array,
             &identity_key,
             token_payment_info,
             &signer,
