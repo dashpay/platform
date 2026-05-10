@@ -411,8 +411,23 @@ impl FromProof<DocumentCountQuery> for DocumentSplitCounts {
                 index,
                 where_clauses: request.document_query.where_clauses.clone(),
             };
+            // Reconstruct the same `PathQuery` the prover used. The
+            // server's prove-distinct dispatcher applies `request
+            // .limit.unwrap_or(default_query_limit)` and rejects any
+            // value above `max_query_limit` — so by the time we get
+            // back proof bytes, the server has used either the
+            // explicit request limit or the shared default. Mirror
+            // that here using `drive::config::DEFAULT_QUERY_LIMIT`,
+            // which both sides share, so the path query bytes match
+            // exactly. (Operators who override `default_query_limit`
+            // away from the shared constant must require clients to
+            // set `limit` explicitly on prove-distinct queries.)
+            let limit_u16 = request
+                .limit
+                .map(|l| l as u16)
+                .unwrap_or(drive::config::DEFAULT_QUERY_LIMIT);
             let path_query = count_query
-                .distinct_count_path_query(platform_version)
+                .distinct_count_path_query(limit_u16, platform_version)
                 .map_err(|e| drive_proof_verifier::Error::RequestError {
                     error: format!("failed to build distinct-count path query: {}", e),
                 })?;

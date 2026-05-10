@@ -100,30 +100,25 @@ impl<C> Platform<C> {
         };
 
         // Hand the raw decoded where `Value` to drive — same pattern
-        // `query_documents_v0` uses, where decomposition into
-        // structured clauses lives inside `DriveDocumentQuery::
-        // from_decomposed_values`. Drive parses + validates per
+        // `query_documents_v0` uses. Drive parses + validates per
         // clause and surfaces any error as `Error::Query(...)`, which
         // the existing match arm below maps to a query-validation
-        // result.
-        //
-        // Limit normalization: an unset (`None`) wire field would
-        // otherwise mean "no limit" downstream — letting a caller
-        // bypass `max_query_limit` and walk arbitrarily large
-        // distinct-mode result sets. Default to
-        // `default_query_limit` first, then clamp to
-        // `max_query_limit`. After this point the limit is
-        // guaranteed `Some(...) ≤ max_query_limit`.
-        let effective_limit = limit
-            .unwrap_or(self.config.drive.default_query_limit as u32)
-            .min(self.config.drive.max_query_limit as u32);
+        // result. Drive also applies per-mode limit policy:
+        // - no-proof modes silently clamp to `max_query_limit`
+        //   (proto contract — "passing a larger value just gets
+        //   clamped, not rejected")
+        // - the prove-distinct mode rejects `limit > max_query_limit`
+        //   instead of clamping, because client-side proof
+        //   reconstruction needs the exact same limit value the
+        //   server used; silent clamping would silently break
+        //   verification on requests above the cap.
         let request = DocumentCountRequest {
             contract: contract_ref,
             document_type,
             raw_where_value: where_clause,
             return_distinct_counts_in_range,
             order_by_ascending,
-            limit: Some(effective_limit),
+            limit,
             start_after_split_key,
             prove,
             drive_config: &self.config.drive,

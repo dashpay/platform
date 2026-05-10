@@ -1010,11 +1010,12 @@ impl<'a> DriveDocumentCountQuery<'a> {
     pub fn execute_distinct_count_with_proof(
         &self,
         drive: &Drive,
+        limit: u16,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
         let drive_version = &platform_version.drive;
-        let path_query = self.distinct_count_path_query(platform_version)?;
+        let path_query = self.distinct_count_path_query(limit, platform_version)?;
         let proof = drive
             .grove
             .get_proved_path_query(&path_query, None, transaction, &drive_version.grove_version)
@@ -1250,36 +1251,46 @@ impl<'a> DriveDocumentCountQuery<'a> {
     /// Where [`Self::aggregate_count_path_query`] wraps the inner
     /// range in `QueryItem::AggregateCountOnRange(_)` so grovedb's
     /// prover collapses the result into a single `u64`, this builder
-    /// hands grovedb a bare range and lets the leaf merk emit one
-    /// `Node::KVCount(key, value, count)` op per distinct in-range
-    /// key. Each `count` is bound to the merk root via
-    /// `node_hash_with_count(kv_hash, l_hash, r_hash, count)` exactly
-    /// the same way `HashWithCount` is on the aggregate path — so the
-    /// verifier still gets cryptographic per-key correctness, just
-    /// with O(distinct values) proof bytes instead of O(log n).
+    /// hands grovedb a bare range with a `limit` cap and lets the
+    /// leaf merk emit one node per distinct in-range key (up to
+    /// `limit`). Each per-key count is bound to the merk root via
+    /// the same hash chain `verify_query_with_options` validates —
+    /// no `HashWithCount` collapse, just regular `KVValueHash...`
+    /// ops carrying the encoded `Element::CountTree` whose
+    /// `count_value_or_default()` is the per-distinct count.
+    ///
+    /// `limit` IS load-bearing for verification: the prover bounds
+    /// the proof at `limit` matched keys, and the verifier must
+    /// build the exact same `PathQuery` (including this cap) for the
+    /// merk-root recomputation to match. The dispatcher
+    /// pre-validates `limit ≤ max_query_limit`, so unbounded queries
+    /// can't reach this builder.
     ///
     /// Shared between the server-side prove path
     /// ([`Self::execute_distinct_count_with_proof`]) and the SDK's
     /// per-key-count verifier
-    /// ([`drive_proof_verifier::verify_distinct_count_proof`]). Same
-    /// load-bearing parity: both sides must build the *exact same*
-    /// `PathQuery` or merk root reconstruction diverges.
+    /// ([`drive_proof_verifier::verify_distinct_count_proof`]).
     ///
     /// Errors: see [`Self::count_path_and_query_item`].
     pub fn distinct_count_path_query(
         &self,
+        limit: u16,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
         let (path, query_item) =
             self.count_path_and_query_item("distinct_count_path_query", platform_version)?;
 
         // Bare range item wrapped in a regular Query — no aggregate
-        // collapse. `SizedQuery` defaults: no limit, no offset; the
-        // leaf merk emits per-key ops for everything in the range.
+        // collapse. The `SizedQuery::limit` caps the matched-key
+        // count, which both bounds the proof size and gives the
+        // verifier a reproducible target.
         let mut query = Query::new();
         query.insert_item(query_item);
 
-        Ok(PathQuery::new(path, SizedQuery::new(query, None, None)))
+        Ok(PathQuery::new(
+            path,
+            SizedQuery::new(query, Some(limit), None),
+        ))
     }
 }
 
@@ -1543,12 +1554,20 @@ impl Drive {
     /// [`drive_proof_verifier::verify_distinct_count_proof`], yielding
     /// a `BTreeMap<Vec<u8>, u64>` keyed by serialized property value.
     /// Used by [`DocumentCountMode::RangeDistinctProof`] dispatch.
+    ///
+    /// `limit` caps the number of distinct in-range values the proof
+    /// covers — the dispatcher pre-validates `limit ≤ max_query_limit`
+    /// so client-side proof reconstruction can use the exact same
+    /// value without divergence. The SDK reads it back off the
+    /// request when building the verifier's `PathQuery`.
+    #[allow(clippy::too_many_arguments)]
     pub fn execute_document_count_range_distinct_proof(
         &self,
         contract_id: [u8; 32],
         document_type: DocumentTypeRef,
         document_type_name: String,
         where_clauses: Vec<WhereClause>,
+        limit: u16,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
@@ -1570,7 +1589,7 @@ impl Drive {
             index,
             where_clauses,
         };
-        count_query.execute_distinct_count_with_proof(self, transaction, platform_version)
+        count_query.execute_distinct_count_with_proof(self, limit, transaction, platform_version)
     }
 
     /// Materialize-and-count proof fallback for point-lookup count
@@ -1868,16 +1887,41 @@ impl Drive {
                     platform_version,
                 )?,
             )),
-            DocumentCountMode::RangeDistinctProof => Ok(DocumentCountResponse::Proof(
-                self.execute_document_count_range_distinct_proof(
-                    contract_id,
-                    request.document_type,
-                    document_type_name,
-                    where_clauses,
-                    transaction,
-                    platform_version,
-                )?,
-            )),
+            DocumentCountMode::RangeDistinctProof => {
+                // Validate-don't-clamp limit policy on the prove
+                // path: client-side proof reconstruction needs the
+                // exact same limit value the server applied to the
+                // path query (so the merk-root recomputation
+                // matches). Silent clamping would invisibly break
+                // verification on any request with `limit >
+                // max_query_limit`. Default to `default_query_limit`
+                // when `None` (the SDK and server share the same
+                // `DEFAULT_QUERY_LIMIT` constant in
+                // `drive::config`).
+                let effective_limit = request
+                    .limit
+                    .unwrap_or(request.drive_config.default_query_limit as u32);
+                if effective_limit > request.drive_config.max_query_limit as u32 {
+                    return Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(
+                        "limit {} exceeds max_query_limit {} on the prove + \
+                         return_distinct_counts_in_range path; reduce the requested \
+                         limit or use prove = false",
+                        effective_limit, request.drive_config.max_query_limit
+                    ))));
+                }
+                let limit_u16 = effective_limit as u16;
+                Ok(DocumentCountResponse::Proof(
+                    self.execute_document_count_range_distinct_proof(
+                        contract_id,
+                        request.document_type,
+                        document_type_name,
+                        where_clauses,
+                        limit_u16,
+                        transaction,
+                        platform_version,
+                    )?,
+                ))
+            }
             DocumentCountMode::PointLookupProof => Ok(DocumentCountResponse::Proof(
                 self.execute_document_count_point_lookup_proof(
                     request.raw_where_value,

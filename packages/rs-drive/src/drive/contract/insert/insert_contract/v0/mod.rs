@@ -3158,23 +3158,29 @@ mod range_countable_index_e2e_tests {
             where_clauses,
         };
 
-        // Prove side: no `AggregateCountOnRange` wrapper.
+        // Prove side: no `AggregateCountOnRange` wrapper. Use the
+        // shared `DEFAULT_QUERY_LIMIT` so the test exercises the
+        // same default the dispatcher would apply when a client
+        // omits `limit`. 24 distinct lots fit comfortably under
+        // 100 so all entries land in the proof.
+        const TEST_LIMIT: u16 = crate::config::DEFAULT_QUERY_LIMIT;
         let proof_bytes = query
-            .execute_distinct_count_with_proof(&drive, None, pv)
+            .execute_distinct_count_with_proof(&drive, TEST_LIMIT, None, pv)
             .expect("should generate distinct count proof");
         assert!(!proof_bytes.is_empty(), "proof must not be empty");
 
         // Verify side: standard verify_query gives us the integrity
-        // check + root_hash. The KVCount counts inside the proof are
+        // check + root_hash. The per-lot counts inside the proof are
         // bound to root_hash via node_hash_with_count, so once this
-        // returns we just walk the ops to extract them.
+        // returns we just read each element's count.
         let path_query = query
-            .distinct_count_path_query(pv)
+            .distinct_count_path_query(TEST_LIMIT, pv)
             .expect("path query should build");
 
-        // Distinct-count path queries don't carry a `limit`, so we
-        // disable `absence_proofs_for_non_existing_searched_keys`
-        // (the default `true` requires one). Succinctness stays on:
+        // The path query carries `Some(limit)` now, so we keep
+        // `absence_proofs_for_non_existing_searched_keys: false`
+        // because absence proofs apply to explicit `Query::Key(k)`
+        // items (a range-only query has none). Succinctness stays on:
         // AVL boundary nodes are *required* for hash-chain
         // verification, not "extra" data.
         let verify_options = grovedb::VerifyOptions {
@@ -3409,5 +3415,251 @@ mod range_countable_index_e2e_tests {
             total, 348,
             "sum of per-lot counts must equal aggregate (3+4+...+26 = 348)"
         );
+    }
+
+    /// `RangeDistinctProof` honors the request's `limit` field — the
+    /// path query carries `SizedQuery::limit = Some(N)` so the
+    /// prover bounds the proof at `N` matched keys. With `limit = 5`
+    /// over the 24-distinct-lots-in-range parking-lot fixture, the
+    /// verified proof should cover exactly the first 5 lots in
+    /// ascending order: `c, d, e, f, g`.
+    ///
+    /// Pins two things at once: (1) the limit is plumbed end-to-end
+    /// through `execute_document_count_range_distinct_proof` →
+    /// `execute_distinct_count_with_proof` →
+    /// `distinct_count_path_query`, and (2) the prover and verifier
+    /// build the *exact same* `PathQuery` with that limit so the
+    /// merk-root recomputation matches.
+    #[test]
+    fn distinct_count_proof_honors_request_limit() {
+        use crate::query::{DriveDocumentCountQuery, WhereClause, WhereOperator};
+        use dpp::platform_value::Value;
+        use grovedb::{Element, GroveDb};
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let pv = PlatformVersion::latest();
+        let factory =
+            dpp::data_contract::DataContractFactory::new(PROTOCOL_VERSION_V12).expect("factory");
+        let document_schema = platform_value!({
+            "type": "object",
+            "properties": { "lot": { "type": "string", "position": 0, "maxLength": 4 } },
+            "indices": [{
+                "name": "byLot",
+                "properties": [{"lot": "asc"}],
+                "countable": "countable",
+                "rangeCountable": true,
+            }],
+            "additionalProperties": false,
+        });
+        let schemas = platform_value!({ "car": document_schema });
+        let contract = factory
+            .create_with_value_config(generate_random_identifier_struct(), 0, schemas, None, None)
+            .expect("create contract")
+            .data_contract_owned();
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("apply contract");
+        let document_type = contract.document_type_for_name("car").expect("car doctype");
+
+        // 1 car per lot a..z = 26 docs; small fixture is fine since
+        // we're only testing the limit, not per-lot counts.
+        let mut seed = 1u64;
+        for letter in 'a'..='z' {
+            let mut doc = document_type
+                .random_document(Some(seed), pv)
+                .expect("random doc");
+            let mut props = std::collections::BTreeMap::new();
+            props.insert("lot".to_string(), Value::Text(letter.to_string()));
+            doc.set_properties(props);
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&doc, None)),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    pv,
+                    None,
+                )
+                .expect("insert");
+            seed += 1;
+        }
+
+        let where_clauses = vec![WhereClause {
+            field: "lot".to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: Value::Text("b".to_string()),
+        }];
+        let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+            document_type.indexes(),
+            &where_clauses,
+        )
+        .expect("byLot picked");
+        let query = DriveDocumentCountQuery {
+            document_type,
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "car".to_string(),
+            index,
+            where_clauses,
+        };
+
+        const LIMIT: u16 = 5;
+        let proof_bytes = query
+            .execute_distinct_count_with_proof(&drive, LIMIT, None, pv)
+            .expect("proof");
+        let path_query = query
+            .distinct_count_path_query(LIMIT, pv)
+            .expect("path query");
+
+        let verify_options = grovedb::VerifyOptions {
+            absence_proofs_for_non_existing_searched_keys: false,
+            ..grovedb::VerifyOptions::default()
+        };
+        let (root_hash, elements) = GroveDb::verify_query_with_options(
+            &proof_bytes,
+            &path_query,
+            verify_options,
+            &pv.drive.grove_version,
+        )
+        .expect("verify");
+        assert_ne!(root_hash, [0u8; 32]);
+
+        // Proof should cover exactly LIMIT entries — the first 5 in
+        // ascending key order: c, d, e, f, g.
+        let keys: Vec<Vec<u8>> = elements
+            .iter()
+            .filter_map(|(_p, k, e)| e.as_ref().map(|_| k.clone()))
+            .collect();
+        assert_eq!(
+            keys.len(),
+            LIMIT as usize,
+            "proof should cover exactly {} matched keys, got {}",
+            LIMIT,
+            keys.len()
+        );
+        assert_eq!(
+            keys,
+            vec![
+                b"c".to_vec(),
+                b"d".to_vec(),
+                b"e".to_vec(),
+                b"f".to_vec(),
+                b"g".to_vec()
+            ],
+            "first {} matched keys in ascending order",
+            LIMIT
+        );
+
+        // Spot-check that we can still recover the per-lot count
+        // (everyone is 1 in this fixture).
+        for (_p, _k, elem) in elements {
+            let elem = elem.expect("matched element");
+            assert_eq!(
+                elem.count_value_or_default(),
+                1,
+                "each lot has exactly 1 doc in this fixture"
+            );
+            // Suppress unused-import if nothing else uses Element.
+            let _: Element = elem;
+        }
+    }
+
+    /// The dispatcher rejects `RangeDistinctProof` requests where
+    /// the effective limit exceeds `max_query_limit` rather than
+    /// silently clamping. Silent clamping would invisibly break
+    /// client-side proof reconstruction (the SDK builds its
+    /// `PathQuery` from `request.limit`, not from a server-clamped
+    /// value the SDK never sees), so the policy is to fail loudly.
+    #[test]
+    fn distinct_count_proof_rejects_limit_above_max_query_limit() {
+        use crate::query::{DocumentCountRequest, DocumentCountResponse, DriveDocumentCountQuery};
+        use dpp::platform_value::Value;
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let pv = PlatformVersion::latest();
+        let factory =
+            dpp::data_contract::DataContractFactory::new(PROTOCOL_VERSION_V12).expect("factory");
+        let document_schema = platform_value!({
+            "type": "object",
+            "properties": { "lot": { "type": "string", "position": 0, "maxLength": 4 } },
+            "indices": [{
+                "name": "byLot",
+                "properties": [{"lot": "asc"}],
+                "countable": "countable",
+                "rangeCountable": true,
+            }],
+            "additionalProperties": false,
+        });
+        let schemas = platform_value!({ "car": document_schema });
+        let contract = factory
+            .create_with_value_config(generate_random_identifier_struct(), 0, schemas, None, None)
+            .expect("create contract")
+            .data_contract_owned();
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("apply contract");
+        let document_type = contract.document_type_for_name("car").expect("car doctype");
+
+        // Build a where-clause `Value::Array` of one range clause:
+        // [["lot", ">", "b"]]. Mirrors the wire shape the abci
+        // handler hands to drive after CBOR-decoding.
+        let where_clause_value = Value::Array(vec![Value::Array(vec![
+            Value::Text("lot".to_string()),
+            Value::Text(">".to_string()),
+            Value::Text("b".to_string()),
+        ])]);
+
+        let drive_config = crate::config::DriveConfig::default();
+        let too_large = drive_config.max_query_limit as u32 + 1;
+
+        let request = DocumentCountRequest {
+            contract: &contract,
+            document_type,
+            raw_where_value: where_clause_value,
+            return_distinct_counts_in_range: true,
+            order_by_ascending: None,
+            limit: Some(too_large),
+            start_after_split_key: None,
+            prove: true,
+            drive_config: &drive_config,
+        };
+        let result = drive.execute_document_count_request(request, None, pv);
+
+        match &result {
+            Err(crate::error::Error::Query(
+                crate::error::query::QuerySyntaxError::InvalidLimit(msg),
+            )) => assert!(
+                msg.contains("exceeds max_query_limit"),
+                "expected message about exceeding max_query_limit, got: {}",
+                msg
+            ),
+            Ok(DocumentCountResponse::Counts(_)) => panic!("expected rejection, got Counts"),
+            Ok(DocumentCountResponse::Proof(_)) => panic!("expected rejection, got Proof"),
+            Err(e) => panic!("expected InvalidLimit, got different error: {:?}", e),
+        }
+        // Silence unused-import for `DriveDocumentCountQuery` —
+        // referenced as a type for `PhantomData` only.
+        let _ = std::marker::PhantomData::<DriveDocumentCountQuery>;
     }
 }
