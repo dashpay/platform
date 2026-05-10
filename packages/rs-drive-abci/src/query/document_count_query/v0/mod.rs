@@ -17,7 +17,7 @@ use dpp::platform_value::Value;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::error::query::QuerySyntaxError;
-use drive::query::{DriveDocumentCountQuery, DriveDocumentQuery, WhereClause};
+use drive::query::{DriveDocumentCountQuery, DriveDocumentQuery, RangeCountOptions, WhereClause};
 use drive::util::grove_operations::GroveDBToUse;
 
 impl<C> Platform<C> {
@@ -28,27 +28,14 @@ impl<C> Platform<C> {
             document_type: document_type_name,
             r#where,
             return_distinct_counts_in_range,
-            order_by_ascending: _,
-            limit: _,
-            start_after_split_key: _,
+            order_by_ascending,
+            limit,
+            start_after_split_key,
             prove,
         }: GetDocumentsCountRequestV0,
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetDocumentsCountResponseV0>, Error> {
-        // `return_distinct_counts_in_range` requires a range clause and a
-        // `range_countable` index. The dependencies (range_countable per-index
-        // property in dpp + NonCounted<*> element variants in grovedb) are
-        // not yet implemented; reject up front.
-        if return_distinct_counts_in_range {
-            return Ok(QueryValidationResult::new_with_error(
-                QueryError::InvalidArgument(
-                    "return_distinct_counts_in_range requires range_countable indexes \
-                     and grovedb NonCounted element variants; not yet supported"
-                        .to_string(),
-                ),
-            ));
-        }
         let contract_id: Identifier = check_validation_result_with_data!(data_contract_id
             .try_into()
             .map_err(|_| QueryError::InvalidArgument(
@@ -120,8 +107,104 @@ impl<C> Platform<C> {
             });
 
         let response = if prove {
-            // For prove path, use the standard DriveDocumentQuery approach.
-            // We still need the full path query structure for proof generation.
+            // Range-count proof short-circuit: if there's a range
+            // operator AND a covering `range_countable` index, generate
+            // a grovedb `AggregateCountOnRange` proof. The client
+            // verifies via `GroveDb::verify_aggregate_count_query`,
+            // recovering `(root_hash, count)` without materializing
+            // any matching documents — replaces the u16::MAX cap that
+            // the materialize-and-count path needed.
+            let range_clause_count = all_where_clauses
+                .iter()
+                .filter(|wc| DriveDocumentCountQuery::is_range_operator(wc.operator))
+                .count();
+            if range_clause_count > 0 {
+                if range_clause_count > 1 {
+                    return Ok(QueryValidationResult::new_with_error(
+                        QueryError::InvalidArgument(
+                            "count query supports at most one range where-clause".to_string(),
+                        ),
+                    ));
+                }
+                if return_distinct_counts_in_range {
+                    // The proof primitive (`AggregateCountOnRange`)
+                    // returns a single aggregate. Per-distinct-value
+                    // entries can't be expressed as a single proof
+                    // shape, so reject in prove mode and direct the
+                    // caller to `prove = false`.
+                    return Ok(QueryValidationResult::new_with_error(
+                        QueryError::InvalidArgument(
+                            "return_distinct_counts_in_range = true is only supported on the \
+                             no-prove path; the proof primitive returns a single aggregate"
+                                .to_string(),
+                        ),
+                    ));
+                }
+                if all_where_clauses
+                    .iter()
+                    .any(|wc| wc.operator == drive::query::WhereOperator::In)
+                {
+                    return Ok(QueryValidationResult::new_with_error(
+                        QueryError::InvalidArgument(
+                            "range count with `prove = true` does not accept `in` on \
+                             prefix properties; use `==` for the prefix"
+                                .to_string(),
+                        ),
+                    ));
+                }
+
+                let range_index =
+                    DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+                        document_type.indexes(),
+                        &all_where_clauses,
+                    );
+                let Some(index) = range_index else {
+                    return Ok(QueryValidationResult::new_with_error(
+                        QueryError::InvalidArgument(
+                            "range count requires a `range_countable: true` index whose last \
+                             property matches the range field"
+                                .to_string(),
+                        ),
+                    ));
+                };
+
+                let count_query = DriveDocumentCountQuery {
+                    document_type,
+                    contract_id: contract_id.to_buffer(),
+                    document_type_name: document_type_name.clone(),
+                    index,
+                    where_clauses: all_where_clauses.clone(),
+                    split_by_property: None,
+                };
+                let proof = match count_query.execute_aggregate_count_with_proof(
+                    &self.drive,
+                    None,
+                    platform_version,
+                ) {
+                    Ok(p) => p,
+                    Err(drive::error::Error::Query(qe)) => {
+                        return Ok(QueryValidationResult::new_with_error(QueryError::Query(qe)));
+                    }
+                    Err(e) => return Err(e.into()),
+                };
+                let (grovedb_used, proof) =
+                    self.response_proof_v0(platform_state, proof, GroveDBToUse::Current)?;
+                return Ok(QueryValidationResult::new_with_data(
+                    GetDocumentsCountResponseV0 {
+                        result: Some(get_documents_count_response_v0::Result::Proof(proof)),
+                        metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
+                    },
+                ));
+            }
+
+            // No range operator → fall back to the materialize-and-
+            // count proof path. This still has the u16::MAX cap
+            // because grovedb's aggregate primitive doesn't apply to
+            // pure point-lookup count queries (each value tree is a
+            // CountTree, but the per-CountTree count proof is a
+            // separate primitive that's not yet wired through). For
+            // larger point-lookup counts, callers should use
+            // `prove = false` with a covering countable index.
             let mut drive_query =
                 check_validation_result_with_data!(DriveDocumentQuery::from_decomposed_values(
                     where_clause,
@@ -134,15 +217,6 @@ impl<C> Platform<C> {
                     document_type,
                     &self.config.drive,
                 ));
-
-            // Cap the proof at u16::MAX matching documents. The proof
-            // verifier returns the count by deserializing every document in
-            // the proof, so an unbounded query would force the server to
-            // materialize and the client to verify an arbitrarily large set
-            // of documents purely to learn their count. Until count-tree
-            // proofs are implemented, callers that need exact counts on
-            // larger result sets should use `prove=false` with a covering
-            // countable index.
             drive_query.limit = Some(u16::MAX);
 
             let proof =
@@ -164,18 +238,120 @@ impl<C> Platform<C> {
                 metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
             }
         } else {
-            // The count fast path supports only Equal and In where-clause
-            // operators. Range operators (>, <, between, startsWith) need a
-            // boundary walk that the current count-tree path query model
-            // cannot express; surface that as a clear error rather than
-            // letting it fall through and silently drop the predicate.
+            // Detect range operators. If any are present we route to the
+            // range-countable count path (`execute_range_count_no_proof`)
+            // instead of the Equal/In fast path. Range queries require
+            // both a `range_countable` index AND that no `In` clause is
+            // present (mixing per-value split with range walk produces
+            // ambiguous output — caller should split client-side).
+            let range_clause_count = all_where_clauses
+                .iter()
+                .filter(|wc| DriveDocumentCountQuery::is_range_operator(wc.operator))
+                .count();
+            if range_clause_count > 0 {
+                if range_clause_count > 1 {
+                    return Ok(QueryValidationResult::new_with_error(
+                        QueryError::InvalidArgument(
+                            "count query supports at most one range where-clause; combine \
+                             two-sided ranges via `between*` instead of separate `>` / `<` \
+                             clauses"
+                                .to_string(),
+                        ),
+                    ));
+                }
+                if all_where_clauses
+                    .iter()
+                    .any(|wc| wc.operator == drive::query::WhereOperator::In)
+                {
+                    return Ok(QueryValidationResult::new_with_error(
+                        QueryError::InvalidArgument(
+                            "range count queries cannot also carry an `in` clause; pick \
+                             either per-value split (In) or per-distinct-value range \
+                             (return_distinct_counts_in_range)"
+                                .to_string(),
+                        ),
+                    ));
+                }
+
+                let range_index =
+                    DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+                        document_type.indexes(),
+                        &all_where_clauses,
+                    );
+                let Some(index) = range_index else {
+                    return Ok(QueryValidationResult::new_with_error(
+                        QueryError::InvalidArgument(
+                            "range count requires a `range_countable: true` index whose last \
+                             property matches the range field, with all other clauses \
+                             covering its prefix as `==` matches"
+                                .to_string(),
+                        ),
+                    ));
+                };
+
+                // Server-side limit clamp matches the docs/Documents query
+                // behavior: clients may request more than the configured
+                // ceiling but the server enforces it.
+                let effective_limit =
+                    limit.map(|requested| requested.min(self.config.drive.max_query_limit as u32));
+
+                let count_query = DriveDocumentCountQuery {
+                    document_type,
+                    contract_id: contract_id.to_buffer(),
+                    document_type_name: document_type_name.clone(),
+                    index,
+                    where_clauses: all_where_clauses,
+                    split_by_property: None,
+                };
+
+                let options = RangeCountOptions {
+                    distinct: return_distinct_counts_in_range,
+                    limit: effective_limit,
+                    start_after_split_key,
+                    // Default to ascending — `order_by_ascending` is an
+                    // optional bool on the wire, so an unset value means
+                    // "use the natural BTreeMap order".
+                    order_by_ascending: order_by_ascending.unwrap_or(true),
+                };
+                let entries: Vec<get_documents_count_response_v0::CountEntry> = count_query
+                    .execute_range_count_no_proof(&self.drive, &options, None, platform_version)?
+                    .into_iter()
+                    .map(|e| get_documents_count_response_v0::CountEntry {
+                        key: e.key,
+                        count: e.count,
+                    })
+                    .collect();
+
+                return Ok(QueryValidationResult::new_with_data(
+                    GetDocumentsCountResponseV0 {
+                        result: Some(get_documents_count_response_v0::Result::Counts(
+                            get_documents_count_response_v0::CountResults { entries },
+                        )),
+                        metadata: Some(
+                            self.response_metadata_v0(platform_state, CheckpointUsed::Current),
+                        ),
+                    },
+                ));
+            }
+
+            // No range operators → traditional Equal/In path. Reject any
+            // other unsupported operator (defense in depth — should be
+            // unreachable given the range branch above, but `is_range_operator`
+            // and `has_unsupported_operator` are independent checks).
             if DriveDocumentCountQuery::has_unsupported_operator(&all_where_clauses) {
                 return Ok(QueryValidationResult::new_with_error(
                     QueryError::InvalidArgument(
-                        "count query supports only `==` and `in` where-clause operators; \
-                         range operators (`>`, `<`, `between`, `startsWith`) are not yet \
-                         supported on the no-prove path"
-                            .to_string(),
+                        "count query supports only `==`, `in`, and range operators".to_string(),
+                    ),
+                ));
+            }
+
+            // Reject return_distinct_counts_in_range with no range
+            // clause — the flag has no defined meaning without a range.
+            if return_distinct_counts_in_range {
+                return Ok(QueryValidationResult::new_with_error(
+                    QueryError::InvalidArgument(
+                        "return_distinct_counts_in_range requires a range where-clause".to_string(),
                     ),
                 ));
             }
@@ -611,7 +787,7 @@ mod tests {
     }
 
     #[test]
-    fn test_documents_count_rejects_range_operator() {
+    fn test_documents_count_range_without_range_countable_index_returns_clear_error() {
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
         let platform_version = PlatformVersion::latest();
 
@@ -626,7 +802,10 @@ mod tests {
 
         store_data_contract(&platform, &data_contract, version);
 
-        // [["age", ">", 20]] — range operator, must be rejected on no-prove path.
+        // [["age", ">", 20]] — range operator on a contract whose `age`
+        // index is `countable` but NOT `range_countable`. The range
+        // path now accepts range operators, but the picker must report
+        // "no usable index" so the handler surfaces a clear error.
         let where_clauses = vec![Value::Array(vec![
             Value::Text("age".to_string()),
             Value::Text(">".to_string()),
@@ -651,9 +830,9 @@ mod tests {
         assert!(
             matches!(
                 result.errors.as_slice(),
-                [QueryError::InvalidArgument(msg)] if msg.contains("range operators") && msg.contains("not yet")
+                [QueryError::InvalidArgument(msg)] if msg.contains("range_countable")
             ),
-            "expected range-operator rejection, got {:?}",
+            "expected range_countable-index rejection, got {:?}",
             result.errors
         );
     }

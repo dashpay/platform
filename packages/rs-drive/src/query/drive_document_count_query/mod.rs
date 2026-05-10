@@ -1188,4 +1188,92 @@ impl<'a> DriveDocumentCountQuery<'a> {
         }
         Ok(entries)
     }
+
+    /// Generates a grovedb `AggregateCountOnRange` proof for a
+    /// range-count query against a `range_countable` index. The returned
+    /// proof bytes can be verified client-side via
+    /// `GroveDb::verify_aggregate_count_query`, which yields
+    /// `(root_hash, count)` — replacing the materialize-and-count proof
+    /// path that capped at `u16::MAX` documents.
+    ///
+    /// Limitations vs. [`Self::execute_range_count_no_proof`]:
+    /// - Returns ONLY the total count (a single number, no
+    ///   per-distinct-value entries) — `AggregateCountOnRange` is a
+    ///   single-aggregate primitive at the merk layer.
+    /// - Requires the prefix to resolve to exactly one path. `In` on
+    ///   prefix properties is not supported because grovedb's aggregate
+    ///   primitive only lifts a single inner range.
+    pub fn execute_aggregate_count_with_proof(
+        &self,
+        drive: &Drive,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, Error> {
+        let drive_version = &platform_version.drive;
+
+        let range_clause = self
+            .where_clauses
+            .iter()
+            .find(|wc| Self::is_range_operator(wc.operator))
+            .ok_or_else(|| {
+                Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
+                    "execute_aggregate_count_with_proof requires a range where-clause",
+                ))
+            })?;
+        let query_item = self.range_clause_to_query_item(range_clause, platform_version)?;
+
+        // Build the path. Prefix props must be Equal-only — In would
+        // require multiple separate proofs, which doesn't compose into
+        // a single aggregate.
+        let mut path = vec![
+            vec![RootTree::DataContractDocuments as u8],
+            self.contract_id.to_vec(),
+            vec![1u8],
+            self.document_type_name.as_bytes().to_vec(),
+        ];
+        let prefix_props = &self.index.properties[..self.index.properties.len() - 1];
+        for prop in prefix_props {
+            let clause = self
+                .where_clauses
+                .iter()
+                .find(|wc| wc.field == prop.name)
+                .ok_or_else(|| {
+                    Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
+                        "aggregate-count proof: missing where clause for an index prefix property",
+                    ))
+                })?;
+            if clause.operator != WhereOperator::Equal {
+                return Err(Error::Query(
+                    QuerySyntaxError::InvalidWhereClauseComponents(
+                        "aggregate-count proof: prefix properties must use `==` (no `in`)",
+                    ),
+                ));
+            }
+            path.push(prop.name.as_bytes().to_vec());
+            path.push(self.document_type.serialize_value_for_key(
+                prop.name.as_str(),
+                &clause.value,
+                platform_version,
+            )?);
+        }
+        let range_prop_name = &self
+            .index
+            .properties
+            .last()
+            .ok_or_else(|| {
+                Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
+                    "range_countable index must have at least one property",
+                ))
+            })?
+            .name;
+        path.push(range_prop_name.as_bytes().to_vec());
+
+        let path_query = PathQuery::new_aggregate_count_on_range(path, query_item);
+        let proof = drive
+            .grove
+            .get_proved_path_query(&path_query, None, transaction, &drive_version.grove_version)
+            .unwrap()
+            .map_err(|e| Error::GroveDB(Box::new(e)))?;
+        Ok(proof)
+    }
 }
