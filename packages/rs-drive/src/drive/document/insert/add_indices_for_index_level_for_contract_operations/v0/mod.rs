@@ -1,4 +1,5 @@
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
@@ -88,6 +89,32 @@ impl Drive {
 
         // fourth we need to store a reference to the document for each index
         for (name, sub_level) in index_level.sub_levels() {
+            // TODO(range_countable): when `sub_level.has_index_with_type()`
+            // reports `range_countable: true`, the property-name tree
+            // inserted at line ~111 below should be a `ProvableCountTree`
+            // (not `NormalTree`), the value tree at ~159 should be a
+            // `CountTree`, and any further sibling continuations encountered
+            // when recursing should be wrapped with `Element::NonCounted`
+            // (helper: `LowLevelDriveOperation::for_known_path_key_empty_non_counted_normal_tree`).
+            // See `book/src/drive/indexes.md § Range-Countable Indexes`.
+            //
+            // Until that's wired, fail loudly if a contract somehow reaches
+            // this path with `range_countable: true`. The rs-dpp validation
+            // gate at `try_from_schema/v1/mod.rs` rejects such contracts on
+            // protocol_version < 12, but on v12+ the contract would succeed
+            // validation and reach here with the wrong storage shape — so we
+            // refuse rather than corrupt the count aggregation silently.
+            if let Some(info) = sub_level.has_index_with_type() {
+                if info.range_countable {
+                    return Err(Error::Drive(DriveError::NotSupported(
+                        "range_countable index storage is not yet implemented; \
+                         the schema-level plumbing is in place but the insert \
+                         walker doesn't yet emit ProvableCountTree / CountTree / \
+                         NonCounted as required",
+                    )));
+                }
+            }
+
             let mut sub_level_index_path_info = index_path_info.clone();
             let index_property_key = KeyRef(name.as_bytes());
 

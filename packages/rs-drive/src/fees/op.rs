@@ -443,6 +443,32 @@ impl LowLevelDriveOperation {
         LowLevelDriveOperation::insert_for_known_path_key_element(path, key, tree)
     }
 
+    /// Sets `GroveOperation` for inserting an empty `NormalTree` wrapped in
+    /// `Element::NonCounted` at the given path and key. The wrapper makes
+    /// the inserted subtree contribute 0 to a parent count tree's aggregate
+    /// (per grovedb #654). Used by the index-walker for sibling continuations
+    /// inside a `range_countable` value tree, so e.g. a compound `byColorShape`
+    /// continuation under a `byColor` value tree (which is a `CountTree`)
+    /// doesn't pollute the byColor count.
+    pub fn for_known_path_key_empty_non_counted_normal_tree(
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        storage_flags: Option<&StorageFlags>,
+    ) -> Self {
+        let inner = match storage_flags {
+            Some(storage_flags) => {
+                Element::empty_tree_with_flags(storage_flags.to_some_element_flags())
+            }
+            None => Element::empty_tree(),
+        };
+        // `new_non_counted` rejects nested wrappers; we wrap a freshly-created
+        // empty tree, so it can't fail. `expect` is appropriate for a logic
+        // invariant that's enforced by construction.
+        let tree = Element::new_non_counted(inner)
+            .expect("new_non_counted only fails when wrapping another NonCounted");
+        LowLevelDriveOperation::insert_for_known_path_key_element(path, key, tree)
+    }
+
     /// Sets `GroveOperation` for inserting an empty provable count tree at the given path and key
     pub fn for_known_path_key_empty_provable_count_tree(
         path: Vec<Vec<u8>>,

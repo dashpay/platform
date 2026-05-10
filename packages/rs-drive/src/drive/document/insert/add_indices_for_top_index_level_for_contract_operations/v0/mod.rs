@@ -95,6 +95,25 @@ impl Drive {
 
         // next we need to store a reference to the document for each index
         for (name, sub_level) in index_level.sub_levels() {
+            // TODO(range_countable): emit `ProvableCountTree` for the
+            // property-name tree (line ~121 below) when this sub_level
+            // terminates a `range_countable` index. See the matching TODO in
+            // `add_indices_for_index_level_for_contract_operations_v0` for the
+            // full plumbing scope. For now refuse rather than write a wrong
+            // layout — the rs-dpp validation gate already rejects
+            // `range_countable: true` on protocol_version < 12; on v12+ the
+            // contract reaches here and we surface a clear error.
+            if let Some(info) = sub_level.has_index_with_type() {
+                if info.range_countable {
+                    return Err(Error::Drive(crate::error::drive::DriveError::NotSupported(
+                        "range_countable index storage is not yet implemented; \
+                             schema-level plumbing is in place but the insert \
+                             walker doesn't yet emit ProvableCountTree / CountTree / \
+                             NonCounted as required",
+                    )));
+                }
+            }
+
             // at this point the contract path is to the contract documents
             // for each index the top index component will already have been added
             // when the contract itself was created
