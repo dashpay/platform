@@ -7,7 +7,9 @@ use crate::drive::Drive;
 // validation, no Drive) is callable in either context.
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::error::query::QuerySyntaxError;
-#[cfg(feature = "server")]
+// `Error` is needed by the path-builder helpers shared between the
+// server prove path and the SDK proof verifier.
+#[cfg(any(feature = "server", feature = "verify"))]
 use crate::error::Error;
 #[cfg(feature = "server")]
 use crate::util::grove_operations::DirectQueryType;
@@ -16,20 +18,27 @@ use dpp::version::drive_versions::DriveVersion;
 #[cfg(feature = "server")]
 use grovedb::query_result_type::QueryResultType;
 #[cfg(feature = "server")]
-use grovedb::{PathQuery, Query, QueryItem, SizedQuery, TransactionArg};
+use grovedb::{Query, SizedQuery, TransactionArg};
+// `PathQuery` + `QueryItem` are needed by `aggregate_count_path_query`,
+// which is shared between the server prove path and the SDK proof
+// verifier (compiled under `verify`).
+#[cfg(any(feature = "server", feature = "verify"))]
+use grovedb::{PathQuery, QueryItem};
 #[cfg(feature = "server")]
 use grovedb_path::SubtreePath;
 
-#[cfg(feature = "server")]
+// `RootTree` is the index path's first byte. Available under both
+// gates so the verifier can reconstruct the same path the prover built.
+#[cfg(any(feature = "server", feature = "verify"))]
 use crate::drive::RootTree;
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 #[cfg(feature = "server")]
 use dpp::data_contract::document_type::IndexProperty;
 use dpp::data_contract::document_type::{DocumentTypeRef, Index};
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::version::PlatformVersion;
 
 use super::conditions::{WhereClause, WhereOperator};
@@ -991,113 +1000,6 @@ pub struct RangeCountOptions {
 
 #[cfg(feature = "server")]
 impl<'a> DriveDocumentCountQuery<'a> {
-    /// Convert a single range where-clause + value into the grovedb
-    /// `QueryItem` used to walk children of the property-name
-    /// `ProvableCountTree`. The clause's value is serialized via the
-    /// document type's `serialize_value_for_key`, which produces the
-    /// canonical bytes used everywhere else in the index path.
-    ///
-    /// Range mappings:
-    /// - `>`  → `RangeAfter(value..)` (exclusive lower)
-    /// - `>=` → `RangeFrom(value..)` (inclusive lower)
-    /// - `<`  → `RangeTo(..value)` (exclusive upper)
-    /// - `<=` → `RangeToInclusive(..=value)` (inclusive upper)
-    /// - `between [a, b]` → `RangeInclusive(a..=b)` (inclusive both)
-    /// - `between (a, b)` → `RangeAfterTo(a..b)` (exclusive both — the
-    ///   inner range is half-open in grovedb terms; this models exclude-bounds)
-    /// - `between (a, b]` → `RangeAfterToInclusive(a..=b)`
-    /// - `between [a, b)` → `Range(a..b)`
-    /// - `startsWith` is rejected here — its grovedb encoding requires
-    ///   a byte-incremented upper bound that depends on key encoding,
-    ///   which we don't compute generically.
-    fn range_clause_to_query_item(
-        &self,
-        clause: &WhereClause,
-        platform_version: &PlatformVersion,
-    ) -> Result<QueryItem, Error> {
-        let serialize = |v: &dpp::platform_value::Value| -> Result<Vec<u8>, Error> {
-            Ok(self.document_type.serialize_value_for_key(
-                clause.field.as_str(),
-                v,
-                platform_version,
-            )?)
-        };
-        let serialize_pair = |op_name: &'static str| -> Result<(Vec<u8>, Vec<u8>), Error> {
-            let arr = clause.value.as_array().ok_or_else(|| {
-                Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
-                    "range bounds value must be a 2-element array",
-                ))
-            })?;
-            if arr.len() != 2 {
-                return Err(Error::Query(
-                    QuerySyntaxError::InvalidWhereClauseComponents(
-                        "range bounds value must be a 2-element array",
-                    ),
-                ));
-            }
-            let a = serialize(&arr[0])?;
-            let b = serialize(&arr[1])?;
-            if a > b {
-                let _ = op_name;
-                return Err(Error::Query(
-                    QuerySyntaxError::InvalidWhereClauseComponents(
-                        "range lower bound must be <= upper bound",
-                    ),
-                ));
-            }
-            Ok((a, b))
-        };
-
-        Ok(match clause.operator {
-            WhereOperator::GreaterThan => {
-                let v = serialize(&clause.value)?;
-                QueryItem::RangeAfter(v..)
-            }
-            WhereOperator::GreaterThanOrEquals => {
-                let v = serialize(&clause.value)?;
-                QueryItem::RangeFrom(v..)
-            }
-            WhereOperator::LessThan => {
-                let v = serialize(&clause.value)?;
-                QueryItem::RangeTo(..v)
-            }
-            WhereOperator::LessThanOrEquals => {
-                let v = serialize(&clause.value)?;
-                QueryItem::RangeToInclusive(..=v)
-            }
-            WhereOperator::Between => {
-                let (a, b) = serialize_pair("between")?;
-                QueryItem::RangeInclusive(a..=b)
-            }
-            WhereOperator::BetweenExcludeBounds => {
-                let (a, b) = serialize_pair("betweenExcludeBounds")?;
-                QueryItem::RangeAfterTo(a..b)
-            }
-            WhereOperator::BetweenExcludeLeft => {
-                let (a, b) = serialize_pair("betweenExcludeLeft")?;
-                QueryItem::RangeAfterToInclusive(a..=b)
-            }
-            WhereOperator::BetweenExcludeRight => {
-                let (a, b) = serialize_pair("betweenExcludeRight")?;
-                QueryItem::Range(a..b)
-            }
-            WhereOperator::StartsWith => {
-                return Err(Error::Query(
-                    QuerySyntaxError::InvalidWhereClauseComponents(
-                        "startsWith is not yet supported on the range_countable count fast path",
-                    ),
-                ));
-            }
-            _ => {
-                return Err(Error::Query(
-                    QuerySyntaxError::InvalidWhereClauseComponents(
-                        "range_clause_to_query_item called on a non-range operator",
-                    ),
-                ));
-            }
-        })
-    }
-
     /// Executes a range-aware count query against a `range_countable`
     /// index. Walks children of the property-name `ProvableCountTree` at
     /// path `[contract_doc, doctype, prefix..., range_prop_name]` whose
@@ -1340,14 +1242,159 @@ impl<'a> DriveDocumentCountQuery<'a> {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
         let drive_version = &platform_version.drive;
+        let path_query = self.aggregate_count_path_query(platform_version)?;
+        let proof = drive
+            .grove
+            .get_proved_path_query(&path_query, None, transaction, &drive_version.grove_version)
+            .unwrap()
+            .map_err(|e| Error::GroveDB(Box::new(e)))?;
+        Ok(proof)
+    }
+}
 
+#[cfg(any(feature = "server", feature = "verify"))]
+impl<'a> DriveDocumentCountQuery<'a> {
+    /// Convert a single range where-clause + value into the grovedb
+    /// `QueryItem` used to walk children of the property-name
+    /// `ProvableCountTree`. The clause's value is serialized via the
+    /// document type's `serialize_value_for_key`, which produces the
+    /// canonical bytes used everywhere else in the index path.
+    ///
+    /// Range mappings:
+    /// - `>` → `RangeAfter(value..)` (exclusive lower)
+    /// - `>=` → `RangeFrom(value..)` (inclusive lower)
+    /// - `<` → `RangeTo(..value)` (exclusive upper)
+    /// - `<=` → `RangeToInclusive(..=value)` (inclusive upper)
+    /// - `between [a, b]` → `RangeInclusive(a..=b)` (inclusive both)
+    /// - `between (a, b)` → `RangeAfterTo(a..b)` (exclusive both — the
+    ///   inner range is half-open in grovedb terms; this models
+    ///   exclude-bounds)
+    /// - `between (a, b]` → `RangeAfterToInclusive(a..=b)`
+    /// - `between [a, b)` → `Range(a..b)`
+    /// - `startsWith` is rejected here — its grovedb encoding requires
+    ///   a byte-incremented upper bound that depends on key encoding,
+    ///   which we don't compute generically.
+    fn range_clause_to_query_item(
+        &self,
+        clause: &WhereClause,
+        platform_version: &PlatformVersion,
+    ) -> Result<QueryItem, Error> {
+        let serialize = |v: &dpp::platform_value::Value| -> Result<Vec<u8>, Error> {
+            Ok(self.document_type.serialize_value_for_key(
+                clause.field.as_str(),
+                v,
+                platform_version,
+            )?)
+        };
+        let serialize_pair = |op_name: &'static str| -> Result<(Vec<u8>, Vec<u8>), Error> {
+            let arr = clause.value.as_array().ok_or_else(|| {
+                Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
+                    "range bounds value must be a 2-element array",
+                ))
+            })?;
+            if arr.len() != 2 {
+                return Err(Error::Query(
+                    QuerySyntaxError::InvalidWhereClauseComponents(
+                        "range bounds value must be a 2-element array",
+                    ),
+                ));
+            }
+            let a = serialize(&arr[0])?;
+            let b = serialize(&arr[1])?;
+            if a > b {
+                let _ = op_name;
+                return Err(Error::Query(
+                    QuerySyntaxError::InvalidWhereClauseComponents(
+                        "range lower bound must be <= upper bound",
+                    ),
+                ));
+            }
+            Ok((a, b))
+        };
+
+        Ok(match clause.operator {
+            WhereOperator::GreaterThan => {
+                let v = serialize(&clause.value)?;
+                QueryItem::RangeAfter(v..)
+            }
+            WhereOperator::GreaterThanOrEquals => {
+                let v = serialize(&clause.value)?;
+                QueryItem::RangeFrom(v..)
+            }
+            WhereOperator::LessThan => {
+                let v = serialize(&clause.value)?;
+                QueryItem::RangeTo(..v)
+            }
+            WhereOperator::LessThanOrEquals => {
+                let v = serialize(&clause.value)?;
+                QueryItem::RangeToInclusive(..=v)
+            }
+            WhereOperator::Between => {
+                let (a, b) = serialize_pair("between")?;
+                QueryItem::RangeInclusive(a..=b)
+            }
+            WhereOperator::BetweenExcludeBounds => {
+                let (a, b) = serialize_pair("betweenExcludeBounds")?;
+                QueryItem::RangeAfterTo(a..b)
+            }
+            WhereOperator::BetweenExcludeLeft => {
+                let (a, b) = serialize_pair("betweenExcludeLeft")?;
+                QueryItem::RangeAfterToInclusive(a..=b)
+            }
+            WhereOperator::BetweenExcludeRight => {
+                let (a, b) = serialize_pair("betweenExcludeRight")?;
+                QueryItem::Range(a..b)
+            }
+            WhereOperator::StartsWith => {
+                return Err(Error::Query(
+                    QuerySyntaxError::InvalidWhereClauseComponents(
+                        "startsWith is not yet supported on the range_countable count fast path",
+                    ),
+                ));
+            }
+            _ => {
+                return Err(Error::Query(
+                    QuerySyntaxError::InvalidWhereClauseComponents(
+                        "range_clause_to_query_item called on a non-range operator",
+                    ),
+                ));
+            }
+        })
+    }
+
+    /// Build the grovedb `PathQuery` for an `AggregateCountOnRange`
+    /// query against this count query's `range_countable` index.
+    ///
+    /// Shared between the server-side prove path
+    /// ([`Self::execute_aggregate_count_with_proof`]) and the client-
+    /// side verify path (the SDK's `FromProof<DocumentCountQuery>` for
+    /// `DocumentCount`). Both sides must produce the *exact same*
+    /// `PathQuery` for verification to recompute the same merk root —
+    /// keeping path construction in one place is load-bearing.
+    ///
+    /// Inputs come from the struct fields:
+    /// - `contract_id`, `document_type_name`, `index` — index path prefix
+    /// - `where_clauses` — Equal-only prefix clauses + exactly one
+    ///    range clause on the index's last property
+    /// - `document_type` — for `serialize_value_for_key` on prefix values
+    ///
+    /// Errors:
+    /// - No range where-clause / multiple range where-clauses →
+    ///   `InvalidWhereClauseComponents`
+    /// - `In` on a prefix property (would need multiple disjoint proofs)
+    ///   → `InvalidWhereClauseComponents`
+    /// - Missing prefix clause → `InvalidWhereClauseComponents`
+    pub fn aggregate_count_path_query(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<PathQuery, Error> {
         let range_clause = self
             .where_clauses
             .iter()
             .find(|wc| Self::is_range_operator(wc.operator))
             .ok_or_else(|| {
                 Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
-                    "execute_aggregate_count_with_proof requires a range where-clause",
+                    "aggregate_count_path_query requires a range where-clause",
                 ))
             })?;
         let query_item = self.range_clause_to_query_item(range_clause, platform_version)?;
@@ -1398,13 +1445,7 @@ impl<'a> DriveDocumentCountQuery<'a> {
             .name;
         path.push(range_prop_name.as_bytes().to_vec());
 
-        let path_query = PathQuery::new_aggregate_count_on_range(path, query_item);
-        let proof = drive
-            .grove
-            .get_proved_path_query(&path_query, None, transaction, &drive_version.grove_version)
-            .unwrap()
-            .map_err(|e| Error::GroveDB(Box::new(e)))?;
-        Ok(proof)
+        Ok(PathQuery::new_aggregate_count_on_range(path, query_item))
     }
 }
 

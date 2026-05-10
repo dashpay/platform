@@ -24,7 +24,7 @@ use dpp::{
     data_contract::accessors::v0::DataContractV0Getters, platform_value::Value,
     prelude::DataContract, ProtocolError,
 };
-use drive::query::{DriveDocumentQuery, WhereClause, WhereOperator};
+use drive::query::{DriveDocumentCountQuery, DriveDocumentQuery, WhereClause, WhereOperator};
 use drive_proof_verifier::{DocumentCount, DocumentSplitCounts, FromProof};
 use rs_dapi_client::transport::{
     AppliedRequestSettings, BoxFuture, TransportError, TransportRequest,
@@ -228,6 +228,41 @@ impl FromProof<DocumentCountQuery> for DocumentCount {
         Self: 'a,
     {
         let request: Self::Request = request.into();
+
+        // Range queries arrive with a grovedb `AggregateCountOnRange`
+        // proof (produced by `Drive::execute_document_count_range_proof`),
+        // which the materialize-and-count verifier below cannot decode.
+        // The merk-level verifier `GroveDb::verify_aggregate_count_query`
+        // is gated to grovedb's `feature = "minimal"`, not `"verify"`,
+        // so it isn't reachable from rs-drive-proof-verifier today.
+        // Wiring this up requires an upstream grovedb feature-gate
+        // change; until then, surface a clear error directing callers
+        // to either:
+        // - Use `prove = false` for range counts (no SDK gap), or
+        // - Build the path-query via
+        //   `DriveDocumentCountQuery::aggregate_count_path_query` and
+        //   call `GroveDb::verify_aggregate_count_query` directly with
+        //   `grovedb` pulled in under `feature = "minimal"`.
+        //
+        // The path-builder is intentionally kept in rs-drive under
+        // `cfg(any(server, verify))` so direct callers don't have to
+        // duplicate it.
+        if request
+            .document_query
+            .where_clauses
+            .iter()
+            .any(|wc| DriveDocumentCountQuery::is_range_operator(wc.operator))
+        {
+            return Err(drive_proof_verifier::Error::RequestError {
+                error: "AggregateCountOnRange proof verification is not yet wired in the SDK \
+                        (grovedb's verify_aggregate_count_query is gated to feature = \"minimal\", \
+                        not \"verify\"). Use prove = false for range counts, or call \
+                        GroveDb::verify_aggregate_count_query directly with the path query \
+                        from DriveDocumentCountQuery::aggregate_count_path_query."
+                    .to_string(),
+            });
+        }
+
         let drive_query: DriveDocumentQuery =
             (&request)
                 .try_into()
