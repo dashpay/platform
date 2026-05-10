@@ -5,7 +5,7 @@ use dapi_grpc::platform::v0::{GetDocumentsCountResponse, Proof, ResponseMetadata
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::dashcore::Network;
 use dpp::version::PlatformVersion;
-use drive::grovedb::{GroveDb, VerifyOptions};
+use drive::grovedb::GroveDb;
 use drive::query::{DriveDocumentQuery, PathQuery};
 use std::collections::BTreeMap;
 
@@ -129,24 +129,30 @@ pub fn verify_distinct_count_proof(
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
 ) -> Result<BTreeMap<Vec<u8>, u64>, Error> {
-    // Standard verifier does the hash-chain check leaf-merk →
-    // multi-layer envelope → GroveDB root, AND returns the matched
-    // elements already deserialized. Each element is the per-value
-    // `CountTree(_, lot_count, _)` whose count we want — read it via
-    // `count_value_or_default()` and we're done. The returned counts
-    // are bound to `root_hash` through the same hash chain
-    // `verify_query_with_options` just validated.
+    // Mirror the normal docs query's verify pattern (see
+    // `DriveDocumentQuery::verify_proof_keep_serialized_v0`): use
+    // `GroveDb::verify_query` (strict succinctness, no absence-proof
+    // requirement) when there's no cursor, and `verify_subset_query`
+    // (no succinctness — subset proof) when one is supplied. Both
+    // helpers have `absence_proofs_for_non_existing_searched_keys:
+    // false` baked in by grovedb because range queries fundamentally
+    // can't enumerate keys for absence checks (unbounded ranges hit
+    // `Error::NotSupported("terminal keys are not supported with
+    // unbounded ranges")` in `Query::terminal_keys_inner`).
     //
-    // Use grovedb's strict default options. The path query now
-    // carries `Some(limit)` (enforced by the dispatcher's prove-
-    // distinct validate-not-clamp policy), which satisfies
-    // `absence_proofs_for_non_existing_searched_keys`'s "limit must
-    // be set" requirement. Succinctness check is on so proofs with
-    // unrequested extra subtree data are rejected.
-    let (root_hash, elements) = GroveDb::verify_query_with_options(
+    // The hash-chain check leaf-merk → multi-layer envelope → GroveDB
+    // root still validates, and the returned elements are
+    // deserialized `Element::CountTree(_, lot_count, _)`s whose
+    // `count_value_or_default()` gives the per-distinct count we
+    // want. Counts are bound to `root_hash` through the same hash
+    // chain.
+    //
+    // Note: prove-distinct doesn't currently surface a cursor; when
+    // it does, switch the `false` branch to `verify_subset_query`
+    // matching the docs handler.
+    let (root_hash, elements) = GroveDb::verify_query(
         &proof.grovedb_proof,
         path_query,
-        VerifyOptions::default(),
         &platform_version.drive.grove_version,
     )
     .map_err(|e| Error::GroveDBError {

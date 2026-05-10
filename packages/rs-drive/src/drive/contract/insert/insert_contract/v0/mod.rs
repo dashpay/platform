@@ -3177,16 +3177,16 @@ mod range_countable_index_e2e_tests {
             .distinct_count_path_query(TEST_LIMIT, pv)
             .expect("path query should build");
 
-        // Use grovedb's strict defaults — the path query carries
-        // `Some(TEST_LIMIT)`, which satisfies the
-        // absence-proofs-need-a-limit prerequisite.
-        let (root_hash, _elements) = GroveDb::verify_query_with_options(
-            &proof_bytes,
-            &path_query,
-            grovedb::VerifyOptions::default(),
-            &pv.drive.grove_version,
-        )
-        .expect("standard verify_query must succeed for the regular range proof shape");
+        // Mirror the normal docs query's verify pattern: `verify_query`
+        // (strict succinctness, no absence-proof requirement) — see
+        // `DriveDocumentQuery::verify_proof_keep_serialized_v0`. The
+        // `verify_query_with_options` default has
+        // `absence_proofs_for_non_existing_searched_keys: true` which
+        // can't handle unbounded ranges like `lot > "b"`; this helper
+        // doesn't.
+        let (root_hash, _elements) =
+            GroveDb::verify_query(&proof_bytes, &path_query, &pv.drive.grove_version)
+                .expect("standard verify_query must succeed for the regular range proof shape");
         assert_ne!(root_hash, [0u8; 32], "root hash should not be zero");
 
         // Walk the envelope down to the leaf merk and pluck per-lot
@@ -3518,17 +3518,9 @@ mod range_countable_index_e2e_tests {
             .distinct_count_path_query(LIMIT, pv)
             .expect("path query");
 
-        let verify_options = grovedb::VerifyOptions {
-            absence_proofs_for_non_existing_searched_keys: false,
-            ..grovedb::VerifyOptions::default()
-        };
-        let (root_hash, elements) = GroveDb::verify_query_with_options(
-            &proof_bytes,
-            &path_query,
-            verify_options,
-            &pv.drive.grove_version,
-        )
-        .expect("verify");
+        let (root_hash, elements) =
+            GroveDb::verify_query(&proof_bytes, &path_query, &pv.drive.grove_version)
+                .expect("verify");
         assert_ne!(root_hash, [0u8; 32]);
 
         // Proof should cover exactly LIMIT entries — the first 5 in
