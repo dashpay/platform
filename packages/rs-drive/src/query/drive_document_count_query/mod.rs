@@ -1661,3 +1661,189 @@ impl Drive {
             .0)
     }
 }
+
+/// All inputs required for the unified document-count entry point
+/// [`Drive::execute_document_count_request`]. Built by the gRPC
+/// handler from a `GetDocumentsCountRequestV0` after CBOR-decoding +
+/// contract lookup; drive owns everything past this point including
+/// mode detection, index picking, and per-mode dispatch.
+///
+/// Both `where_clauses` and `raw_where_value` are present because
+/// `DriveDocumentQuery::from_decomposed_values` (used by the
+/// materialize-and-count fallback for `prove=true` point lookups)
+/// takes a `Value` while every other path takes the parsed
+/// `Vec<WhereClause>`. The handler decodes once and passes both.
+#[cfg(feature = "server")]
+pub struct DocumentCountRequest<'a> {
+    /// Live contract (already loaded by the handler).
+    pub contract: &'a dpp::data_contract::DataContract,
+    /// Resolved document type within `contract`.
+    pub document_type: DocumentTypeRef<'a>,
+    /// Parsed where clauses for mode detection + executor dispatch.
+    pub where_clauses: Vec<WhereClause>,
+    /// Raw decoded where `Value` — needed only by the materialize-and-
+    /// count fallback (`PointLookupProof`); other modes ignore it.
+    pub raw_where_value: dpp::platform_value::Value,
+    /// `return_distinct_counts_in_range` flag from the request.
+    pub return_distinct_counts_in_range: bool,
+    /// `order_by_ascending` from the request (`None` = ascending, the
+    /// default for distinct-mode entries).
+    pub order_by_ascending: Option<bool>,
+    /// Limit cap from the request, **already clamped** by the caller
+    /// against its `max_query_limit` policy. Drive applies it as-is to
+    /// the distinct-mode entry list.
+    pub limit: Option<u32>,
+    /// Pagination cursor for distinct-mode entries.
+    pub start_after_split_key: Option<Vec<u8>>,
+    /// Whether to produce a proof (vs. raw counts).
+    pub prove: bool,
+    /// Drive-side query config — only consumed by the materialize-and-
+    /// count fallback.
+    pub drive_config: &'a crate::config::DriveConfig,
+}
+
+/// Output shape of [`Drive::execute_document_count_request`]. Either
+/// a raw set of `(key, count)` entries (Counts modes) or proof bytes
+/// the client must verify (Proof modes). The gRPC handler maps these
+/// to the protobuf `oneof result` variants.
+#[cfg(feature = "server")]
+#[derive(Debug, Clone)]
+pub enum DocumentCountResponse {
+    /// Per-entry counts. The shape inside depends on the request mode:
+    /// - `Total`         → exactly one entry, empty `key`, count = total
+    /// - `PerInValue`    → one entry per deduped `In` value
+    /// - `RangeNoProof`  → one entry summed (empty key) or one per
+    ///                     distinct value in the range, depending on
+    ///                     `return_distinct_counts_in_range`
+    Counts(Vec<SplitCountEntry>),
+    /// Grovedb proof bytes the client verifies via either
+    /// `verify_aggregate_count_query` (for `RangeProof`) or the
+    /// `DriveDocumentQuery` proof verifier (for `PointLookupProof`).
+    Proof(Vec<u8>),
+}
+
+#[cfg(feature = "server")]
+impl Drive {
+    /// Single entry point for the unified `GetDocumentsCount` request.
+    ///
+    /// Owns the whole pipeline:
+    /// 1. [`DriveDocumentCountQuery::detect_mode`] classifies the
+    ///    query shape from the where clauses + flags.
+    /// 2. The matching `Drive::execute_document_count_*` per-mode
+    ///    method picks an index and runs the executor.
+    /// 3. The result is wrapped in [`DocumentCountResponse`] —
+    ///    `Counts(...)` for no-proof modes, `Proof(...)` for proof
+    ///    modes.
+    ///
+    /// Errors:
+    /// - Mode-detection failures (multiple range clauses, range +
+    ///   `In`, distinct on prove path, …) come back as
+    ///   `Error::Query(QuerySyntaxError::InvalidWhereClauseComponents)`.
+    /// - "No covering index" failures come back as
+    ///   `Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty)`.
+    /// - All other failures (grovedb, cost calculation, …) surface
+    ///   as their native `Error` variants.
+    ///
+    /// The handler maps both `Error::Query(...)` cases to its own
+    /// `QueryError::Query(...)` variant uniformly.
+    pub fn execute_document_count_request(
+        &self,
+        request: DocumentCountRequest,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<DocumentCountResponse, Error> {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+
+        let mode = DriveDocumentCountQuery::detect_mode(
+            &request.where_clauses,
+            request.return_distinct_counts_in_range,
+            request.prove,
+        )?;
+
+        let contract_id = request.contract.id_ref().to_buffer();
+        let document_type_name = request.document_type.name().to_string();
+
+        match mode {
+            DocumentCountMode::Total => {
+                let entries = self.execute_document_count_total_no_proof(
+                    contract_id,
+                    request.document_type,
+                    document_type_name,
+                    request.where_clauses,
+                    transaction,
+                    platform_version,
+                )?;
+                // Total mode produces exactly one entry; if the indexed
+                // path doesn't exist yet the executor returns an empty
+                // vec, which we fold to a (empty-key, 0) entry so the
+                // wire shape stays uniform across "no docs" and
+                // "matched some".
+                let entries = if entries.is_empty() {
+                    vec![SplitCountEntry {
+                        key: Vec::new(),
+                        count: 0,
+                    }]
+                } else {
+                    entries
+                        .into_iter()
+                        .map(|e| SplitCountEntry {
+                            key: Vec::new(),
+                            count: e.count,
+                        })
+                        .collect()
+                };
+                Ok(DocumentCountResponse::Counts(entries))
+            }
+            DocumentCountMode::PerInValue => Ok(DocumentCountResponse::Counts(
+                self.execute_document_count_per_in_value_no_proof(
+                    contract_id,
+                    request.document_type,
+                    document_type_name,
+                    request.where_clauses,
+                    transaction,
+                    platform_version,
+                )?,
+            )),
+            DocumentCountMode::RangeNoProof => {
+                let options = RangeCountOptions {
+                    distinct: request.return_distinct_counts_in_range,
+                    limit: request.limit,
+                    start_after_split_key: request.start_after_split_key,
+                    // `None` → ascending (BTreeMap natural order).
+                    order_by_ascending: request.order_by_ascending.unwrap_or(true),
+                };
+                Ok(DocumentCountResponse::Counts(
+                    self.execute_document_count_range_no_proof(
+                        contract_id,
+                        request.document_type,
+                        document_type_name,
+                        request.where_clauses,
+                        options,
+                        transaction,
+                        platform_version,
+                    )?,
+                ))
+            }
+            DocumentCountMode::RangeProof => Ok(DocumentCountResponse::Proof(
+                self.execute_document_count_range_proof(
+                    contract_id,
+                    request.document_type,
+                    document_type_name,
+                    request.where_clauses,
+                    transaction,
+                    platform_version,
+                )?,
+            )),
+            DocumentCountMode::PointLookupProof => Ok(DocumentCountResponse::Proof(
+                self.execute_document_count_point_lookup_proof(
+                    request.raw_where_value,
+                    request.contract,
+                    request.document_type,
+                    request.drive_config,
+                    transaction,
+                    platform_version,
+                )?,
+            )),
+        }
+    }
+}

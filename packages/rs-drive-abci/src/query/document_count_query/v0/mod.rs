@@ -15,9 +15,7 @@ use dpp::platform_value::Value;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::error::query::QuerySyntaxError;
-use drive::query::{
-    DocumentCountMode, DriveDocumentCountQuery, RangeCountOptions, SplitCountEntry, WhereClause,
-};
+use drive::query::{DocumentCountRequest, DocumentCountResponse, SplitCountEntry, WhereClause};
 use drive::util::grove_operations::GroveDBToUse;
 
 /// Wrap a vector of [`SplitCountEntry`]s plus current-state metadata
@@ -131,138 +129,46 @@ impl<C> Platform<C> {
                 )),
             });
 
-        // Mode detection: maps (where clauses, distinct flag, prove flag)
-        // onto a single dispatch tag. All validation that depends only on
-        // the where clauses + flags lives in `detect_mode` in rs-drive;
-        // index-coverage validation stays at each per-mode call site
-        // below since it requires the contract's index map.
-        let mode = match DriveDocumentCountQuery::detect_mode(
-            &all_where_clauses,
+        // Single rs-drive call owns mode detection, index picking, and
+        // per-mode dispatch. The handler is left with: build request,
+        // pre-clamp limit, map drive result to protobuf response.
+        let request = DocumentCountRequest {
+            contract: contract_ref,
+            document_type,
+            where_clauses: all_where_clauses,
+            raw_where_value: where_clause,
             return_distinct_counts_in_range,
+            order_by_ascending,
+            // Server-side limit clamp: clients may request more than
+            // the configured ceiling but the server enforces it.
+            limit: limit.map(|req| req.min(self.config.drive.max_query_limit as u32)),
+            start_after_split_key,
             prove,
-        ) {
-            Ok(m) => m,
-            Err(qe) => {
-                return Ok(QueryValidationResult::new_with_error(QueryError::Query(qe)));
-            }
+            drive_config: &self.config.drive,
         };
-
-        // Per-mode dispatch: each arm calls a single rs-drive executor
-        // method, then wraps the result (either Vec<SplitCountEntry> or
-        // Vec<u8> proof bytes) in the protobuf response shape.
-        // Errors from rs-drive's `Error::Query(...)` come back to the
-        // client as `QueryError::Query(...)` with the same message.
-        macro_rules! handle_drive_result {
-            ($expr:expr) => {
-                match $expr {
-                    Ok(v) => v,
-                    Err(drive::error::Error::Query(qe)) => {
-                        return Ok(QueryValidationResult::new_with_error(QueryError::Query(qe)));
-                    }
-                    Err(e) => return Err(e.into()),
+        let drive_response =
+            match self
+                .drive
+                .execute_document_count_request(request, None, platform_version)
+            {
+                Ok(r) => r,
+                Err(drive::error::Error::Query(qe)) => {
+                    return Ok(QueryValidationResult::new_with_error(QueryError::Query(qe)));
                 }
+                Err(e) => return Err(e.into()),
             };
-        }
-        let response = match mode {
-            DocumentCountMode::RangeProof => {
-                let proof = handle_drive_result!(self.drive.execute_document_count_range_proof(
-                    contract_id.to_buffer(),
-                    document_type,
-                    document_type_name.clone(),
-                    all_where_clauses,
-                    None,
-                    platform_version,
-                ));
+
+        let response = match drive_response {
+            DocumentCountResponse::Counts(entries) => {
+                count_response_with_entries(entries, self, platform_state)
+            }
+            DocumentCountResponse::Proof(proof_bytes) => {
                 let (grovedb_used, proof) =
-                    self.response_proof_v0(platform_state, proof, GroveDBToUse::Current)?;
+                    self.response_proof_v0(platform_state, proof_bytes, GroveDBToUse::Current)?;
                 GetDocumentsCountResponseV0 {
                     result: Some(get_documents_count_response_v0::Result::Proof(proof)),
                     metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
                 }
-            }
-            DocumentCountMode::PointLookupProof => {
-                let proof =
-                    handle_drive_result!(self.drive.execute_document_count_point_lookup_proof(
-                        where_clause,
-                        contract_ref,
-                        document_type,
-                        &self.config.drive,
-                        None,
-                        platform_version,
-                    ));
-                let (grovedb_used, proof) =
-                    self.response_proof_v0(platform_state, proof, GroveDBToUse::Current)?;
-                GetDocumentsCountResponseV0 {
-                    result: Some(get_documents_count_response_v0::Result::Proof(proof)),
-                    metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
-                }
-            }
-            DocumentCountMode::RangeNoProof => {
-                // Server-side limit clamp matches the docs/Documents
-                // query behavior: clients may request more than the
-                // configured ceiling but the server enforces it.
-                let options = RangeCountOptions {
-                    distinct: return_distinct_counts_in_range,
-                    limit: limit.map(|req| req.min(self.config.drive.max_query_limit as u32)),
-                    start_after_split_key,
-                    // `order_by_ascending = None` on the wire means
-                    // "use the natural BTreeMap order" (ascending).
-                    order_by_ascending: order_by_ascending.unwrap_or(true),
-                };
-                let entries =
-                    handle_drive_result!(self.drive.execute_document_count_range_no_proof(
-                        contract_id.to_buffer(),
-                        document_type,
-                        document_type_name.clone(),
-                        all_where_clauses,
-                        options,
-                        None,
-                        platform_version,
-                    ));
-                count_response_with_entries(entries, self, platform_state)
-            }
-            DocumentCountMode::PerInValue => {
-                let entries =
-                    handle_drive_result!(self.drive.execute_document_count_per_in_value_no_proof(
-                        contract_id.to_buffer(),
-                        document_type,
-                        document_type_name.clone(),
-                        all_where_clauses,
-                        None,
-                        platform_version,
-                    ));
-                count_response_with_entries(entries, self, platform_state)
-            }
-            DocumentCountMode::Total => {
-                let entries =
-                    handle_drive_result!(self.drive.execute_document_count_total_no_proof(
-                        contract_id.to_buffer(),
-                        document_type,
-                        document_type_name.clone(),
-                        all_where_clauses,
-                        None,
-                        platform_version,
-                    ));
-                let entries: Vec<SplitCountEntry> = if entries.is_empty() {
-                    vec![SplitCountEntry {
-                        key: Vec::new(),
-                        count: 0,
-                    }]
-                } else {
-                    // Total mode produces exactly one entry, but the
-                    // executor's no-proof path returns zero entries
-                    // when the indexed path doesn't exist yet. Fold to
-                    // a single empty-key entry with count=0 so the
-                    // response shape is uniform.
-                    entries
-                        .into_iter()
-                        .map(|e| SplitCountEntry {
-                            key: Vec::new(),
-                            count: e.count,
-                        })
-                        .collect()
-                };
-                count_response_with_entries(entries, self, platform_state)
             }
         };
         Ok(QueryValidationResult::new_with_data(response))
