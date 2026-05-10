@@ -2151,4 +2151,432 @@ mod range_countable_index_e2e_tests {
             result
         );
     }
+
+    // -------- Aggregate-count prove-path coverage helpers ----------
+    //
+    // The existing `aggregate_count_proof_verifies_and_returns_correct_count`
+    // tests exactly one operator (`>` → grovedb's `RangeAfter`). The
+    // remaining 7 mapped operator shapes
+    // (`>=`/`<`/`<=`/`between`/`betweenExcludeBounds`/
+    // `betweenExcludeLeft`/`betweenExcludeRight`) all generate
+    // structurally different `QueryItem` variants and exercise
+    // different `Disjoint`/`Contained`/`Boundary` classifications in
+    // grovedb's `prove_aggregate_count_on_range` walk. Each is its own
+    // potential regression site even though all share the same
+    // platform-side path-builder. The helpers + per-operator tests
+    // below close that gap.
+
+    /// Single-byColor fixture with 5 distinct color values
+    /// (`a`..`e`, two docs each — 10 docs total) so range tests can
+    /// land Disjoint, Contained, and Boundary classifications across
+    /// the AVL tree without carrying contract setup duplication.
+    fn setup_widget_with_5_colors_2_docs_each() -> (Drive, DataContract) {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let pv = PlatformVersion::latest();
+        let contract = build_widget_with_color_index(false);
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("apply contract");
+
+        let document_type = contract
+            .document_type_for_name("widget")
+            .expect("widget exists");
+
+        let mut seed = 1u64;
+        for color in ["a", "b", "c", "d", "e"] {
+            for _ in 0..2 {
+                let doc = build_widget_doc(&contract, color, "small", seed);
+                drive
+                    .add_document_for_contract(
+                        DocumentAndContractInfo {
+                            owned_document_info: OwnedDocumentInfo {
+                                document_info: DocumentRefInfo((&doc, None)),
+                                owner_id: None,
+                            },
+                            contract: &contract,
+                            document_type,
+                        },
+                        false,
+                        BlockInfo::default(),
+                        true,
+                        None,
+                        pv,
+                        None,
+                    )
+                    .expect("expected to insert document");
+                seed += 1;
+            }
+        }
+
+        (drive, contract)
+    }
+
+    /// Prove-path roundtrip helper: builds the path query via the
+    /// shared `aggregate_count_path_query` (the same path the prover
+    /// internally uses), generates the proof, verifies it via
+    /// grovedb's `verify_aggregate_count_query`, and asserts the
+    /// recovered count equals `expected_count`. Reusing the
+    /// path-builder rather than hand-coding the path matches the SDK's
+    /// runtime flow — a divergence between prover and verifier
+    /// path-construction would surface here as a verification failure.
+    fn assert_aggregate_count_proof_returns(
+        drive: &Drive,
+        contract: &DataContract,
+        document_type_name: &str,
+        where_clauses: Vec<crate::query::WhereClause>,
+        expected_count: u64,
+    ) {
+        use crate::query::DriveDocumentCountQuery;
+        use grovedb::GroveDb;
+
+        let pv = PlatformVersion::latest();
+        let document_type = contract
+            .document_type_for_name(document_type_name)
+            .expect("document type exists");
+        let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+            document_type.indexes(),
+            &where_clauses,
+        )
+        .expect("range_countable index should be picked");
+
+        let query = DriveDocumentCountQuery {
+            document_type,
+            contract_id: contract.id().to_buffer(),
+            document_type_name: document_type_name.to_string(),
+            index,
+            where_clauses,
+        };
+
+        let proof_bytes = query
+            .execute_aggregate_count_with_proof(drive, None, pv)
+            .expect("should generate aggregate count proof");
+        assert!(!proof_bytes.is_empty(), "proof must not be empty");
+
+        let path_query = query
+            .aggregate_count_path_query(pv)
+            .expect("aggregate_count_path_query should build");
+
+        let (root_hash, count) = GroveDb::verify_aggregate_count_query(
+            &proof_bytes,
+            &path_query,
+            &pv.drive.grove_version,
+        )
+        .expect("aggregate-count proof should verify");
+        assert_ne!(root_hash, [0u8; 32], "root hash should not be zero");
+        assert_eq!(
+            count, expected_count,
+            "verified count should equal expected count"
+        );
+    }
+
+    /// `>=` → grovedb `RangeFrom`. Lower bound inclusive, no upper
+    /// bound. Differs from `>` (RangeAfter) in whether the bound key
+    /// itself contributes — both share the same one-sided-from-below
+    /// AVL walk shape so this also serves as the regression for the
+    /// inclusivity bit.
+    #[test]
+    fn aggregate_count_proof_verifies_lower_bound_inclusive_ge() {
+        use crate::query::{WhereClause, WhereOperator};
+
+        let (drive, contract) = setup_widget_with_5_colors_2_docs_each();
+        let where_clauses = vec![WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::GreaterThanOrEquals,
+            value: dpp::platform_value::Value::Text("c".to_string()),
+        }];
+        // c, d, e each have 2 docs; a, b excluded → 6.
+        assert_aggregate_count_proof_returns(&drive, &contract, "widget", where_clauses, 6);
+    }
+
+    /// `<` → grovedb `RangeTo`. Upper bound strict, no lower bound.
+    /// Pins the one-sided-from-above walk shape; without this we'd
+    /// only ever exercise the symmetric `RangeAfter` half.
+    #[test]
+    fn aggregate_count_proof_verifies_upper_bound_strict_lt() {
+        use crate::query::{WhereClause, WhereOperator};
+
+        let (drive, contract) = setup_widget_with_5_colors_2_docs_each();
+        let where_clauses = vec![WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::LessThan,
+            value: dpp::platform_value::Value::Text("c".to_string()),
+        }];
+        // a, b each have 2 docs; c, d, e excluded → 4.
+        assert_aggregate_count_proof_returns(&drive, &contract, "widget", where_clauses, 4);
+    }
+
+    /// `<=` → grovedb `RangeToInclusive`. Pins the upper-bound
+    /// inclusivity bit on the from-above shape.
+    #[test]
+    fn aggregate_count_proof_verifies_upper_bound_inclusive_le() {
+        use crate::query::{WhereClause, WhereOperator};
+
+        let (drive, contract) = setup_widget_with_5_colors_2_docs_each();
+        let where_clauses = vec![WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::LessThanOrEquals,
+            value: dpp::platform_value::Value::Text("c".to_string()),
+        }];
+        // a, b, c each have 2 docs; d, e excluded → 6.
+        assert_aggregate_count_proof_returns(&drive, &contract, "widget", where_clauses, 6);
+    }
+
+    /// `between` → grovedb `RangeInclusive` (closed-closed). The most
+    /// common two-sided range shape; both bounds are matched.
+    #[test]
+    fn aggregate_count_proof_verifies_between_closed_closed() {
+        use crate::query::{WhereClause, WhereOperator};
+
+        let (drive, contract) = setup_widget_with_5_colors_2_docs_each();
+        let where_clauses = vec![WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::Between,
+            value: dpp::platform_value::Value::Array(vec![
+                dpp::platform_value::Value::Text("b".to_string()),
+                dpp::platform_value::Value::Text("d".to_string()),
+            ]),
+        }];
+        // b, c, d each have 2 docs → 6.
+        assert_aggregate_count_proof_returns(&drive, &contract, "widget", where_clauses, 6);
+    }
+
+    /// `betweenExcludeBounds` → grovedb `RangeAfterTo` (open-open).
+    /// Both bounds are excluded — the only `between*` variant where
+    /// neither bound key contributes.
+    #[test]
+    fn aggregate_count_proof_verifies_between_open_open() {
+        use crate::query::{WhereClause, WhereOperator};
+
+        let (drive, contract) = setup_widget_with_5_colors_2_docs_each();
+        let where_clauses = vec![WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::BetweenExcludeBounds,
+            value: dpp::platform_value::Value::Array(vec![
+                dpp::platform_value::Value::Text("a".to_string()),
+                dpp::platform_value::Value::Text("d".to_string()),
+            ]),
+        }];
+        // b, c each have 2 docs (a excluded as lower, d excluded as
+        // upper) → 4.
+        assert_aggregate_count_proof_returns(&drive, &contract, "widget", where_clauses, 4);
+    }
+
+    /// `betweenExcludeLeft` → grovedb `RangeAfterToInclusive`
+    /// (open-closed). Lower excluded, upper included.
+    #[test]
+    fn aggregate_count_proof_verifies_between_open_closed() {
+        use crate::query::{WhereClause, WhereOperator};
+
+        let (drive, contract) = setup_widget_with_5_colors_2_docs_each();
+        let where_clauses = vec![WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::BetweenExcludeLeft,
+            value: dpp::platform_value::Value::Array(vec![
+                dpp::platform_value::Value::Text("a".to_string()),
+                dpp::platform_value::Value::Text("c".to_string()),
+            ]),
+        }];
+        // b, c each have 2 docs (a excluded as lower) → 4.
+        assert_aggregate_count_proof_returns(&drive, &contract, "widget", where_clauses, 4);
+    }
+
+    /// `betweenExcludeRight` → grovedb `Range` (closed-open). Lower
+    /// included, upper excluded — the conventional half-open range.
+    #[test]
+    fn aggregate_count_proof_verifies_between_closed_open() {
+        use crate::query::{WhereClause, WhereOperator};
+
+        let (drive, contract) = setup_widget_with_5_colors_2_docs_each();
+        let where_clauses = vec![WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::BetweenExcludeRight,
+            value: dpp::platform_value::Value::Array(vec![
+                dpp::platform_value::Value::Text("b".to_string()),
+                dpp::platform_value::Value::Text("d".to_string()),
+            ]),
+        }];
+        // b, c each have 2 docs (d excluded as upper) → 4.
+        assert_aggregate_count_proof_returns(&drive, &contract, "widget", where_clauses, 4);
+    }
+
+    /// Empty range: zero matching keys must still produce a valid
+    /// proof with count = 0. This is the boundary case where every
+    /// subtree is `Disjoint` from the inner range — grovedb's prover
+    /// short-circuits at every link without descending. The verifier
+    /// must accept this proof shape and recover count = 0 (not error
+    /// "no items in range"). Without this test a regression that made
+    /// empty proofs fail would only surface at customer time.
+    #[test]
+    fn aggregate_count_proof_verifies_empty_range_returns_zero() {
+        use crate::query::{WhereClause, WhereOperator};
+
+        let (drive, contract) = setup_widget_with_5_colors_2_docs_each();
+        let where_clauses = vec![WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: dpp::platform_value::Value::Text("z".to_string()),
+        }];
+        // No colors > "z" — count = 0.
+        assert_aggregate_count_proof_returns(&drive, &contract, "widget", where_clauses, 0);
+    }
+
+    /// Compound `[brand, color]` range_countable index, prove path:
+    /// the `Equal`-on-brand prefix becomes path bytes (not a query
+    /// shape), and only the terminator `color > X` becomes the merk
+    /// `AggregateCountOnRange` walk. This exercises grovedb#658's
+    /// multi-layer envelope where the verifier must walk through one
+    /// non-leaf layer (the `brand=acme` value tree's existence proof)
+    /// before reaching the leaf merk's count proof. The single-
+    /// property tests above all run at the top property-name layer
+    /// directly so they don't reach this code path.
+    #[test]
+    fn aggregate_count_proof_verifies_on_compound_index_with_equal_prefix() {
+        use crate::query::{DriveDocumentCountQuery, WhereClause, WhereOperator};
+        use dpp::platform_value::Value;
+        use grovedb::GroveDb;
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let pv = PlatformVersion::latest();
+
+        // Build a contract with `[brand, color]` range_countable.
+        // Same shape as `range_count_with_in_on_prefix_forks_and_merges`
+        // uses, but here we exercise the prove path instead of the
+        // no-proof executor.
+        let factory = dpp::data_contract::DataContractFactory::new(PROTOCOL_VERSION_V12)
+            .expect("expected to create factory");
+        let document_schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "brand": { "type": "string", "position": 0, "maxLength": 32 },
+                "color": { "type": "string", "position": 1, "maxLength": 32 },
+            },
+            "indices": [{
+                "name": "byBrandColor",
+                "properties": [{"brand": "asc"}, {"color": "asc"}],
+                "countable": "countable",
+                "rangeCountable": true,
+            }],
+            "additionalProperties": false,
+        });
+        let schemas = platform_value!({ "widget": document_schema });
+        let contract = factory
+            .create_with_value_config(generate_random_identifier_struct(), 0, schemas, None, None)
+            .expect("create contract")
+            .data_contract_owned();
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("apply contract");
+
+        let document_type = contract
+            .document_type_for_name("widget")
+            .expect("widget exists");
+
+        // acme: red×3, blue×2; contoso: red×2, green×1, blue×1.
+        // Query: brand = acme AND color > "blue" → 3 (acme reds).
+        let docs: &[(&str, &str)] = &[
+            ("acme", "red"),
+            ("acme", "red"),
+            ("acme", "red"),
+            ("acme", "blue"),
+            ("acme", "blue"),
+            ("contoso", "red"),
+            ("contoso", "red"),
+            ("contoso", "green"),
+            ("contoso", "blue"),
+        ];
+        for (i, (brand, color)) in docs.iter().enumerate() {
+            let mut doc = document_type
+                .random_document(Some((i + 1) as u64), pv)
+                .expect("random document");
+            let mut props = std::collections::BTreeMap::new();
+            props.insert("brand".to_string(), Value::Text(brand.to_string()));
+            props.insert("color".to_string(), Value::Text(color.to_string()));
+            doc.set_properties(props);
+
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&doc, None)),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    pv,
+                    None,
+                )
+                .expect("expected to insert document");
+        }
+
+        let where_clauses = vec![
+            WhereClause {
+                field: "brand".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("acme".to_string()),
+            },
+            WhereClause {
+                field: "color".to_string(),
+                operator: WhereOperator::GreaterThan,
+                value: Value::Text("blue".to_string()),
+            },
+        ];
+        let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+            document_type.indexes(),
+            &where_clauses,
+        )
+        .expect("compound range_countable index should be picked");
+
+        let query = DriveDocumentCountQuery {
+            document_type,
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "widget".to_string(),
+            index,
+            where_clauses,
+        };
+
+        let proof_bytes = query
+            .execute_aggregate_count_with_proof(&drive, None, pv)
+            .expect("should generate aggregate count proof");
+        assert!(!proof_bytes.is_empty(), "proof must not be empty");
+
+        let path_query = query
+            .aggregate_count_path_query(pv)
+            .expect("compound aggregate_count_path_query should build");
+
+        let (root_hash, count) = GroveDb::verify_aggregate_count_query(
+            &proof_bytes,
+            &path_query,
+            &pv.drive.grove_version,
+        )
+        .expect(
+            "compound aggregate-count proof should verify (multi-layer \
+             envelope walk through brand=acme to color leaf merk)",
+        );
+        assert_ne!(root_hash, [0u8; 32], "root hash should not be zero");
+        assert_eq!(
+            count, 3,
+            "verified count should be 3 (acme reds; acme blues excluded by `> blue`)"
+        );
+    }
 }
