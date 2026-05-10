@@ -55,8 +55,8 @@ In a `CountTree`, the only count-bearing node is the root. To compute "how many 
 
 A document type opts in via two schema flags:
 
-- `documentsCountable: true` → primary-key tree is a `CountTree`. Enables O(1) total-count for the document type; sufficient for `GetDocumentsCount`.
-- `rangeCountable: true` → primary-key tree is a `ProvableCountTree`. Implies `documentsCountable`. Required for `GetDocumentsSplitCount` to be answerable without enumerating documents (the sub-counts at the split-property level are read from internal nodes).
+- `documentsCountable: true` → primary-key tree is a `CountTree`. Enables O(1) total-count for the document type; sufficient for `GetDocumentsCount` with no `where` filter.
+- `rangeCountable: true` → primary-key tree is a `ProvableCountTree`. Implies `documentsCountable`. The same flag is also accepted *per-index*, where it controls range-count storage layout (see below) and is required for any `GetDocumentsCount` request that carries a range where-clause.
 
 ## How a Document Type Picks Its Tree Variant
 
@@ -118,34 +118,42 @@ Tests pinning these guards live in `packages/rs-dpp/src/data_contract/document_t
 
 ## Counting Documents at Query Time
 
-Two gRPC endpoints expose the feature:
+A single unified gRPC endpoint exposes the feature: `GetDocumentsCount`. The response shape varies by request mode (total / per-`In`-value / per-distinct-value-in-range / total-over-range), see [Range Modes](#range-modes) below. The endpoint also has two underlying paths (prove vs. no-prove); both modes are valid in either path with the exception of `return_distinct_counts_in_range = true` which is no-prove only.
 
-- `GetDocumentsCount` — total count of documents matching a query, optionally with proof.
-- `GetDocumentsSplitCount` — counts split by an index property, again optionally with proof.
+### No-Prove (Server-Side O(1) or O(log n))
 
-Both endpoints have two underlying paths:
+When `prove=false`, drive-abci calls into `DriveDocumentCountQuery` (in [`packages/rs-drive/src/query/drive_document_count_query/mod.rs`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/src/query/drive_document_count_query/mod.rs)). The handler picks a path based on the where clauses:
 
-### No-Prove (Server-Side O(1))
-
-When `prove=false`, drive-abci calls into `DriveDocumentCountQuery` (in [`packages/rs-drive/src/query/drive_document_count_query.rs`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/src/query/drive_document_count_query.rs)). For total counts the path is roughly:
+**Equal/In only** ([`execute_no_proof`](https://docs.rs/drive/latest/drive/query/struct.DriveDocumentCountQuery.html#method.execute_no_proof)):
 
 1. Pick a `CountTree`-typed primary-key index whose properties cover all `Equal` / `In` `WhereClause` predicates (a covering index — see the supported-operators note below).
 2. Walk the tree from the root down to the deepest covered level, pushing `prop_name` and `serialize_value_for_key(prop_name, value)` at each step. `Equal` extends one path; `In` clones the current path once per value in its array (a cartesian fork) and the per-branch counts are summed.
 3. If every index property was covered: read the `CountTree` element at the resulting path and return its built-in `u64` count. O(1) per branch.
 4. If only a prefix was covered: sum the counts of all `CountTree` children at the deepest covered level.
 
-For split counts the path is similar, but stops at the level *before* the split property, then for each value subtree under the split-property level reads its sub-count and emits a `(key_bytes, count)` entry. The result is wire-formatted as `repeated SplitCountEntry { bytes key; uint64 count }`.
+If the request carries an `In` clause, the response emits one `CountEntry` per `In` value (the per-value split mode). Otherwise the response is a single `CountEntry` with empty `key`.
 
-### Prove (Client-Side Verify-Then-Aggregate)
+**Range** ([`execute_range_count_no_proof`](https://docs.rs/drive/latest/drive/query/struct.DriveDocumentCountQuery.html#method.execute_range_count_no_proof)):
 
-When `prove=true`, drive-abci returns a standard `DriveDocumentQuery` proof of the matching documents themselves — there is no signed-count primitive on the wire today. The client then verifies the proof, deserializes the documents, and aggregates locally:
+1. Pick a `range_countable: true` index where the Equal/In clauses cover the prefix and the range operator hits the index's last property.
+2. Build the path `[contract_doc, doctype, prefix..., range_prop_name]` — pointing at the property-name `ProvableCountTree`.
+3. Issue a grovedb path query with the converted range `QueryItem` (`>`, `>=`, `<`, `<=`, `Range`, `RangeInclusive`, `RangeAfter`, `RangeAfterTo`, `RangeAfterToInclusive`) and walk the children whose keys lie inside the range.
+4. Each child's `count_value_or_default()` is the doc count at that property value. Either sum all per-value counts (summed mode) or emit them as per-value `CountEntry`s (distinct mode), then apply order / cursor / limit.
+
+### Prove (Client-Side Verify-Then-Aggregate or Aggregate-Count Proof)
+
+When `prove=true`, the proof shape depends on whether the query carries a range clause.
+
+**With a range clause**: drive-abci builds a grovedb [`AggregateCountOnRange`](https://docs.rs/grovedb/latest/grovedb/struct.GroveDb.html#method.verify_aggregate_count_query) path query against the same property-name `ProvableCountTree` the no-prove path walks, and `get_proved_path_query` produces an aggregate-count proof. The client verifies via `GroveDb::verify_aggregate_count_query` and recovers `(root_hash, count)` directly — no documents are ever materialized server-side or client-side. `return_distinct_counts_in_range = true` is rejected on this path because the merk-level primitive returns one number, not per-distinct entries; if you want per-distinct entries with a range, use `prove = false`.
+
+**Without a range clause** (point-lookup with prove): drive-abci falls back to a standard `DriveDocumentQuery` proof of the matching documents themselves — there is no signed-count primitive for `CountTree`-direct point lookups today. The client verifies the proof, deserializes the documents, and aggregates locally:
 
 - For total counts the aggregation is `documents.len() as u64` ([`packages/rs-drive-proof-verifier/src/proof/document_count.rs`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive-proof-verifier/src/proof/document_count.rs)).
-- For split counts the aggregation walks each verified document, reads `properties.get(split_property)`, encodes the value via `document_type.serialize_value_for_key(split_property, value, platform_version)` so the byte keys line up with what the no-prove path produces, and increments the per-key counter ([`packages/rs-drive-proof-verifier/src/proof/document_split_count.rs`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive-proof-verifier/src/proof/document_split_count.rs)).
+- For per-`In`-value counts the aggregation walks each verified document, reads `properties.get(split_property)`, encodes the value via `document_type.serialize_value_for_key`, and increments the per-key counter.
 
-Because the prove path materializes documents, drive-abci caps it at `u16::MAX` matching documents per request as a defensive bound on response size; result sets larger than that need a covering countable index and `prove=false`. The SDK side (`DocumentCountQuery`/`DocumentSplitCountQuery` → `DriveDocumentQuery`) explicitly clears the underlying `DocumentQuery.limit` so the verifier counts every document in the proof rather than truncating at the caller's pagination limit.
+Because the materialize-and-count proof path actually returns documents, drive-abci caps it at `u16::MAX` matching documents per request as a defensive bound on response size. Result sets larger than that need a covering countable index and `prove=false`, OR a covering `range_countable: true` index where the range proof primitive is unbounded. The SDK side explicitly clears the underlying `DocumentQuery.limit` so the verifier counts every document in the proof rather than truncating at the caller's pagination limit.
 
-Aggregation needs the split-property name, but `DriveDocumentQuery` does not carry it. The proof verifier exposes a dedicated entry point that takes it explicitly:
+Aggregation for the per-`In`-value mode needs the split-property name, but `DriveDocumentQuery` does not carry it. The proof verifier exposes a dedicated entry point that takes it explicitly:
 
 ```rust
 DocumentSplitCounts::maybe_from_proof_with_split_property(
@@ -162,18 +170,44 @@ The generic `FromProof<Q>` impl on `DocumentSplitCounts` is intentionally *not* 
 
 ### Supported Where Operators
 
-The no-prove fast path covers two operator shapes today:
+The no-prove fast path covers three operator shapes:
 
-- **`Equal` (`==`)** — single point lookup against the count tree at a fully-resolved index path.
-- **`In` (`in`)** — cartesian fork. Each value in the `In` array becomes its own index path; their counts are summed (or, for split counts, merged by split key). An `In` clause with `k` values costs `k` point lookups, not a tree walk.
+- **`Equal` (`==`)** — single point lookup against the count tree at a fully-resolved index path. Picked by [`find_countable_index_for_where_clauses`](https://docs.rs/drive/latest/drive/query/struct.DriveDocumentCountQuery.html#method.find_countable_index_for_where_clauses).
+- **`In` (`in`)** — cartesian fork. Each value in the `In` array becomes its own index path; their counts are summed (or, for split counts, merged by split key). An `In` clause with `k` values costs `k` point lookups, not a tree walk. The `In` clause also doubles as the per-value split signal in the unified `GetDocumentsCount` endpoint — at most one `In` per request.
+- **Range** (`>`, `>=`, `<`, `<=`, `between*`) — walks the property-name `ProvableCountTree`'s children whose keys lie inside the range, reading each child `CountTree`'s count value. Picked by [`find_range_countable_index_for_where_clauses`](https://docs.rs/drive/latest/drive/query/struct.DriveDocumentCountQuery.html#method.find_range_countable_index_for_where_clauses); requires the index to have `range_countable: true` AND the range property to be the index's last property (the IndexLevel terminator).
 
-Both `find_countable_index_for_where_clauses` (total count) and `find_countable_index_for_split` (split count) accept either operator on any prefix property of a countable index, mixed freely with `Equal` clauses on other prefix properties.
+`Equal`/`In` and range can both appear in one query: the `Equal`/`In` clauses cover the index's prefix, the single range clause hits the terminator. The handler returns `InvalidArgument` if more than one range clause is present (use `between*` to express two-sided ranges) or if `In` and range are mixed (the per-value split signal would be ambiguous).
 
-Range operators (`>`, `<`, `>=`, `<=`, `between*`, `startsWith`) require a boundary walk that the current count `PathQuery` model cannot express. The handlers detect those upfront and return a clear `InvalidArgument` error rather than silently returning a wrong count. Callers that need counts under range predicates should use `prove=true` and aggregate client-side, or pre-aggregate via a separate countable index whose leading columns are the equality / `In` fields.
+`StartsWith` is rejected on the range path with a clear error — its grovedb encoding requires a byte-incremented upper bound that's not generic across key encodings. Use `between*` with explicit bounds instead.
+
+#### Range Modes
+
+A range query in the unified endpoint produces one of two response shapes, controlled by `return_distinct_counts_in_range`:
+
+- **`return_distinct_counts_in_range = false`** (default) — single `CountEntry` with empty `key`, count = sum of the per-value `CountTree` counts within the range. Use for "how many widgets have color in `[red, tomato]`?".
+- **`return_distinct_counts_in_range = true`** — one `CountEntry` per distinct property value within the range, key = serialized property value, count = `CountTree` count for that value. Use for "show me a histogram of widgets by color in `[red, tomato]`".
+
+Distinct mode also accepts pagination knobs:
+
+| Field | Effect |
+|---|---|
+| `order_by_ascending` | `true` (default) walks the range in BTreeMap natural order; `false` reverses |
+| `start_after_split_key` | Skip entries up to AND including this serialized key; pair with `limit` to walk in chunks |
+| `limit` | Truncate after `min(requested, max_query_limit)` entries; applied last (after order + cursor) |
+
+These knobs are ignored on summed mode (they have no defined meaning for a single aggregate).
+
+#### Range Queries on the Prove Path
+
+When `prove = true` and the query carries a range clause, the handler builds a grovedb [`AggregateCountOnRange`](https://docs.rs/grovedb/latest/grovedb/struct.GroveDb.html#method.verify_aggregate_count_query) proof. The client verifies via `GroveDb::verify_aggregate_count_query`, recovering `(root_hash, count)` *without materializing any matching documents* — replacing the older materialize-and-count proof path that capped at `u16::MAX` matching docs. `return_distinct_counts_in_range = true` is rejected on the prove path because the merk-level primitive returns a single aggregate; per-distinct-value entries can't be expressed as one proof shape. `In` on prefix properties is similarly rejected on the prove path (the aggregate primitive lifts only one inner range).
+
+For point-lookup count proofs (no range clause), the handler still falls back to the materialize-and-count flow with the `u16::MAX` cap. A future change can wire per-`CountTree` count proofs through a similar aggregate primitive.
 
 ## Range Queries and ProvableCountTree
 
-> Provable count trees will later be able to answer offset-style queries (e.g. "the next 50 items starting after item 7") in O(log n). That capability isn't released yet — if you want offsets in the future, pick a `ProvableCountTree` (`rangeCountable: true`) for that document type now.
+Range count queries (`>`, `<`, `between*`) over an index with `range_countable: true` are answered in O(log n) by walking the property-name `ProvableCountTree`'s boundary nodes. The proof path uses grovedb's `AggregateCountOnRange`, which lets clients verify a range count without ever materializing the underlying documents.
+
+> Offset-style queries ("the next 50 items starting after item 7") are a separate primitive that will likely build on the same `ProvableCountTree` shape. They are not exposed via `GetDocumentsCount` today — the existing `start_after_split_key` cursor on the count endpoint is for *paginating per-distinct-value entries* in distinct-mode, not for offsetting into the underlying documents.
 
 ### Why Internal-Node Counts Make Range Counts O(log n)
 
@@ -257,7 +291,7 @@ Set at the same level as `type` / `properties` / `indices` on a document type:
 
 That contract gets a `CountTree` for the `widget` primary-key tree. `GetDocumentsCount` for `widget` with no `where` filter is now an O(1) lookup of the tree element's count value.
 
-To opt into a `ProvableCountTree` instead — required if you want today's `GetDocumentsSplitCount` over an index property, and what you'd pick today if you want offset-style range queries to work later — set `rangeCountable: true`. It implies `documentsCountable`, so you don't need both:
+To opt into a `ProvableCountTree` for the *primary-key* tree instead — useful if you want range queries on the primary key in the future, or if you intend to use this document type behind range proof primitives — set `rangeCountable: true` at the document-type level. It implies `documentsCountable`, so you don't need both:
 
 ```json
 {
@@ -325,11 +359,14 @@ A few notes about the index-level flag:
 |---|---|
 | Fast `count(*)` for the whole document type | `documentsCountable: true` on the document type |
 | O(1) filtered count: `count(*) WHERE col = X` | `documentsCountable: true` (or `rangeCountable: true`) at the type level **plus** `countable: true` on an index whose properties are exactly `["col"]`. A composite index whose leading column is `col` (e.g. `["col", "other"]`) still answers the query, but as O(distinct values of `other`) instead of O(1). |
-| Per-distinct-value sub-counts via `GetDocumentsSplitCount` | `rangeCountable: true` on the document type **plus** an index whose leading columns cover any equality `where` predicates and whose next column is the split property |
+| Per-`In`-value sub-counts: one `CountEntry` per value in an `In` clause | `documentsCountable: true` plus `countable: true` on an index whose leading columns cover any other equality predicates and whose next column is the `In` property |
+| O(log n) range count: `count(*) WHERE col BETWEEN A AND B` | `rangeCountable: true` on an index whose last property is `col` and whose other properties cover any equality predicates as a prefix. Implies `countable: true`. |
+| Per-distinct-value range histogram: one `CountEntry` per distinct value in a range | Same `rangeCountable: true` index as above, plus `return_distinct_counts_in_range = true` on the request (no-prove path only). |
+| Range count proof (`prove = true` + range clause) | Same `rangeCountable: true` index. The handler uses grovedb's `AggregateCountOnRange` proof primitive, which is unbounded (no `u16::MAX` cap). |
 | Future offset-style range queries (not yet released — see above) | `rangeCountable: true` on the document type |
 | Nothing count-aware (default) | Don't set any of these flags. Primary-key tree stays a `NormalTree`. |
 
-A migration check from `dapi-grpc` server logic: if you ask for `GetDocumentsCount` with a `where` clause, the no-prove path needs a covering countable index. If no such index exists for that document type, the call falls back to `prove=true` semantics or returns an error depending on the path you took. Pick your indexes deliberately; a `countable: true` flag is cheap to add at contract creation time and impossible to add later.
+A migration check from `dapi-grpc` server logic: if you ask for `GetDocumentsCount` with a `where` clause, the no-prove path needs a covering countable index. If no such index exists for that document type, the call returns a clear `InvalidArgument` describing what the picker was looking for ("requires a `range_countable: true` index whose last property matches the range field" for range queries, or "requires a countable index" for Equal/In queries). Pick your indexes deliberately; per-index `countable: true` / `range_countable: true` flags are cheap to add at contract creation time and impossible to add later.
 
 ## SDK Access at Three Layers
 
@@ -358,7 +395,7 @@ let DocumentSplitCounts(splits) = DocumentSplitCounts::fetch(
 .expect("DocumentSplitCounts::fetch always returns a value on success");
 ```
 
-`DocumentCountQuery` and `DocumentSplitCountQuery` wrap an internal `DocumentQuery` (so they reuse where-clause / order-by / contract-id machinery) and expose a `with_where(WhereClause)` builder for filters. Their `TransportRequest` impls target `GetDocumentsCountRequest` / `GetDocumentsSplitCountRequest`; their `FromProof` impls go through the dedicated proof-verifier entry points described above.
+`DocumentCountQuery` and `DocumentSplitCountQuery` wrap an internal `DocumentQuery` (so they reuse where-clause / order-by / contract-id machinery) and expose a `with_where(WhereClause)` builder for filters. Both target the unified `GetDocumentsCountRequest`; the SDK derives the request mode (total / per-`In`-value / per-distinct-range / total-range) from the where clauses you supply.
 
 ### `wasm-sdk` (browser)
 
