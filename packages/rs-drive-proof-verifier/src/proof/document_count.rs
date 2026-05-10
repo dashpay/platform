@@ -140,13 +140,13 @@ pub fn verify_distinct_count_proof(
     // Disable `absence_proofs_for_non_existing_searched_keys` (the
     // default `true` would require a `limit` on the path query — but
     // distinct-count path queries don't carry one, the result is
-    // bounded by the range itself) and `verify_proof_succinctness`
-    // (grovedb's range walker emits AVL-ancestor nodes regardless of
-    // whether their keys land in-range, and that's expected here).
+    // bounded by the range itself, and "absence proofs" only apply to
+    // explicit `Query::Key(k)` items which a range-only query has
+    // none of). Keep `verify_proof_succinctness: true` (default) so
+    // proofs with unrequested extra subtree data are rejected.
     let verify_options = VerifyOptions {
         absence_proofs_for_non_existing_searched_keys: false,
-        verify_proof_succinctness: false,
-        include_empty_trees_in_result: false,
+        ..VerifyOptions::default()
     };
     let (root_hash, elements) = GroveDb::verify_query_with_options(
         &proof.grovedb_proof,
