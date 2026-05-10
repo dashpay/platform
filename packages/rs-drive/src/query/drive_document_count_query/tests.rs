@@ -1132,3 +1132,186 @@ mod range_countable_picker_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod detect_mode_tests {
+    //! Coverage for [`DriveDocumentCountQuery::detect_mode`].
+    //!
+    //! Pure validation/dispatch decisions — no Drive instance, no
+    //! contract, no platform_version needed. Tests the full truth
+    //! table of (range × In × distinct × prove).
+
+    use super::*;
+
+    fn eq_clause(field: &str) -> WhereClause {
+        WhereClause {
+            field: field.to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text("x".to_string()),
+        }
+    }
+    fn in_clause(field: &str) -> WhereClause {
+        WhereClause {
+            field: field.to_string(),
+            operator: WhereOperator::In,
+            value: Value::Array(vec![Value::Text("a".to_string())]),
+        }
+    }
+    fn gt_clause(field: &str) -> WhereClause {
+        WhereClause {
+            field: field.to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: Value::Text("b".to_string()),
+        }
+    }
+    fn lt_clause(field: &str) -> WhereClause {
+        WhereClause {
+            field: field.to_string(),
+            operator: WhereOperator::LessThan,
+            value: Value::Text("z".to_string()),
+        }
+    }
+
+    /// No clauses, no flags → total mode.
+    #[test]
+    fn no_clauses_no_flags_is_total() {
+        let mode = DriveDocumentCountQuery::detect_mode(&[], false, false).unwrap();
+        assert_eq!(mode, DocumentCountMode::Total);
+    }
+
+    /// Equal-only clauses → still total.
+    #[test]
+    fn only_equal_clauses_is_total() {
+        let clauses = vec![eq_clause("a"), eq_clause("b")];
+        assert_eq!(
+            DriveDocumentCountQuery::detect_mode(&clauses, false, false).unwrap(),
+            DocumentCountMode::Total,
+        );
+    }
+
+    /// Single In clause → per-In-value.
+    #[test]
+    fn single_in_is_per_in_value() {
+        let clauses = vec![in_clause("a")];
+        assert_eq!(
+            DriveDocumentCountQuery::detect_mode(&clauses, false, false).unwrap(),
+            DocumentCountMode::PerInValue,
+        );
+    }
+
+    /// Equal + In on different fields → per-In-value.
+    #[test]
+    fn equal_plus_in_is_per_in_value() {
+        let clauses = vec![eq_clause("a"), in_clause("b")];
+        assert_eq!(
+            DriveDocumentCountQuery::detect_mode(&clauses, false, false).unwrap(),
+            DocumentCountMode::PerInValue,
+        );
+    }
+
+    /// Single range + no proof → range no-proof.
+    #[test]
+    fn single_range_no_proof_is_range_no_proof() {
+        let clauses = vec![gt_clause("color")];
+        assert_eq!(
+            DriveDocumentCountQuery::detect_mode(&clauses, false, false).unwrap(),
+            DocumentCountMode::RangeNoProof,
+        );
+    }
+
+    /// Single range + prove → range proof.
+    #[test]
+    fn single_range_with_prove_is_range_proof() {
+        let clauses = vec![gt_clause("color")];
+        assert_eq!(
+            DriveDocumentCountQuery::detect_mode(&clauses, false, true).unwrap(),
+            DocumentCountMode::RangeProof,
+        );
+    }
+
+    /// No range + prove → point-lookup proof (materialize-and-count).
+    #[test]
+    fn no_range_with_prove_is_point_lookup_proof() {
+        let clauses = vec![eq_clause("a")];
+        assert_eq!(
+            DriveDocumentCountQuery::detect_mode(&clauses, false, true).unwrap(),
+            DocumentCountMode::PointLookupProof,
+        );
+    }
+
+    /// Equal-prefix + range terminator + no proof → range no-proof.
+    #[test]
+    fn equal_prefix_plus_range_terminator_is_range_no_proof() {
+        let clauses = vec![eq_clause("brand"), gt_clause("color")];
+        assert_eq!(
+            DriveDocumentCountQuery::detect_mode(&clauses, false, false).unwrap(),
+            DocumentCountMode::RangeNoProof,
+        );
+    }
+
+    /// Two range operators → rejected.
+    #[test]
+    fn two_range_operators_rejected() {
+        let clauses = vec![gt_clause("color"), lt_clause("color")];
+        let err = DriveDocumentCountQuery::detect_mode(&clauses, false, false).unwrap_err();
+        assert!(matches!(
+            err,
+            QuerySyntaxError::InvalidWhereClauseComponents(msg) if msg.contains("at most one range")
+        ));
+    }
+
+    /// Two `In` operators → rejected.
+    #[test]
+    fn two_in_operators_rejected() {
+        let clauses = vec![in_clause("a"), in_clause("b")];
+        let err = DriveDocumentCountQuery::detect_mode(&clauses, false, false).unwrap_err();
+        assert!(matches!(
+            err,
+            QuerySyntaxError::InvalidWhereClauseComponents(msg) if msg.contains("at most one `in`")
+        ));
+    }
+
+    /// Range + In together → rejected (ambiguous output shape).
+    #[test]
+    fn range_plus_in_rejected() {
+        let clauses = vec![in_clause("a"), gt_clause("b")];
+        let err = DriveDocumentCountQuery::detect_mode(&clauses, false, false).unwrap_err();
+        assert!(matches!(
+            err,
+            QuerySyntaxError::InvalidWhereClauseComponents(msg) if msg.contains("cannot also carry an `in`")
+        ));
+    }
+
+    /// `return_distinct_counts_in_range = true` without a range → rejected.
+    #[test]
+    fn distinct_without_range_rejected() {
+        let err = DriveDocumentCountQuery::detect_mode(&[], true, false).unwrap_err();
+        assert!(matches!(
+            err,
+            QuerySyntaxError::InvalidWhereClauseComponents(msg) if msg.contains("requires a range where-clause")
+        ));
+    }
+
+    /// `return_distinct_counts_in_range = true` + `prove = true` → rejected
+    /// (the proof primitive returns a single aggregate).
+    #[test]
+    fn distinct_on_prove_path_rejected() {
+        let clauses = vec![gt_clause("color")];
+        let err = DriveDocumentCountQuery::detect_mode(&clauses, true, true).unwrap_err();
+        assert!(matches!(
+            err,
+            QuerySyntaxError::InvalidWhereClauseComponents(msg) if msg.contains("only supported on the \\\n                 no-prove path") || msg.contains("no-prove path")
+        ));
+    }
+
+    /// Distinct mode in no-prove range → still RangeNoProof; the
+    /// distinct flag is consumed by the executor, not the mode tag.
+    #[test]
+    fn distinct_no_prove_with_range_is_range_no_proof() {
+        let clauses = vec![gt_clause("color")];
+        assert_eq!(
+            DriveDocumentCountQuery::detect_mode(&clauses, true, false).unwrap(),
+            DocumentCountMode::RangeNoProof,
+        );
+    }
+}

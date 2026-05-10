@@ -65,6 +65,40 @@ pub struct SplitCountEntry {
     pub count: u64,
 }
 
+/// Classification of a count query's shape, used to dispatch to the
+/// right executor. Returned by
+/// [`DriveDocumentCountQuery::detect_mode`].
+///
+/// The discriminator is purely a function of the where-clause operators
+/// + request flags (`return_distinct_counts_in_range`, `prove`); it
+/// does not depend on the contract's index set. Picking a covering
+/// index for the chosen mode is a separate step that requires the
+/// document type's `BTreeMap<String, Index>`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DocumentCountMode {
+    /// No range, no `In` — single summed entry with empty key. Reads
+    /// the `CountTree` count directly at the indexed path.
+    Total,
+    /// Exactly one `In` clause, no range — one entry per (deduped)
+    /// `In` value, each computed as the count at that single value.
+    /// The `In` doubles as the per-value split signal.
+    PerInValue,
+    /// Exactly one range clause, no proof — walks the property-name
+    /// `ProvableCountTree`'s children inside the range. Returns either
+    /// a single summed entry or per-distinct-value entries depending on
+    /// `return_distinct_counts_in_range`.
+    RangeNoProof,
+    /// Exactly one range clause + `prove = true` — produces a grovedb
+    /// `AggregateCountOnRange` proof that verifies to a single u64.
+    /// `return_distinct_counts_in_range = true` is rejected here
+    /// because the merk-level primitive returns one aggregate.
+    RangeProof,
+    /// No range clause + `prove = true` — falls back to the
+    /// materialize-and-count proof path. Capped at `u16::MAX` matching
+    /// docs because each verified document is materialized client-side.
+    PointLookupProof,
+}
+
 impl<'a> DriveDocumentCountQuery<'a> {
     /// Returns `true` if the where-clause operator is one the count fast path
     /// can serve via point-lookups in a CountTree.
@@ -103,6 +137,97 @@ impl<'a> DriveDocumentCountQuery<'a> {
         where_clauses
             .iter()
             .any(|wc| !Self::is_indexable_for_count(wc.operator))
+    }
+
+    /// Classify a count query's mode from its where clauses + request flags.
+    ///
+    /// This is the protocol-version-agnostic shape detection that decides
+    /// which executor (Equal/In point lookup, range walk, range proof,
+    /// materialize-and-count proof, etc.) the request maps to. The
+    /// returned [`DocumentCountMode`] discriminates among the handler's
+    /// dispatch arms; concrete pagination / index-picker inputs still
+    /// flow through the call sites separately.
+    ///
+    /// All validation that depends only on the where clauses + flags
+    /// (multiple range clauses, range mixed with `In`, distinct mode on
+    /// the prove path, distinct mode without a range clause, etc.) is
+    /// done here and surfaces as
+    /// [`QuerySyntaxError::InvalidWhereClauseComponents`]. Validation
+    /// that depends on the contract's index set (no covering index)
+    /// stays at the call site since it requires the
+    /// `&BTreeMap<String, Index>`.
+    pub fn detect_mode(
+        where_clauses: &[WhereClause],
+        return_distinct_counts_in_range: bool,
+        prove: bool,
+    ) -> Result<DocumentCountMode, QuerySyntaxError> {
+        // Reject any operator that's neither an indexable point operator
+        // (Equal/In) nor a range operator. Defense-in-depth: the request
+        // shape forbids these elsewhere, but folding the check in here
+        // keeps the mode-detection contract self-contained.
+        for wc in where_clauses {
+            if !Self::is_indexable_for_count(wc.operator) && !Self::is_range_operator(wc.operator) {
+                return Err(QuerySyntaxError::InvalidWhereClauseComponents(
+                    "count query supports only `==`, `in`, and range operators",
+                ));
+            }
+        }
+
+        let range_count = where_clauses
+            .iter()
+            .filter(|wc| Self::is_range_operator(wc.operator))
+            .count();
+        let in_count = where_clauses
+            .iter()
+            .filter(|wc| wc.operator == WhereOperator::In)
+            .count();
+
+        if range_count > 1 {
+            return Err(QuerySyntaxError::InvalidWhereClauseComponents(
+                "count query supports at most one range where-clause; combine \
+                 two-sided ranges via `between*` instead of separate `>` / `<` clauses",
+            ));
+        }
+        if in_count > 1 {
+            return Err(QuerySyntaxError::InvalidWhereClauseComponents(
+                "count query supports at most one `in` where-clause; the In carries \
+                 the split property and only one split dimension is supported per request",
+            ));
+        }
+
+        let has_range = range_count == 1;
+        let has_in = in_count == 1;
+
+        if has_range && has_in {
+            return Err(QuerySyntaxError::InvalidWhereClauseComponents(
+                "range count queries cannot also carry an `in` clause; pick either \
+                 per-value split (In) or per-distinct-value range \
+                 (return_distinct_counts_in_range)",
+            ));
+        }
+
+        if return_distinct_counts_in_range && !has_range {
+            return Err(QuerySyntaxError::InvalidWhereClauseComponents(
+                "return_distinct_counts_in_range requires a range where-clause",
+            ));
+        }
+        if return_distinct_counts_in_range && prove {
+            return Err(QuerySyntaxError::InvalidWhereClauseComponents(
+                "return_distinct_counts_in_range = true is only supported on the \
+                 no-prove path; the proof primitive returns a single aggregate",
+            ));
+        }
+
+        Ok(match (has_range, has_in, prove) {
+            (true, false, true) => DocumentCountMode::RangeProof,
+            (true, false, false) => DocumentCountMode::RangeNoProof,
+            (false, true, _) => DocumentCountMode::PerInValue,
+            (false, false, true) => DocumentCountMode::PointLookupProof,
+            (false, false, false) => DocumentCountMode::Total,
+            // (true, true, _) is rejected by the has_range && has_in
+            // check above; (false, _, false) falls through cleanly.
+            (true, true, _) => unreachable!("range + In is rejected above"),
+        })
     }
 
     /// Finds a countable index whose properties form a prefix that matches the

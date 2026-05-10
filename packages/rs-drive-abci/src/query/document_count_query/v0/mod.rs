@@ -17,7 +17,9 @@ use dpp::platform_value::Value;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::error::query::QuerySyntaxError;
-use drive::query::{DriveDocumentCountQuery, DriveDocumentQuery, RangeCountOptions, WhereClause};
+use drive::query::{
+    DocumentCountMode, DriveDocumentCountQuery, DriveDocumentQuery, RangeCountOptions, WhereClause,
+};
 use drive::util::grove_operations::GroveDBToUse;
 
 impl<C> Platform<C> {
@@ -106,53 +108,24 @@ impl<C> Platform<C> {
                 )),
             });
 
-        let response = if prove {
-            // Range-count proof short-circuit: if there's a range
-            // operator AND a covering `range_countable` index, generate
-            // a grovedb `AggregateCountOnRange` proof. The client
-            // verifies via `GroveDb::verify_aggregate_count_query`,
-            // recovering `(root_hash, count)` without materializing
-            // any matching documents — replaces the u16::MAX cap that
-            // the materialize-and-count path needed.
-            let range_clause_count = all_where_clauses
-                .iter()
-                .filter(|wc| DriveDocumentCountQuery::is_range_operator(wc.operator))
-                .count();
-            if range_clause_count > 0 {
-                if range_clause_count > 1 {
-                    return Ok(QueryValidationResult::new_with_error(
-                        QueryError::InvalidArgument(
-                            "count query supports at most one range where-clause".to_string(),
-                        ),
-                    ));
-                }
-                if return_distinct_counts_in_range {
-                    // The proof primitive (`AggregateCountOnRange`)
-                    // returns a single aggregate. Per-distinct-value
-                    // entries can't be expressed as a single proof
-                    // shape, so reject in prove mode and direct the
-                    // caller to `prove = false`.
-                    return Ok(QueryValidationResult::new_with_error(
-                        QueryError::InvalidArgument(
-                            "return_distinct_counts_in_range = true is only supported on the \
-                             no-prove path; the proof primitive returns a single aggregate"
-                                .to_string(),
-                        ),
-                    ));
-                }
-                if all_where_clauses
-                    .iter()
-                    .any(|wc| wc.operator == drive::query::WhereOperator::In)
-                {
-                    return Ok(QueryValidationResult::new_with_error(
-                        QueryError::InvalidArgument(
-                            "range count with `prove = true` does not accept `in` on \
-                             prefix properties; use `==` for the prefix"
-                                .to_string(),
-                        ),
-                    ));
-                }
+        // Mode detection: maps (where clauses, distinct flag, prove flag)
+        // onto a single dispatch tag. All validation that depends only on
+        // the where clauses + flags lives in `detect_mode` in rs-drive;
+        // index-coverage validation stays at each per-mode call site
+        // below since it requires the contract's index map.
+        let mode = match DriveDocumentCountQuery::detect_mode(
+            &all_where_clauses,
+            return_distinct_counts_in_range,
+            prove,
+        ) {
+            Ok(m) => m,
+            Err(qe) => {
+                return Ok(QueryValidationResult::new_with_error(QueryError::Query(qe)));
+            }
+        };
 
+        let response = match mode {
+            DocumentCountMode::RangeProof => {
                 let range_index =
                     DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
                         document_type.indexes(),
@@ -189,90 +162,54 @@ impl<C> Platform<C> {
                 };
                 let (grovedb_used, proof) =
                     self.response_proof_v0(platform_state, proof, GroveDBToUse::Current)?;
-                return Ok(QueryValidationResult::new_with_data(
-                    GetDocumentsCountResponseV0 {
-                        result: Some(get_documents_count_response_v0::Result::Proof(proof)),
-                        metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
-                    },
-                ));
-            }
-
-            // No range operator → fall back to the materialize-and-
-            // count proof path. This still has the u16::MAX cap
-            // because grovedb's aggregate primitive doesn't apply to
-            // pure point-lookup count queries (each value tree is a
-            // CountTree, but the per-CountTree count proof is a
-            // separate primitive that's not yet wired through). For
-            // larger point-lookup counts, callers should use
-            // `prove = false` with a covering countable index.
-            let mut drive_query =
-                check_validation_result_with_data!(DriveDocumentQuery::from_decomposed_values(
-                    where_clause,
-                    None,
-                    Some(self.config.drive.default_query_limit),
-                    None,
-                    true,
-                    None,
-                    contract_ref,
-                    document_type,
-                    &self.config.drive,
-                ));
-            drive_query.limit = Some(u16::MAX);
-
-            let proof =
-                match drive_query.execute_with_proof(&self.drive, None, None, platform_version) {
-                    Ok(result) => result.0,
-                    Err(drive::error::Error::Query(query_error)) => {
-                        return Ok(QueryValidationResult::new_with_error(QueryError::Query(
-                            query_error,
-                        )));
-                    }
-                    Err(e) => return Err(e.into()),
-                };
-
-            let (grovedb_used, proof) =
-                self.response_proof_v0(platform_state, proof, GroveDBToUse::Current)?;
-
-            GetDocumentsCountResponseV0 {
-                result: Some(get_documents_count_response_v0::Result::Proof(proof)),
-                metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
-            }
-        } else {
-            // Detect range operators. If any are present we route to the
-            // range-countable count path (`execute_range_count_no_proof`)
-            // instead of the Equal/In fast path. Range queries require
-            // both a `range_countable` index AND that no `In` clause is
-            // present (mixing per-value split with range walk produces
-            // ambiguous output — caller should split client-side).
-            let range_clause_count = all_where_clauses
-                .iter()
-                .filter(|wc| DriveDocumentCountQuery::is_range_operator(wc.operator))
-                .count();
-            if range_clause_count > 0 {
-                if range_clause_count > 1 {
-                    return Ok(QueryValidationResult::new_with_error(
-                        QueryError::InvalidArgument(
-                            "count query supports at most one range where-clause; combine \
-                             two-sided ranges via `between*` instead of separate `>` / `<` \
-                             clauses"
-                                .to_string(),
-                        ),
-                    ));
+                GetDocumentsCountResponseV0 {
+                    result: Some(get_documents_count_response_v0::Result::Proof(proof)),
+                    metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
                 }
-                if all_where_clauses
-                    .iter()
-                    .any(|wc| wc.operator == drive::query::WhereOperator::In)
-                {
-                    return Ok(QueryValidationResult::new_with_error(
-                        QueryError::InvalidArgument(
-                            "range count queries cannot also carry an `in` clause; pick \
-                             either per-value split (In) or per-distinct-value range \
-                             (return_distinct_counts_in_range)"
-                                .to_string(),
-                        ),
+            }
+            DocumentCountMode::PointLookupProof => {
+                // Materialize-and-count fallback. Capped at u16::MAX
+                // because grovedb's aggregate primitive doesn't apply
+                // to pure point-lookup count queries (the per-CountTree
+                // count proof is a separate primitive that's not yet
+                // wired through). For larger result sets, callers
+                // should use `prove = false` with a covering countable
+                // index.
+                let mut drive_query =
+                    check_validation_result_with_data!(DriveDocumentQuery::from_decomposed_values(
+                        where_clause,
+                        None,
+                        Some(self.config.drive.default_query_limit),
+                        None,
+                        true,
+                        None,
+                        contract_ref,
+                        document_type,
+                        &self.config.drive,
                     ));
-                }
+                drive_query.limit = Some(u16::MAX);
 
+                let proof =
+                    match drive_query.execute_with_proof(&self.drive, None, None, platform_version)
+                    {
+                        Ok(result) => result.0,
+                        Err(drive::error::Error::Query(query_error)) => {
+                            return Ok(QueryValidationResult::new_with_error(QueryError::Query(
+                                query_error,
+                            )));
+                        }
+                        Err(e) => return Err(e.into()),
+                    };
+
+                let (grovedb_used, proof) =
+                    self.response_proof_v0(platform_state, proof, GroveDBToUse::Current)?;
+
+                GetDocumentsCountResponseV0 {
+                    result: Some(get_documents_count_response_v0::Result::Proof(proof)),
+                    metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
+                }
+            }
+            DocumentCountMode::RangeNoProof => {
                 let range_index =
                     DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
                         document_type.indexes(),
@@ -289,9 +226,9 @@ impl<C> Platform<C> {
                     ));
                 };
 
-                // Server-side limit clamp matches the docs/Documents query
-                // behavior: clients may request more than the configured
-                // ceiling but the server enforces it.
+                // Server-side limit clamp matches the docs/Documents
+                // query behavior: clients may request more than the
+                // configured ceiling but the server enforces it.
                 let effective_limit =
                     limit.map(|requested| requested.min(self.config.drive.max_query_limit as u32));
 
@@ -308,9 +245,9 @@ impl<C> Platform<C> {
                     distinct: return_distinct_counts_in_range,
                     limit: effective_limit,
                     start_after_split_key,
-                    // Default to ascending — `order_by_ascending` is an
-                    // optional bool on the wire, so an unset value means
-                    // "use the natural BTreeMap order".
+                    // `order_by_ascending` is an optional bool on the
+                    // wire — `None` means "use the natural BTreeMap
+                    // order" (ascending).
                     order_by_ascending: order_by_ascending.unwrap_or(true),
                 };
                 let entries: Vec<get_documents_count_response_v0::CountEntry> = count_query
@@ -322,76 +259,34 @@ impl<C> Platform<C> {
                     })
                     .collect();
 
-                return Ok(QueryValidationResult::new_with_data(
-                    GetDocumentsCountResponseV0 {
-                        result: Some(get_documents_count_response_v0::Result::Counts(
-                            get_documents_count_response_v0::CountResults { entries },
-                        )),
-                        metadata: Some(
-                            self.response_metadata_v0(platform_state, CheckpointUsed::Current),
-                        ),
-                    },
-                ));
-            }
-
-            // No range operators → traditional Equal/In path. Reject any
-            // other unsupported operator (defense in depth — should be
-            // unreachable given the range branch above, but `is_range_operator`
-            // and `has_unsupported_operator` are independent checks).
-            if DriveDocumentCountQuery::has_unsupported_operator(&all_where_clauses) {
-                return Ok(QueryValidationResult::new_with_error(
-                    QueryError::InvalidArgument(
-                        "count query supports only `==`, `in`, and range operators".to_string(),
+                GetDocumentsCountResponseV0 {
+                    result: Some(get_documents_count_response_v0::Result::Counts(
+                        get_documents_count_response_v0::CountResults { entries },
+                    )),
+                    metadata: Some(
+                        self.response_metadata_v0(platform_state, CheckpointUsed::Current),
                     ),
-                ));
+                }
             }
-
-            // Reject return_distinct_counts_in_range with no range
-            // clause — the flag has no defined meaning without a range.
-            if return_distinct_counts_in_range {
-                return Ok(QueryValidationResult::new_with_error(
-                    QueryError::InvalidArgument(
-                        "return_distinct_counts_in_range requires a range where-clause".to_string(),
-                    ),
-                ));
-            }
-
-            // Determine split mode from the where clauses. The unified count
-            // endpoint uses an `In` clause as the per-value split signal: at
-            // most one `In` is allowed per query, and the In's array becomes
-            // the entries in the response (one CountEntry per value, each
-            // computed as the count of docs matching that single value).
-            // No In clause → total count, single entry with empty key.
-            let in_clauses: Vec<&WhereClause> = all_where_clauses
-                .iter()
-                .filter(|wc| wc.operator == drive::query::WhereOperator::In)
-                .collect();
-            if in_clauses.len() > 1 {
-                return Ok(QueryValidationResult::new_with_error(
-                    QueryError::InvalidArgument(
-                        "count query supports at most one `in` where-clause; \
-                         the In carries the split property and only one split \
-                         dimension is supported per request"
-                            .to_string(),
-                    ),
-                ));
-            }
-
-            let entries: Vec<get_documents_count_response_v0::CountEntry> = if let Some(in_clause) =
-                in_clauses.first().cloned()
-            {
-                // Per-In-value entries. Replace the In with an Equal on each
-                // listed value, ask rs-drive for the count of that single
-                // value, and emit a (serialized_value, count) entry. Same
-                // value-key encoding as the no-In code path produces (via
-                // `serialize_value_for_key`), so wire keys round-trip
-                // consistently between modes.
-                let in_values =
-                    check_validation_result_with_data!(in_clause.value.as_array().ok_or_else(
-                        || QueryError::Query(QuerySyntaxError::InvalidWhereClauseComponents(
+            DocumentCountMode::PerInValue => {
+                // Cartesian fork: replace the (single) In with an Equal
+                // on each listed value, ask rs-drive for the count of
+                // that single value, and emit a (serialized_value,
+                // count) entry. `detect_mode` has already verified
+                // exactly one In clause is present.
+                let in_clause_owned = all_where_clauses
+                    .iter()
+                    .find(|wc| wc.operator == drive::query::WhereOperator::In)
+                    .expect("PerInValue mode implies exactly one In clause")
+                    .clone();
+                let in_values = check_validation_result_with_data!(in_clause_owned
+                    .value
+                    .as_array()
+                    .ok_or_else(|| QueryError::Query(
+                        QuerySyntaxError::InvalidWhereClauseComponents(
                             "In where-clause value must be an array",
-                        ))
-                    ));
+                        )
+                    )));
 
                 let other_clauses: Vec<WhereClause> = all_where_clauses
                     .iter()
@@ -402,10 +297,11 @@ impl<C> Platform<C> {
                 let mut entries = Vec::with_capacity(in_values.len());
                 let mut seen_keys: std::collections::BTreeSet<Vec<u8>> = Default::default();
                 for value in in_values {
-                    // Pre-serialize to use as the entry key AND dedupe so a
-                    // duplicated In value doesn't produce two entries.
+                    // Pre-serialize to use as the entry key AND dedupe
+                    // so a duplicated In value doesn't produce two
+                    // entries.
                     let key_bytes = document_type.serialize_value_for_key(
-                        in_clause.field.as_str(),
+                        in_clause_owned.field.as_str(),
                         value,
                         platform_version,
                     )?;
@@ -415,7 +311,7 @@ impl<C> Platform<C> {
 
                     let mut clauses_for_value = other_clauses.clone();
                     clauses_for_value.push(WhereClause {
-                        field: in_clause.field.clone(),
+                        field: in_clause_owned.field.clone(),
                         operator: drive::query::WhereOperator::Equal,
                         value: value.clone(),
                     });
@@ -452,8 +348,17 @@ impl<C> Platform<C> {
                         count,
                     });
                 }
-                entries
-            } else {
+
+                GetDocumentsCountResponseV0 {
+                    result: Some(get_documents_count_response_v0::Result::Counts(
+                        get_documents_count_response_v0::CountResults { entries },
+                    )),
+                    metadata: Some(
+                        self.response_metadata_v0(platform_state, CheckpointUsed::Current),
+                    ),
+                }
+            }
+            DocumentCountMode::Total => {
                 // No In clause → total count. Single entry with empty key.
                 let countable_index =
                     DriveDocumentCountQuery::find_countable_index_for_where_clauses(
@@ -478,20 +383,20 @@ impl<C> Platform<C> {
                     split_by_property: None,
                 };
                 let results = count_query.execute_no_proof(&self.drive, None, platform_version)?;
-                vec![get_documents_count_response_v0::CountEntry {
+                let entries = vec![get_documents_count_response_v0::CountEntry {
                     key: Vec::new(),
                     count: results.first().map_or(0, |e| e.count),
-                }]
-            };
-
-            GetDocumentsCountResponseV0 {
-                result: Some(get_documents_count_response_v0::Result::Counts(
-                    get_documents_count_response_v0::CountResults { entries },
-                )),
-                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
+                }];
+                GetDocumentsCountResponseV0 {
+                    result: Some(get_documents_count_response_v0::Result::Counts(
+                        get_documents_count_response_v0::CountResults { entries },
+                    )),
+                    metadata: Some(
+                        self.response_metadata_v0(platform_state, CheckpointUsed::Current),
+                    ),
+                }
             }
         };
-
         Ok(QueryValidationResult::new_with_data(response))
     }
 }
@@ -1116,10 +1021,19 @@ mod tests {
             .query_documents_count_v0(request, &state, version)
             .expect("query should return validation error");
         let _ = platform_version;
+        // After the detect_mode refactor this rejection now comes from
+        // rs-drive's where-clause validation rather than an inline
+        // handler check, so it surfaces as a `Query(InvalidWhereClauseComponents)`
+        // rather than `InvalidArgument`. Both shape variants are valid
+        // rejections; we accept either.
         assert!(
             matches!(
                 result.errors.as_slice(),
                 [QueryError::InvalidArgument(msg)] if msg.contains("return_distinct_counts_in_range")
+            ) || matches!(
+                result.errors.as_slice(),
+                [QueryError::Query(QuerySyntaxError::InvalidWhereClauseComponents(msg))]
+                    if msg.contains("return_distinct_counts_in_range")
             ),
             "expected return_distinct_counts_in_range rejection on prove path, got {:?}",
             result.errors
