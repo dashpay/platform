@@ -18,10 +18,12 @@ impl Drive {
     /// Pushes an "insert empty tree where path key does not yet exist" operation to `drive_operations`.
     /// Will also check the current drive operations
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn batch_insert_empty_tree_if_not_exists_v0<const N: usize>(
         &self,
         path_key_info: PathKeyInfo<N>,
         tree_type: TreeType,
+        wrap_in_non_counted: bool,
         storage_flags: Option<&StorageFlags>,
         apply_type: BatchInsertTreeApplyType,
         transaction: TransactionArg,
@@ -29,14 +31,34 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<bool, Error> {
+        // When wrapping with NonCounted, only NormalTree is currently
+        // supported — that's the only shape the index walker needs and the
+        // only one whose semantics are non-ambiguous (NonCounted preserves
+        // the inner element's storage but zeros its count contribution to
+        // the parent count tree). Reject other combinations early.
+        if wrap_in_non_counted && tree_type != TreeType::NormalTree {
+            return Err(Error::Drive(DriveError::NotSupported(
+                "wrap_in_non_counted is only supported with TreeType::NormalTree",
+            )));
+        }
+        let build_op =
+            |path: Vec<Vec<u8>>, key: Vec<u8>| -> Result<LowLevelDriveOperation, Error> {
+                if wrap_in_non_counted {
+                    Ok(
+                        LowLevelDriveOperation::for_known_path_key_empty_non_counted_normal_tree(
+                            path,
+                            key,
+                            storage_flags,
+                        ),
+                    )
+                } else {
+                    tree_type.empty_tree_operation_for_known_path_key(path, key, storage_flags)
+                }
+            };
         //todo: clean up the duplication
         match path_key_info {
             PathKeyRef((path, key)) => {
-                let drive_operation = tree_type.empty_tree_operation_for_known_path_key(
-                    path.clone(),
-                    key.to_vec(),
-                    storage_flags,
-                )?;
+                let drive_operation = build_op(path.clone(), key.to_vec())?;
                 // we only add the operation if it doesn't already exist in the current batch
                 if let Some(existing_operations) = check_existing_operations {
                     let mut i = 0;
@@ -99,11 +121,7 @@ impl Drive {
                 DriveError::NotSupportedPrivate("document sizes in batch operations not supported"),
             )),
             PathKey((path, key)) => {
-                let drive_operation = tree_type.empty_tree_operation_for_known_path_key(
-                    path.clone(),
-                    key.to_vec(),
-                    storage_flags,
-                )?;
+                let drive_operation = build_op(path.clone(), key.to_vec())?;
                 // we only add the operation if it doesn't already exist in the current batch
                 if let Some(existing_operations) = check_existing_operations {
                     let mut i = 0;
@@ -164,11 +182,7 @@ impl Drive {
             }
             PathFixedSizeKey((path, key)) => {
                 let path_items: Vec<Vec<u8>> = path.into_iter().map(Vec::from).collect();
-                let drive_operation = tree_type.empty_tree_operation_for_known_path_key(
-                    path_items,
-                    key.to_vec(),
-                    storage_flags,
-                )?;
+                let drive_operation = build_op(path_items, key.to_vec())?;
                 // we only add the operation if it doesn't already exist in the current batch
                 if let Some(existing_operations) = check_existing_operations {
                     let mut i = 0;
@@ -229,11 +243,7 @@ impl Drive {
             }
             PathFixedSizeKeyRef((path, key)) => {
                 let path_items: Vec<Vec<u8>> = path.into_iter().map(Vec::from).collect();
-                let drive_operation = tree_type.empty_tree_operation_for_known_path_key(
-                    path_items,
-                    key.to_vec(),
-                    storage_flags,
-                )?;
+                let drive_operation = build_op(path_items, key.to_vec())?;
                 // we only add the operation if it doesn't already exist in the current batch
                 if let Some(existing_operations) = check_existing_operations {
                     let mut i = 0;
@@ -331,6 +341,7 @@ mod tests {
             .batch_insert_empty_tree_if_not_exists_v0(
                 info,
                 TreeType::NormalTree,
+                false,
                 None,
                 BatchInsertTreeApplyType::StatefulBatchInsertTree,
                 Some(&tx),
@@ -381,6 +392,7 @@ mod tests {
             .batch_insert_empty_tree_if_not_exists_v0(
                 info,
                 TreeType::NormalTree,
+                false,
                 None,
                 BatchInsertTreeApplyType::StatefulBatchInsertTree,
                 Some(&tx),
@@ -421,6 +433,7 @@ mod tests {
             .batch_insert_empty_tree_if_not_exists_v0(
                 info,
                 TreeType::NormalTree,
+                false,
                 None,
                 BatchInsertTreeApplyType::StatefulBatchInsertTree,
                 Some(&tx),
@@ -448,6 +461,7 @@ mod tests {
         let result = drive.batch_insert_empty_tree_if_not_exists_v0(
             info,
             TreeType::NormalTree,
+            false,
             None,
             BatchInsertTreeApplyType::StatefulBatchInsertTree,
             None,
@@ -485,6 +499,7 @@ mod tests {
             .batch_insert_empty_tree_if_not_exists_v0(
                 info,
                 TreeType::NormalTree,
+                false,
                 None,
                 BatchInsertTreeApplyType::StatefulBatchInsertTree,
                 Some(&tx),
@@ -524,6 +539,7 @@ mod tests {
             .batch_insert_empty_tree_if_not_exists_v0(
                 info,
                 TreeType::NormalTree,
+                false,
                 None,
                 BatchInsertTreeApplyType::StatefulBatchInsertTree,
                 Some(&tx),
@@ -563,6 +579,7 @@ mod tests {
             .batch_insert_empty_tree_if_not_exists_v0(
                 info,
                 TreeType::NormalTree,
+                false,
                 None,
                 BatchInsertTreeApplyType::StatefulBatchInsertTree,
                 Some(&tx),
