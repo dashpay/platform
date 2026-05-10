@@ -1314,4 +1314,19 @@ mod detect_mode_tests {
             DocumentCountMode::RangeNoProof,
         );
     }
+
+    /// `prove = true` + `In` is rejected up front. The PerInValue
+    /// dispatch runs N no-proof point lookups, so silently mapping
+    /// `(in_clause, prove=true)` to `PerInValue` would downgrade the
+    /// caller's explicit proof request to an unproven count. Reject
+    /// instead until per-In-value proof support exists.
+    #[test]
+    fn in_with_prove_is_rejected() {
+        let clauses = vec![in_clause("a")];
+        let err = DriveDocumentCountQuery::detect_mode(&clauses, false, true).unwrap_err();
+        assert!(matches!(
+            err,
+            QuerySyntaxError::InvalidWhereClauseComponents(msg) if msg.contains("`in`") && msg.contains("prove")
+        ));
+    }
 }

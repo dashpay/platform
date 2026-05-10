@@ -231,16 +231,30 @@ impl<'a> DriveDocumentCountQuery<'a> {
                  no-prove path; the proof primitive returns a single aggregate",
             ));
         }
+        // `prove = true` + `In` is rejected up front to avoid silently
+        // downgrading the user's proof request to an unproven count.
+        // The PerInValue mode runs N point-count lookups in the
+        // no-proof path; there's no aggregate-proof primitive that
+        // returns one (key, count) entry per `In` value, so a
+        // proof-bearing version of this mode is genuinely not
+        // supported today (vs. just unimplemented).
+        if has_in && prove {
+            return Err(QuerySyntaxError::InvalidWhereClauseComponents(
+                "prove = true is not supported with an `in` where-clause; \
+                 per-In-value proofs are not yet implemented",
+            ));
+        }
 
         Ok(match (has_range, has_in, prove) {
             (true, false, true) => DocumentCountMode::RangeProof,
             (true, false, false) => DocumentCountMode::RangeNoProof,
-            (false, true, _) => DocumentCountMode::PerInValue,
+            (false, true, false) => DocumentCountMode::PerInValue,
             (false, false, true) => DocumentCountMode::PointLookupProof,
             (false, false, false) => DocumentCountMode::Total,
-            // (true, true, _) is rejected by the has_range && has_in
-            // check above; (false, _, false) falls through cleanly.
-            (true, true, _) => unreachable!("range + In is rejected above"),
+            // (true, true, _), (false, true, true): rejected above.
+            (true, true, _) | (false, true, true) => {
+                unreachable!("rejected by has_in && (prove || has_range) guards above")
+            }
         })
     }
 
@@ -1734,9 +1748,14 @@ pub struct DocumentCountRequest<'a> {
     /// `order_by_ascending` from the request (`None` = ascending, the
     /// default for distinct-mode entries).
     pub order_by_ascending: Option<bool>,
-    /// Limit cap from the request, **already clamped** by the caller
-    /// against its `max_query_limit` policy. Drive applies it as-is to
-    /// the distinct-mode entry list.
+    /// Limit cap from the request. Callers SHOULD pre-clamp against
+    /// their server-side `max_query_limit` policy, but Drive also
+    /// enforces a defense-in-depth clamp before forwarding to the
+    /// distinct-mode walk: an `Option::None` here is normalized to
+    /// `drive_config.default_query_limit` and any `Some(value)` is
+    /// reduced to `drive_config.max_query_limit` if larger. After
+    /// dispatch, the limit forwarded to
+    /// [`RangeCountOptions::limit`] is always `Some(_)` ≤ system cap.
     pub limit: Option<u32>,
     /// Pagination cursor for distinct-mode entries.
     pub start_after_split_key: Option<Vec<u8>>,
@@ -1850,9 +1869,21 @@ impl Drive {
                 )?,
             )),
             DocumentCountMode::RangeNoProof => {
+                // Defense-in-depth limit clamp: even if the caller
+                // forgot to pre-clamp (per the contract on
+                // `DocumentCountRequest::limit`), make sure we never
+                // forward an unbounded distinct-mode walk to the
+                // executor. None → default_query_limit; Some(_) is
+                // clamped down to max_query_limit. After this point
+                // `RangeCountOptions::limit` is always `Some(_)` ≤
+                // system cap, regardless of caller hygiene.
+                let effective_limit = request
+                    .limit
+                    .unwrap_or(request.drive_config.default_query_limit as u32)
+                    .min(request.drive_config.max_query_limit as u32);
                 let options = RangeCountOptions {
                     distinct: request.return_distinct_counts_in_range,
-                    limit: request.limit,
+                    limit: Some(effective_limit),
                     start_after_split_key: request.start_after_split_key,
                     // `None` → ascending (BTreeMap natural order).
                     order_by_ascending: request.order_by_ascending.unwrap_or(true),

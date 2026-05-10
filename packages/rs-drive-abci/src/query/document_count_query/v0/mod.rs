@@ -132,6 +132,17 @@ impl<C> Platform<C> {
         // Single rs-drive call owns mode detection, index picking, and
         // per-mode dispatch. The handler is left with: build request,
         // pre-clamp limit, map drive result to protobuf response.
+        //
+        // Limit normalization: an unset (`None`) wire field would
+        // otherwise mean "no limit" downstream — letting a caller
+        // bypass `max_query_limit` and walk arbitrarily large
+        // distinct-mode result sets. Default to
+        // `default_query_limit` first, then clamp to
+        // `max_query_limit`. After this point the limit is
+        // guaranteed `Some(...) ≤ max_query_limit`.
+        let effective_limit = limit
+            .unwrap_or(self.config.drive.default_query_limit as u32)
+            .min(self.config.drive.max_query_limit as u32);
         let request = DocumentCountRequest {
             contract: contract_ref,
             document_type,
@@ -139,9 +150,7 @@ impl<C> Platform<C> {
             raw_where_value: where_clause,
             return_distinct_counts_in_range,
             order_by_ascending,
-            // Server-side limit clamp: clients may request more than
-            // the configured ceiling but the server enforces it.
-            limit: limit.map(|req| req.min(self.config.drive.max_query_limit as u32)),
+            limit: Some(effective_limit),
             start_after_split_key,
             prove,
             drive_config: &self.config.drive,

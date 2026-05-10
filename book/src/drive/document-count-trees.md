@@ -193,7 +193,7 @@ Distinct mode also accepts pagination knobs:
 |---|---|
 | `order_by_ascending` | `true` (default) walks the range in BTreeMap natural order; `false` reverses |
 | `start_after_split_key` | Skip entries up to AND including this serialized key; pair with `limit` to walk in chunks |
-| `limit` | Truncate after `min(requested, max_query_limit)` entries; applied last (after order + cursor) |
+| `limit` | Truncate after `min(requested, max_query_limit)` entries; applied last (after order + cursor). **Unset (`None`) is normalized to `default_query_limit` before the cap is applied** — the server never walks an unbounded distinct-mode result set, even if the client omits the field. Clients that want a tight working-set should still set this explicitly. |
 
 These knobs are ignored on summed mode (they have no defined meaning for a single aggregate).
 
