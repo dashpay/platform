@@ -10,10 +10,14 @@ use grovedb::TransactionArg;
 use grovedb_path::SubtreePath;
 
 impl Drive {
-    /// Verify that the sum tree identity credits + pool credits + refunds are equal to the
-    /// Total credits in the system
+    /// Verify that the sum tree identity credits + pool credits + refunds + address
+    /// credits + shielded credits are equal to the Total credits in the system.
+    ///
+    /// v2 adds the `ShieldedBalances` root sum tree (introduced at protocol v12 /
+    /// drive v7) as a fifth term in the equation. Earlier calculators do not
+    /// read it because the tree does not exist on pre-v12 chains.
     #[inline(always)]
-    pub(super) fn calculate_total_credits_balance_v1(
+    pub(super) fn calculate_total_credits_balance_v2(
         &self,
         transaction: TransactionArg,
         drive_version: &DriveVersion,
@@ -69,17 +73,22 @@ impl Drive {
             drive_version,
         )?;
 
+        let total_in_shielded_balances = self.grove_get_sum_tree_total_value(
+            SubtreePath::empty(),
+            Into::<&[u8; 1]>::into(RootTree::ShieldedBalances),
+            DirectQueryType::StatefulDirectQuery,
+            transaction,
+            &mut drive_operations,
+            drive_version,
+        )?;
+
         Ok(TotalCreditsBalance {
             total_credits_in_platform,
             total_in_pools,
             total_identity_balances,
             total_specialized_balances,
             total_in_addresses,
-            // v1 predates the ShieldedBalances root tree (introduced at
-            // protocol v12 / drive v7 alongside the v2 calculator). On
-            // pre-v12 chains the tree does not exist, so v1 does not read
-            // it and leaves the field zeroed.
-            total_in_shielded_balances: 0,
+            total_in_shielded_balances,
         })
     }
 }
