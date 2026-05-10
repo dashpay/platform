@@ -20,6 +20,8 @@ use grovedb_path::SubtreePath;
 #[cfg(feature = "server")]
 use crate::drive::RootTree;
 #[cfg(feature = "server")]
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+#[cfg(feature = "server")]
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 #[cfg(feature = "server")]
 use dpp::data_contract::document_type::IndexProperty;
@@ -1400,5 +1402,262 @@ impl<'a> DriveDocumentCountQuery<'a> {
             .unwrap()
             .map_err(|e| Error::GroveDB(Box::new(e)))?;
         Ok(proof)
+    }
+}
+
+#[cfg(feature = "server")]
+impl Drive {
+    //! Per-mode count-query executors. Each method:
+    //!   1. Picks the right covering index for its mode (returns
+    //!      `Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty)`
+    //!      if no index covers the where clauses).
+    //!   2. Builds the appropriate `DriveDocumentCountQuery` /
+    //!      `DriveDocumentQuery`.
+    //!   3. Runs the right executor (`execute_no_proof`,
+    //!      `execute_range_count_no_proof`,
+    //!      `execute_aggregate_count_with_proof`, or
+    //!      `execute_with_proof`).
+    //!   4. Returns either `Vec<SplitCountEntry>` (no-proof modes)
+    //!      or `Vec<u8>` proof bytes (proof modes).
+    //!
+    //! These methods are step 2 of the document_count_query handler
+    //! refactor: they collapse what used to be ~30-line per-mode
+    //! match arms in the drive-abci handler into single calls.
+
+    /// Total count for the given where clauses against the best
+    /// covering countable index. Single summed entry with empty key.
+    /// Used by [`DocumentCountMode::Total`] dispatch.
+    pub fn execute_document_count_total_no_proof(
+        &self,
+        contract_id: [u8; 32],
+        document_type: DocumentTypeRef,
+        document_type_name: String,
+        where_clauses: Vec<WhereClause>,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<SplitCountEntry>, Error> {
+        let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+            document_type.indexes(),
+            &where_clauses,
+        )
+        .ok_or_else(|| {
+            Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
+                "count query requires a countable index on the document type that \
+                     matches the where clause properties"
+                    .to_string(),
+            ))
+        })?;
+        let count_query = DriveDocumentCountQuery {
+            document_type,
+            contract_id,
+            document_type_name,
+            index,
+            where_clauses,
+            split_by_property: None,
+        };
+        count_query.execute_no_proof(self, transaction, platform_version)
+    }
+
+    /// Per-`In`-value entries: cartesian-fork the single `In` clause
+    /// into one Equal-on-each-value sub-query, run each, emit a
+    /// `(serialized_value, count)` entry. Used by
+    /// [`DocumentCountMode::PerInValue`] dispatch.
+    ///
+    /// Caller has already verified via [`DriveDocumentCountQuery::detect_mode`]
+    /// that exactly one `In` clause is present in `where_clauses`.
+    pub fn execute_document_count_per_in_value_no_proof(
+        &self,
+        contract_id: [u8; 32],
+        document_type: DocumentTypeRef,
+        document_type_name: String,
+        where_clauses: Vec<WhereClause>,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<SplitCountEntry>, Error> {
+        let in_clause = where_clauses
+            .iter()
+            .find(|wc| wc.operator == WhereOperator::In)
+            .ok_or_else(|| {
+                Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
+                    "execute_document_count_per_in_value_no_proof requires exactly one `in` clause",
+                ))
+            })?
+            .clone();
+        let in_values = in_clause.value.as_array().ok_or_else(|| {
+            Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
+                "In where-clause value must be an array",
+            ))
+        })?;
+
+        let other_clauses: Vec<WhereClause> = where_clauses
+            .iter()
+            .filter(|wc| wc.operator != WhereOperator::In)
+            .cloned()
+            .collect();
+
+        let mut entries = Vec::with_capacity(in_values.len());
+        let mut seen_keys: BTreeSet<Vec<u8>> = BTreeSet::new();
+        for value in in_values {
+            // Pre-serialize so wire keys round-trip consistently with
+            // the no-In total-count path AND so we dedupe when an `In`
+            // value list contains duplicates.
+            let key_bytes = document_type.serialize_value_for_key(
+                in_clause.field.as_str(),
+                value,
+                platform_version,
+            )?;
+            if !seen_keys.insert(key_bytes.clone()) {
+                continue;
+            }
+
+            let mut clauses_for_value = other_clauses.clone();
+            clauses_for_value.push(WhereClause {
+                field: in_clause.field.clone(),
+                operator: WhereOperator::Equal,
+                value: value.clone(),
+            });
+
+            let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+                document_type.indexes(),
+                &clauses_for_value,
+            )
+            .ok_or_else(|| {
+                Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
+                    "count query requires a countable index on the document type that \
+                     matches the where clause properties"
+                        .to_string(),
+                ))
+            })?;
+
+            let count_query = DriveDocumentCountQuery {
+                document_type,
+                contract_id,
+                document_type_name: document_type_name.clone(),
+                index,
+                where_clauses: clauses_for_value,
+                split_by_property: None,
+            };
+            let results = count_query.execute_no_proof(self, transaction, platform_version)?;
+            let count = results.first().map_or(0, |entry| entry.count);
+
+            entries.push(SplitCountEntry {
+                key: key_bytes,
+                count,
+            });
+        }
+        Ok(entries)
+    }
+
+    /// Range-count walk against a `range_countable` index. Returns a
+    /// summed entry or per-distinct-value entries depending on
+    /// `options.distinct`. Used by [`DocumentCountMode::RangeNoProof`]
+    /// dispatch.
+    pub fn execute_document_count_range_no_proof(
+        &self,
+        contract_id: [u8; 32],
+        document_type: DocumentTypeRef,
+        document_type_name: String,
+        where_clauses: Vec<WhereClause>,
+        options: RangeCountOptions,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<SplitCountEntry>, Error> {
+        let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+            document_type.indexes(),
+            &where_clauses,
+        )
+        .ok_or_else(|| {
+            Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
+                "range count requires a `range_countable: true` index whose last \
+                     property matches the range field, with all other clauses covering \
+                     its prefix as `==` matches"
+                    .to_string(),
+            ))
+        })?;
+        let count_query = DriveDocumentCountQuery {
+            document_type,
+            contract_id,
+            document_type_name,
+            index,
+            where_clauses,
+            split_by_property: None,
+        };
+        count_query.execute_range_count_no_proof(self, &options, transaction, platform_version)
+    }
+
+    /// Range-count proof via grovedb's `AggregateCountOnRange`. Returns
+    /// proof bytes that the client verifies via
+    /// `GroveDb::verify_aggregate_count_query`. Used by
+    /// [`DocumentCountMode::RangeProof`] dispatch.
+    pub fn execute_document_count_range_proof(
+        &self,
+        contract_id: [u8; 32],
+        document_type: DocumentTypeRef,
+        document_type_name: String,
+        where_clauses: Vec<WhereClause>,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, Error> {
+        let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+            document_type.indexes(),
+            &where_clauses,
+        )
+        .ok_or_else(|| {
+            Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
+                "range count requires a `range_countable: true` index whose last \
+                     property matches the range field"
+                    .to_string(),
+            ))
+        })?;
+        let count_query = DriveDocumentCountQuery {
+            document_type,
+            contract_id,
+            document_type_name,
+            index,
+            where_clauses,
+            split_by_property: None,
+        };
+        count_query.execute_aggregate_count_with_proof(self, transaction, platform_version)
+    }
+
+    /// Materialize-and-count proof fallback for point-lookup count
+    /// queries with `prove = true`. Capped at `u16::MAX` matching docs
+    /// because each document is materialized client-side. Used by
+    /// [`DocumentCountMode::PointLookupProof`] dispatch.
+    ///
+    /// `where_clause` is the raw decoded `Value` (matching what
+    /// `DriveDocumentQuery::from_decomposed_values` expects), not a
+    /// `Vec<WhereClause>` — the materialize-path uses the broader
+    /// `DriveDocumentQuery` which has its own internal where-clause
+    /// model.
+    #[allow(clippy::too_many_arguments)]
+    pub fn execute_document_count_point_lookup_proof(
+        &self,
+        where_clause: dpp::platform_value::Value,
+        contract: &dpp::data_contract::DataContract,
+        document_type: DocumentTypeRef,
+        drive_config: &crate::config::DriveConfig,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, Error> {
+        let mut drive_query = crate::query::DriveDocumentQuery::from_decomposed_values(
+            where_clause,
+            None,
+            Some(drive_config.default_query_limit),
+            None,
+            true,
+            None,
+            contract,
+            document_type,
+            drive_config,
+        )?;
+        // Defensive cap: the proof verifier deserializes every doc.
+        // Until per-CountTree count proofs are wired through, callers
+        // that need exact counts on larger result sets must use
+        // `prove=false` with a covering countable index.
+        drive_query.limit = Some(u16::MAX);
+        Ok(drive_query
+            .execute_with_proof(self, None, transaction, platform_version)?
+            .0)
     }
 }

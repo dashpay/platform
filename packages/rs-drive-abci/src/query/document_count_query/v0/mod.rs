@@ -10,17 +10,40 @@ use dapi_grpc::platform::v0::get_documents_count_response::{
 };
 use dpp::check_validation_result_with_data;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::error::query::QuerySyntaxError;
 use drive::query::{
-    DocumentCountMode, DriveDocumentCountQuery, DriveDocumentQuery, RangeCountOptions, WhereClause,
+    DocumentCountMode, DriveDocumentCountQuery, RangeCountOptions, SplitCountEntry, WhereClause,
 };
 use drive::util::grove_operations::GroveDBToUse;
+
+/// Wrap a vector of [`SplitCountEntry`]s plus current-state metadata
+/// into the protobuf `GetDocumentsCountResponseV0`. Pulled out as a
+/// free function so the per-mode match arms in
+/// [`Platform::query_documents_count_v0`] can each be a single
+/// expression instead of inlining the same shape three times.
+fn count_response_with_entries<C>(
+    entries: Vec<SplitCountEntry>,
+    platform: &Platform<C>,
+    platform_state: &PlatformState,
+) -> GetDocumentsCountResponseV0 {
+    let entries: Vec<get_documents_count_response_v0::CountEntry> = entries
+        .into_iter()
+        .map(|e| get_documents_count_response_v0::CountEntry {
+            key: e.key,
+            count: e.count,
+        })
+        .collect();
+    GetDocumentsCountResponseV0 {
+        result: Some(get_documents_count_response_v0::Result::Counts(
+            get_documents_count_response_v0::CountResults { entries },
+        )),
+        metadata: Some(platform.response_metadata_v0(platform_state, CheckpointUsed::Current)),
+    }
+}
 
 impl<C> Platform<C> {
     pub(super) fn query_documents_count_v0(
@@ -124,42 +147,32 @@ impl<C> Platform<C> {
             }
         };
 
-        let response = match mode {
-            DocumentCountMode::RangeProof => {
-                let range_index =
-                    DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
-                        document_type.indexes(),
-                        &all_where_clauses,
-                    );
-                let Some(index) = range_index else {
-                    return Ok(QueryValidationResult::new_with_error(
-                        QueryError::InvalidArgument(
-                            "range count requires a `range_countable: true` index whose last \
-                             property matches the range field"
-                                .to_string(),
-                        ),
-                    ));
-                };
-
-                let count_query = DriveDocumentCountQuery {
-                    document_type,
-                    contract_id: contract_id.to_buffer(),
-                    document_type_name: document_type_name.clone(),
-                    index,
-                    where_clauses: all_where_clauses.clone(),
-                    split_by_property: None,
-                };
-                let proof = match count_query.execute_aggregate_count_with_proof(
-                    &self.drive,
-                    None,
-                    platform_version,
-                ) {
-                    Ok(p) => p,
+        // Per-mode dispatch: each arm calls a single rs-drive executor
+        // method, then wraps the result (either Vec<SplitCountEntry> or
+        // Vec<u8> proof bytes) in the protobuf response shape.
+        // Errors from rs-drive's `Error::Query(...)` come back to the
+        // client as `QueryError::Query(...)` with the same message.
+        macro_rules! handle_drive_result {
+            ($expr:expr) => {
+                match $expr {
+                    Ok(v) => v,
                     Err(drive::error::Error::Query(qe)) => {
                         return Ok(QueryValidationResult::new_with_error(QueryError::Query(qe)));
                     }
                     Err(e) => return Err(e.into()),
-                };
+                }
+            };
+        }
+        let response = match mode {
+            DocumentCountMode::RangeProof => {
+                let proof = handle_drive_result!(self.drive.execute_document_count_range_proof(
+                    contract_id.to_buffer(),
+                    document_type,
+                    document_type_name.clone(),
+                    all_where_clauses,
+                    None,
+                    platform_version,
+                ));
                 let (grovedb_used, proof) =
                     self.response_proof_v0(platform_state, proof, GroveDBToUse::Current)?;
                 GetDocumentsCountResponseV0 {
@@ -168,233 +181,88 @@ impl<C> Platform<C> {
                 }
             }
             DocumentCountMode::PointLookupProof => {
-                // Materialize-and-count fallback. Capped at u16::MAX
-                // because grovedb's aggregate primitive doesn't apply
-                // to pure point-lookup count queries (the per-CountTree
-                // count proof is a separate primitive that's not yet
-                // wired through). For larger result sets, callers
-                // should use `prove = false` with a covering countable
-                // index.
-                let mut drive_query =
-                    check_validation_result_with_data!(DriveDocumentQuery::from_decomposed_values(
+                let proof =
+                    handle_drive_result!(self.drive.execute_document_count_point_lookup_proof(
                         where_clause,
-                        None,
-                        Some(self.config.drive.default_query_limit),
-                        None,
-                        true,
-                        None,
                         contract_ref,
                         document_type,
                         &self.config.drive,
+                        None,
+                        platform_version,
                     ));
-                drive_query.limit = Some(u16::MAX);
-
-                let proof =
-                    match drive_query.execute_with_proof(&self.drive, None, None, platform_version)
-                    {
-                        Ok(result) => result.0,
-                        Err(drive::error::Error::Query(query_error)) => {
-                            return Ok(QueryValidationResult::new_with_error(QueryError::Query(
-                                query_error,
-                            )));
-                        }
-                        Err(e) => return Err(e.into()),
-                    };
-
                 let (grovedb_used, proof) =
                     self.response_proof_v0(platform_state, proof, GroveDBToUse::Current)?;
-
                 GetDocumentsCountResponseV0 {
                     result: Some(get_documents_count_response_v0::Result::Proof(proof)),
                     metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
                 }
             }
             DocumentCountMode::RangeNoProof => {
-                let range_index =
-                    DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
-                        document_type.indexes(),
-                        &all_where_clauses,
-                    );
-                let Some(index) = range_index else {
-                    return Ok(QueryValidationResult::new_with_error(
-                        QueryError::InvalidArgument(
-                            "range count requires a `range_countable: true` index whose last \
-                             property matches the range field, with all other clauses \
-                             covering its prefix as `==` matches"
-                                .to_string(),
-                        ),
-                    ));
-                };
-
                 // Server-side limit clamp matches the docs/Documents
                 // query behavior: clients may request more than the
                 // configured ceiling but the server enforces it.
-                let effective_limit =
-                    limit.map(|requested| requested.min(self.config.drive.max_query_limit as u32));
-
-                let count_query = DriveDocumentCountQuery {
-                    document_type,
-                    contract_id: contract_id.to_buffer(),
-                    document_type_name: document_type_name.clone(),
-                    index,
-                    where_clauses: all_where_clauses,
-                    split_by_property: None,
-                };
-
                 let options = RangeCountOptions {
                     distinct: return_distinct_counts_in_range,
-                    limit: effective_limit,
+                    limit: limit.map(|req| req.min(self.config.drive.max_query_limit as u32)),
                     start_after_split_key,
-                    // `order_by_ascending` is an optional bool on the
-                    // wire — `None` means "use the natural BTreeMap
-                    // order" (ascending).
+                    // `order_by_ascending = None` on the wire means
+                    // "use the natural BTreeMap order" (ascending).
                     order_by_ascending: order_by_ascending.unwrap_or(true),
                 };
-                let entries: Vec<get_documents_count_response_v0::CountEntry> = count_query
-                    .execute_range_count_no_proof(&self.drive, &options, None, platform_version)?
-                    .into_iter()
-                    .map(|e| get_documents_count_response_v0::CountEntry {
-                        key: e.key,
-                        count: e.count,
-                    })
-                    .collect();
-
-                GetDocumentsCountResponseV0 {
-                    result: Some(get_documents_count_response_v0::Result::Counts(
-                        get_documents_count_response_v0::CountResults { entries },
-                    )),
-                    metadata: Some(
-                        self.response_metadata_v0(platform_state, CheckpointUsed::Current),
-                    ),
-                }
+                let entries =
+                    handle_drive_result!(self.drive.execute_document_count_range_no_proof(
+                        contract_id.to_buffer(),
+                        document_type,
+                        document_type_name.clone(),
+                        all_where_clauses,
+                        options,
+                        None,
+                        platform_version,
+                    ));
+                count_response_with_entries(entries, self, platform_state)
             }
             DocumentCountMode::PerInValue => {
-                // Cartesian fork: replace the (single) In with an Equal
-                // on each listed value, ask rs-drive for the count of
-                // that single value, and emit a (serialized_value,
-                // count) entry. `detect_mode` has already verified
-                // exactly one In clause is present.
-                let in_clause_owned = all_where_clauses
-                    .iter()
-                    .find(|wc| wc.operator == drive::query::WhereOperator::In)
-                    .expect("PerInValue mode implies exactly one In clause")
-                    .clone();
-                let in_values = check_validation_result_with_data!(in_clause_owned
-                    .value
-                    .as_array()
-                    .ok_or_else(|| QueryError::Query(
-                        QuerySyntaxError::InvalidWhereClauseComponents(
-                            "In where-clause value must be an array",
-                        )
-                    )));
-
-                let other_clauses: Vec<WhereClause> = all_where_clauses
-                    .iter()
-                    .filter(|wc| wc.operator != drive::query::WhereOperator::In)
-                    .cloned()
-                    .collect();
-
-                let mut entries = Vec::with_capacity(in_values.len());
-                let mut seen_keys: std::collections::BTreeSet<Vec<u8>> = Default::default();
-                for value in in_values {
-                    // Pre-serialize to use as the entry key AND dedupe
-                    // so a duplicated In value doesn't produce two
-                    // entries.
-                    let key_bytes = document_type.serialize_value_for_key(
-                        in_clause_owned.field.as_str(),
-                        value,
-                        platform_version,
-                    )?;
-                    if !seen_keys.insert(key_bytes.clone()) {
-                        continue;
-                    }
-
-                    let mut clauses_for_value = other_clauses.clone();
-                    clauses_for_value.push(WhereClause {
-                        field: in_clause_owned.field.clone(),
-                        operator: drive::query::WhereOperator::Equal,
-                        value: value.clone(),
-                    });
-
-                    let countable_index =
-                        DriveDocumentCountQuery::find_countable_index_for_where_clauses(
-                            document_type.indexes(),
-                            &clauses_for_value,
-                        );
-                    let Some(index) = countable_index else {
-                        return Ok(QueryValidationResult::new_with_error(
-                            QueryError::InvalidArgument(
-                                "count query requires a countable index on the document \
-                                 type that matches the where clause properties"
-                                    .to_string(),
-                            ),
-                        ));
-                    };
-
-                    let count_query = DriveDocumentCountQuery {
+                let entries =
+                    handle_drive_result!(self.drive.execute_document_count_per_in_value_no_proof(
+                        contract_id.to_buffer(),
                         document_type,
-                        contract_id: contract_id.to_buffer(),
-                        document_type_name: document_type_name.clone(),
-                        index,
-                        where_clauses: clauses_for_value,
-                        split_by_property: None,
-                    };
-                    let results =
-                        count_query.execute_no_proof(&self.drive, None, platform_version)?;
-                    let count = results.first().map_or(0, |entry| entry.count);
-
-                    entries.push(get_documents_count_response_v0::CountEntry {
-                        key: key_bytes,
-                        count,
-                    });
-                }
-
-                GetDocumentsCountResponseV0 {
-                    result: Some(get_documents_count_response_v0::Result::Counts(
-                        get_documents_count_response_v0::CountResults { entries },
-                    )),
-                    metadata: Some(
-                        self.response_metadata_v0(platform_state, CheckpointUsed::Current),
-                    ),
-                }
+                        document_type_name.clone(),
+                        all_where_clauses,
+                        None,
+                        platform_version,
+                    ));
+                count_response_with_entries(entries, self, platform_state)
             }
             DocumentCountMode::Total => {
-                // No In clause → total count. Single entry with empty key.
-                let countable_index =
-                    DriveDocumentCountQuery::find_countable_index_for_where_clauses(
-                        document_type.indexes(),
-                        &all_where_clauses,
-                    );
-                let Some(index) = countable_index else {
-                    return Ok(QueryValidationResult::new_with_error(
-                        QueryError::InvalidArgument(
-                            "count query requires a countable index on the document type \
-                             that matches the where clause properties"
-                                .to_string(),
-                        ),
+                let entries =
+                    handle_drive_result!(self.drive.execute_document_count_total_no_proof(
+                        contract_id.to_buffer(),
+                        document_type,
+                        document_type_name.clone(),
+                        all_where_clauses,
+                        None,
+                        platform_version,
                     ));
+                let entries: Vec<SplitCountEntry> = if entries.is_empty() {
+                    vec![SplitCountEntry {
+                        key: Vec::new(),
+                        count: 0,
+                    }]
+                } else {
+                    // Total mode produces exactly one entry, but the
+                    // executor's no-proof path returns zero entries
+                    // when the indexed path doesn't exist yet. Fold to
+                    // a single empty-key entry with count=0 so the
+                    // response shape is uniform.
+                    entries
+                        .into_iter()
+                        .map(|e| SplitCountEntry {
+                            key: Vec::new(),
+                            count: e.count,
+                        })
+                        .collect()
                 };
-                let count_query = DriveDocumentCountQuery {
-                    document_type,
-                    contract_id: contract_id.to_buffer(),
-                    document_type_name: document_type_name.clone(),
-                    index,
-                    where_clauses: all_where_clauses,
-                    split_by_property: None,
-                };
-                let results = count_query.execute_no_proof(&self.drive, None, platform_version)?;
-                let entries = vec![get_documents_count_response_v0::CountEntry {
-                    key: Vec::new(),
-                    count: results.first().map_or(0, |e| e.count),
-                }];
-                GetDocumentsCountResponseV0 {
-                    result: Some(get_documents_count_response_v0::Result::Counts(
-                        get_documents_count_response_v0::CountResults { entries },
-                    )),
-                    metadata: Some(
-                        self.response_metadata_v0(platform_state, CheckpointUsed::Current),
-                    ),
-                }
+                count_response_with_entries(entries, self, platform_state)
             }
         };
         Ok(QueryValidationResult::new_with_data(response))
@@ -732,10 +600,19 @@ mod tests {
             .query_documents_count_v0(request, &state, version)
             .expect("expected query to return validation error");
 
+        // Step 2 of the refactor moved the no-covering-index check into
+        // rs-drive, where it surfaces as
+        // `Query(WhereClauseOnNonIndexedProperty)` rather than the
+        // handler-local `InvalidArgument`. Both shapes are valid
+        // rejections — accept either.
         assert!(
             matches!(
                 result.errors.as_slice(),
                 [QueryError::InvalidArgument(msg)] if msg.contains("range_countable")
+            ) || matches!(
+                result.errors.as_slice(),
+                [QueryError::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(msg))]
+                    if msg.contains("range_countable")
             ),
             "expected range_countable-index rejection, got {:?}",
             result.errors
