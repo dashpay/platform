@@ -2592,17 +2592,16 @@ impl Strategy {
                                     transition_amount.saturating_sub(fee_deduction);
 
                                 if existing_output_addresses.contains(address) {
-                                    // Update balance for existing address
-                                    if let Some((nonce, balance)) = current_addresses_with_balance
-                                        .addresses_with_balance
-                                        .get(address)
+                                    // Update balance for existing address using the
+                                    // effective state so any prior same-block delta
+                                    // (staged balance) is preserved before crediting.
+                                    if let Some((nonce, balance)) =
+                                        current_addresses_with_balance.get_effective(address)
                                     {
+                                        let new_entry = (*nonce, balance + actual_credited_amount);
                                         current_addresses_with_balance
                                             .addresses_in_block_with_new_balance
-                                            .insert(
-                                                *address,
-                                                (*nonce, balance + actual_credited_amount),
-                                            );
+                                            .insert(*address, new_entry);
                                     }
                                 } else {
                                     // New address - track with fee-adjusted amount

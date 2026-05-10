@@ -2425,6 +2425,74 @@ impl NetworkStrategy {
             .clone()
             .unwrap_or(vec![AddressFundsFeeStrategyStep::DeductFromInput(0)]);
 
+        // Calculate estimated fee for local balance tracking.
+        // Fee = identity_create_base_cost + identity_key_in_creation_cost * num_keys
+        //     + address_funds_transfer_input_cost * num_inputs
+        //     + address_funds_transfer_output_cost * num_outputs
+        let total_key_count = identity.public_keys().len() as u64;
+        let num_inputs = inputs.len() as u64;
+        let has_output = maybe_output_amount.is_some();
+        let num_outputs: u64 = if has_output { 1 } else { 0 };
+
+        let min_fees = &platform_version.fee_version.state_transition_min_fees;
+        let estimated_fee = min_fees
+            .identity_create_base_cost
+            .saturating_add(
+                min_fees
+                    .identity_key_in_creation_cost
+                    .saturating_mul(total_key_count),
+            )
+            .saturating_add(
+                min_fees
+                    .address_funds_transfer_input_cost
+                    .saturating_mul(num_inputs),
+            )
+            .saturating_add(
+                min_fees
+                    .address_funds_transfer_output_cost
+                    .saturating_mul(num_outputs),
+            );
+
+        // Track fee deductions for balance tracking
+        let mut output_fee_deduction: Credits = 0;
+        let mut input_fee_deductions: BTreeMap<usize, Credits> = BTreeMap::new();
+
+        let input_addresses_in_order: Vec<PlatformAddress> = inputs.keys().cloned().collect();
+
+        let mut remaining_fee = estimated_fee;
+        for step in &fee_strategy {
+            if remaining_fee == 0 {
+                break;
+            }
+            match step {
+                AddressFundsFeeStrategyStep::ReduceOutput(index) => {
+                    if *index == 0 && has_output {
+                        output_fee_deduction = output_fee_deduction.saturating_add(remaining_fee);
+                        remaining_fee = 0;
+                    }
+                }
+                AddressFundsFeeStrategyStep::DeductFromInput(index) => {
+                    if (*index as usize) < inputs.len() {
+                        let entry = input_fee_deductions.entry(*index as usize).or_insert(0);
+                        *entry = entry.saturating_add(remaining_fee);
+                        remaining_fee = 0;
+                    }
+                }
+            }
+        }
+
+        // Apply fee deductions to input balances (beyond the amount already staged)
+        for (idx, fee_deduction) in input_fee_deductions {
+            if let Some(address) = input_addresses_in_order.get(idx) {
+                if let Some((_, staged_balance)) = current_addresses_with_balance
+                    .addresses_in_block_with_new_balance
+                    .get_mut(address)
+                {
+                    *staged_balance = staged_balance.saturating_sub(fee_deduction);
+                }
+            }
+        }
+
         // Sample the optional output amount and validate it against
         // min_output_amount before registering any output address. The
         // constructor rejects optional outputs below this minimum, so
@@ -2453,10 +2521,11 @@ impl NetworkStrategy {
         // Create output if maybe_output_amount is provided
         let output = sampled_output_amount.map(|output_amount| {
             let output_address = signer.add_random_address_key(rng);
-            // Register the output address with balance
+            // Register the output address with balance minus fee deduction
+            let actual_output_amount = output_amount.saturating_sub(output_fee_deduction);
             current_addresses_with_balance.register_new_address_keep_only_highest(
                 output_address.clone(),
-                output_amount,
+                actual_output_amount,
                 self.max_addresses_to_choose_from_in_cache,
             );
             (output_address, output_amount)
@@ -2712,9 +2781,10 @@ impl NetworkStrategy {
             let actual_credited_amount = transition_amount.saturating_sub(fee_deduction);
 
             if existing_output_addresses.contains(address) {
-                if let Some((nonce, balance)) = current_addresses_with_balance
-                    .addresses_with_balance
-                    .get(address)
+                // Use the effective state so any prior same-block delta
+                // (staged balance) is preserved before crediting.
+                if let Some((nonce, balance)) =
+                    current_addresses_with_balance.get_effective(address)
                 {
                     let new_entry = (*nonce, balance + actual_credited_amount);
                     current_addresses_with_balance
