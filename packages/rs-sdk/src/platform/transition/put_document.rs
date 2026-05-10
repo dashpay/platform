@@ -46,6 +46,91 @@ pub trait PutDocument<S: Signer<IdentityPublicKey>>: Waitable {
     ) -> Result<Document, Error>;
 }
 
+/// Build, sign, and structurally validate a document create-or-replace
+/// [`StateTransition`] without broadcasting it.
+///
+/// This is the pre-broadcast half of [`PutDocument::put_to_platform`]: it
+/// allocates a fresh identity-contract nonce, picks the create-vs-replace
+/// branch based on the document's revision, fills in entropy when missing,
+/// applies `user_fee_increase` / `token_payment_info` /
+/// `state_transition_creation_options` from `settings`, signs the transition,
+/// and runs structure validation. The caller decides whether (and how) to
+/// broadcast the returned, signed transition.
+///
+/// Errors from this function may have already advanced the local nonce cache
+/// without a corresponding remote nonce consumption; if the caller cannot
+/// safely retry the transition itself, it should call
+/// [`Sdk::refresh_identity_nonce`] to resync.
+#[allow(clippy::too_many_arguments)]
+pub async fn build_signed_document_create_or_replace_transition<S: Signer<IdentityPublicKey>>(
+    sdk: &Sdk,
+    document: &Document,
+    document_type: &DocumentType,
+    document_state_transition_entropy: Option<[u8; 32]>,
+    identity_public_key: &IdentityPublicKey,
+    token_payment_info: Option<TokenPaymentInfo>,
+    signer: &S,
+    settings: Option<PutSettings>,
+) -> Result<StateTransition, Error> {
+    let new_identity_contract_nonce = sdk
+        .get_identity_contract_nonce(
+            document.owner_id(),
+            document_type.data_contract_id(),
+            true,
+            settings,
+        )
+        .await?;
+
+    let put_settings = settings.unwrap_or_default();
+    let transition = if document
+        .revision()
+        .is_some_and(|rev| rev != INITIAL_REVISION)
+    {
+        BatchTransition::new_document_replacement_transition_from_document(
+            document.clone(),
+            document_type.as_ref(),
+            identity_public_key,
+            new_identity_contract_nonce,
+            put_settings.user_fee_increase.unwrap_or_default(),
+            token_payment_info,
+            signer,
+            sdk.version(),
+            put_settings.state_transition_creation_options,
+        )
+        .await?
+    } else {
+        let (doc, entropy) = document_state_transition_entropy
+            .map(|entropy| (document.clone(), entropy))
+            .unwrap_or_else(|| {
+                let mut rng = StdRng::from_entropy();
+                let mut doc = document.clone();
+                let entropy = rng.gen::<[u8; 32]>();
+                doc.set_id(Document::generate_document_id_v0(
+                    &document_type.data_contract_id(),
+                    &doc.owner_id(),
+                    document_type.name(),
+                    entropy.as_slice(),
+                ));
+                (doc, entropy)
+            });
+        BatchTransition::new_document_creation_transition_from_document(
+            doc,
+            document_type.as_ref(),
+            entropy,
+            identity_public_key,
+            new_identity_contract_nonce,
+            put_settings.user_fee_increase.unwrap_or_default(),
+            token_payment_info,
+            signer,
+            sdk.version(),
+            put_settings.state_transition_creation_options,
+        )
+        .await?
+    };
+    ensure_valid_state_transition_structure(&transition, sdk.version())?;
+    Ok(transition)
+}
+
 #[async_trait::async_trait]
 impl<S: Signer<IdentityPublicKey>> PutDocument<S> for Document {
     async fn put_to_platform(
@@ -58,64 +143,22 @@ impl<S: Signer<IdentityPublicKey>> PutDocument<S> for Document {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error> {
-        let new_identity_contract_nonce = sdk
-            .get_identity_contract_nonce(
-                self.owner_id(),
-                document_type.data_contract_id(),
-                true,
-                settings,
-            )
-            .await?;
-
-        let settings = settings.unwrap_or_default();
-        let transition = if self.revision().is_some()
-            && self.revision().unwrap() != INITIAL_REVISION
-        {
-            BatchTransition::new_document_replacement_transition_from_document(
-                self.clone(),
-                document_type.as_ref(),
-                &identity_public_key,
-                new_identity_contract_nonce,
-                settings.user_fee_increase.unwrap_or_default(),
-                token_payment_info,
-                signer,
-                sdk.version(),
-                settings.state_transition_creation_options,
-            )
-            .await?
-        } else {
-            let (document, document_state_transition_entropy) = document_state_transition_entropy
-                .map(|entropy| (self.clone(), entropy))
-                .unwrap_or_else(|| {
-                    let mut rng = StdRng::from_entropy();
-                    let mut document = self.clone();
-                    let entropy = rng.gen::<[u8; 32]>();
-                    document.set_id(Document::generate_document_id_v0(
-                        &document_type.data_contract_id(),
-                        &document.owner_id(),
-                        document_type.name(),
-                        entropy.as_slice(),
-                    ));
-                    (document, entropy)
-                });
-            BatchTransition::new_document_creation_transition_from_document(
-                document,
-                document_type.as_ref(),
-                document_state_transition_entropy,
-                &identity_public_key,
-                new_identity_contract_nonce,
-                settings.user_fee_increase.unwrap_or_default(),
-                token_payment_info,
-                signer,
-                sdk.version(),
-                settings.state_transition_creation_options,
-            )
-            .await?
-        };
-        ensure_valid_state_transition_structure(&transition, sdk.version())?;
+        let transition = build_signed_document_create_or_replace_transition(
+            sdk,
+            self,
+            &document_type,
+            document_state_transition_entropy,
+            &identity_public_key,
+            token_payment_info,
+            signer,
+            settings,
+        )
+        .await?;
 
         // response is empty for a broadcast, result comes from the stream wait for state transition result
-        transition.broadcast(sdk, Some(settings)).await?;
+        transition
+            .broadcast(sdk, Some(settings.unwrap_or_default()))
+            .await?;
         Ok(transition)
     }
 

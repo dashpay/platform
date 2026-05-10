@@ -28,7 +28,7 @@ mod txid;
 #[cfg(feature = "shielded")]
 pub mod unshield;
 pub mod update_price_of_document;
-pub(crate) mod validation;
+pub mod validation;
 pub mod vote;
 pub mod waitable;
 pub mod withdraw_from_identity;

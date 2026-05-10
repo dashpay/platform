@@ -34,23 +34,21 @@
 use crate::error::WasmSdkError;
 use crate::sdk::WasmSdk;
 use crate::settings::PutSettingsInput;
-use dash_sdk::dpp::dashcore::secp256k1::rand::rngs::StdRng;
-use dash_sdk::dpp::dashcore::secp256k1::rand::{Rng, SeedableRng};
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dash_sdk::dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dash_sdk::dpp::data_contract::document_type::DocumentType;
-use dash_sdk::dpp::document::{Document, DocumentV0Getters, DocumentV0Setters, INITIAL_REVISION};
+use dash_sdk::dpp::document::{Document, DocumentV0Getters, INITIAL_REVISION};
 use dash_sdk::dpp::fee::Credits;
 use dash_sdk::dpp::identity::IdentityPublicKey;
 use dash_sdk::dpp::platform_value::Identifier;
-use dash_sdk::dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
-use dash_sdk::dpp::state_transition::batch_transition::BatchTransition;
 use dash_sdk::dpp::tokens::token_payment_info::TokenPaymentInfo;
 use dash_sdk::platform::documents::transitions::DocumentDeleteTransitionBuilder;
 use dash_sdk::platform::transition::purchase_document::PurchaseDocument;
-use dash_sdk::platform::transition::put_document::PutDocument;
+use dash_sdk::platform::transition::put_document::{
+    build_signed_document_create_or_replace_transition, PutDocument,
+};
 use dash_sdk::platform::transition::transfer_document::TransferDocument;
 use dash_sdk::platform::transition::update_price_of_document::UpdatePriceOfDocument;
+use dash_sdk::platform::transition::validation::ensure_valid_state_transition_structure;
 use js_sys::Reflect;
 use std::sync::Arc;
 use wasm_bindgen::{prelude::*, JsCast};
@@ -622,7 +620,9 @@ impl WasmSdk {
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
         let token_payment_info = try_from_options_optional_token_payment_info(&options)?;
 
-        // Build and sign the state transition without broadcasting
+        // Build, sign, and structurally validate the state transition without
+        // broadcasting it. Errors here refresh the identity-contract nonce so
+        // it doesn't drift past Platform's view (the helper does that for us).
         let state_transition = build_document_create_or_replace_transition(
             &document,
             &document_type,
@@ -634,19 +634,6 @@ impl WasmSdk {
             settings,
         )
         .await?;
-
-        // Validate structure before handing the ST back, mirroring rs-sdk's
-        // pre-broadcast check. For document Batch transitions this currently
-        // ends up as a no-op because DPP returns UnsupportedFeatureError until
-        // that structure validation is implemented there.
-        if let Err(err) =
-            validate_state_transition_structure(&state_transition, self.inner_sdk().version())
-        {
-            self.inner_sdk()
-                .refresh_identity_nonce(&document.owner_id())
-                .await;
-            return Err(err);
-        }
 
         Ok(state_transition.into())
     }
@@ -733,7 +720,9 @@ impl WasmSdk {
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
         let token_payment_info = try_from_options_optional_token_payment_info(&options)?;
 
-        // Build and sign the state transition without broadcasting
+        // Build, sign, and structurally validate the state transition without
+        // broadcasting it. Errors here refresh the identity-contract nonce so
+        // it doesn't drift past Platform's view (the helper does that for us).
         let state_transition = build_document_create_or_replace_transition(
             &document,
             &document_type,
@@ -745,19 +734,6 @@ impl WasmSdk {
             settings,
         )
         .await?;
-
-        // Validate structure before handing the ST back, mirroring rs-sdk's
-        // pre-broadcast check. For document Batch transitions this currently
-        // ends up as a no-op because DPP returns UnsupportedFeatureError until
-        // that structure validation is implemented there.
-        if let Err(err) =
-            validate_state_transition_structure(&state_transition, self.inner_sdk().version())
-        {
-            self.inner_sdk()
-                .refresh_identity_nonce(&document.owner_id())
-                .await;
-            return Err(err);
-        }
 
         Ok(state_transition.into())
     }
@@ -915,10 +891,10 @@ impl WasmSdk {
         // ends up as a no-op because DPP returns UnsupportedFeatureError until
         // that structure validation is implemented there.
         if let Err(err) =
-            validate_state_transition_structure(&state_transition, self.inner_sdk().version())
+            ensure_valid_state_transition_structure(&state_transition, self.inner_sdk().version())
         {
             self.inner_sdk().refresh_identity_nonce(&owner_id).await;
-            return Err(err);
+            return Err(err.into());
         }
 
         Ok(state_transition.into())
@@ -1294,18 +1270,14 @@ impl WasmSdk {
 // Helper Functions
 // ============================================================================
 
-/// Build and sign a document create or replace state transition without broadcasting.
+/// Build, sign and validate a document create-or-replace state transition
+/// without broadcasting it.
 ///
-/// This replicates the ST construction logic from `PutDocument::put_to_platform` in `rs-sdk`,
-/// but stops before the broadcast step. The returned `StateTransition` is fully signed and
-/// ready to be broadcast via `broadcastStateTransition()`.
-///
-/// Whether this produces a create or replace transition depends on the document's revision:
-/// - If revision is `None` or `INITIAL_REVISION` → create transition
-/// - Otherwise → replace transition
-///
-/// Any error after bumping the identity-contract nonce refreshes the nonce cache,
-/// mirroring rs-sdk's refresh-on-broadcast-failure idea for this prepare-path failure.
+/// This is a thin wrapper around rs-sdk's
+/// [`build_signed_document_create_or_replace_transition`], adding wasm-sdk's
+/// prepare-path policy: any error after the identity-contract nonce has been
+/// allocated (build/sign or structure validation) refreshes the nonce cache so
+/// future calls don't drift past Platform's view.
 #[allow(clippy::too_many_arguments)]
 async fn build_document_create_or_replace_transition(
     document: &Document,
@@ -1317,73 +1289,26 @@ async fn build_document_create_or_replace_transition(
     sdk: &dash_sdk::Sdk,
     settings: Option<dash_sdk::platform::transition::put_settings::PutSettings>,
 ) -> Result<dash_sdk::dpp::state_transition::StateTransition, WasmSdkError> {
-    let new_identity_contract_nonce = sdk
-        .get_identity_contract_nonce(
-            document.owner_id(),
-            document_type.data_contract_id(),
-            true,
-            settings,
-        )
-        .await?;
     let owner_id = document.owner_id();
 
-    let put_settings = settings.unwrap_or_default();
-
-    let transition_result = if document
-        .revision()
-        .is_some_and(|rev| rev != INITIAL_REVISION)
+    match build_signed_document_create_or_replace_transition(
+        sdk,
+        document,
+        document_type,
+        document_state_transition_entropy,
+        identity_public_key,
+        token_payment_info,
+        signer,
+        settings,
+    )
+    .await
     {
-        BatchTransition::new_document_replacement_transition_from_document(
-            document.clone(),
-            document_type.as_ref(),
-            identity_public_key,
-            new_identity_contract_nonce,
-            put_settings.user_fee_increase.unwrap_or_default(),
-            token_payment_info,
-            signer,
-            sdk.version(),
-            put_settings.state_transition_creation_options,
-        )
-        .await
-    } else {
-        let (doc, entropy) = document_state_transition_entropy
-            .map(|entropy| (document.clone(), entropy))
-            .unwrap_or_else(|| {
-                let mut rng = StdRng::from_entropy();
-                let mut doc = document.clone();
-                let entropy = rng.gen::<[u8; 32]>();
-                doc.set_id(Document::generate_document_id_v0(
-                    &document_type.data_contract_id(),
-                    &doc.owner_id(),
-                    document_type.name(),
-                    entropy.as_slice(),
-                ));
-                (doc, entropy)
-            });
-        BatchTransition::new_document_creation_transition_from_document(
-            doc,
-            document_type.as_ref(),
-            entropy,
-            identity_public_key,
-            new_identity_contract_nonce,
-            put_settings.user_fee_increase.unwrap_or_default(),
-            token_payment_info,
-            signer,
-            sdk.version(),
-            put_settings.state_transition_creation_options,
-        )
-        .await
-    };
-
-    let transition = match transition_result {
-        Ok(transition) => transition,
+        Ok(transition) => Ok(transition),
         Err(err) => {
             sdk.refresh_identity_nonce(&owner_id).await;
-            return Err(err.into());
+            Err(err.into())
         }
-    };
-
-    Ok(transition)
+    }
 }
 
 fn ensure_document_create_revision(
@@ -1438,49 +1363,6 @@ fn get_document_type(
         })
 }
 
-/// Validate the structure of a state transition, mirroring the same
-/// pre-broadcast check rs-sdk performs.
-///
-/// rs-sdk's equivalent helper (`ensure_valid_state_transition_structure`) is
-/// crate-private, so we reimplement the same logic against the public
-/// `StateTransitionStructureValidation` trait.
-///
-/// `UnsupportedFeatureError` is allowed through, matching rs-sdk behavior —
-/// DPP currently returns it for transition kinds whose structure validation is
-/// not implemented yet. That means this helper is currently a no-op for
-/// document Batch transitions used by `prepareDocumentCreate/Replace/Delete`
-/// until DPP adds that validation; platform still validates them during execution.
-fn validate_state_transition_structure(
-    state_transition: &dash_sdk::dpp::state_transition::StateTransition,
-    platform_version: &dash_sdk::dpp::version::PlatformVersion,
-) -> Result<(), WasmSdkError> {
-    use dash_sdk::dpp::consensus::basic::BasicError;
-    use dash_sdk::dpp::consensus::ConsensusError;
-    use dash_sdk::dpp::state_transition::StateTransitionStructureValidation;
-
-    let validation_result = state_transition.validate_structure(platform_version);
-    if validation_result.is_valid() {
-        return Ok(());
-    }
-
-    let all_unsupported = validation_result.errors.iter().all(|e| {
-        matches!(
-            e,
-            ConsensusError::BasicError(BasicError::UnsupportedFeatureError(_))
-        )
-    });
-    if all_unsupported {
-        return Ok(());
-    }
-
-    // Surface the first error through the ProtocolError → WasmSdkError conversion chain.
-    // `is_valid()` returned false, so `errors` is non-empty; fall back defensively.
-    let first = validation_result.errors.into_iter().next().ok_or_else(|| {
-        WasmSdkError::generic("state transition structure validation failed without an error")
-    })?;
-    Err(dash_sdk::dpp::ProtocolError::from(first).into())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1532,8 +1414,9 @@ mod tests {
     /// DPP's `validate_structure` implementation returns `UnsupportedFeatureError`
     /// for identity-based state transitions (see rs-dpp `state_transition/mod.rs`
     /// `StateTransitionStructureValidation` impl). rs-sdk intentionally allows
-    /// these through before broadcasting; we must do the same so we don't
-    /// over-reject STs in the prepare paths.
+    /// these through before broadcasting; the prepare APIs delegate to that
+    /// shared helper, so we sanity-check the same behavior here against the
+    /// public API to guard against regressions if the helper relocates.
     #[test]
     fn validate_accepts_unsupported_feature_errors() {
         let version = PlatformVersion::latest();
@@ -1541,7 +1424,7 @@ mod tests {
             .expect("default versioned ICT transition")
             .into();
         assert!(
-            validate_state_transition_structure(&st, version).is_ok(),
+            ensure_valid_state_transition_structure(&st, version).is_ok(),
             "identity-based STs should pass through via UnsupportedFeatureError"
         );
     }
