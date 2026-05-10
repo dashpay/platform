@@ -154,8 +154,17 @@ pub unsafe extern "C" fn dash_sdk_document_count(
 
     let result: Result<String, FFIError> = wrapper.runtime.block_on(async {
         let base_query = build_base_query(data_contract, document_type, where_json)?;
+        // FFI count entry points are proof-path Fetch calls, like
+        // wasm-sdk. Distinct mode + pagination knobs need a separate
+        // FFI entry point since the proof primitive returns a single
+        // aggregate; defaults match the gRPC defaults for the
+        // total/per-In-value modes the FFI currently exposes.
         let count_query = DocumentCountQuery {
             document_query: base_query,
+            return_distinct_counts_in_range: false,
+            order_by_ascending: None,
+            limit: None,
+            start_after_split_key: None,
         };
 
         let count = DocumentCount::fetch(&wrapper.sdk, count_query)
@@ -216,8 +225,17 @@ pub unsafe extern "C" fn dash_sdk_document_split_count(
 
     let result: Result<String, FFIError> = wrapper.runtime.block_on(async {
         let base_query = build_base_query(data_contract, document_type, where_json)?;
+        // FFI count entry points are proof-path Fetch calls, like
+        // wasm-sdk. Distinct mode + pagination knobs need a separate
+        // FFI entry point since the proof primitive returns a single
+        // aggregate; defaults match the gRPC defaults for the
+        // total/per-In-value modes the FFI currently exposes.
         let count_query = DocumentCountQuery {
             document_query: base_query,
+            return_distinct_counts_in_range: false,
+            order_by_ascending: None,
+            limit: None,
+            start_after_split_key: None,
         };
 
         let split_counts = DocumentSplitCounts::fetch(&wrapper.sdk, count_query)
