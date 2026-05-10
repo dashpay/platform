@@ -50,6 +50,7 @@ pub struct IndexLevelTypeInfo {
     /// - Sibling continuations inside each value tree get wrapped with
     ///   `Element::NonCounted` so their counts don't leak into the value
     ///   tree's count.
+    ///
     /// Mutually compatible with the `countable` flag — additive, not a
     /// replacement.
     pub range_countable: bool,
