@@ -1375,7 +1375,7 @@ impl<'a> DriveDocumentCountQuery<'a> {
     /// Inputs come from the struct fields:
     /// - `contract_id`, `document_type_name`, `index` — index path prefix
     /// - `where_clauses` — Equal-only prefix clauses + exactly one
-    ///    range clause on the index's last property
+    ///   range clause on the index's last property
     /// - `document_type` — for `serialize_value_for_key` on prefix values
     ///
     /// Errors:

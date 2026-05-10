@@ -662,7 +662,11 @@ message GetDocumentsCountResponse {
     // count) and how many documents match.
     message CountEntry {
       bytes key = 1;
-      uint64 count = 2;
+      // `jstype = JS_STRING` so JS/Web clients receive a string and don't
+      // round counts > 2^53-1 to the nearest representable Number. Matches
+      // the convention used elsewhere in this proto for `uint64` fields
+      // that can exceed Number.MAX_SAFE_INTEGER.
+      uint64 count = 2 [jstype = JS_STRING];
     }
 
     message CountResults {
