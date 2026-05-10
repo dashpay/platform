@@ -341,12 +341,17 @@ impl DocumentTypeV1 {
 
                         #[cfg(feature = "validation")]
                         if full_validation {
-                            // Countable indices are only supported starting from protocol version 12.
-                            // Both `Countable` and `CountableAllowingOffset` are gated together —
-                            // either form requires v12+ since it changes the GroveDB tree type.
-                            if index.countable.is_countable()
-                                && platform_version.protocol_version < 12
-                            {
+                            // `countable` and `rangeCountable` index features
+                            // require GroveDB tree variants and query primitives
+                            // (CountTree / ProvableCountTree / NonCounted /
+                            // AggregateCountOnRange) that only exist from
+                            // protocol v12 onward. The dispatch table routes
+                            // v12+ to `try_from_schema_v2`, so by reaching
+                            // this v1 body we know `protocol_version < 12` —
+                            // and therefore neither feature is admissible
+                            // here. Belt-and-suspenders rejection in case the
+                            // dispatch is ever changed.
+                            if index.countable.is_countable() {
                                 return Err(ProtocolError::ConsensusError(Box::new(
                                     UnsupportedFeatureError::new(
                                         "count index".to_string(),
@@ -355,12 +360,7 @@ impl DocumentTypeV1 {
                                     .into(),
                                 )));
                             }
-
-                            // `rangeCountable` requires the grovedb `NonCounted`
-                            // element variant + `AggregateCountOnRange` query
-                            // primitive, both of which only exist from
-                            // protocol version 12 onward.
-                            if index.range_countable && platform_version.protocol_version < 12 {
+                            if index.range_countable {
                                 return Err(ProtocolError::ConsensusError(Box::new(
                                     UnsupportedFeatureError::new(
                                         "range-countable index".to_string(),
