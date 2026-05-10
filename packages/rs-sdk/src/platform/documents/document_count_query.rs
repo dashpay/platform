@@ -17,15 +17,19 @@ use dapi_grpc::platform::v0::get_documents_count_request::{
 use dapi_grpc::platform::v0::{
     GetDocumentsCountRequest, GetDocumentsCountResponse, Proof, ResponseMetadata,
 };
+use dapi_grpc::platform::VersionedGrpcResponse;
 use dash_context_provider::ContextProvider;
 use dpp::dashcore::Network;
 use dpp::version::PlatformVersion;
 use dpp::{
-    data_contract::accessors::v0::DataContractV0Getters, platform_value::Value,
+    data_contract::accessors::v0::DataContractV0Getters,
+    data_contract::document_type::accessors::DocumentTypeV0Getters, platform_value::Value,
     prelude::DataContract, ProtocolError,
 };
 use drive::query::{DriveDocumentCountQuery, DriveDocumentQuery, WhereClause, WhereOperator};
-use drive_proof_verifier::{DocumentCount, DocumentSplitCounts, FromProof};
+use drive_proof_verifier::{
+    verify_aggregate_count_proof, DocumentCount, DocumentSplitCounts, FromProof,
+};
 use rs_dapi_client::transport::{
     AppliedRequestSettings, BoxFuture, TransportError, TransportRequest,
 };
@@ -206,9 +210,21 @@ impl TransportRequest for DocumentCountQuery {
         client: &'c mut Self::Client,
         settings: &AppliedRequestSettings,
     ) -> BoxFuture<'c, Result<Self::Response, TransportError>> {
-        let request: GetDocumentsCountRequest = self
-            .try_into()
-            .expect("DocumentCountQuery should always be valid");
+        // CBOR-serializing the where clauses can fail on values that
+        // aren't representable (the conversion goes through ciborium).
+        // Surface that as a recoverable transport error rather than
+        // panicking — callers expect `Fetch` failures to be matchable
+        // on `Error::DapiClientError`, not aborts.
+        let request: GetDocumentsCountRequest = match self.try_into() {
+            Ok(r) => r,
+            Err(e) => {
+                let status = dapi_grpc::tonic::Status::internal(format!(
+                    "DocumentCountQuery -> GetDocumentsCountRequest conversion failed: {}",
+                    e
+                ));
+                return Box::pin(async move { Err(TransportError::Grpc(status)) });
+            }
+        };
         request.execute_transport(client, settings)
     }
 }
@@ -230,37 +246,65 @@ impl FromProof<DocumentCountQuery> for DocumentCount {
         let request: Self::Request = request.into();
 
         // Range queries arrive with a grovedb `AggregateCountOnRange`
-        // proof (produced by `Drive::execute_document_count_range_proof`),
-        // which the materialize-and-count verifier below cannot decode.
-        // The merk-level verifier `GroveDb::verify_aggregate_count_query`
-        // is gated to grovedb's `feature = "minimal"`, not `"verify"`,
-        // so it isn't reachable from rs-drive-proof-verifier today.
-        // Wiring this up requires an upstream grovedb feature-gate
-        // change; until then, surface a clear error directing callers
-        // to either:
-        // - Use `prove = false` for range counts (no SDK gap), or
-        // - Build the path-query via
-        //   `DriveDocumentCountQuery::aggregate_count_path_query` and
-        //   call `GroveDb::verify_aggregate_count_query` directly with
-        //   `grovedb` pulled in under `feature = "minimal"`.
-        //
-        // The path-builder is intentionally kept in rs-drive under
-        // `cfg(any(server, verify))` so direct callers don't have to
-        // duplicate it.
+        // proof (produced by `Drive::execute_document_count_range_proof`)
+        // that the materialize-and-count path below can't decode. Pivot
+        // to the merk-level aggregate verifier instead, building the
+        // exact same `PathQuery` the prover used via the shared
+        // `DriveDocumentCountQuery::aggregate_count_path_query` builder
+        // (kept in rs-drive under `cfg(any(server, verify))` so prover
+        // and verifier never drift).
         if request
             .document_query
             .where_clauses
             .iter()
             .any(|wc| DriveDocumentCountQuery::is_range_operator(wc.operator))
         {
-            return Err(drive_proof_verifier::Error::RequestError {
-                error: "AggregateCountOnRange proof verification is not yet wired in the SDK \
-                        (grovedb's verify_aggregate_count_query is gated to feature = \"minimal\", \
-                        not \"verify\"). Use prove = false for range counts, or call \
-                        GroveDb::verify_aggregate_count_query directly with the path query \
-                        from DriveDocumentCountQuery::aggregate_count_path_query."
+            let response: Self::Response = response.into();
+
+            let document_type = request
+                .document_query
+                .data_contract
+                .document_type_for_name(&request.document_query.document_type_name)
+                .map_err(|e| drive_proof_verifier::Error::RequestError {
+                    error: format!(
+                        "document type {} not found in contract: {}",
+                        request.document_query.document_type_name, e
+                    ),
+                })?;
+            let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+                document_type.indexes(),
+                &request.document_query.where_clauses,
+            )
+            .ok_or_else(|| drive_proof_verifier::Error::RequestError {
+                error: "range count requires a `range_countable: true` index whose last \
+                        property matches the range field"
                     .to_string(),
-            });
+            })?;
+
+            let count_query = DriveDocumentCountQuery {
+                document_type,
+                contract_id: request.document_query.data_contract.id().to_buffer(),
+                document_type_name: request.document_query.document_type_name.clone(),
+                index,
+                where_clauses: request.document_query.where_clauses.clone(),
+                split_by_property: None,
+            };
+            let path_query = count_query
+                .aggregate_count_path_query(platform_version)
+                .map_err(|e| drive_proof_verifier::Error::RequestError {
+                    error: format!("failed to build aggregate-count path query: {}", e),
+                })?;
+
+            let proof = response
+                .proof()
+                .or(Err(drive_proof_verifier::Error::NoProofInResult))?;
+            let mtd = response
+                .metadata()
+                .or(Err(drive_proof_verifier::Error::EmptyResponseMetadata))?;
+
+            let count =
+                verify_aggregate_count_proof(proof, mtd, &path_query, platform_version, provider)?;
+            return Ok((Some(DocumentCount(count)), mtd.clone(), proof.clone()));
         }
 
         let drive_query: DriveDocumentQuery =
@@ -353,12 +397,14 @@ impl FromProof<DocumentCountQuery> for DocumentSplitCounts {
                 provider,
             )
             .map(|(opt, mtd, proof)| {
+                // Total-count mode: a verified count of zero is a valid
+                // result, not absence — emit a single empty-key entry
+                // unconditionally so callers can distinguish "no docs
+                // matched" from "no proof returned" purely by structure.
                 let map = opt
                     .map(|DocumentCount(count)| {
                         let mut m = std::collections::BTreeMap::new();
-                        if count > 0 {
-                            m.insert(Vec::new(), count);
-                        }
+                        m.insert(Vec::new(), count);
                         m
                     })
                     .unwrap_or_default();

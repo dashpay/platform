@@ -31,7 +31,10 @@ use grovedb_path::SubtreePath;
 // gates so the verifier can reconstruct the same path the prover built.
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::drive::RootTree;
-#[cfg(any(feature = "server", feature = "verify"))]
+// `.indexes()` is only used inside the `impl Drive` dispatcher blocks
+// (gated `feature = "server"`); the verify-only path takes the
+// `&BTreeMap<String, Index>` directly so doesn't need the trait.
+#[cfg(feature = "server")]
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
