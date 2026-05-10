@@ -137,21 +137,16 @@ pub fn verify_distinct_count_proof(
     // are bound to `root_hash` through the same hash chain
     // `verify_query_with_options` just validated.
     //
-    // Disable `absence_proofs_for_non_existing_searched_keys` (the
-    // default `true` would require a `limit` on the path query — but
-    // distinct-count path queries don't carry one, the result is
-    // bounded by the range itself, and "absence proofs" only apply to
-    // explicit `Query::Key(k)` items which a range-only query has
-    // none of). Keep `verify_proof_succinctness: true` (default) so
-    // proofs with unrequested extra subtree data are rejected.
-    let verify_options = VerifyOptions {
-        absence_proofs_for_non_existing_searched_keys: false,
-        ..VerifyOptions::default()
-    };
+    // Use grovedb's strict default options. The path query now
+    // carries `Some(limit)` (enforced by the dispatcher's prove-
+    // distinct validate-not-clamp policy), which satisfies
+    // `absence_proofs_for_non_existing_searched_keys`'s "limit must
+    // be set" requirement. Succinctness check is on so proofs with
+    // unrequested extra subtree data are rejected.
     let (root_hash, elements) = GroveDb::verify_query_with_options(
         &proof.grovedb_proof,
         path_query,
-        verify_options,
+        VerifyOptions::default(),
         &platform_version.drive.grove_version,
     )
     .map_err(|e| Error::GroveDBError {

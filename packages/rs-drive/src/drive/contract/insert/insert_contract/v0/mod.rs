@@ -3177,20 +3177,13 @@ mod range_countable_index_e2e_tests {
             .distinct_count_path_query(TEST_LIMIT, pv)
             .expect("path query should build");
 
-        // The path query carries `Some(limit)` now, so we keep
-        // `absence_proofs_for_non_existing_searched_keys: false`
-        // because absence proofs apply to explicit `Query::Key(k)`
-        // items (a range-only query has none). Succinctness stays on:
-        // AVL boundary nodes are *required* for hash-chain
-        // verification, not "extra" data.
-        let verify_options = grovedb::VerifyOptions {
-            absence_proofs_for_non_existing_searched_keys: false,
-            ..grovedb::VerifyOptions::default()
-        };
+        // Use grovedb's strict defaults — the path query carries
+        // `Some(TEST_LIMIT)`, which satisfies the
+        // absence-proofs-need-a-limit prerequisite.
         let (root_hash, _elements) = GroveDb::verify_query_with_options(
             &proof_bytes,
             &path_query,
-            verify_options,
+            grovedb::VerifyOptions::default(),
             &pv.drive.grove_version,
         )
         .expect("standard verify_query must succeed for the regular range proof shape");
