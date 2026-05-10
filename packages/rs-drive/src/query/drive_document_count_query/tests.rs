@@ -235,52 +235,6 @@ fn test_count_query_total_count_empty() {
 }
 
 #[test]
-fn test_count_query_split_by_property() {
-    let (drive, data_contract) = setup_drive_and_contract();
-    let platform_version = PlatformVersion::latest();
-
-    insert_random_documents(&drive, &data_contract, "person", 5, 600);
-
-    let document_type = data_contract
-        .document_type_for_name("person")
-        .expect("expected document type");
-
-    let index = DriveDocumentCountQuery::find_countable_index_for_split(
-        document_type.indexes(),
-        &[],
-        "firstName",
-    )
-    .expect("expected to find countable index for split");
-
-    let query = DriveDocumentCountQuery {
-        document_type,
-        contract_id: data_contract.id().to_buffer(),
-        document_type_name: "person".to_string(),
-        index,
-        where_clauses: vec![],
-        split_by_property: Some("firstName".to_string()),
-    };
-
-    let results = query
-        .execute_no_proof(&drive, None, platform_version)
-        .expect("expected query to succeed");
-
-    let total: u64 = results.iter().map(|e| e.count).sum();
-    assert_eq!(total, 5, "expected total split count of 5 documents");
-
-    for entry in &results {
-        assert!(!entry.key.is_empty(), "expected non-empty split key");
-        assert!(entry.count > 0, "expected positive count per split");
-    }
-
-    // Also verify proof generation works for split query
-    let proof = query
-        .execute_with_proof(&drive, None, platform_version)
-        .expect("expected proof generation to succeed");
-    assert!(!proof.is_empty(), "expected non-empty proof");
-}
-
-#[test]
 fn test_find_countable_index_for_where_clauses_no_match() {
     let platform_version = PlatformVersion::latest();
 
@@ -312,35 +266,6 @@ fn test_find_countable_index_for_where_clauses_no_match() {
     assert!(
         result.is_none(),
         "expected no countable index for non-existent field"
-    );
-}
-
-#[test]
-fn test_find_countable_index_for_split_no_match() {
-    let platform_version = PlatformVersion::latest();
-
-    let data_contract = json_document_to_contract_with_ids(
-        "tests/supporting_files/contract/family/family-contract-countable.json",
-        None,
-        None,
-        false,
-        platform_version,
-    )
-    .expect("expected to get json based contract");
-
-    let document_type = data_contract
-        .document_type_for_name("person")
-        .expect("expected document type");
-
-    let result = DriveDocumentCountQuery::find_countable_index_for_split(
-        document_type.indexes(),
-        &[],
-        "nonExistentField",
-    );
-
-    assert!(
-        result.is_none(),
-        "expected no countable index for non-existent split field"
     );
 }
 
@@ -414,12 +339,6 @@ fn test_find_countable_index_rejects_unsupported_operator() {
         )
         .is_none()
     );
-    assert!(DriveDocumentCountQuery::find_countable_index_for_split(
-        document_type.indexes(),
-        std::slice::from_ref(&gt_clause),
-        "firstName",
-    )
-    .is_none());
 }
 
 #[test]
@@ -514,68 +433,6 @@ fn test_count_query_total_count_with_in_operator_no_matches() {
     assert_eq!(results[0].count, 0, "expected count of 0 for unmatched In");
 }
 
-#[test]
-fn test_count_query_split_with_in_prefix() {
-    let (drive, data_contract) = setup_drive_and_contract();
-    let platform_version = PlatformVersion::latest();
-
-    // firstName IN ["Alice", "Bob"] split by lastName
-    // Expected: Smith=3 (Alice+Alice+Bob), Jones=2 (Alice+Bob), Doe=1 (Carol — excluded)
-    insert_person_doc(&drive, &data_contract, [1u8; 32], "Alice", "M", "Smith", 30);
-    insert_person_doc(&drive, &data_contract, [2u8; 32], "Alice", "N", "Smith", 31);
-    insert_person_doc(&drive, &data_contract, [3u8; 32], "Bob", "M", "Smith", 32);
-    insert_person_doc(&drive, &data_contract, [4u8; 32], "Alice", "M", "Jones", 33);
-    insert_person_doc(&drive, &data_contract, [5u8; 32], "Bob", "M", "Jones", 34);
-    insert_person_doc(&drive, &data_contract, [6u8; 32], "Carol", "M", "Doe", 35);
-
-    let document_type = data_contract
-        .document_type_for_name("person")
-        .expect("expected document type");
-
-    let in_clause = WhereClause {
-        field: "firstName".to_string(),
-        operator: WhereOperator::In,
-        value: Value::Array(vec![
-            Value::Text("Alice".to_string()),
-            Value::Text("Bob".to_string()),
-        ]),
-    };
-
-    let index = DriveDocumentCountQuery::find_countable_index_for_split(
-        document_type.indexes(),
-        std::slice::from_ref(&in_clause),
-        "lastName",
-    )
-    .expect("expected to find countable index for In + split lastName");
-
-    let query = DriveDocumentCountQuery {
-        document_type,
-        contract_id: data_contract.id().to_buffer(),
-        document_type_name: "person".to_string(),
-        index,
-        where_clauses: vec![in_clause],
-        split_by_property: Some("lastName".to_string()),
-    };
-
-    let results = query
-        .execute_no_proof(&drive, None, platform_version)
-        .expect("expected query to succeed");
-
-    let total: u64 = results.iter().map(|e| e.count).sum();
-    assert_eq!(
-        total, 5,
-        "expected total of 5 (3 Smith + 2 Jones, Carol/Doe excluded)"
-    );
-    assert_eq!(
-        results.len(),
-        2,
-        "expected 2 split entries (Smith and Jones)"
-    );
-    for entry in &results {
-        assert!(entry.count > 0, "filtered split entries should be > 0");
-    }
-}
-
 /// Codex review finding #3: an `In` clause with duplicate values used to
 /// double-count by recursing once per array element. The fix dedupes
 /// branches by serialized key before summing.
@@ -622,6 +479,57 @@ fn test_count_query_in_operator_dedupes_duplicate_values() {
     assert_eq!(
         results[0].count, 2,
         "expected count of 2 (age=30, set semantics — duplicates collapsed)"
+    );
+}
+
+/// `execute_document_count_per_in_value_no_proof` runs one GroveDB walk
+/// per `In` value, so its iteration cost is proportional to the array's
+/// length rather than the configured `max_query_limit`. That makes the
+/// In-array length the actual amplification factor — capping the
+/// *output* `limit` after the loop is cosmetic. We delegate the cap to
+/// `WhereClause::in_values()` (the same 100-element validator other In
+/// consumers use); this test pins that delegation at the executor's
+/// entry point so a regression here surfaces as a query-rejection
+/// rather than as a quietly amplified backend scan.
+#[test]
+fn test_count_query_in_operator_rejects_oversized_array() {
+    let (drive, data_contract) = setup_drive_and_contract();
+    let platform_version = PlatformVersion::latest();
+
+    let document_type = data_contract
+        .document_type_for_name("person")
+        .expect("expected document type");
+
+    // 101 distinct `age` values triggers the 100-cap in `in_values()`.
+    let oversized: Vec<Value> = (0u64..101).map(Value::U64).collect();
+    let in_clause = WhereClause {
+        field: "age".to_string(),
+        operator: WhereOperator::In,
+        value: Value::Array(oversized),
+    };
+
+    let err = drive
+        .execute_document_count_per_in_value_no_proof(
+            data_contract.id().to_buffer(),
+            document_type,
+            "person".to_string(),
+            vec![in_clause],
+            super::RangeCountOptions {
+                distinct: false,
+                limit: Some(50),
+                start_after_split_key: None,
+                order_by_ascending: true,
+            },
+            None,
+            platform_version,
+        )
+        .expect_err("expected 101-element In array to be rejected");
+
+    let msg = err.to_string();
+    assert!(
+        msg.contains("at most 100"),
+        "expected 100-cap rejection, got: {}",
+        msg
     );
 }
 
