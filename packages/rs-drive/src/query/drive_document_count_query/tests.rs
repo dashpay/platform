@@ -1193,16 +1193,20 @@ mod detect_mode_tests {
         ));
     }
 
-    /// `return_distinct_counts_in_range = true` + `prove = true` → rejected
-    /// (the proof primitive returns a single aggregate).
+    /// `return_distinct_counts_in_range = true` + `prove = true` →
+    /// `RangeDistinctProof`. Per-distinct-value counts come from a
+    /// regular range proof against the property-name
+    /// `ProvableCountTree` (no `AggregateCountOnRange` wrapper), with
+    /// `KVCount(key, value, count)` ops bound to the merk root via
+    /// `node_hash_with_count`. The verifier extracts them as a
+    /// `BTreeMap<Vec<u8>, u64>`.
     #[test]
-    fn distinct_on_prove_path_rejected() {
+    fn distinct_with_prove_is_range_distinct_proof() {
         let clauses = vec![gt_clause("color")];
-        let err = DriveDocumentCountQuery::detect_mode(&clauses, true, true).unwrap_err();
-        assert!(matches!(
-            err,
-            QuerySyntaxError::InvalidWhereClauseComponents(msg) if msg.contains("only supported on the \\\n                 no-prove path") || msg.contains("no-prove path")
-        ));
+        assert_eq!(
+            DriveDocumentCountQuery::detect_mode(&clauses, true, true).unwrap(),
+            DocumentCountMode::RangeDistinctProof,
+        );
     }
 
     /// Distinct mode in no-prove range → still RangeNoProof; the

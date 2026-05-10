@@ -28,7 +28,8 @@ use dpp::{
 };
 use drive::query::{DriveDocumentCountQuery, DriveDocumentQuery, WhereClause, WhereOperator};
 use drive_proof_verifier::{
-    verify_aggregate_count_proof, DocumentCount, DocumentSplitCounts, FromProof,
+    verify_aggregate_count_proof, verify_distinct_count_proof, DocumentCount, DocumentSplitCounts,
+    FromProof,
 };
 use rs_dapi_client::transport::{
     AppliedRequestSettings, BoxFuture, TransportError, TransportRequest,
@@ -365,6 +366,72 @@ impl FromProof<DocumentCountQuery> for DocumentSplitCounts {
             .iter()
             .find(|wc| wc.operator == WhereOperator::In)
             .map(|wc| wc.field.clone());
+
+        let has_range = request
+            .document_query
+            .where_clauses
+            .iter()
+            .any(|wc| DriveDocumentCountQuery::is_range_operator(wc.operator));
+
+        // Range + distinct (no In): per-distinct-value counts via a
+        // regular merk range proof (no `AggregateCountOnRange`
+        // wrapper). The proof's `KVCount` ops carry per-key counts
+        // that the merk root commits to via `node_hash_with_count`,
+        // so `verify_distinct_count_proof` runs the standard hash
+        // chain check and reads the counts back as a verified
+        // `BTreeMap`. Only reachable when the SDK builder set
+        // `with_distinct_counts_in_range(true)`.
+        if split_property.is_none() && has_range && request.return_distinct_counts_in_range {
+            let response: Self::Response = response.into();
+
+            let document_type = request
+                .document_query
+                .data_contract
+                .document_type_for_name(&request.document_query.document_type_name)
+                .map_err(|e| drive_proof_verifier::Error::RequestError {
+                    error: format!(
+                        "document type {} not found in contract: {}",
+                        request.document_query.document_type_name, e
+                    ),
+                })?;
+            let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+                document_type.indexes(),
+                &request.document_query.where_clauses,
+            )
+            .ok_or_else(|| drive_proof_verifier::Error::RequestError {
+                error: "distinct range count requires a `range_countable: true` index whose \
+                        last property matches the range field"
+                    .to_string(),
+            })?;
+
+            let count_query = DriveDocumentCountQuery {
+                document_type,
+                contract_id: request.document_query.data_contract.id().to_buffer(),
+                document_type_name: request.document_query.document_type_name.clone(),
+                index,
+                where_clauses: request.document_query.where_clauses.clone(),
+            };
+            let path_query = count_query
+                .distinct_count_path_query(platform_version)
+                .map_err(|e| drive_proof_verifier::Error::RequestError {
+                    error: format!("failed to build distinct-count path query: {}", e),
+                })?;
+
+            let proof = response
+                .proof()
+                .or(Err(drive_proof_verifier::Error::NoProofInResult))?;
+            let mtd = response
+                .metadata()
+                .or(Err(drive_proof_verifier::Error::EmptyResponseMetadata))?;
+
+            let counts =
+                verify_distinct_count_proof(proof, mtd, &path_query, platform_version, provider)?;
+            return Ok((
+                Some(DocumentSplitCounts(counts)),
+                mtd.clone(),
+                proof.clone(),
+            ));
+        }
 
         if let Some(split_property) = split_property {
             // Per-In-value split case: groups verified docs by the In

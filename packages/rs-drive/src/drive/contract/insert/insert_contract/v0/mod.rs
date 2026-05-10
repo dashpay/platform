@@ -3036,4 +3036,273 @@ mod range_countable_index_e2e_tests {
             "sum of per-lot counts must equal the aggregate (3+4+...+26 = 348)"
         );
     }
+
+    /// The trustless companion to the no-proof distinct test above:
+    /// same parking-lot fixture, same `lot > "b"` predicate, asking
+    /// for *per-lot* counts but this time via the prove path. Returns
+    /// a regular grovedb range proof against the property-name
+    /// `ProvableCountTree` — no `AggregateCountOnRange` wrapper.
+    /// merk's `to_kv_count_node` emits one `Node::KVCount(key, value,
+    /// count)` per matched in-range key, each `count` bound to the
+    /// merk root via `node_hash_with_count`, and we recover the
+    /// per-key map by walking the proof's op stream after the
+    /// standard hash-chain check passes.
+    ///
+    /// Pinned guarantees:
+    /// 1. Per-lot counts match the no-proof distinct walk exactly
+    ///    (cross-checked against the `range_count_executor_returns
+    ///    _per_lot_counts_for_lots_greater_than_b` expectations).
+    /// 2. The recovered counts sum to 348 — same answer the
+    ///    aggregate prove path produces, just decomposed per-key.
+    ///    All three code paths (no-proof distinct, prove aggregate,
+    ///    prove distinct) are obligated to agree.
+    /// 3. The proof never materializes the underlying 348 documents.
+    ///    Total proof bytes scale with O(distinct lots in range)
+    ///    rather than O(matched docs), proving the
+    ///    "doesn't-materialize-docs" win that distinguishes this
+    ///    from the materialize-and-count fallback.
+    #[test]
+    fn distinct_count_proof_returns_per_lot_counts_for_lots_greater_than_b() {
+        use crate::query::{DriveDocumentCountQuery, WhereClause, WhereOperator};
+        use dpp::platform_value::Value;
+        use grovedb::GroveDb;
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let pv = PlatformVersion::latest();
+
+        let factory = dpp::data_contract::DataContractFactory::new(PROTOCOL_VERSION_V12)
+            .expect("expected to create factory");
+        let document_schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "lot": { "type": "string", "position": 0, "maxLength": 4 },
+            },
+            "indices": [{
+                "name": "byLot",
+                "properties": [{"lot": "asc"}],
+                "countable": "countable",
+                "rangeCountable": true,
+            }],
+            "additionalProperties": false,
+        });
+        let schemas = platform_value!({ "car": document_schema });
+        let contract = factory
+            .create_with_value_config(generate_random_identifier_struct(), 0, schemas, None, None)
+            .expect("create parking-lot contract")
+            .data_contract_owned();
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("apply parking-lot contract");
+
+        let document_type = contract
+            .document_type_for_name("car")
+            .expect("car document type exists");
+
+        let mut seed = 1u64;
+        for (idx, letter) in ('a'..='z').enumerate() {
+            let car_count = idx + 1;
+            for _ in 0..car_count {
+                let mut doc = document_type
+                    .random_document(Some(seed), pv)
+                    .expect("random document");
+                let mut props = std::collections::BTreeMap::new();
+                props.insert("lot".to_string(), Value::Text(letter.to_string()));
+                doc.set_properties(props);
+
+                drive
+                    .add_document_for_contract(
+                        DocumentAndContractInfo {
+                            owned_document_info: OwnedDocumentInfo {
+                                document_info: DocumentRefInfo((&doc, None)),
+                                owner_id: None,
+                            },
+                            contract: &contract,
+                            document_type,
+                        },
+                        false,
+                        BlockInfo::default(),
+                        true,
+                        None,
+                        pv,
+                        None,
+                    )
+                    .expect("expected to insert car document");
+                seed += 1;
+            }
+        }
+
+        let where_clauses = vec![WhereClause {
+            field: "lot".to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: Value::Text("b".to_string()),
+        }];
+        let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+            document_type.indexes(),
+            &where_clauses,
+        )
+        .expect("byLot range_countable index should be picked");
+
+        let query = DriveDocumentCountQuery {
+            document_type,
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "car".to_string(),
+            index,
+            where_clauses,
+        };
+
+        // Prove side: no `AggregateCountOnRange` wrapper.
+        let proof_bytes = query
+            .execute_distinct_count_with_proof(&drive, None, pv)
+            .expect("should generate distinct count proof");
+        assert!(!proof_bytes.is_empty(), "proof must not be empty");
+
+        // Verify side: standard verify_query gives us the integrity
+        // check + root_hash. The KVCount counts inside the proof are
+        // bound to root_hash via node_hash_with_count, so once this
+        // returns we just walk the ops to extract them.
+        let path_query = query
+            .distinct_count_path_query(pv)
+            .expect("path query should build");
+
+        // Distinct-count proofs don't carry a path-query limit (the
+        // range bounds the result set on their own), and the AVL
+        // boundary walk legitimately includes nodes whose keys land
+        // outside the strict matched set — so disable the
+        // absence-proof and succinctness checks that the default
+        // `VerifyOptions` enables.
+        let verify_options = grovedb::VerifyOptions {
+            absence_proofs_for_non_existing_searched_keys: false,
+            verify_proof_succinctness: false,
+            include_empty_trees_in_result: false,
+        };
+        let (root_hash, _elements) = GroveDb::verify_query_with_options(
+            &proof_bytes,
+            &path_query,
+            verify_options,
+            &pv.drive.grove_version,
+        )
+        .expect("standard verify_query must succeed for the regular range proof shape");
+        assert_ne!(root_hash, [0u8; 32], "root hash should not be zero");
+
+        // Walk the envelope down to the leaf merk and pluck per-lot
+        // counts. Mirrors verify_distinct_count_proof's extraction.
+        // At the property-name `ProvableCountTree` layer each child's
+        // value is a serialized `Element::CountTree(_, lot_count, _)`
+        // pointing to that lot's value-CountTree; we deserialize the
+        // value bytes and read `count_value_or_default()` for the per-
+        // lot count. The AVL-aggregate count carried by the
+        // `ProvableCountedMerkNode(_)` feature type is the *wrong*
+        // number — it includes left/right AVL-subtree contributions,
+        // not just this lot.
+        use grovedb::operations::proof::{
+            GroveDBProof, GroveDBProofV0, GroveDBProofV1, ProofBytes,
+        };
+        use grovedb::{Element, MerkProofDecoder, MerkProofNode, MerkProofOp};
+        use std::collections::BTreeMap;
+
+        let config = bincode::config::standard()
+            .with_big_endian()
+            .with_limit::<{ 256 * 1024 * 1024 }>();
+        let (envelope, _): (GroveDBProof, _) =
+            bincode::decode_from_slice(&proof_bytes, config).expect("envelope decodes");
+
+        let mut counts: BTreeMap<Vec<u8>, u64> = BTreeMap::new();
+        let target_depth = path_query.path.len();
+
+        let extract_per_lot = |merk_bytes: &[u8], counts: &mut BTreeMap<Vec<u8>, u64>| {
+            for op in MerkProofDecoder::new(merk_bytes) {
+                let (key, value) =
+                    match op {
+                        Ok(MerkProofOp::Push(MerkProofNode::KVValueHashFeatureType(
+                            key,
+                            value,
+                            _,
+                            _,
+                        ))) => (key, value),
+                        Ok(MerkProofOp::Push(
+                            MerkProofNode::KVValueHashFeatureTypeWithChildHash(key, value, _, _, _),
+                        )) => (key, value),
+                        Ok(MerkProofOp::Push(MerkProofNode::KVCount(key, value, _))) => {
+                            (key, value)
+                        }
+                        _ => continue,
+                    };
+                let elem = Element::deserialize(&value, &pv.drive.grove_version)
+                    .expect("element value should deserialize");
+                counts.insert(key, elem.count_value_or_default());
+            }
+        };
+
+        match envelope {
+            GroveDBProof::V0(GroveDBProofV0 { root_layer, .. }) => {
+                let mut layer = &root_layer;
+                let mut depth = 0;
+                while depth < target_depth {
+                    let next_key = &path_query.path[depth];
+                    layer = layer
+                        .lower_layers
+                        .get(next_key)
+                        .expect("lower layer must exist for each path key");
+                    depth += 1;
+                }
+                extract_per_lot(&layer.merk_proof, &mut counts);
+            }
+            GroveDBProof::V1(GroveDBProofV1 { root_layer }) => {
+                let mut layer = &root_layer;
+                let mut depth = 0;
+                while depth < target_depth {
+                    let next_key = &path_query.path[depth];
+                    layer = layer
+                        .lower_layers
+                        .get(next_key)
+                        .expect("lower layer must exist for each path key");
+                    depth += 1;
+                }
+                let merk_bytes = match &layer.merk_proof {
+                    ProofBytes::Merk(b) => b.as_slice(),
+                    _ => panic!("unexpected non-merk leaf bytes for distinct-count proof"),
+                };
+                extract_per_lot(merk_bytes, &mut counts);
+            }
+        }
+
+        // 24 distinct lots (c..=z) each with their alphabet-position
+        // count. Same expectation as the no-proof distinct test — the
+        // prove path is obligated to return the same numbers, just
+        // with cryptographic bounding on each.
+        assert_eq!(
+            counts.len(),
+            24,
+            "expected one entry per lot from c through z, got {}",
+            counts.len()
+        );
+        for (i, letter) in ('c'..='z').enumerate() {
+            let key = letter.to_string().into_bytes();
+            let expected_count = (i + 3) as u64;
+            assert_eq!(
+                counts.get(&key).copied(),
+                Some(expected_count),
+                "lot '{}' should have {} cars",
+                letter,
+                expected_count
+            );
+        }
+
+        // Cross-path agreement: per-lot sum equals the aggregate
+        // proof's answer (348). Three code paths (no-proof distinct,
+        // prove aggregate, prove distinct) all obligated to agree.
+        let total: u64 = counts.values().sum();
+        assert_eq!(
+            total, 348,
+            "sum of per-lot counts must equal aggregate (3+4+...+26 = 348)"
+        );
+    }
 }

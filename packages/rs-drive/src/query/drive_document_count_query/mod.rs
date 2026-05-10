@@ -18,12 +18,14 @@ use dpp::version::drive_versions::DriveVersion;
 #[cfg(feature = "server")]
 use grovedb::query_result_type::QueryResultType;
 #[cfg(feature = "server")]
-use grovedb::{Query, SizedQuery, TransactionArg};
-// `PathQuery` + `QueryItem` are needed by `aggregate_count_path_query`,
-// which is shared between the server prove path and the SDK proof
-// verifier (compiled under `verify`).
+use grovedb::TransactionArg;
+// `PathQuery`, `QueryItem`, `Query`, and `SizedQuery` are needed by
+// the path-builders shared between the server prove path and the SDK
+// proof verifier (compiled under `verify`). Both halves must produce
+// the *exact same* `PathQuery` so the verifier reconstructs the same
+// merk root the prover used.
 #[cfg(any(feature = "server", feature = "verify"))]
-use grovedb::{PathQuery, QueryItem};
+use grovedb::{PathQuery, Query, QueryItem, SizedQuery};
 #[cfg(feature = "server")]
 use grovedb_path::SubtreePath;
 
@@ -101,11 +103,24 @@ pub enum DocumentCountMode {
     /// a single summed entry or per-distinct-value entries depending on
     /// `return_distinct_counts_in_range`.
     RangeNoProof,
-    /// Exactly one range clause + `prove = true` — produces a grovedb
+    /// Exactly one range clause + `prove = true` +
+    /// `return_distinct_counts_in_range = false` — produces a grovedb
     /// `AggregateCountOnRange` proof that verifies to a single u64.
-    /// `return_distinct_counts_in_range = true` is rejected here
-    /// because the merk-level primitive returns one aggregate.
+    /// The merk-level primitive returns one aggregate; per-distinct-
+    /// value entries with proof go through [`Self::RangeDistinctProof`]
+    /// instead.
     RangeProof,
+    /// Exactly one range clause + `prove = true` +
+    /// `return_distinct_counts_in_range = true` — produces a regular
+    /// range proof against the property-name `ProvableCountTree`. The
+    /// proof's `KVCount(key, value, count)` ops carry per-distinct-
+    /// value counts, each cryptographically committed via
+    /// `node_hash_with_count` to the merk root. The verifier walks the
+    /// proof op stream and emits a per-key count map, no opt-in
+    /// aggregate-collapse wrapper. Proof size is O(distinct values
+    /// matched) rather than the O(log n) of [`Self::RangeProof`], but
+    /// still much smaller than materialize-and-count.
+    RangeDistinctProof,
     /// No range clause + `prove = true` — falls back to the
     /// materialize-and-count proof path. Capped at `u16::MAX` matching
     /// docs because each verified document is materialized client-side.
@@ -235,31 +250,36 @@ impl<'a> DriveDocumentCountQuery<'a> {
                 "return_distinct_counts_in_range requires a range where-clause",
             ));
         }
-        if return_distinct_counts_in_range && prove {
-            return Err(QuerySyntaxError::InvalidWhereClauseComponents(
-                "return_distinct_counts_in_range = true is only supported on the \
-                 no-prove path; the proof primitive returns a single aggregate",
-            ));
-        }
 
-        Ok(match (has_range, has_in, prove) {
-            (true, false, true) => DocumentCountMode::RangeProof,
-            (true, false, false) => DocumentCountMode::RangeNoProof,
-            (false, true, false) => DocumentCountMode::PerInValue,
-            // `In` + `prove = true`: route to the materialize-and-count
-            // proof path. The SDK's `FromProof<DocumentCountQuery>` for
-            // `DocumentSplitCounts` then groups verified documents by
-            // the `In` field's serialized value to produce per-key
-            // count entries. There's no aggregate-proof primitive that
-            // emits one `(key, count)` per In value yet, but the
-            // materialize path is correct, just bounded at u16::MAX.
-            (false, true, true) => DocumentCountMode::PointLookupProof,
-            (false, false, true) => DocumentCountMode::PointLookupProof,
-            (false, false, false) => DocumentCountMode::Total,
-            // (true, true, _) is rejected by the has_range && has_in
-            // check above.
-            (true, true, _) => unreachable!("range + In is rejected above"),
-        })
+        Ok(
+            match (has_range, has_in, prove, return_distinct_counts_in_range) {
+                // Range + prove + distinct: per-distinct-value counts come
+                // from a regular range proof against the property-name
+                // `ProvableCountTree`. The `KVCount` ops in the proof carry
+                // per-key counts already bound to the merk root via
+                // `node_hash_with_count`; no `AggregateCountOnRange`
+                // wrapper.
+                (true, false, true, true) => DocumentCountMode::RangeDistinctProof,
+                // Range + prove + summed: `AggregateCountOnRange` collapse
+                // — single u64 verified out.
+                (true, false, true, false) => DocumentCountMode::RangeProof,
+                (true, false, false, _) => DocumentCountMode::RangeNoProof,
+                (false, true, false, _) => DocumentCountMode::PerInValue,
+                // `In` + `prove = true`: route to the materialize-and-count
+                // proof path. The SDK's `FromProof<DocumentCountQuery>` for
+                // `DocumentSplitCounts` then groups verified documents by
+                // the `In` field's serialized value to produce per-key
+                // count entries. There's no aggregate-proof primitive that
+                // emits one `(key, count)` per In value yet, but the
+                // materialize path is correct, just bounded at u16::MAX.
+                (false, true, true, _) => DocumentCountMode::PointLookupProof,
+                (false, false, true, _) => DocumentCountMode::PointLookupProof,
+                (false, false, false, _) => DocumentCountMode::Total,
+                // (true, true, _, _) is rejected by the has_range && has_in
+                // check above.
+                (true, true, _, _) => unreachable!("range + In is rejected above"),
+            },
+        )
     }
 
     /// Finds a countable index whose properties form a prefix that matches the
@@ -964,6 +984,44 @@ impl<'a> DriveDocumentCountQuery<'a> {
             .map_err(|e| Error::GroveDB(Box::new(e)))?;
         Ok(proof)
     }
+
+    /// Generates a regular grovedb range proof against this count
+    /// query's `range_countable` index — the distinct-counts-with-
+    /// proof companion to [`Self::execute_aggregate_count_with_proof`].
+    ///
+    /// No new prover code: the leaf is a `ProvableCountTree` and
+    /// merk's existing `prove_query` already emits `KVCount(key,
+    /// value, count)` per matched in-range key (via
+    /// `to_kv_count_node`). Each `count` is hash-bound to the merk
+    /// root via `node_hash_with_count`, so the per-key correctness
+    /// guarantee comes for free with the standard hash-chain check —
+    /// the SDK-side
+    /// [`drive_proof_verifier::verify_distinct_count_proof`] just
+    /// pulls the counts out of the proof's op stream after the
+    /// integrity check passes.
+    ///
+    /// Trade-off vs. the aggregate prove path:
+    /// - Returns per-distinct-value counts (one `(key, count)` per
+    ///   matched lot value), not just a single sum.
+    /// - Proof size is O(distinct values matched), not O(log n) — so
+    ///   ~1 `KVCount` op per matched key instead of subtree collapse
+    ///   via `HashWithCount`. Still strictly smaller than
+    ///   materialize-and-count, which would emit each underlying doc.
+    pub fn execute_distinct_count_with_proof(
+        &self,
+        drive: &Drive,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, Error> {
+        let drive_version = &platform_version.drive;
+        let path_query = self.distinct_count_path_query(platform_version)?;
+        let proof = drive
+            .grove
+            .get_proved_path_query(&path_query, None, transaction, &drive_version.grove_version)
+            .unwrap()
+            .map_err(|e| Error::GroveDB(Box::new(e)))?;
+        Ok(proof)
+    }
 }
 
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -1076,21 +1134,23 @@ impl<'a> DriveDocumentCountQuery<'a> {
         })
     }
 
-    /// Build the grovedb `PathQuery` for an `AggregateCountOnRange`
-    /// query against this count query's `range_countable` index.
+    /// Shared path-construction core for both count-proof variants.
     ///
-    /// Shared between the server-side prove path
-    /// ([`Self::execute_aggregate_count_with_proof`]) and the client-
-    /// side verify path (the SDK's `FromProof<DocumentCountQuery>` for
-    /// `DocumentCount`). Both sides must produce the *exact same*
-    /// `PathQuery` for verification to recompute the same merk root —
-    /// keeping path construction in one place is load-bearing.
+    /// Returns `(path, range_query_item)`:
+    /// - `path` — `[DataContractDocuments, contract_id, 0x01, doctype,
+    ///   prefix_prop_name, prefix_value, ..., range_prop_name]` walking
+    ///   from the contract root down to the property-name
+    ///   `ProvableCountTree` whose children carry per-distinct-value
+    ///   counts.
+    /// - `range_query_item` — the converted range from the where-clause's
+    ///   range operator, ready to either be wrapped in
+    ///   `QueryItem::AggregateCountOnRange` (for the aggregate prove
+    ///   path) or inserted bare into a `Query` (for the distinct prove
+    ///   path).
     ///
-    /// Inputs come from the struct fields:
-    /// - `contract_id`, `document_type_name`, `index` — index path prefix
-    /// - `where_clauses` — Equal-only prefix clauses + exactly one
-    ///   range clause on the index's last property
-    /// - `document_type` — for `serialize_value_for_key` on prefix values
+    /// Both [`Self::aggregate_count_path_query`] and
+    /// [`Self::distinct_count_path_query`] feed off this; keeping path
+    /// construction in one place keeps prover/verifier parity tight.
     ///
     /// Errors:
     /// - No range where-clause / multiple range where-clauses →
@@ -1098,24 +1158,26 @@ impl<'a> DriveDocumentCountQuery<'a> {
     /// - `In` on a prefix property (would need multiple disjoint proofs)
     ///   → `InvalidWhereClauseComponents`
     /// - Missing prefix clause → `InvalidWhereClauseComponents`
-    pub fn aggregate_count_path_query(
+    fn count_path_and_query_item(
         &self,
+        builder_label: &'static str,
         platform_version: &PlatformVersion,
-    ) -> Result<PathQuery, Error> {
+    ) -> Result<(Vec<Vec<u8>>, QueryItem), Error> {
         let range_clause = self
             .where_clauses
             .iter()
             .find(|wc| Self::is_range_operator(wc.operator))
-            .ok_or_else(|| {
-                Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
-                    "aggregate_count_path_query requires a range where-clause",
-                ))
-            })?;
+            .ok_or(Error::Query(
+                QuerySyntaxError::InvalidWhereClauseComponents(
+                    "count path query requires a range where-clause",
+                ),
+            ))?;
+        let _ = builder_label;
         let query_item = self.range_clause_to_query_item(range_clause, platform_version)?;
 
         // Build the path. Prefix props must be Equal-only — In would
         // require multiple separate proofs, which doesn't compose into
-        // a single aggregate.
+        // a single aggregate or a single distinct walk.
         let mut path = vec![
             vec![RootTree::DataContractDocuments as u8],
             self.contract_id.to_vec(),
@@ -1128,15 +1190,15 @@ impl<'a> DriveDocumentCountQuery<'a> {
                 .where_clauses
                 .iter()
                 .find(|wc| wc.field == prop.name)
-                .ok_or_else(|| {
-                    Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
-                        "aggregate-count proof: missing where clause for an index prefix property",
-                    ))
-                })?;
+                .ok_or(Error::Query(
+                    QuerySyntaxError::InvalidWhereClauseComponents(
+                        "count path query: missing where clause for an index prefix property",
+                    ),
+                ))?;
             if clause.operator != WhereOperator::Equal {
                 return Err(Error::Query(
                     QuerySyntaxError::InvalidWhereClauseComponents(
-                        "aggregate-count proof: prefix properties must use `==` (no `in`)",
+                        "count path query: prefix properties must use `==` (no `in`)",
                     ),
                 ));
             }
@@ -1151,15 +1213,73 @@ impl<'a> DriveDocumentCountQuery<'a> {
             .index
             .properties
             .last()
-            .ok_or_else(|| {
-                Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
+            .ok_or(Error::Query(
+                QuerySyntaxError::InvalidWhereClauseComponents(
                     "range_countable index must have at least one property",
-                ))
-            })?
+                ),
+            ))?
             .name;
         path.push(range_prop_name.as_bytes().to_vec());
 
+        Ok((path, query_item))
+    }
+
+    /// Build the grovedb `PathQuery` for an `AggregateCountOnRange`
+    /// query against this count query's `range_countable` index.
+    ///
+    /// Shared between the server-side prove path
+    /// ([`Self::execute_aggregate_count_with_proof`]) and the client-
+    /// side verify path (the SDK's `FromProof<DocumentCountQuery>` for
+    /// `DocumentCount`). Both sides must produce the *exact same*
+    /// `PathQuery` for verification to recompute the same merk root.
+    ///
+    /// Errors: see [`Self::count_path_and_query_item`].
+    pub fn aggregate_count_path_query(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<PathQuery, Error> {
+        let (path, query_item) =
+            self.count_path_and_query_item("aggregate_count_path_query", platform_version)?;
         Ok(PathQuery::new_aggregate_count_on_range(path, query_item))
+    }
+
+    /// Build the grovedb `PathQuery` for a *regular* range query
+    /// against this count query's `range_countable` index — the
+    /// distinct-counts-with-proof variant.
+    ///
+    /// Where [`Self::aggregate_count_path_query`] wraps the inner
+    /// range in `QueryItem::AggregateCountOnRange(_)` so grovedb's
+    /// prover collapses the result into a single `u64`, this builder
+    /// hands grovedb a bare range and lets the leaf merk emit one
+    /// `Node::KVCount(key, value, count)` op per distinct in-range
+    /// key. Each `count` is bound to the merk root via
+    /// `node_hash_with_count(kv_hash, l_hash, r_hash, count)` exactly
+    /// the same way `HashWithCount` is on the aggregate path — so the
+    /// verifier still gets cryptographic per-key correctness, just
+    /// with O(distinct values) proof bytes instead of O(log n).
+    ///
+    /// Shared between the server-side prove path
+    /// ([`Self::execute_distinct_count_with_proof`]) and the SDK's
+    /// per-key-count verifier
+    /// ([`drive_proof_verifier::verify_distinct_count_proof`]). Same
+    /// load-bearing parity: both sides must build the *exact same*
+    /// `PathQuery` or merk root reconstruction diverges.
+    ///
+    /// Errors: see [`Self::count_path_and_query_item`].
+    pub fn distinct_count_path_query(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<PathQuery, Error> {
+        let (path, query_item) =
+            self.count_path_and_query_item("distinct_count_path_query", platform_version)?;
+
+        // Bare range item wrapped in a regular Query — no aggregate
+        // collapse. `SizedQuery` defaults: no limit, no offset; the
+        // leaf merk emits per-key ops for everything in the range.
+        let mut query = Query::new();
+        query.insert_item(query_item);
+
+        Ok(PathQuery::new(path, SizedQuery::new(query, None, None)))
     }
 }
 
@@ -1417,6 +1537,42 @@ impl Drive {
         count_query.execute_aggregate_count_with_proof(self, transaction, platform_version)
     }
 
+    /// Distinct-counts-with-proof companion to
+    /// [`Self::execute_document_count_range_proof`]. Returns proof
+    /// bytes that the client verifies via
+    /// [`drive_proof_verifier::verify_distinct_count_proof`], yielding
+    /// a `BTreeMap<Vec<u8>, u64>` keyed by serialized property value.
+    /// Used by [`DocumentCountMode::RangeDistinctProof`] dispatch.
+    pub fn execute_document_count_range_distinct_proof(
+        &self,
+        contract_id: [u8; 32],
+        document_type: DocumentTypeRef,
+        document_type_name: String,
+        where_clauses: Vec<WhereClause>,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, Error> {
+        let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+            document_type.indexes(),
+            &where_clauses,
+        )
+        .ok_or_else(|| {
+            Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
+                "range count requires a `range_countable: true` index whose last \
+                     property matches the range field"
+                    .to_string(),
+            ))
+        })?;
+        let count_query = DriveDocumentCountQuery {
+            document_type,
+            contract_id,
+            document_type_name,
+            index,
+            where_clauses,
+        };
+        count_query.execute_distinct_count_with_proof(self, transaction, platform_version)
+    }
+
     /// Materialize-and-count proof fallback for point-lookup count
     /// queries with `prove = true`. Capped at `u16::MAX` matching docs
     /// because each document is materialized client-side. Used by
@@ -1658,6 +1814,16 @@ impl Drive {
             }
             DocumentCountMode::RangeProof => Ok(DocumentCountResponse::Proof(
                 self.execute_document_count_range_proof(
+                    contract_id,
+                    request.document_type,
+                    document_type_name,
+                    request.where_clauses,
+                    transaction,
+                    platform_version,
+                )?,
+            )),
+            DocumentCountMode::RangeDistinctProof => Ok(DocumentCountResponse::Proof(
+                self.execute_document_count_range_distinct_proof(
                     contract_id,
                     request.document_type,
                     document_type_name,
