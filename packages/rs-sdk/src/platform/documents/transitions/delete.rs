@@ -346,6 +346,118 @@ mod tests {
             None
         );
     }
+
+    /// Failing-signer used by the rollback test below to deterministically
+    /// fail signing **after** nonce allocation. Mirrors the pattern in
+    /// `put_document.rs` so a future reader can map the two.
+    #[derive(Debug)]
+    struct AlwaysFailingSigner;
+
+    #[async_trait::async_trait]
+    impl dpp::identity::signer::Signer<IdentityPublicKey> for AlwaysFailingSigner {
+        async fn sign(
+            &self,
+            _key: &IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<dpp::platform_value::BinaryData, dpp::ProtocolError> {
+            Err(dpp::ProtocolError::Generic(
+                "deliberate signing failure for delete rollback test".to_string(),
+            ))
+        }
+
+        async fn sign_create_witness(
+            &self,
+            _key: &IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<dpp::address_funds::AddressWitness, dpp::ProtocolError> {
+            unreachable!("not used by document delete transition signing")
+        }
+
+        fn can_sign_with(&self, _key: &IdentityPublicKey) -> bool {
+            true
+        }
+    }
+
+    /// Pre-broadcast signing failure inside `Sdk::document_delete` must
+    /// roll the identity-contract nonce back so the cache does not advance
+    /// past a nonce the network never observed. Asserting via "next
+    /// allocation reuses the rolled-back value" mirrors the put_document
+    /// rollback test pattern.
+    #[tokio::test]
+    async fn document_delete_rolls_back_nonce_on_signing_failure() {
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::identity::identity_public_key::{KeyType, Purpose, SecurityLevel};
+        use dpp::platform_value::BinaryData;
+        use drive_proof_verifier::types::IdentityContractNonceFetcher;
+
+        let data_contract = Arc::new(
+            get_data_contract_fixture(
+                None,
+                Default::default(),
+                PlatformVersion::latest().protocol_version,
+            )
+            .data_contract_owned(),
+        );
+        let contract_id = data_contract.id();
+        let owner_id = Identifier::from([7u8; 32]);
+        let document_id = Identifier::from([3u8; 32]);
+
+        // Build a key whose purpose / security level / enabled flag pass the
+        // BatchTransition pre-sign verification, so the failure happens
+        // inside `signer.sign` (i.e. *after* nonce allocation), not earlier.
+        let identity_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 0,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(vec![0u8; 33]),
+            disabled_at: None,
+        });
+
+        let mut sdk = crate::Sdk::new_mock();
+        sdk.mock()
+            .expect_fetch::<IdentityContractNonceFetcher, _>(
+                (owner_id, contract_id),
+                Some(IdentityContractNonceFetcher(10u64)),
+            )
+            .await
+            .expect("set IdentityContractNonceFetcher mock expectation");
+
+        let builder = DocumentDeleteTransitionBuilder::new(
+            data_contract.clone(),
+            "niceDocument".to_string(),
+            document_id,
+            owner_id,
+        );
+
+        let signer = AlwaysFailingSigner;
+
+        let err = sdk
+            .document_delete(builder, &identity_key, &signer)
+            .await
+            .expect_err(
+                "signer failure must surface so document_delete can roll back the allocated nonce",
+            );
+
+        assert!(
+            err.to_string().contains("deliberate signing failure"),
+            "expected the signer's failure to surface, got: {err}"
+        );
+
+        // Cache was bumped from platform=10 to 11 during the failed attempt
+        // and then rolled back to 10. Re-allocating with bump_first=true
+        // must yield 11 again — proving the rolled-back nonce is reusable.
+        let next = sdk
+            .get_identity_contract_nonce(owner_id, contract_id, true, None)
+            .await
+            .expect("nonce allocation must succeed after rollback");
+        assert_eq!(
+            next, 11,
+            "rolled-back nonce should be reused by the next allocation"
+        );
+    }
 }
 
 impl Sdk {

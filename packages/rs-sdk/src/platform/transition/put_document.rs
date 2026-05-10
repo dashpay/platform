@@ -1,3 +1,28 @@
+//! Document put / create / replace state-transition builders.
+//!
+//! # Compatibility note (2026-05)
+//!
+//! Two intentionally different create-path entry points coexist:
+//!
+//! - The [`PutDocument::put_to_platform`] trait method is the **legacy
+//!   native** entry point. It accepts
+//!   `document_state_transition_entropy = None` on the create path and will
+//!   auto-generate 32-byte entropy + rewrite `document.id` via
+//!   [`Document::generate_document_id_v0`] before signing. In-tree callers
+//!   such as `rs-platform-wallet` (DashPay profile creation) rely on this
+//!   fallback.
+//! - The strict [`build_signed_document_create_transition`] /
+//!   [`build_signed_document_replace_transition`] helpers, used by the
+//!   wasm-sdk `prepareDocumentCreate` / `prepareDocumentReplace` flows, do
+//!   **not** auto-generate entropy. Callers must supply entropy whose
+//!   derived `Document::generate_document_id_v0(...)` matches `document.id`;
+//!   a mismatch is rejected before any identity-contract nonce is
+//!   allocated.
+//!
+//! New prepare/sign-without-broadcast call sites should prefer the strict
+//! builders so the supplied document id and entropy commit to the same
+//! value.
+
 use super::broadcast::BroadcastStateTransition;
 use super::validation::ensure_valid_state_transition_structure;
 use super::waitable::Waitable;
@@ -69,6 +94,41 @@ fn ensure_revision_for_replace(revision: Option<u64>) -> Result<(), Error> {
     }
 }
 
+/// Strict create-path id check: documents handed to
+/// [`build_signed_document_create_transition`] must already have their `id`
+/// derived from the supplied entropy via [`Document::generate_document_id_v0`].
+///
+/// This guards against silently signing a transition whose committed
+/// document id does not match the entropy bound into the create transition.
+/// Callers that want id auto-generation should use the legacy
+/// [`PutDocument::put_to_platform`] trait method, which still accepts
+/// `entropy = None` and rewrites the document id before signing.
+fn ensure_document_id_matches_entropy(
+    document: &Document,
+    document_type: &DocumentType,
+    entropy: &[u8; 32],
+) -> Result<(), Error> {
+    let expected = Document::generate_document_id_v0(
+        &document_type.data_contract_id(),
+        &document.owner_id(),
+        document_type.name(),
+        entropy.as_slice(),
+    );
+    if document.id() != expected {
+        return Err(Error::Generic(format!(
+            "InvalidArgument: document.id does not match \
+             generate_document_id_v0(contract_id, owner_id, document_type_name, entropy); \
+             expected {expected}, got {got}. \
+             Either set document.id to the derived value before calling \
+             build_signed_document_create_transition, or use the legacy \
+             PutDocument::put_to_platform trait method which auto-generates \
+             entropy and rewrites the document id when entropy is None.",
+            got = document.id()
+        )));
+    }
+    Ok(())
+}
+
 fn resolve_document_create_entropy(
     document: &Document,
     document_type: &DocumentType,
@@ -121,25 +181,35 @@ pub trait PutDocument<S: Signer<IdentityPublicKey>>: Waitable {
     ) -> Result<Document, Error>;
 }
 
-/// Build, sign, and structurally validate a document create-or-replace
-/// [`StateTransition`] without broadcasting it.
+/// Internal dispatch: build, sign, and structurally validate a document
+/// create-or-replace [`StateTransition`] without broadcasting it.
 ///
-/// This is the pre-broadcast half of [`PutDocument::put_to_platform`]: it
-/// allocates a fresh identity-contract nonce, picks the create-vs-replace
-/// branch based on the document's revision, fills in entropy when missing,
+/// This is intentionally **not** part of the public API. It is the
+/// pre-broadcast core shared by [`build_signed_document_create_transition`],
+/// [`build_signed_document_replace_transition`], and the legacy
+/// [`PutDocument::put_to_platform`] trait method. It allocates a fresh
+/// identity-contract nonce, picks the create-vs-replace branch based on the
+/// document's revision, falls back to RNG-derived entropy + id auto-rewrite on
+/// the create branch when `document_state_transition_entropy` is `None`,
 /// applies `user_fee_increase` / `token_payment_info` /
 /// `state_transition_creation_options` from `settings`, signs the transition,
-/// and runs structure validation. The caller decides whether (and how) to
-/// broadcast the returned, signed transition.
+/// and runs structure validation.
+///
+/// # Why this is not public
+///
+/// The auto-fallback create branch (entropy `None` → RNG entropy + rewritten
+/// document id) is convenient for the legacy `PutDocument` trait but is a
+/// footgun for prepare/sign-without-broadcast flows like the wasm-sdk's
+/// `prepareDocumentCreate`, where the caller's already-derived document id
+/// must commit to the entropy they pass in. Public callers must go through
+/// [`build_signed_document_create_transition`] (which enforces the strict
+/// id-matches-entropy check) or [`build_signed_document_replace_transition`].
 ///
 /// # Revision validation
 ///
 /// The dispatch is driven by the document revision and rejects only the
-/// always-invalid `Some(0)` case. Use
-/// [`build_signed_document_create_transition`] or
-/// [`build_signed_document_replace_transition`] for fail-fast validation that
-/// also enforces caller intent (mismatched create/replace revisions error
-/// before any nonce allocation).
+/// always-invalid `Some(0)` case. Strict per-intent validation lives in the
+/// public create / replace helpers, which run before any nonce allocation.
 ///
 /// # Nonce handling on local errors
 ///
@@ -151,7 +221,7 @@ pub trait PutDocument<S: Signer<IdentityPublicKey>>: Waitable {
 /// the cache entry if it still equals the nonce allocated by this attempt, so
 /// concurrent allocations are not clobbered.
 #[allow(clippy::too_many_arguments)]
-pub async fn build_signed_document_create_or_replace_transition<S: Signer<IdentityPublicKey>>(
+async fn build_signed_document_create_or_replace_transition<S: Signer<IdentityPublicKey>>(
     sdk: &Sdk,
     document: &Document,
     document_type: &DocumentType,
@@ -202,22 +272,27 @@ pub async fn build_signed_document_create_or_replace_transition<S: Signer<Identi
 /// Build, sign, and structurally validate a document **create** transition
 /// without broadcasting it.
 ///
-/// This is a fail-fast wrapper around
-/// [`build_signed_document_create_or_replace_transition`] that enforces the
-/// create-path revision boundary before any nonce allocation: the document
-/// revision must be unset or equal to [`INITIAL_REVISION`]. Any other value
-/// (including `Some(0)` and revisions greater than `INITIAL_REVISION`) is
-/// rejected here, mirroring the wasm-sdk's `prepareDocumentCreate` guard so
-/// native callers get the same precise behavior.
+/// This is a fail-fast wrapper that enforces the create-path revision
+/// boundary **and** the document-id-matches-entropy invariant before any
+/// nonce allocation. The document revision must be unset or equal to
+/// [`INITIAL_REVISION`]. Any other value (including `Some(0)` and revisions
+/// greater than `INITIAL_REVISION`) is rejected here, mirroring the wasm-sdk's
+/// `prepareDocumentCreate` guard so native callers get the same precise
+/// behavior.
 ///
-/// `document_state_transition_entropy` is required on the create path: it
-/// uniquely determines the document id and must match the entropy used to
-/// derive the document's `id`. Callers that want id auto-generation should
-/// use [`build_signed_document_create_or_replace_transition`] directly, which
-/// still accepts `None` and falls back to RNG-derived entropy.
+/// `document_state_transition_entropy` is required on the create path and
+/// must match the entropy used to derive `document.id` via
+/// [`Document::generate_document_id_v0`]. A mismatch is rejected here,
+/// before the identity-contract nonce is allocated.
 ///
-/// See [`build_signed_document_create_or_replace_transition`] for the local
-/// nonce-rollback semantics on build/sign/validation failures.
+/// Callers that want id auto-generation (legacy native behavior) should use
+/// the [`PutDocument::put_to_platform`] trait method, which accepts
+/// `entropy = None` and rewrites the document id before signing.
+///
+/// On any pre-broadcast failure inside the dispatch (build, sign, or local
+/// structure validation) the bumped identity-contract nonce is rolled back
+/// so the local cache does not advance past a nonce the network never
+/// observed.
 #[allow(clippy::too_many_arguments)]
 pub async fn build_signed_document_create_transition<S: Signer<IdentityPublicKey>>(
     sdk: &Sdk,
@@ -230,6 +305,14 @@ pub async fn build_signed_document_create_transition<S: Signer<IdentityPublicKey
     settings: Option<PutSettings>,
 ) -> Result<StateTransition, Error> {
     ensure_revision_for_create(document.revision())?;
+    // Verify the caller's document id matches the entropy *before* we
+    // allocate any identity-contract nonce, so a stale/wrong id never
+    // bumps the local nonce cache.
+    ensure_document_id_matches_entropy(
+        document,
+        document_type,
+        &document_state_transition_entropy,
+    )?;
     build_signed_document_create_or_replace_transition(
         sdk,
         document,
@@ -246,16 +329,17 @@ pub async fn build_signed_document_create_transition<S: Signer<IdentityPublicKey
 /// Build, sign, and structurally validate a document **replace** transition
 /// without broadcasting it.
 ///
-/// This is a fail-fast wrapper around
-/// [`build_signed_document_create_or_replace_transition`] that enforces the
-/// replace-path revision boundary before any nonce allocation: the document
-/// revision must be greater than [`INITIAL_REVISION`]. `None`, `Some(0)`,
-/// and `Some(INITIAL_REVISION)` are rejected here, mirroring the wasm-sdk's
+/// This is a fail-fast wrapper that enforces the replace-path revision
+/// boundary before any nonce allocation: the document revision must be
+/// greater than [`INITIAL_REVISION`]. `None`, `Some(0)`, and
+/// `Some(INITIAL_REVISION)` are rejected here, mirroring the wasm-sdk's
 /// `prepareDocumentReplace` guard so native callers get the same precise
 /// behavior.
 ///
-/// See [`build_signed_document_create_or_replace_transition`] for the local
-/// nonce-rollback semantics on build/sign/validation failures.
+/// On any pre-broadcast failure inside the dispatch (build, sign, or local
+/// structure validation) the bumped identity-contract nonce is rolled back
+/// so the local cache does not advance past a nonce the network never
+/// observed.
 #[allow(clippy::too_many_arguments)]
 pub async fn build_signed_document_replace_transition<S: Signer<IdentityPublicKey>>(
     sdk: &Sdk,
@@ -335,6 +419,18 @@ async fn build_and_sign_create_or_replace_after_nonce<S: Signer<IdentityPublicKe
 
 #[async_trait::async_trait]
 impl<S: Signer<IdentityPublicKey>> PutDocument<S> for Document {
+    /// Legacy native put-document entry point.
+    ///
+    /// **Backwards-compatibility note:** unlike the strict
+    /// [`build_signed_document_create_transition`] / wasm
+    /// `prepareDocumentCreate` builders, this trait method accepts
+    /// `document_state_transition_entropy = None` on the create path and
+    /// auto-generates 32-byte entropy + rewrites `document.id` via
+    /// [`Document::generate_document_id_v0`] before signing. This preserves
+    /// the original `PutDocument` behavior used by in-tree callers such as
+    /// `rs-platform-wallet` profile creation. New prepare/sign-without-broadcast
+    /// call sites should use the strict create/replace builders so
+    /// the supplied document id and entropy commit to the same value.
     async fn put_to_platform(
         &self,
         sdk: &Sdk,
@@ -353,24 +449,23 @@ impl<S: Signer<IdentityPublicKey>> PutDocument<S> for Document {
         // `INITIAL_REVISION` select replace; `Some(0)` is rejected by the
         // strict replace helper before any nonce allocation.
         let transition = if self.revision().is_none() || self.revision() == Some(INITIAL_REVISION) {
-            // Create path: entropy is required. Reject `None` *before* we
-            // allocate a nonce so we never advance the cache for an
-            // attempt we know cannot succeed. We deliberately do NOT
-            // silently fall back to regenerating the document id — the
-            // caller's id must match the entropy they supplied.
-            let entropy = document_state_transition_entropy.ok_or_else(|| {
-                Error::Generic(
-                    "InvalidArgument: document_state_transition_entropy is required \
-                     when calling put_to_platform on the create path; supply the \
-                     32-byte entropy that was used to derive the document id"
-                        .to_string(),
-                )
-            })?;
-            build_signed_document_create_transition(
-                sdk,
+            // Create path. Preserve legacy behavior: when the caller did not
+            // supply entropy, generate it and rewrite `document.id` so the
+            // pair stays consistent before we hand the (document, entropy)
+            // to the strict create helper. The strict helper still verifies
+            // that `document.id == generate_document_id_v0(entropy)` before
+            // allocating any nonce, so the legacy fallback cannot mask an
+            // id/entropy mismatch.
+            let (resolved_document, resolved_entropy) = resolve_document_create_entropy(
                 self,
                 &document_type,
-                entropy,
+                document_state_transition_entropy,
+            );
+            build_signed_document_create_transition(
+                sdk,
+                &resolved_document,
+                &document_type,
+                resolved_entropy,
                 &identity_public_key,
                 token_payment_info,
                 signer,
@@ -630,8 +725,18 @@ mod tests {
         let document_type = test_document_type();
         let contract_id = document_type.data_contract_id();
         let entropy = [0u8; 32];
-        let document = test_document(None, Identifier::from([3; 32]));
-        let owner_id = document.owner_id();
+        // Derive the document id from the entropy so the strict create
+        // helper's id-matches-entropy guard passes and the failure happens
+        // *after* nonce allocation, where rollback is what we're testing.
+        let owner_id = Identifier::from([7; 32]);
+        let derived_id = Document::generate_document_id_v0(
+            &contract_id,
+            &owner_id,
+            document_type.name(),
+            entropy.as_slice(),
+        );
+        let document = test_document(None, derived_id);
+        assert_eq!(document.owner_id(), owner_id);
 
         // Build a key whose purpose / security level / enabled flag pass the
         // BatchTransition pre-sign verification, so the failure happens
@@ -686,6 +791,100 @@ mod tests {
         assert_eq!(
             next, 11,
             "rolled-back nonce should be reused by the next allocation"
+        );
+    }
+
+    /// The strict create helper must reject a document whose id does not
+    /// match the supplied entropy *before* it allocates an
+    /// identity-contract nonce. The post-condition we assert is:
+    /// the very next nonce allocation (with `bump_first=true`) returns the
+    /// expected first-bump value (1 over the platform-fetched 10), which
+    /// proves the failed call did not bump the cache.
+    #[tokio::test]
+    async fn build_signed_document_create_rejects_id_entropy_mismatch_before_nonce_alloc() {
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::identity::identity_public_key::{KeyType, Purpose, SecurityLevel};
+        use dpp::platform_value::BinaryData;
+        use drive_proof_verifier::types::IdentityContractNonceFetcher;
+
+        let document_type = test_document_type();
+        let contract_id = document_type.data_contract_id();
+        let entropy = [0u8; 32];
+        // Intentionally use a document id that does NOT match
+        // generate_document_id_v0(.., entropy = [0; 32]).
+        let bogus_id = Identifier::from([0xAB; 32]);
+        let document = test_document(None, bogus_id);
+        let owner_id = document.owner_id();
+
+        // Sanity-check that the bogus id really does not match the
+        // expected derived id, otherwise this test would silently pass for
+        // the wrong reason.
+        let expected_id = Document::generate_document_id_v0(
+            &contract_id,
+            &owner_id,
+            document_type.name(),
+            entropy.as_slice(),
+        );
+        assert_ne!(
+            bogus_id, expected_id,
+            "test fixture must use an id that does not match the entropy"
+        );
+
+        let identity_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 0,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(vec![0u8; 33]),
+            disabled_at: None,
+        });
+
+        let mut sdk = crate::Sdk::new_mock();
+        // Pre-load the platform-side nonce so a later `bump_first=true`
+        // allocation has a deterministic value to return. If the strict
+        // helper had (incorrectly) allocated a nonce before failing, the
+        // first post-failure allocation would jump to 12 instead of 11.
+        sdk.mock()
+            .expect_fetch::<IdentityContractNonceFetcher, _>(
+                (owner_id, contract_id),
+                Some(IdentityContractNonceFetcher(10u64)),
+            )
+            .await
+            .expect("set IdentityContractNonceFetcher mock expectation");
+
+        let signer = AlwaysFailingSigner;
+
+        let err = build_signed_document_create_transition(
+            &sdk,
+            &document,
+            &document_type,
+            entropy,
+            &identity_key,
+            None,
+            &signer,
+            None,
+        )
+        .await
+        .expect_err("id-mismatch must error before nonce allocation");
+
+        let msg = err.to_string();
+        assert!(msg.contains("InvalidArgument"), "msg: {msg}");
+        assert!(
+            msg.contains("does not match"),
+            "expected id-mismatch error, got: {msg}"
+        );
+
+        // No nonce allocation happened during the failed call, so the
+        // first allocation now should be the platform value + 1 = 11.
+        let next = sdk
+            .get_identity_contract_nonce(owner_id, contract_id, true, None)
+            .await
+            .expect("nonce allocation must succeed after rejected attempt");
+        assert_eq!(
+            next, 11,
+            "id-mismatch must reject before nonce allocation; next allocation should be 11"
         );
     }
 }

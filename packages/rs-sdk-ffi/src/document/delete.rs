@@ -5,6 +5,7 @@ use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicK
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::prelude::{Identifier, UserFeeIncrease};
 use dash_sdk::platform::documents::transitions::DocumentDeleteTransitionBuilder;
+use dash_sdk::platform::transition::validation::ensure_valid_state_transition_structure;
 use dash_sdk::platform::IdentityPublicKey;
 use drive_proof_verifier::ContextProvider;
 use std::ffi::CStr;
@@ -196,6 +197,27 @@ pub unsafe extern "C" fn dash_sdk_document_delete(
                 )));
             }
         };
+
+        // Run local structure validation before serialization. Like the
+        // sign step above, any failure here is *pre-broadcast* and must
+        // roll the identity-contract nonce back so the local cache does
+        // not advance past a nonce the network never observed.
+        if let Err(e) =
+            ensure_valid_state_transition_structure(&state_transition, wrapper.sdk.version())
+        {
+            wrapper
+                .sdk
+                .rollback_identity_contract_nonce(
+                    owner_identifier,
+                    contract_id_for_nonce,
+                    identity_contract_nonce,
+                )
+                .await;
+            return Err(FFIError::InternalError(format!(
+                "Delete transition failed structure validation: {}",
+                e
+            )));
+        }
 
         // Serialize the state transition with bincode
         let config = bincode::config::standard();
