@@ -30,9 +30,12 @@ use crate::{
         IdentityPublicKey,
     },
     prelude::{AddressNonce, UserFeeIncrease},
-    serialization::Signable,
+    serialization::{PlatformMessageSignable, Signable},
     state_transition::{
-        public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters, StateTransition,
+        public_key_in_creation::accessors::{
+            IdentityPublicKeyInCreationV0Getters, IdentityPublicKeyInCreationV0Setters,
+        },
+        StateTransition,
     },
     version::PlatformVersion,
     ProtocolError,
@@ -56,7 +59,7 @@ impl IdentityCreateFromAddressesTransitionMethodsV0 for IdentityCreateFromAddres
         // Create the unsigned transition
         let mut identity_create_from_addresses_transition =
             IdentityCreateFromAddressesTransitionV0 {
-                inputs: inputs.clone(),
+                inputs,
                 output,
                 fee_strategy,
                 user_fee_increase,
@@ -113,9 +116,30 @@ impl IdentityCreateFromAddressesTransitionMethodsV0 for IdentityCreateFromAddres
             }
         }
 
+        // Verify proof-of-possession signatures we just produced before
+        // returning, matching the server-side
+        // `IdentityCreateFromAddressesStateTransitionSignaturesValidationV0`
+        // check. Only keys with unique types were signed above, so verify
+        // those exact keys here.
+        for public_key_with_witness in identity_create_from_addresses_transition.public_keys.iter()
+        {
+            if !public_key_with_witness.key_type().is_unique_key_type() {
+                continue;
+            }
+            let pop_result = signable_bytes.as_slice().verify_signature(
+                public_key_with_witness.key_type(),
+                public_key_with_witness.data().as_slice(),
+                public_key_with_witness.signature().as_slice(),
+            );
+            if let Some(error) = first_consensus_error_as_protocol_error(pop_result) {
+                return Err(error);
+            }
+        }
+
         // Create witnesses for each input address
-        let mut input_witnesses = Vec::with_capacity(inputs.len());
-        for address in inputs.keys() {
+        let mut input_witnesses =
+            Vec::with_capacity(identity_create_from_addresses_transition.inputs.len());
+        for address in identity_create_from_addresses_transition.inputs.keys() {
             input_witnesses.push(
                 address_signer
                     .sign_create_witness(address, &signable_bytes)

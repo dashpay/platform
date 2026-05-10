@@ -2384,6 +2384,13 @@ impl NetworkStrategy {
             .state_transitions
             .address_funds
             .min_input_amount;
+        // Snapshot the staged map BEFORE picking inputs so any rollback
+        // restores the exact pre-staging state. Removing only `inputs.keys()`
+        // would be unsafe if the picker ever reuses same-block addresses or
+        // if other paths stage entries we shouldn't drop.
+        let staged_snapshot_before_inputs = current_addresses_with_balance
+            .addresses_in_block_with_new_balance
+            .clone();
         let inputs = current_addresses_with_balance
             .take_random_amounts_with_range_and_min_per_input(amount_range, min_per_input, rng)?;
         tracing::debug!(
@@ -2506,11 +2513,8 @@ impl NetworkStrategy {
                 .address_funds
                 .min_output_amount;
             if amount < min_per_output {
-                for addr in inputs.keys() {
-                    current_addresses_with_balance
-                        .addresses_in_block_with_new_balance
-                        .remove(addr);
-                }
+                current_addresses_with_balance.addresses_in_block_with_new_balance =
+                    staged_snapshot_before_inputs;
                 return None;
             }
             Some(amount)
@@ -2573,6 +2577,13 @@ impl NetworkStrategy {
             .state_transitions
             .address_funds
             .min_output_amount;
+        // Snapshot the staged map BEFORE picking inputs so any rollback
+        // restores the exact pre-staging state. Removing only `inputs.keys()`
+        // would be unsafe if the picker ever reuses same-block addresses or
+        // if other paths stage entries we shouldn't drop.
+        let staged_snapshot_before_inputs = current_addresses_with_balance
+            .addresses_in_block_with_new_balance
+            .clone();
         let inputs = current_addresses_with_balance
             .take_random_amounts_with_range_and_min_per_input(amount_range, min_per_input, rng)?;
 
@@ -2584,11 +2595,8 @@ impl NetworkStrategy {
         // If total_input is below min_output_amount, we cannot create even a single
         // valid output. Roll back the staged input balances and skip this transition.
         if total_input < min_per_output {
-            for addr in inputs.keys() {
-                current_addresses_with_balance
-                    .addresses_in_block_with_new_balance
-                    .remove(addr);
-            }
+            current_addresses_with_balance.addresses_in_block_with_new_balance =
+                staged_snapshot_before_inputs;
             return None;
         }
 
@@ -2669,11 +2677,8 @@ impl NetworkStrategy {
                 estimated_fee = estimated_fee,
                 "AddressTransfer: insufficient remaining balance for fees, skipping"
             );
-            for addr in input_addresses_for_check {
-                current_addresses_with_balance
-                    .addresses_in_block_with_new_balance
-                    .remove(&addr);
-            }
+            current_addresses_with_balance.addresses_in_block_with_new_balance =
+                staged_snapshot_before_inputs;
             return None;
         }
 

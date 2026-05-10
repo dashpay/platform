@@ -49,7 +49,7 @@ impl AddressCreditWithdrawalTransitionMethodsV0 for AddressCreditWithdrawalTrans
 
         // Create the unsigned transition
         let mut address_credit_withdrawal_transition = AddressCreditWithdrawalTransitionV0 {
-            inputs: inputs.clone(),
+            inputs,
             output,
             fee_strategy,
             core_fee_per_byte,
@@ -72,8 +72,9 @@ impl AddressCreditWithdrawalTransitionMethodsV0 for AddressCreditWithdrawalTrans
 
         let signable_bytes = state_transition.signable_bytes()?;
 
-        let mut input_witnesses: Vec<AddressWitness> = Vec::with_capacity(inputs.len());
-        for address in inputs.keys() {
+        let mut input_witnesses: Vec<AddressWitness> =
+            Vec::with_capacity(address_credit_withdrawal_transition.inputs.len());
+        for address in address_credit_withdrawal_transition.inputs.keys() {
             input_witnesses.push(signer.sign_create_witness(address, &signable_bytes).await?);
         }
         address_credit_withdrawal_transition.input_witnesses = input_witnesses;

@@ -41,7 +41,7 @@ impl AddressFundsTransferTransitionMethodsV0 for AddressFundsTransferTransitionV
 
         // Create the unsigned transition
         let mut address_funds_transition = AddressFundsTransferTransitionV0 {
-            inputs: inputs.clone(),
+            inputs,
             outputs,
             fee_strategy,
             user_fee_increase,
@@ -61,8 +61,9 @@ impl AddressFundsTransferTransitionMethodsV0 for AddressFundsTransferTransitionV
 
         let signable_bytes = state_transition.signable_bytes()?;
 
-        let mut input_witnesses: Vec<AddressWitness> = Vec::with_capacity(inputs.len());
-        for address in inputs.keys() {
+        let mut input_witnesses: Vec<AddressWitness> =
+            Vec::with_capacity(address_funds_transition.inputs.len());
+        for address in address_funds_transition.inputs.keys() {
             input_witnesses.push(signer.sign_create_witness(address, &signable_bytes).await?);
         }
         address_funds_transition.input_witnesses = input_witnesses;

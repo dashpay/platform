@@ -37,7 +37,7 @@ impl AddressFundingFromAssetLockTransitionMethodsV0 for AddressFundingFromAssetL
         // Create the unsigned transition
         let mut address_funding_transition = AddressFundingFromAssetLockTransitionV0 {
             asset_lock_proof,
-            inputs: inputs.clone(),
+            inputs,
             outputs,
             fee_strategy,
             user_fee_increase,
@@ -63,8 +63,9 @@ impl AddressFundingFromAssetLockTransitionMethodsV0 for AddressFundingFromAssetL
         address_funding_transition.signature = signature.to_vec().into();
 
         // Sign with input witnesses
-        let mut input_witnesses: Vec<AddressWitness> = Vec::with_capacity(inputs.len());
-        for address in inputs.keys() {
+        let mut input_witnesses: Vec<AddressWitness> =
+            Vec::with_capacity(address_funding_transition.inputs.len());
+        for address in address_funding_transition.inputs.keys() {
             input_witnesses.push(signer.sign_create_witness(address, &signable_bytes).await?);
         }
         address_funding_transition.input_witnesses = input_witnesses;

@@ -38,7 +38,7 @@ impl IdentityTopUpFromAddressesTransitionMethodsV0 for IdentityTopUpFromAddresse
     ) -> Result<StateTransition, ProtocolError> {
         let mut identity_top_up_from_addresses_transition =
             IdentityTopUpFromAddressesTransitionV0 {
-                inputs: inputs.clone(),
+                inputs,
                 output: None,
                 identity_id: identity.id(),
                 fee_strategy: vec![
@@ -62,8 +62,9 @@ impl IdentityTopUpFromAddressesTransitionMethodsV0 for IdentityTopUpFromAddresse
 
         let signable_bytes = state_transition.signable_bytes()?;
 
-        let mut input_witnesses: Vec<AddressWitness> = Vec::with_capacity(inputs.len());
-        for address in inputs.keys() {
+        let mut input_witnesses: Vec<AddressWitness> =
+            Vec::with_capacity(identity_top_up_from_addresses_transition.inputs.len());
+        for address in identity_top_up_from_addresses_transition.inputs.keys() {
             input_witnesses.push(signer.sign_create_witness(address, &signable_bytes).await?);
         }
         identity_top_up_from_addresses_transition.input_witnesses = input_witnesses;

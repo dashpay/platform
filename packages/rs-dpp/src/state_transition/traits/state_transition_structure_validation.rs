@@ -16,12 +16,23 @@ pub trait StateTransitionStructureValidation {
 ///
 /// This avoids `unwrap` while still surfacing only the first consensus error, which is the
 /// pattern used by client-side state transition constructors before/after signing.
+///
+/// When multiple consensus errors are present, only the first is returned; any additional
+/// errors are emitted at `debug` level via `tracing` so they remain visible during
+/// debugging without changing the public single-error return contract.
 pub(crate) fn first_consensus_error_as_protocol_error(
     result: SimpleConsensusValidationResult,
 ) -> Option<ProtocolError> {
-    result
-        .errors
-        .into_iter()
-        .next()
-        .map(|error| ProtocolError::ConsensusError(Box::new(error)))
+    let mut errors = result.errors.into_iter();
+    let first_error = errors.next()?;
+    let discarded: Vec<_> = errors.collect();
+    if !discarded.is_empty() {
+        tracing::debug!(
+            discarded_count = discarded.len(),
+            ?discarded,
+            "first_consensus_error_as_protocol_error: discarding {} additional consensus error(s)",
+            discarded.len(),
+        );
+    }
+    Some(ProtocolError::ConsensusError(Box::new(first_error)))
 }

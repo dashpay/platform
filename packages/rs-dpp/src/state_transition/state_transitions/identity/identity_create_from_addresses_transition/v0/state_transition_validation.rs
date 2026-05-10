@@ -235,6 +235,16 @@ impl IdentityCreateFromAddressesTransitionV0 {
             );
         }
 
+        // NOTE: Public-key structure validation (counts, duplicates,
+        // purpose/security level constraints) is intentionally NOT performed
+        // here. On the server, that validation lives in drive-abci's
+        // `advanced_structure_v0`, where invalid public keys attach a
+        // `BumpAddressInputNoncesAction` with a penalty + processing fee.
+        // Running it here on the basic-structure / trait surface would create
+        // a free failure mode, because basic-structure failures return only
+        // errors with no penalty action. Client-side constructors invoke
+        // `IdentityPublicKeyInCreation::validate_identity_public_keys_structure`
+        // directly for pre-broadcast feedback.
         SimpleConsensusValidationResult::new()
     }
 

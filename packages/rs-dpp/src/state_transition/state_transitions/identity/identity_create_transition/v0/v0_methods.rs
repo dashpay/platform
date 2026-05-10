@@ -17,11 +17,13 @@ use crate::prelude::AssetLockProof;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::UserFeeIncrease;
 #[cfg(feature = "state-transition-signing")]
-use crate::serialization::Signable;
+use crate::serialization::{PlatformMessageSignable, Signable};
 use crate::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use crate::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
 #[cfg(feature = "state-transition-signing")]
-use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
+use crate::state_transition::public_key_in_creation::accessors::{
+    IdentityPublicKeyInCreationV0Getters, IdentityPublicKeyInCreationV0Setters,
+};
 
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::IdentityPublicKey;
@@ -70,6 +72,16 @@ impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransitionV0 {
             ..Default::default()
         };
 
+        // Validate the asset lock proof structure client-side before signing
+        // so malformed proofs are caught locally rather than being rejected by
+        // the network during basic-structure validation.
+        let asset_lock_validation_result = identity_create_transition
+            .asset_lock_proof()
+            .validate_structure(platform_version)?;
+        if let Some(error) = first_consensus_error_as_protocol_error(asset_lock_validation_result) {
+            return Err(error);
+        }
+
         //todo: remove clone
         let state_transition: StateTransition = identity_create_transition.clone().into();
 
@@ -83,6 +95,24 @@ impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransitionV0 {
             if public_key.key_type().is_unique_key_type() {
                 let signature = signer.sign(public_key, &key_signable_bytes).await?;
                 public_key_with_witness.set_signature(signature);
+            }
+        }
+
+        // Verify the proof-of-possession signatures we just produced before
+        // returning, mirroring the server-side identity_create signatures
+        // validator. Only keys with unique types were signed above, so verify
+        // those exact keys here.
+        for public_key_with_witness in identity_create_transition.public_keys.iter() {
+            if !public_key_with_witness.key_type().is_unique_key_type() {
+                continue;
+            }
+            let pop_result = key_signable_bytes.as_slice().verify_signature(
+                public_key_with_witness.key_type(),
+                public_key_with_witness.data().as_slice(),
+                public_key_with_witness.signature().as_slice(),
+            );
+            if let Some(error) = first_consensus_error_as_protocol_error(pop_result) {
+                return Err(error);
             }
         }
 
