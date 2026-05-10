@@ -118,7 +118,7 @@ Tests pinning these guards live in `packages/rs-dpp/src/data_contract/document_t
 
 ## Counting Documents at Query Time
 
-A single unified gRPC endpoint exposes the feature: `GetDocumentsCount`. The response shape varies by request mode (total / per-`In`-value / per-distinct-value-in-range / total-over-range), see [Range Modes](#range-modes) below. The endpoint also has two underlying paths (prove vs. no-prove); both modes are valid in either path with the exception of `return_distinct_counts_in_range = true` which is no-prove only.
+A single unified gRPC endpoint exposes the feature: `GetDocumentsCount`. The response shape varies by request mode (total / per-`In`-value / per-distinct-value-in-range / total-over-range), see [Range Modes](#range-modes) below. The endpoint has two underlying paths (prove vs. no-prove); every mode — including `return_distinct_counts_in_range = true` — is valid on both paths. The prove path uses two different proof shapes depending on whether you want a single aggregate or per-distinct-value entries (see [Prove (Client-Side Verify-Then-Aggregate or Aggregate-Count Proof)](#prove-client-side-verify-then-aggregate-or-aggregate-count-proof) below).
 
 ### No-Prove (Server-Side O(1) or O(log n))
 
@@ -365,7 +365,7 @@ A few notes about the index-level flag:
 | O(1) filtered count: `count(*) WHERE col = X` | `documentsCountable: true` (or `rangeCountable: true`) at the type level **plus** `countable: true` on an index whose properties are exactly `["col"]`. A composite index whose leading column is `col` (e.g. `["col", "other"]`) still answers the query, but as O(distinct values of `other`) instead of O(1). |
 | Per-`In`-value sub-counts: one `CountEntry` per value in an `In` clause | `documentsCountable: true` plus `countable: true` on an index whose leading columns cover any other equality predicates and whose next column is the `In` property |
 | O(log n) range count: `count(*) WHERE col BETWEEN A AND B` | `rangeCountable: true` on an index whose last property is `col` and whose other properties cover any equality predicates as a prefix. Implies `countable: true`. |
-| Per-distinct-value range histogram: one `CountEntry` per distinct value in a range | Same `rangeCountable: true` index as above, plus `return_distinct_counts_in_range = true` on the request (no-prove path only). |
+| Per-distinct-value range histogram: one `CountEntry` per distinct value in a range | Same `rangeCountable: true` index as above, plus `return_distinct_counts_in_range = true` on the request. Available on both prove and no-prove paths; the prove path returns a regular range proof against the property-name `ProvableCountTree` and the SDK extracts per-key counts from the proof's `KVCount` ops via [`drive_proof_verifier::verify_distinct_count_proof`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive-proof-verifier/src/proof/document_count.rs). |
 | Range count proof (`prove = true` + range clause) | Same `rangeCountable: true` index. The handler uses grovedb's `AggregateCountOnRange` proof primitive, which is unbounded (no `u16::MAX` cap). |
 | Future offset-style range queries (not yet released — see above) | `rangeCountable: true` on the document type |
 | Nothing count-aware (default) | Don't set any of these flags. Primary-key tree stays a `NormalTree`. |
@@ -399,7 +399,7 @@ let DocumentSplitCounts(splits) = DocumentSplitCounts::fetch(
 .expect("DocumentSplitCounts::fetch always returns a value on success");
 ```
 
-`DocumentCountQuery` and `DocumentSplitCountQuery` wrap an internal `DocumentQuery` (so they reuse where-clause / order-by / contract-id machinery) and expose a `with_where(WhereClause)` builder for filters. Both target the unified `GetDocumentsCountRequest`; the SDK derives the request mode (total / per-`In`-value / per-distinct-range / total-range) from the where clauses you supply.
+`DocumentCountQuery` and `DocumentSplitCountQuery` wrap an internal `DocumentQuery` (so they reuse where-clause / order-by / contract-id machinery) and expose a `with_where(WhereClause)` builder for filters. Both target the unified `GetDocumentsCountRequest`. The SDK picks the request mode (total / per-`In`-value / total-range / per-distinct-range) from query *shape* — Equal/`In`/range operators in the where clauses — *plus* explicit request flags. `return_distinct_counts_in_range = true` (set via `.with_distinct_counts_in_range(true)`) is what selects per-distinct-range over the default total-range when a range clause is present; without it a range query returns a single sum.
 
 ### `wasm-sdk` (browser)
 
