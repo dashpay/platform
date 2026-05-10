@@ -1315,18 +1315,20 @@ mod detect_mode_tests {
         );
     }
 
-    /// `prove = true` + `In` is rejected up front. The PerInValue
-    /// dispatch runs N no-proof point lookups, so silently mapping
-    /// `(in_clause, prove=true)` to `PerInValue` would downgrade the
-    /// caller's explicit proof request to an unproven count. Reject
-    /// instead until per-In-value proof support exists.
+    /// `prove = true` + `In` routes to `PointLookupProof` (the
+    /// materialize-and-count proof fallback). The SDK's
+    /// `FromProof<DocumentCountQuery>` for `DocumentSplitCounts`
+    /// then groups verified documents by the In field's serialized
+    /// value to produce per-key count entries. No proof aggregate
+    /// primitive supports per-In-value entries directly, but
+    /// materialize-and-count is correct (and was the pre-refactor
+    /// behavior).
     #[test]
-    fn in_with_prove_is_rejected() {
+    fn in_with_prove_routes_to_point_lookup_proof() {
         let clauses = vec![in_clause("a")];
-        let err = DriveDocumentCountQuery::detect_mode(&clauses, false, true).unwrap_err();
-        assert!(matches!(
-            err,
-            QuerySyntaxError::InvalidWhereClauseComponents(msg) if msg.contains("`in`") && msg.contains("prove")
-        ));
+        assert_eq!(
+            DriveDocumentCountQuery::detect_mode(&clauses, false, true).unwrap(),
+            DocumentCountMode::PointLookupProof,
+        );
     }
 }

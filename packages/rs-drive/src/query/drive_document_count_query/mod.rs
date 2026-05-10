@@ -185,6 +185,17 @@ impl<'a> DriveDocumentCountQuery<'a> {
                     "count query supports only `==`, `in`, and range operators",
                 ));
             }
+            // `startsWith` is in `is_range_operator` but the executor
+            // can't yet encode the byte-incremented upper bound for
+            // arbitrary key types. Reject up front so the picker
+            // doesn't accept a query that the dispatcher would later
+            // fail at execution. When `range_clause_to_query_item`
+            // grows StartsWith support, drop this branch.
+            if wc.operator == WhereOperator::StartsWith {
+                return Err(QuerySyntaxError::InvalidWhereClauseComponents(
+                    "startsWith is not yet supported on count queries",
+                ));
+            }
         }
 
         let range_count = where_clauses
@@ -231,30 +242,24 @@ impl<'a> DriveDocumentCountQuery<'a> {
                  no-prove path; the proof primitive returns a single aggregate",
             ));
         }
-        // `prove = true` + `In` is rejected up front to avoid silently
-        // downgrading the user's proof request to an unproven count.
-        // The PerInValue mode runs N point-count lookups in the
-        // no-proof path; there's no aggregate-proof primitive that
-        // returns one (key, count) entry per `In` value, so a
-        // proof-bearing version of this mode is genuinely not
-        // supported today (vs. just unimplemented).
-        if has_in && prove {
-            return Err(QuerySyntaxError::InvalidWhereClauseComponents(
-                "prove = true is not supported with an `in` where-clause; \
-                 per-In-value proofs are not yet implemented",
-            ));
-        }
 
         Ok(match (has_range, has_in, prove) {
             (true, false, true) => DocumentCountMode::RangeProof,
             (true, false, false) => DocumentCountMode::RangeNoProof,
             (false, true, false) => DocumentCountMode::PerInValue,
+            // `In` + `prove = true`: route to the materialize-and-count
+            // proof path. The SDK's `FromProof<DocumentCountQuery>` for
+            // `DocumentSplitCounts` then groups verified documents by
+            // the `In` field's serialized value to produce per-key
+            // count entries. There's no aggregate-proof primitive that
+            // emits one `(key, count)` per In value yet, but the
+            // materialize path is correct, just bounded at u16::MAX.
+            (false, true, true) => DocumentCountMode::PointLookupProof,
             (false, false, true) => DocumentCountMode::PointLookupProof,
             (false, false, false) => DocumentCountMode::Total,
-            // (true, true, _), (false, true, true): rejected above.
-            (true, true, _) | (false, true, true) => {
-                unreachable!("rejected by has_in && (prove || has_range) guards above")
-            }
+            // (true, true, _) is rejected by the has_range && has_in
+            // check above.
+            (true, true, _) => unreachable!("range + In is rejected above"),
         })
     }
 
@@ -1521,14 +1526,23 @@ impl Drive {
     /// `(serialized_value, count)` entry. Used by
     /// [`DocumentCountMode::PerInValue`] dispatch.
     ///
+    /// `options` (limit / order / cursor / distinct) applies to the
+    /// returned entry list — split-mode pagination per the proto
+    /// contract on `GetDocumentsCountRequestV0.{order_by_ascending,
+    /// limit, start_after_split_key}`. The `distinct` flag has no
+    /// effect here (PerInValue is always per-value); it's accepted
+    /// for symmetry with the range-mode executor.
+    ///
     /// Caller has already verified via [`DriveDocumentCountQuery::detect_mode`]
     /// that exactly one `In` clause is present in `where_clauses`.
+    #[allow(clippy::too_many_arguments)]
     pub fn execute_document_count_per_in_value_no_proof(
         &self,
         contract_id: [u8; 32],
         document_type: DocumentTypeRef,
         document_type_name: String,
         where_clauses: Vec<WhereClause>,
+        options: RangeCountOptions,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<SplitCountEntry>, Error> {
@@ -1553,18 +1567,22 @@ impl Drive {
             .cloned()
             .collect();
 
-        let mut entries = Vec::with_capacity(in_values.len());
-        let mut seen_keys: BTreeSet<Vec<u8>> = BTreeSet::new();
+        // Aggregate first into a key-ordered map (dedupes duplicate
+        // `In` values via the same canonical-byte rule as the range
+        // walker uses; BTreeMap ordering matches `RangeCountOptions`'s
+        // ascending convention). Order, cursor, and limit get applied
+        // after.
+        let mut merged: std::collections::BTreeMap<Vec<u8>, u64> =
+            std::collections::BTreeMap::new();
         for value in in_values {
-            // Pre-serialize so wire keys round-trip consistently with
-            // the no-In total-count path AND so we dedupe when an `In`
-            // value list contains duplicates.
             let key_bytes = document_type.serialize_value_for_key(
                 in_clause.field.as_str(),
                 value,
                 platform_version,
             )?;
-            if !seen_keys.insert(key_bytes.clone()) {
+            if merged.contains_key(&key_bytes) {
+                // Duplicate `In` values resolve to the same indexed path,
+                // so the count is the same — no need to re-query.
                 continue;
             }
 
@@ -1597,11 +1615,36 @@ impl Drive {
             };
             let results = count_query.execute_no_proof(self, transaction, platform_version)?;
             let count = results.first().map_or(0, |entry| entry.count);
+            merged.insert(key_bytes, count);
+        }
 
-            entries.push(SplitCountEntry {
-                key: key_bytes,
-                count,
-            });
+        // Apply order, then cursor, then limit — same shape as the
+        // range walker. BTreeMap iteration is already ascending; flip
+        // the vec if descending was requested.
+        let mut entries: Vec<SplitCountEntry> = merged
+            .into_iter()
+            .map(|(key, count)| SplitCountEntry { key, count })
+            .collect();
+        if !options.order_by_ascending {
+            entries.reverse();
+        }
+        if let Some(cursor) = options.start_after_split_key.as_ref() {
+            // Drop everything up to AND including the cursor key, in
+            // the requested order.
+            let kept: Vec<SplitCountEntry> = entries
+                .into_iter()
+                .skip_while(|e| {
+                    if options.order_by_ascending {
+                        e.key.as_slice() <= cursor.as_slice()
+                    } else {
+                        e.key.as_slice() >= cursor.as_slice()
+                    }
+                })
+                .collect();
+            entries = kept;
+        }
+        if let Some(limit) = options.limit {
+            entries.truncate(limit as usize);
         }
         Ok(entries)
     }
@@ -1858,16 +1901,34 @@ impl Drive {
                 };
                 Ok(DocumentCountResponse::Counts(entries))
             }
-            DocumentCountMode::PerInValue => Ok(DocumentCountResponse::Counts(
-                self.execute_document_count_per_in_value_no_proof(
-                    contract_id,
-                    request.document_type,
-                    document_type_name,
-                    request.where_clauses,
-                    transaction,
-                    platform_version,
-                )?,
-            )),
+            DocumentCountMode::PerInValue => {
+                // Same defense-in-depth clamp as RangeNoProof — the
+                // proto contract has `limit`/`order_by_ascending`/
+                // `start_after_split_key` apply to per-In-value
+                // entries too, so the executor honors them and we
+                // make sure `limit` is always `Some(_)` ≤ system cap.
+                let effective_limit = request
+                    .limit
+                    .unwrap_or(request.drive_config.default_query_limit as u32)
+                    .min(request.drive_config.max_query_limit as u32);
+                let options = RangeCountOptions {
+                    distinct: false, // ignored by PerInValue executor
+                    limit: Some(effective_limit),
+                    start_after_split_key: request.start_after_split_key,
+                    order_by_ascending: request.order_by_ascending.unwrap_or(true),
+                };
+                Ok(DocumentCountResponse::Counts(
+                    self.execute_document_count_per_in_value_no_proof(
+                        contract_id,
+                        request.document_type,
+                        document_type_name,
+                        request.where_clauses,
+                        options,
+                        transaction,
+                        platform_version,
+                    )?,
+                ))
+            }
             DocumentCountMode::RangeNoProof => {
                 // Defense-in-depth limit clamp: even if the caller
                 // forgot to pre-clamp (per the contract on
