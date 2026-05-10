@@ -30,6 +30,16 @@
 //! refreshed, but it does not reserve or consume the nonce remotely on Platform. If
 //! you need a "dry run" with no local nonce-cache side effects in this SDK instance,
 //! do not use the prepare API.
+//!
+//! ## One-shot document revision rules
+//!
+//! `documentCreate()` now accepts only documents whose revision is unset or
+//! `INITIAL_REVISION`, and `documentReplace()` now accepts only documents whose
+//! revision is greater than `INITIAL_REVISION`.
+//!
+//! Earlier wasm-sdk behavior could silently route invalid revisions to the other
+//! transition type. That implicit routing is no longer performed: invalid
+//! revisions now fail with `InvalidArgument` instead.
 
 use crate::error::WasmSdkError;
 use crate::sdk::WasmSdk;
@@ -137,6 +147,9 @@ export interface DocumentCreateOptions {
    * The document to create.
    * Use `new Document(...)` or `Document.fromJSON(...)` to construct it.
    * Must include dataContractId, documentTypeName, ownerId, and entropy.
+   * Revision must be omitted or set to 1 (INITIAL_REVISION).
+   * Other revisions are rejected with InvalidArgument instead of being routed
+   * to documentReplace().
    */
   document: Document;
 
@@ -180,6 +193,10 @@ impl WasmSdk {
     /// 2. Validates the document data against the document type schema
     /// 3. Creates and signs the document create transition
     /// 4. Broadcasts and waits for confirmation
+    ///
+    /// The document revision must be unset or `INITIAL_REVISION`. Revisions
+    /// greater than `INITIAL_REVISION` now return `InvalidArgument` instead of
+    /// being routed to `documentReplace()`.
     ///
     /// @param options - Creation options including document, identity key, and signer
     /// @returns Promise that resolves when the document is created
@@ -261,7 +278,9 @@ export interface DocumentReplaceOptions {
   /**
    * The document with updated data.
    * Must have the same ID as the existing document.
-   * Revision should be set to current revision + 1.
+   * Revision must be set to current revision + 1 and therefore be greater than
+   * 1 (INITIAL_REVISION). Missing, 0, or 1 revisions are rejected with
+   * InvalidArgument instead of being routed to documentCreate().
    */
   document: Document;
 
@@ -305,6 +324,10 @@ impl WasmSdk {
     /// 2. Validates the new document data against the document type schema
     /// 3. Creates and signs the document replace transition
     /// 4. Broadcasts and waits for confirmation
+    ///
+    /// The document revision must be greater than `INITIAL_REVISION`. Missing
+    /// or initial revisions now return `InvalidArgument` instead of being
+    /// routed to `documentCreate()`.
     ///
     /// @param options - Replace options including document, identity key, and signer
     /// @returns Promise that resolves when the document is replaced

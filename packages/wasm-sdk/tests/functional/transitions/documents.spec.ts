@@ -378,12 +378,18 @@ describe('Document State Transitions', function describeDocumentStateTransitions
       await client.broadcastStateTransition(restored);
       await client.waitForResponse(restored);
 
+      let secondBroadcastError;
       try {
         await client.broadcastStateTransition(restored);
         await client.waitForResponse(restored);
       } catch (e) {
-        expect(String(e?.message ?? e)).to.match(/already|duplicate|exists|known|cache/i);
+        secondBroadcastError = e;
       }
+
+      expect(secondBroadcastError, 'expected second broadcast to be rejected').to.exist();
+      expect(String(secondBroadcastError?.message ?? secondBroadcastError)).to.match(
+        /\b(duplicate|already known|already exists|existing state transition|known state transition)\b/i,
+      );
 
       await waitForPlatform();
     }

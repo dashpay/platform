@@ -1,5 +1,6 @@
 use crate::platform::transition::broadcast::BroadcastStateTransition;
 use crate::platform::transition::put_settings::PutSettings;
+use crate::platform::transition::validation::ensure_valid_state_transition_structure;
 use crate::platform::Identifier;
 use crate::{Error, Sdk};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -351,6 +352,8 @@ impl Sdk {
         let state_transition = delete_document_transition_builder
             .sign(self, signing_key, signer, platform_version)
             .await?;
+
+        ensure_valid_state_transition_structure(&state_transition, platform_version)?;
 
         let proof_result = state_transition
             .broadcast_and_wait::<StateTransitionProofResult>(self, put_settings)

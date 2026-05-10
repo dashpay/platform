@@ -175,6 +175,12 @@ client.free();
 
 The full surface includes identity, document, contract, token, group, epoch/system, and proof helpers.
 
+### Document revision rules
+
+- `documentCreate()` requires the document revision to be omitted or set to `1` (`INITIAL_REVISION`).
+- `documentReplace()` requires the document revision to be greater than `1`.
+- Invalid one-shot document revisions now reject with `InvalidArgument`; the wasm SDK no longer silently routes them to the other transition type.
+
 ### Logging
 
 By default, the SDK is silent. You can enable tracing logs globally or via the builder:
