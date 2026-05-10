@@ -3274,6 +3274,113 @@ mod range_countable_index_e2e_tests {
             }
         }
 
+        // Inline-print under `cargo test -- --nocapture`. Mirrors the
+        // aggregate test's print-decoded-proof block but for the
+        // distinct shape: matched children show up as
+        // `KVValueHashFeatureType[WithChildHash]` ops carrying the
+        // encoded `Element::CountTree(_, lot_count, _)` value plus
+        // the AVL-aggregate `ProvableCountedMerkNode(_)` feature
+        // count. Side-by-side comparison with the aggregate proof
+        // makes the size/shape trade-off visible.
+        fn label_path_segment(key: &[u8]) -> String {
+            if key.iter().all(|b| b.is_ascii_graphic() || *b == b' ') {
+                format!("\"{}\"", String::from_utf8_lossy(key))
+            } else {
+                format!("0x{}", hex::encode(key))
+            }
+        }
+        fn print_ops(label: &str, depth: usize, merk_bytes: &[u8]) {
+            let indent = "  ".repeat(depth);
+            println!(
+                "{}{} (merk_proof = {} bytes)",
+                indent,
+                label,
+                merk_bytes.len()
+            );
+            for (i, op_res) in MerkProofDecoder::new(merk_bytes).enumerate() {
+                match op_res {
+                    Ok(MerkProofOp::Push(n)) => println!("{}  [{:>2}] Push({})", indent, i, n),
+                    Ok(MerkProofOp::PushInverted(n)) => {
+                        println!("{}  [{:>2}] PushInverted({})", indent, i, n)
+                    }
+                    Ok(MerkProofOp::Parent) => println!("{}  [{:>2}] Parent", indent, i),
+                    Ok(MerkProofOp::Child) => println!("{}  [{:>2}] Child", indent, i),
+                    Ok(MerkProofOp::ParentInverted) => {
+                        println!("{}  [{:>2}] ParentInverted", indent, i)
+                    }
+                    Ok(MerkProofOp::ChildInverted) => {
+                        println!("{}  [{:>2}] ChildInverted", indent, i)
+                    }
+                    Err(e) => println!("{}  [{:>2}] <decode error: {}>", indent, i, e),
+                }
+            }
+        }
+        fn walk_v0_print(
+            layer: &grovedb::operations::proof::MerkOnlyLayerProof,
+            depth: usize,
+            label: String,
+        ) {
+            print_ops(&label, depth, &layer.merk_proof);
+            for (k, lower) in &layer.lower_layers {
+                walk_v0_print(
+                    lower,
+                    depth + 1,
+                    format!(
+                        "layer @ depth {} (path key {})",
+                        depth + 1,
+                        label_path_segment(k)
+                    ),
+                );
+            }
+        }
+        fn walk_v1_print(
+            layer: &grovedb::operations::proof::LayerProof,
+            depth: usize,
+            label: String,
+        ) {
+            let bytes = match &layer.merk_proof {
+                ProofBytes::Merk(b) => b.as_slice(),
+                _ => {
+                    println!(
+                        "{}{}: <non-merk leaf bytes — unexpected for distinct-count>",
+                        "  ".repeat(depth),
+                        label
+                    );
+                    return;
+                }
+            };
+            print_ops(&label, depth, bytes);
+            for (k, lower) in &layer.lower_layers {
+                walk_v1_print(
+                    lower,
+                    depth + 1,
+                    format!(
+                        "layer @ depth {} (path key {})",
+                        depth + 1,
+                        label_path_segment(k)
+                    ),
+                );
+            }
+        }
+        let (envelope_for_print, _): (GroveDBProof, _) =
+            bincode::decode_from_slice(&proof_bytes, config).expect("envelope decodes");
+
+        println!("=== parking-lot DISTINCT-count proof ===");
+        println!("inserted docs: 351 (1 + 2 + ... + 26)");
+        println!("query: lot > \"b\" (return_distinct_counts_in_range = true)");
+        println!("verified per-lot count entries: {}", counts.len());
+        println!("verified root hash: {}", hex::encode(root_hash));
+        println!("envelope size: {} bytes", proof_bytes.len());
+        match envelope_for_print {
+            GroveDBProof::V0(GroveDBProofV0 { root_layer, .. }) => {
+                walk_v0_print(&root_layer, 0, "layer @ depth 0 (root)".to_string())
+            }
+            GroveDBProof::V1(GroveDBProofV1 { root_layer }) => {
+                walk_v1_print(&root_layer, 0, "layer @ depth 0 (root)".to_string())
+            }
+        }
+        println!("=== end distinct proof ===");
+
         // 24 distinct lots (c..=z) each with their alphabet-position
         // count. Same expectation as the no-proof distinct test — the
         // prove path is obligated to return the same numbers, just
