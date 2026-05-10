@@ -461,8 +461,18 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getDocumentsCount", unchecked_return_type = "bigint")]
     pub async fn get_documents_count(&self, query: DocumentsQueryJs) -> Result<u64, WasmSdkError> {
         let base_query = parse_documents_query(self, query).await?;
+        // Wasm-sdk's count entry points are all proof-path Fetch calls.
+        // Range no-proof distinct mode (`return_distinct_counts_in_range`,
+        // pagination knobs) needs a separate JS-facing API entry point
+        // since proof + distinct is rejected server-side; tracked as a
+        // follow-up. Defaults match the gRPC defaults for the
+        // proof-path total/split modes that wasm-sdk currently exposes.
         let count_query = DocumentCountQuery {
             document_query: base_query,
+            return_distinct_counts_in_range: false,
+            order_by_ascending: None,
+            limit: None,
+            start_after_split_key: None,
         };
 
         let count = DocumentCount::fetch(self.as_ref(), count_query)
@@ -482,8 +492,18 @@ impl WasmSdk {
         query: DocumentsQueryJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         let base_query = parse_documents_query(self, query).await?;
+        // Wasm-sdk's count entry points are all proof-path Fetch calls.
+        // Range no-proof distinct mode (`return_distinct_counts_in_range`,
+        // pagination knobs) needs a separate JS-facing API entry point
+        // since proof + distinct is rejected server-side; tracked as a
+        // follow-up. Defaults match the gRPC defaults for the
+        // proof-path total/split modes that wasm-sdk currently exposes.
         let count_query = DocumentCountQuery {
             document_query: base_query,
+            return_distinct_counts_in_range: false,
+            order_by_ascending: None,
+            limit: None,
+            start_after_split_key: None,
         };
 
         let (count_opt, metadata, proof) =
@@ -511,8 +531,18 @@ impl WasmSdk {
         query: DocumentsQueryJs,
     ) -> Result<Map, WasmSdkError> {
         let base_query = parse_documents_query(self, query).await?;
+        // Wasm-sdk's count entry points are all proof-path Fetch calls.
+        // Range no-proof distinct mode (`return_distinct_counts_in_range`,
+        // pagination knobs) needs a separate JS-facing API entry point
+        // since proof + distinct is rejected server-side; tracked as a
+        // follow-up. Defaults match the gRPC defaults for the
+        // proof-path total/split modes that wasm-sdk currently exposes.
         let count_query = DocumentCountQuery {
             document_query: base_query,
+            return_distinct_counts_in_range: false,
+            order_by_ascending: None,
+            limit: None,
+            start_after_split_key: None,
         };
         let splits = DocumentSplitCounts::fetch(self.as_ref(), count_query).await?;
         Ok(split_counts_to_js_map(splits))
@@ -527,8 +557,18 @@ impl WasmSdk {
         query: DocumentsQueryJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         let base_query = parse_documents_query(self, query).await?;
+        // Wasm-sdk's count entry points are all proof-path Fetch calls.
+        // Range no-proof distinct mode (`return_distinct_counts_in_range`,
+        // pagination knobs) needs a separate JS-facing API entry point
+        // since proof + distinct is rejected server-side; tracked as a
+        // follow-up. Defaults match the gRPC defaults for the
+        // proof-path total/split modes that wasm-sdk currently exposes.
         let count_query = DocumentCountQuery {
             document_query: base_query,
+            return_distinct_counts_in_range: false,
+            order_by_ascending: None,
+            limit: None,
+            start_after_split_key: None,
         };
         let (splits_opt, metadata, proof) =
             DocumentSplitCounts::fetch_with_metadata_and_proof(self.as_ref(), count_query, None)

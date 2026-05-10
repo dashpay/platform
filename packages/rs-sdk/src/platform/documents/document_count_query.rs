@@ -34,6 +34,12 @@ use rs_dapi_client::transport::{
 ///
 /// Wraps a [`DocumentQuery`] (so we can reuse its [`DriveDocumentQuery`]
 /// conversion machinery) and is consumed by [`DocumentCount::fetch`].
+///
+/// Optional fields below correspond to the unified count endpoint's
+/// pagination / distinct-mode knobs added in PR #3623. Defaults match
+/// the gRPC defaults: total-count summed result, ascending order,
+/// no limit, no cursor, proof-verifying transport. Setters override
+/// individual fields without disturbing the rest.
 #[derive(Debug, Clone, dash_platform_macros::Mockable)]
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub struct DocumentCountQuery {
@@ -41,6 +47,25 @@ pub struct DocumentCountQuery {
     /// data-contract / document-type / where-clauses inputs as the
     /// regular document query.
     pub document_query: DocumentQuery,
+    /// `return_distinct_counts_in_range` request flag. Only meaningful
+    /// when the where clauses contain a range operator AND the
+    /// request goes through a no-proof transport — the proof
+    /// endpoint rejects this combination because the merk-level
+    /// `AggregateCountOnRange` proof returns a single aggregate.
+    /// Default: `false`.
+    pub return_distinct_counts_in_range: bool,
+    /// `order_by_ascending` request flag. `None` (default) means the
+    /// server uses the natural BTreeMap order (ascending) for
+    /// distinct-mode entries; `Some(false)` reverses.
+    pub order_by_ascending: Option<bool>,
+    /// `limit` cap for distinct-mode entries. The server clamps this
+    /// to its `max_query_limit` config; passing a larger value here
+    /// just gets clamped, not rejected.
+    pub limit: Option<u32>,
+    /// `start_after_split_key` pagination cursor for distinct-mode
+    /// entries. Skips up to AND including this serialized key, in
+    /// the requested order.
+    pub start_after_split_key: Option<Vec<u8>>,
 }
 
 impl DocumentCountQuery {
@@ -51,6 +76,10 @@ impl DocumentCountQuery {
     ) -> Result<Self, Error> {
         Ok(Self {
             document_query: DocumentQuery::new(contract, document_type_name)?,
+            return_distinct_counts_in_range: false,
+            order_by_ascending: None,
+            limit: None,
+            start_after_split_key: None,
         })
     }
 
@@ -59,12 +88,44 @@ impl DocumentCountQuery {
         self.document_query = self.document_query.with_where(clause);
         self
     }
+
+    /// Set `return_distinct_counts_in_range`. Only meaningful with a
+    /// range where-clause AND a no-proof transport (see field doc).
+    pub fn with_distinct_counts_in_range(mut self, distinct: bool) -> Self {
+        self.return_distinct_counts_in_range = distinct;
+        self
+    }
+
+    /// Set the sort order for distinct-mode entries. `None` (default)
+    /// means ascending; `Some(false)` reverses.
+    pub fn with_order_by_ascending(mut self, ascending: Option<bool>) -> Self {
+        self.order_by_ascending = ascending;
+        self
+    }
+
+    /// Cap distinct-mode entry count. Server clamps to its
+    /// `max_query_limit` config — larger values are silently reduced.
+    pub fn with_limit(mut self, limit: Option<u32>) -> Self {
+        self.limit = limit;
+        self
+    }
+
+    /// Pagination cursor: skip distinct-mode entries up to and
+    /// including this serialized key, in the requested order.
+    pub fn with_start_after_split_key(mut self, cursor: Option<Vec<u8>>) -> Self {
+        self.start_after_split_key = cursor;
+        self
+    }
 }
 
 impl<'a> From<&'a DriveDocumentQuery<'a>> for DocumentCountQuery {
     fn from(value: &'a DriveDocumentQuery<'a>) -> Self {
         Self {
             document_query: value.into(),
+            return_distinct_counts_in_range: false,
+            order_by_ascending: None,
+            limit: None,
+            start_after_split_key: None,
         }
     }
 }
@@ -73,6 +134,10 @@ impl<'a> From<DriveDocumentQuery<'a>> for DocumentCountQuery {
     fn from(value: DriveDocumentQuery<'a>) -> Self {
         Self {
             document_query: value.into(),
+            return_distinct_counts_in_range: false,
+            order_by_ascending: None,
+            limit: None,
+            start_after_split_key: None,
         }
     }
 }
@@ -107,10 +172,14 @@ impl TryFrom<DocumentCountQuery> for GetDocumentsCountRequest {
                     data_contract_id: query.document_query.data_contract.id().to_vec(),
                     document_type: query.document_query.document_type_name.clone(),
                     r#where: where_bytes,
-                    return_distinct_counts_in_range: false,
-                    order_by_ascending: None,
-                    limit: None,
-                    start_after_split_key: None,
+                    return_distinct_counts_in_range: query.return_distinct_counts_in_range,
+                    order_by_ascending: query.order_by_ascending,
+                    limit: query.limit,
+                    start_after_split_key: query.start_after_split_key.clone(),
+                    // SDK Fetch path always requests a proof; users
+                    // wanting no-proof distinct-mode would need a
+                    // separate transport entry point that doesn't
+                    // try to verify the response as a proof.
                     prove: true,
                 },
             )),

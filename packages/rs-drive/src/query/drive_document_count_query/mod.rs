@@ -2,7 +2,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 #[cfg(feature = "server")]
 use crate::drive::Drive;
-#[cfg(feature = "server")]
+// `QuerySyntaxError` is reachable under both `server` and `verify`
+// because [`DriveDocumentCountQuery::detect_mode`] (pure where-clause
+// validation, no Drive) is callable in either context.
+#[cfg(any(feature = "server", feature = "verify"))]
 use crate::error::query::QuerySyntaxError;
 #[cfg(feature = "server")]
 use crate::error::Error;
