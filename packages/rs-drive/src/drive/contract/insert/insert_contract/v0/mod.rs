@@ -10,6 +10,7 @@ use crate::fees::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 
@@ -317,18 +318,42 @@ impl Drive {
             }
 
             let mut index_cache: HashSet<&[u8]> = HashSet::new();
+            let document_type_ref = document_type.as_ref();
+            let index_structure = document_type_ref.index_structure();
             // for each type we should insert the indices that are top level
             for index in document_type.as_ref().top_level_indices() {
                 // toDo: change this to be a reference by index
                 let index_bytes = index.name.as_bytes();
                 if !index_cache.contains(index_bytes) {
-                    self.batch_insert_empty_tree(
-                        type_path,
-                        KeyRef(index_bytes),
-                        storage_flags.as_ref(),
-                        &mut batch_operations,
-                        &platform_version.drive,
-                    )?;
+                    // If a range_countable index terminates at this top
+                    // level (i.e. a single-property index over `index.name`
+                    // with range_countable: true), the property-name tree
+                    // must be a `ProvableCountTree` so range-count queries
+                    // over the property's distinct values can use grovedb's
+                    // `AggregateCountOnRange`. Otherwise it's a NormalTree.
+                    let property_name_is_range_countable_terminator = index_structure
+                        .sub_levels()
+                        .get(index.name.as_str())
+                        .and_then(|level| level.has_index_with_type())
+                        .map(|info| info.range_countable)
+                        .unwrap_or(false);
+                    if property_name_is_range_countable_terminator {
+                        self.batch_insert_empty_provable_count_tree(
+                            type_path,
+                            KeyRef(index_bytes),
+                            storage_flags.as_ref(),
+                            &mut batch_operations,
+                            &platform_version.drive,
+                        )?;
+                    } else {
+                        self.batch_insert_empty_tree(
+                            type_path,
+                            KeyRef(index_bytes),
+                            storage_flags.as_ref(),
+                            &mut batch_operations,
+                            &platform_version.drive,
+                        )?;
+                    }
                     index_cache.insert(index_bytes);
                 }
             }

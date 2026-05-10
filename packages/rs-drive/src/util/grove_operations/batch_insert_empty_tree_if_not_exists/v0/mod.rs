@@ -31,25 +31,20 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<bool, Error> {
-        // When wrapping with NonCounted, only NormalTree is currently
-        // supported — that's the only shape the index walker needs and the
-        // only one whose semantics are non-ambiguous (NonCounted preserves
-        // the inner element's storage but zeros its count contribution to
-        // the parent count tree). Reject other combinations early.
-        if wrap_in_non_counted && tree_type != TreeType::NormalTree {
-            return Err(Error::Drive(DriveError::NotSupported(
-                "wrap_in_non_counted is only supported with TreeType::NormalTree",
-            )));
-        }
+        // The index walker uses NonCounted wrapping for sibling continuations
+        // inside `range_countable` value trees — see the helper docs in
+        // `fees/op.rs`. Wrapping is only validated for the small set of
+        // tree variants the walker actually emits (NormalTree / CountTree /
+        // ProvableCountTree); anything else falls through to the helper's
+        // own NotSupported error.
         let build_op =
             |path: Vec<Vec<u8>>, key: Vec<u8>| -> Result<LowLevelDriveOperation, Error> {
                 if wrap_in_non_counted {
-                    Ok(
-                        LowLevelDriveOperation::for_known_path_key_empty_non_counted_normal_tree(
-                            path,
-                            key,
-                            storage_flags,
-                        ),
+                    LowLevelDriveOperation::for_known_path_key_empty_non_counted_tree(
+                        path,
+                        key,
+                        tree_type,
+                        storage_flags,
                     )
                 } else {
                     tree_type.empty_tree_operation_for_known_path_key(path, key, storage_flags)

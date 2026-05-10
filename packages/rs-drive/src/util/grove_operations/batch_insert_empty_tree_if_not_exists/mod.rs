@@ -74,6 +74,38 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<bool, Error> {
+        self.batch_insert_empty_non_counted_tree_if_not_exists(
+            path_key_info,
+            TreeType::NormalTree,
+            storage_flags,
+            apply_type,
+            transaction,
+            check_existing_operations,
+            drive_operations,
+            drive_version,
+        )
+    }
+
+    /// Pushes an "insert empty `tree_type` wrapped in `Element::NonCounted`"
+    /// operation to `drive_operations`, but only if the path/key doesn't
+    /// already exist. Generalizes
+    /// [`batch_insert_empty_non_counted_normal_tree_if_not_exists`] to
+    /// arbitrary tree variants — required for nested-`range_countable`
+    /// scenarios where a continuation property-name tree under a
+    /// `CountTree` value tree is itself a `ProvableCountTree` and still
+    /// needs to contribute 0 to the parent count.
+    #[allow(clippy::too_many_arguments)]
+    pub fn batch_insert_empty_non_counted_tree_if_not_exists<const N: usize>(
+        &self,
+        path_key_info: PathKeyInfo<N>,
+        tree_type: TreeType,
+        storage_flags: Option<&StorageFlags>,
+        apply_type: BatchInsertTreeApplyType,
+        transaction: TransactionArg,
+        check_existing_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+        drive_version: &DriveVersion,
+    ) -> Result<bool, Error> {
         match drive_version
             .grove_methods
             .batch
@@ -81,7 +113,7 @@ impl Drive {
         {
             0 => self.batch_insert_empty_tree_if_not_exists_v0(
                 path_key_info,
-                TreeType::NormalTree,
+                tree_type,
                 true, // wrap_in_non_counted
                 storage_flags,
                 apply_type,
@@ -91,7 +123,7 @@ impl Drive {
                 drive_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "batch_insert_empty_non_counted_normal_tree_if_not_exists".to_string(),
+                method: "batch_insert_empty_non_counted_tree_if_not_exists".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
