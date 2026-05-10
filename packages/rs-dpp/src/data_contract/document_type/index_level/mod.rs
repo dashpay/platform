@@ -42,6 +42,17 @@ pub struct IndexLevelTypeInfo {
     /// `Countable` → `CountTree`,
     /// `CountableAllowingOffset` → `ProvableCountTree`.
     pub countable: IndexCountability,
+    /// Whether this index supports range-count queries. When true:
+    /// - The property-name level (the level *above* this terminating
+    ///   level, whose keys are the property's distinct values) is laid out
+    ///   as a `ProvableCountTree`.
+    /// - Each value tree under it is laid out as a `CountTree`.
+    /// - Sibling continuations inside each value tree get wrapped with
+    ///   `Element::NonCounted` so their counts don't leak into the value
+    ///   tree's count.
+    /// Mutually compatible with the `countable` flag — additive, not a
+    /// replacement.
+    pub range_countable: bool,
 }
 
 impl IndexType {
@@ -222,6 +233,7 @@ impl IndexLevel {
                         should_insert_with_all_null: index.null_searchable,
                         index_type,
                         countable: index.countable,
+                        range_countable: index.range_countable,
                     });
                 }
             }
@@ -329,6 +341,7 @@ mod tests {
             null_searchable: true,
             contested_index: None,
             countable: IndexCountability::NotCountable,
+            range_countable: false,
         }];
 
         let old_index_structure =
@@ -357,6 +370,7 @@ mod tests {
             null_searchable: true,
             contested_index: None,
             countable: IndexCountability::NotCountable,
+            range_countable: false,
         }];
 
         let new_indices = vec![
@@ -370,6 +384,7 @@ mod tests {
                 null_searchable: true,
                 contested_index: None,
                 countable: IndexCountability::NotCountable,
+                range_countable: false,
             },
             Index {
                 name: "test2".to_string(),
@@ -381,6 +396,7 @@ mod tests {
                 null_searchable: true,
                 contested_index: None,
                 countable: IndexCountability::NotCountable,
+                range_countable: false,
             },
         ];
 
@@ -418,6 +434,7 @@ mod tests {
                 null_searchable: true,
                 contested_index: None,
                 countable: IndexCountability::NotCountable,
+                range_countable: false,
             },
             Index {
                 name: "test2".to_string(),
@@ -429,6 +446,7 @@ mod tests {
                 null_searchable: true,
                 contested_index: None,
                 countable: IndexCountability::NotCountable,
+                range_countable: false,
             },
         ];
 
@@ -442,6 +460,7 @@ mod tests {
             null_searchable: true,
             contested_index: None,
             countable: IndexCountability::NotCountable,
+            range_countable: false,
         }];
 
         let old_index_structure =
@@ -477,6 +496,7 @@ mod tests {
             null_searchable: true,
             contested_index: None,
             countable: IndexCountability::NotCountable,
+            range_countable: false,
         }];
 
         let new_indices = vec![Index {
@@ -495,6 +515,7 @@ mod tests {
             null_searchable: true,
             contested_index: None,
             countable: IndexCountability::NotCountable,
+            range_countable: false,
         }];
 
         let old_index_structure =
@@ -536,6 +557,7 @@ mod tests {
             null_searchable: true,
             contested_index: None,
             countable: IndexCountability::NotCountable,
+            range_countable: false,
         }];
 
         let new_indices = vec![Index {
@@ -548,6 +570,7 @@ mod tests {
             null_searchable: true,
             contested_index: None,
             countable: IndexCountability::NotCountable,
+            range_countable: false,
         }];
 
         let old_index_structure =
@@ -583,6 +606,7 @@ mod tests {
             null_searchable: true,
             contested_index: None,
             countable: IndexCountability::NotCountable,
+            range_countable: false,
         }];
 
         let new_indices = vec![Index {
@@ -595,6 +619,7 @@ mod tests {
             null_searchable: true,
             contested_index: None,
             countable: IndexCountability::Countable,
+            range_countable: false,
         }];
 
         let old_index_structure =
@@ -630,6 +655,7 @@ mod tests {
             null_searchable: true,
             contested_index: None,
             countable: IndexCountability::Countable,
+            range_countable: false,
         }];
 
         let new_indices = vec![Index {
@@ -642,6 +668,7 @@ mod tests {
             null_searchable: true,
             contested_index: None,
             countable: IndexCountability::NotCountable,
+            range_countable: false,
         }];
 
         let old_index_structure =
@@ -677,6 +704,7 @@ mod tests {
             null_searchable: true,
             contested_index: None,
             countable: IndexCountability::Countable,
+            range_countable: false,
         }];
 
         let old_index_structure =
@@ -712,6 +740,7 @@ mod tests {
             null_searchable: true,
             contested_index: None,
             countable: IndexCountability::NotCountable,
+            range_countable: false,
         }];
 
         let new_indices = vec![Index {
@@ -730,6 +759,7 @@ mod tests {
             null_searchable: true,
             contested_index: None,
             countable: IndexCountability::Countable,
+            range_countable: false,
         }];
 
         let old_index_structure =

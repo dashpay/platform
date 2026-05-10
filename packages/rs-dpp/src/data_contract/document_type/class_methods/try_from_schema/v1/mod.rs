@@ -356,6 +356,20 @@ impl DocumentTypeV1 {
                                 )));
                             }
 
+                            // `rangeCountable` requires the grovedb `NonCounted`
+                            // element variant + `AggregateCountOnRange` query
+                            // primitive, both of which only exist from
+                            // protocol version 12 onward.
+                            if index.range_countable && platform_version.protocol_version < 12 {
+                                return Err(ProtocolError::ConsensusError(Box::new(
+                                    UnsupportedFeatureError::new(
+                                        "range-countable index".to_string(),
+                                        platform_version.protocol_version,
+                                    )
+                                    .into(),
+                                )));
+                            }
+
                             validation_operations.extend(std::iter::once(
                                 ProtocolValidationOperation::DocumentTypeSchemaIndexValidation(
                                     index.properties.len() as u64,

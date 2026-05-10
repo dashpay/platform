@@ -356,6 +356,22 @@ pub struct Index {
     /// Whether and how the index supports count fast paths. See
     /// [`IndexCountability`].
     pub countable: IndexCountability,
+    /// Whether the index supports O(log n) count queries over a *range* of
+    /// values for the indexed property. When true:
+    /// - The property-name tree (the level whose keys are property values)
+    ///   is stored as a `ProvableCountTree`, so range queries over distinct
+    ///   values can be answered by walking the boundary in O(log n).
+    /// - Each value tree under it is stored as a `CountTree`, so the
+    ///   property-name aggregate sums per-value counts cleanly.
+    /// - Sibling continuations inside each value tree (compound-index
+    ///   suffixes) are wrapped with `Element::NonCounted` so their counts
+    ///   do not pollute the value tree's count.
+    ///
+    /// `range_countable: true` requires `countable` to be `Countable` or
+    /// `CountableAllowingOffset` (it's additive, not a replacement) and is
+    /// gated on protocol version 12+ (depends on grovedb's `NonCounted`
+    /// element variant + `AggregateCountOnRange` query item).
+    pub range_countable: bool,
 }
 
 impl Index {
@@ -531,6 +547,7 @@ impl TryFrom<&[(Value, Value)]> for Index {
         let mut contested_index = None;
         let mut index_properties: Vec<IndexProperty> = Vec::new();
         let mut countable = IndexCountability::NotCountable;
+        let mut range_countable = false;
 
         for (key_value, value_value) in index_type_value_map {
             let key = key_value.to_str()?;
@@ -679,6 +696,14 @@ impl TryFrom<&[(Value, Value)]> for Index {
                         }
                     };
                 }
+                "rangeCountable" => {
+                    range_countable =
+                        value_value
+                            .as_bool()
+                            .ok_or(DataContractError::ValueWrongType(
+                                "rangeCountable value must be a boolean".to_string(),
+                            ))?;
+                }
                 "properties" => {
                     let properties =
                         value_value
@@ -712,6 +737,20 @@ impl TryFrom<&[(Value, Value)]> for Index {
             ));
         }
 
+        // `rangeCountable` is additive on top of `countable`: it changes how
+        // the index's tree is laid out (property-name → ProvableCountTree,
+        // value level → CountTree, sibling continuations → NonCounted) so
+        // that range-count queries can be answered in O(log n). It is
+        // meaningless without the underlying countability.
+        if range_countable && !countable.is_countable() {
+            return Err(DataContractError::InvalidContractStructure(
+                "rangeCountable requires countable to be \"countable\" or \
+                 \"countableAllowingOffset\"; range-count queries only make \
+                 sense on a count-bearing index"
+                    .to_string(),
+            ));
+        }
+
         // if the index didn't have a name let's make one
         let name = name.unwrap_or_else(|| Alphanumeric.sample_string(&mut rand::thread_rng(), 24));
 
@@ -722,6 +761,7 @@ impl TryFrom<&[(Value, Value)]> for Index {
             null_searchable,
             contested_index,
             countable,
+            range_countable,
         })
     }
 }
@@ -776,6 +816,7 @@ mod tests {
             null_searchable: true,
             contested_index: None,
             countable: IndexCountability::NotCountable,
+            range_countable: false,
         }
     }
 
