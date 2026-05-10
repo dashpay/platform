@@ -719,18 +719,23 @@ mod tests {
         }
     }
 
-    /// `return_distinct_counts_in_range = true` is rejected on the
-    /// prove path because grovedb's `AggregateCountOnRange` proof
-    /// returns one aggregate, not per-distinct-value entries.
+    /// `return_distinct_counts_in_range = true` + `prove = true` is
+    /// supported via the `RangeDistinctProof` dispatch path: a
+    /// regular grovedb range proof against the property-name
+    /// `ProvableCountTree` whose `KVValueHashFeatureType[WithChildHash]`
+    /// ops carry per-distinct-value counts (bound to the merk root
+    /// via `node_hash_with_count`). Earlier commits in this PR
+    /// rejected this combination because only the aggregate-count
+    /// proof primitive existed; the distinct-count proof was added
+    /// in 93a1b0ca7c. This test pins the acceptance shape.
     #[test]
-    fn test_documents_count_range_with_prove_rejects_distinct() {
+    fn test_documents_count_range_with_prove_and_distinct_returns_proof() {
         use dpp::data_contract::DataContractFactory;
         use dpp::platform_value::platform_value;
 
         const PROTOCOL_VERSION_V12: u32 = 12;
 
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
-        let platform_version = PlatformVersion::latest();
 
         let factory =
             DataContractFactory::new(PROTOCOL_VERSION_V12).expect("expected to create factory");
@@ -779,24 +784,18 @@ mod tests {
 
         let result = platform
             .query_documents_count_v0(request, &state, version)
-            .expect("query should return validation error");
-        let _ = platform_version;
-        // After the detect_mode refactor this rejection now comes from
-        // rs-drive's where-clause validation rather than an inline
-        // handler check, so it surfaces as a `Query(InvalidWhereClauseComponents)`
-        // rather than `InvalidArgument`. Both shape variants are valid
-        // rejections; we accept either.
+            .expect("query should succeed");
         assert!(
-            matches!(
-                result.errors.as_slice(),
-                [QueryError::InvalidArgument(msg)] if msg.contains("return_distinct_counts_in_range")
-            ) || matches!(
-                result.errors.as_slice(),
-                [QueryError::Query(QuerySyntaxError::InvalidWhereClauseComponents(msg))]
-                    if msg.contains("return_distinct_counts_in_range")
-            ),
-            "expected return_distinct_counts_in_range rejection on prove path, got {:?}",
+            result.errors.is_empty(),
+            "expected no validation errors, got {:?}",
             result.errors
         );
+        match result.data {
+            Some(GetDocumentsCountResponseV0 {
+                result: Some(get_documents_count_response_v0::Result::Proof(_)),
+                metadata: Some(_),
+            }) => {}
+            other => panic!("expected Proof response, got {:?}", other),
+        }
     }
 }
