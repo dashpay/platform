@@ -287,7 +287,6 @@ impl FromProof<DocumentCountQuery> for DocumentCount {
                 document_type_name: request.document_query.document_type_name.clone(),
                 index,
                 where_clauses: request.document_query.where_clauses.clone(),
-                split_by_property: None,
             };
             let path_query = count_query
                 .aggregate_count_path_query(platform_version)

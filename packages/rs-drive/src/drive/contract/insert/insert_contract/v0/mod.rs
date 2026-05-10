@@ -1621,7 +1621,6 @@ mod range_countable_index_e2e_tests {
             document_type_name: "widget".to_string(),
             index,
             where_clauses: where_clauses.clone(),
-            split_by_property: None,
         };
 
         // distinct=false: single summed entry. green(3) + red(2) = 5.
@@ -1789,7 +1788,6 @@ mod range_countable_index_e2e_tests {
             document_type_name: "widget".to_string(),
             index,
             where_clauses,
-            split_by_property: None,
         };
 
         let split = query
@@ -1888,7 +1886,6 @@ mod range_countable_index_e2e_tests {
             document_type_name: "widget".to_string(),
             index,
             where_clauses: where_clauses.clone(),
-            split_by_property: None,
         };
 
         let proof_bytes = query
@@ -2044,7 +2041,6 @@ mod range_countable_index_e2e_tests {
             document_type_name: "widget".to_string(),
             index,
             where_clauses,
-            split_by_property: None,
         };
 
         // Distinct mode: per-color entries, summed across both brands.
@@ -2131,7 +2127,6 @@ mod range_countable_index_e2e_tests {
             document_type_name: "widget".to_string(),
             index,
             where_clauses,
-            split_by_property: None,
         };
 
         let result = query.execute_range_count_no_proof(

@@ -175,7 +175,6 @@ fn test_count_query_total_count_with_documents() {
         document_type_name: "person".to_string(),
         index,
         where_clauses: vec![],
-        split_by_property: None,
     };
 
     let results = query
@@ -217,7 +216,6 @@ fn test_count_query_total_count_empty() {
         document_type_name: "person".to_string(),
         index,
         where_clauses: vec![],
-        split_by_property: None,
     };
 
     let results = query
@@ -377,7 +375,6 @@ fn test_count_query_total_count_with_in_operator() {
         document_type_name: "person".to_string(),
         index,
         where_clauses: vec![in_clause],
-        split_by_property: None,
     };
 
     let results = query
@@ -422,7 +419,6 @@ fn test_count_query_total_count_with_in_operator_no_matches() {
         document_type_name: "person".to_string(),
         index,
         where_clauses: vec![in_clause],
-        split_by_property: None,
     };
 
     let results = query
@@ -468,7 +464,6 @@ fn test_count_query_in_operator_dedupes_duplicate_values() {
         document_type_name: "person".to_string(),
         index,
         where_clauses: vec![in_clause],
-        split_by_property: None,
     };
 
     let results = query
@@ -747,7 +742,6 @@ fn test_countable_allowing_offset_variant_end_to_end() {
         document_type_name: "person".to_string(),
         index: picked,
         where_clauses: vec![],
-        split_by_property: None,
     };
 
     let results = query
@@ -819,7 +813,6 @@ fn test_count_query_unique_countable_index_returns_correct_count() {
         document_type_name: "person".to_string(),
         index,
         where_clauses,
-        split_by_property: None,
     };
 
     let results = query

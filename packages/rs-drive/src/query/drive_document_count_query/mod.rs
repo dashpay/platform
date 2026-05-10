@@ -53,8 +53,7 @@ mod tests;
 /// A query to count documents using CountTree elements in the index path.
 ///
 /// This struct encapsulates all the information needed to perform a count
-/// query on a document type's countable index, including optional split-by
-/// functionality for getting per-value counts.
+/// query on a document type's countable index.
 #[derive(Debug, Clone)]
 pub struct DriveDocumentCountQuery<'a> {
     /// The document type to count
@@ -67,9 +66,6 @@ pub struct DriveDocumentCountQuery<'a> {
     pub index: &'a Index,
     /// The equality where clauses that match index prefix properties
     pub where_clauses: Vec<WhereClause>,
-    /// Optional property to split counts by. When set, returns per-value
-    /// counts for this property instead of a single total count.
-    pub split_by_property: Option<String>,
 }
 
 /// An entry in a split count result, containing the serialized key
@@ -1215,7 +1211,6 @@ impl Drive {
             document_type_name,
             index,
             where_clauses,
-            split_by_property: None,
         };
         count_query.execute_no_proof(self, transaction, platform_version)
     }
@@ -1314,7 +1309,6 @@ impl Drive {
                 document_type_name: document_type_name.clone(),
                 index,
                 where_clauses: clauses_for_value,
-                split_by_property: None,
             };
             let results = count_query.execute_no_proof(self, transaction, platform_version)?;
             let count = results.first().map_or(0, |entry| entry.count);
@@ -1385,7 +1379,6 @@ impl Drive {
             document_type_name,
             index,
             where_clauses,
-            split_by_property: None,
         };
         count_query.execute_range_count_no_proof(self, &options, transaction, platform_version)
     }
@@ -1420,7 +1413,6 @@ impl Drive {
             document_type_name,
             index,
             where_clauses,
-            split_by_property: None,
         };
         count_query.execute_aggregate_count_with_proof(self, transaction, platform_version)
     }
