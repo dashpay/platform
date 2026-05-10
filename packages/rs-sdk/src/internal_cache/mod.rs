@@ -245,6 +245,60 @@ impl NonceCache {
         }
     }
 
+    /// Conditionally roll back a previously-bumped identity-contract nonce
+    /// after a **local** (pre-broadcast) failure.
+    ///
+    /// Use this only when the caller is certain the nonce was never observed
+    /// by the network — e.g. when build/sign or local structure validation
+    /// fails after [`get_identity_contract_nonce`](Self::get_identity_contract_nonce)
+    /// returned `allocated_nonce` with `bump_first = true`. Broadcast failures
+    /// must keep using [`refresh`](Self::refresh) instead, because the network
+    /// may have already accepted the nonce.
+    ///
+    /// The rollback is conditional: it only adjusts the cache entry if
+    /// `current_nonce` still equals `allocated_nonce`. If a concurrent caller
+    /// has already bumped past it, the entry is left untouched so concurrent
+    /// allocations are not clobbered. A missing entry is also left alone.
+    ///
+    /// We use [`LruCache::peek_mut`] so the rollback does not promote the
+    /// entry to most-recently-used: a rollback signals the entry is *not* in
+    /// active use, the opposite of what [`refresh`](Self::refresh) signals.
+    pub(crate) async fn rollback_identity_contract_nonce(
+        &self,
+        identity_id: Identifier,
+        contract_id: Identifier,
+        allocated_nonce: IdentityNonce,
+    ) {
+        if allocated_nonce == 0 {
+            // Nothing to roll back; bumping never produces 0 (it starts at 1).
+            return;
+        }
+        let key = IdentityContractPair {
+            identity_id,
+            contract_id,
+        };
+        let mut guard = self.contract_nonces.lock().await;
+        if let Some(entry) = guard.peek_mut(&key) {
+            if entry.current_nonce == allocated_nonce {
+                entry.current_nonce = allocated_nonce - 1;
+                tracing::trace!(
+                    identity_id = %identity_id,
+                    contract_id = %contract_id,
+                    allocated_nonce,
+                    "rolled back identity-contract nonce after local pre-broadcast failure"
+                );
+            } else {
+                tracing::trace!(
+                    identity_id = %identity_id,
+                    contract_id = %contract_id,
+                    allocated_nonce,
+                    cached_nonce = entry.current_nonce,
+                    "skipped identity-contract nonce rollback: cache moved past allocated nonce"
+                );
+            }
+        }
+    }
+
     /// Shared nonce cache logic. Checks staleness and drift, fetches from
     /// Platform when needed, and maintains the cache entry.
     ///
@@ -998,5 +1052,151 @@ mod nonce_cache_tests {
         .await
         .unwrap();
         assert_eq!(nonce, 6);
+    }
+
+    // --- rollback_identity_contract_nonce: pre-broadcast rollback semantics ---
+    #[tokio::test]
+    async fn rollback_decrements_when_cache_matches_allocated_nonce() {
+        use drive_proof_verifier::types::IdentityContractNonceFetcher;
+
+        let mut sdk = crate::Sdk::new_mock();
+        let identity_id = Identifier::default();
+        let contract_id = Identifier::from([1u8; 32]);
+        let settings = PutSettings::default();
+
+        sdk.mock()
+            .expect_fetch::<IdentityContractNonceFetcher, _>(
+                (identity_id, contract_id),
+                Some(IdentityContractNonceFetcher(10u64)),
+            )
+            .await
+            .expect("set mock expectation");
+
+        // Allocate: platform=10 → bump to 11.
+        let allocated = sdk
+            .get_identity_contract_nonce(identity_id, contract_id, true, Some(settings))
+            .await
+            .unwrap();
+        assert_eq!(allocated, 11);
+
+        // Local (pre-broadcast) failure: rollback to 10.
+        sdk.rollback_identity_contract_nonce(identity_id, contract_id, allocated)
+            .await;
+
+        // Next allocation should bump from 10, producing 11 again.
+        let next = sdk
+            .get_identity_contract_nonce(identity_id, contract_id, true, Some(settings))
+            .await
+            .unwrap();
+        assert_eq!(
+            next, 11,
+            "rollback should free the allocated nonce for reuse"
+        );
+    }
+
+    #[tokio::test]
+    async fn rollback_is_noop_when_cache_advanced_past_allocated_nonce() {
+        use drive_proof_verifier::types::IdentityContractNonceFetcher;
+
+        let mut sdk = crate::Sdk::new_mock();
+        let identity_id = Identifier::default();
+        let contract_id = Identifier::from([2u8; 32]);
+        let settings = PutSettings::default();
+
+        sdk.mock()
+            .expect_fetch::<IdentityContractNonceFetcher, _>(
+                (identity_id, contract_id),
+                Some(IdentityContractNonceFetcher(10u64)),
+            )
+            .await
+            .expect("set mock expectation");
+
+        // Allocate twice: 11 then 12 (both from cache, second one cache-only bump).
+        let first = sdk
+            .get_identity_contract_nonce(identity_id, contract_id, true, Some(settings))
+            .await
+            .unwrap();
+        assert_eq!(first, 11);
+        let second = sdk
+            .get_identity_contract_nonce(identity_id, contract_id, true, Some(settings))
+            .await
+            .unwrap();
+        assert_eq!(second, 12);
+
+        // Roll back the FIRST allocation. The cache has already moved past 11
+        // (it is now 12), so the rollback must be a no-op to avoid clobbering
+        // the second allocation.
+        sdk.rollback_identity_contract_nonce(identity_id, contract_id, first)
+            .await;
+
+        // Next allocation should bump from 12 to 13, not from 10.
+        let third = sdk
+            .get_identity_contract_nonce(identity_id, contract_id, true, Some(settings))
+            .await
+            .unwrap();
+        assert_eq!(third, 13, "rollback must not clobber a newer allocation");
+    }
+
+    #[tokio::test]
+    async fn rollback_is_noop_when_entry_missing() {
+        let mut sdk = crate::Sdk::new_mock();
+        let identity_id = Identifier::default();
+        let contract_id = Identifier::from([3u8; 32]);
+        let _ = &mut sdk;
+
+        // Should not panic / not insert anything.
+        sdk.rollback_identity_contract_nonce(identity_id, contract_id, 5)
+            .await;
+    }
+
+    #[tokio::test]
+    async fn rollback_does_not_affect_other_contract_entries() {
+        use drive_proof_verifier::types::IdentityContractNonceFetcher;
+
+        let mut sdk = crate::Sdk::new_mock();
+        let identity_id = Identifier::default();
+        let contract_a = Identifier::from([4u8; 32]);
+        let contract_b = Identifier::from([5u8; 32]);
+        let settings = PutSettings::default();
+
+        sdk.mock()
+            .expect_fetch::<IdentityContractNonceFetcher, _>(
+                (identity_id, contract_a),
+                Some(IdentityContractNonceFetcher(10u64)),
+            )
+            .await
+            .expect("set mock A");
+        sdk.mock()
+            .expect_fetch::<IdentityContractNonceFetcher, _>(
+                (identity_id, contract_b),
+                Some(IdentityContractNonceFetcher(20u64)),
+            )
+            .await
+            .expect("set mock B");
+
+        let allocated_a = sdk
+            .get_identity_contract_nonce(identity_id, contract_a, true, Some(settings))
+            .await
+            .unwrap();
+        let allocated_b = sdk
+            .get_identity_contract_nonce(identity_id, contract_b, true, Some(settings))
+            .await
+            .unwrap();
+        assert_eq!(allocated_a, 11);
+        assert_eq!(allocated_b, 21);
+
+        // Roll back A only.
+        sdk.rollback_identity_contract_nonce(identity_id, contract_a, allocated_a)
+            .await;
+
+        // B must be unaffected.
+        let next_b = sdk
+            .get_identity_contract_nonce(identity_id, contract_b, true, Some(settings))
+            .await
+            .unwrap();
+        assert_eq!(
+            next_b, 22,
+            "contract B nonce must continue from its own bump"
+        );
     }
 }

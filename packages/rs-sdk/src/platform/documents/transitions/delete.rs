@@ -8,6 +8,7 @@ use dpp::data_contract::DataContract;
 use dpp::document::{Document, INITIAL_REVISION};
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
+use dpp::prelude::IdentityNonce;
 use dpp::prelude::UserFeeIncrease;
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
@@ -152,7 +153,13 @@ impl DocumentDeleteTransitionBuilder {
         self
     }
 
-    /// Signs the document delete transition
+    /// Signs the document delete transition.
+    ///
+    /// Allocates a fresh identity-contract nonce from `sdk` and delegates to
+    /// [`Self::sign_with_nonce`]. Use [`Self::sign_with_nonce`] directly if
+    /// you need to pre-allocate the nonce so a pre-broadcast failure can roll
+    /// it back via
+    /// [`Sdk::rollback_identity_contract_nonce`](crate::Sdk::rollback_identity_contract_nonce).
     ///
     /// # Arguments
     ///
@@ -180,6 +187,32 @@ impl DocumentDeleteTransitionBuilder {
             )
             .await?;
 
+        self.sign_with_nonce(
+            identity_contract_nonce,
+            identity_public_key,
+            signer,
+            platform_version,
+        )
+        .await
+    }
+
+    /// Signs the document delete transition using a pre-allocated
+    /// identity-contract nonce.
+    ///
+    /// This variant lets the caller separate nonce allocation from signing so
+    /// pre-broadcast failures can be rolled back by calling
+    /// [`Sdk::rollback_identity_contract_nonce`](crate::Sdk::rollback_identity_contract_nonce)
+    /// with the same `identity_contract_nonce`. The caller is responsible for
+    /// having obtained the nonce via
+    /// [`Sdk::get_identity_contract_nonce`](crate::Sdk::get_identity_contract_nonce)
+    /// with `bump_first = true` for the same `(owner_id, contract_id)` pair.
+    pub async fn sign_with_nonce(
+        &self,
+        identity_contract_nonce: IdentityNonce,
+        identity_public_key: &IdentityPublicKey,
+        signer: &impl Signer<IdentityPublicKey>,
+        platform_version: &PlatformVersion,
+    ) -> Result<StateTransition, Error> {
         let document_type = self
             .data_contract
             .document_type_for_name(&self.document_type_name)

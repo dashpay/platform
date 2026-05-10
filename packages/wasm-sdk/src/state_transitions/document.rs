@@ -31,6 +31,19 @@
 //! you need a "dry run" with no local nonce-cache side effects in this SDK instance,
 //! do not use the prepare API.
 //!
+//! ### Pre-broadcast failures
+//!
+//! If a `prepareDocument*` call fails *before* the transition is broadcast (build,
+//! sign, or local structure validation error), the bumped identity-contract nonce is
+//! conditionally rolled back via rs-sdk's
+//! [`Sdk::rollback_identity_contract_nonce`](dash_sdk::Sdk::rollback_identity_contract_nonce).
+//! The rollback only adjusts the cache entry if it still equals the nonce allocated
+//! by the failed attempt, so it does not clobber concurrent allocations. This makes
+//! these errors safe to retry: a follow-up `prepareDocument*` call will reuse the
+//! freed nonce instead of skipping it. Broadcast failures (which happen *after*
+//! `prepareDocument*` returns) intentionally do **not** roll back, because the
+//! network may have already observed the nonce.
+//!
 //! ## One-shot document revision rules
 //!
 //! `documentCreate()` now accepts only documents whose revision is unset or
@@ -54,7 +67,7 @@ use dash_sdk::dpp::tokens::token_payment_info::TokenPaymentInfo;
 use dash_sdk::platform::documents::transitions::DocumentDeleteTransitionBuilder;
 use dash_sdk::platform::transition::purchase_document::PurchaseDocument;
 use dash_sdk::platform::transition::put_document::{
-    build_signed_document_create_or_replace_transition, PutDocument,
+    build_signed_document_create_transition, build_signed_document_replace_transition, PutDocument,
 };
 use dash_sdk::platform::transition::transfer_document::TransferDocument;
 use dash_sdk::platform::transition::update_price_of_document::UpdatePriceOfDocument;
@@ -644,16 +657,17 @@ impl WasmSdk {
         let token_payment_info = try_from_options_optional_token_payment_info(&options)?;
 
         // Build, sign, and structurally validate the state transition without
-        // broadcasting it. Errors here refresh the identity-contract nonce so
-        // it doesn't drift past Platform's view (the helper does that for us).
-        let state_transition = build_document_create_or_replace_transition(
+        // broadcasting it. Local pre-broadcast failures are rolled back inside
+        // rs-sdk so the identity-contract nonce cache cannot advance past a
+        // nonce the network never observed.
+        let state_transition = build_signed_document_create_transition(
+            self.inner_sdk(),
             &document,
             &document_type,
             Some(entropy_array),
             &identity_key,
             token_payment_info,
             &signer,
-            self.inner_sdk(),
             settings,
         )
         .await?;
@@ -744,16 +758,16 @@ impl WasmSdk {
         let token_payment_info = try_from_options_optional_token_payment_info(&options)?;
 
         // Build, sign, and structurally validate the state transition without
-        // broadcasting it. Errors here refresh the identity-contract nonce so
-        // it doesn't drift past Platform's view (the helper does that for us).
-        let state_transition = build_document_create_or_replace_transition(
+        // broadcasting it. Local pre-broadcast failures are rolled back inside
+        // rs-sdk so the identity-contract nonce cache cannot advance past a
+        // nonce the network never observed.
+        let state_transition = build_signed_document_replace_transition(
+            self.inner_sdk(),
             &document,
             &document_type,
-            None, // entropy not needed for replace
             &identity_key,
             token_payment_info,
             &signer,
-            self.inner_sdk(),
             settings,
         )
         .await?;
@@ -893,9 +907,19 @@ impl WasmSdk {
             builder
         };
 
+        // Pre-allocate the identity-contract nonce so that any pre-broadcast
+        // failure (sign or local structure validation) can be rolled back via
+        // rs-sdk's `rollback_identity_contract_nonce`. The rollback is
+        // conditional: it only adjusts the cache entry if it still equals the
+        // nonce allocated here, so it does not clobber concurrent allocations.
+        let allocated_nonce = self
+            .inner_sdk()
+            .get_identity_contract_nonce(owner_id, contract_id, true, settings)
+            .await?;
+
         let state_transition = match builder
-            .sign(
-                self.inner_sdk(),
+            .sign_with_nonce(
+                allocated_nonce,
                 &identity_key,
                 &signer,
                 self.inner_sdk().version(),
@@ -904,7 +928,9 @@ impl WasmSdk {
         {
             Ok(st) => st,
             Err(err) => {
-                self.inner_sdk().refresh_identity_nonce(&owner_id).await;
+                self.inner_sdk()
+                    .rollback_identity_contract_nonce(owner_id, contract_id, allocated_nonce)
+                    .await;
                 return Err(err.into());
             }
         };
@@ -916,7 +942,9 @@ impl WasmSdk {
         if let Err(err) =
             ensure_valid_state_transition_structure(&state_transition, self.inner_sdk().version())
         {
-            self.inner_sdk().refresh_identity_nonce(&owner_id).await;
+            self.inner_sdk()
+                .rollback_identity_contract_nonce(owner_id, contract_id, allocated_nonce)
+                .await;
             return Err(err.into());
         }
 
@@ -1292,47 +1320,6 @@ impl WasmSdk {
 // ============================================================================
 // Helper Functions
 // ============================================================================
-
-/// Build, sign and validate a document create-or-replace state transition
-/// without broadcasting it.
-///
-/// This is a thin wrapper around rs-sdk's
-/// [`build_signed_document_create_or_replace_transition`], adding wasm-sdk's
-/// prepare-path policy: any error after the identity-contract nonce has been
-/// allocated (build/sign or structure validation) refreshes the nonce cache so
-/// future calls don't drift past Platform's view.
-#[allow(clippy::too_many_arguments)]
-async fn build_document_create_or_replace_transition(
-    document: &Document,
-    document_type: &DocumentType,
-    document_state_transition_entropy: Option<[u8; 32]>,
-    identity_public_key: &IdentityPublicKey,
-    token_payment_info: Option<TokenPaymentInfo>,
-    signer: &IdentitySignerWasm,
-    sdk: &dash_sdk::Sdk,
-    settings: Option<dash_sdk::platform::transition::put_settings::PutSettings>,
-) -> Result<dash_sdk::dpp::state_transition::StateTransition, WasmSdkError> {
-    let owner_id = document.owner_id();
-
-    match build_signed_document_create_or_replace_transition(
-        sdk,
-        document,
-        document_type,
-        document_state_transition_entropy,
-        identity_public_key,
-        token_payment_info,
-        signer,
-        settings,
-    )
-    .await
-    {
-        Ok(transition) => Ok(transition),
-        Err(err) => {
-            sdk.refresh_identity_nonce(&owner_id).await;
-            Err(err.into())
-        }
-    }
-}
 
 fn ensure_document_create_revision(
     revision: Option<u64>,

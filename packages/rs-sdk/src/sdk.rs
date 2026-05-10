@@ -476,8 +476,42 @@ impl Sdk {
     /// Marks identity nonce cache entries as stale so they are re-fetched from
     /// Platform on the next call to [`get_identity_nonce`] or
     /// [`get_identity_contract_nonce`].
+    ///
+    /// Note: this **preserves** the cached nonce value, it does not roll it
+    /// back. Use this after **broadcast** failures, where the network may
+    /// have already observed the nonce and the cache must not regress past
+    /// what the chain has seen. For pre-broadcast (local) failures use
+    /// [`rollback_identity_contract_nonce`](Self::rollback_identity_contract_nonce)
+    /// instead.
     pub async fn refresh_identity_nonce(&self, identity_id: &Identifier) {
         self.nonce_cache.refresh(identity_id).await;
+    }
+
+    /// Conditionally roll back a previously-bumped identity-contract nonce
+    /// after a **local** (pre-broadcast) failure.
+    ///
+    /// Call this only when the caller is certain the nonce was never observed
+    /// by the network — e.g. when build/sign or local structure validation
+    /// fails right after a successful
+    /// [`get_identity_contract_nonce`](Self::get_identity_contract_nonce) with
+    /// `bump_first = true`. The rollback is conditional: it only adjusts the
+    /// cache entry if its current nonce still equals `allocated_nonce`,
+    /// avoiding clobbering concurrent newer allocations. A missing or
+    /// already-advanced entry is left untouched.
+    ///
+    /// For broadcast failures keep using
+    /// [`refresh_identity_nonce`](Self::refresh_identity_nonce), which
+    /// preserves the cached (bumped) value so the cache cannot regress past
+    /// a nonce the network may have accepted.
+    pub async fn rollback_identity_contract_nonce(
+        &self,
+        identity_id: Identifier,
+        contract_id: Identifier,
+        allocated_nonce: IdentityNonce,
+    ) {
+        self.nonce_cache
+            .rollback_identity_contract_nonce(identity_id, contract_id, allocated_nonce)
+            .await;
     }
 
     /// Return [Dash Platform version](PlatformVersion) information used by this SDK.
