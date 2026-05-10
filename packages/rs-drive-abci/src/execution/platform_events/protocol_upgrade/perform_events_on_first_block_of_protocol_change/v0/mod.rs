@@ -28,7 +28,7 @@ use drive::drive::saved_block_transactions::{
     COMPACTED_ADDRESS_BALANCES_KEY_U8,
 };
 use drive::drive::shielded::paths::{
-    shielded_credit_pool_path, SHIELDED_ANCHORS_IN_POOL_KEY, SHIELDED_CREDIT_POOL_KEY_U8,
+    shielded_credit_pool_path, MAIN_SHIELDED_CREDIT_POOL_KEY_U8, SHIELDED_ANCHORS_IN_POOL_KEY,
     SHIELDED_NOTES_KEY, SHIELDED_NULLIFIERS_KEY, SHIELDED_TOTAL_BALANCE_KEY,
 };
 use drive::drive::system::misc_path;
@@ -618,7 +618,7 @@ impl<C> Platform<C> {
         // Shielded credit pool SumTree under AddressBalances: [AddressBalances] / "s"
         self.drive.grove_insert_if_not_exists(
             addresses_path.as_slice().into(),
-            &[SHIELDED_CREDIT_POOL_KEY_U8],
+            &[MAIN_SHIELDED_CREDIT_POOL_KEY_U8],
             Element::empty_sum_tree(),
             Some(transaction),
             None,
@@ -826,7 +826,7 @@ mod tests {
         // Verify shielded credit pool tree was created under AddressBalances
         let shielded_pool_element = platform.drive.grove.get(
             SubtreePath::from(&[&[RootTree::AddressBalances as u8] as &[u8]]),
-            &[SHIELDED_CREDIT_POOL_KEY_U8],
+            &[MAIN_SHIELDED_CREDIT_POOL_KEY_U8],
             Some(&transaction),
             &platform_version.drive.grove_version,
         );
@@ -921,7 +921,7 @@ mod tests {
         // Verify version 12 artifacts: shielded credit pool tree should exist
         let shielded_pool = platform.drive.grove.get(
             SubtreePath::from(&[&[RootTree::AddressBalances as u8] as &[u8]]),
-            &[SHIELDED_CREDIT_POOL_KEY_U8],
+            &[MAIN_SHIELDED_CREDIT_POOL_KEY_U8],
             Some(&transaction),
             &platform_version.drive.grove_version,
         );

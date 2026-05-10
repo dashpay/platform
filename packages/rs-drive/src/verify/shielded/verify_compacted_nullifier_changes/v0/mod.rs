@@ -2,7 +2,7 @@ use crate::drive::shielded::nullifiers::queries::{
     shielded_compacted_nullifiers_path_vec, SHIELDED_COMPACTED_NULLIFIERS_KEY_U8,
 };
 use crate::drive::shielded::nullifiers::types::{CompactedNullifierChange, CompactedNullifiers};
-use crate::drive::shielded::paths::SHIELDED_CREDIT_POOL_KEY_U8;
+use crate::drive::shielded::paths::MAIN_SHIELDED_CREDIT_POOL_KEY_U8;
 use crate::drive::Drive;
 use crate::drive::RootTree;
 use crate::error::proof::ProofError;
@@ -79,9 +79,9 @@ impl Drive {
         };
 
         // Navigate to the compacted nullifiers layer
-        // Path: AddressBalances -> SHIELDED_CREDIT_POOL_KEY -> CompactedNullifiers ('o')
-        let address_balances_key = vec![RootTree::AddressBalances as u8];
-        let pool_key = vec![SHIELDED_CREDIT_POOL_KEY_U8];
+        // Path: ShieldedBalances -> MAIN_SHIELDED_CREDIT_POOL_KEY -> CompactedNullifiers ('o')
+        let shielded_balances_key = vec![RootTree::ShieldedBalances as u8];
+        let pool_key = vec![MAIN_SHIELDED_CREDIT_POOL_KEY_U8];
         let compacted_key = vec![SHIELDED_COMPACTED_NULLIFIERS_KEY_U8];
 
         // Extract KV entries from the compacted layer's merk proof to find
@@ -93,7 +93,7 @@ impl Drive {
                 let compacted_layer = v0
                     .root_layer
                     .lower_layers
-                    .get(&address_balances_key)
+                    .get(&shielded_balances_key)
                     .and_then(|layer| layer.lower_layers.get(&pool_key))
                     .and_then(|layer| layer.lower_layers.get(&compacted_key));
                 compacted_layer
@@ -105,7 +105,7 @@ impl Drive {
                 let compacted_layer = v1
                     .root_layer
                     .lower_layers
-                    .get(&address_balances_key)
+                    .get(&shielded_balances_key)
                     .and_then(|layer| layer.lower_layers.get(&pool_key))
                     .and_then(|layer| layer.lower_layers.get(&compacted_key));
                 compacted_layer
