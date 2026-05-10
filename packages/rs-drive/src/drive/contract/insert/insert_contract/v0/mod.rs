@@ -980,3 +980,513 @@ mod countable_e2e_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod range_countable_index_e2e_tests {
+    //! End-to-end coverage for an *indexed* `rangeCountable` property.
+    //!
+    //! Where `countable_e2e_tests` only checks the document-type-level flag
+    //! (`documentsCountable` / `rangeCountable` on the document type, which
+    //! drives the primary-key tree variant), this module builds a contract
+    //! whose `indices` section contains a `rangeCountable: true` index over
+    //! a property and verifies the *index storage tree shape*:
+    //!
+    //!   - `[contract_doc, doctype, "color"]` is a `ProvableCountTree`
+    //!     (created at contract setup).
+    //!   - `[..., "color", <c1>]` is a `CountTree` (created on document
+    //!     insert by the index walker), whose count tracks how many docs
+    //!     have that color value.
+    //!   - Sibling continuations under that `CountTree` (compound index
+    //!     suffixes) are wrapped with `Element::NonCounted` so they
+    //!     contribute 0 to the parent count.
+
+    use crate::drive::Drive;
+    use crate::util::grove_operations::DirectQueryType;
+    use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
+    use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+    use crate::util::storage_flags::StorageFlags;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+    use dpp::data_contract::DataContractFactory;
+    use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
+    use dpp::platform_value::{platform_value, Value};
+    use dpp::prelude::DataContract;
+    use dpp::tests::utils::generate_random_identifier_struct;
+    use dpp::version::PlatformVersion;
+    use grovedb::Element;
+
+    const PROTOCOL_VERSION_V12: u32 = 12;
+
+    /// Build a v12 contract whose `widget` document type has a
+    /// `rangeCountable: true` single-property index over `color`. The
+    /// optional `compound_index` adds a non-range-countable compound
+    /// `[color, size]` index so we can verify NonCounted-wrapping of the
+    /// sibling continuation.
+    fn build_widget_with_color_index(compound_index: bool) -> DataContract {
+        let factory =
+            DataContractFactory::new(PROTOCOL_VERSION_V12).expect("expected to create factory");
+
+        let mut indices = vec![platform_value!({
+            "name": "byColor",
+            "properties": [{"color": "asc"}],
+            "countable": "countable",
+            "rangeCountable": true,
+        })];
+        if compound_index {
+            indices.push(platform_value!({
+                "name": "byColorSize",
+                "properties": [{"color": "asc"}, {"size": "asc"}],
+            }));
+        }
+
+        let document_schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "color": {
+                    "type": "string",
+                    "position": 0,
+                    "maxLength": 32,
+                },
+                "size": {
+                    "type": "string",
+                    "position": 1,
+                    "maxLength": 32,
+                },
+            },
+            "indices": Value::Array(indices),
+            "additionalProperties": false,
+        });
+
+        let schemas = platform_value!({ "widget": document_schema });
+        let owner_id = generate_random_identifier_struct();
+
+        factory
+            .create_with_value_config(owner_id, 0, schemas, None, None)
+            .expect("expected to create data contract")
+            .data_contract_owned()
+    }
+
+    fn property_name_tree_path(
+        contract: &DataContract,
+        document_type_name: &str,
+        property_name: &str,
+    ) -> Vec<Vec<u8>> {
+        vec![
+            vec![crate::drive::RootTree::DataContractDocuments as u8],
+            contract.id().as_bytes().to_vec(),
+            vec![1],
+            document_type_name.as_bytes().to_vec(),
+            property_name.as_bytes().to_vec(),
+        ]
+    }
+
+    fn read_grove_element(drive: &Drive, path: &[Vec<u8>], key: &[u8]) -> Option<Element> {
+        let pv = PlatformVersion::latest();
+        let path_refs: Vec<&[u8]> = path.iter().map(|v| v.as_slice()).collect();
+        drive
+            .grove_get_raw(
+                path_refs.as_slice().into(),
+                key,
+                DirectQueryType::StatefulDirectQuery,
+                None,
+                &mut vec![],
+                &pv.drive,
+            )
+            .expect("grove_get_raw should succeed")
+    }
+
+    fn build_widget_doc(contract: &DataContract, color: &str, size: &str, seed: u64) -> Document {
+        let pv = PlatformVersion::latest();
+        let document_type = contract
+            .document_type_for_name("widget")
+            .expect("widget exists");
+        let mut doc = document_type
+            .random_document(Some(seed), pv)
+            .expect("random document");
+        let mut props = std::collections::BTreeMap::new();
+        props.insert("color".to_string(), Value::Text(color.to_string()));
+        props.insert("size".to_string(), Value::Text(size.to_string()));
+        doc.set_properties(props);
+        doc
+    }
+
+    /// The top-level property-name tree at `[contract_doc, doctype, "color"]`
+    /// must be a `ProvableCountTree` for a contract with a `rangeCountable`
+    /// single-property index over `color`. This is the layer that
+    /// `AggregateCountOnRange` walks for O(log n) range counts.
+    #[test]
+    fn property_name_tree_for_range_countable_index_is_provable_count_tree() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let pv = PlatformVersion::latest();
+        let contract = build_widget_with_color_index(false);
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("expected to apply contract");
+
+        let path = property_name_tree_path(&contract, "widget", "color");
+        let parent_path: Vec<Vec<u8>> = path[..path.len() - 1].to_vec();
+        let key = path.last().unwrap().clone();
+        let elem = read_grove_element(&drive, &parent_path, &key)
+            .expect("color property-name tree must exist");
+        match elem {
+            Element::ProvableCountTree(_, count, _) => {
+                assert_eq!(
+                    count, 0,
+                    "freshly created property-name ProvableCountTree should have aggregate 0"
+                );
+            }
+            other => panic!(
+                "rangeCountable index property-name tree should be ProvableCountTree, got {:?}",
+                other
+            ),
+        }
+    }
+
+    /// Inserting a document whose indexed property has value `c1` creates
+    /// the value tree at `[contract_doc, doctype, "color", "c1"]`. With
+    /// `rangeCountable: true` the walker must lay this down as a
+    /// `CountTree` so the parent property-name `ProvableCountTree`'s
+    /// aggregate sums per-value counts cleanly.
+    #[test]
+    fn value_tree_for_range_countable_index_is_count_tree_after_insert() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let pv = PlatformVersion::latest();
+        let contract = build_widget_with_color_index(false);
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("expected to apply contract");
+
+        let document_type = contract
+            .document_type_for_name("widget")
+            .expect("widget exists");
+        let doc = build_widget_doc(&contract, "red", "small", 1);
+
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&doc, None)),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                pv,
+                None,
+            )
+            .expect("expected to insert document");
+
+        // Property-name aggregate should now reflect the inserted doc.
+        let property_path = property_name_tree_path(&contract, "widget", "color");
+        let prop_parent: Vec<Vec<u8>> = property_path[..property_path.len() - 1].to_vec();
+        let prop_key = property_path.last().unwrap().clone();
+        let prop_elem = read_grove_element(&drive, &prop_parent, &prop_key)
+            .expect("color property-name tree must exist");
+        match prop_elem {
+            Element::ProvableCountTree(_, count, _) => {
+                assert_eq!(
+                    count, 1,
+                    "ProvableCountTree aggregate should be 1 after inserting one doc"
+                );
+            }
+            other => panic!("expected ProvableCountTree, got {:?}", other),
+        }
+
+        // Value tree at <c1> should be a CountTree counting the docs with
+        // color="red".
+        let value_elem = read_grove_element(&drive, &property_path, b"red")
+            .expect("value tree for color=red must exist");
+        match value_elem {
+            Element::CountTree(_, count, _) => {
+                assert_eq!(count, 1, "value-tree CountTree should count 1 doc");
+            }
+            other => panic!(
+                "rangeCountable value tree should be a CountTree, got {:?}",
+                other
+            ),
+        }
+    }
+
+    /// Walking the same property's IndexLevel for a *compound* sibling
+    /// index `[color, size]` requires the walker to insert a continuation
+    /// property-name tree under the `CountTree` value tree. That
+    /// continuation must be wrapped with `Element::NonCounted` so it
+    /// contributes 0 to the value tree's count — otherwise the count
+    /// would be `1 (reference) + 1 (continuation NormalTree) = 2` per
+    /// inserted doc instead of the correct `1`.
+    #[test]
+    fn count_tree_value_count_excludes_compound_continuation_via_non_counted() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let pv = PlatformVersion::latest();
+        let contract = build_widget_with_color_index(true);
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("expected to apply contract");
+
+        let document_type = contract
+            .document_type_for_name("widget")
+            .expect("widget exists");
+        let doc = build_widget_doc(&contract, "red", "small", 1);
+
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&doc, None)),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                pv,
+                None,
+            )
+            .expect("expected to insert document");
+
+        // CountTree count must be exactly 1 (the doc reference), even
+        // though there's a compound continuation tree inserted as a
+        // sibling. If NonCounted-wrapping is broken, count will be 2 (or
+        // more, depending on how the [0] tree contributes).
+        let property_path = property_name_tree_path(&contract, "widget", "color");
+        let value_elem = read_grove_element(&drive, &property_path, b"red")
+            .expect("value tree for color=red must exist");
+        match value_elem {
+            Element::CountTree(_, count, _) => {
+                assert_eq!(
+                    count, 1,
+                    "CountTree count should equal exactly the number of docs with color=red, \
+                     not including the compound-index continuation tree (NonCounted wrapping \
+                     check)"
+                );
+            }
+            other => panic!("expected CountTree, got {:?}", other),
+        }
+
+        // The compound continuation property-name tree at [..., "color",
+        // "red", "size"] should exist and be wrapped with NonCounted.
+        let mut size_path = property_path.clone();
+        size_path.push(b"red".to_vec());
+        let size_elem = read_grove_element(&drive, &size_path, b"size")
+            .expect("compound continuation tree at 'size' must exist");
+        match size_elem {
+            Element::NonCounted(inner) => match inner.as_ref() {
+                Element::Tree(_, _) => {} // expected: NonCounted<NormalTree>
+                other => panic!(
+                    "expected NonCounted<NormalTree>, got NonCounted<{:?}>",
+                    other
+                ),
+            },
+            other => panic!(
+                "compound continuation under a CountTree must be NonCounted-wrapped, got {:?}",
+                other
+            ),
+        }
+    }
+
+    /// Deleting a document under a `range_countable` index must decrement
+    /// the value tree's `CountTree` and the parent property-name tree's
+    /// `ProvableCountTree` aggregate. If the delete walker doesn't see
+    /// the right tree variants in cost estimation, removals can leave
+    /// stale references or over-bill the operation; this test pins the
+    /// observable outcome (counts after delete).
+    #[test]
+    fn delete_decrements_count_tree_and_provable_count_aggregate() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let pv = PlatformVersion::latest();
+        let contract = build_widget_with_color_index(false);
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("expected to apply contract");
+
+        let document_type = contract
+            .document_type_for_name("widget")
+            .expect("widget exists");
+
+        // Insert two docs at color="red" so we can delete one and watch
+        // the count drop from 2 → 1 (instead of 1 → 0, which is also
+        // correct but doesn't distinguish "decrement" from "tree
+        // collapsed").
+        let doc1 = build_widget_doc(&contract, "red", "small", 1);
+        let doc2 = build_widget_doc(&contract, "red", "large", 2);
+        for doc in [&doc1, &doc2] {
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((doc, None)),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    pv,
+                    None,
+                )
+                .expect("expected to insert document");
+        }
+
+        let property_path = property_name_tree_path(&contract, "widget", "color");
+
+        // Sanity: 2 docs, both red.
+        let value_elem =
+            read_grove_element(&drive, &property_path, b"red").expect("value tree exists");
+        match value_elem {
+            Element::CountTree(_, count, _) => assert_eq!(count, 2),
+            other => panic!("expected CountTree, got {:?}", other),
+        }
+
+        drive
+            .delete_document_for_contract(
+                doc1.id(),
+                &contract,
+                "widget",
+                BlockInfo::default(),
+                true,
+                None,
+                pv,
+                None,
+            )
+            .expect("expected to delete document");
+
+        let prop_parent: Vec<Vec<u8>> = property_path[..property_path.len() - 1].to_vec();
+        let prop_key = property_path.last().unwrap().clone();
+        let prop_elem =
+            read_grove_element(&drive, &prop_parent, &prop_key).expect("property-name tree exists");
+        match prop_elem {
+            Element::ProvableCountTree(_, count, _) => assert_eq!(
+                count, 1,
+                "ProvableCountTree aggregate should drop to 1 after one delete"
+            ),
+            other => panic!("expected ProvableCountTree, got {:?}", other),
+        }
+        let value_elem =
+            read_grove_element(&drive, &property_path, b"red").expect("value tree exists");
+        match value_elem {
+            Element::CountTree(_, count, _) => assert_eq!(
+                count, 1,
+                "CountTree count should drop to 1 after one delete"
+            ),
+            other => panic!("expected CountTree, got {:?}", other),
+        }
+    }
+
+    /// Inserting multiple docs at the same color value increments the
+    /// CountTree, and the aggregate at the property-name
+    /// `ProvableCountTree` reflects the total across all values.
+    #[test]
+    fn aggregate_count_grows_across_distinct_values() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let pv = PlatformVersion::latest();
+        let contract = build_widget_with_color_index(false);
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("expected to apply contract");
+
+        let document_type = contract
+            .document_type_for_name("widget")
+            .expect("widget exists");
+
+        for (i, color) in ["red", "red", "blue", "green", "green", "green"]
+            .iter()
+            .enumerate()
+        {
+            let doc = build_widget_doc(&contract, color, "small", (i + 1) as u64);
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&doc, None)),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    pv,
+                    None,
+                )
+                .expect("expected to insert document");
+        }
+
+        let property_path = property_name_tree_path(&contract, "widget", "color");
+
+        // 6 inserts total → ProvableCountTree aggregate = 6
+        let prop_parent: Vec<Vec<u8>> = property_path[..property_path.len() - 1].to_vec();
+        let prop_key = property_path.last().unwrap().clone();
+        let prop_elem =
+            read_grove_element(&drive, &prop_parent, &prop_key).expect("property-name tree exists");
+        match prop_elem {
+            Element::ProvableCountTree(_, count, _) => assert_eq!(count, 6),
+            other => panic!("expected ProvableCountTree, got {:?}", other),
+        }
+
+        // Per-value counts: red=2, blue=1, green=3
+        for (color, expected) in [("red", 2u64), ("blue", 1), ("green", 3)] {
+            let value_elem = read_grove_element(&drive, &property_path, color.as_bytes())
+                .unwrap_or_else(|| panic!("value tree for color={} must exist", color));
+            match value_elem {
+                Element::CountTree(_, count, _) => {
+                    assert_eq!(count, expected, "color={} CountTree count mismatch", color)
+                }
+                other => panic!("expected CountTree at color={}, got {:?}", color, other),
+            }
+        }
+    }
+}
