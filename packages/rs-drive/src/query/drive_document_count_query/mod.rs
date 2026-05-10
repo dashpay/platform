@@ -874,12 +874,12 @@ impl<'a> DriveDocumentCountQuery<'a> {
     /// - `<=` → `RangeToInclusive(..=value)` (inclusive upper)
     /// - `between [a, b]` → `RangeInclusive(a..=b)` (inclusive both)
     /// - `between (a, b)` → `RangeAfterTo(a..b)` (exclusive both — the
-    ///    inner range is half-open in grovedb terms; this models exclude-bounds)
+    ///   inner range is half-open in grovedb terms; this models exclude-bounds)
     /// - `between (a, b]` → `RangeAfterToInclusive(a..=b)`
     /// - `between [a, b)` → `Range(a..b)`
     /// - `startsWith` is rejected here — its grovedb encoding requires
-    ///    a byte-incremented upper bound that depends on key encoding,
-    ///    which we don't compute generically.
+    ///   a byte-incremented upper bound that depends on key encoding,
+    ///   which we don't compute generically.
     fn range_clause_to_query_item(
         &self,
         clause: &WhereClause,
