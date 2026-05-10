@@ -2584,8 +2584,8 @@ export namespace GetDocumentsCountResponse {
       getKey_asB64(): string;
       setKey(value: Uint8Array | string): void;
 
-      getCount(): number;
-      setCount(value: number): void;
+      getCount(): string;
+      setCount(value: string): void;
 
       serializeBinary(): Uint8Array;
       toObject(includeInstance?: boolean): CountEntry.AsObject;
@@ -2600,7 +2600,7 @@ export namespace GetDocumentsCountResponse {
     export namespace CountEntry {
       export type AsObject = {
         key: Uint8Array | string,
-        count: number,
+        count: string,
       }
     }
 

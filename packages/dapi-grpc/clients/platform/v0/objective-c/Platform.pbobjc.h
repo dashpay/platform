@@ -2581,6 +2581,12 @@ GPB_FINAL @interface GetDocumentsCountResponse_GetDocumentsCountResponseV0_Count
 
 @property(nonatomic, readwrite, copy, null_resettable) NSData *key;
 
+/**
+ * `jstype = JS_STRING` so JS/Web clients receive a string and don't
+ * round counts > 2^53-1 to the nearest representable Number. Matches
+ * the convention used elsewhere in this proto for `uint64` fields
+ * that can exceed Number.MAX_SAFE_INTEGER.
+ **/
 @property(nonatomic, readwrite) uint64_t count;
 
 @end

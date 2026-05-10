@@ -26375,7 +26375,7 @@ proto.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountRespo
 proto.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntry.toObject = function(includeInstance, msg) {
   var f, obj = {
     key: msg.getKey_asB64(),
-    count: jspb.Message.getFieldWithDefault(msg, 2, 0)
+    count: jspb.Message.getFieldWithDefault(msg, 2, "0")
   };
 
   if (includeInstance) {
@@ -26417,7 +26417,7 @@ proto.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountRespo
       msg.setKey(value);
       break;
     case 2:
-      var value = /** @type {number} */ (reader.readUint64());
+      var value = /** @type {string} */ (reader.readUint64String());
       msg.setCount(value);
       break;
     default:
@@ -26457,8 +26457,8 @@ proto.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountRespo
     );
   }
   f = message.getCount();
-  if (f !== 0) {
-    writer.writeUint64(
+  if (parseInt(f, 10) !== 0) {
+    writer.writeUint64String(
       2,
       f
     );
@@ -26510,19 +26510,19 @@ proto.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountRespo
 
 /**
  * optional uint64 count = 2;
- * @return {number}
+ * @return {string}
  */
 proto.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntry.prototype.getCount = function() {
-  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 2, 0));
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 2, "0"));
 };
 
 
 /**
- * @param {number} value
+ * @param {string} value
  * @return {!proto.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntry} returns this
  */
 proto.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntry.prototype.setCount = function(value) {
-  return jspb.Message.setProto3IntField(this, 2, value);
+  return jspb.Message.setProto3StringIntField(this, 2, value);
 };
 
 
