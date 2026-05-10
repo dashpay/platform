@@ -2579,4 +2579,132 @@ mod range_countable_index_e2e_tests {
             "verified count should be 3 (acme reds; acme blues excluded by `> blue`)"
         );
     }
+
+    /// Real-world scenario test for grovedb#656's
+    /// `AggregateCountOnRange` primitive at non-trivial scale: a
+    /// parking-lot contract with one document per car, each tagged
+    /// with its lot letter (`a`..`z`). Lot `a` has 1 car, `b` has 2,
+    /// ..., `z` has 26 — total `1+2+...+26 = 351` cars across 26
+    /// distinct lot values.
+    ///
+    /// Question: how many cars are in parking lots > b?
+    /// Answer: cars in lots `c..=z` = `3+4+...+26` = 348.
+    ///
+    /// Why this test earns its keep on top of the operator-shape
+    /// matrix above:
+    ///
+    /// 1. **Wide range** — 24 of 26 distinct values are in-range, so
+    ///    grovedb's prover walks the AVL tree end-to-end and
+    ///    classifies most subtrees as `Contained` (one-level kv_hash
+    ///    + grandchild-hash visit) rather than `Boundary` (recurse).
+    ///    The narrow ranges in the operator-shape tests don't
+    ///    exercise this regime.
+    /// 2. **Realistic per-key fan-out** — multi-doc lots (b=2, c=3,
+    ///    …, z=26) mean each value tree is a non-trivial CountTree
+    ///    with internal counts > 1. The aggregate count must sum
+    ///    those internal counts correctly, not just count keys.
+    /// 3. **The proof stays O(log n)** even though the answer is 348
+    ///    — the verifier never sees the underlying 348 documents,
+    ///    only the merk-level count proof. That's the whole point of
+    ///    grovedb#656 over the materialize-and-count fallback.
+    #[test]
+    fn aggregate_count_proof_counts_cars_in_parking_lots_greater_than_b() {
+        use crate::query::{WhereClause, WhereOperator};
+        use dpp::platform_value::Value;
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let pv = PlatformVersion::latest();
+
+        // parking-lot contract: one `car` document type with a `byLot`
+        // range_countable index on the `lot` property. Single-property
+        // index keeps the path-builder at the top property-name layer
+        // (the leaf-merk count proof is the whole envelope here).
+        let factory = dpp::data_contract::DataContractFactory::new(PROTOCOL_VERSION_V12)
+            .expect("expected to create factory");
+        let document_schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "lot": { "type": "string", "position": 0, "maxLength": 4 },
+            },
+            "indices": [{
+                "name": "byLot",
+                "properties": [{"lot": "asc"}],
+                "countable": "countable",
+                "rangeCountable": true,
+            }],
+            "additionalProperties": false,
+        });
+        let schemas = platform_value!({ "car": document_schema });
+        let contract = factory
+            .create_with_value_config(generate_random_identifier_struct(), 0, schemas, None, None)
+            .expect("create parking-lot contract")
+            .data_contract_owned();
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("apply parking-lot contract");
+
+        let document_type = contract
+            .document_type_for_name("car")
+            .expect("car document type exists");
+
+        // Insert N cars for each lot, where N = lot's 1-based
+        // position in the alphabet (a → 1, b → 2, …, z → 26).
+        let mut seed = 1u64;
+        for (idx, letter) in ('a'..='z').enumerate() {
+            let car_count = idx + 1;
+            for _ in 0..car_count {
+                let mut doc = document_type
+                    .random_document(Some(seed), pv)
+                    .expect("random document");
+                let mut props = std::collections::BTreeMap::new();
+                props.insert("lot".to_string(), Value::Text(letter.to_string()));
+                doc.set_properties(props);
+
+                drive
+                    .add_document_for_contract(
+                        DocumentAndContractInfo {
+                            owned_document_info: OwnedDocumentInfo {
+                                document_info: DocumentRefInfo((&doc, None)),
+                                owner_id: None,
+                            },
+                            contract: &contract,
+                            document_type,
+                        },
+                        false,
+                        BlockInfo::default(),
+                        true,
+                        None,
+                        pv,
+                        None,
+                    )
+                    .expect("expected to insert car document");
+                seed += 1;
+            }
+        }
+
+        // Quick math check on the closed-form expected count so a
+        // future reader doesn't have to recompute the sum to follow
+        // the assertion.
+        let expected: u64 = (3..=26).sum();
+        assert_eq!(
+            expected, 348,
+            "sanity check: cars in lots c..=z = 3 + 4 + … + 26 = 348"
+        );
+
+        // The actual scenario: how many cars are in parking lots > b?
+        let where_clauses = vec![WhereClause {
+            field: "lot".to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: Value::Text("b".to_string()),
+        }];
+        assert_aggregate_count_proof_returns(&drive, &contract, "car", where_clauses, expected);
+    }
 }
