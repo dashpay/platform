@@ -1552,6 +1552,7 @@ impl Drive {
     /// summed entry or per-distinct-value entries depending on
     /// `options.distinct`. Used by [`DocumentCountMode::RangeNoProof`]
     /// dispatch.
+    #[allow(clippy::too_many_arguments)]
     pub fn execute_document_count_range_no_proof(
         &self,
         contract_id: [u8; 32],
@@ -1710,11 +1711,11 @@ pub struct DocumentCountRequest<'a> {
 #[derive(Debug, Clone)]
 pub enum DocumentCountResponse {
     /// Per-entry counts. The shape inside depends on the request mode:
-    /// - `Total`         → exactly one entry, empty `key`, count = total
-    /// - `PerInValue`    → one entry per deduped `In` value
-    /// - `RangeNoProof`  → one entry summed (empty key) or one per
-    ///                     distinct value in the range, depending on
-    ///                     `return_distinct_counts_in_range`
+    /// - `Total` → exactly one entry, empty `key`, count = total
+    /// - `PerInValue` → one entry per deduped `In` value
+    /// - `RangeNoProof` → one entry summed (empty key) or one per
+    ///   distinct value in the range, depending on
+    ///   `return_distinct_counts_in_range`
     Counts(Vec<SplitCountEntry>),
     /// Grovedb proof bytes the client verifies via either
     /// `verify_aggregate_count_query` (for `RangeProof`) or the
