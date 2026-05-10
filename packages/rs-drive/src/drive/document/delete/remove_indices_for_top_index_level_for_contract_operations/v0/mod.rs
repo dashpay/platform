@@ -82,6 +82,16 @@ impl Drive {
 
         // next we need to store a reference to the document for each index
         for (name, sub_level) in index_level.sub_levels() {
+            let sub_level_range_countable = sub_level
+                .has_index_with_type()
+                .map(|info| info.range_countable)
+                .unwrap_or(false);
+            let property_name_tree_type = if sub_level_range_countable {
+                TreeType::ProvableCountTree
+            } else {
+                TreeType::NormalTree
+            };
+
             // at this point the contract path is to the contract documents
             // for each index the top index component will already have been added
             // when the contract itself was created
@@ -119,7 +129,7 @@ impl Drive {
                 estimated_costs_only_with_layer_info.insert(
                     KeyInfoPath::from_known_owned_path(index_path.clone()),
                     EstimatedLayerInformation {
-                        tree_type: TreeType::NormalTree,
+                        tree_type: property_name_tree_type,
                         estimated_layer_count: PotentiallyAtMaxElements,
                         estimated_layer_sizes: AllSubtrees(
                             document_top_field_estimated_size as u8,
@@ -154,6 +164,7 @@ impl Drive {
                 sub_level,
                 any_fields_null,
                 all_fields_null,
+                sub_level_range_countable,
                 &storage_flags,
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,
