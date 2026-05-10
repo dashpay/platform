@@ -1755,4 +1755,349 @@ mod range_countable_index_e2e_tests {
         assert_eq!(split[1].key, b"ccc".to_vec());
         assert_eq!(split[1].count, 1);
     }
+
+    /// `execute_aggregate_count_with_proof` should produce a grovedb
+    /// `AggregateCountOnRange` proof that verifies to the same total
+    /// count as the no-proof range walk. This is the prove-path
+    /// counterpart of [`range_count_executor_sums_and_splits_correctly`].
+    ///
+    /// The verification step uses
+    /// `GroveDb::verify_aggregate_count_query` directly — proves the
+    /// returned bytes are a real proof, not just any blob — and asserts
+    /// the recovered count matches the no-proof sum.
+    #[test]
+    fn aggregate_count_proof_verifies_and_returns_correct_count() {
+        use crate::query::{DriveDocumentCountQuery, WhereClause, WhereOperator};
+        use grovedb::{GroveDb, PathQuery};
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let pv = PlatformVersion::latest();
+        let contract = build_widget_with_color_index(false);
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("expected to apply contract");
+
+        let document_type = contract
+            .document_type_for_name("widget")
+            .expect("widget exists");
+
+        // Same six-doc fixture as the no-proof test.
+        for (i, color) in ["red", "red", "blue", "green", "green", "green"]
+            .iter()
+            .enumerate()
+        {
+            let doc = build_widget_doc(&contract, color, "small", (i + 1) as u64);
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&doc, None)),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    pv,
+                    None,
+                )
+                .expect("expected to insert document");
+        }
+
+        let where_clauses = vec![WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: dpp::platform_value::Value::Text("blue".to_string()),
+        }];
+        let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+            document_type.indexes(),
+            &where_clauses,
+        )
+        .expect("range_countable index should be picked");
+
+        let query = DriveDocumentCountQuery {
+            document_type,
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "widget".to_string(),
+            index,
+            where_clauses: where_clauses.clone(),
+            split_by_property: None,
+        };
+
+        let proof_bytes = query
+            .execute_aggregate_count_with_proof(&drive, None, pv)
+            .expect("should generate aggregate count proof");
+        assert!(!proof_bytes.is_empty(), "proof must not be empty");
+
+        // Reconstruct the same path query the prover used, verify the
+        // proof against it, and check the recovered count.
+        let path = vec![
+            vec![crate::drive::RootTree::DataContractDocuments as u8],
+            contract.id().as_bytes().to_vec(),
+            vec![1u8],
+            b"widget".to_vec(),
+            b"color".to_vec(),
+        ];
+        let query_item = grovedb::QueryItem::RangeAfter(b"blue".to_vec()..);
+        let path_query = PathQuery::new_aggregate_count_on_range(path, query_item);
+
+        let (root_hash, count) = GroveDb::verify_aggregate_count_query(
+            &proof_bytes,
+            &path_query,
+            &pv.drive.grove_version,
+        )
+        .expect("aggregate-count proof should verify");
+        assert_ne!(root_hash, [0u8; 32], "root hash should not be zero");
+        assert_eq!(
+            count, 5,
+            "verified count should match no-proof sum: 3 (green) + 2 (red) = 5"
+        );
+    }
+
+    /// Range count with an `In` clause on the prefix forks the walk
+    /// into one path per prefix value and merges per-key entries.
+    /// Uses a compound `[brand, color]` range_countable index — Equal
+    /// would also work for one brand value, but `In` exercises the
+    /// cartesian fork path that's not covered elsewhere.
+    #[test]
+    fn range_count_with_in_on_prefix_forks_and_merges() {
+        use crate::query::{
+            DriveDocumentCountQuery, RangeCountOptions, WhereClause, WhereOperator,
+        };
+        use dpp::platform_value::Value;
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let pv = PlatformVersion::latest();
+
+        // Build a contract with `[brand, color]` range_countable.
+        let factory = dpp::data_contract::DataContractFactory::new(PROTOCOL_VERSION_V12)
+            .expect("expected to create factory");
+        let document_schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "brand": { "type": "string", "position": 0, "maxLength": 32 },
+                "color": { "type": "string", "position": 1, "maxLength": 32 },
+            },
+            "indices": [{
+                "name": "byBrandColor",
+                "properties": [{"brand": "asc"}, {"color": "asc"}],
+                "countable": "countable",
+                "rangeCountable": true,
+            }],
+            "additionalProperties": false,
+        });
+        let schemas = platform_value!({ "widget": document_schema });
+        let contract = factory
+            .create_with_value_config(generate_random_identifier_struct(), 0, schemas, None, None)
+            .expect("create contract")
+            .data_contract_owned();
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("apply contract");
+
+        let document_type = contract
+            .document_type_for_name("widget")
+            .expect("widget exists");
+
+        // 3 acme + red, 2 acme + blue, 2 contoso + red, 1 contoso + green.
+        let docs: Vec<(&str, &str)> = vec![
+            ("acme", "red"),
+            ("acme", "red"),
+            ("acme", "red"),
+            ("acme", "blue"),
+            ("acme", "blue"),
+            ("contoso", "red"),
+            ("contoso", "red"),
+            ("contoso", "green"),
+        ];
+        for (i, (brand, color)) in docs.iter().enumerate() {
+            let mut doc = document_type
+                .random_document(Some((i + 1) as u64), pv)
+                .expect("random doc");
+            let mut props = std::collections::BTreeMap::new();
+            props.insert("brand".to_string(), Value::Text(brand.to_string()));
+            props.insert("color".to_string(), Value::Text(color.to_string()));
+            doc.set_properties(props);
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&doc, None)),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    pv,
+                    None,
+                )
+                .expect("insert");
+        }
+
+        // brand IN (acme, contoso) AND color > "blue"
+        // Match: acme+red(3), contoso+red(2), contoso+green(1) = 6
+        // (Excluded: acme+blue, contoso+blue — but there's no
+        //  contoso+blue, just acme+blue which doesn't match.)
+        let where_clauses = vec![
+            WhereClause {
+                field: "brand".to_string(),
+                operator: WhereOperator::In,
+                value: Value::Array(vec![
+                    Value::Text("acme".to_string()),
+                    Value::Text("contoso".to_string()),
+                ]),
+            },
+            WhereClause {
+                field: "color".to_string(),
+                operator: WhereOperator::GreaterThan,
+                value: Value::Text("blue".to_string()),
+            },
+        ];
+        let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+            document_type.indexes(),
+            &where_clauses,
+        )
+        .expect("range_countable index should be picked");
+
+        let query = DriveDocumentCountQuery {
+            document_type,
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "widget".to_string(),
+            index,
+            where_clauses,
+            split_by_property: None,
+        };
+
+        // Distinct mode: per-color entries, summed across both brands.
+        // green: 1 (only contoso). red: 3 + 2 = 5. So [(green, 1), (red, 5)].
+        let split = query
+            .execute_range_count_no_proof(
+                &drive,
+                &RangeCountOptions {
+                    distinct: true,
+                    limit: None,
+                    start_after_split_key: None,
+                    order_by_ascending: true,
+                },
+                None,
+                pv,
+            )
+            .expect("range count should succeed");
+        assert_eq!(split.len(), 2);
+        assert_eq!(split[0].key, b"green".to_vec());
+        assert_eq!(split[0].count, 1);
+        assert_eq!(split[1].key, b"red".to_vec());
+        assert_eq!(split[1].count, 5);
+
+        // Sum mode: 6 docs total.
+        let summed = query
+            .execute_range_count_no_proof(
+                &drive,
+                &RangeCountOptions {
+                    distinct: false,
+                    limit: None,
+                    start_after_split_key: None,
+                    order_by_ascending: true,
+                },
+                None,
+                pv,
+            )
+            .expect("range count should succeed");
+        assert_eq!(summed.len(), 1);
+        assert_eq!(summed[0].count, 6);
+    }
+
+    /// `StartsWith` is in the picker's range-operator set but the
+    /// executor rejects it because the upper-bound encoding is
+    /// key-dependent. The error must surface clearly rather than
+    /// silently using a wrong range.
+    #[test]
+    fn range_count_executor_rejects_starts_with() {
+        use crate::query::{
+            DriveDocumentCountQuery, RangeCountOptions, WhereClause, WhereOperator,
+        };
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let pv = PlatformVersion::latest();
+        let contract = build_widget_with_color_index(false);
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("apply contract");
+
+        let document_type = contract
+            .document_type_for_name("widget")
+            .expect("widget exists");
+        let where_clauses = vec![WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::StartsWith,
+            value: dpp::platform_value::Value::Text("re".to_string()),
+        }];
+        let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+            document_type.indexes(),
+            &where_clauses,
+        )
+        .expect("picker accepts StartsWith");
+
+        let query = DriveDocumentCountQuery {
+            document_type,
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "widget".to_string(),
+            index,
+            where_clauses,
+            split_by_property: None,
+        };
+
+        let result = query.execute_range_count_no_proof(
+            &drive,
+            &RangeCountOptions {
+                distinct: false,
+                limit: None,
+                start_after_split_key: None,
+                order_by_ascending: true,
+            },
+            None,
+            pv,
+        );
+        assert!(
+            matches!(
+                result,
+                Err(crate::error::Error::Query(
+                    crate::error::query::QuerySyntaxError::InvalidWhereClauseComponents(msg)
+                )) if msg.contains("startsWith")
+            ),
+            "expected startsWith rejection, got {:?}",
+            result
+        );
+    }
 }

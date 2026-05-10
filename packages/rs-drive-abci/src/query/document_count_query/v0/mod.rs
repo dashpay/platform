@@ -899,4 +899,230 @@ mod tests {
             })
         ));
     }
+
+    /// End-to-end test for the range count happy path against a v12
+    /// contract whose `widget` document type carries a
+    /// `rangeCountable: true` index over `color`. Exercises the
+    /// `find_range_countable_index_for_where_clauses` →
+    /// `execute_range_count_no_proof` route in the no-prove handler,
+    /// in both summed and distinct modes plus the pagination knobs.
+    #[test]
+    fn test_documents_count_range_query_no_prove() {
+        use dpp::data_contract::DataContractFactory;
+        use dpp::document::DocumentV0Setters;
+        use dpp::platform_value::platform_value;
+
+        const PROTOCOL_VERSION_V12: u32 = 12;
+
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let platform_version = PlatformVersion::latest();
+
+        // Build an in-memory v12 contract with a range_countable index.
+        let factory =
+            DataContractFactory::new(PROTOCOL_VERSION_V12).expect("expected to create factory");
+        let document_schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "color": {"type": "string", "position": 0, "maxLength": 32},
+            },
+            "indices": [{
+                "name": "byColor",
+                "properties": [{"color": "asc"}],
+                "countable": "countable",
+                "rangeCountable": true,
+            }],
+            "additionalProperties": false,
+        });
+        let schemas = platform_value!({ "widget": document_schema });
+        let contract = factory
+            .create_with_value_config(
+                dpp::tests::utils::generate_random_identifier_struct(),
+                0,
+                schemas,
+                None,
+                None,
+            )
+            .expect("create contract")
+            .data_contract_owned();
+
+        store_data_contract(&platform, &contract, version);
+
+        let document_type = contract
+            .document_type_for_name("widget")
+            .expect("widget exists");
+
+        // 6 docs across 3 colors: red×2, blue×1, green×3.
+        for (i, color) in ["red", "red", "blue", "green", "green", "green"]
+            .iter()
+            .enumerate()
+        {
+            let mut doc = document_type
+                .random_document(Some((i + 1) as u64), platform_version)
+                .expect("random doc");
+            let mut props = std::collections::BTreeMap::new();
+            props.insert("color".to_string(), Value::Text(color.to_string()));
+            doc.set_properties(props);
+            store_document(&platform, &contract, document_type, &doc, platform_version);
+        }
+
+        // Helper: issue a range count request with the given options.
+        let make_request = |distinct: bool, limit: Option<u32>, ascending: Option<bool>| {
+            let where_clauses = vec![Value::Array(vec![
+                Value::Text("color".to_string()),
+                Value::Text(">".to_string()),
+                Value::Text("blue".to_string()),
+            ])];
+            GetDocumentsCountRequestV0 {
+                data_contract_id: contract.id().to_vec(),
+                document_type: "widget".to_string(),
+                r#where: serialize_where_clauses_to_cbor(where_clauses),
+                return_distinct_counts_in_range: distinct,
+                order_by_ascending: ascending,
+                limit,
+                start_after_split_key: None,
+                prove: false,
+            }
+        };
+
+        // Sum mode: green(3) + red(2) = 5.
+        let result = platform
+            .query_documents_count_v0(make_request(false, None, None), &state, version)
+            .expect("query should succeed");
+        assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+        match result.data {
+            Some(GetDocumentsCountResponseV0 {
+                result: Some(get_documents_count_response_v0::Result::Counts(counts)),
+                ..
+            }) => {
+                assert_eq!(counts.entries.len(), 1, "summed mode → one entry");
+                assert!(counts.entries[0].key.is_empty());
+                assert_eq!(counts.entries[0].count, 5);
+            }
+            other => panic!("expected counts result, got {:?}", other),
+        }
+
+        // Distinct mode ascending: [(green, 3), (red, 2)].
+        let result = platform
+            .query_documents_count_v0(make_request(true, None, Some(true)), &state, version)
+            .expect("query should succeed");
+        assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+        match result.data {
+            Some(GetDocumentsCountResponseV0 {
+                result: Some(get_documents_count_response_v0::Result::Counts(counts)),
+                ..
+            }) => {
+                assert_eq!(counts.entries.len(), 2);
+                assert_eq!(counts.entries[0].key, b"green".to_vec());
+                assert_eq!(counts.entries[0].count, 3);
+                assert_eq!(counts.entries[1].key, b"red".to_vec());
+                assert_eq!(counts.entries[1].count, 2);
+            }
+            other => panic!("expected counts result, got {:?}", other),
+        }
+
+        // Distinct mode with limit=1: only the first entry (ascending → green).
+        let result = platform
+            .query_documents_count_v0(make_request(true, Some(1), Some(true)), &state, version)
+            .expect("query should succeed");
+        assert!(result.errors.is_empty());
+        match result.data {
+            Some(GetDocumentsCountResponseV0 {
+                result: Some(get_documents_count_response_v0::Result::Counts(counts)),
+                ..
+            }) => {
+                assert_eq!(counts.entries.len(), 1);
+                assert_eq!(counts.entries[0].key, b"green".to_vec());
+            }
+            other => panic!("expected counts result, got {:?}", other),
+        }
+
+        // Distinct descending: [(red, 2), (green, 3)].
+        let result = platform
+            .query_documents_count_v0(make_request(true, None, Some(false)), &state, version)
+            .expect("query should succeed");
+        assert!(result.errors.is_empty());
+        match result.data {
+            Some(GetDocumentsCountResponseV0 {
+                result: Some(get_documents_count_response_v0::Result::Counts(counts)),
+                ..
+            }) => {
+                assert_eq!(counts.entries.len(), 2);
+                assert_eq!(counts.entries[0].key, b"red".to_vec());
+                assert_eq!(counts.entries[1].key, b"green".to_vec());
+            }
+            other => panic!("expected counts result, got {:?}", other),
+        }
+    }
+
+    /// `return_distinct_counts_in_range = true` is rejected on the
+    /// prove path because grovedb's `AggregateCountOnRange` proof
+    /// returns one aggregate, not per-distinct-value entries.
+    #[test]
+    fn test_documents_count_range_with_prove_rejects_distinct() {
+        use dpp::data_contract::DataContractFactory;
+        use dpp::platform_value::platform_value;
+
+        const PROTOCOL_VERSION_V12: u32 = 12;
+
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let platform_version = PlatformVersion::latest();
+
+        let factory =
+            DataContractFactory::new(PROTOCOL_VERSION_V12).expect("expected to create factory");
+        let document_schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "color": {"type": "string", "position": 0, "maxLength": 32},
+            },
+            "indices": [{
+                "name": "byColor",
+                "properties": [{"color": "asc"}],
+                "countable": "countable",
+                "rangeCountable": true,
+            }],
+            "additionalProperties": false,
+        });
+        let schemas = platform_value!({ "widget": document_schema });
+        let contract = factory
+            .create_with_value_config(
+                dpp::tests::utils::generate_random_identifier_struct(),
+                0,
+                schemas,
+                None,
+                None,
+            )
+            .expect("create contract")
+            .data_contract_owned();
+
+        store_data_contract(&platform, &contract, version);
+
+        let where_clauses = vec![Value::Array(vec![
+            Value::Text("color".to_string()),
+            Value::Text(">".to_string()),
+            Value::Text("blue".to_string()),
+        ])];
+        let request = GetDocumentsCountRequestV0 {
+            data_contract_id: contract.id().to_vec(),
+            document_type: "widget".to_string(),
+            r#where: serialize_where_clauses_to_cbor(where_clauses),
+            return_distinct_counts_in_range: true,
+            order_by_ascending: None,
+            limit: None,
+            start_after_split_key: None,
+            prove: true,
+        };
+
+        let result = platform
+            .query_documents_count_v0(request, &state, version)
+            .expect("query should return validation error");
+        let _ = platform_version;
+        assert!(
+            matches!(
+                result.errors.as_slice(),
+                [QueryError::InvalidArgument(msg)] if msg.contains("return_distinct_counts_in_range")
+            ),
+            "expected return_distinct_counts_in_range rejection on prove path, got {:?}",
+            result.errors
+        );
+    }
 }
