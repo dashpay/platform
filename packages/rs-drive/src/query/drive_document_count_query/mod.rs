@@ -13,7 +13,7 @@ use dpp::version::drive_versions::DriveVersion;
 #[cfg(feature = "server")]
 use grovedb::query_result_type::QueryResultType;
 #[cfg(feature = "server")]
-use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
+use grovedb::{PathQuery, Query, QueryItem, SizedQuery, TransactionArg};
 #[cfg(feature = "server")]
 use grovedb_path::SubtreePath;
 
@@ -830,5 +830,362 @@ impl<'a> DriveDocumentCountQuery<'a> {
         }
 
         Ok(total_count)
+    }
+}
+
+/// Pagination + ordering knobs for `execute_range_count_no_proof`.
+///
+/// Mirrors the protobuf request fields on
+/// `GetDocumentsCountRequestV0` so the drive-abci handler can pass them
+/// through unmodified. `distinct = false` collapses the range walk to a
+/// single summed entry; `distinct = true` returns one entry per distinct
+/// property value within the range.
+#[cfg(feature = "server")]
+#[derive(Debug, Clone, Default)]
+pub struct RangeCountOptions {
+    /// When `true`, return one [`SplitCountEntry`] per distinct property
+    /// value within the range. When `false`, return a single entry
+    /// (empty `key`) summing all per-value counts.
+    pub distinct: bool,
+    /// Maximum number of entries to return. Only meaningful when
+    /// `distinct = true`. Applied after `start_after_split_key`. `None`
+    /// means no limit.
+    pub limit: Option<u32>,
+    /// Pagination cursor: skip entries up to and including this
+    /// serialized key. Only meaningful when `distinct = true`.
+    pub start_after_split_key: Option<Vec<u8>>,
+    /// Sort order for distinct entries. `true` (default) is ascending by
+    /// serialized key bytes. Ignored when `distinct = false`.
+    pub order_by_ascending: bool,
+}
+
+#[cfg(feature = "server")]
+impl<'a> DriveDocumentCountQuery<'a> {
+    /// Convert a single range where-clause + value into the grovedb
+    /// `QueryItem` used to walk children of the property-name
+    /// `ProvableCountTree`. The clause's value is serialized via the
+    /// document type's `serialize_value_for_key`, which produces the
+    /// canonical bytes used everywhere else in the index path.
+    ///
+    /// Range mappings:
+    /// - `>`  → `RangeAfter(value..)` (exclusive lower)
+    /// - `>=` → `RangeFrom(value..)` (inclusive lower)
+    /// - `<`  → `RangeTo(..value)` (exclusive upper)
+    /// - `<=` → `RangeToInclusive(..=value)` (inclusive upper)
+    /// - `between [a, b]` → `RangeInclusive(a..=b)` (inclusive both)
+    /// - `between (a, b)` → `RangeAfterTo(a..b)` (exclusive both — the
+    ///    inner range is half-open in grovedb terms; this models exclude-bounds)
+    /// - `between (a, b]` → `RangeAfterToInclusive(a..=b)`
+    /// - `between [a, b)` → `Range(a..b)`
+    /// - `startsWith` is rejected here — its grovedb encoding requires
+    ///    a byte-incremented upper bound that depends on key encoding,
+    ///    which we don't compute generically.
+    fn range_clause_to_query_item(
+        &self,
+        clause: &WhereClause,
+        platform_version: &PlatformVersion,
+    ) -> Result<QueryItem, Error> {
+        let serialize = |v: &dpp::platform_value::Value| -> Result<Vec<u8>, Error> {
+            Ok(self.document_type.serialize_value_for_key(
+                clause.field.as_str(),
+                v,
+                platform_version,
+            )?)
+        };
+        let serialize_pair = |op_name: &'static str| -> Result<(Vec<u8>, Vec<u8>), Error> {
+            let arr = clause.value.as_array().ok_or_else(|| {
+                Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
+                    "range bounds value must be a 2-element array",
+                ))
+            })?;
+            if arr.len() != 2 {
+                return Err(Error::Query(
+                    QuerySyntaxError::InvalidWhereClauseComponents(
+                        "range bounds value must be a 2-element array",
+                    ),
+                ));
+            }
+            let a = serialize(&arr[0])?;
+            let b = serialize(&arr[1])?;
+            if a > b {
+                let _ = op_name;
+                return Err(Error::Query(
+                    QuerySyntaxError::InvalidWhereClauseComponents(
+                        "range lower bound must be <= upper bound",
+                    ),
+                ));
+            }
+            Ok((a, b))
+        };
+
+        Ok(match clause.operator {
+            WhereOperator::GreaterThan => {
+                let v = serialize(&clause.value)?;
+                QueryItem::RangeAfter(v..)
+            }
+            WhereOperator::GreaterThanOrEquals => {
+                let v = serialize(&clause.value)?;
+                QueryItem::RangeFrom(v..)
+            }
+            WhereOperator::LessThan => {
+                let v = serialize(&clause.value)?;
+                QueryItem::RangeTo(..v)
+            }
+            WhereOperator::LessThanOrEquals => {
+                let v = serialize(&clause.value)?;
+                QueryItem::RangeToInclusive(..=v)
+            }
+            WhereOperator::Between => {
+                let (a, b) = serialize_pair("between")?;
+                QueryItem::RangeInclusive(a..=b)
+            }
+            WhereOperator::BetweenExcludeBounds => {
+                let (a, b) = serialize_pair("betweenExcludeBounds")?;
+                QueryItem::RangeAfterTo(a..b)
+            }
+            WhereOperator::BetweenExcludeLeft => {
+                let (a, b) = serialize_pair("betweenExcludeLeft")?;
+                QueryItem::RangeAfterToInclusive(a..=b)
+            }
+            WhereOperator::BetweenExcludeRight => {
+                let (a, b) = serialize_pair("betweenExcludeRight")?;
+                QueryItem::Range(a..b)
+            }
+            WhereOperator::StartsWith => {
+                return Err(Error::Query(
+                    QuerySyntaxError::InvalidWhereClauseComponents(
+                        "startsWith is not yet supported on the range_countable count fast path",
+                    ),
+                ));
+            }
+            _ => {
+                return Err(Error::Query(
+                    QuerySyntaxError::InvalidWhereClauseComponents(
+                        "range_clause_to_query_item called on a non-range operator",
+                    ),
+                ));
+            }
+        })
+    }
+
+    /// Executes a range-aware count query against a `range_countable`
+    /// index. Walks children of the property-name `ProvableCountTree` at
+    /// path `[contract_doc, doctype, prefix..., range_prop_name]` whose
+    /// keys lie within the range. Each child is a `CountTree` whose
+    /// `count_value_or_default()` is the document count at that property
+    /// value.
+    ///
+    /// The caller picks the index via
+    /// [`Self::find_range_countable_index_for_where_clauses`]; this
+    /// method assumes:
+    /// - `self.index.range_countable == true`
+    /// - All `Equal` / `In` where clauses cover the index prefix
+    /// - Exactly one range-operator where clause hits the index's last
+    ///   property
+    ///
+    /// `In` on the prefix forks the walk into one path per (deduped)
+    /// `In` value and merges the results.
+    ///
+    /// When `options.distinct = false`, returns a single entry with
+    /// empty key whose count is the sum of all per-value counts in the
+    /// range. When `options.distinct = true`, returns one entry per
+    /// distinct property value within the range, after applying
+    /// `order_by_ascending`, `start_after_split_key`, and `limit`.
+    pub fn execute_range_count_no_proof(
+        &self,
+        drive: &Drive,
+        options: &RangeCountOptions,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<SplitCountEntry>, Error> {
+        let drive_version = &platform_version.drive;
+
+        let range_clause = self
+            .where_clauses
+            .iter()
+            .find(|wc| Self::is_range_operator(wc.operator))
+            .ok_or_else(|| {
+                Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
+                    "execute_range_count_no_proof requires exactly one range where-clause",
+                ))
+            })?;
+        if self
+            .where_clauses
+            .iter()
+            .filter(|wc| Self::is_range_operator(wc.operator))
+            .count()
+            > 1
+        {
+            return Err(Error::Query(
+                QuerySyntaxError::InvalidWhereClauseComponents(
+                    "range count supports only one range where-clause",
+                ),
+            ));
+        }
+        let query_item = self.range_clause_to_query_item(range_clause, platform_version)?;
+
+        // Build the prefix path: [contract_doc, doctype, prop_a, val_a,
+        // prop_b, val_b, ...]. Equal clauses contribute one path each;
+        // In clauses fork into multiple paths.
+        let base_path = vec![
+            vec![RootTree::DataContractDocuments as u8],
+            self.contract_id.to_vec(),
+            vec![1u8],
+            self.document_type_name.as_bytes().to_vec(),
+        ];
+
+        // Prefix props are everything in the index up to (but not
+        // including) the range property — by picker invariant the range
+        // property is `index.properties.last()`.
+        let prefix_props = &self.index.properties[..self.index.properties.len() - 1];
+        let range_prop_name = &self
+            .index
+            .properties
+            .last()
+            .ok_or_else(|| {
+                Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
+                    "range_countable index must have at least one property",
+                ))
+            })?
+            .name;
+
+        let mut prefix_paths: Vec<Vec<Vec<u8>>> = vec![base_path];
+        for prop in prefix_props {
+            let clause = self.where_clauses.iter().find(|wc| wc.field == prop.name).ok_or_else(|| {
+                Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
+                    "range count: missing where clause for an index property preceding the range property",
+                ))
+            })?;
+            let mut next_paths: Vec<Vec<Vec<u8>>> = Vec::new();
+            match clause.operator {
+                WhereOperator::Equal => {
+                    let serialized = self.document_type.serialize_value_for_key(
+                        prop.name.as_str(),
+                        &clause.value,
+                        platform_version,
+                    )?;
+                    for mut path in prefix_paths.into_iter() {
+                        path.push(prop.name.as_bytes().to_vec());
+                        path.push(serialized.clone());
+                        next_paths.push(path);
+                    }
+                }
+                WhereOperator::In => {
+                    let values = clause.value.as_array().ok_or_else(|| {
+                        Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
+                            "In where-clause value must be an array",
+                        ))
+                    })?;
+                    let mut seen: BTreeSet<Vec<u8>> = BTreeSet::new();
+                    for v in values {
+                        let serialized = self.document_type.serialize_value_for_key(
+                            prop.name.as_str(),
+                            v,
+                            platform_version,
+                        )?;
+                        if !seen.insert(serialized.clone()) {
+                            continue;
+                        }
+                        for path in &prefix_paths {
+                            let mut p = path.clone();
+                            p.push(prop.name.as_bytes().to_vec());
+                            p.push(serialized.clone());
+                            next_paths.push(p);
+                        }
+                    }
+                }
+                _ => {
+                    return Err(Error::Query(
+                        QuerySyntaxError::InvalidWhereClauseComponents(
+                            "range count: only Equal and In are supported on prefix properties",
+                        ),
+                    ));
+                }
+            }
+            prefix_paths = next_paths;
+        }
+
+        // Per prefix path, walk the range under [..., range_prop_name].
+        // Merge per-key entries across In-fork paths so a value that
+        // appears under two prefixes contributes the sum of both.
+        let mut merged: BTreeMap<Vec<u8>, u64> = BTreeMap::new();
+        for prefix in prefix_paths {
+            let mut path = prefix;
+            path.push(range_prop_name.as_bytes().to_vec());
+
+            let mut query = Query::new();
+            query.insert_item(query_item.clone());
+            let path_query = PathQuery::new(path.clone(), SizedQuery::new(query, None, None));
+
+            let mut drive_operations = vec![];
+            let result = drive.grove_get_raw_path_query(
+                &path_query,
+                transaction,
+                QueryResultType::QueryKeyElementPairResultType,
+                &mut drive_operations,
+                drive_version,
+            );
+            let (elements, _) = match result {
+                Ok(r) => r,
+                Err(Error::GroveDB(e))
+                    if matches!(
+                        e.as_ref(),
+                        grovedb::Error::PathNotFound(_)
+                            | grovedb::Error::PathParentLayerNotFound(_)
+                            | grovedb::Error::PathKeyNotFound(_)
+                    ) =>
+                {
+                    continue;
+                }
+                Err(e) => return Err(e),
+            };
+
+            for (key, element) in elements.to_key_elements() {
+                let count = element.count_value_or_default();
+                if count == 0 {
+                    continue;
+                }
+                *merged.entry(key).or_insert(0) += count;
+            }
+        }
+
+        if !options.distinct {
+            // Sum mode: collapse all entries into one with empty key.
+            let total: u64 = merged.values().copied().sum();
+            return Ok(vec![SplitCountEntry {
+                key: Vec::new(),
+                count: total,
+            }]);
+        }
+
+        // Distinct mode: apply order, then cursor, then limit.
+        let mut entries: Vec<SplitCountEntry> = merged
+            .into_iter()
+            .map(|(key, count)| SplitCountEntry { key, count })
+            .collect();
+        // BTreeMap iteration is already ascending; flip if requested.
+        if !options.order_by_ascending {
+            entries.reverse();
+        }
+        if let Some(cursor) = options.start_after_split_key.as_ref() {
+            // Drop everything up to AND including the cursor key
+            // (matches the protobuf doc: "skip entries up to and
+            // including this serialized key").
+            let kept: Vec<SplitCountEntry> = entries
+                .into_iter()
+                .skip_while(|e| {
+                    if options.order_by_ascending {
+                        e.key.as_slice() <= cursor.as_slice()
+                    } else {
+                        e.key.as_slice() >= cursor.as_slice()
+                    }
+                })
+                .collect();
+            entries = kept;
+        }
+        if let Some(limit) = options.limit {
+            entries.truncate(limit as usize);
+        }
+        Ok(entries)
     }
 }

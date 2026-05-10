@@ -1008,6 +1008,7 @@ mod range_countable_index_e2e_tests {
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
     use dpp::data_contract::DataContractFactory;
     use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
@@ -1488,5 +1489,270 @@ mod range_countable_index_e2e_tests {
                 other => panic!("expected CountTree at color={}, got {:?}", color, other),
             }
         }
+    }
+
+    /// End-to-end exercise of the range count executor:
+    /// `DriveDocumentCountQuery::execute_range_count_no_proof`. With six
+    /// docs at three distinct color values, a `> "blue"` range
+    /// should hit `green` (3 docs) and `red` (2 docs) for a total of 5,
+    /// and `distinct = true` returns one entry per matching value.
+    #[test]
+    fn range_count_executor_sums_and_splits_correctly() {
+        use crate::query::{
+            DriveDocumentCountQuery, RangeCountOptions, WhereClause, WhereOperator,
+        };
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let pv = PlatformVersion::latest();
+        let contract = build_widget_with_color_index(false);
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("expected to apply contract");
+
+        let document_type = contract
+            .document_type_for_name("widget")
+            .expect("widget exists");
+
+        for (i, color) in ["red", "red", "blue", "green", "green", "green"]
+            .iter()
+            .enumerate()
+        {
+            let doc = build_widget_doc(&contract, color, "small", (i + 1) as u64);
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&doc, None)),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    pv,
+                    None,
+                )
+                .expect("expected to insert document");
+        }
+
+        // Find the range_countable index via the picker so the test
+        // doesn't depend on any particular index name.
+        let where_clauses = vec![WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: dpp::platform_value::Value::Text("blue".to_string()),
+        }];
+        let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+            document_type.indexes(),
+            &where_clauses,
+        )
+        .expect("range_countable index should be picked");
+
+        let query = DriveDocumentCountQuery {
+            document_type,
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "widget".to_string(),
+            index,
+            where_clauses: where_clauses.clone(),
+            split_by_property: None,
+        };
+
+        // distinct=false: single summed entry. green(3) + red(2) = 5.
+        let summed = query
+            .execute_range_count_no_proof(
+                &drive,
+                &RangeCountOptions {
+                    distinct: false,
+                    limit: None,
+                    start_after_split_key: None,
+                    order_by_ascending: true,
+                },
+                None,
+                pv,
+            )
+            .expect("range count should succeed");
+        assert_eq!(summed.len(), 1);
+        assert!(summed[0].key.is_empty(), "summed entry has empty key");
+        assert_eq!(
+            summed[0].count, 5,
+            "color > 'blue' should sum to 3 (green) + 2 (red) = 5"
+        );
+
+        // distinct=true: per-value entries, ascending. Should be
+        // [(green, 3), (red, 2)] — `blue` is excluded by the
+        // exclusive lower bound.
+        let split = query
+            .execute_range_count_no_proof(
+                &drive,
+                &RangeCountOptions {
+                    distinct: true,
+                    limit: None,
+                    start_after_split_key: None,
+                    order_by_ascending: true,
+                },
+                None,
+                pv,
+            )
+            .expect("range count should succeed");
+        assert_eq!(split.len(), 2);
+        assert_eq!(split[0].key, b"green".to_vec());
+        assert_eq!(split[0].count, 3);
+        assert_eq!(split[1].key, b"red".to_vec());
+        assert_eq!(split[1].count, 2);
+
+        // distinct=true with limit=1: only the first entry.
+        let limited = query
+            .execute_range_count_no_proof(
+                &drive,
+                &RangeCountOptions {
+                    distinct: true,
+                    limit: Some(1),
+                    start_after_split_key: None,
+                    order_by_ascending: true,
+                },
+                None,
+                pv,
+            )
+            .expect("range count should succeed");
+        assert_eq!(limited.len(), 1);
+        assert_eq!(limited[0].key, b"green".to_vec());
+
+        // distinct=true with start_after_split_key=green: only red.
+        let after = query
+            .execute_range_count_no_proof(
+                &drive,
+                &RangeCountOptions {
+                    distinct: true,
+                    limit: None,
+                    start_after_split_key: Some(b"green".to_vec()),
+                    order_by_ascending: true,
+                },
+                None,
+                pv,
+            )
+            .expect("range count should succeed");
+        assert_eq!(after.len(), 1);
+        assert_eq!(after[0].key, b"red".to_vec());
+
+        // distinct=true descending: [(red, 2), (green, 3)].
+        let desc = query
+            .execute_range_count_no_proof(
+                &drive,
+                &RangeCountOptions {
+                    distinct: true,
+                    limit: None,
+                    start_after_split_key: None,
+                    order_by_ascending: false,
+                },
+                None,
+                pv,
+            )
+            .expect("range count should succeed");
+        assert_eq!(desc.len(), 2);
+        assert_eq!(desc[0].key, b"red".to_vec());
+        assert_eq!(desc[1].key, b"green".to_vec());
+    }
+
+    /// `Between [a, b]` is inclusive on both ends — a value at
+    /// exactly the lower or upper bound must be counted.
+    #[test]
+    fn range_count_executor_between_is_inclusive_on_both_bounds() {
+        use crate::query::{
+            DriveDocumentCountQuery, RangeCountOptions, WhereClause, WhereOperator,
+        };
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let pv = PlatformVersion::latest();
+        let contract = build_widget_with_color_index(false);
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("expected to apply contract");
+
+        let document_type = contract
+            .document_type_for_name("widget")
+            .expect("widget exists");
+
+        for (i, color) in ["aaa", "bbb", "ccc", "ddd"].iter().enumerate() {
+            let doc = build_widget_doc(&contract, color, "small", (i + 1) as u64);
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&doc, None)),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    pv,
+                    None,
+                )
+                .expect("expected to insert document");
+        }
+
+        let where_clauses = vec![WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::Between,
+            value: dpp::platform_value::Value::Array(vec![
+                dpp::platform_value::Value::Text("bbb".to_string()),
+                dpp::platform_value::Value::Text("ccc".to_string()),
+            ]),
+        }];
+        let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+            document_type.indexes(),
+            &where_clauses,
+        )
+        .expect("range_countable index should be picked");
+
+        let query = DriveDocumentCountQuery {
+            document_type,
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "widget".to_string(),
+            index,
+            where_clauses,
+            split_by_property: None,
+        };
+
+        let split = query
+            .execute_range_count_no_proof(
+                &drive,
+                &RangeCountOptions {
+                    distinct: true,
+                    limit: None,
+                    start_after_split_key: None,
+                    order_by_ascending: true,
+                },
+                None,
+                pv,
+            )
+            .expect("range count should succeed");
+        assert_eq!(split.len(), 2);
+        assert_eq!(split[0].key, b"bbb".to_vec());
+        assert_eq!(split[0].count, 1);
+        assert_eq!(split[1].key, b"ccc".to_vec());
+        assert_eq!(split[1].count, 1);
     }
 }
