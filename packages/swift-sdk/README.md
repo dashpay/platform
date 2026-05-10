@@ -52,7 +52,8 @@ If you are working directly with the FFI `DashSDKError` pointer, inspect
 `SDKError.consensusErrors(fromDashSDKError:)` or
 `SDKError.fromDashSDKErrorWithConsensusErrors(_:)` before
 `dash_sdk_error_free` to retrieve race-free structured consensus details. Code
-that wants to pass both values around together can wrap them in
+that wants to pass both values around together can explicitly wrap them in
+`SDKDetailedError`. Public Swift throwing wrappers do not throw
 `SDKDetailedError`.
 
 ## API Reference

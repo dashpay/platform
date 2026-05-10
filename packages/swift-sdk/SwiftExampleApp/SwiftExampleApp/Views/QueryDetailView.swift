@@ -181,7 +181,7 @@ struct QueryDetailView: View {
                 await MainActor.run {
                     self.error = QueryDetailView.formatSDKError(
                         sdkError,
-                        consensusErrors: sdkError.consensusErrors
+                        consensusErrors: nil
                     )
                     isLoading = false
                     print("❌ QueryDetailView: Error set to: \(self.error)")

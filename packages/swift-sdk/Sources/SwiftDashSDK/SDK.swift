@@ -446,6 +446,11 @@ public enum SDKError: Error {
   /// details must read them from the original FFI pointer via
   /// `fromDashSDKErrorWithConsensusErrors(_:)` or
   /// `consensusErrors(fromDashSDKError:)` before `dash_sdk_error_free` runs.
+  @available(
+    *, deprecated,
+    message:
+      "Scalar SDKError does not retain structured consensus details; read them from the FFI pointer before free or wrap them explicitly in SDKDetailedError."
+  )
   public var consensusErrors: [SDKConsensusError]? {
     nil
   }
