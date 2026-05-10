@@ -1069,6 +1069,61 @@ mod range_countable_index_e2e_tests {
             .data_contract_owned()
     }
 
+    /// Two `range_countable` indexes sharing the `color` prefix:
+    /// `byColor [color]` and `byColorSize [color, size]`. The shared
+    /// prefix exercises the `NonCounted<*>` wrapping rule (book:
+    /// indexes.md §"Compound interaction with range_countable") on a
+    /// configuration where the wrapped tree itself is a
+    /// `ProvableCountTree` rather than a plain `NormalTree` —
+    /// stressing the walker's `parent_value_tree_is_range_countable`
+    /// flag against a wrapper-target type that the existing single-
+    /// doc layout test doesn't reach.
+    fn build_widget_with_two_range_countable_indexes() -> DataContract {
+        let factory =
+            DataContractFactory::new(PROTOCOL_VERSION_V12).expect("expected to create factory");
+
+        let indices = vec![
+            platform_value!({
+                "name": "byColor",
+                "properties": [{"color": "asc"}],
+                "countable": "countable",
+                "rangeCountable": true,
+            }),
+            platform_value!({
+                "name": "byColorSize",
+                "properties": [{"color": "asc"}, {"size": "asc"}],
+                "countable": "countable",
+                "rangeCountable": true,
+            }),
+        ];
+
+        let document_schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "color": {
+                    "type": "string",
+                    "position": 0,
+                    "maxLength": 32,
+                },
+                "size": {
+                    "type": "string",
+                    "position": 1,
+                    "maxLength": 32,
+                },
+            },
+            "indices": Value::Array(indices),
+            "additionalProperties": false,
+        });
+
+        let schemas = platform_value!({ "widget": document_schema });
+        let owner_id = generate_random_identifier_struct();
+
+        factory
+            .create_with_value_config(owner_id, 0, schemas, None, None)
+            .expect("expected to create data contract")
+            .data_contract_owned()
+    }
+
     fn property_name_tree_path(
         contract: &DataContract,
         document_type_name: &str,
@@ -2099,5 +2154,162 @@ mod range_countable_index_e2e_tests {
             "expected startsWith rejection, got {:?}",
             result
         );
+    }
+
+    /// Two range_countable indexes share the `color` prefix:
+    /// `byColor [color]` and `byColorSize [color, size]`. The "find
+    /// the most common color" use case answers via a distinct-range
+    /// count over the byColor index — the server returns
+    /// `(color_bytes, count)` per distinct color in the requested
+    /// range, and the client picks the max by count.
+    ///
+    /// Two invariants are pinned:
+    ///
+    /// 1. The dual-range-countable layout doesn't over-count colors
+    ///    via the byColorSize continuation. The book documents that
+    ///    sibling continuations under each color CountTree must be
+    ///    NonCounted-wrapped regardless of whether the inner tree is
+    ///    `ProvableCountTree`, `CountTree`, or plain `NormalTree`. If
+    ///    the wrapper is wrong here, byColor's per-color counts pick
+    ///    up contributions from byColorSize's `size` property-name
+    ///    sub-tree on top of the doc count itself.
+    /// 2. The "most common color" client pattern works end-to-end with
+    ///    today's API: distinct=true range count over the full color
+    ///    space, sort the returned entries by count descending
+    ///    client-side, take the first. The server doesn't sort by
+    ///    count itself — sort key is the serialized property value —
+    ///    but as long as the distinct-mode entry list fits under
+    ///    `max_query_limit`, the client has the full picture to
+    ///    identify the global max.
+    #[test]
+    fn most_common_color_via_distinct_range_count_with_two_range_countable_indexes() {
+        use crate::query::{
+            DriveDocumentCountQuery, RangeCountOptions, WhereClause, WhereOperator,
+        };
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let pv = PlatformVersion::latest();
+        let contract = build_widget_with_two_range_countable_indexes();
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("apply contract with both range_countable indexes");
+
+        let document_type = contract
+            .document_type_for_name("widget")
+            .expect("widget exists");
+
+        // 4 reds with distinct sizes, 2 blues with distinct sizes,
+        // 1 green. Distinct sizes per color exercise byColorSize's
+        // size sub-keys — the count under each color value's
+        // CountTree must still be doc-only (not size-key-influenced).
+        let docs = [
+            ("red", "small"),
+            ("red", "medium"),
+            ("red", "large"),
+            ("red", "tiny"),
+            ("blue", "small"),
+            ("blue", "medium"),
+            ("green", "huge"),
+        ];
+        for (i, (color, size)) in docs.iter().enumerate() {
+            let doc = build_widget_doc(&contract, color, size, (i + 1) as u64);
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&doc, None)),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    pv,
+                    None,
+                )
+                .expect("expected to insert document");
+        }
+
+        // Wide-open color range — every distinct color value lies
+        // strictly above the empty-string lower bound. The picker
+        // must pick byColor (terminator = "color"), NOT byColorSize
+        // (terminator = "size"), because the range field is "color".
+        let where_clauses = vec![WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: dpp::platform_value::Value::Text(String::new()),
+        }];
+        let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+            document_type.indexes(),
+            &where_clauses,
+        )
+        .expect("byColor range_countable index should be picked");
+        assert_eq!(
+            index.name, "byColor",
+            "expected picker to pick byColor (color is range terminator), \
+             not byColorSize (size is range terminator)"
+        );
+
+        let query = DriveDocumentCountQuery {
+            document_type,
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "widget".to_string(),
+            index,
+            where_clauses,
+            split_by_property: None,
+        };
+
+        let mut entries = query
+            .execute_range_count_no_proof(
+                &drive,
+                &RangeCountOptions {
+                    distinct: true,
+                    limit: None,
+                    start_after_split_key: None,
+                    order_by_ascending: true,
+                },
+                None,
+                pv,
+            )
+            .expect("distinct-range count should succeed");
+
+        // Per-color counts must reflect documents only — *not*
+        // contributions from the byColorSize continuation tree under
+        // each color value. With 4 distinct sizes under "red", a
+        // missing NonCounted-wrapper would push red's count to ≥5
+        // (one extra per size sub-tree element).
+        assert_eq!(entries.len(), 3, "expected three distinct colors");
+        let by_color: std::collections::BTreeMap<Vec<u8>, u64> =
+            entries.iter().map(|e| (e.key.clone(), e.count)).collect();
+        assert_eq!(
+            by_color.get(b"red".as_slice()),
+            Some(&4),
+            "red count must reflect only the 4 docs, not the 4 distinct \
+             size sub-keys under byColorSize"
+        );
+        assert_eq!(by_color.get(b"blue".as_slice()), Some(&2));
+        assert_eq!(by_color.get(b"green".as_slice()), Some(&1));
+
+        // "Find the most common color" pattern: client sorts by count
+        // desc, takes the first entry. The server sorts by serialized
+        // key, so this ordering happens client-side.
+        entries.sort_by(|a, b| b.count.cmp(&a.count));
+        assert_eq!(
+            entries[0].key,
+            b"red".to_vec(),
+            "expected red to be the most common color"
+        );
+        assert_eq!(entries[0].count, 4);
     }
 }

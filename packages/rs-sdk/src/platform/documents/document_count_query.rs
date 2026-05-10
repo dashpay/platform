@@ -367,17 +367,21 @@ impl FromProof<DocumentCountQuery> for DocumentSplitCounts {
             .find(|wc| wc.operator == WhereOperator::In)
             .map(|wc| wc.field.clone());
 
-        let drive_query: DriveDocumentQuery =
-            (&request)
-                .try_into()
-                .map_err(|e| drive_proof_verifier::Error::RequestError {
-                    error: format!(
-                        "Failed to convert DocumentCountQuery to DriveDocumentQuery: {}",
-                        e
-                    ),
-                })?;
-
         if let Some(split_property) = split_property {
+            // Per-In-value split case: groups verified docs by the In
+            // field's serialized value. Goes through the materialize-
+            // and-count path (no per-In-value aggregate primitive
+            // exists yet), so the DriveDocumentQuery conversion is
+            // load-bearing here.
+            let drive_query: DriveDocumentQuery =
+                (&request)
+                    .try_into()
+                    .map_err(|e| drive_proof_verifier::Error::RequestError {
+                        error: format!(
+                            "Failed to convert DocumentCountQuery to DriveDocumentQuery: {}",
+                            e
+                        ),
+                    })?;
             DocumentSplitCounts::maybe_from_proof_with_split_property::<DriveDocumentQuery, _, _>(
                 drive_query,
                 &split_property,
@@ -387,10 +391,17 @@ impl FromProof<DocumentCountQuery> for DocumentSplitCounts {
                 provider,
             )
         } else {
-            // Total-count case: just count documents from the proof and
-            // return a single entry with empty key.
-            <DocumentCount as FromProof<DriveDocumentQuery>>::maybe_from_proof_with_metadata(
-                drive_query,
+            // Total-count case: a single entry with empty key. Route
+            // through `FromProof<DocumentCountQuery> for DocumentCount`
+            // (not the underlying `FromProof<DriveDocumentQuery>`) so
+            // range-only requests use the merk-level
+            // `verify_aggregate_count_proof` rather than the materialize-
+            // and-count path. The materialize path can't decode an
+            // `AggregateCountOnRange` proof, so without this dispatch
+            // `DocumentSplitCounts::fetch` with a range clause and no
+            // `In` would fail verifier-side.
+            <DocumentCount as FromProof<DocumentCountQuery>>::maybe_from_proof_with_metadata(
+                request,
                 response,
                 network,
                 platform_version,
