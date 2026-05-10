@@ -15,7 +15,7 @@ use dpp::platform_value::Value;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::error::query::QuerySyntaxError;
-use drive::query::{DocumentCountRequest, DocumentCountResponse, SplitCountEntry, WhereClause};
+use drive::query::{DocumentCountRequest, DocumentCountResponse, SplitCountEntry};
 use drive::util::grove_operations::GroveDBToUse;
 
 /// Wrap a vector of [`SplitCountEntry`]s plus current-state metadata
@@ -99,39 +99,13 @@ impl<C> Platform<C> {
                 }))
         };
 
-        // Parse where clauses into WhereClause structs so we can match them against
-        // index properties for the CountTree path.
-        let all_where_clauses: Vec<WhereClause> =
-            check_validation_result_with_data!(match &where_clause {
-                Value::Null => Ok(vec![]),
-                Value::Array(clauses) => clauses
-                    .iter()
-                    .map(|wc| {
-                        if let Value::Array(components) = wc {
-                            WhereClause::from_components(components).map_err(|e| match e {
-                                drive::error::Error::Query(qe) => QueryError::Query(qe),
-                                other => QueryError::InvalidArgument(format!(
-                                    "error parsing where clauses: {}",
-                                    other
-                                )),
-                            })
-                        } else {
-                            Err(QueryError::Query(
-                                QuerySyntaxError::InvalidFormatWhereClause(
-                                    "where clause must be an array",
-                                ),
-                            ))
-                        }
-                    })
-                    .collect::<Result<Vec<WhereClause>, QueryError>>(),
-                _ => Err(QueryError::Query(
-                    QuerySyntaxError::InvalidFormatWhereClause("where clause must be an array"),
-                )),
-            });
-
-        // Single rs-drive call owns mode detection, index picking, and
-        // per-mode dispatch. The handler is left with: build request,
-        // pre-clamp limit, map drive result to protobuf response.
+        // Hand the raw decoded where `Value` to drive — same pattern
+        // `query_documents_v0` uses, where decomposition into
+        // structured clauses lives inside `DriveDocumentQuery::
+        // from_decomposed_values`. Drive parses + validates per
+        // clause and surfaces any error as `Error::Query(...)`, which
+        // the existing match arm below maps to a query-validation
+        // result.
         //
         // Limit normalization: an unset (`None`) wire field would
         // otherwise mean "no limit" downstream — letting a caller
@@ -146,7 +120,6 @@ impl<C> Platform<C> {
         let request = DocumentCountRequest {
             contract: contract_ref,
             document_type,
-            where_clauses: all_where_clauses,
             raw_where_value: where_clause,
             return_distinct_counts_in_range,
             order_by_ascending,

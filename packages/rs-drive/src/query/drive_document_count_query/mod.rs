@@ -1632,10 +1632,16 @@ pub struct DocumentCountRequest<'a> {
     pub contract: &'a dpp::data_contract::DataContract,
     /// Resolved document type within `contract`.
     pub document_type: DocumentTypeRef<'a>,
-    /// Parsed where clauses for mode detection + executor dispatch.
-    pub where_clauses: Vec<WhereClause>,
-    /// Raw decoded where `Value` — needed only by the materialize-and-
-    /// count fallback (`PointLookupProof`); other modes ignore it.
+    /// Decoded `where` value as it came off the wire (after CBOR
+    /// decode). The dispatcher parses this into `Vec<WhereClause>`
+    /// internally for mode detection + per-mode executors that
+    /// consume structured clauses, and forwards the raw value as-is
+    /// to the materialize-and-count fallback (`PointLookupProof`)
+    /// which uses `DriveDocumentQuery::from_decomposed_values`.
+    ///
+    /// Mirrors how the regular `query_documents_v0` handler delegates
+    /// where-clause decomposition to drive: the abci layer just CBOR-
+    /// decodes and hands the raw value down.
     pub raw_where_value: dpp::platform_value::Value,
     /// `return_distinct_counts_in_range` flag from the request.
     pub return_distinct_counts_in_range: bool,
@@ -1680,6 +1686,39 @@ pub enum DocumentCountResponse {
     Proof(Vec<u8>),
 }
 
+/// Parse the decoded `where` value into structured [`WhereClause`]s.
+///
+/// Mirrors the per-clause loop the regular `query_documents_v0`
+/// handler delegates to `DriveDocumentQuery::from_decomposed_values`:
+/// the abci layer just CBOR-decodes the wire bytes into a `Value` and
+/// hands the raw value down. Drive owns the parsing so a future
+/// per-clause validation (e.g. forbidding operators in distinct mode)
+/// can live next to the executors instead of being scattered across
+/// abci handlers.
+///
+/// `Value::Null` (empty `where` field) → no clauses. Any other shape
+/// must be an outer array of inner arrays-of-components.
+#[cfg(feature = "server")]
+fn where_clauses_from_value(value: &dpp::platform_value::Value) -> Result<Vec<WhereClause>, Error> {
+    match value {
+        dpp::platform_value::Value::Null => Ok(Vec::new()),
+        dpp::platform_value::Value::Array(clauses) => clauses
+            .iter()
+            .map(|wc| match wc {
+                dpp::platform_value::Value::Array(components) => {
+                    WhereClause::from_components(components)
+                }
+                _ => Err(Error::Query(QuerySyntaxError::InvalidFormatWhereClause(
+                    "where clause must be an array",
+                ))),
+            })
+            .collect(),
+        _ => Err(Error::Query(QuerySyntaxError::InvalidFormatWhereClause(
+            "where clause must be an array",
+        ))),
+    }
+}
+
 #[cfg(feature = "server")]
 impl Drive {
     /// Single entry point for the unified `GetDocumentsCount` request.
@@ -1712,8 +1751,15 @@ impl Drive {
     ) -> Result<DocumentCountResponse, Error> {
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
+        // Parse where clauses out of the raw decoded `Value` once,
+        // then thread them through the per-mode executors. Mirrors
+        // how the regular `query_documents_v0` handler delegates this
+        // to `DriveDocumentQuery::from_decomposed_values` —
+        // where-clause decomposition is a drive concern, not abci's.
+        let where_clauses = where_clauses_from_value(&request.raw_where_value)?;
+
         let mode = DriveDocumentCountQuery::detect_mode(
-            &request.where_clauses,
+            &where_clauses,
             request.return_distinct_counts_in_range,
             request.prove,
         )?;
@@ -1727,7 +1773,7 @@ impl Drive {
                     contract_id,
                     request.document_type,
                     document_type_name,
-                    request.where_clauses,
+                    where_clauses,
                     transaction,
                     platform_version,
                 )?;
@@ -1773,7 +1819,7 @@ impl Drive {
                         contract_id,
                         request.document_type,
                         document_type_name,
-                        request.where_clauses,
+                        where_clauses,
                         options,
                         transaction,
                         platform_version,
@@ -1805,7 +1851,7 @@ impl Drive {
                         contract_id,
                         request.document_type,
                         document_type_name,
-                        request.where_clauses,
+                        where_clauses,
                         options,
                         transaction,
                         platform_version,
@@ -1817,7 +1863,7 @@ impl Drive {
                     contract_id,
                     request.document_type,
                     document_type_name,
-                    request.where_clauses,
+                    where_clauses,
                     transaction,
                     platform_version,
                 )?,
@@ -1827,7 +1873,7 @@ impl Drive {
                     contract_id,
                     request.document_type,
                     document_type_name,
-                    request.where_clauses,
+                    where_clauses,
                     transaction,
                     platform_version,
                 )?,
