@@ -129,27 +129,36 @@ pub fn verify_distinct_count_proof(
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
 ) -> Result<BTreeMap<Vec<u8>, u64>, Error> {
-    // Mirror the normal docs query's verify pattern (see
-    // `DriveDocumentQuery::verify_proof_keep_serialized_v0`): use
-    // `GroveDb::verify_query` (strict succinctness, no absence-proof
-    // requirement) when there's no cursor, and `verify_subset_query`
-    // (no succinctness — subset proof) when one is supplied. Both
-    // helpers have `absence_proofs_for_non_existing_searched_keys:
-    // false` baked in by grovedb because range queries fundamentally
-    // can't enumerate keys for absence checks (unbounded ranges hit
-    // `Error::NotSupported("terminal keys are not supported with
-    // unbounded ranges")` in `Query::terminal_keys_inner`).
+    // The path query built by
+    // `DriveDocumentCountQuery::distinct_count_path_query` always
+    // contains exactly one range `QueryItem` and no explicit `Key`
+    // items — `detect_mode` only routes `(range, no In, prove,
+    // distinct)` to `RangeDistinctProof`, so neither `In`-on-prefix
+    // nor point lookups can reach this verifier.
     //
-    // The hash-chain check leaf-merk → multi-layer envelope → GroveDB
-    // root still validates, and the returned elements are
-    // deserialized `Element::CountTree(_, lot_count, _)`s whose
-    // `count_value_or_default()` gives the per-distinct count we
-    // want. Counts are bound to `root_hash` through the same hash
-    // chain.
+    // For that invariant, `GroveDb::verify_query` is the correct
+    // helper:
+    // - `absence_proofs_for_non_existing_searched_keys: false` —
+    //   range items can't be enumerated for absence checks anyway
+    //   (`Query::terminal_keys_inner` errors `NotSupported` on
+    //   unbounded ranges), and there are no explicit `Key` items
+    //   whose absence we'd need to prove. Matches what the normal
+    //   docs handler does in `DriveDocumentQuery::
+    //   verify_proof_keep_serialized_v0`.
+    // - `verify_proof_succinctness: true` — proofs with unrequested
+    //   extra subtree data are still rejected.
     //
-    // Note: prove-distinct doesn't currently surface a cursor; when
-    // it does, switch the `false` branch to `verify_subset_query`
-    // matching the docs handler.
+    // **If `detect_mode` is ever extended to route `In`-bearing
+    // queries here**, this is the place that needs to branch: for
+    // `Key`-item queries the path query CAN be enumerated and
+    // `absence_proofs_for_non_existing_searched_keys: true` SHOULD
+    // be used (via `verify_query_with_options`) to detect a
+    // malicious server omitting some of the requested values from
+    // the proof.
+    //
+    // Cursor support (`start_after_split_key`) would similarly
+    // switch the no-cursor branch to `verify_subset_query` — same
+    // pattern the docs handler uses.
     let (root_hash, elements) = GroveDb::verify_query(
         &proof.grovedb_proof,
         path_query,
