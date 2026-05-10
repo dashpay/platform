@@ -2705,6 +2705,335 @@ mod range_countable_index_e2e_tests {
             operator: WhereOperator::GreaterThan,
             value: Value::Text("b".to_string()),
         }];
-        assert_aggregate_count_proof_returns(&drive, &contract, "car", where_clauses, expected);
+
+        use crate::query::DriveDocumentCountQuery;
+        use grovedb::GroveDb;
+        let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+            document_type.indexes(),
+            &where_clauses,
+        )
+        .expect("byLot range_countable index should be picked");
+        let query = DriveDocumentCountQuery {
+            document_type,
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "car".to_string(),
+            index,
+            where_clauses,
+        };
+
+        let proof_bytes = query
+            .execute_aggregate_count_with_proof(&drive, None, pv)
+            .expect("should generate aggregate count proof");
+
+        let path_query = query
+            .aggregate_count_path_query(pv)
+            .expect("path query should build");
+
+        let (root_hash, count) = GroveDb::verify_aggregate_count_query(
+            &proof_bytes,
+            &path_query,
+            &pv.drive.grove_version,
+        )
+        .expect("aggregate-count proof should verify");
+
+        // Inline-print under `cargo test -- --nocapture`. The
+        // envelope walk decodes the bincode-wrapped `GroveDBProof`,
+        // then for each layer's merk proof bytes uses
+        // `MerkProofDecoder` to print the per-layer Op stream. This
+        // is the same decoding the verifier above performed
+        // internally — surfacing it makes the O(log n) shape concrete
+        // (the leaf merk proof for `lot > "b"` is ~700 bytes
+        // regardless of how many of the 351 cars are in-range).
+        use grovedb::operations::proof::{
+            GroveDBProof, GroveDBProofV0, GroveDBProofV1, LayerProof, MerkOnlyLayerProof,
+            ProofBytes,
+        };
+        use grovedb::{MerkProofDecoder, MerkProofOp};
+
+        fn label_path_segment(key: &[u8]) -> String {
+            // Path keys are mostly small ascii, but the contract-id
+            // bytes and the `[1]` doctype-table marker aren't —
+            // hex-encode anything non-printable.
+            if key.iter().all(|b| b.is_ascii_graphic() || *b == b' ') {
+                format!("\"{}\"", String::from_utf8_lossy(key))
+            } else {
+                format!("0x{}", hex::encode(key))
+            }
+        }
+
+        fn print_ops(label: &str, depth: usize, merk_bytes: &[u8]) {
+            let indent = "  ".repeat(depth);
+            println!(
+                "{}{} (merk_proof = {} bytes)",
+                indent,
+                label,
+                merk_bytes.len()
+            );
+            for (i, op_res) in MerkProofDecoder::new(merk_bytes).enumerate() {
+                match op_res {
+                    Ok(MerkProofOp::Push(n)) => println!("{}  [{:>2}] Push({})", indent, i, n),
+                    Ok(MerkProofOp::PushInverted(n)) => {
+                        println!("{}  [{:>2}] PushInverted({})", indent, i, n)
+                    }
+                    Ok(MerkProofOp::Parent) => println!("{}  [{:>2}] Parent", indent, i),
+                    Ok(MerkProofOp::Child) => println!("{}  [{:>2}] Child", indent, i),
+                    Ok(MerkProofOp::ParentInverted) => {
+                        println!("{}  [{:>2}] ParentInverted", indent, i)
+                    }
+                    Ok(MerkProofOp::ChildInverted) => {
+                        println!("{}  [{:>2}] ChildInverted", indent, i)
+                    }
+                    Err(e) => println!("{}  [{:>2}] <decode error: {}>", indent, i, e),
+                }
+            }
+        }
+
+        fn walk_v0(layer: &MerkOnlyLayerProof, depth: usize, label: String) {
+            print_ops(&label, depth, &layer.merk_proof);
+            for (k, lower) in &layer.lower_layers {
+                walk_v0(
+                    lower,
+                    depth + 1,
+                    format!(
+                        "layer @ depth {} (path key {})",
+                        depth + 1,
+                        label_path_segment(k)
+                    ),
+                );
+            }
+        }
+
+        fn walk_v1(layer: &LayerProof, depth: usize, label: String) {
+            let bytes = match &layer.merk_proof {
+                ProofBytes::Merk(b) => b.as_slice(),
+                _ => {
+                    println!(
+                        "{}{}: <non-merk leaf bytes — unexpected for aggregate-count>",
+                        "  ".repeat(depth),
+                        label
+                    );
+                    return;
+                }
+            };
+            print_ops(&label, depth, bytes);
+            for (k, lower) in &layer.lower_layers {
+                walk_v1(
+                    lower,
+                    depth + 1,
+                    format!(
+                        "layer @ depth {} (path key {})",
+                        depth + 1,
+                        label_path_segment(k)
+                    ),
+                );
+            }
+        }
+
+        let config = bincode::config::standard()
+            .with_big_endian()
+            .with_limit::<{ 256 * 1024 * 1024 }>();
+        let (envelope, _): (GroveDBProof, _) =
+            bincode::decode_from_slice(&proof_bytes, config).expect("envelope decodes");
+
+        println!("=== parking-lot aggregate-count proof ===");
+        println!("inserted docs: 351 (1 + 2 + ... + 26)");
+        println!("query: lot > \"b\"");
+        println!("verified count: {}", count);
+        println!("verified root hash: {}", hex::encode(root_hash));
+        println!("envelope size: {} bytes", proof_bytes.len());
+
+        match envelope {
+            GroveDBProof::V0(GroveDBProofV0 { root_layer, .. }) => {
+                walk_v0(&root_layer, 0, "layer @ depth 0 (root)".to_string())
+            }
+            GroveDBProof::V1(GroveDBProofV1 { root_layer }) => {
+                walk_v1(&root_layer, 0, "layer @ depth 0 (root)".to_string())
+            }
+        }
+        println!("=== end proof ===");
+
+        assert_ne!(root_hash, [0u8; 32], "root hash should not be zero");
+        assert_eq!(
+            count, expected,
+            "expected {} cars in parking lots > b (sum of 3+4+...+26)",
+            expected
+        );
+    }
+
+    /// Same parking-lot fixture as the prove-path scenario, but
+    /// asking the no-proof distinct-mode executor for *per-lot*
+    /// counts in the same range. Where the aggregate-count proof
+    /// returns one number (348 = total cars in lots > b), distinct
+    /// mode walks the property-name `ProvableCountTree` and emits
+    /// one entry per distinct in-range value:
+    /// `c=3, d=4, e=5, ..., z=26`.
+    ///
+    /// This is the no-proof companion to grovedb#656's primitive:
+    /// the prove path was specifically restricted to a single
+    /// aggregate (the merk-level proof returns one u64), so getting
+    /// per-distinct-value counts requires the executor to walk the
+    /// children of the property-name tree directly. That walk is
+    /// cheaper than the materialize-and-count fallback (no documents
+    /// are loaded) but isn't cryptographically committed by a single
+    /// proof shape — `return_distinct_counts_in_range = true` is
+    /// rejected on the prove path for that reason (see
+    /// `book/src/drive/document-count-trees.md`).
+    ///
+    /// The fixture is identical to
+    /// `aggregate_count_proof_counts_cars_in_parking_lots_greater_than_b`
+    /// — duplicating the setup keeps each test independently
+    /// runnable rather than introducing a fragile shared-fixture
+    /// helper.
+    #[test]
+    fn range_count_executor_returns_per_lot_counts_for_lots_greater_than_b() {
+        use crate::query::{
+            DriveDocumentCountQuery, RangeCountOptions, WhereClause, WhereOperator,
+        };
+        use dpp::platform_value::Value;
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let pv = PlatformVersion::latest();
+
+        let factory = dpp::data_contract::DataContractFactory::new(PROTOCOL_VERSION_V12)
+            .expect("expected to create factory");
+        let document_schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "lot": { "type": "string", "position": 0, "maxLength": 4 },
+            },
+            "indices": [{
+                "name": "byLot",
+                "properties": [{"lot": "asc"}],
+                "countable": "countable",
+                "rangeCountable": true,
+            }],
+            "additionalProperties": false,
+        });
+        let schemas = platform_value!({ "car": document_schema });
+        let contract = factory
+            .create_with_value_config(generate_random_identifier_struct(), 0, schemas, None, None)
+            .expect("create parking-lot contract")
+            .data_contract_owned();
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("apply parking-lot contract");
+
+        let document_type = contract
+            .document_type_for_name("car")
+            .expect("car document type exists");
+
+        let mut seed = 1u64;
+        for (idx, letter) in ('a'..='z').enumerate() {
+            let car_count = idx + 1;
+            for _ in 0..car_count {
+                let mut doc = document_type
+                    .random_document(Some(seed), pv)
+                    .expect("random document");
+                let mut props = std::collections::BTreeMap::new();
+                props.insert("lot".to_string(), Value::Text(letter.to_string()));
+                doc.set_properties(props);
+
+                drive
+                    .add_document_for_contract(
+                        DocumentAndContractInfo {
+                            owned_document_info: OwnedDocumentInfo {
+                                document_info: DocumentRefInfo((&doc, None)),
+                                owner_id: None,
+                            },
+                            contract: &contract,
+                            document_type,
+                        },
+                        false,
+                        BlockInfo::default(),
+                        true,
+                        None,
+                        pv,
+                        None,
+                    )
+                    .expect("expected to insert car document");
+                seed += 1;
+            }
+        }
+
+        // Range query: `lot > "b"` (same predicate as the prove
+        // test). Distinct mode → one entry per distinct in-range
+        // value, each carrying that lot's car count.
+        let where_clauses = vec![WhereClause {
+            field: "lot".to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: Value::Text("b".to_string()),
+        }];
+        let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+            document_type.indexes(),
+            &where_clauses,
+        )
+        .expect("byLot range_countable index should be picked");
+
+        let query = DriveDocumentCountQuery {
+            document_type,
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "car".to_string(),
+            index,
+            where_clauses,
+        };
+
+        let entries = query
+            .execute_range_count_no_proof(
+                &drive,
+                &RangeCountOptions {
+                    distinct: true,
+                    limit: None,
+                    start_after_split_key: None,
+                    order_by_ascending: true,
+                },
+                None,
+                pv,
+            )
+            .expect("distinct-range count should succeed");
+
+        // 24 distinct lots in range (c through z).
+        assert_eq!(
+            entries.len(),
+            24,
+            "expected one entry per lot from c through z"
+        );
+
+        // Each entry: lot letter (as serialized key bytes) → its
+        // alphabet-position car count. Ascending serialized-key
+        // order matches alphabetical order for ASCII single chars.
+        for (i, entry) in entries.iter().enumerate() {
+            let expected_letter = (b'c' + i as u8) as char;
+            let expected_count = (i + 3) as u64; // c → 3, d → 4, …, z → 26
+            assert_eq!(
+                entry.key,
+                expected_letter.to_string().as_bytes().to_vec(),
+                "entry {} should be lot '{}'",
+                i,
+                expected_letter
+            );
+            assert_eq!(
+                entry.count, expected_count,
+                "lot '{}' should have {} cars",
+                expected_letter, expected_count
+            );
+        }
+
+        // Sum-check: per-lot counts must total the prove-path
+        // aggregate (348). Different code path, same answer — the
+        // distinct walk and the merk-level aggregate are obligated
+        // to agree.
+        let total: u64 = entries.iter().map(|e| e.count).sum();
+        assert_eq!(
+            total, 348,
+            "sum of per-lot counts must equal the aggregate (3+4+...+26 = 348)"
+        );
     }
 }
