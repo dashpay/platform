@@ -925,3 +925,210 @@ fn test_count_query_unique_countable_index_returns_correct_count() {
          (Reference at [0] returns count_value_or_default = 1)"
     );
 }
+
+#[cfg(test)]
+mod range_countable_picker_tests {
+    //! Coverage for [`DriveDocumentCountQuery::find_range_countable_index_for_where_clauses`].
+    //!
+    //! Builds a small in-memory `BTreeMap<String, Index>` rather than going
+    //! through a full DataContract, since we're only testing the picker
+    //! rule (prefix match + range terminator + range_countable=true) and
+    //! the contract-level wiring is exercised by the e2e tests under
+    //! `drive::contract::insert::insert_contract::v0::range_countable_index_e2e_tests`.
+
+    use super::*;
+    use dpp::data_contract::document_type::{Index, IndexCountability, IndexProperty};
+
+    fn make_index(
+        name: &str,
+        properties: &[&str],
+        countable: IndexCountability,
+        range_countable: bool,
+    ) -> Index {
+        Index {
+            name: name.to_string(),
+            properties: properties
+                .iter()
+                .map(|p| IndexProperty {
+                    name: p.to_string(),
+                    ascending: true,
+                })
+                .collect(),
+            unique: false,
+            null_searchable: true,
+            contested_index: None,
+            countable,
+            range_countable,
+        }
+    }
+
+    fn make_indexes(indexes: Vec<Index>) -> std::collections::BTreeMap<String, Index> {
+        indexes.into_iter().map(|i| (i.name.clone(), i)).collect()
+    }
+
+    /// Single-property range_countable index — straightforward range
+    /// query over `color`.
+    #[test]
+    fn picks_single_property_range_countable_index() {
+        let indexes = make_indexes(vec![make_index(
+            "byColor",
+            &["color"],
+            IndexCountability::Countable,
+            true,
+        )]);
+        let where_clauses = vec![WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: Value::Text("a".to_string()),
+        }];
+        let picked = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+            &indexes,
+            &where_clauses,
+        );
+        assert!(picked.is_some());
+        assert_eq!(picked.unwrap().name, "byColor");
+    }
+
+    /// Compound range_countable `[brand, color]`: Equal on `brand` (the
+    /// prefix), range on `color` (the terminator).
+    #[test]
+    fn picks_compound_range_countable_index_with_equal_prefix() {
+        let indexes = make_indexes(vec![make_index(
+            "byBrandColor",
+            &["brand", "color"],
+            IndexCountability::Countable,
+            true,
+        )]);
+        let where_clauses = vec![
+            WhereClause {
+                field: "brand".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("acme".to_string()),
+            },
+            WhereClause {
+                field: "color".to_string(),
+                operator: WhereOperator::Between,
+                value: Value::Array(vec![
+                    Value::Text("a".to_string()),
+                    Value::Text("z".to_string()),
+                ]),
+            },
+        ];
+        let picked = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+            &indexes,
+            &where_clauses,
+        );
+        assert!(picked.is_some());
+        assert_eq!(picked.unwrap().name, "byBrandColor");
+    }
+
+    /// Range on a non-terminator property must not match. For
+    /// `[brand, color]`, a range on `brand` (with no clause on `color`)
+    /// would not be answerable via the index walker model — there's no
+    /// CountTree at the brand value level.
+    #[test]
+    fn rejects_range_on_non_terminator_property() {
+        let indexes = make_indexes(vec![make_index(
+            "byBrandColor",
+            &["brand", "color"],
+            IndexCountability::Countable,
+            true,
+        )]);
+        let where_clauses = vec![WhereClause {
+            field: "brand".to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: Value::Text("a".to_string()),
+        }];
+        assert!(
+            DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+                &indexes,
+                &where_clauses,
+            )
+            .is_none(),
+            "a range on a non-terminator property must not match — the storage \
+             layout doesn't put a ProvableCountTree at that level"
+        );
+    }
+
+    /// An index without `range_countable: true` must not match even if
+    /// the property structure aligns. The storage layout for these is
+    /// plain NormalTree — no CountTree counts to walk.
+    #[test]
+    fn rejects_non_range_countable_index() {
+        let indexes = make_indexes(vec![make_index(
+            "byColor",
+            &["color"],
+            IndexCountability::Countable,
+            false, // <-- NOT range_countable
+        )]);
+        let where_clauses = vec![WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: Value::Text("a".to_string()),
+        }];
+        assert!(
+            DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+                &indexes,
+                &where_clauses,
+            )
+            .is_none()
+        );
+    }
+
+    /// Two range operators should never resolve to a single index — the
+    /// PathQuery model can express only one range at a time.
+    #[test]
+    fn rejects_multiple_range_operators() {
+        let indexes = make_indexes(vec![make_index(
+            "byColor",
+            &["color"],
+            IndexCountability::Countable,
+            true,
+        )]);
+        let where_clauses = vec![
+            WhereClause {
+                field: "color".to_string(),
+                operator: WhereOperator::GreaterThan,
+                value: Value::Text("a".to_string()),
+            },
+            WhereClause {
+                field: "color".to_string(),
+                operator: WhereOperator::LessThan,
+                value: Value::Text("z".to_string()),
+            },
+        ];
+        assert!(
+            DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+                &indexes,
+                &where_clauses,
+            )
+            .is_none(),
+            "two separate range operators must be rejected (use Between to express a bounded range)"
+        );
+    }
+
+    /// Pure point-lookup queries should NOT match the range picker —
+    /// they belong on `find_countable_index_for_where_clauses` instead.
+    #[test]
+    fn rejects_pure_point_lookup_queries() {
+        let indexes = make_indexes(vec![make_index(
+            "byColor",
+            &["color"],
+            IndexCountability::Countable,
+            true,
+        )]);
+        let where_clauses = vec![WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text("red".to_string()),
+        }];
+        assert!(
+            DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+                &indexes,
+                &where_clauses,
+            )
+            .is_none(),
+            "no range operator → not the range picker's job"
+        );
+    }
+}

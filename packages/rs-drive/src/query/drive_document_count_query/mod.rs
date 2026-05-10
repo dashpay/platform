@@ -78,6 +78,25 @@ impl<'a> DriveDocumentCountQuery<'a> {
         matches!(op, WhereOperator::Equal | WhereOperator::In)
     }
 
+    /// Returns `true` if `op` is a range operator that can be served by a
+    /// `range_countable` index walking the property-name `ProvableCountTree`'s
+    /// children. The non-prefix portion of a range count query carries
+    /// exactly one range operator on the index's last property.
+    pub fn is_range_operator(op: WhereOperator) -> bool {
+        matches!(
+            op,
+            WhereOperator::GreaterThan
+                | WhereOperator::GreaterThanOrEquals
+                | WhereOperator::LessThan
+                | WhereOperator::LessThanOrEquals
+                | WhereOperator::Between
+                | WhereOperator::BetweenExcludeBounds
+                | WhereOperator::BetweenExcludeLeft
+                | WhereOperator::BetweenExcludeRight
+                | WhereOperator::StartsWith
+        )
+    }
+
     /// Returns `true` if any where clause uses an operator the count fast path
     /// cannot serve. Callers should treat this as a query-rejection signal.
     pub fn has_unsupported_operator(where_clauses: &[WhereClause]) -> bool {
@@ -141,6 +160,79 @@ impl<'a> DriveDocumentCountQuery<'a> {
         }
 
         best_match.map(|(index, _)| index)
+    }
+
+    /// Finds a `range_countable` index that can serve a range-count query.
+    ///
+    /// Match criteria:
+    /// - All `Equal`/`In` where-clause fields form a prefix of the index
+    ///   properties.
+    /// - There is exactly one range-operator where-clause, on a property
+    ///   that is the *last* property of the index (the IndexLevel
+    ///   terminator). This is the property whose values get walked.
+    /// - The index has `range_countable = true` and `countable.is_countable()`.
+    ///
+    /// Returns `None` if no such index exists or if there's more than one
+    /// range operator in the where clauses (which would require nested range
+    /// walks the current model doesn't support). Pure point-lookup queries
+    /// (no range operator) should fall back to
+    /// [`Self::find_countable_index_for_where_clauses`].
+    pub fn find_range_countable_index_for_where_clauses<'b>(
+        indexes: &'b BTreeMap<String, Index>,
+        where_clauses: &[WhereClause],
+    ) -> Option<&'b Index> {
+        let range_clauses: Vec<&WhereClause> = where_clauses
+            .iter()
+            .filter(|wc| Self::is_range_operator(wc.operator))
+            .collect();
+        if range_clauses.len() != 1 {
+            return None;
+        }
+        let range_clause = range_clauses[0];
+
+        // Reject any operator that's neither indexable (Equal/In) nor a
+        // range operator — anything else has no defined count semantics.
+        if where_clauses.iter().any(|wc| {
+            !Self::is_indexable_for_count(wc.operator) && !Self::is_range_operator(wc.operator)
+        }) {
+            return None;
+        }
+
+        let prefix_fields: BTreeSet<&str> = where_clauses
+            .iter()
+            .filter(|wc| Self::is_indexable_for_count(wc.operator))
+            .map(|wc| wc.field.as_str())
+            .collect();
+
+        for index in indexes.values() {
+            if !index.range_countable || !index.countable.is_countable() {
+                continue;
+            }
+
+            // Walk the index properties: prefix matches must come first,
+            // followed by the range property as the LAST element.
+            let mut prefix_len = 0usize;
+            for prop in &index.properties {
+                if prefix_fields.contains(prop.name.as_str()) {
+                    prefix_len += 1;
+                } else {
+                    break;
+                }
+            }
+            if prefix_len < prefix_fields.len() {
+                continue;
+            }
+            if prefix_len + 1 != index.properties.len() {
+                // Range property must be the terminator (last property).
+                continue;
+            }
+            let range_prop = &index.properties[prefix_len];
+            if range_prop.name == range_clause.field {
+                return Some(index);
+            }
+        }
+
+        None
     }
 
     /// Finds a countable index where:
