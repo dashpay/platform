@@ -3174,7 +3174,7 @@ mod range_countable_index_e2e_tests {
         // bound to root_hash via node_hash_with_count, so once this
         // returns we just read each element's count.
         let path_query = query
-            .distinct_count_path_query(TEST_LIMIT, pv)
+            .distinct_count_path_query(Some(TEST_LIMIT), pv)
             .expect("path query should build");
 
         // Mirror the normal docs query's verify pattern: `verify_query`
@@ -3515,7 +3515,7 @@ mod range_countable_index_e2e_tests {
             .execute_distinct_count_with_proof(&drive, LIMIT, None, pv)
             .expect("proof");
         let path_query = query
-            .distinct_count_path_query(LIMIT, pv)
+            .distinct_count_path_query(Some(LIMIT), pv)
             .expect("path query");
 
         let (root_hash, elements) =
@@ -3646,5 +3646,180 @@ mod range_countable_index_e2e_tests {
         // Silence unused-import for `DriveDocumentCountQuery` —
         // referenced as a type for `PhantomData` only.
         let _ = std::marker::PhantomData::<DriveDocumentCountQuery>;
+    }
+
+    /// The prove-distinct path supports `In` on prefix via grovedb's
+    /// native subquery primitive: outer `Query` has one `Key(...)`
+    /// per In value at the In-bearing prop's property-name subtree,
+    /// `set_subquery_path` carries any post-In Equal pairs +
+    /// terminator name, `set_subquery` is the range item. The
+    /// resulting proof emits per-(brand,color) elements which the
+    /// verifier sums across brand forks to produce per-color counts.
+    ///
+    /// Mirrors the no-proof
+    /// `range_count_with_in_on_prefix_forks_and_merges` test —
+    /// same fixture (3 acme+red, 2 acme+blue, 2 contoso+red,
+    /// 1 contoso+green), same predicate (`brand IN (acme, contoso)
+    /// AND color > "blue"`), same expected per-color counts
+    /// (red=5, green=1). Pins that both code paths agree on the
+    /// compound shape, and that the verifier's cross-fork sum
+    /// matches the no-proof executor's cross-fork merge.
+    #[test]
+    fn distinct_count_proof_with_in_on_prefix_sums_across_brands() {
+        use crate::query::{DriveDocumentCountQuery, WhereClause, WhereOperator};
+        use dpp::platform_value::Value;
+        use grovedb::{Element, GroveDb};
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let pv = PlatformVersion::latest();
+
+        let factory =
+            dpp::data_contract::DataContractFactory::new(PROTOCOL_VERSION_V12).expect("factory");
+        let document_schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "brand": { "type": "string", "position": 0, "maxLength": 32 },
+                "color": { "type": "string", "position": 1, "maxLength": 32 },
+            },
+            "indices": [{
+                "name": "byBrandColor",
+                "properties": [{"brand": "asc"}, {"color": "asc"}],
+                "countable": "countable",
+                "rangeCountable": true,
+            }],
+            "additionalProperties": false,
+        });
+        let schemas = platform_value!({ "widget": document_schema });
+        let contract = factory
+            .create_with_value_config(generate_random_identifier_struct(), 0, schemas, None, None)
+            .expect("create contract")
+            .data_contract_owned();
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("apply contract");
+        let document_type = contract
+            .document_type_for_name("widget")
+            .expect("widget exists");
+
+        // Same fixture as the no-proof counterpart.
+        let docs: Vec<(&str, &str)> = vec![
+            ("acme", "red"),
+            ("acme", "red"),
+            ("acme", "red"),
+            ("acme", "blue"),
+            ("acme", "blue"),
+            ("contoso", "red"),
+            ("contoso", "red"),
+            ("contoso", "green"),
+        ];
+        for (i, (brand, color)) in docs.iter().enumerate() {
+            let mut doc = document_type
+                .random_document(Some((i + 1) as u64), pv)
+                .expect("random doc");
+            let mut props = std::collections::BTreeMap::new();
+            props.insert("brand".to_string(), Value::Text(brand.to_string()));
+            props.insert("color".to_string(), Value::Text(color.to_string()));
+            doc.set_properties(props);
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&doc, None)),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    pv,
+                    None,
+                )
+                .expect("insert");
+        }
+
+        let where_clauses = vec![
+            WhereClause {
+                field: "brand".to_string(),
+                operator: WhereOperator::In,
+                value: Value::Array(vec![
+                    Value::Text("acme".to_string()),
+                    Value::Text("contoso".to_string()),
+                ]),
+            },
+            WhereClause {
+                field: "color".to_string(),
+                operator: WhereOperator::GreaterThan,
+                value: Value::Text("blue".to_string()),
+            },
+        ];
+        let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+            document_type.indexes(),
+            &where_clauses,
+        )
+        .expect("byBrandColor picked");
+        let query = DriveDocumentCountQuery {
+            document_type,
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "widget".to_string(),
+            index,
+            where_clauses,
+        };
+
+        const LIMIT: u16 = 100;
+        let proof_bytes = query
+            .execute_distinct_count_with_proof(&drive, LIMIT, None, pv)
+            .expect("proof");
+        assert!(!proof_bytes.is_empty(), "proof must not be empty");
+
+        let path_query = query
+            .distinct_count_path_query(Some(LIMIT), pv)
+            .expect("path query");
+
+        // `lot > "blue"` is one-sided — disable absence proofs
+        // (same reason as the other distinct-prove tests).
+        let verify_options = grovedb::VerifyOptions {
+            absence_proofs_for_non_existing_searched_keys: false,
+            ..grovedb::VerifyOptions::default()
+        };
+        let (root_hash, elements) = GroveDb::verify_query_with_options(
+            &proof_bytes,
+            &path_query,
+            verify_options,
+            &pv.drive.grove_version,
+        )
+        .expect("verify");
+        assert_ne!(root_hash, [0u8; 32]);
+
+        // Sum per terminator key across In-forks — same logic as
+        // `verify_distinct_count_proof`.
+        let mut counts: std::collections::BTreeMap<Vec<u8>, u64> =
+            std::collections::BTreeMap::new();
+        for (_path, key, elem) in elements {
+            if let Some(e) = elem {
+                let _: Element = e.clone();
+                *counts.entry(key).or_insert(0) += e.count_value_or_default();
+            }
+        }
+
+        // Expected: red=5 (3 acme + 2 contoso), green=1 (contoso only).
+        // blue excluded by `> blue`.
+        assert_eq!(counts.len(), 2, "expected two distinct in-range colors");
+        assert_eq!(counts.get(b"red".as_slice()), Some(&5));
+        assert_eq!(counts.get(b"green".as_slice()), Some(&1));
+
+        // Cross-path agreement: sum of per-color counts matches the
+        // sum-mode no-proof answer (6 docs).
+        let total: u64 = counts.values().sum();
+        assert_eq!(total, 6);
     }
 }

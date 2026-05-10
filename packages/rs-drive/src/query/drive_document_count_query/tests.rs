@@ -1172,15 +1172,51 @@ mod detect_mode_tests {
         ));
     }
 
-    /// Range + In together → rejected (ambiguous output shape).
+    /// Range + In together → routed by mode:
+    /// - `(range, In, no-proof, _)` → `RangeNoProof` (executor uses
+    ///   `distinct_count_path_query`'s compound shape with grovedb
+    ///   subqueries to cartesian-fork over the In values).
+    /// - `(range, In, prove, distinct=true)` → `RangeDistinctProof`
+    ///   (same compound shape, just runs through the prove path).
+    /// - `(range, In, prove, distinct=false)` → **rejected** because
+    ///   grovedb's `AggregateCountOnRange` primitive wraps a single
+    ///   inner range and can't cartesian-fork at the merk layer.
     #[test]
-    fn range_plus_in_rejected() {
+    fn range_plus_in_routes_by_mode() {
         let clauses = vec![in_clause("a"), gt_clause("b")];
-        let err = DriveDocumentCountQuery::detect_mode(&clauses, false, false).unwrap_err();
-        assert!(matches!(
+
+        // No-proof — both sum and distinct route through RangeNoProof,
+        // which uses the unified `distinct_count_path_query` builder
+        // and applies `options.distinct` in post-processing.
+        assert_eq!(
+            DriveDocumentCountQuery::detect_mode(&clauses, false, false).unwrap(),
+            DocumentCountMode::RangeNoProof,
+        );
+        assert_eq!(
+            DriveDocumentCountQuery::detect_mode(&clauses, true, false).unwrap(),
+            DocumentCountMode::RangeNoProof,
+        );
+
+        // Prove + distinct — routes to RangeDistinctProof. The path
+        // query carries In as outer `Key`s and the range as the
+        // subquery; the verifier reconstructs the same shape.
+        assert_eq!(
+            DriveDocumentCountQuery::detect_mode(&clauses, true, true).unwrap(),
+            DocumentCountMode::RangeDistinctProof,
+        );
+
+        // Prove + !distinct (aggregate) — still rejected, the
+        // AggregateCountOnRange primitive can't fork.
+        let err = DriveDocumentCountQuery::detect_mode(&clauses, false, true).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                QuerySyntaxError::InvalidWhereClauseComponents(msg)
+                    if msg.contains("not supported on the aggregate prove path")
+            ),
+            "expected aggregate-prove rejection, got: {:?}",
             err,
-            QuerySyntaxError::InvalidWhereClauseComponents(msg) if msg.contains("cannot also carry an `in`")
-        ));
+        );
     }
 
     /// `return_distinct_counts_in_range = true` without a range → rejected.

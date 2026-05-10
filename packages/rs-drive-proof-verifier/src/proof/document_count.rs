@@ -174,8 +174,17 @@ pub fn verify_distinct_count_proof(
 
     verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-    Ok(elements
-        .into_iter()
-        .filter_map(|(_path, key, elem)| elem.map(|e| (key, e.count_value_or_default())))
-        .collect())
+    // Sum per terminator key. For flat queries (no In on prefix)
+    // each terminator value appears once → behaves like a collect.
+    // For compound queries (In on prefix), the same terminator
+    // value may appear under multiple outer In keys (e.g. color
+    // "red" under brand=acme and brand=contoso) → sum across forks.
+    // Matches the no-proof executor's cross-fork merge semantic.
+    let mut counts: BTreeMap<Vec<u8>, u64> = BTreeMap::new();
+    for (_path, key, elem) in elements {
+        if let Some(e) = elem {
+            *counts.entry(key).or_insert(0) += e.count_value_or_default();
+        }
+    }
+    Ok(counts)
 }

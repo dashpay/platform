@@ -237,11 +237,20 @@ impl<'a> DriveDocumentCountQuery<'a> {
         let has_range = range_count == 1;
         let has_in = in_count == 1;
 
-        if has_range && has_in {
+        // `range + In` is only rejected on the aggregate prove path
+        // (grovedb's `AggregateCountOnRange` primitive wraps a single
+        // inner range and can't cartesian-fork over multiple In
+        // values at the merk layer — see the comment on
+        // `aggregate_count_path_query`). For distinct modes (both
+        // no-proof and prove) and for total-range-no-proof, the
+        // `distinct_count_path_query` builder handles In on prefix
+        // via grovedb's native subquery primitive.
+        if has_range && has_in && prove && !return_distinct_counts_in_range {
             return Err(QuerySyntaxError::InvalidWhereClauseComponents(
-                "range count queries cannot also carry an `in` clause; pick either \
-                 per-value split (In) or per-distinct-value range \
-                 (return_distinct_counts_in_range)",
+                "range count queries with an `in` clause are not supported on the \
+                 aggregate prove path; use `return_distinct_counts_in_range = true` \
+                 for compound In-on-prefix prove queries, or `prove = false` for the \
+                 no-proof variant",
             ));
         }
 
@@ -253,31 +262,44 @@ impl<'a> DriveDocumentCountQuery<'a> {
 
         Ok(
             match (has_range, has_in, prove, return_distinct_counts_in_range) {
-                // Range + prove + distinct: per-distinct-value counts come
-                // from a regular range proof against the property-name
-                // `ProvableCountTree`. The `KVCount` ops in the proof carry
-                // per-key counts already bound to the merk root via
-                // `node_hash_with_count`; no `AggregateCountOnRange`
-                // wrapper.
-                (true, false, true, true) => DocumentCountMode::RangeDistinctProof,
-                // Range + prove + summed: `AggregateCountOnRange` collapse
-                // — single u64 verified out.
+                // Range + prove + distinct (with or without In on
+                // prefix): per-distinct-value counts come from a
+                // regular range proof against the property-name
+                // `ProvableCountTree`. With In on prefix the path
+                // query uses grovedb's subquery primitive to
+                // cartesian-fork; the verifier walks the same
+                // compound shape.
+                (true, _, true, true) => DocumentCountMode::RangeDistinctProof,
+                // Range + prove + summed (no In): `AggregateCountOnRange`
+                // collapse — single u64 verified out. The In case is
+                // rejected above.
                 (true, false, true, false) => DocumentCountMode::RangeProof,
-                (true, false, false, _) => DocumentCountMode::RangeNoProof,
+                // Range + no-proof: the executor uses the same
+                // `distinct_count_path_query` builder; In on prefix
+                // forks via grovedb subquery at execution time. Sum
+                // vs. distinct comes from `RangeCountOptions.distinct`
+                // applied to the merged result.
+                (true, _, false, _) => DocumentCountMode::RangeNoProof,
                 (false, true, false, _) => DocumentCountMode::PerInValue,
-                // `In` + `prove = true`: route to the materialize-and-count
-                // proof path. The SDK's `FromProof<DocumentCountQuery>` for
-                // `DocumentSplitCounts` then groups verified documents by
-                // the `In` field's serialized value to produce per-key
-                // count entries. There's no aggregate-proof primitive that
-                // emits one `(key, count)` per In value yet, but the
-                // materialize path is correct, just bounded at u16::MAX.
+                // `In` + `prove = true` (no range): route to the
+                // materialize-and-count proof path. The SDK's
+                // `FromProof<DocumentCountQuery>` for
+                // `DocumentSplitCounts` then groups verified
+                // documents by the `In` field's serialized value to
+                // produce per-key count entries. There's no
+                // aggregate-proof primitive that emits one
+                // `(key, count)` per In value yet, but the
+                // materialize path is correct, just bounded at
+                // u16::MAX.
                 (false, true, true, _) => DocumentCountMode::PointLookupProof,
                 (false, false, true, _) => DocumentCountMode::PointLookupProof,
                 (false, false, false, _) => DocumentCountMode::Total,
-                // (true, true, _, _) is rejected by the has_range && has_in
-                // check above.
-                (true, true, _, _) => unreachable!("range + In is rejected above"),
+                // (true, true, true, false) — range + In on the
+                // aggregate prove path — is rejected by the
+                // explicit early check above.
+                (true, true, true, false) => unreachable!(
+                    "range + In + prove + !distinct is rejected before the dispatch match"
+                ),
             },
         )
     }
@@ -766,153 +788,69 @@ impl<'a> DriveDocumentCountQuery<'a> {
     ) -> Result<Vec<SplitCountEntry>, Error> {
         let drive_version = &platform_version.drive;
 
-        let range_clause = self
-            .where_clauses
-            .iter()
-            .find(|wc| Self::is_range_operator(wc.operator))
-            .ok_or_else(|| {
-                Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
-                    "execute_range_count_no_proof requires exactly one range where-clause",
-                ))
-            })?;
-        if self
-            .where_clauses
-            .iter()
-            .filter(|wc| Self::is_range_operator(wc.operator))
-            .count()
-            > 1
-        {
-            return Err(Error::Query(
-                QuerySyntaxError::InvalidWhereClauseComponents(
-                    "range count supports only one range where-clause",
-                ),
-            ));
-        }
-        let query_item = self.range_clause_to_query_item(range_clause, platform_version)?;
+        // Build a single path query via the unified
+        // `distinct_count_path_query` builder. For an Equal-only
+        // prefix this collapses to a flat range-only query at the
+        // terminator's property-name subtree; for an In-on-prefix
+        // it becomes a compound query with one outer `Key` per In
+        // value and a `subquery_path`/`subquery` descending to the
+        // terminator's range item. Either way, grovedb's native
+        // primitive does the walk (no Rust-side cartesian loop), and
+        // emits one `(terminator_key, CountTree(_, count, _))` pair
+        // per matched in-range key per outer fork.
+        //
+        // We pass `None` for the path-query limit so the underlying
+        // walk sees every emitted element before cross-fork
+        // summing. The `options.limit` truncation happens at the
+        // result-set level below, after the merge — applying limit
+        // pre-merge would cut off elements that should sum with
+        // already-counted ones.
+        let path_query = self.distinct_count_path_query(None, platform_version)?;
 
-        // Build the prefix path: [contract_doc, doctype, prop_a, val_a,
-        // prop_b, val_b, ...]. Equal clauses contribute one path each;
-        // In clauses fork into multiple paths.
-        let base_path = vec![
-            vec![RootTree::DataContractDocuments as u8],
-            self.contract_id.to_vec(),
-            vec![1u8],
-            self.document_type_name.as_bytes().to_vec(),
-        ];
-
-        // Prefix props are everything in the index up to (but not
-        // including) the range property — by picker invariant the range
-        // property is `index.properties.last()`.
-        let prefix_props = &self.index.properties[..self.index.properties.len() - 1];
-        let range_prop_name = &self
-            .index
-            .properties
-            .last()
-            .ok_or_else(|| {
-                Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
-                    "range_countable index must have at least one property",
-                ))
-            })?
-            .name;
-
-        let mut prefix_paths: Vec<Vec<Vec<u8>>> = vec![base_path];
-        for prop in prefix_props {
-            let clause = self.where_clauses.iter().find(|wc| wc.field == prop.name).ok_or_else(|| {
-                Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
-                    "range count: missing where clause for an index property preceding the range property",
-                ))
-            })?;
-            let mut next_paths: Vec<Vec<Vec<u8>>> = Vec::new();
-            match clause.operator {
-                WhereOperator::Equal => {
-                    let serialized = self.document_type.serialize_value_for_key(
-                        prop.name.as_str(),
-                        &clause.value,
-                        platform_version,
-                    )?;
-                    for mut path in prefix_paths.into_iter() {
-                        path.push(prop.name.as_bytes().to_vec());
-                        path.push(serialized.clone());
-                        next_paths.push(path);
-                    }
-                }
-                WhereOperator::In => {
-                    let values = clause.value.as_array().ok_or_else(|| {
-                        Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
-                            "In where-clause value must be an array",
-                        ))
-                    })?;
-                    let mut seen: BTreeSet<Vec<u8>> = BTreeSet::new();
-                    for v in values {
-                        let serialized = self.document_type.serialize_value_for_key(
-                            prop.name.as_str(),
-                            v,
-                            platform_version,
-                        )?;
-                        if !seen.insert(serialized.clone()) {
-                            continue;
-                        }
-                        for path in &prefix_paths {
-                            let mut p = path.clone();
-                            p.push(prop.name.as_bytes().to_vec());
-                            p.push(serialized.clone());
-                            next_paths.push(p);
-                        }
-                    }
-                }
-                _ => {
-                    return Err(Error::Query(
-                        QuerySyntaxError::InvalidWhereClauseComponents(
-                            "range count: only Equal and In are supported on prefix properties",
-                        ),
-                    ));
-                }
+        let mut drive_operations = vec![];
+        let result = drive.grove_get_raw_path_query(
+            &path_query,
+            transaction,
+            QueryResultType::QueryKeyElementPairResultType,
+            &mut drive_operations,
+            drive_version,
+        );
+        let elements = match result {
+            Ok((elements, _)) => elements,
+            Err(Error::GroveDB(e))
+                if matches!(
+                    e.as_ref(),
+                    grovedb::Error::PathNotFound(_)
+                        | grovedb::Error::PathParentLayerNotFound(_)
+                        | grovedb::Error::PathKeyNotFound(_)
+                ) =>
+            {
+                // No matching prefix path — return zero/empty per
+                // mode below.
+                return Ok(if !options.distinct {
+                    vec![SplitCountEntry {
+                        key: Vec::new(),
+                        count: 0,
+                    }]
+                } else {
+                    Vec::new()
+                });
             }
-            prefix_paths = next_paths;
-        }
+            Err(e) => return Err(e),
+        };
 
-        // Per prefix path, walk the range under [..., range_prop_name].
-        // Merge per-key entries across In-fork paths so a value that
-        // appears under two prefixes contributes the sum of both.
+        // Walk emitted (key, element) pairs and sum per terminator
+        // key. `key` is always the innermost match — for compound
+        // queries the brand fork is implicit in the path and not
+        // returned by `QueryKeyElementPairResultType`, which is
+        // exactly the cross-In merge semantic we want.
         let mut merged: BTreeMap<Vec<u8>, u64> = BTreeMap::new();
-        for prefix in prefix_paths {
-            let mut path = prefix;
-            path.push(range_prop_name.as_bytes().to_vec());
-
-            let mut query = Query::new();
-            query.insert_item(query_item.clone());
-            let path_query = PathQuery::new(path.clone(), SizedQuery::new(query, None, None));
-
-            let mut drive_operations = vec![];
-            let result = drive.grove_get_raw_path_query(
-                &path_query,
-                transaction,
-                QueryResultType::QueryKeyElementPairResultType,
-                &mut drive_operations,
-                drive_version,
-            );
-            let (elements, _) = match result {
-                Ok(r) => r,
-                Err(Error::GroveDB(e))
-                    if matches!(
-                        e.as_ref(),
-                        grovedb::Error::PathNotFound(_)
-                            | grovedb::Error::PathParentLayerNotFound(_)
-                            | grovedb::Error::PathKeyNotFound(_)
-                    ) =>
-                {
-                    continue;
-                }
-                Err(e) => return Err(e),
-            };
-
-            for (key, element) in elements.to_key_elements() {
-                let count = element.count_value_or_default();
-                if count == 0 {
-                    continue;
-                }
-                *merged.entry(key).or_insert(0) += count;
+        for (key, element) in elements.to_key_elements() {
+            let count = element.count_value_or_default();
+            if count == 0 {
+                continue;
             }
+            *merged.entry(key).or_insert(0) += count;
         }
 
         if !options.distinct {
@@ -1015,7 +953,7 @@ impl<'a> DriveDocumentCountQuery<'a> {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
         let drive_version = &platform_version.drive;
-        let path_query = self.distinct_count_path_query(limit, platform_version)?;
+        let path_query = self.distinct_count_path_query(Some(limit), platform_version)?;
         let proof = drive
             .grove
             .get_proved_path_query(&path_query, None, transaction, &drive_version.grove_version)
@@ -1135,50 +1073,43 @@ impl<'a> DriveDocumentCountQuery<'a> {
         })
     }
 
-    /// Shared path-construction core for both count-proof variants.
+    /// Build the grovedb `PathQuery` for an `AggregateCountOnRange`
+    /// query against this count query's `range_countable` index.
     ///
-    /// Returns `(path, range_query_item)`:
-    /// - `path` — `[DataContractDocuments, contract_id, 0x01, doctype,
-    ///   prefix_prop_name, prefix_value, ..., range_prop_name]` walking
-    ///   from the contract root down to the property-name
-    ///   `ProvableCountTree` whose children carry per-distinct-value
-    ///   counts.
-    /// - `range_query_item` — the converted range from the where-clause's
-    ///   range operator, ready to either be wrapped in
-    ///   `QueryItem::AggregateCountOnRange` (for the aggregate prove
-    ///   path) or inserted bare into a `Query` (for the distinct prove
-    ///   path).
+    /// Shared between the server-side prove path
+    /// ([`Self::execute_aggregate_count_with_proof`]) and the client-
+    /// side verify path (the SDK's `FromProof<DocumentCountQuery>` for
+    /// `DocumentCount`). Both sides must produce the *exact same*
+    /// `PathQuery` for verification to recompute the same merk root.
     ///
-    /// Both [`Self::aggregate_count_path_query`] and
-    /// [`Self::distinct_count_path_query`] feed off this; keeping path
-    /// construction in one place keeps prover/verifier parity tight.
+    /// Aggregate-count specifically restricts prefix props to `Equal`:
+    /// grovedb's `AggregateCountOnRange` primitive wraps a *single*
+    /// inner range and emits one aggregate `u64` — there's no way for
+    /// it to cartesian-fork over multiple In values at the merk
+    /// layer. For per-distinct-value counts with In on prefix, use
+    /// [`Self::distinct_count_path_query`] instead.
     ///
     /// Errors:
     /// - No range where-clause / multiple range where-clauses →
     ///   `InvalidWhereClauseComponents`
-    /// - `In` on a prefix property (would need multiple disjoint proofs)
-    ///   → `InvalidWhereClauseComponents`
+    /// - `In` on a prefix property → `InvalidWhereClauseComponents`
+    ///   (aggregate primitive can't fork)
     /// - Missing prefix clause → `InvalidWhereClauseComponents`
-    fn count_path_and_query_item(
+    pub fn aggregate_count_path_query(
         &self,
-        builder_label: &'static str,
         platform_version: &PlatformVersion,
-    ) -> Result<(Vec<Vec<u8>>, QueryItem), Error> {
+    ) -> Result<PathQuery, Error> {
         let range_clause = self
             .where_clauses
             .iter()
             .find(|wc| Self::is_range_operator(wc.operator))
             .ok_or(Error::Query(
                 QuerySyntaxError::InvalidWhereClauseComponents(
-                    "count path query requires a range where-clause",
+                    "aggregate_count_path_query requires a range where-clause",
                 ),
             ))?;
-        let _ = builder_label;
         let query_item = self.range_clause_to_query_item(range_clause, platform_version)?;
 
-        // Build the path. Prefix props must be Equal-only — In would
-        // require multiple separate proofs, which doesn't compose into
-        // a single aggregate or a single distinct walk.
         let mut path = vec![
             vec![RootTree::DataContractDocuments as u8],
             self.contract_id.to_vec(),
@@ -1193,13 +1124,15 @@ impl<'a> DriveDocumentCountQuery<'a> {
                 .find(|wc| wc.field == prop.name)
                 .ok_or(Error::Query(
                     QuerySyntaxError::InvalidWhereClauseComponents(
-                        "count path query: missing where clause for an index prefix property",
+                        "aggregate-count proof: missing where clause for an index prefix property",
                     ),
                 ))?;
             if clause.operator != WhereOperator::Equal {
                 return Err(Error::Query(
                     QuerySyntaxError::InvalidWhereClauseComponents(
-                        "count path query: prefix properties must use `==` (no `in`)",
+                        "aggregate-count proof: prefix properties must use `==` (no `in`); \
+                         use `return_distinct_counts_in_range = true` for compound In-on-prefix \
+                         queries",
                     ),
                 ));
             }
@@ -1222,75 +1155,195 @@ impl<'a> DriveDocumentCountQuery<'a> {
             .name;
         path.push(range_prop_name.as_bytes().to_vec());
 
-        Ok((path, query_item))
-    }
-
-    /// Build the grovedb `PathQuery` for an `AggregateCountOnRange`
-    /// query against this count query's `range_countable` index.
-    ///
-    /// Shared between the server-side prove path
-    /// ([`Self::execute_aggregate_count_with_proof`]) and the client-
-    /// side verify path (the SDK's `FromProof<DocumentCountQuery>` for
-    /// `DocumentCount`). Both sides must produce the *exact same*
-    /// `PathQuery` for verification to recompute the same merk root.
-    ///
-    /// Errors: see [`Self::count_path_and_query_item`].
-    pub fn aggregate_count_path_query(
-        &self,
-        platform_version: &PlatformVersion,
-    ) -> Result<PathQuery, Error> {
-        let (path, query_item) =
-            self.count_path_and_query_item("aggregate_count_path_query", platform_version)?;
         Ok(PathQuery::new_aggregate_count_on_range(path, query_item))
     }
 
     /// Build the grovedb `PathQuery` for a *regular* range query
     /// against this count query's `range_countable` index — the
-    /// distinct-counts-with-proof variant.
+    /// distinct-counts variant. Used by:
+    /// - the server's prove-distinct executor
+    ///   ([`Self::execute_distinct_count_with_proof`])
+    /// - the server's no-proof range executor
+    ///   ([`Self::execute_range_count_no_proof`])
+    /// - the SDK's per-key-count verifier
+    ///   ([`drive_proof_verifier::verify_distinct_count_proof`])
     ///
-    /// Where [`Self::aggregate_count_path_query`] wraps the inner
-    /// range in `QueryItem::AggregateCountOnRange(_)` so grovedb's
-    /// prover collapses the result into a single `u64`, this builder
-    /// hands grovedb a bare range with a `limit` cap and lets the
-    /// leaf merk emit one node per distinct in-range key (up to
-    /// `limit`). Each per-key count is bound to the merk root via
-    /// the same hash chain `verify_query_with_options` validates —
-    /// no `HashWithCount` collapse, just regular `KVValueHash...`
-    /// ops carrying the encoded `Element::CountTree` whose
-    /// `count_value_or_default()` is the per-distinct count.
+    /// **In-on-prefix support via grovedb subqueries.** Where
+    /// [`Self::aggregate_count_path_query`] rejects In on prefix
+    /// (the aggregate merk primitive can't cartesian-fork), this
+    /// builder uses grovedb's native subquery primitive:
     ///
-    /// `limit` IS load-bearing for verification: the prover bounds
-    /// the proof at `limit` matched keys, and the verifier must
-    /// build the exact same `PathQuery` (including this cap) for the
-    /// merk-root recomputation to match. The dispatcher
-    /// pre-validates `limit ≤ max_query_limit`, so unbounded queries
-    /// can't reach this builder.
+    /// - **Flat shape** (no In on prefix, only Equal): path includes
+    ///   the range terminator; outer Query has the range item.
+    /// - **Compound shape** (one In on prefix): path stops at the
+    ///   In-bearing prop's property-name subtree; outer Query has
+    ///   one `Key(value)` item per In value; `set_subquery_path`
+    ///   carries any post-In Equal-clause `(name, value)` pairs plus
+    ///   the terminator name; `set_subquery` is the range item.
     ///
-    /// Shared between the server-side prove path
-    /// ([`Self::execute_distinct_count_with_proof`]) and the SDK's
-    /// per-key-count verifier
-    /// ([`drive_proof_verifier::verify_distinct_count_proof`]).
+    /// Both shapes return `(path, branched-or-flat Query)` and feed
+    /// the same `grove_get_raw_path_query` / `get_proved_path_query`
+    /// pipelines downstream. The compound shape replaces the
+    /// pre-existing cartesian-fork loop in
+    /// `execute_range_count_no_proof`.
     ///
-    /// Errors: see [`Self::count_path_and_query_item`].
+    /// `limit` IS load-bearing for prove-path verification: the
+    /// prover bounds the proof at `limit` matched keys, and the
+    /// verifier must build the exact same `PathQuery` (including
+    /// this cap) for the merk-root recomputation to match. The
+    /// dispatcher pre-validates `limit ≤ max_query_limit` on the
+    /// prove path, so unbounded queries can't reach this builder
+    /// with `Some(...)` greater than the cap. The no-proof path
+    /// passes `None` (full walk) so cross-In-fork merging sees
+    /// every emitted element before the result-set-level limit is
+    /// applied in post-processing.
+    ///
+    /// Errors:
+    /// - No range where-clause / multiple range where-clauses
+    /// - Multiple In clauses on prefix props
+    /// - Non-Equal-non-In operator on a prefix prop
+    /// - Missing prefix clause
     pub fn distinct_count_path_query(
         &self,
-        limit: u16,
+        limit: Option<u16>,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
-        let (path, query_item) =
-            self.count_path_and_query_item("distinct_count_path_query", platform_version)?;
+        let range_clause = self
+            .where_clauses
+            .iter()
+            .find(|wc| Self::is_range_operator(wc.operator))
+            .ok_or(Error::Query(
+                QuerySyntaxError::InvalidWhereClauseComponents(
+                    "distinct_count_path_query requires a range where-clause",
+                ),
+            ))?;
+        let range_item = self.range_clause_to_query_item(range_clause, platform_version)?;
 
-        // Bare range item wrapped in a regular Query — no aggregate
-        // collapse. The `SizedQuery::limit` caps the matched-key
-        // count, which both bounds the proof size and gives the
-        // verifier a reproducible target.
-        let mut query = Query::new();
-        query.insert_item(query_item);
+        let prefix_props = &self.index.properties[..self.index.properties.len() - 1];
+        let terminator_name = &self
+            .index
+            .properties
+            .last()
+            .ok_or(Error::Query(
+                QuerySyntaxError::InvalidWhereClauseComponents(
+                    "range_countable index must have at least one property",
+                ),
+            ))?
+            .name;
 
-        Ok(PathQuery::new(
-            path,
-            SizedQuery::new(query, Some(limit), None),
-        ))
+        let mut base_path: Vec<Vec<u8>> = vec![
+            vec![RootTree::DataContractDocuments as u8],
+            self.contract_id.to_vec(),
+            vec![1u8],
+            self.document_type_name.as_bytes().to_vec(),
+        ];
+
+        // `Some(keys)` once an In clause has been encountered on a
+        // prefix property. From that point on, subsequent Equal
+        // clauses go into `subquery_path_extension` rather than
+        // `base_path`. Only one In allowed (multiple Ins would
+        // multiply the fork count beyond what a single Query can
+        // express via `set_subquery_path`).
+        let mut in_outer_keys: Option<Vec<Vec<u8>>> = None;
+        let mut subquery_path_extension: Vec<Vec<u8>> = vec![];
+
+        for prop in prefix_props {
+            let clause = self
+                .where_clauses
+                .iter()
+                .find(|wc| wc.field == prop.name)
+                .ok_or(Error::Query(
+                    QuerySyntaxError::InvalidWhereClauseComponents(
+                        "distinct_count_path_query: missing where clause for an index \
+                         prefix property",
+                    ),
+                ))?;
+
+            match clause.operator {
+                WhereOperator::Equal => {
+                    let serialized = self.document_type.serialize_value_for_key(
+                        prop.name.as_str(),
+                        &clause.value,
+                        platform_version,
+                    )?;
+                    if in_outer_keys.is_some() {
+                        subquery_path_extension.push(prop.name.as_bytes().to_vec());
+                        subquery_path_extension.push(serialized);
+                    } else {
+                        base_path.push(prop.name.as_bytes().to_vec());
+                        base_path.push(serialized);
+                    }
+                }
+                WhereOperator::In => {
+                    if in_outer_keys.is_some() {
+                        return Err(Error::Query(
+                            QuerySyntaxError::InvalidWhereClauseComponents(
+                                "distinct_count_path_query: at most one `In` clause is supported \
+                                 on prefix properties",
+                            ),
+                        ));
+                    }
+                    // Path stops at the In-bearing prop's property-
+                    // name subtree; outer Query lives at that level.
+                    base_path.push(prop.name.as_bytes().to_vec());
+                    let in_values = clause.in_values().into_data_with_error()??;
+                    let keys: Vec<Vec<u8>> = in_values
+                        .iter()
+                        .map(|v| {
+                            self.document_type.serialize_value_for_key(
+                                prop.name.as_str(),
+                                v,
+                                platform_version,
+                            )
+                        })
+                        .collect::<Result<_, _>>()?;
+                    in_outer_keys = Some(keys);
+                }
+                _ => {
+                    return Err(Error::Query(
+                        QuerySyntaxError::InvalidWhereClauseComponents(
+                            "distinct_count_path_query: prefix properties must use `==` or `in`",
+                        ),
+                    ));
+                }
+            }
+        }
+
+        match in_outer_keys {
+            None => {
+                // Flat shape — path includes terminator, single
+                // range-only Query.
+                base_path.push(terminator_name.as_bytes().to_vec());
+                let mut query = Query::new();
+                query.insert_item(range_item);
+                Ok(PathQuery::new(
+                    base_path,
+                    SizedQuery::new(query, limit, None),
+                ))
+            }
+            Some(keys) => {
+                // Compound shape — outer Query has one Key per In
+                // value at the In-bearing prop's property-name
+                // subtree. `subquery_path` carries any post-In Equal
+                // pairs + terminator. Subquery is the range item.
+                let mut outer_query = Query::new();
+                for key in keys {
+                    outer_query.insert_key(key);
+                }
+                subquery_path_extension.push(terminator_name.as_bytes().to_vec());
+
+                let mut subquery = Query::new();
+                subquery.insert_item(range_item);
+
+                outer_query.set_subquery_path(subquery_path_extension);
+                outer_query.set_subquery(subquery);
+
+                Ok(PathQuery::new(
+                    base_path,
+                    SizedQuery::new(outer_query, limit, None),
+                ))
+            }
+        }
     }
 }
 

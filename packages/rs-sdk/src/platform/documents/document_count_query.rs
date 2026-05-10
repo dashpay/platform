@@ -427,7 +427,7 @@ impl FromProof<DocumentCountQuery> for DocumentSplitCounts {
                 .map(|l| l as u16)
                 .unwrap_or(drive::config::DEFAULT_QUERY_LIMIT);
             let path_query = count_query
-                .distinct_count_path_query(limit_u16, platform_version)
+                .distinct_count_path_query(Some(limit_u16), platform_version)
                 .map_err(|e| drive_proof_verifier::Error::RequestError {
                     error: format!("failed to build distinct-count path query: {}", e),
                 })?;

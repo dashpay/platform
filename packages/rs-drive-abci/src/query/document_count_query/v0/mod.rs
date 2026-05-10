@@ -158,6 +158,7 @@ mod tests {
     use crate::query::tests::{setup_platform, store_data_contract, store_document};
     use dpp::dashcore::Network;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+    use dpp::document::DocumentV0Setters;
     use dpp::tests::json_document::json_document_to_contract_with_ids;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
@@ -766,6 +767,31 @@ mod tests {
 
         store_data_contract(&platform, &contract, version);
 
+        // Insert a few widgets spread across distinct color values
+        // so the prove-distinct path actually carries per-key counts
+        // in its proof — without this the proof covers an empty
+        // range and the test only verifies dispatch acceptance.
+        // Same distribution as the no-prove test above:
+        // red×2, green×3, blue×1. `color > "blue"` excludes blue,
+        // so the proof should carry per-color entries for red(2)
+        // and green(3).
+        let document_type = contract
+            .document_type_for_name("widget")
+            .expect("widget exists");
+        let platform_version = PlatformVersion::latest();
+        for (i, color) in ["red", "red", "green", "green", "green", "blue"]
+            .iter()
+            .enumerate()
+        {
+            let mut doc = document_type
+                .random_document(Some((i + 1) as u64), platform_version)
+                .expect("random doc");
+            let mut props = std::collections::BTreeMap::new();
+            props.insert("color".to_string(), Value::Text(color.to_string()));
+            doc.set_properties(props);
+            store_document(&platform, &contract, document_type, &doc, platform_version);
+        }
+
         let where_clauses = vec![Value::Array(vec![
             Value::Text("color".to_string()),
             Value::Text(">".to_string()),
@@ -792,9 +818,18 @@ mod tests {
         );
         match result.data {
             Some(GetDocumentsCountResponseV0 {
-                result: Some(get_documents_count_response_v0::Result::Proof(_)),
+                result: Some(get_documents_count_response_v0::Result::Proof(proof)),
                 metadata: Some(_),
-            }) => {}
+            }) => {
+                // The proof should not be empty since we inserted
+                // matching documents — a non-trivial proof shape
+                // pins that the prover actually emitted per-key
+                // count entries, not just a degenerate envelope.
+                assert!(
+                    !proof.grovedb_proof.is_empty(),
+                    "expected non-empty grovedb proof bytes for non-empty range result"
+                );
+            }
             other => panic!("expected Proof response, got {:?}", other),
         }
     }
