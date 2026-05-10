@@ -181,8 +181,8 @@ pub struct Drive {
 //       Tokens 16                    Pools 48                                                    WithdrawalTransactions 80                                                Votes  112
 //       /      \                           /                     \                                         /                           \                            /                          \
 //     NUPKH->I 8 UPKH->I 24   PreFundedSpecializedBalances 40  AddressBalances 56              SpentAssetLockTransactions 72    GroupActions 88             Misc 104                        Versions 120
-//                                     /                  \
-//                           Saved Block Transactions 36  ShieldedBalances 52
+//                                     /                          /
+//                           Saved Block Transactions 36       ShieldedBalances 52
 
 /// Keys for the root tree.
 #[cfg(any(feature = "server", feature = "verify"))]
