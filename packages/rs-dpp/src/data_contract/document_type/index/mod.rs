@@ -357,10 +357,13 @@ pub struct Index {
     /// [`IndexCountability`].
     pub countable: IndexCountability,
     /// Whether the index supports O(log n) count queries over a *range* of
-    /// values for the indexed property. When true:
-    /// - The property-name tree (the level whose keys are property values)
-    ///   is stored as a `ProvableCountTree`, so range queries over distinct
-    ///   values can be answered by walking the boundary in O(log n).
+    /// values for the index's last property (the terminator). The flag
+    /// only affects the storage layout at the last property level — all
+    /// preceding (prefix) properties keep their default tree shape:
+    /// - The property-name tree at the *last* property (whose keys are
+    ///   that property's distinct values) is stored as a
+    ///   `ProvableCountTree`, so range queries over distinct values can
+    ///   be answered by walking the boundary in O(log n).
     /// - Each value tree under it is stored as a `CountTree`, so the
     ///   property-name aggregate sums per-value counts cleanly.
     /// - Sibling continuations inside each value tree (compound-index
@@ -368,9 +371,7 @@ pub struct Index {
     ///   do not pollute the value tree's count.
     ///
     /// `range_countable: true` requires `countable` to be `Countable` or
-    /// `CountableAllowingOffset` (it's additive, not a replacement) and is
-    /// gated on protocol version 12+ (depends on grovedb's `NonCounted`
-    /// element variant + `AggregateCountOnRange` query item).
+    /// `CountableAllowingOffset` (it's additive, not a replacement).
     pub range_countable: bool,
 }
 
