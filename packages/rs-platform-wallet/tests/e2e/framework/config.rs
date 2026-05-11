@@ -70,18 +70,18 @@ pub mod vars {
     /// on every cached identity so `Identity::balance`,
     /// `Identity::revision`, and `Identity::public_keys` track chain
     /// reality during a test run. Unset uses
-    /// [`DEFAULT_IDENTITY_SYNC_INTERVAL`] (3 s — more aggressive than
-    /// production's 15 s BLAST loop because e2e tests churn faster).
+    /// [`DEFAULT_IDENTITY_SYNC_INTERVAL`] (15 s — matches production
+    /// `PlatformAddressSync` / `IdentityTokenSync` / `ShieldedSync`).
     /// Non-positive / unparseable values fall back to the default with
     /// a warn.
     pub const IDENTITY_SYNC_INTERVAL_SECS: &str = "PLATFORM_WALLET_E2E_IDENTITY_SYNC_INTERVAL_SECS";
 }
 
 /// Default cadence for the harness's identity-state auto-sync (see
-/// [`vars::IDENTITY_SYNC_INTERVAL_SECS`]). 3 s is more aggressive than
-/// production's 15 s BLAST loop because e2e tests churn identity state
-/// (transfers, registrations, key rotations) much faster than UI users.
-pub const DEFAULT_IDENTITY_SYNC_INTERVAL: Duration = Duration::from_secs(3);
+/// [`vars::IDENTITY_SYNC_INTERVAL_SECS`]). Matches the production
+/// `PlatformAddressSync` / `IdentityTokenSync` / `ShieldedSync` cadence;
+/// 3 s previously caused DAPI overload (v36 TK-005b/TK-011 regressions).
+pub const DEFAULT_IDENTITY_SYNC_INTERVAL: Duration = Duration::from_secs(15);
 
 /// Default deadline for the bank Core funding gate when the env var is
 /// unset. Sized to fit a cold-cache compact-filter scan from genesis on
@@ -691,7 +691,7 @@ mod tests {
     const TRUTHY_PROBE_VAR: &str = "PLATFORM_WALLET_E2E_TEST_TRUTHY_PROBE";
 
     #[test]
-    fn identity_sync_unset_defaults_to_3s() {
+    fn identity_sync_unset_defaults_to_15s() {
         assert_eq!(
             parse_identity_sync_interval(None),
             DEFAULT_IDENTITY_SYNC_INTERVAL

@@ -44,10 +44,10 @@ use platform_wallet::PlatformWalletManager;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
-/// Default cadence. More aggressive than production's 15 s BLAST loop
-/// because e2e tests churn identity state (transfers, registrations,
-/// key rotations) much faster than a UI user.
-pub const DEFAULT_INTERVAL: Duration = Duration::from_secs(3);
+/// Default cadence. Matches the production `PlatformAddressSync` /
+/// `IdentityTokenSync` / `ShieldedSync` cadence; 3 s previously caused
+/// DAPI overload (v36 TK-005b/TK-011 regressions).
+pub const DEFAULT_INTERVAL: Duration = Duration::from_secs(15);
 
 /// Best-effort grace period [`IdentitySync::stop`] gives the background
 /// task to settle after the cancel token fires before aborting the
@@ -125,12 +125,19 @@ async fn run_loop(
         "identity-sync loop starting"
     );
 
+    let mut next_tick_number: u64 = 0;
+    let mut last_tick_at = std::time::Instant::now();
+
     loop {
         if cancel.is_cancelled() {
             break;
         }
 
-        tick(manager.as_ref()).await;
+        let elapsed_ms = last_tick_at.elapsed().as_millis() as u64;
+        last_tick_at = std::time::Instant::now();
+
+        tick(manager.as_ref(), next_tick_number, elapsed_ms).await;
+        next_tick_number += 1;
 
         tokio::select! {
             _ = tokio::time::sleep(interval) => {}
@@ -146,7 +153,11 @@ async fn run_loop(
 
 /// Single pass: snapshot every `(wallet, identity_id)` pair held by
 /// the manager and refresh each. Errors are logged and skipped.
-async fn tick(manager: &PlatformWalletManager<NoPlatformPersistence>) {
+async fn tick(
+    manager: &PlatformWalletManager<NoPlatformPersistence>,
+    tick_n: u64,
+    elapsed_ms: u64,
+) {
     use dpp::prelude::Identifier;
     use platform_wallet::wallet::WalletId;
     use platform_wallet::PlatformWallet;
@@ -174,6 +185,14 @@ async fn tick(manager: &PlatformWalletManager<NoPlatformPersistence>) {
             targets.push((*wallet_id, Arc::clone(wallet), id));
         }
     }
+
+    tracing::trace!(
+        target: "platform_wallet::e2e::identity_sync",
+        tick_n,
+        targets_n = targets.len(),
+        elapsed_ms,
+        "identity-sync tick start"
+    );
 
     if targets.is_empty() {
         return;
@@ -206,11 +225,11 @@ mod tests {
         assert!(STOP_GRACE > Duration::ZERO);
     }
 
-    /// `DEFAULT_INTERVAL` is the documented "more aggressive than BLAST"
-    /// promise. Lock it in so a future refactor can't silently widen it
-    /// past production's 15 s without an explicit decision.
+    /// `DEFAULT_INTERVAL` must match the proven production cadence (15 s).
+    /// Lock it in so a future refactor can't silently drop it back to an
+    /// over-aggressive value without an explicit decision.
     #[test]
-    fn default_interval_beats_blast() {
-        assert!(DEFAULT_INTERVAL < Duration::from_secs(15));
+    fn default_interval_matches_production_cadence() {
+        assert_eq!(DEFAULT_INTERVAL, Duration::from_secs(15));
     }
 }
