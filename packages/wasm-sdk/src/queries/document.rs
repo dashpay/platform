@@ -11,7 +11,7 @@ use dash_sdk::platform::documents::document_query::DocumentQuery;
 use dash_sdk::platform::Fetch;
 use dash_sdk::platform::FetchMany;
 use drive::query::{OrderClause, WhereClause, WhereOperator};
-use drive_proof_verifier::{DocumentCount, DocumentSplitCounts};
+use drive_proof_verifier::DocumentSplitCounts;
 use js_sys::Map;
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
@@ -119,12 +119,26 @@ struct DocumentsQueryInput {
     start_after: Option<IdentifierWasm>,
     #[serde(rename = "startAt", default)]
     start_at: Option<IdentifierWasm>,
+    /// Count-query knob: when `true` AND the query carries a range
+    /// clause, the server returns per-distinct-value entries within
+    /// the range instead of a single sum. Ignored by the regular
+    /// document-fetch path. Default `false`.
+    #[serde(default)]
+    return_distinct_counts_in_range: Option<bool>,
+    /// Count-query knob: order of entries for distinct-mode results.
+    /// `None` (default) → server picks ascending; `Some(false)` →
+    /// descending. Ignored by the regular document-fetch path.
+    #[serde(default)]
+    order_by_ascending: Option<bool>,
 }
 
 async fn build_documents_query(
     sdk: &WasmSdk,
     input: DocumentsQueryInput,
 ) -> Result<DocumentQuery, WasmSdkError> {
+    // `return_distinct_counts_in_range` / `order_by_ascending` on
+    // the shared input struct are count-query-only knobs; the regular
+    // document-fetch path destructured here just drops them.
     let DocumentsQueryInput {
         data_contract_id,
         document_type_name,
@@ -133,6 +147,8 @@ async fn build_documents_query(
         limit,
         start_after,
         start_at,
+        return_distinct_counts_in_range: _,
+        order_by_ascending: _,
     } = input;
 
     let contract_id: Identifier = data_contract_id.into();
@@ -185,6 +201,38 @@ async fn parse_documents_query(
         deserialize_required_query(query, "Query object is required", "documents query")?;
 
     build_documents_query(sdk, input).await
+}
+
+/// Parse a JS query object into a [`DocumentCountQuery`] — the count-
+/// query analogue of [`parse_documents_query`]. The inner
+/// [`DocumentQuery`] is built from the same `DocumentsQueryInput`
+/// (data-contract / document-type / where-clauses), and the
+/// count-specific knobs (`return_distinct_counts_in_range`,
+/// `order_by_ascending`, `limit`) are forwarded to the outer
+/// `DocumentCountQuery` rather than the inner `DocumentQuery`. The
+/// SDK-side `TryFrom<&DocumentCountQuery> for DriveDocumentQuery`
+/// forcibly nulls the inner limit anyway (so the proof verifier
+/// counts every matched doc, not a paginated slice), making the
+/// outer-field forwarding load-bearing.
+async fn parse_documents_count_query(
+    sdk: &WasmSdk,
+    query: DocumentsQueryJs,
+) -> Result<DocumentCountQuery, WasmSdkError> {
+    let input: DocumentsQueryInput =
+        deserialize_required_query(query, "Query object is required", "documents count query")?;
+
+    let return_distinct_counts_in_range = input.return_distinct_counts_in_range.unwrap_or(false);
+    let order_by_ascending = input.order_by_ascending;
+    let limit = input.limit;
+
+    let base_query = build_documents_query(sdk, input).await?;
+
+    Ok(DocumentCountQuery {
+        document_query: base_query,
+        return_distinct_counts_in_range,
+        order_by_ascending,
+        limit,
+    })
 }
 
 /// Parse JSON where clause into WhereClause
@@ -458,114 +506,53 @@ impl WasmSdk {
         ))
     }
 
-    #[wasm_bindgen(js_name = "getDocumentsCount", unchecked_return_type = "bigint")]
-    pub async fn get_documents_count(&self, query: DocumentsQueryJs) -> Result<u64, WasmSdkError> {
-        let base_query = parse_documents_query(self, query).await?;
-        // Wasm-sdk's count entry points are all proof-path Fetch calls.
-        // Range no-proof distinct mode (`return_distinct_counts_in_range`,
-        // pagination knobs) needs a separate JS-facing API entry point
-        // since proof + distinct is rejected server-side; tracked as a
-        // follow-up. Defaults match the gRPC defaults for the
-        // proof-path total/split modes that wasm-sdk currently exposes.
-        let count_query = DocumentCountQuery {
-            document_query: base_query,
-            return_distinct_counts_in_range: false,
-            order_by_ascending: None,
-            limit: None,
-        };
-
-        let count = DocumentCount::fetch(self.as_ref(), count_query)
-            .await?
-            .map(|c| c.0)
-            .unwrap_or(0);
-
-        Ok(count)
-    }
-
+    /// Count documents matching a query.
+    ///
+    /// Returns a `Map<string, bigint>` keyed by the platform-value-
+    /// encoded property value (hex-encoded). For simple total counts
+    /// (no `in` clause and `return_distinct_counts_in_range = false`)
+    /// the map has a single entry with empty-string key —
+    /// `result.get("")` is the total. For per-`In`-value or per-
+    /// distinct-value-in-range modes, each key maps to its count.
+    ///
+    /// Query-object knobs (all camelCase on the JS side):
+    /// - `where: [[field, op, value], ...]`
+    /// - `limit?: number` — caps the number of entries returned in
+    ///   per-key modes (server clamps to its `max_query_limit`).
+    /// - `returnDistinctCountsInRange?: boolean` — when `true` AND
+    ///   the query carries a range clause, returns per-distinct-
+    ///   value entries instead of a single sum.
+    /// - `orderByAscending?: boolean` — order of per-key entries;
+    ///   `false` reverses. Default ascending.
+    ///
+    /// This is the unified successor to the previous
+    /// `getDocumentsCount` / `getDocumentsSplitCount` pair —
+    /// `DocumentSplitCounts::fetch` (which this wraps) handles every
+    /// count mode internally, so the JS surface only needs one entry
+    /// point per `[plain | withProofInfo]` variant. For compound
+    /// `In + range + distinct` queries the per-`(in_key, key)`
+    /// entries are summed by `key` into the flat map; callers needing
+    /// the unmerged compound shape should use a richer binding (not
+    /// yet exposed here).
     #[wasm_bindgen(
-        js_name = "getDocumentsCountWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<bigint>"
-    )]
-    pub async fn get_documents_count_with_proof_info(
-        &self,
-        query: DocumentsQueryJs,
-    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
-        let base_query = parse_documents_query(self, query).await?;
-        // Wasm-sdk's count entry points are all proof-path Fetch calls.
-        // Range no-proof distinct mode (`return_distinct_counts_in_range`,
-        // pagination knobs) needs a separate JS-facing API entry point
-        // since proof + distinct is rejected server-side; tracked as a
-        // follow-up. Defaults match the gRPC defaults for the
-        // proof-path total/split modes that wasm-sdk currently exposes.
-        let count_query = DocumentCountQuery {
-            document_query: base_query,
-            return_distinct_counts_in_range: false,
-            order_by_ascending: None,
-            limit: None,
-        };
-
-        let (count_opt, metadata, proof) =
-            DocumentCount::fetch_with_metadata_and_proof(self.as_ref(), count_query, None).await?;
-        let count = count_opt.map(|c| c.0).unwrap_or(0);
-
-        Ok(ProofMetadataResponseWasm::from_sdk_parts(
-            JsValue::from(count),
-            metadata,
-            proof,
-        ))
-    }
-
-    /// Per-key count map. Splitting is signalled by including an `in`
-    /// where-clause in the query: the field of that clause becomes the
-    /// split property and each value in the array becomes one entry.
-    /// Without an `in` clause this returns a one-entry map keyed by the
-    /// empty string (i.e., the total count).
-    #[wasm_bindgen(
-        js_name = "getDocumentsSplitCount",
+        js_name = "getDocumentsCount",
         unchecked_return_type = "Map<string, bigint>"
     )]
-    pub async fn get_documents_split_count(
-        &self,
-        query: DocumentsQueryJs,
-    ) -> Result<Map, WasmSdkError> {
-        let base_query = parse_documents_query(self, query).await?;
-        // Wasm-sdk's count entry points are all proof-path Fetch calls.
-        // Range no-proof distinct mode (`return_distinct_counts_in_range`,
-        // pagination knobs) needs a separate JS-facing API entry point
-        // since proof + distinct is rejected server-side; tracked as a
-        // follow-up. Defaults match the gRPC defaults for the
-        // proof-path total/split modes that wasm-sdk currently exposes.
-        let count_query = DocumentCountQuery {
-            document_query: base_query,
-            return_distinct_counts_in_range: false,
-            order_by_ascending: None,
-            limit: None,
-        };
+    pub async fn get_documents_count(&self, query: DocumentsQueryJs) -> Result<Map, WasmSdkError> {
+        let count_query = parse_documents_count_query(self, query).await?;
         let splits = DocumentSplitCounts::fetch(self.as_ref(), count_query).await?;
         Ok(split_counts_to_js_map(splits))
     }
 
     #[wasm_bindgen(
-        js_name = "getDocumentsSplitCountWithProofInfo",
+        js_name = "getDocumentsCountWithProofInfo",
         unchecked_return_type = "ProofMetadataResponseTyped<Map<string, bigint>>"
     )]
-    pub async fn get_documents_split_count_with_proof_info(
+    pub async fn get_documents_count_with_proof_info(
         &self,
         query: DocumentsQueryJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
-        let base_query = parse_documents_query(self, query).await?;
-        // Wasm-sdk's count entry points are all proof-path Fetch calls.
-        // Range no-proof distinct mode (`return_distinct_counts_in_range`,
-        // pagination knobs) needs a separate JS-facing API entry point
-        // since proof + distinct is rejected server-side; tracked as a
-        // follow-up. Defaults match the gRPC defaults for the
-        // proof-path total/split modes that wasm-sdk currently exposes.
-        let count_query = DocumentCountQuery {
-            document_query: base_query,
-            return_distinct_counts_in_range: false,
-            order_by_ascending: None,
-            limit: None,
-        };
+        let count_query = parse_documents_count_query(self, query).await?;
         let (splits_opt, metadata, proof) =
             DocumentSplitCounts::fetch_with_metadata_and_proof(self.as_ref(), count_query, None)
                 .await?;
