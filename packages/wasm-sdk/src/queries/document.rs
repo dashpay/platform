@@ -585,11 +585,15 @@ impl WasmSdk {
 ///
 /// Keys are hex-encoded so the JS side can match them against the
 /// platform-value-encoded property values returned in proofs. None →
-/// empty map.
+/// empty map. For compound (`In + range + distinct`) queries entries
+/// carry an `in_key` alongside `key` — to keep this helper's flat-map
+/// shape we sum across forks via `into_flat_map`. Callers that need
+/// the unmerged per-(in_key, key) view should consume
+/// `DocumentSplitCounts.0` directly via a dedicated WASM binding.
 fn split_counts_to_js_map(splits: Option<DocumentSplitCounts>) -> Map {
     let map = Map::new();
-    if let Some(DocumentSplitCounts(inner)) = splits {
-        for (key_bytes, count) in inner {
+    if let Some(split_counts) = splits {
+        for (key_bytes, count) in split_counts.into_flat_map() {
             let key: JsValue = hex::encode(key_bytes).into();
             map.set(&key, &JsValue::from(count));
         }

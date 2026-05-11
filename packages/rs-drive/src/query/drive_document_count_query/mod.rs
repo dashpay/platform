@@ -70,13 +70,32 @@ pub struct DriveDocumentCountQuery<'a> {
     pub where_clauses: Vec<WhereClause>,
 }
 
-/// An entry in a split count result, containing the serialized key
-/// and the count of documents matching that key value.
+/// An entry in a split count result, containing the serialized
+/// key(s) and the count of documents matching them.
+///
+/// For flat queries (per-`In`-value mode without a range, or
+/// per-distinct-value-in-range mode without an `In` on prefix) only
+/// `key` is meaningful and `in_key` is `None`.
+///
+/// For compound range-distinct queries (an `In` clause on a prefix
+/// property plus a range on the terminator) BOTH keys are carried:
+/// `in_key` is the In-fork's prefix value and `key` is the
+/// terminator value. Cross-fork aggregation is intentionally NOT
+/// done server-side — emitting the unmerged per-(in_key, key) shape
+/// lets `limit` push directly into grovedb (no pre-merge issue),
+/// keeps proof verification straightforward (no absence-proof
+/// gymnastics for omitted In branches), and gives callers strictly
+/// more information than a flat histogram. Callers reduce
+/// client-side when they want the sum.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SplitCountEntry {
-    /// The serialized key bytes for this value
+    /// The serialized prefix key for compound queries (the `In`
+    /// value for this fork). `None` for flat queries.
+    pub in_key: Option<Vec<u8>>,
+    /// The serialized terminator/value key for this entry.
     pub key: Vec<u8>,
-    /// The count of documents matching this key value
+    /// The count of documents matching this `(in_key, key)` tuple
+    /// (or just `key` for flat queries).
     pub count: u64,
 }
 
@@ -440,7 +459,11 @@ impl<'a> DriveDocumentCountQuery<'a> {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<SplitCountEntry>, Error> {
         let count = self.execute_total_count(drive, transaction, platform_version)?;
-        Ok(vec![SplitCountEntry { key: vec![], count }])
+        Ok(vec![SplitCountEntry {
+            in_key: None,
+            key: vec![],
+            count,
+        }])
     }
 
     /// Executes the count query and generates a GroveDB proof.
@@ -767,13 +790,21 @@ impl<'a> DriveDocumentCountQuery<'a> {
     ///   property
     ///
     /// `In` on the prefix forks the walk into one path per (deduped)
-    /// `In` value and merges the results.
+    /// `In` value. Each emitted entry carries its `in_key` (the In
+    /// value for that fork) alongside the `key` (the terminator
+    /// value). Cross-fork aggregation is intentionally NOT performed
+    /// server-side — callers reduce by `key` client-side if they
+    /// want a flat histogram. See the book chapter ("Range Modes")
+    /// for rationale.
     ///
     /// When `options.distinct = false`, returns a single entry with
-    /// empty key whose count is the sum of all per-value counts in the
-    /// range. When `options.distinct = true`, returns one entry per
-    /// distinct property value within the range, after applying
-    /// `order_by_ascending`, `start_after_split_key`, and `limit`.
+    /// `in_key = None`, empty `key`, and `count` equal to the sum of
+    /// all matched per-value counts (the natural reduction). When
+    /// `options.distinct = true`, returns one entry per emitted
+    /// `(in_key, key)` pair, after applying `order_by_ascending`,
+    /// `start_after_split_key`, and `limit`. Cursor / ordering are
+    /// applied to the lexicographic `(in_key, key)` tuple so that
+    /// pagination is stable across compound shapes.
     pub fn execute_range_count_no_proof(
         &self,
         drive: &Drive,
@@ -789,24 +820,31 @@ impl<'a> DriveDocumentCountQuery<'a> {
         // terminator's property-name subtree; for an In-on-prefix
         // it becomes a compound query with one outer `Key` per In
         // value and a `subquery_path`/`subquery` descending to the
-        // terminator's range item. Either way, grovedb's native
-        // primitive does the walk (no Rust-side cartesian loop), and
-        // emits one `(terminator_key, CountTree(_, count, _))` pair
-        // per matched in-range key per outer fork.
+        // terminator's range item.
         //
-        // We pass `None` for the path-query limit so the underlying
-        // walk sees every emitted element before cross-fork
-        // summing. The `options.limit` truncation happens at the
-        // result-set level below, after the merge — applying limit
-        // pre-merge would cut off elements that should sum with
-        // already-counted ones.
+        // We pass `None` for the path-query limit so the executor
+        // sees every emitted element regardless of whether the
+        // caller's `limit` would have truncated grovedb mid-walk.
+        // For summed mode we must see all elements to compute the
+        // total. For distinct mode we apply `limit` post-query
+        // below — the per-query DoS bound is the index size, which
+        // is the same bound the prior merge-based code lived under.
         let path_query = self.distinct_count_path_query(None, platform_version)?;
+        let base_path_len = path_query.path.len();
+        let has_in_on_prefix = self
+            .where_clauses
+            .iter()
+            .any(|wc| wc.operator == WhereOperator::In);
 
         let mut drive_operations = vec![];
         let result = drive.grove_get_raw_path_query(
             &path_query,
             transaction,
-            QueryResultType::QueryKeyElementPairResultType,
+            // PathKeyElementTrio so we can recover the In value from
+            // the emitted element's full path (for compound queries
+            // the In value sits at `path[base_path_len]` — the first
+            // segment beyond the path query's `path`).
+            QueryResultType::QueryPathKeyElementTrioResultType,
             &mut drive_operations,
             drive_version,
         );
@@ -824,6 +862,7 @@ impl<'a> DriveDocumentCountQuery<'a> {
                 // mode below.
                 return Ok(if !options.distinct {
                     vec![SplitCountEntry {
+                        in_key: None,
                         key: Vec::new(),
                         count: 0,
                     }]
@@ -834,42 +873,72 @@ impl<'a> DriveDocumentCountQuery<'a> {
             Err(e) => return Err(e),
         };
 
-        // Walk emitted (key, element) pairs and sum per terminator
-        // key. `key` is always the innermost match — for compound
-        // queries the brand fork is implicit in the path and not
-        // returned by `QueryKeyElementPairResultType`, which is
-        // exactly the cross-In merge semantic we want.
-        let mut merged: BTreeMap<Vec<u8>, u64> = BTreeMap::new();
-        for (key, element) in elements.to_key_elements() {
+        // Walk emitted `(path, key, element)` triples and build the
+        // unmerged entry list. For compound (In-on-prefix) queries
+        // the In value sits at `path[base_path_len]`; for flat
+        // queries `path.len() == base_path_len` so `in_key` is
+        // `None`. We DO NOT collapse multiple emitted entries with
+        // the same `key` into one — that's the whole point of
+        // dropping the merge.
+        let mut entries: Vec<SplitCountEntry> = Vec::new();
+        for triple in elements.to_path_key_elements() {
+            let (path, key, element) = triple;
             let count = element.count_value_or_default();
             if count == 0 {
                 continue;
             }
-            *merged.entry(key).or_insert(0) += count;
+            let in_key = if has_in_on_prefix && path.len() > base_path_len {
+                Some(path[base_path_len].clone())
+            } else {
+                None
+            };
+            entries.push(SplitCountEntry { in_key, key, count });
         }
 
         if !options.distinct {
-            // Sum mode: collapse all entries into one with empty key.
-            let total: u64 = merged.values().copied().sum();
+            // Summed mode: sum across all emitted entries (across
+            // both forks and per-terminator-value sub-counts).
+            // Returns a single `in_key: None, key: empty` entry with
+            // the aggregate total — matches the wire-format
+            // `aggregate_count` variant the abci handler will lift
+            // it into.
+            let total: u64 = entries.iter().map(|e| e.count).sum();
             return Ok(vec![SplitCountEntry {
+                in_key: None,
                 key: Vec::new(),
                 count: total,
             }]);
         }
 
-        // Distinct mode: apply order, then cursor, then limit.
-        let mut entries: Vec<SplitCountEntry> = merged
-            .into_iter()
-            .map(|(key, count)| SplitCountEntry { key, count })
-            .collect();
-        // BTreeMap iteration is already ascending; flip if requested.
+        // Distinct mode: order, cursor, limit — applied to the
+        // lexicographic `(in_key, key)` tuple so pagination is
+        // stable across compound shapes.
+        //
+        // The natural emit order from grovedb is already
+        // `(in_key_lex_asc, key_lex_asc)` since the outer Query
+        // enumerates In keys in insert order (matching the
+        // distinct_count_path_query builder, which inserts keys in
+        // input order) and the subquery range walks ascending. We
+        // sort defensively to make the order contract explicit
+        // regardless of underlying grovedb iteration changes.
+        entries.sort_by(|a, b| {
+            a.in_key
+                .as_deref()
+                .unwrap_or(&[])
+                .cmp(b.in_key.as_deref().unwrap_or(&[]))
+                .then_with(|| a.key.cmp(&b.key))
+        });
         if !options.order_by_ascending {
             entries.reverse();
         }
         if let Some(cursor) = options.start_after_split_key.as_ref() {
-            // Drop everything up to AND including the cursor key
-            // (matches the protobuf doc: "skip entries up to and
-            // including this serialized key").
+            // Cursor compares against the `key` field — keeps the
+            // protobuf contract semantics ("split key") stable for
+            // flat queries. For compound queries the cursor still
+            // applies to `key`; clients walking compound shapes
+            // should be aware that pagination is per-(in_key, key)
+            // but cursor matches only on `key`. (A future revision
+            // could carry a structured cursor.)
             let kept: Vec<SplitCountEntry> = entries
                 .into_iter()
                 .skip_while(|e| {
@@ -1516,9 +1585,19 @@ impl Drive {
         // Apply order, then cursor, then limit — same shape as the
         // range walker. BTreeMap iteration is already ascending; flip
         // the vec if descending was requested.
+        //
+        // PerInValue mode splits by the `In` dimension itself, so
+        // the In value goes in `key` (the split-key field) and
+        // `in_key` is `None`. The `in_key` field is reserved for
+        // compound queries where the `In` is on a prefix property
+        // distinct from the value being counted.
         let mut entries: Vec<SplitCountEntry> = merged
             .into_iter()
-            .map(|(key, count)| SplitCountEntry { key, count })
+            .map(|(key, count)| SplitCountEntry {
+                in_key: None,
+                key,
+                count,
+            })
             .collect();
         if !options.order_by_ascending {
             entries.reverse();

@@ -10,7 +10,7 @@ pub mod types;
 mod verify;
 pub use error::Error;
 pub use proof::document_count::{
-    verify_aggregate_count_proof, verify_distinct_count_proof, DocumentCount,
+    verify_aggregate_count_proof, verify_distinct_count_proof, DocumentCount, VerifiedSplitCount,
 };
 pub use proof::document_split_count::DocumentSplitCounts;
 pub use proof::{FromProof, Length};

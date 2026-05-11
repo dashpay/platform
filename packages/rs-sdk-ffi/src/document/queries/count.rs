@@ -238,10 +238,16 @@ pub unsafe extern "C" fn dash_sdk_document_split_count(
             start_after_split_key: None,
         };
 
+        // `DocumentSplitCounts` now carries per-(in_key, key)
+        // entries — collapse to the historical flat map shape via
+        // `into_flat_map`, summing across `in_key` forks when the
+        // query was compound. Swift FFI clients that need the
+        // unmerged view can switch to a separate binding once the
+        // FFI surface exposes the richer shape.
         let split_counts = DocumentSplitCounts::fetch(&wrapper.sdk, count_query)
             .await
             .map_err(|e| FFIError::InternalError(format!("Failed to fetch split counts: {}", e)))?
-            .map(|s| s.0)
+            .map(|s| s.into_flat_map())
             .unwrap_or_default();
 
         let counts: BTreeMap<String, u64> = split_counts

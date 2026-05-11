@@ -11,14 +11,46 @@ use dpp::version::PlatformVersion;
 use drive::query::DriveDocumentQuery;
 use std::collections::BTreeMap;
 
+use crate::proof::document_count::VerifiedSplitCount;
+
 /// The split counts of documents matching a query, verified from proof.
-/// Maps property value bytes to count.
 ///
-/// The keys are the byte form of each split-property value as produced by
-/// [`DocumentTypeBasicMethods::serialize_value_for_key`], so they line up
-/// with the keys returned on the no-proof / CountTree path.
+/// Each entry carries the serialized split-property value (`key`) as
+/// produced by
+/// [`DocumentTypeBasicMethods::serialize_value_for_key`], the verified
+/// `count`, and an optional `in_key` carrying the In-prefix value for
+/// compound range-distinct queries (see the [`VerifiedSplitCount`]
+/// doc for rationale on why compound results stay unmerged).
+///
+/// For flat queries (per-`In`-value mode without a range, or per-
+/// distinct-value-in-range mode without an `In` on prefix) every
+/// entry's `in_key` is `None`. Callers can recover the historical
+/// `BTreeMap<Vec<u8>, u64>` shape by collecting `(key, count)` pairs
+/// — see [`Self::into_flat_map`].
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct DocumentSplitCounts(pub BTreeMap<Vec<u8>, u64>);
+pub struct DocumentSplitCounts(pub Vec<VerifiedSplitCount>);
+
+impl DocumentSplitCounts {
+    /// Collect entries into a `BTreeMap<Vec<u8>, u64>` keyed by the
+    /// terminator `key`, summing across `in_key` forks. Use this when
+    /// the caller wants the merged-histogram view of a compound
+    /// query (or for backwards compatibility with the pre-no-merge
+    /// API shape). Flat queries pass through unchanged.
+    pub fn into_flat_map(self) -> BTreeMap<Vec<u8>, u64> {
+        let mut out: BTreeMap<Vec<u8>, u64> = BTreeMap::new();
+        for entry in self.0 {
+            *out.entry(entry.key).or_insert(0) += entry.count;
+        }
+        out
+    }
+
+    /// Build a [`DocumentSplitCounts`] from a verifier-side
+    /// `Vec<VerifiedSplitCount>`. Identity for now; kept as a
+    /// constructor in case the internal shape evolves.
+    pub fn from_verified(entries: Vec<VerifiedSplitCount>) -> Self {
+        DocumentSplitCounts(entries)
+    }
+}
 
 /// Reject the generic [`FromProof`] entry point for [`DocumentSplitCounts`].
 ///
@@ -110,8 +142,22 @@ impl DocumentSplitCounts {
             platform_version,
         )?;
 
+        // PerInValue mode (materialize-and-count path) has no In
+        // dimension distinct from the value being counted — the
+        // split property IS the In field. So `in_key = None` and
+        // `key = serialized In value` per VerifiedSplitCount's flat
+        // convention.
+        let entries: Vec<VerifiedSplitCount> = aggregated
+            .into_iter()
+            .map(|(key, count)| VerifiedSplitCount {
+                in_key: None,
+                key,
+                count,
+            })
+            .collect();
+
         Ok((
-            Some(DocumentSplitCounts(aggregated)),
+            Some(DocumentSplitCounts(entries)),
             mtd.clone(),
             proof.clone(),
         ))

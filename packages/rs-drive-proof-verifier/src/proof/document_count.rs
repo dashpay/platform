@@ -7,7 +7,6 @@ use dpp::dashcore::Network;
 use dpp::version::PlatformVersion;
 use drive::grovedb::GroveDb;
 use drive::query::{DriveDocumentQuery, PathQuery};
-use std::collections::BTreeMap;
 
 /// The count of documents matching a query, verified from proof.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -98,9 +97,24 @@ pub fn verify_aggregate_count_proof(
     Ok(count)
 }
 
+/// A single verified `(in_key, key, count)` triple from a distinct-
+/// count proof. Mirrors `drive::query::SplitCountEntry`'s shape — see
+/// that struct's doc comment for why the In dimension is preserved
+/// instead of being merged client-side.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VerifiedSplitCount {
+    /// The serialized In-prefix value for compound queries. `None`
+    /// for flat queries with no `In` on prefix.
+    pub in_key: Option<Vec<u8>>,
+    /// The serialized terminator (range-property) value.
+    pub key: Vec<u8>,
+    /// The verified count for this `(in_key, key)` tuple.
+    pub count: u64,
+}
+
 /// Verify a regular grovedb range proof against a `ProvableCountTree`
-/// and the surrounding tenderdash commit, returning the per-distinct-
-/// value counts the proof commits to.
+/// and the surrounding tenderdash commit, returning the verified
+/// per-(in_key, key) counts the proof commits to.
 ///
 /// Companion to [`verify_aggregate_count_proof`]: where that one
 /// extracts a single `u64` via `AggregateCountOnRange`'s `HashWithCount`
@@ -108,8 +122,7 @@ pub fn verify_aggregate_count_proof(
 /// wrapper) and pulls the per-key counts out of the leaf merk's
 /// `KVCount(key, value, count)` ops. Each `count` is bound to the merk
 /// root via `node_hash_with_count(kv_hash, l_hash, r_hash, count)`, so
-/// the standard hash-chain check
-/// (`GroveDb::verify_query_with_options`) is sufficient — once that
+/// the standard hash-chain check is sufficient — once `verify_query`
 /// returns `Ok`, every `count` we extract is cryptographically
 /// committed to the same `root_hash` tenderdash signs.
 ///
@@ -118,47 +131,52 @@ pub fn verify_aggregate_count_proof(
 /// — the prover and verifier must agree on the exact path/range bytes
 /// or the merk chain check fails.
 ///
-/// Trade-off vs. the aggregate path: proof size is O(distinct values
-/// matched) rather than O(log n), because each distinct in-range key
-/// emits its own `KVCount` op instead of being collapsed into a
-/// boundary subtree.
+/// ## No cross-fork merge
+///
+/// For compound queries (an `In` clause on a prefix property) each
+/// emitted element retains its `in_key` (the In value for that fork)
+/// alongside the terminator `key`. Cross-fork aggregation is
+/// intentionally NOT done here — callers reduce by `key` client-side
+/// if they want a flat histogram. This makes verification a near
+/// pass-through over what `verify_query` returns, avoids the
+/// pre-merge undercount that biases proofs when `limit` truncates
+/// elements before the merge can run, and means a malicious server
+/// omitting one whole `In` branch shows up as missing entries
+/// (rather than as a silently-undersummed total).
+///
+/// ## Trade-off vs. the aggregate path
+///
+/// Proof size is O(distinct (in_key, terminator) pairs matched)
+/// rather than O(log n), because each distinct in-range pair emits
+/// its own `KVCount` op instead of being collapsed into a boundary
+/// subtree. Still strictly smaller than materialize-and-count.
 pub fn verify_distinct_count_proof(
     proof: &Proof,
     mtd: &ResponseMetadata,
     path_query: &PathQuery,
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
-) -> Result<BTreeMap<Vec<u8>, u64>, Error> {
-    // The path query built by
-    // `DriveDocumentCountQuery::distinct_count_path_query` always
-    // contains exactly one range `QueryItem` and no explicit `Key`
-    // items — `detect_mode` only routes `(range, no In, prove,
-    // distinct)` to `RangeDistinctProof`, so neither `In`-on-prefix
-    // nor point lookups can reach this verifier.
-    //
-    // For that invariant, `GroveDb::verify_query` is the correct
-    // helper:
-    // - `absence_proofs_for_non_existing_searched_keys: false` —
-    //   range items can't be enumerated for absence checks anyway
+) -> Result<Vec<VerifiedSplitCount>, Error> {
+    // `GroveDb::verify_query` is appropriate here for both flat and
+    // compound shapes:
+    // - For flat queries (no `In` on prefix) the path query has a
+    //   single range `QueryItem` and no explicit `Key` items; range
+    //   items can't be enumerated for absence checks anyway
     //   (`Query::terminal_keys_inner` errors `NotSupported` on
-    //   unbounded ranges), and there are no explicit `Key` items
-    //   whose absence we'd need to prove. Matches what the normal
-    //   docs handler does in `DriveDocumentQuery::
-    //   verify_proof_keep_serialized_v0`.
-    // - `verify_proof_succinctness: true` — proofs with unrequested
-    //   extra subtree data are still rejected.
+    //   unbounded ranges).
+    // - For compound queries (`In` on prefix) the outer Query has
+    //   explicit `Key` items per In value, but because we no longer
+    //   sum across forks, a missing `Key` branch surfaces as missing
+    //   entries with that `in_key` rather than as a wrong total —
+    //   the caller can detect "I asked for 3 In values but only got
+    //   entries for 2" directly. We do NOT need
+    //   `absence_proofs_for_non_existing_searched_keys: true` for
+    //   correctness here; it would be a useful future addition for
+    //   "prove this In value has zero entries" but isn't required
+    //   to make distinct-count proofs sound.
     //
-    // **If `detect_mode` is ever extended to route `In`-bearing
-    // queries here**, this is the place that needs to branch: for
-    // `Key`-item queries the path query CAN be enumerated and
-    // `absence_proofs_for_non_existing_searched_keys: true` SHOULD
-    // be used (via `verify_query_with_options`) to detect a
-    // malicious server omitting some of the requested values from
-    // the proof.
-    //
-    // Cursor support (`start_after_split_key`) would similarly
-    // switch the no-cursor branch to `verify_subset_query` — same
-    // pattern the docs handler uses.
+    // `verify_proof_succinctness: true` (the default) is kept so
+    // proofs with unrequested extra subtree data are still rejected.
     let (root_hash, elements) = GroveDb::verify_query(
         &proof.grovedb_proof,
         path_query,
@@ -174,17 +192,26 @@ pub fn verify_distinct_count_proof(
 
     verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-    // Sum per terminator key. For flat queries (no In on prefix)
-    // each terminator value appears once → behaves like a collect.
-    // For compound queries (In on prefix), the same terminator
-    // value may appear under multiple outer In keys (e.g. color
-    // "red" under brand=acme and brand=contoso) → sum across forks.
-    // Matches the no-proof executor's cross-fork merge semantic.
-    let mut counts: BTreeMap<Vec<u8>, u64> = BTreeMap::new();
-    for (_path, key, elem) in elements {
+    // Convert `(path, key, Option<Element>)` triples into
+    // `VerifiedSplitCount`. For compound queries the In value sits at
+    // `path[base_path_len]` (the first extra path segment beyond the
+    // path query's `path`); for flat queries the emitted path equals
+    // `path_query.path` so the in_key is `None`.
+    let base_path_len = path_query.path.len();
+    let mut out: Vec<VerifiedSplitCount> = Vec::with_capacity(elements.len());
+    for (path, key, elem) in elements {
         if let Some(e) = elem {
-            *counts.entry(key).or_insert(0) += e.count_value_or_default();
+            let count = e.count_value_or_default();
+            if count == 0 {
+                continue;
+            }
+            let in_key = if path.len() > base_path_len {
+                Some(path[base_path_len].clone())
+            } else {
+                None
+            };
+            out.push(VerifiedSplitCount { in_key, key, count });
         }
     }
-    Ok(counts)
+    Ok(out)
 }

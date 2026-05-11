@@ -373,15 +373,20 @@ impl FromProof<DocumentCountQuery> for DocumentSplitCounts {
             .iter()
             .any(|wc| DriveDocumentCountQuery::is_range_operator(wc.operator));
 
-        // Range + distinct (no In): per-distinct-value counts via a
-        // regular merk range proof (no `AggregateCountOnRange`
-        // wrapper). The proof's `KVCount` ops carry per-key counts
-        // that the merk root commits to via `node_hash_with_count`,
-        // so `verify_distinct_count_proof` runs the standard hash
+        // Range + distinct (with or without In on prefix): per-
+        // distinct-value counts via a regular merk range proof
+        // (no `AggregateCountOnRange` wrapper). The proof's
+        // `KVCount` ops carry per-`(in_key, key)` counts that the
+        // merk root commits to via `node_hash_with_count`, so
+        // `verify_distinct_count_proof` runs the standard hash
         // chain check and reads the counts back as a verified
-        // `BTreeMap`. Only reachable when the SDK builder set
+        // `Vec<VerifiedSplitCount>`. For compound queries the In
+        // value is preserved in each entry's `in_key` — callers can
+        // reduce by `key` via `DocumentSplitCounts::into_flat_map`
+        // if they want the merged-histogram shape. Only reachable
+        // when the SDK builder set
         // `with_distinct_counts_in_range(true)`.
-        if split_property.is_none() && has_range && request.return_distinct_counts_in_range {
+        if has_range && request.return_distinct_counts_in_range {
             let response: Self::Response = response.into();
 
             let document_type = request
@@ -439,10 +444,10 @@ impl FromProof<DocumentCountQuery> for DocumentSplitCounts {
                 .metadata()
                 .or(Err(drive_proof_verifier::Error::EmptyResponseMetadata))?;
 
-            let counts =
+            let entries =
                 verify_distinct_count_proof(proof, mtd, &path_query, platform_version, provider)?;
             return Ok((
-                Some(DocumentSplitCounts(counts)),
+                Some(DocumentSplitCounts::from_verified(entries)),
                 mtd.clone(),
                 proof.clone(),
             ));
@@ -493,14 +498,20 @@ impl FromProof<DocumentCountQuery> for DocumentSplitCounts {
                 // result, not absence — emit a single empty-key entry
                 // unconditionally so callers can distinguish "no docs
                 // matched" from "no proof returned" purely by structure.
-                let map = opt
+                let entries = opt
                     .map(|DocumentCount(count)| {
-                        let mut m = std::collections::BTreeMap::new();
-                        m.insert(Vec::new(), count);
-                        m
+                        vec![drive_proof_verifier::VerifiedSplitCount {
+                            in_key: None,
+                            key: Vec::new(),
+                            count,
+                        }]
                     })
                     .unwrap_or_default();
-                (Some(DocumentSplitCounts(map)), mtd, proof)
+                (
+                    Some(DocumentSplitCounts::from_verified(entries)),
+                    mtd,
+                    proof,
+                )
             })
         }
     }

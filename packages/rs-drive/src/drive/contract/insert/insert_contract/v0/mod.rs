@@ -1919,12 +1919,14 @@ mod range_countable_index_e2e_tests {
     }
 
     /// Range count with an `In` clause on the prefix forks the walk
-    /// into one path per prefix value and merges per-key entries.
-    /// Uses a compound `[brand, color]` range_countable index — Equal
-    /// would also work for one brand value, but `In` exercises the
-    /// cartesian fork path that's not covered elsewhere.
+    /// into one path per prefix value. Each emitted entry carries
+    /// the `in_key` (the brand) AND `key` (the color) — server-side
+    /// cross-fork merging was dropped (originally bg of Codex
+    /// finding 1: limit applied pre-merge can undercount cross-fork
+    /// sums). Callers reduce by `key` client-side if they want the
+    /// flat histogram view.
     #[test]
-    fn range_count_with_in_on_prefix_forks_and_merges() {
+    fn range_count_with_in_on_prefix_returns_per_brand_color_entries() {
         use crate::query::{
             DriveDocumentCountQuery, RangeCountOptions, WhereClause, WhereOperator,
         };
@@ -2043,8 +2045,13 @@ mod range_countable_index_e2e_tests {
             where_clauses,
         };
 
-        // Distinct mode: per-color entries, summed across both brands.
-        // green: 1 (only contoso). red: 3 + 2 = 5. So [(green, 1), (red, 5)].
+        // Distinct mode: per-(brand, color) entries, unmerged.
+        // brand=acme + color > "blue" matches red(3).
+        // brand=contoso + color > "blue" matches red(2), green(1).
+        // Expected order: ascending (in_key, key) tuple →
+        //   (acme, red)     count=3
+        //   (contoso, green) count=1
+        //   (contoso, red)   count=2
         let split = query
             .execute_range_count_no_proof(
                 &drive,
@@ -2058,13 +2065,35 @@ mod range_countable_index_e2e_tests {
                 pv,
             )
             .expect("range count should succeed");
-        assert_eq!(split.len(), 2);
-        assert_eq!(split[0].key, b"green".to_vec());
-        assert_eq!(split[0].count, 1);
-        assert_eq!(split[1].key, b"red".to_vec());
-        assert_eq!(split[1].count, 5);
+        assert_eq!(
+            split.len(),
+            3,
+            "expected unmerged per-(brand, color) entries, not a cross-fork sum"
+        );
+        assert_eq!(split[0].in_key.as_deref(), Some(b"acme".as_slice()));
+        assert_eq!(split[0].key, b"red".to_vec());
+        assert_eq!(split[0].count, 3);
+        assert_eq!(split[1].in_key.as_deref(), Some(b"contoso".as_slice()));
+        assert_eq!(split[1].key, b"green".to_vec());
+        assert_eq!(split[1].count, 1);
+        assert_eq!(split[2].in_key.as_deref(), Some(b"contoso".as_slice()));
+        assert_eq!(split[2].key, b"red".to_vec());
+        assert_eq!(split[2].count, 2);
 
-        // Sum mode: 6 docs total.
+        // Client-side merge over `key` recovers the flat histogram:
+        //   green: 1
+        //   red:   3 + 2 = 5
+        let merged: std::collections::BTreeMap<Vec<u8>, u64> =
+            split
+                .iter()
+                .fold(std::collections::BTreeMap::new(), |mut m, e| {
+                    *m.entry(e.key.clone()).or_insert(0) += e.count;
+                    m
+                });
+        assert_eq!(merged.get(b"green".as_slice()), Some(&1));
+        assert_eq!(merged.get(b"red".as_slice()), Some(&5));
+
+        // Summed mode: 6 docs total across all forks.
         let summed = query
             .execute_range_count_no_proof(
                 &drive,
@@ -2079,6 +2108,11 @@ mod range_countable_index_e2e_tests {
             )
             .expect("range count should succeed");
         assert_eq!(summed.len(), 1);
+        assert!(
+            summed[0].in_key.is_none(),
+            "summed mode always emits a single in_key=None, key=empty entry"
+        );
+        assert!(summed[0].key.is_empty());
         assert_eq!(summed[0].count, 6);
     }
 
@@ -3844,19 +3878,24 @@ mod range_countable_index_e2e_tests {
     /// per In value at the In-bearing prop's property-name subtree,
     /// `set_subquery_path` carries any post-In Equal pairs +
     /// terminator name, `set_subquery` is the range item. The
-    /// resulting proof emits per-(brand,color) elements which the
-    /// verifier sums across brand forks to produce per-color counts.
+    /// resulting proof emits per-(brand, color) elements which the
+    /// verifier reads as-is — there is NO server-side cross-fork
+    /// merging, so the `limit` pushed into the prover's path query
+    /// can't undercount cross-fork sums (this was the original
+    /// motivation for the no-merge design, Codex finding 1).
+    /// Callers reduce by `key` client-side via
+    /// [`DocumentSplitCounts::into_flat_map`] for the historical
+    /// flat-histogram view.
     ///
     /// Mirrors the no-proof
-    /// `range_count_with_in_on_prefix_forks_and_merges` test —
-    /// same fixture (3 acme+red, 2 acme+blue, 2 contoso+red,
+    /// `range_count_with_in_on_prefix_returns_per_brand_color_entries`
+    /// test — same fixture (3 acme+red, 2 acme+blue, 2 contoso+red,
     /// 1 contoso+green), same predicate (`brand IN (acme, contoso)
-    /// AND color > "blue"`), same expected per-color counts
-    /// (red=5, green=1). Pins that both code paths agree on the
-    /// compound shape, and that the verifier's cross-fork sum
-    /// matches the no-proof executor's cross-fork merge.
+    /// AND color > "blue"`), same expected per-(brand, color)
+    /// entries. Pins that both code paths agree on the unmerged
+    /// compound shape.
     #[test]
-    fn distinct_count_proof_with_in_on_prefix_sums_across_brands() {
+    fn distinct_count_proof_with_in_on_prefix_returns_per_brand_color_entries() {
         use crate::query::{DriveDocumentCountQuery, WhereClause, WhereOperator};
         use dpp::platform_value::Value;
         use grovedb::{Element, GroveDb};
@@ -3991,26 +4030,62 @@ mod range_countable_index_e2e_tests {
         .expect("verify");
         assert_ne!(root_hash, [0u8; 32]);
 
-        // Sum per terminator key across In-forks — same logic as
-        // `verify_distinct_count_proof`.
-        let mut counts: std::collections::BTreeMap<Vec<u8>, u64> =
+        // Walk the verified `(path, key, element)` triples and
+        // collect per-(brand, color) entries — mirrors what
+        // `verify_distinct_count_proof` does. We do NOT sum across
+        // brand forks here; the unmerged shape is what the verifier
+        // returns.
+        let base_path_len = path_query.path.len();
+        let mut per_pair: std::collections::BTreeMap<(Vec<u8>, Vec<u8>), u64> =
             std::collections::BTreeMap::new();
-        for (_path, key, elem) in elements {
+        for (path, key, elem) in elements {
             if let Some(e) = elem {
                 let _: Element = e.clone();
-                *counts.entry(key).or_insert(0) += e.count_value_or_default();
+                let count = e.count_value_or_default();
+                if count == 0 {
+                    continue;
+                }
+                let in_key = if path.len() > base_path_len {
+                    path[base_path_len].clone()
+                } else {
+                    Vec::new()
+                };
+                *per_pair.entry((in_key, key)).or_insert(0) += count;
             }
         }
 
-        // Expected: red=5 (3 acme + 2 contoso), green=1 (contoso only).
+        // Expected unmerged:
+        //   (acme,    red)    → 3
+        //   (contoso, green)  → 1
+        //   (contoso, red)    → 2
         // blue excluded by `> blue`.
-        assert_eq!(counts.len(), 2, "expected two distinct in-range colors");
-        assert_eq!(counts.get(b"red".as_slice()), Some(&5));
-        assert_eq!(counts.get(b"green".as_slice()), Some(&1));
+        assert_eq!(
+            per_pair.len(),
+            3,
+            "expected three (brand, color) pairs in the verified proof"
+        );
+        assert_eq!(per_pair.get(&(b"acme".to_vec(), b"red".to_vec())), Some(&3));
+        assert_eq!(
+            per_pair.get(&(b"contoso".to_vec(), b"green".to_vec())),
+            Some(&1)
+        );
+        assert_eq!(
+            per_pair.get(&(b"contoso".to_vec(), b"red".to_vec())),
+            Some(&2)
+        );
 
-        // Cross-path agreement: sum of per-color counts matches the
-        // sum-mode no-proof answer (6 docs).
-        let total: u64 = counts.values().sum();
+        // Cross-path agreement (client-side merge): sum across
+        // brand forks per color matches what callers reducing by
+        // `key` would see. Sum of all per-(brand, color) counts
+        // matches the sum-mode no-proof answer (6 docs).
+        let mut per_color: std::collections::BTreeMap<Vec<u8>, u64> =
+            std::collections::BTreeMap::new();
+        for ((_, color), count) in &per_pair {
+            *per_color.entry(color.clone()).or_insert(0) += count;
+        }
+        assert_eq!(per_color.get(b"red".as_slice()), Some(&5));
+        assert_eq!(per_color.get(b"green".as_slice()), Some(&1));
+        let total: u64 = per_pair.values().sum();
         assert_eq!(total, 6);
     }
 }

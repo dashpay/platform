@@ -180,16 +180,30 @@ The no-prove fast path covers three operator shapes:
 - **`In` (`in`)** — cartesian fork. Each value in the `In` array becomes its own index path; their counts are summed (or, for split counts, merged by split key). An `In` clause with `k` values costs `k` point lookups, not a tree walk. The `In` clause also doubles as the per-value split signal in the unified `GetDocumentsCount` endpoint — at most one `In` per request.
 - **Range** (`>`, `>=`, `<`, `<=`, `between*`, `startsWith`) — walks the property-name `ProvableCountTree`'s children whose keys lie inside the range, reading each child `CountTree`'s count value. Picked by [`find_range_countable_index_for_where_clauses`](https://docs.rs/drive/latest/drive/query/struct.DriveDocumentCountQuery.html#method.find_range_countable_index_for_where_clauses); requires the index to have `range_countable: true` AND the range property to be the index's last property (the IndexLevel terminator). `startsWith "p"` becomes the half-open range `[serialize("p"), serialize("p") with last byte +1)` — the same byte-incremented encoding the normal docs path uses (see `conditions.rs`'s `StartsWith` arm), valid for UTF-8 string keys since UTF-8 never contains `0xFF`.
 
-Through the unified `GetDocumentsCount` request handler, range queries take an `Equal`-only prefix and a single range terminator. The handler returns `InvalidArgument` for more than one range clause (use `between*` to express two-sided ranges) and for `In + range` mixed — the proto makes `In` doubly meaningful (cartesian-fork covering AND the per-value split signal), so pairing it with a range would conflict with `return_distinct_counts_in_range`'s per-distinct-value entries. The lower-level `execute_range_count_no_proof` executor *does* accept `In`-on-prefix + range-on-terminator (the cartesian fork merges per-key counts) and is reachable from direct rs-drive callers, not from the unified endpoint.
+Through the unified `GetDocumentsCount` request handler, range queries take a single range terminator clause plus a prefix of `Equal` clauses and/or one `In` clause. `In` on a prefix property exercises grovedb's native subquery primitive — each emitted entry then carries both the `in_key` (the In value for that fork) and the `key` (the terminator value within the range). Per-fork counts are NOT merged server-side — see [No-Merge Compound Semantics](#no-merge-compound-semantics) below for rationale.
 
 #### Range Modes
 
 A range query in the unified endpoint produces one of two response shapes, controlled by `return_distinct_counts_in_range`:
 
 - **`return_distinct_counts_in_range = false`** (default) — `CountResults.aggregate_count` carrying the sum of the per-value `CountTree` counts within the range. Use for "how many widgets have color in `[red, tomato]`?".
-- **`return_distinct_counts_in_range = true`** — `CountResults.entries` with one `CountEntry` per distinct property value within the range (`key` = serialized property value, `count` = `CountTree` count for that value). Use for "show me a histogram of widgets by color in `[red, tomato]`".
+- **`return_distinct_counts_in_range = true`** — `CountResults.entries` with one `CountEntry` per distinct property value within the range (`key` = serialized terminator value, `count` = `CountTree` count for that value, `in_key` = the In-fork value for compound queries or absent for flat queries). Use for "show me a histogram of widgets by color in `[red, tomato]`".
 
-Distinct mode also accepts pagination knobs:
+#### No-Merge Compound Semantics
+
+For compound queries (`In` on a prefix property + range on the terminator), the entries are returned **unmerged** — one `CountEntry` per emitted `(in_key, key)` pair. The server does NOT collapse them down to a flat histogram keyed only by `key`. This is a load-bearing design choice:
+
+1. **Correctness under `limit`.** Pushing a `limit` into grovedb's path query truncates the emitted elements before any merge could run. With cross-fork merging this can undercount the merged sums (e.g. `brand IN (acme, contoso)` + `color > x` + `limit=1` could return `acme/red, count=2` and silently drop `contoso/red, count=3` so the merged `red` count comes out as `2` instead of `5`). Without merge, `limit` and the user's "number of entries returned" mean the same thing.
+2. **Proof verification stays straightforward.** A malicious server omitting one `In` branch shows up as missing entries with that `in_key` rather than as a silent undercount in a merged total. The caller can detect "I asked for 3 In values but only got entries for 2" directly from the response shape.
+3. **No information loss.** A caller who wanted the merged histogram can compute `result.fold(by=key, sum=count)` client-side trivially. A caller who wanted per-`(in_key, key)` counts can't reverse a merged histogram.
+
+The rs-sdk surfaces this via `DocumentSplitCounts.0: Vec<VerifiedSplitCount>`. Callers wanting the historical flat-map shape can call `DocumentSplitCounts::into_flat_map()` which sums across `in_key` forks.
+
+Flat queries (no `In` on prefix) have `in_key = None` on every entry; for those callers the API behaves identically to the pre-no-merge shape.
+
+#### Pagination
+
+Distinct mode accepts pagination knobs:
 
 | Field | Effect |
 |---|---|
@@ -201,7 +215,9 @@ These knobs are ignored on summed mode (they have no defined meaning for a singl
 
 #### Range Queries on the Prove Path
 
-When `prove = true` and the query carries a range clause, the handler picks one of two prove sub-paths based on `return_distinct_counts_in_range`. The aggregate sub-path (default) builds a grovedb [`AggregateCountOnRange`](https://docs.rs/grovedb/latest/grovedb/struct.GroveDb.html#method.verify_aggregate_count_query) proof — verified via `GroveDb::verify_aggregate_count_query`, recovering `(root_hash, count)` *without materializing any matching documents* and replacing the older materialize-and-count fallback that capped at `u16::MAX` matching docs. The distinct sub-path (`return_distinct_counts_in_range = true`) builds a regular range proof against the property-name `ProvableCountTree` — the leaf merk emits per-key `KVCount(key, value, count)` ops, each bound to the merk root via `node_hash_with_count`, and the SDK extracts them as a `BTreeMap<Vec<u8>, u64>`. Distinct proof size is O(distinct values matched) instead of the aggregate's O(log n), but still much smaller than materialize-and-count. `In` on prefix properties remains rejected on both prove sub-paths (the proof shapes lift only a single inner range; multi-value prefix coverage would require composing N independent proofs).
+When `prove = true` and the query carries a range clause, the handler picks one of two prove sub-paths based on `return_distinct_counts_in_range`. The aggregate sub-path (default) builds a grovedb [`AggregateCountOnRange`](https://docs.rs/grovedb/latest/grovedb/struct.GroveDb.html#method.verify_aggregate_count_query) proof — verified via `GroveDb::verify_aggregate_count_query`, recovering `(root_hash, count)` *without materializing any matching documents* and replacing the older materialize-and-count fallback that capped at `u16::MAX` matching docs. The distinct sub-path (`return_distinct_counts_in_range = true`) builds a regular range proof against the property-name `ProvableCountTree` — the leaf merk emits per-`(in_key, key)` `KVCount` ops, each bound to the merk root via `node_hash_with_count`, and the SDK extracts them as a `Vec<VerifiedSplitCount>` (preserving the unmerged compound shape per [No-Merge Compound Semantics](#no-merge-compound-semantics)). Distinct proof size is O(distinct `(in_key, key)` pairs matched) instead of the aggregate's O(log n), but still much smaller than materialize-and-count.
+
+`In` on a prefix property is supported on the distinct sub-path: grovedb's outer Query enumerates `Key(in_value)` entries at the In-bearing prop's property-name subtree, `set_subquery_path` carries any post-In Equal pairs + terminator name, and `set_subquery` is the range item. The aggregate sub-path still rejects `In` on prefix because `AggregateCountOnRange` is a single-range merk primitive that can't fork at the merk layer — for compound aggregates, callers use `return_distinct_counts_in_range = true` and reduce client-side via `DocumentSplitCounts::into_flat_map`.
 
 For point-lookup count proofs (no range clause), the handler still falls back to the materialize-and-count flow with the `u16::MAX` cap. A future change can wire per-`CountTree` count proofs through a similar aggregate primitive.
 

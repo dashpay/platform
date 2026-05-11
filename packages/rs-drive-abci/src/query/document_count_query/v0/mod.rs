@@ -55,6 +55,7 @@ fn count_response_with_entries<C>(
     let entries: Vec<get_documents_count_response_v0::CountEntry> = entries
         .into_iter()
         .map(|e| get_documents_count_response_v0::CountEntry {
+            in_key: e.in_key,
             key: e.key,
             count: e.count,
         })
