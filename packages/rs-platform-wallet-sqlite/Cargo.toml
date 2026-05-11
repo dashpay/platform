@@ -1,0 +1,48 @@
+[package]
+name = "platform-wallet-sqlite"
+version.workspace = true
+rust-version.workspace = true
+edition = "2021"
+authors = ["Dash Core Team"]
+license = "MIT"
+description = "SQLite-backed PlatformWalletPersistence implementation with online backup, retention, and CLI"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "platform-wallet-sqlite"
+path = "src/bin/platform-wallet-sqlite.rs"
+required-features = ["cli"]
+
+[dependencies]
+platform-wallet = { path = "../rs-platform-wallet" }
+key-wallet = { workspace = true }
+key-wallet-manager = { workspace = true }
+dashcore = { workspace = true }
+dpp = { path = "../rs-dpp" }
+dash-sdk = { path = "../rs-sdk", default-features = false }
+rusqlite = { version = "0.38", features = ["bundled", "backup", "blob"] }
+refinery = { version = "0.9", default-features = false, features = ["rusqlite"] }
+barrel = { version = "0.7", features = ["sqlite3"] }
+serde = { version = "1", features = ["derive"] }
+bincode = { version = "2", features = ["serde"] }
+thiserror = "1"
+tracing = "0.1"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+hex = "0.4"
+humantime = "2"
+sha2 = "0.10"
+clap = { version = "4", features = ["derive"], optional = true }
+
+[dev-dependencies]
+tempfile = "3"
+proptest = "1"
+assert_cmd = "2"
+predicates = "3"
+static_assertions = "1"
+filetime = "0.2"
+
+[features]
+default = ["cli"]
+cli = ["dep:clap"]
