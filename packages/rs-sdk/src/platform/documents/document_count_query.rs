@@ -280,12 +280,6 @@ impl FromProof<DocumentCountQuery> for DocumentCount {
                 index,
                 where_clauses: request.document_query.where_clauses.clone(),
             };
-            let path_query = count_query
-                .aggregate_count_path_query(platform_version)
-                .map_err(|e| drive_proof_verifier::Error::RequestError {
-                    error: format!("failed to build aggregate-count path query: {}", e),
-                })?;
-
             let proof = response
                 .proof()
                 .or(Err(drive_proof_verifier::Error::NoProofInResult))?;
@@ -293,8 +287,13 @@ impl FromProof<DocumentCountQuery> for DocumentCount {
                 .metadata()
                 .or(Err(drive_proof_verifier::Error::EmptyResponseMetadata))?;
 
+            // The verifier helper rebuilds the prover's path query
+            // internally via `count_query.aggregate_count_path_query`
+            // — same builder both sides share, so the path query
+            // bytes match byte-for-byte and the merk root
+            // recomputation succeeds.
             let count =
-                verify_aggregate_count_proof(proof, mtd, &path_query, platform_version, provider)?;
+                verify_aggregate_count_proof(&count_query, proof, mtd, platform_version, provider)?;
             return Ok((Some(DocumentCount(count)), mtd.clone(), proof.clone()));
         }
 
@@ -371,7 +370,7 @@ impl FromProof<DocumentCountQuery> for DocumentSplitCounts {
         // merk root commits to via `node_hash_with_count`, so
         // `verify_distinct_count_proof` runs the standard hash
         // chain check and reads the counts back as a verified
-        // `Vec<VerifiedSplitCount>`. For compound queries the In
+        // `Vec<SplitCountEntry>`. For compound queries the In
         // value is preserved in each entry's `in_key` — callers can
         // reduce by `key` via `DocumentSplitCounts::into_flat_map`
         // if they want the merged-histogram shape. Only reachable
@@ -407,35 +406,30 @@ impl FromProof<DocumentCountQuery> for DocumentSplitCounts {
                 index,
                 where_clauses: request.document_query.where_clauses.clone(),
             };
-            // Reconstruct the same `PathQuery` the prover used. The
-            // server's prove-distinct dispatcher applies `request
-            // .limit.unwrap_or(default_query_limit)` and rejects any
-            // value above `max_query_limit` — so by the time we get
-            // back proof bytes, the server has used either the
-            // explicit request limit or the shared default. Mirror
-            // that here using `drive::config::DEFAULT_QUERY_LIMIT`,
-            // which both sides share, so the path query bytes match
-            // exactly. (Operators who override `default_query_limit`
-            // away from the shared constant must require clients to
-            // set `limit` explicitly on prove-distinct queries.)
+            // Match the prover's defaults for limit and order so
+            // the verifier helper can rebuild the same path query
+            // internally. The server's prove-distinct dispatcher
+            // applies `request.limit.unwrap_or(default_query_limit)`
+            // and rejects any value above `max_query_limit` — so by
+            // the time we get back proof bytes, the server has used
+            // either the explicit request limit or the shared
+            // default. Mirror that here using
+            // `drive::config::DEFAULT_QUERY_LIMIT`, which both
+            // sides share, so the path query bytes match exactly.
+            // (Operators who override `default_query_limit` away
+            // from the shared constant must require clients to set
+            // `limit` explicitly on prove-distinct queries.)
+            //
+            // `order_by_ascending` defaults to ascending — the
+            // server's prove-distinct dispatcher uses the same
+            // fallback; both sides must land on the same
+            // `left_to_right` value or the merk-root recomputation
+            // fails.
             let limit_u16 = request
                 .limit
                 .map(|l| l as u16)
                 .unwrap_or(drive::config::DEFAULT_QUERY_LIMIT);
-            // Mirror the server's default when the request omits
-            // `order_by_ascending`: ascending. The server's prove-
-            // distinct dispatcher uses the same fallback (see
-            // `RangeDistinctProof` arm in
-            // `execute_document_count_request`); both sides must
-            // land on the same `left_to_right` value or the merk-
-            // root recomputation in `verify_distinct_count_proof`
-            // fails.
             let left_to_right = request.order_by_ascending.unwrap_or(true);
-            let path_query = count_query
-                .distinct_count_path_query(Some(limit_u16), left_to_right, platform_version)
-                .map_err(|e| drive_proof_verifier::Error::RequestError {
-                    error: format!("failed to build distinct-count path query: {}", e),
-                })?;
 
             let proof = response
                 .proof()
@@ -444,8 +438,15 @@ impl FromProof<DocumentCountQuery> for DocumentSplitCounts {
                 .metadata()
                 .or(Err(drive_proof_verifier::Error::EmptyResponseMetadata))?;
 
-            let entries =
-                verify_distinct_count_proof(proof, mtd, &path_query, platform_version, provider)?;
+            let entries = verify_distinct_count_proof(
+                &count_query,
+                proof,
+                mtd,
+                limit_u16,
+                left_to_right,
+                platform_version,
+                provider,
+            )?;
             return Ok((
                 Some(DocumentSplitCounts::from_verified(entries)),
                 mtd.clone(),
@@ -500,7 +501,7 @@ impl FromProof<DocumentCountQuery> for DocumentSplitCounts {
                 // matched" from "no proof returned" purely by structure.
                 let entries = opt
                     .map(|DocumentCount(count)| {
-                        vec![drive_proof_verifier::VerifiedSplitCount {
+                        vec![drive_proof_verifier::SplitCountEntry {
                             in_key: None,
                             key: Vec::new(),
                             count,

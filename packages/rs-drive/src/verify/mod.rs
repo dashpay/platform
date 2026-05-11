@@ -4,6 +4,9 @@
 pub mod contract;
 /// Document verification methods on proofs
 pub mod document;
+/// Document-count verification methods on proofs (the
+/// `GetDocumentsCount` endpoint's prove-path verifiers).
+pub mod document_count;
 /// Identity verification methods on proofs
 pub mod identity;
 /// Single Document verification methods on proofs

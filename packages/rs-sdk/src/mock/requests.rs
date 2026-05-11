@@ -609,14 +609,10 @@ impl MockResponse for drive_proof_verifier::DocumentSplitCounts {
         let bincode_config = standard();
         let (triples, _): (DecodedTriples, _) =
             bincode::decode_from_slice(buf, bincode_config).expect("decode DocumentSplitCounts");
-        let entries: Vec<drive_proof_verifier::VerifiedSplitCount> = triples
+        let entries: Vec<drive_proof_verifier::SplitCountEntry> = triples
             .into_iter()
             .map(
-                |(in_key, key, count)| drive_proof_verifier::VerifiedSplitCount {
-                    in_key,
-                    key,
-                    count,
-                },
+                |(in_key, key, count)| drive_proof_verifier::SplitCountEntry { in_key, key, count },
             )
             .collect();
         drive_proof_verifier::DocumentSplitCounts::from_verified(entries)

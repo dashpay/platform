@@ -87,7 +87,7 @@ pub struct DriveDocumentCountQuery<'a> {
 /// gymnastics for omitted In branches), and gives callers strictly
 /// more information than a flat histogram. Callers reduce
 /// client-side when they want the sum.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SplitCountEntry {
     /// The serialized prefix key for compound queries (the `In`
     /// value for this fork). `None` for flat queries.

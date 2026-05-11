@@ -8,10 +8,8 @@ use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::document::Document;
 use dpp::document::DocumentV0Getters;
 use dpp::version::PlatformVersion;
-use drive::query::DriveDocumentQuery;
+use drive::query::{DriveDocumentQuery, SplitCountEntry};
 use std::collections::BTreeMap;
-
-use crate::proof::document_count::VerifiedSplitCount;
 
 /// The split counts of documents matching a query, verified from proof.
 ///
@@ -19,7 +17,7 @@ use crate::proof::document_count::VerifiedSplitCount;
 /// produced by
 /// [`DocumentTypeBasicMethods::serialize_value_for_key`], the verified
 /// `count`, and an optional `in_key` carrying the In-prefix value for
-/// compound range-distinct queries (see the [`VerifiedSplitCount`]
+/// compound range-distinct queries (see the [`SplitCountEntry`]
 /// doc for rationale on why compound results stay unmerged).
 ///
 /// For flat queries (per-`In`-value mode without a range, or per-
@@ -28,7 +26,7 @@ use crate::proof::document_count::VerifiedSplitCount;
 /// `BTreeMap<Vec<u8>, u64>` shape by collecting `(key, count)` pairs
 /// — see [`Self::into_flat_map`].
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct DocumentSplitCounts(pub Vec<VerifiedSplitCount>);
+pub struct DocumentSplitCounts(pub Vec<SplitCountEntry>);
 
 impl DocumentSplitCounts {
     /// Collect entries into a `BTreeMap<Vec<u8>, u64>` keyed by the
@@ -45,9 +43,9 @@ impl DocumentSplitCounts {
     }
 
     /// Build a [`DocumentSplitCounts`] from a verifier-side
-    /// `Vec<VerifiedSplitCount>`. Identity for now; kept as a
+    /// `Vec<SplitCountEntry>`. Identity for now; kept as a
     /// constructor in case the internal shape evolves.
-    pub fn from_verified(entries: Vec<VerifiedSplitCount>) -> Self {
+    pub fn from_verified(entries: Vec<SplitCountEntry>) -> Self {
         DocumentSplitCounts(entries)
     }
 }
@@ -145,11 +143,11 @@ impl DocumentSplitCounts {
         // PerInValue mode (materialize-and-count path) has no In
         // dimension distinct from the value being counted — the
         // split property IS the In field. So `in_key = None` and
-        // `key = serialized In value` per VerifiedSplitCount's flat
+        // `key = serialized In value` per SplitCountEntry's flat
         // convention.
-        let entries: Vec<VerifiedSplitCount> = aggregated
+        let entries: Vec<SplitCountEntry> = aggregated
             .into_iter()
-            .map(|(key, count)| VerifiedSplitCount {
+            .map(|(key, count)| SplitCountEntry {
                 in_key: None,
                 key,
                 count,
@@ -212,7 +210,7 @@ mod tests {
     //! don't need a real grovedb proof or a populated Drive:
     //!
     //! - `into_flat_map` — pure data reduction over the new
-    //!   `Vec<VerifiedSplitCount>` shape (covers the no-merge →
+    //!   `Vec<SplitCountEntry>` shape (covers the no-merge →
     //!   merged-histogram backwards-compat path).
     //! - `from_verified` — identity constructor wrapping the raw
     //!   verified-entries vec.
@@ -226,10 +224,10 @@ mod tests {
     //! proof, which is outside this crate's feature surface.
     use super::*;
 
-    /// Helper to make a `VerifiedSplitCount` with the given fields
+    /// Helper to make a `SplitCountEntry` with the given fields
     /// without each call site needing to type the struct out.
-    fn entry(in_key: Option<&[u8]>, key: &[u8], count: u64) -> VerifiedSplitCount {
-        VerifiedSplitCount {
+    fn entry(in_key: Option<&[u8]>, key: &[u8], count: u64) -> SplitCountEntry {
+        SplitCountEntry {
             in_key: in_key.map(|s| s.to_vec()),
             key: key.to_vec(),
             count,

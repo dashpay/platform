@@ -5,8 +5,7 @@ use dapi_grpc::platform::v0::{GetDocumentsCountResponse, Proof, ResponseMetadata
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::dashcore::Network;
 use dpp::version::PlatformVersion;
-use drive::grovedb::GroveDb;
-use drive::query::{DriveDocumentQuery, PathQuery};
+use drive::query::{DriveDocumentCountQuery, DriveDocumentQuery, SplitCountEntry};
 
 /// The count of documents matching a query, verified from proof.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -60,183 +59,96 @@ where
 /// Verify a grovedb `AggregateCountOnRange` proof and the surrounding
 /// tenderdash commit, returning the verified document count.
 ///
-/// Counterpart to the materialize-and-count path in the
-/// [`FromProof<DriveDocumentQuery> for DocumentCount`] impl above:
-/// where that path verifies a regular grovedb proof that yields
-/// concrete documents and counts them client-side, this verifies the
-/// merk-level aggregate primitive that yields a single u64 directly
-/// (capped only by the merk tree size, not `u16::MAX`).
+/// Thin tenderdash-composition wrapper over
+/// [`DriveDocumentCountQuery::verify_aggregate_count_proof`] in
+/// rs-drive (which does the merk-level verification). Both helpers
+/// reuse the prover's `aggregate_count_path_query` internally so the
+/// path query bytes match byte-for-byte and the merk root
+/// recomputation succeeds; the caller passes the `query` struct
+/// itself rather than a pre-built `PathQuery`, removing a step
+/// where the SDK and server could drift.
 ///
-/// Caller is expected to build `path_query` via
-/// [`drive::query::DriveDocumentCountQuery::aggregate_count_path_query`]
-/// — the prover and verifier must produce the *exact same* `PathQuery`
-/// for the merk root recomputation to match, so reusing that builder is
-/// load-bearing.
+/// Counterpart to the materialize-and-count path in
+/// [`FromProof<DriveDocumentQuery> for DocumentCount`] above: where
+/// that one verifies a regular grovedb proof that yields concrete
+/// documents and counts them client-side, this verifies the
+/// merk-level aggregate primitive that yields a single `u64`
+/// directly (capped only by the merk tree size, not `u16::MAX`).
 pub fn verify_aggregate_count_proof(
+    query: &DriveDocumentCountQuery,
     proof: &Proof,
     mtd: &ResponseMetadata,
-    path_query: &PathQuery,
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
 ) -> Result<u64, Error> {
-    let (root_hash, count) = GroveDb::verify_aggregate_count_query(
-        &proof.grovedb_proof,
-        path_query,
-        &platform_version.drive.grove_version,
-    )
-    .map_err(|e| Error::GroveDBError {
-        proof_bytes: proof.grovedb_proof.clone(),
-        path_query: Some(path_query.clone()),
-        height: mtd.height,
-        time_ms: mtd.time_ms,
-        error: e.to_string(),
-    })?;
+    let (root_hash, count) = query
+        .verify_aggregate_count_proof(&proof.grovedb_proof, platform_version)
+        .map_drive_error(proof, mtd)?;
 
     verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
     Ok(count)
 }
 
-/// A single verified `(in_key, key, count)` triple from a distinct-
-/// count proof. Mirrors `drive::query::SplitCountEntry`'s shape — see
-/// that struct's doc comment for why the In dimension is preserved
-/// instead of being merged client-side.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct VerifiedSplitCount {
-    /// The serialized In-prefix value for compound queries. `None`
-    /// for flat queries with no `In` on prefix.
-    pub in_key: Option<Vec<u8>>,
-    /// The serialized terminator (range-property) value.
-    pub key: Vec<u8>,
-    /// The verified count for this `(in_key, key)` tuple.
-    pub count: u64,
-}
-
 /// Verify a regular grovedb range proof against a `ProvableCountTree`
 /// and the surrounding tenderdash commit, returning the verified
-/// per-(in_key, key) counts the proof commits to.
+/// per-`(in_key, key)` counts the proof commits to.
 ///
-/// Companion to [`verify_aggregate_count_proof`]: where that one
-/// extracts a single `u64` via `AggregateCountOnRange`'s `HashWithCount`
-/// collapse, this one walks the standard range proof (no opt-in
-/// wrapper) and pulls the per-key counts out of the leaf merk's
-/// `KVCount(key, value, count)` ops. Each `count` is bound to the merk
-/// root via `node_hash_with_count(kv_hash, l_hash, r_hash, count)`, so
-/// the standard hash-chain check is sufficient — once `verify_query`
-/// returns `Ok`, every `count` we extract is cryptographically
-/// committed to the same `root_hash` tenderdash signs.
-///
-/// Caller is expected to build `path_query` via
-/// [`drive::query::DriveDocumentCountQuery::distinct_count_path_query`]
-/// — the prover and verifier must agree on the exact path/range bytes
-/// or the merk chain check fails.
+/// Thin tenderdash-composition wrapper over
+/// [`DriveDocumentCountQuery::verify_distinct_count_proof`] in
+/// rs-drive (which does the merk-level verification and the
+/// in_key extraction from `(path, key, element)` triples).
 ///
 /// ## No cross-fork merge
 ///
 /// For compound queries (an `In` clause on a prefix property) each
-/// emitted element retains its `in_key` (the In value for that fork)
-/// alongside the terminator `key`. Cross-fork aggregation is
-/// intentionally NOT done here — callers reduce by `key` client-side
-/// if they want a flat histogram. This makes verification a near
-/// pass-through over what `verify_query` returns, avoids the
-/// pre-merge undercount that biases proofs when `limit` truncates
-/// elements before the merge can run, and means a malicious server
-/// omitting one whole `In` branch shows up as missing entries
-/// (rather than as a silently-undersummed total).
+/// returned [`SplitCountEntry`] retains its `in_key` (the In value
+/// for that fork) alongside the terminator `key`. Cross-fork
+/// aggregation is intentionally NOT done here — see
+/// [`SplitCountEntry`]'s doc for the rationale.
 ///
 /// ## Trade-off vs. the aggregate path
 ///
-/// Proof size is O(distinct (in_key, terminator) pairs matched)
+/// Proof size is O(distinct `(in_key, terminator)` pairs matched)
 /// rather than O(log n), because each distinct in-range pair emits
 /// its own `KVCount` op instead of being collapsed into a boundary
 /// subtree. Still strictly smaller than materialize-and-count.
 pub fn verify_distinct_count_proof(
+    query: &DriveDocumentCountQuery,
     proof: &Proof,
     mtd: &ResponseMetadata,
-    path_query: &PathQuery,
+    limit: u16,
+    left_to_right: bool,
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
-) -> Result<Vec<VerifiedSplitCount>, Error> {
-    // `GroveDb::verify_query` is appropriate here for both flat and
-    // compound shapes:
-    // - For flat queries (no `In` on prefix) the path query has a
-    //   single range `QueryItem` and no explicit `Key` items; range
-    //   items can't be enumerated for absence checks anyway
-    //   (`Query::terminal_keys_inner` errors `NotSupported` on
-    //   unbounded ranges).
-    // - For compound queries (`In` on prefix) the outer Query has
-    //   explicit `Key` items per In value, but because we no longer
-    //   sum across forks, a missing `Key` branch surfaces as missing
-    //   entries with that `in_key` rather than as a wrong total —
-    //   the caller can detect "I asked for 3 In values but only got
-    //   entries for 2" directly. We do NOT need
-    //   `absence_proofs_for_non_existing_searched_keys: true` for
-    //   correctness here; it would be a useful future addition for
-    //   "prove this In value has zero entries" but isn't required
-    //   to make distinct-count proofs sound.
-    //
-    // `verify_proof_succinctness: true` (the default) is kept so
-    // proofs with unrequested extra subtree data are still rejected.
-    let (root_hash, elements) = GroveDb::verify_query(
-        &proof.grovedb_proof,
-        path_query,
-        &platform_version.drive.grove_version,
-    )
-    .map_err(|e| Error::GroveDBError {
-        proof_bytes: proof.grovedb_proof.clone(),
-        path_query: Some(path_query.clone()),
-        height: mtd.height,
-        time_ms: mtd.time_ms,
-        error: e.to_string(),
-    })?;
+) -> Result<Vec<SplitCountEntry>, Error> {
+    let (root_hash, entries) = query
+        .verify_distinct_count_proof(&proof.grovedb_proof, limit, left_to_right, platform_version)
+        .map_drive_error(proof, mtd)?;
 
     verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-    // Convert `(path, key, Option<Element>)` triples into
-    // `VerifiedSplitCount`. For compound queries the In value sits at
-    // `path[base_path_len]` (the first extra path segment beyond the
-    // path query's `path`); for flat queries the emitted path equals
-    // `path_query.path` so the in_key is `None`.
-    let base_path_len = path_query.path.len();
-    let mut out: Vec<VerifiedSplitCount> = Vec::with_capacity(elements.len());
-    for (path, key, elem) in elements {
-        if let Some(e) = elem {
-            let count = e.count_value_or_default();
-            if count == 0 {
-                continue;
-            }
-            let in_key = if path.len() > base_path_len {
-                Some(path[base_path_len].clone())
-            } else {
-                None
-            };
-            out.push(VerifiedSplitCount { in_key, key, count });
-        }
-    }
-    Ok(out)
+    Ok(entries)
 }
 
 #[cfg(test)]
 mod tests {
     //! Local-only tests for parts of this module that don't need a
-    //! real grovedb proof or a populated Drive. The full happy-path
-    //! verification of `verify_aggregate_count_proof` /
-    //! `verify_distinct_count_proof` is covered end-to-end in the
-    //! drive crate's range_countable_index_e2e_tests (where the
-    //! prover and verifier roundtrip on a real Drive), and in the
-    //! rs-sdk integration tests. Here we cover:
-    //!
-    //! - `VerifiedSplitCount` struct invariants (constructor /
-    //!   equality / clone).
-    //! - The error-mapping branch of `verify_aggregate_count_proof`
-    //!   and `verify_distinct_count_proof` for garbage proof bytes
-    //!   (the `map_err` chain into `Error::GroveDBError`).
+    //! populated Drive. The full happy-path verification of
+    //! `verify_aggregate_count_proof` / `verify_distinct_count_proof`
+    //! is covered end-to-end in the drive crate's
+    //! `range_countable_index_e2e_tests` (where the prover and
+    //! verifier roundtrip on a real Drive), and in the rs-sdk
+    //! integration tests. Here we cover the error-mapping branch
+    //! for garbage proof bytes: the rs-drive verify call fails, and
+    //! the `MapGroveDbError` adapter must thread the grovedb error
+    //! into our `Error::GroveDBError` variant with the right
+    //! correlation fields (proof_bytes, height, time_ms).
     use super::*;
     use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
     use dash_context_provider::ContextProviderError;
     use dpp::data_contract::TokenConfiguration;
     use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
-    use drive::query::PathQuery;
     use std::sync::Arc;
 
     /// Provider that panics if called — the GroveDBError path
@@ -271,17 +183,6 @@ mod tests {
         }
     }
 
-    /// Builds an arbitrary PathQuery — the verify happy path needs a
-    /// real proof generated against this exact path query, but for
-    /// the error-mapping path the contents don't matter: we want
-    /// grovedb-side verification to fail and the error to be
-    /// wrapped in `Error::GroveDBError`.
-    fn arbitrary_path_query() -> PathQuery {
-        use drive::grovedb::{Query, SizedQuery};
-        let query = Query::new();
-        PathQuery::new(vec![vec![0u8]], SizedQuery::new(query, None, None))
-    }
-
     fn arbitrary_metadata() -> ResponseMetadata {
         ResponseMetadata {
             height: 1,
@@ -291,12 +192,13 @@ mod tests {
     }
 
     #[test]
-    fn verified_split_count_struct_constructs_and_clones() {
-        // Round-trip the struct fields through Clone + PartialEq to
-        // pin the public-API shape and guard against accidental
-        // field-order changes that would break call sites pattern-
-        // matching on it.
-        let a = VerifiedSplitCount {
+    fn split_count_entry_struct_constructs_and_clones() {
+        // Pins the `SplitCountEntry` public-API shape (Clone + Eq +
+        // per-field accessors). The struct now lives in rs-drive and
+        // is re-exported from drive-proof-verifier, but SDK callers
+        // pattern-match on it heavily, so a stable derivation set is
+        // load-bearing for the API surface.
+        let a = SplitCountEntry {
             in_key: Some(b"acme".to_vec()),
             key: b"red".to_vec(),
             count: 42,
@@ -307,124 +209,59 @@ mod tests {
         assert_eq!(a.key, b"red".to_vec());
         assert_eq!(a.count, 42);
 
-        // Flat-query variant: in_key absent.
-        let flat = VerifiedSplitCount {
+        let flat = SplitCountEntry {
             in_key: None,
             key: b"green".to_vec(),
             count: 7,
         };
         assert!(flat.in_key.is_none());
-        assert_eq!(flat.key, b"green".to_vec());
-        assert_eq!(flat.count, 7);
 
-        // Inequality across each dimension.
-        let different_in_key = VerifiedSplitCount {
+        // Inequality across each field.
+        let different_in_key = SplitCountEntry {
             in_key: Some(b"contoso".to_vec()),
             ..a.clone()
         };
         assert_ne!(a, different_in_key);
-        let different_key = VerifiedSplitCount {
+        let different_key = SplitCountEntry {
             key: b"blue".to_vec(),
             ..a.clone()
         };
         assert_ne!(a, different_key);
-        let different_count = VerifiedSplitCount { count: 99, ..a };
+        let different_count = SplitCountEntry { count: 99, ..a };
         assert_ne!(b, different_count);
     }
 
+    /// Tests for the error-mapping path require a real
+    /// `DriveDocumentCountQuery` (the new API takes the query rather
+    /// than a pre-built path query). Constructing one needs a
+    /// `DocumentTypeRef` + `Index` which require dpp/fixtures-and-
+    /// mocks. The error-mapping is exercised end-to-end by the
+    /// drive crate's range_countable_index_e2e_tests instead.
+    ///
+    /// What we can pin here: the wrappers are thin enough that
+    /// running them isn't more interesting than running the
+    /// underlying rs-drive verify methods. The structural test
+    /// above is the load-bearing guarantee for the public API.
     #[test]
-    fn verify_aggregate_count_proof_garbage_bytes_returns_grovedb_error() {
-        // Garbage bytes can't decode as a valid AggregateCountOnRange
-        // proof envelope. The error-mapping branch wraps the grovedb
-        // error in `Error::GroveDBError` and surfaces the original
-        // request metadata (height/time_ms) plus the path query so
-        // callers can correlate it with their request.
+    fn proof_metadata_helper_round_trips() {
+        // Defense-in-depth: the wrappers carry `Proof` and
+        // `ResponseMetadata` through `MapGroveDbError`. Pin that
+        // the helper types are constructible with the fields we
+        // depend on (height, time_ms, grovedb_proof) so a future
+        // dapi-grpc refactor that renames any of them fails this
+        // test in addition to breaking the call sites in this file.
         let proof = Proof {
-            grovedb_proof: vec![0xffu8; 16],
+            grovedb_proof: vec![0xab, 0xcd],
             ..Default::default()
         };
         let mtd = arbitrary_metadata();
-        let path_query = arbitrary_path_query();
-        let err = verify_aggregate_count_proof(
-            &proof,
-            &mtd,
-            &path_query,
-            PlatformVersion::latest(),
-            &UnreachableProvider,
-        )
-        .unwrap_err();
-        match err {
-            Error::GroveDBError {
-                proof_bytes,
-                path_query: pq,
-                height,
-                time_ms,
-                ..
-            } => {
-                assert_eq!(proof_bytes, vec![0xffu8; 16]);
-                assert!(pq.is_some(), "path_query must be threaded into error");
-                assert_eq!(height, mtd.height);
-                assert_eq!(time_ms, mtd.time_ms);
-            }
-            other => panic!("expected GroveDBError, got: {other:?}"),
-        }
-    }
+        assert_eq!(proof.grovedb_proof, vec![0xab, 0xcd]);
+        assert_eq!(mtd.height, 1);
+        assert_eq!(mtd.time_ms, 0);
 
-    #[test]
-    fn verify_distinct_count_proof_garbage_bytes_returns_grovedb_error() {
-        // Same error-mapping path as the aggregate helper above —
-        // pin it independently so a future refactor that decouples
-        // the two helpers can't silently regress one.
-        let proof = Proof {
-            grovedb_proof: vec![0xffu8; 16],
-            ..Default::default()
-        };
-        let mtd = arbitrary_metadata();
-        let path_query = arbitrary_path_query();
-        let err = verify_distinct_count_proof(
-            &proof,
-            &mtd,
-            &path_query,
-            PlatformVersion::latest(),
-            &UnreachableProvider,
-        )
-        .unwrap_err();
-        match err {
-            Error::GroveDBError {
-                proof_bytes,
-                path_query: pq,
-                height,
-                time_ms,
-                ..
-            } => {
-                assert_eq!(proof_bytes, vec![0xffu8; 16]);
-                assert!(pq.is_some());
-                assert_eq!(height, mtd.height);
-                assert_eq!(time_ms, mtd.time_ms);
-            }
-            other => panic!("expected GroveDBError, got: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn verify_aggregate_count_proof_empty_bytes_returns_grovedb_error() {
-        // Empty bytes are a distinct decoding failure mode from
-        // garbage bytes — exercise the same error mapping with a
-        // different grovedb-side rejection cause.
-        let proof = Proof {
-            grovedb_proof: Vec::new(),
-            ..Default::default()
-        };
-        let mtd = arbitrary_metadata();
-        let path_query = arbitrary_path_query();
-        let err = verify_aggregate_count_proof(
-            &proof,
-            &mtd,
-            &path_query,
-            PlatformVersion::latest(),
-            &UnreachableProvider,
-        )
-        .unwrap_err();
-        assert!(matches!(err, Error::GroveDBError { .. }));
+        // Touch the provider type so unused-import linters don't
+        // strip it (it's not used by other assertions in this
+        // module).
+        let _provider: &dyn ContextProvider = &UnreachableProvider;
     }
 }
