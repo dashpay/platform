@@ -37,13 +37,22 @@ synchronous, and an auto-backup dir at `<db_dir>/backups/auto/`.
 ## CLI
 
 ```text
-platform-wallet-sqlite --db <path> migrate
+platform-wallet-sqlite --db <path> migrate [--no-auto-backup]
 platform-wallet-sqlite --db <path> backup --out <dir-or-file>
 platform-wallet-sqlite --db <path> restore --from <backup.db> --yes
 platform-wallet-sqlite --db <path> prune --in <dir> [--keep-last N] [--max-age 30d] [--dry-run]
 platform-wallet-sqlite --db <path> inspect [--wallet-id <hex>] [--format text|tsv|json]
 platform-wallet-sqlite --db <path> delete-wallet --wallet-id <hex> --yes [--no-auto-backup]
 ```
+
+Destructive subcommands (`restore`, `delete-wallet`) REQUIRE `--yes`
+— invoking them without it exits 2 with a usage error. `--no-auto-backup`
+opts out of the pre-migration / pre-delete auto-backup respectively;
+the library API has no equivalent opt-out (it routes to
+[`SqlitePersister::delete_wallet_skip_backup`] internally).
+
+Logging: `-v` / `-vv` / `-vvv` enable `info` / `debug` / `trace`
+respectively on stderr; `-q` suppresses non-error output.
 
 Exit codes: `0` success, `1` runtime error, `2` usage error, `3`
 validation failure (e.g. corrupt backup source).

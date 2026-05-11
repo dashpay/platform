@@ -27,10 +27,12 @@ struct Cli {
     /// Auto-backup directory. Pass empty string to disable.
     #[arg(long, value_name = "PATH", global = true)]
     auto_backup_dir: Option<String>,
+    /// Increase log verbosity (stderr). Repeat for more: `-v` enables
+    /// `info`, `-vv` enables `debug`, `-vvv` enables `trace`.
     #[arg(long, short, global = true, action = clap::ArgAction::Count)]
     verbose: u8,
+    /// Suppress non-error stderr output (overrides `--verbose`).
     #[arg(long, short, global = true)]
-    #[allow(dead_code)]
     quiet: bool,
     #[command(subcommand)]
     cmd: Cmd,
@@ -130,6 +132,7 @@ fn parse_wallet_id(s: &str) -> Result<[u8; 32], String> {
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    init_tracing(cli.verbose, cli.quiet);
     match run(cli) {
         Ok(code) => code,
         Err(err) => {
@@ -137,6 +140,26 @@ fn main() -> ExitCode {
             err.code
         }
     }
+}
+
+fn init_tracing(verbose: u8, quiet: bool) {
+    use tracing_subscriber::EnvFilter;
+    let level = if quiet {
+        "error"
+    } else {
+        match verbose {
+            0 => "warn",
+            1 => "info",
+            2 => "debug",
+            _ => "trace",
+        }
+    };
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new(format!("platform_wallet_sqlite={level}")));
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_writer(std::io::stderr)
+        .try_init();
 }
 
 struct CliError {
@@ -179,28 +202,27 @@ fn run(cli: Cli) -> Result<ExitCode, CliError> {
         return run_restore(&db, args);
     }
 
-    // For `migrate`, allow `--no-auto-backup` to skip the auto-backup
-    // dir requirement at open time by opting out before construction.
+    // For `migrate --no-auto-backup`, we must keep `auto_backup_dir =
+    // None` so the open-time pre-migration backup is skipped. For
+    // every other subcommand we leave the user-configured dir (or the
+    // default) in place — the library's safe-by-default semantics
+    // still apply. `delete-wallet --no-auto-backup` reaches a separate
+    // library entry point (`delete_wallet_skip_backup`) and so does
+    // not need the config to be mutated.
     let mut config = SqlitePersisterConfig::new(&db);
-    match (&cli.cmd, &auto_backup_dir) {
-        (Cmd::Migrate(m), Some(None)) if !m.no_auto_backup => {
+    if let Some(dir_opt) = auto_backup_dir.clone() {
+        config = config.with_auto_backup_dir(dir_opt);
+    }
+    if let Cmd::Migrate(m) = &cli.cmd {
+        if matches!(&auto_backup_dir, Some(None)) && !m.no_auto_backup {
             return Err(CliError {
                 message: "auto-backup directory not configured; pass --no-auto-backup to proceed"
                     .to_string(),
                 code: ExitCode::from(1),
             });
         }
-        _ => {}
-    }
-    if let Some(dir_opt) = auto_backup_dir.clone() {
-        config = config.with_auto_backup_dir(dir_opt);
-    }
-    // If --no-auto-backup was passed for migrate, force-disable so the
-    // open() path doesn't take a pre-migration backup.
-    if let Cmd::Migrate(m) = &cli.cmd {
         if m.no_auto_backup {
             config = config.with_auto_backup_dir(None);
-            // Emit the warning whether or not auto_backup_dir was set.
             eprintln!("warning: auto-backup skipped (--no-auto-backup)");
         }
     }
@@ -214,9 +236,6 @@ fn run(cli: Cli) -> Result<ExitCode, CliError> {
         let applied = post_version
             .unwrap_or(0)
             .saturating_sub(pre_version.unwrap_or(0)) as usize;
-        // Best-effort: count by version delta is approximate when
-        // multiple migrations land in one go. For TC-056 we only need
-        // "applied: <N>" with `N > 0` on first run and `N = 0` on second.
         println!("applied: {applied}");
         return Ok(ExitCode::SUCCESS);
     }
@@ -232,15 +251,7 @@ fn run(cli: Cli) -> Result<ExitCode, CliError> {
             run_inspect(&persister, args)
         }
         Cmd::DeleteWallet(args) => {
-            // `--no-auto-backup` forces config.auto_backup_dir = None
-            // before opening, otherwise we keep the user's configured
-            // directory.
-            let mut cfg = config;
-            if args.no_auto_backup {
-                cfg = cfg.with_auto_backup_dir(None);
-                eprintln!("warning: auto-backup skipped (--no-auto-backup)");
-            }
-            let persister = SqlitePersister::open(cfg).map_err(map_open_err_for_cli)?;
+            let persister = SqlitePersister::open(config).map_err(map_open_err_for_cli)?;
             run_delete_wallet(&persister, args)
         }
     }
@@ -430,7 +441,12 @@ fn run_delete_wallet(
         message: m,
         code: ExitCode::from(2),
     })?;
-    let result = persister.delete_wallet(wallet_id);
+    let result = if args.no_auto_backup {
+        eprintln!("warning: auto-backup skipped (--no-auto-backup)");
+        persister.delete_wallet_skip_backup(wallet_id)
+    } else {
+        persister.delete_wallet(wallet_id)
+    };
     match result {
         Ok(report) => {
             if let Some(path) = &report.backup_path {

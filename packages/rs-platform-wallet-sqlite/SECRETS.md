@@ -41,11 +41,15 @@ secret-free.
 
 ## Audit hooks
 
-- NFR-10 / TC-007: the `identity_keys` test asserts no `private` /
-  `secret` / `mnemonic` / `seed` substrings appear in any persisted
-  blob.
-- NFR-4 / TC-082: all public method signatures use concrete error
-  types (`SqlitePersisterError`, `PersistenceError`) — never
+- **`tests/secrets_scan.rs`**: greps every file under `src/schema/`
+  and `migrations/` for the substrings `private`, `mnemonic`, `seed`,
+  `xpriv`, `secret`. A new column, blob field, or comment that uses
+  any of those words breaks the test — forcing the author to either
+  rename, or add their phrase to the file's allow-list with a
+  rationale.
+- NFR-4 / TC-082 (`tests/persist_roundtrip.rs::tc082_no_box_dyn_error_in_src`):
+  all public method signatures use concrete error types
+  (`SqlitePersisterError`, `PersistenceError`) — never
   `Box<dyn Error>` — so a future leak is caught by `grep`.
 
 ## Backup retention and secrets

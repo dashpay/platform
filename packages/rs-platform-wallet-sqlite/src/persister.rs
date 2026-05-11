@@ -17,21 +17,35 @@ use crate::config::{FlushMode, SqlitePersisterConfig, Synchronous};
 use crate::error::{AutoBackupOperation, SqlitePersisterError};
 use crate::schema::{self, PER_WALLET_TABLES};
 
-/// Maintenance reports.
+/// Outcome of a `prune_backups` call.
 #[derive(Debug, Clone)]
 pub struct PruneReport {
+    /// Paths that were unlinked, sorted oldest-first by filename
+    /// timestamp.
     pub removed: Vec<PathBuf>,
+    /// Number of files that remain in the directory after pruning.
     pub kept: usize,
 }
 
+/// Outcome of a `delete_wallet` / `delete_wallet_skip_backup` call.
 #[derive(Debug, Clone)]
 pub struct DeleteWalletReport {
     pub wallet_id: WalletId,
+    /// Absolute path of the pre-delete auto-backup written before the
+    /// cascade. `None` ONLY when the caller went through
+    /// [`SqlitePersister::delete_wallet_skip_backup`] — every
+    /// `delete_wallet` success returns `Some(path)`.
     pub backup_path: Option<PathBuf>,
     pub rows_removed_per_table: BTreeMap<&'static str, usize>,
 }
 
 /// Retention policy for `prune_backups`.
+///
+/// **AND-semantics**: a file is kept iff it satisfies BOTH rules. A
+/// policy with `keep_last_n = Some(3)` and `max_age = Some(30d)` keeps
+/// at most the three newest backups AND only those younger than 30
+/// days — a four-day-old backup that's the fifth-newest is removed.
+/// `RetentionPolicy::default()` (both `None`) keeps every file.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RetentionPolicy {
     pub keep_last_n: Option<usize>,
@@ -168,27 +182,62 @@ impl SqlitePersister {
     }
 
     /// Cascade-delete every row owned by `wallet_id`. Takes a
-    /// pre-delete auto-backup unless `auto_backup_dir` is `None`, in
-    /// which case the operation refuses (FR-18).
+    /// pre-delete auto-backup before the cascade and refuses if
+    /// `auto_backup_dir` is `None` (FR-18). For the library-API,
+    /// safe-by-default route.
+    ///
+    /// To skip the auto-backup explicitly — wired up by the CLI's
+    /// `--no-auto-backup` — call
+    /// [`delete_wallet_skip_backup`](Self::delete_wallet_skip_backup).
     pub fn delete_wallet(
         &self,
         wallet_id: WalletId,
     ) -> Result<DeleteWalletReport, SqlitePersisterError> {
-        let backup_path = self.run_auto_backup(AutoBackupOperation::DeleteWallet, &wallet_id)?;
+        self.delete_wallet_inner(wallet_id, false)
+    }
+
+    /// Cascade-delete every row owned by `wallet_id` WITHOUT taking
+    /// an auto-backup.
+    ///
+    /// Library consumers should prefer [`delete_wallet`](Self::delete_wallet)
+    /// — it's safe by default. This entry point exists so the CLI's
+    /// `--no-auto-backup` flag can deliver on its name regardless of
+    /// `auto_backup_dir`. Returns `DeleteWalletReport.backup_path =
+    /// None` to signal the backup was intentionally skipped.
+    pub fn delete_wallet_skip_backup(
+        &self,
+        wallet_id: WalletId,
+    ) -> Result<DeleteWalletReport, SqlitePersisterError> {
+        self.delete_wallet_inner(wallet_id, true)
+    }
+
+    fn delete_wallet_inner(
+        &self,
+        wallet_id: WalletId,
+        skip_backup: bool,
+    ) -> Result<DeleteWalletReport, SqlitePersisterError> {
+        // Existence check FIRST — refusing on an unknown wallet must
+        // not waste a backup file.
+        {
+            let conn = self.conn()?;
+            let exists: bool = conn
+                .query_row(
+                    "SELECT 1 FROM wallet_metadata WHERE wallet_id = ?1",
+                    rusqlite::params![wallet_id.as_slice()],
+                    |_| Ok(true),
+                )
+                .unwrap_or(false);
+            if !exists {
+                return Err(SqlitePersisterError::WalletNotFound { wallet_id });
+            }
+        }
+        let backup_path = if skip_backup {
+            None
+        } else {
+            self.run_auto_backup(AutoBackupOperation::DeleteWallet, &wallet_id)?
+        };
         let mut conn = self.conn()?;
         let tx = conn.transaction()?;
-        // Confirm the wallet exists; otherwise return WalletNotFound.
-        let exists: bool = tx
-            .query_row(
-                "SELECT 1 FROM wallet_metadata WHERE wallet_id = ?1",
-                rusqlite::params![wallet_id.as_slice()],
-                |_| Ok(true),
-            )
-            .unwrap_or(false);
-        if !exists {
-            return Err(SqlitePersisterError::WalletNotFound { wallet_id });
-        }
-        // Tally row counts per table before deleting.
         let mut rows_removed_per_table = BTreeMap::new();
         for &table in PER_WALLET_TABLES {
             let n: i64 = tx
@@ -265,15 +314,19 @@ impl SqlitePersister {
     ///
     /// Tests use this to seed `wallet_metadata` rows directly, run
     /// SELECTs against tables that aren't part of the public surface,
-    /// or probe `PRAGMA foreign_keys` / `PRAGMA journal_mode`.
-    /// Production code MUST NOT call this.
+    /// or probe `PRAGMA foreign_keys` / `PRAGMA journal_mode`. Gated
+    /// behind `cfg(test)` and the `test-helpers` feature — downstream
+    /// crates cannot reach it.
     #[doc(hidden)]
+    #[cfg(any(test, feature = "test-helpers"))]
     pub fn lock_conn_for_test(&self) -> MutexGuard<'_, Connection> {
         self.conn.lock().expect("conn mutex poisoned")
     }
 
-    /// Test-only: read the resolved config.
+    /// Test-only: read the resolved config. Same visibility rules as
+    /// [`lock_conn_for_test`](Self::lock_conn_for_test).
     #[doc(hidden)]
+    #[cfg(any(test, feature = "test-helpers"))]
     pub fn config_for_test(&self) -> &SqlitePersisterConfig {
         &self.config
     }

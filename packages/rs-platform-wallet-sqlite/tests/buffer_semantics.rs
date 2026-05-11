@@ -276,3 +276,71 @@ fn tc015_two_wallets_in_one_db() {
 fn _unused_btreemap() -> BTreeMap<u32, u32> {
     BTreeMap::new()
 }
+
+/// TC-023: one `flush(wallet_id)` produces exactly one SQLite
+/// transaction.
+///
+/// `rusqlite::Connection::commit_hook` registers a callback that fires
+/// after every successful commit. We register it on the persister's
+/// write connection, then drive a flush whose changeset touches
+/// multiple sub-changesets (core sync state + wallet metadata +
+/// platform addresses + token balances). The hook MUST fire exactly
+/// once for the duration of the flush call, regardless of how many
+/// tables were written.
+#[test]
+fn tc023_one_flush_is_one_transaction() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    use dpp::prelude::Identifier;
+    use key_wallet::Network;
+    use platform_wallet::changeset::{TokenBalanceChangeSet, WalletMetadataEntry};
+
+    let (persister, _tmp, _path) = fresh_persister_with_mode(FlushMode::Manual);
+    let w = wid(0x90);
+    ensure_wallet_meta(&persister, &w);
+    let mut cs = PlatformWalletChangeSet::default();
+    cs.core = Some(core_with_height(7, 7));
+    cs.wallet_metadata = Some(WalletMetadataEntry {
+        network: Network::Testnet,
+        birth_height: 1,
+    });
+    let mut balances = BTreeMap::new();
+    let owner = Identifier::from([0xA1u8; 32]);
+    let token = Identifier::from([0xA2u8; 32]);
+    balances.insert((owner, token), 9u64);
+    cs.token_balances = Some(TokenBalanceChangeSet {
+        balances,
+        ..Default::default()
+    });
+    persister.store(w, cs).unwrap();
+
+    // Install the commit hook AFTER buffering (which only mutates
+    // memory) and BEFORE flush.
+    let commits = Arc::new(AtomicUsize::new(0));
+    {
+        let commits_clone = Arc::clone(&commits);
+        let conn = persister.lock_conn_for_test();
+        conn.commit_hook(Some(move || {
+            commits_clone.fetch_add(1, Ordering::SeqCst);
+            false
+        }))
+        .expect("install commit hook");
+    }
+
+    persister.flush(w).unwrap();
+
+    // Remove the hook so the persister is reusable elsewhere.
+    {
+        let conn = persister.lock_conn_for_test();
+        conn.commit_hook(None::<fn() -> bool>)
+            .expect("remove commit hook");
+    }
+
+    assert_eq!(
+        commits.load(Ordering::SeqCst),
+        1,
+        "expected exactly one COMMIT for the flush, got {}",
+        commits.load(Ordering::SeqCst)
+    );
+}

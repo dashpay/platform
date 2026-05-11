@@ -58,8 +58,9 @@ pub fn run_to(src: &Connection, dest: &Path) -> Result<(), SqlitePersisterError>
 /// caller must guarantee the destination is not held open by this
 /// process.
 pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), SqlitePersisterError> {
-    // 1. Validate source — opens read-only, runs PRAGMA integrity_check
-    //    and requires the refinery_schema_history table.
+    // 1. Validate source — opens read-only, runs PRAGMA integrity_check,
+    //    requires `refinery_schema_history`, and checks the schema
+    //    version is within the supported range (D-04).
     let src = match Connection::open_with_flags(
         src_backup,
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
@@ -91,9 +92,57 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Sqlite
     if !has_schema {
         return Err(SqlitePersisterError::SchemaHistoryMissing);
     }
+    let max_supported = crate::migrations::embedded_migrations()
+        .iter()
+        .map(|(v, _)| *v as i64)
+        .max()
+        .unwrap_or(0);
+    let source_version: Option<i64> = src
+        .query_row(
+            "SELECT MAX(version) FROM refinery_schema_history",
+            [],
+            |row| row.get(0),
+        )
+        .ok()
+        .flatten();
+    if let Some(v) = source_version {
+        if v > max_supported {
+            return Err(SqlitePersisterError::SchemaVersionUnsupported {
+                found: v,
+                expected_range: format!("0..={max_supported}"),
+            });
+        }
+    }
     drop(src);
 
-    // 2. Remove any WAL / SHM siblings of the destination so SQLite
+    // 2. Try-lock the destination so we don't replace a DB that another
+    //    process still holds open. `fs2::FileExt::try_lock_exclusive`
+    //    is non-blocking; if the file is held we surface
+    //    `RestoreDestinationLocked` (D-03). On platforms where flock
+    //    fails for unrelated reasons (e.g. tmpfs without advisory
+    //    locking) the error path falls through to the generic Io
+    //    variant.
+    if dest_db_path.exists() {
+        use fs2::FileExt;
+        let f = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(dest_db_path)
+            .map_err(SqlitePersisterError::Io)?;
+        match f.try_lock_exclusive() {
+            Ok(()) => {
+                let _ = FileExt::unlock(&f);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                return Err(SqlitePersisterError::RestoreDestinationLocked);
+            }
+            Err(_) => {
+                // Advisory locks unsupported on this FS — proceed.
+            }
+        }
+    }
+
+    // 3. Remove any WAL / SHM siblings of the destination so SQLite
     //    can't open the live wallet's stale auxiliary state by mistake.
     for ext in ["-wal", "-shm"] {
         let sibling = dest_db_path.with_file_name(format!(
@@ -108,11 +157,18 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Sqlite
         }
     }
 
-    // 3. Copy the source to a temp file next to the destination, then
-    //    atomically rename over.
-    let tmp = dest_db_path.with_extension("db.restore-tmp");
-    std::fs::copy(src_backup, &tmp).map_err(SqlitePersisterError::Io)?;
-    std::fs::rename(&tmp, dest_db_path).map_err(SqlitePersisterError::Io)?;
+    // 4. Stage the source into a `NamedTempFile` in the destination's
+    //    parent dir, then atomically `persist` over the destination
+    //    (SEC-001: the temp filename is unguessable, eliminating a
+    //    symlink-plant TOCTOU window on the predictable
+    //    `<dest>.db.restore-tmp` path).
+    let parent = dest_db_path.parent().unwrap_or(Path::new("."));
+    let mut tmp = tempfile::NamedTempFile::new_in(parent).map_err(SqlitePersisterError::Io)?;
+    let mut src_file = std::fs::File::open(src_backup).map_err(SqlitePersisterError::Io)?;
+    std::io::copy(&mut src_file, tmp.as_file_mut()).map_err(SqlitePersisterError::Io)?;
+    tmp.as_file().sync_all().map_err(SqlitePersisterError::Io)?;
+    tmp.persist(dest_db_path)
+        .map_err(|e| SqlitePersisterError::Io(e.error))?;
     Ok(())
 }
 
