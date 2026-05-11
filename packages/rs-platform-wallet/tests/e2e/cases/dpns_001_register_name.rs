@@ -58,7 +58,7 @@ const FUNDING_FLOOR: u64 = FUNDING_CREDITS;
 
 /// Per-step deadline: bank funding observation, identity visibility,
 /// DPNS resolver visibility.
-const STEP_TIMEOUT: Duration = Duration::from_secs(60);
+const STEP_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[ignore = "requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access; \
             run with `cargo test -- --ignored`"]
