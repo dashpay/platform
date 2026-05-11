@@ -175,13 +175,23 @@ async fn pa_004b_sweep_below_dust_gate_no_broadcast() {
         .expect("sync after trim");
     let post_trim = s.test_wallet.balances().await;
     let addr_1_residual = post_trim.get(&addr_1).copied().unwrap_or(0);
-    let total_post_trim = s.test_wallet.total_credits().await;
+
+    // Sum over the test wallet's own addresses ONLY. `addr_1` is the
+    // only address this test ever derived on `s.test_wallet`, so the
+    // test-wallet total is `addr_1_residual` by construction. We do
+    // NOT read `total_credits()` here — its aggregate is inflated by
+    // V27-007 (`PlatformAddressWallet::transfer` writes the bank's
+    // primary receive address into the source wallet's local ledger
+    // when we trim to the bank), pulling in credits the test wallet
+    // does not own. The bank is process-shared; its balance is not
+    // part of the PA-004b contract.
+    let test_wallet_total = addr_1_residual;
 
     tracing::info!(
         target: "platform_wallet::e2e::cases::pa_004b",
         ?addr_1,
         addr_1_residual,
-        total_post_trim,
+        test_wallet_total,
         dust_gate,
         "post-trim wallet state"
     );
@@ -196,15 +206,14 @@ async fn pa_004b_sweep_below_dust_gate_no_broadcast() {
          ({TARGET_RESIDUAL}); auto-select Σ inputs == Σ outputs invariant violated"
     );
 
-    // The wallet TOTAL must be below the gate — that is the precondition
-    // the cleanup-gate test rests on. Other addresses on the wallet
-    // (e.g. the bank's funding output's auto-derived change targets)
-    // could theoretically inflate this, so we assert it explicitly.
+    // The test wallet's total (over OWNED addresses only) must be
+    // below the gate. This is the precondition the cleanup-gate test
+    // rests on.
     assert!(
-        total_post_trim < dust_gate,
-        "PA-004b: post-trim wallet total ({total_post_trim}) must be < dust_gate \
-         ({dust_gate}); a stray balance on a non-addr_1 address violates the \
-         precondition for the below-gate cleanup contract"
+        test_wallet_total < dust_gate,
+        "PA-004b: post-trim test-wallet total ({test_wallet_total}) must be < dust_gate \
+         ({dust_gate}); a stray balance on a non-addr_1 address owned by the test \
+         wallet violates the precondition for the below-gate cleanup contract"
     );
 
     // ---- Step 3: teardown. ----

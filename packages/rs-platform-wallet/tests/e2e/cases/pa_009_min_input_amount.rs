@@ -204,15 +204,25 @@ async fn pa_009_min_input_amount_subcase_c() {
         .sync_balances()
         .await
         .expect("sync after trim");
-    let total_post_trim = s.test_wallet.total_credits().await;
     let post_trim = s.test_wallet.balances().await;
     let addr_1_residual = post_trim.get(&addr_1).copied().unwrap_or(0);
+
+    // Sum over the test wallet's own addresses ONLY. `addr_1` is the
+    // only address this test ever derived on `s.test_wallet`, so the
+    // test-wallet total is `addr_1_residual` by construction. We do
+    // NOT read `total_credits()` here — its aggregate is inflated by
+    // V27-007 (`PlatformAddressWallet::transfer` writes the bank's
+    // primary receive address into the source wallet's local ledger
+    // when we trim to the bank), pulling in credits the test wallet
+    // does not own. The bank is process-shared; its balance is not
+    // part of the PA-009 contract.
+    let test_wallet_total = addr_1_residual;
 
     tracing::info!(
         target: "platform_wallet::e2e::cases::pa_009",
         ?addr_1,
         addr_1_residual,
-        total_post_trim,
+        test_wallet_total,
         cleanup_gate,
         version_field,
         "post-trim wallet state"
@@ -224,10 +234,10 @@ async fn pa_009_min_input_amount_subcase_c() {
          ({TARGET_RESIDUAL}) under the auto-select Σ inputs == Σ outputs invariant"
     );
     assert!(
-        total_post_trim < cleanup_gate,
-        "PA-009: post-trim wallet total ({total_post_trim}) must be < cleanup_gate \
-         ({cleanup_gate}); a stray balance on a non-addr_1 address violates the \
-         precondition for the below-gate cleanup contract"
+        test_wallet_total < cleanup_gate,
+        "PA-009: post-trim test-wallet total ({test_wallet_total}) must be < cleanup_gate \
+         ({cleanup_gate}); a stray balance on a non-addr_1 address owned by the test \
+         wallet violates the precondition for the below-gate cleanup contract"
     );
 
     // ---- Step 3: teardown — must NOT broadcast. ----
