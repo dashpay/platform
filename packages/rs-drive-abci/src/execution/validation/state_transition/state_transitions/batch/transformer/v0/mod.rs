@@ -693,21 +693,36 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
         }
     }
 
-    /// Per-transition handler for document arms. Each per-transition failure
-    /// path (ownership mismatch, revision mismatch, missing target document,
-    /// etc.) emits a `BumpIdentityDataContractNonce` action so the user pays
-    /// for the validation work that already ran (fetch + ownership/revision
-    /// checks) and the contract nonce advances. Without this, the failure
-    /// path would return errors-only with no action data, fee accounting
-    /// would charge 0, and the same nonce would remain available — i.e. a
-    /// "free advanced-structure validation" hole.
+    /// Per-transition handler for document arms.
+    ///
+    /// Each per-transition failure path (ownership mismatch, revision
+    /// mismatch, missing target document, etc.) routes through
+    /// [`Self::failed_per_transition_action`], whose behavior is gated
+    /// on the `failed_per_transition_action` version field:
+    ///
+    /// - **v0** (`PROTOCOL_VERSION_11` and below): returns errors-only
+    ///   with no action data. The legacy `flatten_v0` / `merge_many_v0`
+    ///   aggregators lift this to `Some(empty_vec)`, which downstream
+    ///   code records as `PaidConsensusError` with a bump-only fee but
+    ///   no actual `UpdateIdentityContractNonce` drive op — the
+    ///   "free advanced-structure validation" v11 footgun. Preserved
+    ///   here for chain reproducibility.
+    /// - **v1** (`PROTOCOL_VERSION_12`+): emits a
+    ///   `BumpIdentityDataContractNonce` action so the user pays for
+    ///   the validation work that already ran (fetch + ownership /
+    ///   revision check) and the contract nonce advances.
+    ///
+    /// The one exception is Replace's missing-target-document path,
+    /// which always emits a bump inline (regardless of version) — that
+    /// was the one legacy v0 bump site pre-PR, kept as-is to preserve
+    /// v11 chain replay bit-for-bit.
     ///
     /// The `user_fee_increase` argument passed into each
     /// `BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition`
     /// call is `0` deliberately: the value gets overridden by the outer
-    /// Documents Batch's `user_fee_increase` when the per-transition action
-    /// rolls up into the `BatchTransitionAction`, so any per-site value
-    /// would be discarded.
+    /// Documents Batch's `user_fee_increase` when the per-transition
+    /// action rolls up into the `BatchTransitionAction`, so any
+    /// per-site value would be discarded.
     fn transform_document_transition_v0<'a>(
         drive: &Drive,
         transaction: TransactionArg,
@@ -774,7 +789,9 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 }
 
                 if validate_against_state {
-                    // Skipped on the rerun path where the action has already been applied.
+                    //there are situations where we don't want to validate this against the state
+                    // for example when we already applied the state transition action
+                    // and we are just validating it happened
                     let validation_result = Self::check_revision_is_bumped_by_one_during_replace_v0(
                         document_replace_transition.revision(),
                         document_replace_transition.base().id(),
@@ -847,7 +864,9 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 }
 
                 if validate_against_state {
-                    // Skipped on the rerun path where the action has already been applied.
+                    //there are situations where we don't want to validate this against the state
+                    // for example when we already applied the state transition action
+                    // and we are just validating it happened
                     let validation_result = Self::check_revision_is_bumped_by_one_during_replace_v0(
                         document_transfer_transition.revision(),
                         document_transfer_transition.base().id(),
@@ -910,7 +929,9 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 }
 
                 if validate_against_state {
-                    // Skipped on the rerun path where the action has already been applied.
+                    //there are situations where we don't want to validate this against the state
+                    // for example when we already applied the state transition action
+                    // and we are just validating it happened
                     let validation_result = Self::check_revision_is_bumped_by_one_during_replace_v0(
                         document_update_price_transition.revision(),
                         document_update_price_transition.base().id(),
@@ -991,7 +1012,9 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 }
 
                 if validate_against_state {
-                    // Skipped on the rerun path where the action has already been applied.
+                    //there are situations where we don't want to validate this against the state
+                    // for example when we already applied the state transition action
+                    // and we are just validating it happened
                     let validation_result = Self::check_revision_is_bumped_by_one_during_replace_v0(
                         document_purchase_transition.revision(),
                         document_purchase_transition.base().id(),
@@ -1113,9 +1136,12 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
             0 => Ok(ConsensusValidationResult::new_with_errors(errors)),
             // PROTOCOL_VERSION_12+: emit a `BumpIdentityDataContractNonce` action
             // so the user pays for the validation work that already ran.
-            // The `0` user_fee_increase here is overridden by the outer
-            // Documents Batch when this per-transition action rolls up.
             1 => {
+                // The `0` user_fee_increase here is a placeholder. It will be
+                // overridden (reapplied) with the outer Documents Batch's
+                // `user_fee_increase` when this per-transition action rolls up
+                // into the `BatchTransitionAction`, so the per-site value is
+                // discarded — passing `0` is harmless.
                 let bump_action =
                     BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition(
                         base_transition,
