@@ -548,6 +548,28 @@ impl E2eContext {
         )
         .await?;
 
+        // Make sure the bank identity carries a TRANSFER-purpose key
+        // before we ask the drain helper (which broadcasts an
+        // `IdentityCreditTransferToAddresses` transition gated on
+        // `Purpose::TRANSFER`) to talk to it. Identities bootstrapped
+        // before the bank-flow refactor only had AUTHENTICATION keys,
+        // so the drain WARN'd and skipped on every run; this helper
+        // adds the missing key once and short-circuits thereafter.
+        // Best-effort: failures are logged inside the helper.
+        match bank_rebalance::provision_transfer_key_if_missing(&bank, &bank_identity).await {
+            Ok(Some(key_id)) => tracing::info!(
+                target: "platform_wallet::e2e::harness",
+                key_id,
+                "bank identity provisioned with TRANSFER key for drain helper"
+            ),
+            Ok(None) => {}
+            Err(err) => tracing::warn!(
+                target: "platform_wallet::e2e::harness",
+                error = %err,
+                "bank identity TRANSFER-key provision encountered an error; continuing"
+            ),
+        }
+
         // Drain any residual bank-identity credits back to the bank's
         // Platform address (the single Platform-side funding pool —
         // see [`super::bank_rebalance`]). Runs BEFORE the orphan sweep

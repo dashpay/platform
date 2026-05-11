@@ -4,14 +4,23 @@
 //! Platform-to-Core internally as needed. Everything else is
 //! implementation detail.
 //!
-//! Two helpers preserve this invariant at suite start:
+//! Three helpers preserve this invariant at suite start:
 //!
-//! 1. [`drain_bank_identity_to_addresses`] — any credits accumulated on
+//! 1. [`provision_transfer_key_if_missing`] — ensures the bank identity
+//!    advertises a `Purpose::TRANSFER` / `SecurityLevel::CRITICAL` key
+//!    so [`drain_bank_identity_to_addresses`] can use the
+//!    `IdentityCreditTransferToAddresses` primitive. Production bank
+//!    identities registered before the bank-flow refactor only carry
+//!    AUTHENTICATION keys (DPP rejected such drains with `missing key:
+//!    no transfer public key`). Idempotent; the helper short-circuits
+//!    once the key is present.
+//!
+//! 2. [`drain_bank_identity_to_addresses`] — any credits accumulated on
 //!    the bank identity (legacy + transient mid-run sinks) are moved
 //!    back to the Platform address via the fast Platform-only
 //!    `transfer_credits_to_addresses_with_external_signer` primitive.
 //!
-//! 2. [`refill_core_from_platform_if_below_threshold`] — if the bank's
+//! 3. [`refill_core_from_platform_if_below_threshold`] — if the bank's
 //!    L1 Core balance is below the configured threshold, refill it from
 //!    the Platform address via a (slow) Platform→Core withdrawal,
 //!    chained `top_up_from_addresses` → `withdraw_credits_with_external_signer`.
@@ -27,9 +36,13 @@ use std::time::Duration;
 use dash_sdk::platform::Fetch;
 use dash_sdk::query_types::IdentityBalance;
 use dpp::fee::Credits;
+use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::identity::{Identity, Purpose, SecurityLevel};
 
 use super::bank::BankWallet;
 use super::bank_identity::BankIdentity;
+use super::signer::derive_identity_key;
 use super::wait::wait_for_identity_balance;
 use super::FrameworkResult;
 
@@ -67,6 +80,165 @@ const CORE_REFILL_IDENTITY_FEE_RESERVE: Credits = 50_000_000;
 /// bank-identity bootstrap path — generous, because the helper runs once
 /// per suite.
 const CORE_REFILL_TOPUP_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Ensure the bank identity advertises a `Purpose::TRANSFER` /
+/// `SecurityLevel::CRITICAL` key so
+/// [`drain_bank_identity_to_addresses`] (which broadcasts an
+/// `IdentityCreditTransferToAddresses` transition) can satisfy DPP's
+/// `purpose_requirement = [TRANSFER]` gate.
+///
+/// Production bank identities bootstrapped before the bank-flow
+/// refactor were registered with only two AUTHENTICATION keys (a
+/// MASTER for IdentityUpdate-signing and a HIGH for general auth);
+/// the drain then failed with `Protocol error: missing key: no
+/// transfer public key`, stranding ~9.58T credits on the bank
+/// identity forever.
+///
+/// Flow:
+///   - Fetch the identity from chain.
+///   - If any TRANSFER-purpose key already exists, short-circuit (the
+///     helper is idempotent on subsequent runs).
+///   - Otherwise derive a fresh ECDSA keypair at DIP-9
+///     `(identity_index, key_index = max_existing_key_id + 1)` — the
+///     same derivation tree the bootstrap MASTER/HIGH keys live on,
+///     so the existing [`BankIdentity::signer`] cache already holds
+///     its private bytes (pre-derived up to `DEFAULT_GAP_LIMIT`).
+///   - Broadcast an `IdentityUpdate` that adds the new key, signed by
+///     the bank identity's MASTER auth key.
+///
+/// Returns the new key's `key_id` on a successful add, `Ok(None)`
+/// when the helper short-circuited (existing TRANSFER key, fetch
+/// failure, or broadcast failure). Best-effort: errors are logged at
+/// WARN and surfaced to the caller as `Ok(None)` so harness init can
+/// continue.
+pub async fn provision_transfer_key_if_missing(
+    bank: &BankWallet,
+    bank_identity: &BankIdentity,
+) -> FrameworkResult<Option<u32>> {
+    let bank_wallet = bank.platform_wallet();
+    let sdk = bank_wallet.sdk();
+
+    // Snapshot the on-chain key set — the local IdentityManager
+    // cache may be empty at this point in suite init (drain runs
+    // before any `load_identity_by_index` call site).
+    let identity = match Identity::fetch(sdk, bank_identity.id).await {
+        Ok(Some(identity)) => identity,
+        Ok(None) => {
+            tracing::warn!(
+                target: "platform_wallet::e2e::bank_rebalance",
+                bank_identity_id = %bank_identity.id,
+                "transfer-key provision skipped: chain reports bank identity absent"
+            );
+            return Ok(None);
+        }
+        Err(err) => {
+            tracing::warn!(
+                target: "platform_wallet::e2e::bank_rebalance",
+                bank_identity_id = %bank_identity.id,
+                error = %err,
+                "transfer-key provision skipped: bank identity fetch failed"
+            );
+            return Ok(None);
+        }
+    };
+
+    let already_present = identity
+        .public_keys()
+        .values()
+        .any(|key| key.purpose() == Purpose::TRANSFER && key.disabled_at().is_none());
+    if already_present {
+        tracing::debug!(
+            target: "platform_wallet::e2e::bank_rebalance",
+            bank_identity_id = %bank_identity.id,
+            "transfer-key provision no-op: bank identity already advertises a TRANSFER key"
+        );
+        return Ok(None);
+    }
+
+    let next_key_id: u32 = identity
+        .public_keys()
+        .keys()
+        .copied()
+        .max()
+        .map(|max| max.saturating_add(1))
+        .unwrap_or(0);
+
+    let new_key = match derive_identity_key(
+        bank.seed_bytes(),
+        bank.network(),
+        bank_identity.identity_index,
+        next_key_id,
+        Purpose::TRANSFER,
+        SecurityLevel::CRITICAL,
+    ) {
+        Ok(key) => key,
+        Err(err) => {
+            tracing::warn!(
+                target: "platform_wallet::e2e::bank_rebalance",
+                bank_identity_id = %bank_identity.id,
+                next_key_id,
+                error = %err,
+                "transfer-key provision skipped: deriving the new key failed"
+            );
+            return Ok(None);
+        }
+    };
+
+    // `update_identity_with_external_signer` looks the identity up in
+    // the in-process IdentityManager (the same lookup the drain
+    // primitive does later), so load it once here. Any failure means
+    // the manager can't pick a MASTER key to sign the update —
+    // surface as a skip rather than aborting harness init.
+    if let Err(err) = bank_wallet
+        .identity()
+        .load_identity_by_index(bank_identity.identity_index)
+        .await
+    {
+        tracing::warn!(
+            target: "platform_wallet::e2e::bank_rebalance",
+            bank_identity_id = %bank_identity.id,
+            identity_index = bank_identity.identity_index,
+            error = %err,
+            "transfer-key provision skipped: failed to load bank identity into manager"
+        );
+        return Ok(None);
+    }
+
+    match bank_wallet
+        .identity()
+        .update_identity_with_external_signer(
+            &bank_identity.id,
+            vec![new_key],
+            vec![],
+            bank_identity.signer.as_ref(),
+            None,
+        )
+        .await
+    {
+        Ok(()) => {
+            tracing::info!(
+                target: "platform_wallet::e2e::bank_rebalance",
+                bank_identity_id = %bank_identity.id,
+                key_id = next_key_id,
+                identity_index = bank_identity.identity_index,
+                "provisioned TRANSFER key on bank identity \
+                 (drain helper will now succeed on subsequent runs)"
+            );
+            Ok(Some(next_key_id))
+        }
+        Err(err) => {
+            tracing::warn!(
+                target: "platform_wallet::e2e::bank_rebalance",
+                bank_identity_id = %bank_identity.id,
+                next_key_id,
+                error = %err,
+                "transfer-key provision broadcast failed; \
+                 drain will continue to skip until the key lands"
+            );
+            Ok(None)
+        }
+    }
+}
 
 /// Drain the bank identity's Platform credits back to
 /// [`BankWallet::primary_receive_address`] via the fast Platform-only
@@ -174,7 +346,13 @@ pub async fn drain_bank_identity_to_addresses(
                 pre,
                 attempted = amount,
                 error = %err,
-                "bank identity drain broadcast failed; continuing without drain"
+                "bank identity drain broadcast failed; continuing without drain. \
+                 IdentityCreditTransferToAddresses requires a Purpose::TRANSFER / \
+                 SecurityLevel::CRITICAL key on the bank identity. \
+                 `provision_transfer_key_if_missing` runs at suite start to add one; \
+                 if this WARN repeats, check that helper's log line for a broadcast \
+                 failure and / or add a TRANSFER key manually via dash-evo-tool. \
+                 See `framework::bank_rebalance` rustdoc for the operator invariant."
             );
             Ok(0)
         }
