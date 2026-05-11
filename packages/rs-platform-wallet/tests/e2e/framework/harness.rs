@@ -203,10 +203,13 @@ pub struct E2eContext {
     /// `Identity::public_keys` track chain reality during a test run.
     /// Cadence is taken from [`Config::identity_sync_interval`].
     ///
-    /// Held in `StdMutex<Option<_>>` so a future graceful-shutdown path
-    /// can `take()` + `stop().await`. Today the task is reaped at
-    /// process exit (the [`E2eContext`] lives in a `&'static` `OnceCell`
-    /// for the suite lifetime), which is enough for `cargo test`.
+    /// Held in `StdMutex<Option<_>>` so the end-of-suite
+    /// `SetupGuard::Drop` hook can `take()` + `stop().await` via
+    /// [`Self::shutdown_identity_sync`]. Stopping the loop after the
+    /// final `sweep_orphans` lets the run-loop's cancellation branch
+    /// fire and surfaces the "loop exiting" debug log in traces —
+    /// without that hook the loop was previously reaped at process
+    /// exit and the shutdown breadcrumb was lost. (#353)
     pub identity_sync: StdMutex<Option<IdentitySync>>,
     /// Live count of outstanding [`super::SetupGuard`] instances.
     /// Incremented in [`super::setup`] and decremented in

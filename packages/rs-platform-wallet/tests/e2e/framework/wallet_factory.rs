@@ -912,6 +912,24 @@ impl Drop for SetupGuard {
                      catch_unwind to avoid double-panic abort"
                 ),
             }
+
+            // Now that the final sweep has landed, stop the
+            // identity-state auto-sync gracefully so the run-loop's
+            // cancellation branch fires and the "loop exiting" debug
+            // log lands in the trace. Without this the JoinHandle is
+            // dropped at process exit and the loop never observes its
+            // own teardown — operators reading suite traces lose the
+            // shutdown breadcrumb. (#353)
+            let unwind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                drop_shutdown_identity_sync(ctx)
+            }));
+            if let Err(_panic) = unwind {
+                tracing::error!(
+                    target: "platform_wallet::e2e::wallet_factory",
+                    "end-of-suite identity-sync shutdown panicked; suppressed via \
+                     catch_unwind to avoid double-panic abort"
+                );
+            }
         }
     }
 }
@@ -1038,6 +1056,44 @@ fn drop_sweep_orphans(ctx: &'static E2eContext) -> FrameworkResult<usize> {
         Err(_) => Err(FrameworkError::Cleanup(
             "drop sweep_orphans worker thread panicked".into(),
         )),
+    }
+}
+
+/// Synchronous bridge for [`E2eContext::shutdown_identity_sync`].
+///
+/// Same hand-rolled-thread pattern as [`drop_sweep_orphans`] — fresh
+/// current-thread runtime sidesteps `rust-lang/rust#100013`, and the
+/// outer `block_on` runs entirely on the worker thread so the dropping
+/// thread is blocked in `join()` for the duration.
+///
+/// The shutdown itself is bounded by [`identity_sync::IdentitySync::stop`]'s
+/// internal grace; we additionally cap the overall call here so a stuck
+/// stop can't wedge end-of-suite drop. (#353)
+fn drop_shutdown_identity_sync(ctx: &'static E2eContext) {
+    let join = std::thread::spawn(move || {
+        let rt = match tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        {
+            Ok(rt) => rt,
+            Err(e) => {
+                tracing::warn!(
+                    target: "platform_wallet::e2e::wallet_factory",
+                    error = %e,
+                    "identity-sync shutdown: runtime build failed; skipping"
+                );
+                return;
+            }
+        };
+        rt.block_on(async move {
+            ctx.shutdown_identity_sync().await;
+        });
+    });
+    if join.join().is_err() {
+        tracing::warn!(
+            target: "platform_wallet::e2e::wallet_factory",
+            "identity-sync shutdown worker thread panicked"
+        );
     }
 }
 
