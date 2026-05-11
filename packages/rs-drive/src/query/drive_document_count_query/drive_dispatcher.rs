@@ -22,6 +22,7 @@
 //! `pub mod drive_dispatcher;` declaration.
 
 use super::super::conditions::{WhereClause, WhereOperator};
+use super::super::ordering::OrderClause;
 use super::execute_range_count::RangeCountOptions;
 use super::{DocumentCountMode, DriveDocumentCountQuery, SplitCountEntry};
 use crate::drive::Drive;
@@ -90,7 +91,9 @@ impl Drive {
     ///
     /// `options` (limit / order / distinct) applies to the returned
     /// entry list — split-mode pagination per the proto contract on
-    /// `GetDocumentsCountRequestV0.{order_by_ascending, limit}`.
+    /// `GetDocumentsCountRequestV0.{order_by, limit}` (the dispatcher
+    /// derives `RangeCountOptions.order_by_ascending` from the first
+    /// `order_by` clause's direction; empty `order_by` → ascending).
     /// The `distinct` flag has no effect here (PerInValue is always
     /// per-value); it's accepted for symmetry with the range-mode
     /// executor.
@@ -340,15 +343,19 @@ impl Drive {
     /// because each document is materialized client-side. Used by
     /// [`DocumentCountMode::PointLookupProof`] dispatch.
     ///
-    /// `where_clause` is the raw decoded `Value` (matching what
-    /// `DriveDocumentQuery::from_decomposed_values` expects), not a
-    /// `Vec<WhereClause>` — the materialize-path uses the broader
-    /// `DriveDocumentQuery` which has its own internal where-clause
-    /// model.
+    /// `where_clause` and `order_by` are the raw decoded `Value`s
+    /// (matching what `DriveDocumentQuery::from_decomposed_values`
+    /// expects), not parsed clause vectors — the materialize-path uses
+    /// the broader `DriveDocumentQuery` which has its own internal
+    /// clause model. The walker rejects `In` / range operators on the
+    /// where clause when `order_by` doesn't carry a matching field, so
+    /// the SDK MUST set `order_by` for the `(false, true, true, _)`
+    /// dispatch arm to succeed end-to-end.
     #[allow(clippy::too_many_arguments)]
     pub fn execute_document_count_point_lookup_proof(
         &self,
         where_clause: dpp::platform_value::Value,
+        order_by: dpp::platform_value::Value,
         contract: &dpp::data_contract::DataContract,
         document_type: DocumentTypeRef,
         drive_config: &crate::config::DriveConfig,
@@ -357,7 +364,7 @@ impl Drive {
     ) -> Result<Vec<u8>, Error> {
         let mut drive_query = crate::query::DriveDocumentQuery::from_decomposed_values(
             where_clause,
-            None,
+            Some(order_by),
             Some(drive_config.default_query_limit),
             None,
             true,
@@ -383,11 +390,12 @@ impl Drive {
 /// contract lookup; drive owns everything past this point including
 /// mode detection, index picking, and per-mode dispatch.
 ///
-/// Both `where_clauses` and `raw_where_value` are present because
+/// Both `raw_where_value` and parsed `Vec<WhereClause>` (built
+/// internally by the dispatcher) are needed because
 /// `DriveDocumentQuery::from_decomposed_values` (used by the
 /// materialize-and-count fallback for `prove=true` point lookups)
-/// takes a `Value` while every other path takes the parsed
-/// `Vec<WhereClause>`. The handler decodes once and passes both.
+/// takes the raw `Value` while every other path consumes the parsed
+/// clauses. Same dual-shape applies to `raw_order_by_value`.
 pub struct DocumentCountRequest<'a> {
     /// Live contract (already loaded by the handler).
     pub contract: &'a dpp::data_contract::DataContract,
@@ -404,11 +412,22 @@ pub struct DocumentCountRequest<'a> {
     /// where-clause decomposition to drive: the abci layer just CBOR-
     /// decodes and hands the raw value down.
     pub raw_where_value: dpp::platform_value::Value,
+    /// Decoded `order_by` value as it came off the wire. Same dual-
+    /// purpose role as `raw_where_value`: parsed into structured
+    /// `OrderClause`s for split-mode entry direction (per-`In`-value /
+    /// per-distinct-value-in-range / per-distinct-prove), and
+    /// forwarded raw to `DriveDocumentQuery::from_decomposed_values`
+    /// for the `PointLookupProof` walk-order requirement.
+    ///
+    /// `Value::Null` (empty `order_by` field on the wire) → no
+    /// clauses. The dispatcher synthesizes a default direction of
+    /// "ascending" for split-mode response ordering when no clauses
+    /// are present; the materialize path rejects empty `order_by`
+    /// when the where clause has an `In`/range operator (proof
+    /// determinism requires an explicit walk order).
+    pub raw_order_by_value: dpp::platform_value::Value,
     /// `return_distinct_counts_in_range` flag from the request.
     pub return_distinct_counts_in_range: bool,
-    /// `order_by_ascending` from the request (`None` = ascending, the
-    /// default for distinct-mode entries).
-    pub order_by_ascending: Option<bool>,
     /// Limit cap from the request. Callers SHOULD pre-clamp against
     /// their server-side `max_query_limit` policy, but Drive also
     /// enforces a defense-in-depth clamp before forwarding to the
@@ -482,6 +501,41 @@ fn where_clauses_from_value(value: &dpp::platform_value::Value) -> Result<Vec<Wh
     }
 }
 
+/// Parse the decoded `order_by` value into structured [`OrderClause`]s.
+///
+/// Same shape as [`where_clauses_from_value`] for `order_by`:
+/// `Value::Null` (empty `order_by` field on the wire) → no clauses;
+/// any other shape must be an outer array of `[field, direction]`
+/// inner arrays. Direction is `"asc"` / `"desc"` per
+/// `OrderClause::from_components`.
+fn order_clauses_from_value(value: &dpp::platform_value::Value) -> Result<Vec<OrderClause>, Error> {
+    match value {
+        dpp::platform_value::Value::Null => Ok(Vec::new()),
+        dpp::platform_value::Value::Array(clauses) => clauses
+            .iter()
+            .map(|oc| match oc {
+                dpp::platform_value::Value::Array(components) => {
+                    // `OrderClause::from_components` returns
+                    // `grovedb::Error`; wrap as drive's query-syntax
+                    // error so the dispatcher's error contract stays
+                    // uniform with the where-clause parser above.
+                    OrderClause::from_components(components).map_err(|_e| {
+                        Error::Query(QuerySyntaxError::InvalidFormatWhereClause(
+                            "order_by clause must have [field, \"asc\"|\"desc\"] shape",
+                        ))
+                    })
+                }
+                _ => Err(Error::Query(QuerySyntaxError::InvalidFormatWhereClause(
+                    "order_by clause must be an array",
+                ))),
+            })
+            .collect(),
+        _ => Err(Error::Query(QuerySyntaxError::InvalidFormatWhereClause(
+            "order_by clause must be an array",
+        ))),
+    }
+}
+
 impl Drive {
     /// Single entry point for the unified `GetDocumentsCount` request.
     ///
@@ -519,6 +573,14 @@ impl Drive {
         // to `DriveDocumentQuery::from_decomposed_values` —
         // where-clause decomposition is a drive concern, not abci's.
         let where_clauses = where_clauses_from_value(&request.raw_where_value)?;
+        let order_clauses = order_clauses_from_value(&request.raw_order_by_value)?;
+
+        // Split-mode entry direction is whatever the first orderBy
+        // clause specifies. Empty orderBy → ascending default. The
+        // raw `order_by` value is also threaded through to the
+        // materialize path (`PointLookupProof`) for proof-walk
+        // determinism — see the executor.
+        let order_by_ascending = order_clauses.first().map(|c| c.ascending).unwrap_or(true);
 
         let mode = DriveDocumentCountQuery::detect_mode(
             &where_clauses,
@@ -549,10 +611,9 @@ impl Drive {
             }
             DocumentCountMode::PerInValue => {
                 // Per-`In`-value → entries. The proto contract on
-                // `GetDocumentsCountRequestV0.{order_by_ascending,
-                // limit}` applies; clamp `limit` defensively (the
-                // abci handler passes raw, see
-                // `DocumentCountRequest::limit` doc).
+                // `GetDocumentsCountRequestV0.{order_by, limit}`
+                // applies; clamp `limit` defensively (the abci handler
+                // passes raw, see `DocumentCountRequest::limit` doc).
                 let effective_limit = request
                     .limit
                     .unwrap_or(request.drive_config.default_query_limit as u32)
@@ -560,7 +621,7 @@ impl Drive {
                 let options = RangeCountOptions {
                     distinct: false, // ignored by PerInValue executor
                     limit: Some(effective_limit),
-                    order_by_ascending: request.order_by_ascending.unwrap_or(true),
+                    order_by_ascending,
                 };
                 Ok(DocumentCountResponse::Entries(
                     self.execute_document_count_per_in_value_no_proof(
@@ -586,7 +647,7 @@ impl Drive {
                 let options = RangeCountOptions {
                     distinct: request.return_distinct_counts_in_range,
                     limit: Some(effective_limit),
-                    order_by_ascending: request.order_by_ascending.unwrap_or(true),
+                    order_by_ascending,
                 };
                 let entries = self.execute_document_count_range_no_proof(
                     contract_id,
@@ -648,7 +709,7 @@ impl Drive {
                 // `DocumentSplitCounts`); both sides MUST land on the
                 // same `left_to_right` value or the merk-root
                 // recomputation fails.
-                let left_to_right = request.order_by_ascending.unwrap_or(true);
+                let left_to_right = order_by_ascending;
                 Ok(DocumentCountResponse::Proof(
                     self.execute_document_count_range_distinct_proof(
                         contract_id,
@@ -665,6 +726,7 @@ impl Drive {
             DocumentCountMode::PointLookupProof => Ok(DocumentCountResponse::Proof(
                 self.execute_document_count_point_lookup_proof(
                     request.raw_where_value,
+                    request.raw_order_by_value,
                     request.contract,
                     request.document_type,
                     request.drive_config,

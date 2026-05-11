@@ -654,10 +654,15 @@ message GetDocumentsCountRequest {
     // Default false (single sum). When true and a range clause is
     // present, return per-distinct-value entries within the range.
     bool return_distinct_counts_in_range = 4;
-    // Sort direction for split-mode entries (per-`In`-value or
-    // per-range-distinct-value). Defaults true (ascending by
-    // serialized key bytes). Ignored for total-count responses.
-    optional bool order_by_ascending = 5;
+    // CBOR-encoded order_by clauses. Same encoding as
+    // `GetDocumentsRequestV0.order_by`. Required when `where` carries
+    // an `In` or range operator on the prove path: the materialize-
+    // and-count walker needs a deterministic walk order so the SDK
+    // can reconstruct the same path query and verify the proof. The
+    // first orderBy clause's direction also controls entry ordering
+    // in split-mode responses (per-`In`-value or per-range-distinct-
+    // value); ignored for total-count responses.
+    bytes order_by = 5;
     // Maximum number of entries to return on the no-prove path.
     // Server clamps to its `max_query_limit` config. Unset →
     // server default. Has no effect on total-count responses.
@@ -711,7 +716,8 @@ message GetDocumentsCountResponse {
     //     entry to recover the total.
     //   * `entries`: per-`In`-value and per-distinct-value-in-range
     //     modes — one CountEntry per distinct value, in serialized-
-    //     key order subject to `order_by_ascending` and `limit`.
+    //     key order subject to the first `order_by` clause's
+    //     direction and `limit`.
     message CountResults {
       oneof variant {
         // `jstype = JS_STRING` for the same reason as

@@ -82,7 +82,7 @@ impl<C> Platform<C> {
             document_type: document_type_name,
             r#where,
             return_distinct_counts_in_range,
-            order_by_ascending,
+            order_by,
             limit,
             prove,
         }: GetDocumentsCountRequestV0,
@@ -129,11 +129,30 @@ impl<C> Platform<C> {
                 }))
         };
 
-        // Hand the raw decoded where `Value` to drive — same pattern
-        // `query_documents_v0` uses. Drive parses + validates per
-        // clause and surfaces any error as `Error::Query(...)`, which
-        // the existing match arm below maps to a query-validation
-        // result. Drive also applies per-mode limit policy:
+        // `order_by` is decoded the same way as `where`: empty bytes
+        // → `Value::Null` (no clauses), any other shape must be a
+        // CBOR-encoded outer array of `[field, direction]` inner
+        // arrays. Drive parses + validates per clause. Required on
+        // the `(In + prove)` dispatch arm for proof determinism;
+        // empty is fine on every other arm (drive synthesizes an
+        // ascending default for split-mode entry direction).
+        let order_by_clause = if order_by.is_empty() {
+            Value::Null
+        } else {
+            check_validation_result_with_data!(ciborium::de::from_reader(order_by.as_slice())
+                .map_err(|_| {
+                    QueryError::Query(QuerySyntaxError::DeserializationError(
+                        "unable to decode 'order_by' query from cbor".to_string(),
+                    ))
+                }))
+        };
+
+        // Hand the raw decoded where + order_by `Value`s to drive —
+        // same pattern `query_documents_v0` uses. Drive parses +
+        // validates per clause and surfaces any error as
+        // `Error::Query(...)`, which the existing match arm below maps
+        // to a query-validation result. Drive also applies per-mode
+        // limit policy:
         // - no-proof modes silently clamp to `max_query_limit`
         //   (proto contract — "passing a larger value just gets
         //   clamped, not rejected")
@@ -146,8 +165,8 @@ impl<C> Platform<C> {
             contract: contract_ref,
             document_type,
             raw_where_value: where_clause,
+            raw_order_by_value: order_by_clause,
             return_distinct_counts_in_range,
-            order_by_ascending,
             limit,
             prove,
             drive_config: &self.config.drive,
@@ -237,7 +256,7 @@ mod tests {
             document_type: document_type_name.to_string(),
             r#where: vec![],
             return_distinct_counts_in_range: false,
-            order_by_ascending: None,
+            order_by: Vec::new(),
             limit: None,
             prove: false,
         };
@@ -291,7 +310,7 @@ mod tests {
             document_type: document_type_name.to_string(),
             r#where: vec![],
             return_distinct_counts_in_range: false,
-            order_by_ascending: None,
+            order_by: Vec::new(),
             limit: None,
             prove: false,
         };
@@ -461,7 +480,7 @@ mod tests {
             document_type: "person".to_string(),
             r#where: serialize_where_clauses_to_cbor(where_clauses),
             return_distinct_counts_in_range: false,
-            order_by_ascending: None,
+            order_by: Vec::new(),
             limit: None,
             prove: false,
         };
@@ -523,7 +542,7 @@ mod tests {
             document_type: "person".to_string(),
             r#where: serialize_where_clauses_to_cbor(where_clauses),
             return_distinct_counts_in_range: false,
-            order_by_ascending: None,
+            order_by: Vec::new(),
             limit: None,
             prove: false,
         };
@@ -593,7 +612,7 @@ mod tests {
             document_type: document_type_name.to_string(),
             r#where: vec![],
             return_distinct_counts_in_range: false,
-            order_by_ascending: None,
+            order_by: Vec::new(),
             limit: None,
             prove: true,
         };
@@ -611,6 +630,131 @@ mod tests {
                 metadata: Some(_),
             })
         ));
+    }
+
+    /// Regression pin for the `prove = true` + `In` route. Two bugs
+    /// shaped this test:
+    ///
+    /// 1. Before `3ef2ca3fe1`, `detect_mode` dispatched
+    ///    `(has_range=false, has_in=true, _)` unconditionally to
+    ///    `DocumentCountMode::PerInValue`, which emits
+    ///    `DocumentCountResponse::Counts(...)` and never a proof — so
+    ///    any caller setting `prove = true` on a count query with an
+    ///    `In` where-clause silently lost the proof and the SDK
+    ///    verifier bailed with `NoProofInResult` (PR #3623 review
+    ///    comment r3214794852). `detect_mode` now routes the prove
+    ///    combination to `PointLookupProof`.
+    ///
+    /// 2. `PointLookupProof` reaches `DriveDocumentQuery::
+    ///    from_decomposed_values`, which requires an `order_by`
+    ///    clause for any range/In where field (proof determinism —
+    ///    the SDK has to reconstruct the same path query). The
+    ///    initial fix in `3ef2ca3fe1` hard-coded `None` for
+    ///    `order_by`, so `In + prove` exploded with
+    ///    `MissingOrderByForRange` end-to-end. The follow-up
+    ///    introduced the `order_by` request field this test exercises
+    ///    via `[["age", "asc"]]`; with it, the executor walks the In
+    ///    fork in a deterministic order and emits real proof bytes.
+    ///
+    /// Asserts the response variant is `Proof(non-empty bytes)` — if
+    /// a future refactor sends the dispatch back through `PerInValue`
+    /// the variant becomes `Counts`; if it forgets to thread
+    /// `order_by`, the executor errors before producing a response.
+    /// Either regression fails this test.
+    #[test]
+    fn test_documents_count_with_in_and_prove_returns_proof() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let platform_version = PlatformVersion::latest();
+
+        let data_contract = json_document_to_contract_with_ids(
+            "tests/supporting_files/contract/family/family-contract-countable.json",
+            None,
+            None,
+            false,
+            platform_version,
+        )
+        .expect("expected to get json based contract");
+
+        store_data_contract(&platform, &data_contract, version);
+
+        // Same distribution as `test_documents_count_with_in_operator`:
+        // 3 docs at age=30, 2 at age=40, 1 at age=50. We ask for
+        // `age in [30, 40]` so the proof has to cover two forks. One
+        // doc at age=50 is outside the In set, so the proof must NOT
+        // collapse to the full contents.
+        for (id, name, age) in [
+            ([1u8; 32], "Alice", 30u64),
+            ([2u8; 32], "Bob", 30),
+            ([3u8; 32], "Carol", 30),
+            ([4u8; 32], "Dave", 40),
+            ([5u8; 32], "Eve", 40),
+            ([6u8; 32], "Frank", 50),
+        ] {
+            store_person_document(
+                &platform,
+                &data_contract,
+                id,
+                name,
+                "Smith",
+                age,
+                platform_version,
+            );
+        }
+
+        // [["age", "in", [30, 40]]]
+        let where_clauses = vec![Value::Array(vec![
+            Value::Text("age".to_string()),
+            Value::Text("in".to_string()),
+            Value::Array(vec![Value::U64(30), Value::U64(40)]),
+        ])];
+
+        // [["age", "asc"]] — required for the materialize-and-count
+        // proof walker; bug #2 in the doc comment above turned this
+        // omission into a hard error.
+        let order_by = vec![Value::Array(vec![
+            Value::Text("age".to_string()),
+            Value::Text("asc".to_string()),
+        ])];
+
+        let request = GetDocumentsCountRequestV0 {
+            data_contract_id: data_contract.id().to_vec(),
+            document_type: "person".to_string(),
+            r#where: serialize_where_clauses_to_cbor(where_clauses),
+            return_distinct_counts_in_range: false,
+            order_by: serialize_where_clauses_to_cbor(order_by),
+            limit: None,
+            prove: true,
+        };
+
+        let result = platform
+            .query_documents_count_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+
+        match result.data {
+            Some(GetDocumentsCountResponseV0 {
+                result: Some(get_documents_count_response_v0::Result::Proof(proof)),
+                metadata: Some(_),
+            }) => {
+                // Non-empty grovedb proof bytes pin that the
+                // `PointLookupProof` dispatch actually emitted a
+                // materialize-and-count proof rather than a
+                // degenerate empty envelope. End-to-end SDK-verifier
+                // round-trip (group verified docs by the In field's
+                // serialized value → per-key entries) is exercised
+                // by the SDK integration tests once those are
+                // restored post-testnet.
+                assert!(
+                    !proof.grovedb_proof.is_empty(),
+                    "expected non-empty grovedb proof bytes for In + prove count"
+                );
+            }
+            other => panic!(
+                "expected Proof response from In + prove count, got {:?}",
+                other
+            ),
+        }
     }
 
     /// End-to-end test for the range count happy path against a v12
@@ -679,18 +823,29 @@ mod tests {
         }
 
         // Helper: issue a range count request with the given options.
+        // `ascending` controls the direction encoded into the
+        // `order_by` field as `[["color", "asc"|"desc"]]`. `None` →
+        // empty `order_by` bytes, which drive treats as "use ascending
+        // default" for split-mode entry ordering.
         let make_request = |distinct: bool, limit: Option<u32>, ascending: Option<bool>| {
             let where_clauses = vec![Value::Array(vec![
                 Value::Text("color".to_string()),
                 Value::Text(">".to_string()),
                 Value::Text("blue".to_string()),
             ])];
+            let order_by_bytes = match ascending {
+                Some(asc) => serialize_where_clauses_to_cbor(vec![Value::Array(vec![
+                    Value::Text("color".to_string()),
+                    Value::Text(if asc { "asc" } else { "desc" }.to_string()),
+                ])]),
+                None => Vec::new(),
+            };
             GetDocumentsCountRequestV0 {
                 data_contract_id: contract.id().to_vec(),
                 document_type: "widget".to_string(),
                 r#where: serialize_where_clauses_to_cbor(where_clauses),
                 return_distinct_counts_in_range: distinct,
-                order_by_ascending: ascending,
+                order_by: order_by_bytes,
                 limit,
                 prove: false,
             }
@@ -879,7 +1034,7 @@ mod tests {
             document_type: "widget".to_string(),
             r#where: serialize_where_clauses_to_cbor(where_clauses),
             return_distinct_counts_in_range: true,
-            order_by_ascending: None,
+            order_by: Vec::new(),
             limit: None,
             prove: true,
         };

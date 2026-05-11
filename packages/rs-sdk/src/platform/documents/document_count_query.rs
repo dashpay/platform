@@ -26,7 +26,9 @@ use dpp::{
     data_contract::document_type::accessors::DocumentTypeV0Getters, platform_value::Value,
     prelude::DataContract, ProtocolError,
 };
-use drive::query::{DriveDocumentCountQuery, DriveDocumentQuery, WhereClause, WhereOperator};
+use drive::query::{
+    DriveDocumentCountQuery, DriveDocumentQuery, OrderClause, WhereClause, WhereOperator,
+};
 use drive_proof_verifier::{
     verify_aggregate_count_proof, verify_distinct_count_proof, DocumentCount, DocumentSplitCounts,
     FromProof,
@@ -59,10 +61,6 @@ pub struct DocumentCountQuery {
     /// `AggregateCountOnRange` proof returns a single aggregate.
     /// Default: `false`.
     pub return_distinct_counts_in_range: bool,
-    /// `order_by_ascending` request flag. `None` (default) means the
-    /// server uses the natural BTreeMap order (ascending) for
-    /// distinct-mode entries; `Some(false)` reverses.
-    pub order_by_ascending: Option<bool>,
     /// `limit` cap for distinct-mode entries. The server clamps this
     /// to its `max_query_limit` config; passing a larger value here
     /// just gets clamped, not rejected.
@@ -73,6 +71,12 @@ pub struct DocumentCountQuery {
     /// client-side range adjustment, so it was removed before v12
     /// shipped.
     pub limit: Option<u32>,
+    // Order direction lives on the wrapped `document_query` —
+    // `DocumentQuery::order_by_clauses` is serialized into the
+    // request's `order_by` field. The first clause's direction
+    // controls split-mode entry ordering server-side; clauses are
+    // also load-bearing for `(In + prove)` walk determinism (see the
+    // `FromProof` impl below).
 }
 
 impl DocumentCountQuery {
@@ -84,7 +88,6 @@ impl DocumentCountQuery {
         Ok(Self {
             document_query: DocumentQuery::new(contract, document_type_name)?,
             return_distinct_counts_in_range: false,
-            order_by_ascending: None,
             limit: None,
         })
     }
@@ -95,17 +98,19 @@ impl DocumentCountQuery {
         self
     }
 
+    /// Add an order_by clause to the underlying query. The first
+    /// clause's direction also controls split-mode entry ordering
+    /// server-side; clauses are required when the where contains an
+    /// `In` or range operator on the prove path (proof determinism).
+    pub fn with_order_by(mut self, clause: OrderClause) -> Self {
+        self.document_query = self.document_query.with_order_by(clause);
+        self
+    }
+
     /// Set `return_distinct_counts_in_range`. Only meaningful with a
     /// range where-clause AND a no-proof transport (see field doc).
     pub fn with_distinct_counts_in_range(mut self, distinct: bool) -> Self {
         self.return_distinct_counts_in_range = distinct;
-        self
-    }
-
-    /// Set the sort order for distinct-mode entries. `None` (default)
-    /// means ascending; `Some(false)` reverses.
-    pub fn with_order_by_ascending(mut self, ascending: Option<bool>) -> Self {
-        self.order_by_ascending = ascending;
         self
     }
 
@@ -122,7 +127,6 @@ impl<'a> From<&'a DriveDocumentQuery<'a>> for DocumentCountQuery {
         Self {
             document_query: value.into(),
             return_distinct_counts_in_range: false,
-            order_by_ascending: None,
             limit: None,
         }
     }
@@ -133,7 +137,6 @@ impl<'a> From<DriveDocumentQuery<'a>> for DocumentCountQuery {
         Self {
             document_query: value.into(),
             return_distinct_counts_in_range: false,
-            order_by_ascending: None,
             limit: None,
         }
     }
@@ -163,6 +166,8 @@ impl TryFrom<DocumentCountQuery> for GetDocumentsCountRequest {
 
     fn try_from(query: DocumentCountQuery) -> Result<Self, Self::Error> {
         let where_bytes = serialize_where_clauses_to_cbor(&query.document_query.where_clauses)?;
+        let order_by_bytes =
+            serialize_order_by_clauses_to_cbor(&query.document_query.order_by_clauses)?;
         Ok(GetDocumentsCountRequest {
             version: Some(GetDocumentsCountRequestVersion::V0(
                 GetDocumentsCountRequestV0 {
@@ -170,7 +175,7 @@ impl TryFrom<DocumentCountQuery> for GetDocumentsCountRequest {
                     document_type: query.document_query.document_type_name.clone(),
                     r#where: where_bytes,
                     return_distinct_counts_in_range: query.return_distinct_counts_in_range,
-                    order_by_ascending: query.order_by_ascending,
+                    order_by: order_by_bytes,
                     limit: query.limit,
                     // SDK Fetch path always requests a proof; users
                     // wanting no-proof distinct-mode would need a
@@ -420,16 +425,22 @@ impl FromProof<DocumentCountQuery> for DocumentSplitCounts {
             // from the shared constant must require clients to set
             // `limit` explicitly on prove-distinct queries.)
             //
-            // `order_by_ascending` defaults to ascending — the
-            // server's prove-distinct dispatcher uses the same
-            // fallback; both sides must land on the same
-            // `left_to_right` value or the merk-root recomputation
-            // fails.
+            // Direction comes from the first `order_by` clause; empty
+            // `order_by` defaults to ascending — the server's
+            // prove-distinct dispatcher derives `left_to_right` from
+            // the same source (see drive_dispatcher.rs), so both
+            // sides must land on the same value or the merk-root
+            // recomputation fails.
             let limit_u16 = request
                 .limit
                 .map(|l| l as u16)
                 .unwrap_or(drive::config::DEFAULT_QUERY_LIMIT);
-            let left_to_right = request.order_by_ascending.unwrap_or(true);
+            let left_to_right = request
+                .document_query
+                .order_by_clauses
+                .first()
+                .map(|c| c.ascending)
+                .unwrap_or(true);
 
             let proof = response
                 .proof()
@@ -523,6 +534,27 @@ impl Fetch for DocumentSplitCounts {
 }
 
 fn serialize_where_clauses_to_cbor(clauses: &[WhereClause]) -> Result<Vec<u8>, Error> {
+    if clauses.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let value_array = Value::Array(clauses.iter().cloned().map(Value::from).collect());
+
+    let cbor_value: CborValue = TryInto::<CborValue>::try_into(value_array)
+        .map_err(|e| Error::Protocol(ProtocolError::EncodingError(e.to_string())))?;
+
+    let mut serialized = Vec::new();
+    ciborium::ser::into_writer(&cbor_value, &mut serialized)
+        .map_err(|e| Error::Protocol(ProtocolError::EncodingError(e.to_string())))?;
+
+    Ok(serialized)
+}
+
+/// CBOR-encode an order_by clause list for the
+/// `GetDocumentsCountRequestV0.order_by` field. Mirrors
+/// [`serialize_where_clauses_to_cbor`]; empty → empty bytes (the
+/// server treats that as `Value::Null` = no clauses).
+fn serialize_order_by_clauses_to_cbor(clauses: &[OrderClause]) -> Result<Vec<u8>, Error> {
     if clauses.is_empty() {
         return Ok(Vec::new());
     }

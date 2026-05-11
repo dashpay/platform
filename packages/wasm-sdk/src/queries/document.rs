@@ -95,6 +95,20 @@ export interface DocumentsQuery {
    * @default undefined
    */
   startAt?: IdentifierLike
+
+  /**
+   * Count-query knob: when `true` AND the query carries a range
+   * clause, the server returns per-distinct-value entries within
+   * the range instead of a single sum. Ignored by the regular
+   * document-fetch path.
+   *
+   * Entry direction comes from the first `orderBy` clause's
+   * direction (which also drives walk order on the materialize +
+   * prove path); set `orderBy: [["<range_field>", "asc"|"desc"]]`
+   * alongside `returnDistinctCountsInRange: true` to control sort.
+   * @default false
+   */
+  returnDistinctCountsInRange?: boolean;
 }
 "#;
 
@@ -125,20 +139,19 @@ struct DocumentsQueryInput {
     /// document-fetch path. Default `false`.
     #[serde(default)]
     return_distinct_counts_in_range: Option<bool>,
-    /// Count-query knob: order of entries for distinct-mode results.
-    /// `None` (default) → server picks ascending; `Some(false)` →
-    /// descending. Ignored by the regular document-fetch path.
-    #[serde(default)]
-    order_by_ascending: Option<bool>,
+    // Order direction for count results flows through the existing
+    // `orderBy` field — the first clause's direction controls
+    // split-mode entry ordering and `(In + prove)` walk order. No
+    // separate `orderByAscending` knob.
 }
 
 async fn build_documents_query(
     sdk: &WasmSdk,
     input: DocumentsQueryInput,
 ) -> Result<DocumentQuery, WasmSdkError> {
-    // `return_distinct_counts_in_range` / `order_by_ascending` on
-    // the shared input struct are count-query-only knobs; the regular
-    // document-fetch path destructured here just drops them.
+    // `return_distinct_counts_in_range` on the shared input struct is
+    // a count-query-only knob; the regular document-fetch path
+    // destructured here just drops it.
     let DocumentsQueryInput {
         data_contract_id,
         document_type_name,
@@ -148,7 +161,6 @@ async fn build_documents_query(
         start_after,
         start_at,
         return_distinct_counts_in_range: _,
-        order_by_ascending: _,
     } = input;
 
     let contract_id: Identifier = data_contract_id.into();
@@ -206,14 +218,19 @@ async fn parse_documents_query(
 /// Parse a JS query object into a [`DocumentCountQuery`] — the count-
 /// query analogue of [`parse_documents_query`]. The inner
 /// [`DocumentQuery`] is built from the same `DocumentsQueryInput`
-/// (data-contract / document-type / where-clauses), and the
-/// count-specific knobs (`return_distinct_counts_in_range`,
-/// `order_by_ascending`, `limit`) are forwarded to the outer
-/// `DocumentCountQuery` rather than the inner `DocumentQuery`. The
-/// SDK-side `TryFrom<&DocumentCountQuery> for DriveDocumentQuery`
-/// forcibly nulls the inner limit anyway (so the proof verifier
-/// counts every matched doc, not a paginated slice), making the
-/// outer-field forwarding load-bearing.
+/// (data-contract / document-type / where-clauses / orderBy), and the
+/// count-specific knobs (`return_distinct_counts_in_range`, `limit`)
+/// are forwarded to the outer `DocumentCountQuery` rather than the
+/// inner `DocumentQuery`. The SDK-side `TryFrom<&DocumentCountQuery>
+/// for DriveDocumentQuery` forcibly nulls the inner limit anyway (so
+/// the proof verifier counts every matched doc, not a paginated
+/// slice), making the outer-field forwarding load-bearing.
+///
+/// `orderBy` clauses ARE consumed by `build_documents_query` and
+/// stored on `document_query.order_by_clauses`, which the SDK request
+/// builder serializes into the wire `order_by` field — the first
+/// clause's direction controls split-mode entry ordering and is
+/// load-bearing for `(In + prove)` walk determinism.
 async fn parse_documents_count_query(
     sdk: &WasmSdk,
     query: DocumentsQueryJs,
@@ -222,7 +239,6 @@ async fn parse_documents_count_query(
         deserialize_required_query(query, "Query object is required", "documents count query")?;
 
     let return_distinct_counts_in_range = input.return_distinct_counts_in_range.unwrap_or(false);
-    let order_by_ascending = input.order_by_ascending;
     let limit = input.limit;
 
     let base_query = build_documents_query(sdk, input).await?;
@@ -230,7 +246,6 @@ async fn parse_documents_count_query(
     Ok(DocumentCountQuery {
         document_query: base_query,
         return_distinct_counts_in_range,
-        order_by_ascending,
         limit,
     })
 }
@@ -517,13 +532,16 @@ impl WasmSdk {
     ///
     /// Query-object knobs (all camelCase on the JS side):
     /// - `where: [[field, op, value], ...]`
+    /// - `orderBy?: [[field, "asc"|"desc"], ...]` — first clause's
+    ///   direction controls per-key entry ordering. Required when
+    ///   the where carries an `In` or range operator on a prove path
+    ///   (the materialize-and-count walker needs an explicit order
+    ///   for proof determinism).
     /// - `limit?: number` — caps the number of entries returned in
     ///   per-key modes (server clamps to its `max_query_limit`).
     /// - `returnDistinctCountsInRange?: boolean` — when `true` AND
     ///   the query carries a range clause, returns per-distinct-
     ///   value entries instead of a single sum.
-    /// - `orderByAscending?: boolean` — order of per-key entries;
-    ///   `false` reverses. Default ascending.
     ///
     /// This is the unified successor to the previous
     /// `getDocumentsCount` / `getDocumentsSplitCount` pair —

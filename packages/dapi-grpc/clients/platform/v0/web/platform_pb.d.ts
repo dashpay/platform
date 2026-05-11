@@ -2473,22 +2473,15 @@ export namespace GetDocumentsCountRequest {
     getReturnDistinctCountsInRange(): boolean;
     setReturnDistinctCountsInRange(value: boolean): void;
 
-    hasOrderByAscending(): boolean;
-    clearOrderByAscending(): void;
-    getOrderByAscending(): boolean;
-    setOrderByAscending(value: boolean): void;
+    getOrderBy(): Uint8Array | string;
+    getOrderBy_asU8(): Uint8Array;
+    getOrderBy_asB64(): string;
+    setOrderBy(value: Uint8Array | string): void;
 
     hasLimit(): boolean;
     clearLimit(): void;
     getLimit(): number;
     setLimit(value: number): void;
-
-    hasStartAfterSplitKey(): boolean;
-    clearStartAfterSplitKey(): void;
-    getStartAfterSplitKey(): Uint8Array | string;
-    getStartAfterSplitKey_asU8(): Uint8Array;
-    getStartAfterSplitKey_asB64(): string;
-    setStartAfterSplitKey(value: Uint8Array | string): void;
 
     getProve(): boolean;
     setProve(value: boolean): void;
@@ -2509,9 +2502,8 @@ export namespace GetDocumentsCountRequest {
       documentType: string,
       where: Uint8Array | string,
       returnDistinctCountsInRange: boolean,
-      orderByAscending: boolean,
+      orderBy: Uint8Array | string,
       limit: number,
-      startAfterSplitKey: Uint8Array | string,
       prove: boolean,
     }
   }
@@ -2579,6 +2571,13 @@ export namespace GetDocumentsCountResponse {
     }
 
     export class CountEntry extends jspb.Message {
+      hasInKey(): boolean;
+      clearInKey(): void;
+      getInKey(): Uint8Array | string;
+      getInKey_asU8(): Uint8Array;
+      getInKey_asB64(): string;
+      setInKey(value: Uint8Array | string): void;
+
       getKey(): Uint8Array | string;
       getKey_asU8(): Uint8Array;
       getKey_asB64(): string;
@@ -2599,17 +2598,46 @@ export namespace GetDocumentsCountResponse {
 
     export namespace CountEntry {
       export type AsObject = {
+        inKey: Uint8Array | string,
         key: Uint8Array | string,
         count: string,
       }
     }
 
-    export class CountResults extends jspb.Message {
+    export class CountEntries extends jspb.Message {
       clearEntriesList(): void;
       getEntriesList(): Array<GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntry>;
       setEntriesList(value: Array<GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntry>): void;
       addEntries(value?: GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntry, index?: number): GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntry;
 
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): CountEntries.AsObject;
+      static toObject(includeInstance: boolean, msg: CountEntries): CountEntries.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: CountEntries, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): CountEntries;
+      static deserializeBinaryFromReader(message: CountEntries, reader: jspb.BinaryReader): CountEntries;
+    }
+
+    export namespace CountEntries {
+      export type AsObject = {
+        entriesList: Array<GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntry.AsObject>,
+      }
+    }
+
+    export class CountResults extends jspb.Message {
+      hasAggregateCount(): boolean;
+      clearAggregateCount(): void;
+      getAggregateCount(): string;
+      setAggregateCount(value: string): void;
+
+      hasEntries(): boolean;
+      clearEntries(): void;
+      getEntries(): GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntries | undefined;
+      setEntries(value?: GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntries): void;
+
+      getVariantCase(): CountResults.VariantCase;
       serializeBinary(): Uint8Array;
       toObject(includeInstance?: boolean): CountResults.AsObject;
       static toObject(includeInstance: boolean, msg: CountResults): CountResults.AsObject;
@@ -2622,7 +2650,14 @@ export namespace GetDocumentsCountResponse {
 
     export namespace CountResults {
       export type AsObject = {
-        entriesList: Array<GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntry.AsObject>,
+        aggregateCount: string,
+        entries?: GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntries.AsObject,
+      }
+
+      export enum VariantCase {
+        VARIANT_NOT_SET = 0,
+        AGGREGATE_COUNT = 1,
+        ENTRIES = 2,
       }
     }
 

@@ -9,10 +9,10 @@
 //! The previous version exposed two functions (`dash_sdk_document_count`
 //! returning a single u64, `dash_sdk_document_split_count` returning a
 //! per-key map). Now that the count endpoint carries
-//! `return_distinct_counts_in_range`, `order_by_ascending`, and
-//! `limit`, the split path subsumes the simple-total case (total count
-//! becomes a one-entry map with empty key), so we expose one entry
-//! point with all the knobs.
+//! `return_distinct_counts_in_range`, `order_by`, and `limit`, the
+//! split path subsumes the simple-total case (total count becomes a
+//! one-entry map with empty key), so we expose one entry point with
+//! all the knobs.
 
 use std::collections::BTreeMap;
 use std::ffi::{CStr, CString};
@@ -20,7 +20,7 @@ use std::os::raw::c_char;
 
 use dash_sdk::dpp::platform_value::Value;
 use dash_sdk::dpp::prelude::DataContract;
-use dash_sdk::drive::query::{WhereClause, WhereOperator};
+use dash_sdk::drive::query::{OrderClause, WhereClause, WhereOperator};
 use dash_sdk::platform::documents::document_count_query::DocumentCountQuery;
 use dash_sdk::platform::documents::document_query::DocumentQuery;
 use dash_sdk::platform::Fetch;
@@ -37,6 +37,15 @@ struct WhereClauseJson {
     field: String,
     operator: String,
     value: serde_json::Value,
+}
+
+#[derive(Debug, Deserialize)]
+struct OrderClauseJson {
+    field: String,
+    /// `"asc"` (default) or `"desc"`. Direction strings match the
+    /// regular document-fetch FFI surface so callers can reuse their
+    /// JSON shapes between count and fetch.
+    direction: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -62,6 +71,18 @@ fn parse_where_operator(op: &str) -> Result<WhereOperator, FFIError> {
         _ => Err(FFIError::InternalError(format!(
             "Unknown where operator: {}",
             op
+        ))),
+    }
+}
+
+#[allow(clippy::result_large_err)]
+fn parse_order_direction(direction: &str) -> Result<bool, FFIError> {
+    match direction {
+        "asc" | "ascending" => Ok(true),
+        "desc" | "descending" => Ok(false),
+        _ => Err(FFIError::InternalError(format!(
+            "Unknown order_by direction: {} (use \"asc\" or \"desc\")",
+            direction
         ))),
     }
 }
@@ -103,6 +124,7 @@ unsafe fn build_base_query(
     data_contract: &DataContract,
     document_type: *const c_char,
     where_json: *const c_char,
+    order_by_json: *const c_char,
 ) -> Result<DocumentQuery, FFIError> {
     let document_type_str = CStr::from_ptr(document_type)
         .to_str()
@@ -126,6 +148,23 @@ unsafe fn build_base_query(
                     field: clause.field,
                     operator,
                     value,
+                });
+            }
+        }
+    }
+
+    if !order_by_json.is_null() {
+        let order_str = CStr::from_ptr(order_by_json)
+            .to_str()
+            .map_err(FFIError::from)?;
+        if !order_str.is_empty() {
+            let clauses: Vec<OrderClauseJson> = serde_json::from_str(order_str)
+                .map_err(|e| FFIError::InternalError(format!("Invalid order_by JSON: {}", e)))?;
+            for clause in clauses {
+                let ascending = parse_order_direction(&clause.direction)?;
+                query = query.with_order_by(OrderClause {
+                    field: clause.field,
+                    ascending,
                 });
             }
         }
@@ -159,9 +198,14 @@ unsafe fn build_base_query(
 /// - `return_distinct_counts_in_range`: when `true` AND the query has
 ///   a range clause, returns per-distinct-value entries instead of a
 ///   single sum. No-op when there's no range clause.
-/// - `order_by_ascending`: `-1` = use server default (ascending),
-///   `0` = descending, `1` = ascending. Affects per-`in`-value and
-///   per-distinct-value-in-range entry order on the server.
+/// - `order_by_json`: optional JSON `[{"field": "<name>", "direction":
+///   "asc"|"desc"}]`. The first clause's direction controls split-mode
+///   entry ordering server-side; clauses are also load-bearing for
+///   `(In + prove)` walk determinism (the SDK reconstructs the same
+///   path query to verify the proof). Null or empty → no orderBy
+///   (server treats as ascending default for split-mode entry
+///   direction; rejects on the `(In + prove)` arm because proof
+///   determinism needs an explicit walk order).
 /// - `limit`: `-1` = use server default (`default_query_limit`),
 ///   `≥ 0` = explicit cap (clamped to `max_query_limit` server-side
 ///   on no-proof paths, rejected if too large on prove paths).
@@ -170,6 +214,7 @@ unsafe fn build_base_query(
 /// - `sdk_handle` and `data_contract_handle` must be valid, non-null pointers.
 /// - `document_type` must be a NUL-terminated C string valid for the duration of the call.
 /// - `where_json` may be null; if non-null it must be a NUL-terminated JSON string of `[{field, operator, value}]`.
+/// - `order_by_json` may be null; if non-null it must be a NUL-terminated JSON string of `[{field, direction}]`.
 /// - On success, returns a heap-allocated C string pointer; caller must free it using SDK routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_document_count(
@@ -177,8 +222,8 @@ pub unsafe extern "C" fn dash_sdk_document_count(
     data_contract_handle: *const DataContractHandle,
     document_type: *const c_char,
     where_json: *const c_char,
+    order_by_json: *const c_char,
     return_distinct_counts_in_range: bool,
-    order_by_ascending: i32,
     limit: i64,
 ) -> DashSDKResult {
     if sdk_handle.is_null() || data_contract_handle.is_null() || document_type.is_null() {
@@ -192,22 +237,12 @@ pub unsafe extern "C" fn dash_sdk_document_count(
     let data_contract = &*(data_contract_handle as *const DataContract);
 
     let result: Result<String, FFIError> = wrapper.runtime.block_on(async {
-        let base_query = build_base_query(data_contract, document_type, where_json)?;
+        let base_query = build_base_query(data_contract, document_type, where_json, order_by_json)?;
 
         // Sentinel decoding for the C ABI. `-1` means "unset; use
-        // server-side default". The Rust-side request fields are
-        // `Option<...>` so `None` here is the same as the request
+        // server-side default". The Rust-side request field is
+        // `Option<u32>` so `None` here is the same as the request
         // omitting the field on the wire.
-        let order_by_ascending_opt = match order_by_ascending {
-            -1 => None,
-            0 => Some(false),
-            1 => Some(true),
-            other => {
-                return Err(FFIError::InternalError(format!(
-                    "order_by_ascending must be -1 (default), 0 (descending), or 1 (ascending); got {other}"
-                )));
-            }
-        };
         let limit_opt = if limit < 0 {
             None
         } else if limit > u32::MAX as i64 {
@@ -222,7 +257,6 @@ pub unsafe extern "C" fn dash_sdk_document_count(
         let count_query = DocumentCountQuery {
             document_query: base_query,
             return_distinct_counts_in_range,
-            order_by_ascending: order_by_ascending_opt,
             limit: limit_opt,
         };
 
