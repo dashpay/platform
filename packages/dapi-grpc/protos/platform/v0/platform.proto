@@ -662,19 +662,7 @@ message GetDocumentsCountRequest {
     // Server clamps to its `max_query_limit` config. Unset →
     // server default. Has no effect on total-count responses.
     optional uint32 limit = 6;
-    // Field 7 was `optional bytes start_after_split_key`, a single-
-    // key pagination cursor for split mode. Removed before v12
-    // shipped: a cursor adds no expressivity over range-bound
-    // adjustment on the client side (page 2 = `key > <page-1-last
-    // -key>`), and the field's semantics were ambiguous for
-    // compound (`In + range + distinct`) queries — a single
-    // `bytes` cursor can't unambiguously index into the natural
-    // `(in_key, key)` sort order. Field number reserved for a
-    // future structured cursor when compound pagination needs to
-    // be addressable without range tricks.
-    reserved 7;
-    reserved "start_after_split_key";
-    bool prove = 8;
+    bool prove = 7;
   }
   oneof version { GetDocumentsCountRequestV0 v0 = 1; }
 }
