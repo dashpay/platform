@@ -2713,11 +2713,18 @@ mod nft_tests {
 
     /// Helper for the paired set-price-on-not-owned-document test.
     ///
-    /// Same scenario at PROTOCOL_VERSION_11 (legacy bump-only fee) and
-    /// PROTOCOL_VERSION_12 (fee covers the fetch + ownership-mismatch
-    /// validation work that ran before the failure). Both versions land as
-    /// PaidConsensusError because the bump-emission patch makes the per-tx
-    /// failure produce a non-empty action on every version.
+    /// - **PROTOCOL_VERSION_11**: lands as `PaidConsensusError` via the
+    ///   legacy `flatten_v0` / `merge_many_v0` aggregators lifting the
+    ///   empty errors-only result to `Some(empty_vec)` — preserved for
+    ///   chain reproducibility. The contract nonce is *not* actually
+    ///   advanced (no bump action's drive op is created).
+    /// - **PROTOCOL_VERSION_12+**: lands as `PaidConsensusError` because
+    ///   the per-tx failure path now emits a
+    ///   `BumpIdentityDataContractNonce` action
+    ///   (`failed_per_transition_action: 1`). The contract nonce
+    ///   advances and the user pays for the fetch + ownership check.
+    ///
+    /// Only the fee differs between the two versions.
     async fn run_document_set_price_on_not_owned_document_at_protocol_version(
         protocol_version: dpp::version::ProtocolVersion,
         expected_processing_fee: dpp::fee::Credits,
