@@ -97,27 +97,32 @@ impl DriveDocumentCountQuery<'_> {
         // prefix this collapses to a flat range-only query at the
         // terminator's property-name subtree; for an In-on-prefix
         // it becomes a compound query with one outer `Key` per In
-        // value and a `subquery_path`/`subquery` descending to the
-        // terminator's range item.
+        // value (sorted lex-ascending by the builder) plus a
+        // `subquery_path`/`subquery` descending to the terminator's
+        // range item.
         //
-        // We pass `None` for the path-query limit so the executor
-        // sees every emitted element regardless of whether the
-        // caller's `limit` would have truncated grovedb mid-walk.
-        // For summed mode we must see all elements to compute the
-        // total. For distinct mode we apply `limit` post-query
-        // below — the per-query DoS bound is the index size itself,
-        // which is bounded by the contract author's index choice.
-        // Always build the path query in ascending order on the
-        // no-proof path; the Rust-side sort+reverse below applies
-        // the user's `order_by_ascending` to the final result set.
-        // We don't need to push direction into grovedb here because
-        // we don't push `limit` either (we need every element to
-        // either compute the summed total or to apply ordering and
-        // truncation post-emit). Keeping the grovedb walk in a
-        // canonical direction means the unit tests that pin
-        // `distinct_count_path_query`'s bytes don't have to care
-        // about the caller's order preference.
-        let path_query = self.distinct_count_path_query(None, true, platform_version)?;
+        // Limit and direction handling differs by mode:
+        // - **Summed mode** (`distinct = false`) needs every emitted
+        //   element to compute the aggregate, so the path-query
+        //   limit stays `None` and direction is the canonical
+        //   ascending. The per-query DoS bound is the index size
+        //   itself, bounded by the contract author's index choice.
+        //   A follow-up that wires grovedb's no-proof
+        //   `AggregateCountOnRange` execution here would collapse
+        //   this to O(log n) — tracked separately.
+        // - **Distinct mode** (`distinct = true`) pushes the
+        //   caller's `limit` and `order_by_ascending` directly into
+        //   grovedb so the walk stops at `limit` elements in the
+        //   requested direction. Per-query work is then O(limit ×
+        //   log n) instead of O(index size), and no Rust-side
+        //   sort/reverse/truncate is needed.
+        let (path_query_limit, left_to_right) = if options.distinct {
+            (options.limit.map(|l| l as u16), options.order_by_ascending)
+        } else {
+            (None, true)
+        };
+        let path_query =
+            self.distinct_count_path_query(path_query_limit, left_to_right, platform_version)?;
         let base_path_len = path_query.path.len();
         let has_in_on_prefix = self
             .where_clauses
@@ -166,8 +171,8 @@ impl DriveDocumentCountQuery<'_> {
         // the In value sits at `path[base_path_len]`; for flat
         // queries `path.len() == base_path_len` so `in_key` is
         // `None`. We DO NOT collapse multiple emitted entries with
-        // the same `key` into one — that's the whole point of
-        // dropping the merge.
+        // the same `key` into one — that's the whole point of the
+        // no-merge contract.
         let mut entries: Vec<SplitCountEntry> = Vec::new();
         for triple in elements.to_path_key_elements() {
             let (path, key, element) = triple;
@@ -198,33 +203,18 @@ impl DriveDocumentCountQuery<'_> {
             }]);
         }
 
-        // Distinct mode: order, then limit — applied to the
-        // lexicographic `(in_key, key)` tuple so ordering is
-        // stable across compound shapes.
+        // Distinct mode: grovedb already emitted entries in the
+        // requested direction (controlled by `left_to_right`) and
+        // truncated to the path-query limit, so we return the entry
+        // list as-is. The In keys are lex-sorted by the builder
+        // (see `distinct_count_path_query`), so the natural emit
+        // order is `(in_key_lex_asc, key_lex_asc)` for ascending
+        // and `(in_key_lex_desc, key_lex_desc)` for descending —
+        // the documented order contract holds by construction.
         //
-        // The natural emit order from grovedb is already
-        // `(in_key_lex_asc, key_lex_asc)` since the outer Query
-        // enumerates In keys in insert order (matching the
-        // distinct_count_path_query builder, which inserts keys in
-        // input order) and the subquery range walks ascending. We
-        // sort defensively to make the order contract explicit
-        // regardless of underlying grovedb iteration changes.
-        entries.sort_by(|a, b| {
-            a.in_key
-                .as_deref()
-                .unwrap_or(&[])
-                .cmp(b.in_key.as_deref().unwrap_or(&[]))
-                .then_with(|| a.key.cmp(&b.key))
-        });
-        if !options.order_by_ascending {
-            entries.reverse();
-        }
         // For pagination, callers narrow the range bound itself
         // (`color > <last-key>` for the next page) rather than
         // passing a cursor — see `RangeCountOptions::limit` doc.
-        if let Some(limit) = options.limit {
-            entries.truncate(limit as usize);
-        }
         Ok(entries)
     }
 

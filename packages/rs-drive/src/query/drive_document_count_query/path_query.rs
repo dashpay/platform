@@ -379,7 +379,7 @@ impl DriveDocumentCountQuery<'_> {
                     // name subtree; outer Query lives at that level.
                     base_path.push(prop.name.as_bytes().to_vec());
                     let in_values = clause.in_values().into_data_with_error()??;
-                    let keys: Vec<Vec<u8>> = in_values
+                    let mut keys: Vec<Vec<u8>> = in_values
                         .iter()
                         .map(|v| {
                             self.document_type.serialize_value_for_key(
@@ -389,6 +389,35 @@ impl DriveDocumentCountQuery<'_> {
                             )
                         })
                         .collect::<Result<_, _>>()?;
+                    // Sort the serialized In keys lex-ascending before
+                    // building the outer Query. This is load-bearing
+                    // for both correctness and DoS-resistance:
+                    // - **Order parity**: grovedb iterates `Key` items
+                    //   in insert order. Without sorting, the emitted
+                    //   `(in_key, key)` tuples come out in user-input
+                    //   order on the prefix dimension, which diverges
+                    //   from the documented lex-asc order contract on
+                    //   the no-proof distinct path (which sorts post-
+                    //   walk) and forces a per-side sort step.
+                    // - **`left_to_right`-driven descent**: with sorted
+                    //   keys, `left_to_right = false` walks the outer
+                    //   In dimension lex-descending — what the caller
+                    //   asked for. Without the sort, descending
+                    //   `left_to_right` just reverses user-input
+                    //   order, which is gibberish.
+                    // - **Pushed-limit safety**: callers that push the
+                    //   path-query limit (no-proof distinct mode) get
+                    //   the bottom-N or top-N entries by lex order,
+                    //   which is the documented limit-on-distinct
+                    //   semantics. With unsorted keys, the path-query
+                    //   limit would give the first-N entries in user-
+                    //   input order — useless for distinct pagination.
+                    //
+                    // Both the prover and the verifier go through this
+                    // builder, so the byte-equality contract still
+                    // holds — the sort happens identically on both
+                    // sides.
+                    keys.sort();
                     in_outer_keys = Some(keys);
                 }
                 _ => {
