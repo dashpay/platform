@@ -420,18 +420,10 @@ fn serialize_query_item(item: &QueryItem) -> Result<JsValue, JsValue> {
             )
             .map_err(|_| JsValue::from_str("Failed to set endInclusive"))?;
         }
-        // `AggregateCountOnRange` is a count-only proof primitive added in
-        // grovedb #656 (`u64` count + log-size proof for ranges over
-        // `ProvableCountTree`s). The wasm verify-path JS shim doesn't drive
-        // those queries today; rather than swallow them silently, emit a
-        // descriptive type so callers can route around them.
         QueryItem::AggregateCountOnRange(_) => {
-            Reflect::set(
-                &obj,
-                &JsValue::from_str("type"),
-                &JsValue::from_str("AggregateCountOnRange"),
-            )
-            .map_err(|_| JsValue::from_str("Failed to set type"))?;
+            return Err(JsValue::from_str(
+                "AggregateCountOnRange QueryItem is not supported in token-transition path queries",
+            ));
         }
     }
 

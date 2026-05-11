@@ -41,6 +41,19 @@ impl Drive {
             drive_version,
         )?;
 
+        // ShieldedBalances top-level sum tree — separate from AddressBalances so
+        // per-pool internal trees (notes, nullifiers, anchors, …) cannot
+        // contaminate the address-credit aggregate via sum propagation.
+        self.grove_insert_empty_tree(
+            SubtreePath::empty(),
+            &[RootTree::ShieldedBalances as u8],
+            TreeType::SumTree,
+            transaction,
+            None,
+            &mut vec![],
+            drive_version,
+        )?;
+
         // SavedBlockTransactions for address-based transaction sync
         self.grove_insert_empty_tree(
             SubtreePath::empty(),
@@ -69,22 +82,25 @@ impl Drive {
 
     /// Adds shielded pool batch operations for initialization.
     ///
-    /// The eight subtree inserts are ordered breadth-first to match the
-    /// intended balanced shape of the parent Merk tree (see the layout
-    /// diagram in `crate::drive::shielded::paths`): root first, then both
-    /// depth-1 children, then the four depth-2 children, then the depth-3
-    /// leaf. AVL rebalancing is order-sensitive, so this ordering is what
-    /// actually places `SHIELDED_NOTES_KEY` at the root and the spend-path
-    /// keys at depth 1.
+    /// The main shielded credit pool lives under `RootTree::ShieldedBalances`
+    /// at key `MAIN_SHIELDED_CREDIT_POOL_KEY` (`b"M"`).
+    ///
+    /// The eight subtree inserts inside the pool are ordered breadth-first to
+    /// match the intended balanced shape of the parent Merk tree (see the
+    /// layout diagram in `crate::drive::shielded::paths`): root first, then
+    /// both depth-1 children, then the four depth-2 children, then the
+    /// depth-3 leaf. AVL rebalancing is order-sensitive, so this ordering is
+    /// what actually places `SHIELDED_NOTES_KEY` at the root and the
+    /// spend-path keys at depth 1.
     pub(in crate::drive::initialization) fn initial_state_structure_shielded_pool_operations(
         &self,
         batch: &mut GroveDbOpBatch,
     ) -> Result<(), Error> {
-        // Parent: shielded credit pool SumTree under AddressBalances. Must be
-        // inserted before any of its children so the subtree exists.
+        // Parent: main shielded credit pool SumTree under ShieldedBalances.
+        // Must be inserted before any of its children so the subtree exists.
         batch.add_insert(
-            vec![vec![RootTree::AddressBalances as u8]],
-            vec![SHIELDED_CREDIT_POOL_KEY_U8],
+            vec![vec![RootTree::ShieldedBalances as u8]],
+            vec![MAIN_SHIELDED_CREDIT_POOL_KEY_U8],
             Element::empty_sum_tree(),
         );
 
@@ -129,12 +145,16 @@ impl Drive {
             Element::empty_tree(),
         );
 
-        // Level 2: per-block recent-nullifiers CountSumTree.
-        // Each item is an ItemWithSumItem (serialized Vec<[u8;32]> + nullifier count as sum).
+        // Level 2: per-block recent-nullifiers CountSumTree, wrapped in
+        // NotSummed so its sum side (the per-block nullifier count, stored as
+        // the sum half of each ItemWithSumItem) does NOT propagate into the
+        // enclosing shielded pool SumTree — and therefore not into
+        // ShieldedBalances either. Without the wrapper, every spent nullifier
+        // would inflate the "credits in pool" aggregate by 1.
         batch.add_insert(
             shielded_credit_pool_path_vec(),
             vec![SHIELDED_RECENT_NULLIFIERS_KEY_U8],
-            Element::empty_count_sum_tree(),
+            Element::new_not_summed(Element::empty_count_sum_tree())?,
         );
 
         // Level 2: compacted nullifiers NormalTree.
