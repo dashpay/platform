@@ -77,6 +77,23 @@ impl SeedBackedIdentitySigner {
     pub fn cached_key_count(&self) -> usize {
         self.inner.address_private_keys.len()
     }
+
+    /// Insert a freshly-derived identity-key secret into the inner
+    /// [`SimpleSigner`]'s `address_private_keys` cache so subsequent
+    /// `Signer<IdentityPublicKey>` calls can resolve the matching
+    /// [`IdentityPublicKey`].
+    ///
+    /// Used by the ID-004 key-rotation helper after a new auth key
+    /// has been derived via [`derive_identity_key`] outside the
+    /// initial gap window. `public_key` must be the 33-byte
+    /// compressed `secp256k1::PublicKey` produced alongside `secret`
+    /// — the cache is keyed on `ripemd160_sha256(pubkey)`, mirroring
+    /// the construction-time pre-population in
+    /// [`SimpleSigner::from_seed_for_identity`].
+    pub fn inject_identity_key(&mut self, public_key: &[u8; 33], secret: [u8; 32]) {
+        let pkh = ripemd160_sha256(public_key.as_slice());
+        self.inner.address_private_keys.insert(pkh, secret);
+    }
 }
 
 #[async_trait]

@@ -21,13 +21,14 @@ use crate::framework::wait::wait_for_identity_balance;
 
 /// Bank-funded credits the funding address starts with. Option C
 /// (DeductFromInput) delivers exactly this amount. Sized so the
-/// residual after 90M registration (130M) covers the chain-time
-/// IdentityCreateFromAddresses dynamic fee (~110.86M; grew from ~96M
-/// after the slot-2 TRANSFER key was added in `173b2e15ce`, +~550
-/// bytes × 27_000 credits/byte ≈ +14.85M) with ~19M buffer.
-const FUNDING_CREDITS: u64 = 220_000_000;
+/// residual after 90M registration (150M) covers the chain-time
+/// IdentityCreateFromAddresses dynamic fee (~125M; grew from ~110.86M
+/// after QA-800 added a 4th CRITICAL key, +~550 bytes × 27_000
+/// credits/byte ≈ +14.85M) with ~25M buffer for the sweep
+/// teardown's combined-address-balance requirement.
+const FUNDING_CREDITS: u64 = 240_000_000;
 /// Under Option C the address receives exactly FUNDING_CREDITS.
-const FUNDING_FLOOR: u64 = 220_000_000;
+const FUNDING_FLOOR: u64 = 240_000_000;
 
 /// Credits committed to the swept identity. Sized comfortably above
 /// `IDENTITY_SWEEP_FLOOR` (50M, hardcoded in `cleanup.rs`) so the
@@ -122,14 +123,13 @@ async fn id_sweep_recovers_identity_credits() {
         "bank gain {bank_gain} must clear SWEEP_GAIN_FLOOR {SWEEP_GAIN_FLOOR} \
          (pre={bank_pre_balance} post={bank_post_balance})"
     );
-    // Upper bound: the bank identity cannot have gained more than
-    // the swept identity's pre-sweep balance — anything beyond
-    // that came from elsewhere and would indicate cross-talk.
-    assert!(
-        bank_gain <= pre_sweep_balance,
-        "bank gain {bank_gain} cannot exceed swept identity's pre-sweep balance \
-         {pre_sweep_balance}; cross-talk?"
-    );
+    // The bank identity is process-shared, so under parallel test
+    // execution (`--test-threads>1`) other tests' `teardown_one`
+    // identity sweeps land on the same bank identity inside this
+    // test's window. We therefore cannot assert `bank_gain <=
+    // pre_sweep_balance` — sibling sweeps inflate `bank_post_balance`
+    // legitimately. The lower bound above remains the meaningful
+    // contract: OUR sweep DID move credits to the bank identity.
 
     tracing::info!(
         target: "platform_wallet::e2e::cases::id_sweep",

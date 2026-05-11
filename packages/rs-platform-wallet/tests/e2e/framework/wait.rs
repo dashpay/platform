@@ -10,13 +10,15 @@ use std::future::Future;
 use std::time::{Duration, Instant};
 
 use dash_sdk::platform::Fetch;
+use dash_sdk::query_types::AddressInfo;
 use dash_sdk::Sdk;
 use dash_spv::sync::ProgressPercentage;
 use dpp::address_funds::PlatformAddress;
+use dpp::data_contract::DataContract;
 use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
-use dpp::prelude::Identifier;
+use dpp::prelude::{AddressNonce, Identifier};
 use platform_wallet::SpvRuntime;
 
 use super::bank::BankWallet;
@@ -58,15 +60,39 @@ where
 }
 
 /// Wait for `addr`'s balance on `test_wallet` to reach at least
-/// `expected`, syncing on every wake.
+/// `expected`, syncing on every wake AND independently verifying the
+/// chain-confirmed view via a proof-verified `AddressInfo::fetch`.
 ///
 /// Event-driven on [`TestWallet::wait_hub`]; a
 /// [`BACKSTOP_WAKE_INTERVAL`] cap keeps idle-chain / no-peer
 /// scenarios making progress. Sync errors are logged at `debug` and
 /// treated as transient — the next event (or backstop wake) retries.
 /// The `Notified` future is captured BEFORE the sync to avoid
-/// dropping a notification that fires mid-sync. Returns
-/// [`FrameworkError::Cleanup`] on `timeout`.
+/// dropping a notification that fires mid-sync.
+///
+/// **Chain-confirmed gate (Marvin QA — three-tests sync race):**
+/// once the wallet's local-view balance reaches `expected`, the
+/// helper does NOT return immediately. It then polls
+/// [`wait_for_address_balance_chain_confirmed`] within the same
+/// overall budget so the address is also visible at `>= expected`
+/// from the SDK's proof-verified view. The local view's `sync_balances`
+/// can return early when one DAPI node has applied the funding block
+/// while a sibling node serving the next request hasn't; without the
+/// proof-verified gate, the immediately-following
+/// `register_identity_from_addresses` lands on the lagging node and
+/// the chain returns "Address does not exist" (ID-007 / TK-007) or
+/// "Insufficient combined address balances" (DPNS-001) despite the
+/// observed local balance. A single proof-verified observation only
+/// proves the address is visible on whichever DAPI node the SDK
+/// happened to talk to — the very next call may round-robin onto a
+/// still-lagging sibling. The integration here therefore demands
+/// [`CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES`] back-to-back successes
+/// across separate fetches, so the gate clears only after multiple
+/// likely-distinct nodes have independently surfaced the funded
+/// balance and the follow-up state transition's nonce/balance fetch
+/// is far less likely to land on a still-lagging node.
+///
+/// Returns [`FrameworkError::Cleanup`] on `timeout`.
 pub async fn wait_for_balance(
     test_wallet: &TestWallet,
     addr: &PlatformAddress,
@@ -93,9 +119,24 @@ pub async fn wait_for_balance(
                         addr = ?addr,
                         observed = current,
                         elapsed = ?start.elapsed(),
-                        "balance reached target"
+                        "balance reached target (local view); confirming on chain"
                     );
-                    return Ok(());
+                    // Hand off the remaining budget to the
+                    // proof-verified gate. If the cross-node
+                    // replication lag is real, this is where it
+                    // surfaces; if all sampled nodes already agree,
+                    // the gate clears after the configured run of
+                    // consecutive successes.
+                    let remaining = deadline.saturating_duration_since(Instant::now());
+                    return wait_for_address_balance_chain_confirmed_n(
+                        test_wallet.platform_wallet().sdk(),
+                        addr,
+                        expected,
+                        CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+                        remaining,
+                    )
+                    .await
+                    .map(|_| ());
                 }
                 tracing::debug!(
                     target: "platform_wallet::e2e::wait",
@@ -123,6 +164,470 @@ pub async fn wait_for_balance(
         // earlier via the `Notified` future.
         let cap = std::cmp::min(remaining, BACKSTOP_WAKE_INTERVAL);
         let _ = tokio::time::timeout(cap, notified.as_mut()).await;
+    }
+}
+
+/// Default required run-length of back-to-back proof-verified
+/// observations [`wait_for_balance`] hands off to. One success only
+/// proves the address is visible on whichever DAPI node the SDK
+/// happened to round-robin onto for that single fetch; demanding two
+/// consecutive successes across separate fetches biases the gate toward
+/// having sampled at least two likely-distinct nodes. The follow-up
+/// state transition's nonce/balance fetch is far less likely to land
+/// on a still-lagging node once two distinct samples both agree.
+///
+/// This is the floor for the multi-identity race surfaced by TK-014's
+/// "Address does not exist" failure on the third identity registration
+/// — the integrated `wait_for_balance` cleared on a single success but
+/// the very next `register_identity_from_addresses` round-robined onto
+/// a still-lagging sibling node. Tests that need a stronger guarantee
+/// can call [`wait_for_address_balance_chain_confirmed_n`] directly
+/// with a higher count; tests that intentionally want the single-shot
+/// semantics keep the existing
+/// [`wait_for_address_balance_chain_confirmed`] entry-point.
+pub const CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES: u32 = 2;
+
+/// Spacing between consecutive proof-verified fetches inside
+/// [`wait_for_address_balance_chain_confirmed_n`]. Short enough that
+/// requiring N successes adds at most `(N-1) * GAP` to a successful
+/// path, long enough that successive fetches are likely to land on
+/// distinct DAPI nodes via round-robin rather than re-hitting the
+/// same socket the SDK just used.
+const CHAIN_CONFIRMED_SUCCESS_GAP: Duration = Duration::from_millis(250);
+
+/// Stronger streak length for [`wait_for_address_balance_chain_confirmed_strong`].
+/// Picked so the gate is satisfied only after at least four likely-distinct
+/// DAPI nodes have independently surfaced the funded balance — the failure
+/// mode that survived [`CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES`] in Marvin's
+/// QA-802 (TK-007 / ID-007) was a Platform replica still lagging when the
+/// follow-up `register_identity_from_addresses` round-robined onto it.
+pub const CHAIN_CONFIRMED_STRONG_SUCCESSES: u32 = 4;
+
+/// Stronger inter-success gap. One second is long enough that successive
+/// proof-verified fetches really do hit distinct sockets on the round-robin
+/// (the standard 250 ms gap can re-pin the same DAPI node when its keepalive
+/// is still warm), short enough that a four-success streak still clears
+/// inside ~3 s on a healthy network.
+const CHAIN_CONFIRMED_STRONG_GAP: Duration = Duration::from_secs(1);
+
+/// Wait for `addr`'s chain-confirmed balance (queried via the SDK's
+/// proof-verified [`AddressInfo::fetch`] path) to reach at least
+/// `expected` on a single successful observation.
+///
+/// Single-success variant — kept for callers that want the original
+/// "first proof-verified hit returns" shape. The
+/// [`wait_for_balance`] integration uses
+/// [`wait_for_address_balance_chain_confirmed_n`] with
+/// [`CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES`] instead so a single
+/// already-replicated DAPI node can't satisfy the gate while a sibling
+/// is still catching up.
+pub async fn wait_for_address_balance_chain_confirmed(
+    sdk: &Sdk,
+    addr: &PlatformAddress,
+    expected: Credits,
+    timeout: Duration,
+) -> FrameworkResult<Credits> {
+    wait_for_address_balance_chain_confirmed_n(sdk, addr, expected, 1, timeout).await
+}
+
+/// Wait for `addr`'s chain-confirmed balance to reach at least
+/// `expected` on `consecutive_successes` back-to-back proof-verified
+/// observations, separated by [`CHAIN_CONFIRMED_SUCCESS_GAP`].
+///
+/// Mirrors [`wait_for_core_balance`]'s "wait on chain-confirmed
+/// state" precedent on the Platform side. Where `wait_for_balance`
+/// polls the wallet's local cache (which reflects whichever DAPI
+/// node `sync_balances` happened to talk to), this helper independently
+/// verifies the address's balance via proof-verified Fetches — the
+/// same path the chain itself walks when validating a state
+/// transition's input balances. Polls every
+/// [`BACKSTOP_WAKE_INTERVAL`] when the address isn't yet visible /
+/// is below target, and every [`CHAIN_CONFIRMED_SUCCESS_GAP`] between
+/// consecutive successes inside the same gate window.
+///
+/// `consecutive_successes` is the run-length of back-to-back observations
+/// at-or-above `expected` required to clear the gate. Any below-target
+/// observation, missing address, or fetch error resets the run to zero
+/// — the gate only declares success on an unbroken streak. Setting
+/// `consecutive_successes = 0` is treated as `1` (a single-shot gate
+/// is still a meaningful return). Returns the most recent
+/// proof-verified balance on success, [`FrameworkError::Cleanup`] on
+/// timeout.
+pub async fn wait_for_address_balance_chain_confirmed_n(
+    sdk: &Sdk,
+    addr: &PlatformAddress,
+    expected: Credits,
+    consecutive_successes: u32,
+    timeout: Duration,
+) -> FrameworkResult<Credits> {
+    let required = consecutive_successes.max(1);
+    let start = Instant::now();
+    let deadline = Instant::now() + timeout;
+    let mut streak: u32 = 0;
+    let mut last_observed: Credits = 0;
+
+    loop {
+        let mut hit = false;
+        match AddressInfo::fetch(sdk, *addr).await {
+            Ok(Some(info)) => {
+                if info.balance >= expected {
+                    hit = true;
+                    last_observed = info.balance;
+                    streak = streak.saturating_add(1);
+                    tracing::debug!(
+                        target: "platform_wallet::e2e::wait",
+                        addr = ?addr,
+                        observed = info.balance,
+                        expected,
+                        streak,
+                        required,
+                        "chain-confirmed observation at-or-above target"
+                    );
+                    if streak >= required {
+                        tracing::info!(
+                            target: "platform_wallet::e2e::wait",
+                            addr = ?addr,
+                            observed = info.balance,
+                            expected,
+                            streak,
+                            required,
+                            elapsed = ?start.elapsed(),
+                            "address balance chain-confirmed"
+                        );
+                        return Ok(info.balance);
+                    }
+                } else {
+                    streak = 0;
+                    tracing::debug!(
+                        target: "platform_wallet::e2e::wait",
+                        addr = ?addr,
+                        current = info.balance,
+                        expected,
+                        "chain-confirmed balance below target; resetting streak"
+                    );
+                }
+            }
+            Ok(None) => {
+                streak = 0;
+                tracing::debug!(
+                    target: "platform_wallet::e2e::wait",
+                    addr = ?addr,
+                    "address not yet visible on chain; resetting streak"
+                );
+            }
+            Err(err) => {
+                streak = 0;
+                tracing::debug!(
+                    target: "platform_wallet::e2e::wait",
+                    error = %err,
+                    addr = ?addr,
+                    "AddressInfo::fetch failed during \
+                     wait_for_address_balance_chain_confirmed; resetting streak"
+                );
+            }
+        }
+
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(FrameworkError::Cleanup(format!(
+                "wait_for_address_balance_chain_confirmed timed out \
+                 after {timeout:?} \
+                 (addr={addr:?} expected={expected} required={required} \
+                  streak_at_timeout={streak} last_observed={last_observed})"
+            )));
+        }
+
+        // Successful in-streak observations re-fetch quickly so distinct
+        // nodes are likely sampled within the same gate window;
+        // otherwise back off to the standard backstop interval.
+        let next_sleep = if hit && streak < required {
+            CHAIN_CONFIRMED_SUCCESS_GAP
+        } else {
+            BACKSTOP_WAKE_INTERVAL
+        };
+        tokio::time::sleep(std::cmp::min(remaining, next_sleep)).await;
+    }
+}
+
+/// Stronger sibling of [`wait_for_address_balance_chain_confirmed_n`] for
+/// callers that need extra confidence that **every** Platform DAPI replica
+/// has caught up to the funded block, not just two of them.
+///
+/// **Why this exists (Marvin QA-802 — TK-007 / ID-007):** the integrated
+/// [`wait_for_balance`] gate already requires
+/// [`CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES`] back-to-back proof-verified
+/// hits, but the failure timeline shows the streak clearing at 14:19:25.986
+/// and the immediately-following `register_identity_from_addresses` panicking
+/// at 14:19:26.409 with `AddressDoesNotExistError` for the same
+/// `hash160`. Drive validates the state transition by reading
+/// `fetch_balances_with_nonces` from its own local store
+/// (see `address_balances_and_nonces::validate_address_balances_and_nonces_internal_validation`);
+/// the SDK's proof-verified `AddressInfo::fetch` reads the same store via
+/// whichever DAPI node round-robin lands on. Two consecutive successes
+/// can both land on already-replicated nodes while a third sibling that
+/// the broadcast happens to target is still lagging. The stronger streak
+/// — four hits separated by [`CHAIN_CONFIRMED_STRONG_GAP`] (1 s, vs the
+/// 250 ms used by the standard helper) — biases the sample toward more
+/// distinct sockets and gives the slowest replica an extra second per
+/// observation to catch up.
+///
+/// Use this helper at call sites where the immediately-following state
+/// transition is the **first** action against the funded address (e.g.
+/// `register_identity_from_addresses` inside
+/// [`super::setup_with_n_identities`]). Tests that already integrate
+/// the standard gate via [`wait_for_balance`] should keep using that one
+/// — this is the explicit "I know the standard gate isn't enough for
+/// this race, give me the strong variant" entry-point.
+pub async fn wait_for_address_balance_chain_confirmed_strong(
+    sdk: &Sdk,
+    addr: &PlatformAddress,
+    expected: Credits,
+    timeout: Duration,
+) -> FrameworkResult<Credits> {
+    wait_for_address_balance_chain_confirmed_with_gap(
+        sdk,
+        addr,
+        expected,
+        CHAIN_CONFIRMED_STRONG_SUCCESSES,
+        CHAIN_CONFIRMED_STRONG_GAP,
+        timeout,
+    )
+    .await
+}
+
+/// Semantic alias for [`wait_for_address_balance_chain_confirmed_strong`]
+/// scoped to the "is this address visible to Platform's own validator yet?"
+/// question.
+///
+/// Drive's `validate_address_balances_and_nonces_internal_validation` checks
+/// `actual_balances.get(address)` against its local replicated store; an
+/// address is "known to Platform" once that lookup returns `Some(Some(_))`
+/// across enough replicas that the next state-transition broadcast can't
+/// land on a still-empty one. The proof-verified `AddressInfo::fetch` path
+/// reads the same store, so a strong consecutive-successes streak against
+/// it is the closest external mirror of the validator's own check.
+///
+/// Returns the most recent proof-verified balance on success;
+/// [`FrameworkError::Cleanup`] on timeout. Use immediately before the
+/// first state transition that consumes `addr` as an input.
+pub async fn wait_for_address_known_to_platform(
+    sdk: &Sdk,
+    addr: &PlatformAddress,
+    expected: Credits,
+    timeout: Duration,
+) -> FrameworkResult<Credits> {
+    wait_for_address_balance_chain_confirmed_strong(sdk, addr, expected, timeout).await
+}
+
+/// Internal: same loop as [`wait_for_address_balance_chain_confirmed_n`]
+/// but with a configurable inter-success gap. Kept private so the public
+/// surface stays the two named entry-points (`_n` and `_strong`); add a
+/// new named wrapper if you need a different tuning rather than exposing
+/// the raw knob.
+async fn wait_for_address_balance_chain_confirmed_with_gap(
+    sdk: &Sdk,
+    addr: &PlatformAddress,
+    expected: Credits,
+    consecutive_successes: u32,
+    success_gap: Duration,
+    timeout: Duration,
+) -> FrameworkResult<Credits> {
+    let required = consecutive_successes.max(1);
+    let start = Instant::now();
+    let deadline = Instant::now() + timeout;
+    let mut streak: u32 = 0;
+    let mut last_observed: Credits = 0;
+
+    loop {
+        let mut hit = false;
+        match AddressInfo::fetch(sdk, *addr).await {
+            Ok(Some(info)) => {
+                if info.balance >= expected {
+                    hit = true;
+                    last_observed = info.balance;
+                    streak = streak.saturating_add(1);
+                    tracing::debug!(
+                        target: "platform_wallet::e2e::wait",
+                        addr = ?addr,
+                        observed = info.balance,
+                        expected,
+                        streak,
+                        required,
+                        "chain-confirmed observation at-or-above target (strong)"
+                    );
+                    if streak >= required {
+                        tracing::info!(
+                            target: "platform_wallet::e2e::wait",
+                            addr = ?addr,
+                            observed = info.balance,
+                            expected,
+                            streak,
+                            required,
+                            elapsed = ?start.elapsed(),
+                            "address balance chain-confirmed (strong)"
+                        );
+                        return Ok(info.balance);
+                    }
+                } else {
+                    streak = 0;
+                    tracing::debug!(
+                        target: "platform_wallet::e2e::wait",
+                        addr = ?addr,
+                        current = info.balance,
+                        expected,
+                        "chain-confirmed balance below target (strong); resetting streak"
+                    );
+                }
+            }
+            Ok(None) => {
+                streak = 0;
+                tracing::debug!(
+                    target: "platform_wallet::e2e::wait",
+                    addr = ?addr,
+                    "address not yet visible on chain (strong); resetting streak"
+                );
+            }
+            Err(err) => {
+                streak = 0;
+                tracing::debug!(
+                    target: "platform_wallet::e2e::wait",
+                    error = %err,
+                    addr = ?addr,
+                    "AddressInfo::fetch failed during \
+                     wait_for_address_balance_chain_confirmed_strong; resetting streak"
+                );
+            }
+        }
+
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(FrameworkError::Cleanup(format!(
+                "wait_for_address_balance_chain_confirmed_strong timed out \
+                 after {timeout:?} \
+                 (addr={addr:?} expected={expected} required={required} \
+                  streak_at_timeout={streak} last_observed={last_observed})"
+            )));
+        }
+
+        let next_sleep = if hit && streak < required {
+            success_gap
+        } else {
+            BACKSTOP_WAKE_INTERVAL
+        };
+        tokio::time::sleep(std::cmp::min(remaining, next_sleep)).await;
+    }
+}
+
+/// Wait until every `(addr, expected_nonce)` pair in `expected` is
+/// observable on chain via proof-verified [`AddressInfo::fetch`] with
+/// `info.nonce >= expected_nonce`, requiring
+/// [`CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES`] back-to-back full-set
+/// successes spaced by [`CHAIN_CONFIRMED_SUCCESS_GAP`].
+///
+/// Used by `BankWallet::fund_address` to hold `FUNDING_MUTEX` until the
+/// chain state read by the **next** caller's
+/// `fetch_inputs_with_nonce` has caught up to the nonce we just
+/// committed. Without this gate, two parallel `fund_address` calls
+/// race the per-address nonce: the SDK's `broadcast_and_wait` returns
+/// once *some* DAPI node has the result, but the next caller's nonce
+/// fetch round-robins onto a sibling node still showing the pre-tx
+/// nonce, builds `provided_nonce = N` against an already-incremented
+/// chain expected-nonce of `N+1` (or vice versa), and the validator
+/// rejects with `AddressInvalidNonceError`. Mirrors the
+/// `wait_for_address_balance_chain_confirmed_n` / Marvin QA-802
+/// playbook on the nonce axis.
+///
+/// `expected` may include addresses whose nonce is unchanged (typical
+/// for transfer **outputs**); those gate-clear immediately and add no
+/// real wait cost. Empty `expected` returns `Ok(())` with no work.
+///
+/// Returns [`FrameworkError::Cleanup`] on timeout. The error message
+/// names the addresses still below target so operators can correlate
+/// with the broadcast log.
+pub async fn wait_for_address_nonces_chain_confirmed(
+    sdk: &Sdk,
+    expected: &[(PlatformAddress, AddressNonce)],
+    timeout: Duration,
+) -> FrameworkResult<()> {
+    if expected.is_empty() {
+        return Ok(());
+    }
+    let required = CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES.max(1);
+    let start = Instant::now();
+    let deadline = Instant::now() + timeout;
+    let mut streak: u32 = 0;
+
+    loop {
+        let mut all_satisfied = true;
+        let mut last_lag: Option<(PlatformAddress, AddressNonce, AddressNonce)> = None;
+        for (addr, expected_nonce) in expected {
+            match AddressInfo::fetch(sdk, *addr).await {
+                Ok(Some(info)) if info.nonce >= *expected_nonce => {}
+                Ok(Some(info)) => {
+                    all_satisfied = false;
+                    last_lag = Some((*addr, *expected_nonce, info.nonce));
+                    break;
+                }
+                Ok(None) => {
+                    all_satisfied = false;
+                    last_lag = Some((*addr, *expected_nonce, 0));
+                    break;
+                }
+                Err(err) => {
+                    all_satisfied = false;
+                    tracing::debug!(
+                        target: "platform_wallet::e2e::wait",
+                        error = %err,
+                        addr = ?addr,
+                        "AddressInfo::fetch failed during \
+                         wait_for_address_nonces_chain_confirmed; resetting streak"
+                    );
+                    break;
+                }
+            }
+        }
+
+        if all_satisfied {
+            streak = streak.saturating_add(1);
+            if streak >= required {
+                tracing::info!(
+                    target: "platform_wallet::e2e::wait",
+                    addresses = expected.len(),
+                    streak,
+                    required,
+                    elapsed = ?start.elapsed(),
+                    "address nonces chain-confirmed"
+                );
+                return Ok(());
+            }
+        } else {
+            if streak > 0 {
+                tracing::debug!(
+                    target: "platform_wallet::e2e::wait",
+                    streak,
+                    lag = ?last_lag,
+                    "nonce streak broken; resetting"
+                );
+            }
+            streak = 0;
+        }
+
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(FrameworkError::Cleanup(format!(
+                "wait_for_address_nonces_chain_confirmed timed out after {timeout:?} \
+                 (addresses={count} streak_at_timeout={streak} last_lag={lag:?})",
+                count = expected.len(),
+                lag = last_lag,
+            )));
+        }
+
+        let next_sleep = if all_satisfied && streak < required {
+            CHAIN_CONFIRMED_SUCCESS_GAP
+        } else {
+            BACKSTOP_WAKE_INTERVAL
+        };
+        tokio::time::sleep(std::cmp::min(remaining, next_sleep)).await;
     }
 }
 
@@ -396,6 +901,111 @@ pub async fn wait_for_identity_balance(
     }
 }
 
+/// Wait for a freshly-registered identity to become visible across enough
+/// Platform DAPI replicas that the next state transition referencing it
+/// won't round-robin onto a still-lagging node and panic with
+/// `Identity ... not found`.
+///
+/// **Why this exists (Marvin QA-805 — ID-005):** the failure timeline shows
+/// `register_identity_from_addresses` returning `Ok(registered)` and
+/// `wait_for_identity_balance` clearing on a single proof-verified hit,
+/// then the immediately-following
+/// `transfer_credits_to_addresses_with_external_signer` resolving the
+/// identity on a sibling DAPI node that hasn't replicated the new identity
+/// yet. The standard `wait_for_identity_balance` returns on the first
+/// at-or-above observation — perfect for "is the credit there yet?", not
+/// strong enough for "is the identity globally visible?".
+///
+/// Mirror of [`wait_for_address_balance_chain_confirmed_n`] but for
+/// `Identity::fetch`. Polls until the SDK returns `Ok(Some(_))` on
+/// `consecutive_successes` back-to-back fetches separated by
+/// [`CHAIN_CONFIRMED_SUCCESS_GAP`], biasing toward sampling distinct
+/// replicas. Any below-target observation, missing identity, or fetch
+/// error resets the streak. Setting `consecutive_successes = 0` is
+/// treated as `1` (a single-shot gate is still a meaningful return).
+///
+/// Returns the most recent fetched [`Identity`] on success;
+/// [`FrameworkError::Cleanup`] on timeout. Recommended call sites:
+/// - inside [`super::setup_with_n_identities`] after each
+///   `register_identity_from_addresses` and before returning the guard,
+///   so every downstream caller starts with a globally-visible identity;
+/// - in any test that inlines `register_identity_from_addresses` and
+///   immediately follows it with another state transition referencing
+///   the new identity (ID-005 transfer is the canonical case).
+pub async fn wait_for_identity_visible_to_platform(
+    sdk: &Sdk,
+    identity_id: Identifier,
+    timeout: Duration,
+    consecutive_successes: u32,
+) -> FrameworkResult<Identity> {
+    let required = consecutive_successes.max(1);
+    let start = Instant::now();
+    let deadline = start + timeout;
+    let mut streak: u32 = 0;
+
+    loop {
+        let mut hit = false;
+        match Identity::fetch(sdk, identity_id).await {
+            Ok(Some(identity)) => {
+                streak = streak.saturating_add(1);
+                hit = true;
+                tracing::debug!(
+                    target: "platform_wallet::e2e::wait",
+                    ?identity_id,
+                    streak,
+                    required,
+                    "identity visible on DAPI node"
+                );
+                if streak >= required {
+                    tracing::info!(
+                        target: "platform_wallet::e2e::wait",
+                        ?identity_id,
+                        streak,
+                        required,
+                        elapsed = ?start.elapsed(),
+                        "identity propagation gate cleared"
+                    );
+                    return Ok(identity);
+                }
+            }
+            Ok(None) => {
+                streak = 0;
+                tracing::debug!(
+                    target: "platform_wallet::e2e::wait",
+                    ?identity_id,
+                    "identity not yet visible; resetting streak"
+                );
+            }
+            Err(err) => {
+                streak = 0;
+                tracing::debug!(
+                    target: "platform_wallet::e2e::wait",
+                    error = %err,
+                    ?identity_id,
+                    "Identity::fetch failed during \
+                     wait_for_identity_visible_to_platform; resetting streak"
+                );
+            }
+        }
+
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(FrameworkError::Cleanup(format!(
+                "wait_for_identity_visible_to_platform timed out after {timeout:?} \
+                 (identity_id={identity_id:?} required={required} \
+                  streak_at_timeout={streak})"
+            )));
+        }
+
+        let next_sleep = if hit && streak < required {
+            CHAIN_CONFIRMED_SUCCESS_GAP
+        } else {
+            BACKSTOP_WAKE_INTERVAL
+        };
+        tokio::time::sleep(std::cmp::min(remaining, next_sleep)).await;
+    }
+}
+
 /// Wait for a DPNS `<name>.dash` registration to become visible to
 /// resolvers.
 ///
@@ -447,5 +1057,194 @@ pub async fn wait_for_dpns_name_visible(
         // Cap the sleep against the remaining budget so a sub-2s
         // `timeout` doesn't overshoot by up to `BACKSTOP_WAKE_INTERVAL`.
         tokio::time::sleep(std::cmp::min(remaining, BACKSTOP_WAKE_INTERVAL)).await;
+    }
+}
+
+/// Polls `DataContract::fetch` until the contract is visible on at least N
+/// successive DAPI fetches with a small gap between them, biasing toward
+/// sampling distinct nodes. Use after a contract-deploy state transition
+/// before the first follow-up state transition that references the contract.
+///
+/// Call this immediately after the `PutContract` broadcast returns `Ok`.
+/// The deploy state transition is committed on whichever DAPI node the
+/// SDK was round-robined to; a sibling node may not have replicated the
+/// new contract by the time `token_mint` (or any other state transition
+/// that references `contract_id`) is submitted. Without this gate, that
+/// follow-up submission panics with
+/// `Sdk("contract <id> not found on chain")`.
+///
+/// - `consecutive_successes` — number of back-to-back `Ok(Some(_))`
+///   fetches required to clear the gate. Values below 1 are treated as
+///   1. Default: 2.
+pub async fn wait_for_data_contract_visible(
+    sdk: &Sdk,
+    contract_id: Identifier,
+    timeout: Duration,
+    consecutive_successes: u32,
+) -> FrameworkResult<DataContract> {
+    let required = consecutive_successes.max(1);
+    let start = Instant::now();
+    let deadline = start + timeout;
+    let mut streak: u32 = 0;
+
+    loop {
+        let mut hit = false;
+        match DataContract::fetch(sdk, contract_id).await {
+            Ok(Some(contract)) => {
+                streak = streak.saturating_add(1);
+                hit = true;
+                tracing::debug!(
+                    target: "platform_wallet::e2e::wait",
+                    ?contract_id,
+                    streak,
+                    required,
+                    "data contract visible on DAPI node"
+                );
+                if streak >= required {
+                    tracing::info!(
+                        target: "platform_wallet::e2e::wait",
+                        ?contract_id,
+                        streak,
+                        required,
+                        elapsed = ?start.elapsed(),
+                        "data contract propagation gate cleared"
+                    );
+                    return Ok(contract);
+                }
+            }
+            Ok(None) => {
+                streak = 0;
+                tracing::debug!(
+                    target: "platform_wallet::e2e::wait",
+                    ?contract_id,
+                    "data contract not yet visible; resetting streak"
+                );
+            }
+            Err(err) => {
+                streak = 0;
+                tracing::debug!(
+                    target: "platform_wallet::e2e::wait",
+                    error = %err,
+                    ?contract_id,
+                    "DataContract::fetch failed during wait_for_data_contract_visible; resetting streak"
+                );
+            }
+        }
+
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(FrameworkError::Cleanup(format!(
+                "wait_for_data_contract_visible timed out after {timeout:?} \
+                 (contract_id={contract_id:?} required={required} \
+                  streak_at_timeout={streak})"
+            )));
+        }
+
+        // Between consecutive successes use the short gap so we sample
+        // distinct nodes quickly; otherwise back off to the backstop interval.
+        let next_sleep = if hit && streak < required {
+            CHAIN_CONFIRMED_SUCCESS_GAP
+        } else {
+            BACKSTOP_WAKE_INTERVAL
+        };
+        tokio::time::sleep(std::cmp::min(remaining, next_sleep)).await;
+    }
+}
+
+/// Poll an async `fetch` closure until it returns
+/// `Ok(Some(value))` on `consecutive_successes` back-to-back observations
+/// separated by [`CHAIN_CONFIRMED_SUCCESS_GAP`], biasing the gate toward
+/// sampling distinct DAPI replicas.
+///
+/// **Why this exists (Marvin QA-V28-404 — TK-010 / TK-011):** a token
+/// state-transition (pause, mint, set-price) broadcasts and lands on
+/// whichever DAPI node served it; the very next read can round-robin onto
+/// a sibling that hasn't applied the transition yet — surrounding logs
+/// show `received height is outdated: expected ..., received ..., tolerance 1`.
+/// The standard fix elsewhere in the harness (`wait_for_data_contract_visible`,
+/// `wait_for_identity_visible_to_platform`) gates on a streak of successful
+/// fetches; this helper does the same for arbitrary token-shape predicates
+/// (`token_is_paused_of`, `token_balance_of`, `token_pricing_of`).
+///
+/// `fetch` is `FnMut() -> Future<FrameworkResult<Option<T>>>`. Return
+/// `Ok(Some(value))` to record a streak hit; `Ok(None)` and `Err(_)` both
+/// reset the streak (the error is logged at `debug` so transient DAPI
+/// failures don't spam). Setting `consecutive_successes = 0` is treated
+/// as `1`. Returns the most recent satisfying value on success;
+/// [`FrameworkError::Cleanup`] on timeout, with `description` echoed in
+/// the error message so operators can correlate with the broadcast log.
+pub async fn wait_for_token_predicate<F, Fut, T>(
+    description: &str,
+    mut fetch: F,
+    consecutive_successes: u32,
+    timeout: Duration,
+) -> FrameworkResult<T>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = FrameworkResult<Option<T>>>,
+{
+    let required = consecutive_successes.max(1);
+    let start = Instant::now();
+    let deadline = start + timeout;
+    let mut streak: u32 = 0;
+
+    loop {
+        let mut hit = false;
+        match fetch().await {
+            Ok(Some(value)) => {
+                streak = streak.saturating_add(1);
+                hit = true;
+                tracing::debug!(
+                    target: "platform_wallet::e2e::wait",
+                    description,
+                    streak,
+                    required,
+                    "token predicate satisfied"
+                );
+                if streak >= required {
+                    tracing::info!(
+                        target: "platform_wallet::e2e::wait",
+                        description,
+                        streak,
+                        required,
+                        elapsed = ?start.elapsed(),
+                        "token propagation gate cleared"
+                    );
+                    return Ok(value);
+                }
+            }
+            Ok(None) => {
+                streak = 0;
+                tracing::debug!(
+                    target: "platform_wallet::e2e::wait",
+                    description,
+                    "token predicate not yet satisfied; resetting streak"
+                );
+            }
+            Err(err) => {
+                streak = 0;
+                tracing::debug!(
+                    target: "platform_wallet::e2e::wait",
+                    description,
+                    error = %err,
+                    "fetch failed during wait_for_token_predicate; resetting streak"
+                );
+            }
+        }
+
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(FrameworkError::Cleanup(format!(
+                "wait_for_token_predicate({description}) timed out after {timeout:?} \
+                 (required={required} streak_at_timeout={streak})"
+            )));
+        }
+
+        let next_sleep = if hit && streak < required {
+            CHAIN_CONFIRMED_SUCCESS_GAP
+        } else {
+            BACKSTOP_WAKE_INTERVAL
+        };
+        tokio::time::sleep(std::cmp::min(remaining, next_sleep)).await;
     }
 }

@@ -59,6 +59,15 @@ async fn tk_003_register_token_contract() {
     // does internally (register identity + register contract) into
     // two phases so the credit-balance snapshot lands between them.
     let ctx = E2eContext::init().await.expect("init e2e context");
+    if !ctx.bank_floor_satisfied() {
+        eprintln!(
+            "Skipping tk_003: bank Platform balance below 50B floor; refill {} to run token suite",
+            ctx.bank()
+                .primary_receive_address()
+                .to_bech32m_string(ctx.bank().network())
+        );
+        return;
+    }
     let setup_guard = crate::framework::setup_with_n_identities(1, DEFAULT_TK_FUNDING)
         .await
         .expect("register owner identity");

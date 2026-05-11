@@ -11,19 +11,21 @@
 
 use std::fs::File;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex as StdMutex, Once};
 use std::time::Duration;
 
 use platform_wallet::wallet::persister::NoPlatformPersistence;
 use platform_wallet::{PlatformEventHandler, PlatformWalletManager, SpvRuntime};
+use rs_sdk_trusted_context_provider::TrustedHttpContextProvider;
 use tokio::sync::OnceCell;
 use tokio_util::sync::CancellationToken;
 
-use super::bank::BankWallet;
+use super::bank::{BankWallet, CrossCheckResult};
 use super::bank_identity::{self, BankIdentity};
 use super::cleanup;
-use super::config::{BankCoreGateSource, Config};
-use super::registry::PersistentTestWalletRegistry;
+use super::config::{self, BankCoreGateSource, Config};
+use super::registry::{EntryStatus, PersistentTestWalletRegistry};
 use super::sdk;
 use super::spv;
 use super::wait;
@@ -44,6 +46,14 @@ const SPV_READY_TIMEOUT: Duration = Duration::from_secs(180);
 /// and defaults to 900s; this constant is just the "any funding visible"
 /// floor.
 const BANK_CORE_GATE_MIN_DUFFS: u64 = 1;
+
+/// Tolerance (credits) for the bank Platform balance cross-check between
+/// the harness wallet cache and an independent DAPI fetch (QA-V28-410).
+/// Strict equality flagged sub-tDASH drift as MISMATCH, suppressing the
+/// OK log even when the harness was healthy. 1 tDASH (1e8 credits) is
+/// well above observed DAPI replica drift but small enough that any real
+/// accounting bug still trips the MISMATCH branch.
+const BANK_CROSS_CHECK_TOLERANCE_CREDITS: i64 = 100_000_000;
 
 /// Process-shared singleton populated on first
 /// [`E2eContext::init`].
@@ -145,6 +155,16 @@ pub struct E2eContext {
     /// releases the lock.
     workdir_lock: File,
     pub sdk: Arc<dash_sdk::Sdk>,
+    /// Shared handle to the SDK's [`TrustedHttpContextProvider`].
+    /// Tests that deploy contracts at runtime must call
+    /// [`TrustedHttpContextProvider::add_known_contract`] (and
+    /// `add_known_token_configuration` for token slots) on this
+    /// handle so the SDK's proof verifier can resolve the contract
+    /// — otherwise the next state transition referencing the new
+    /// contract surfaces `DriveProofError(UnknownContract)`. The
+    /// inner caches are `Arc<Mutex<...>>`, so the SDK's clone of
+    /// the provider sees mutations made through this handle. (QA-900)
+    pub context_provider: Arc<TrustedHttpContextProvider>,
     pub manager: Arc<PlatformWalletManager<NoPlatformPersistence>>,
     /// SPV runtime started by [`Self::build`]. The SDK still uses
     /// the trusted HTTP context provider; this handle is exposed via
@@ -159,12 +179,28 @@ pub struct E2eContext {
     pub registry: PersistentTestWalletRegistry,
     /// Framework-wide shutdown signal for background tasks. Not
     /// tripped by individual test panics — a single failing test
-    /// must not cancel SPV / wait helpers for sibling tests.
+    /// must not cancel SPV / wait helpers for sibling tasks.
     pub cancel_token: CancellationToken,
     /// Installed as the harness's `PlatformEventHandler`; test
     /// wallets clone the `Arc` so `wait_for_balance` wakes on real
     /// events instead of fixed polling.
     pub wait_hub: Arc<WaitEventHub>,
+    /// Independent DAPI cross-check of the bank's Platform balance,
+    /// captured once per init AFTER the startup sweep and
+    /// `sync_and_refresh_floor` (QA-V26-005 / QA-V26-013). Both
+    /// `harness_credits` and `independent_credits` reflect post-sweep
+    /// state — the same balance that `assert_floor` evaluates. On fetch
+    /// error `independent_credits = 0` with a `warn` logged.
+    pub bank_balance_cross_check: Option<CrossCheckResult>,
+    /// Live count of outstanding [`super::SetupGuard`] instances.
+    /// Incremented in [`super::setup`] and decremented in
+    /// [`super::SetupGuard`]'s `Drop`. The guard whose decrement
+    /// observes a previous value of `1` is the last in-flight test —
+    /// it fires the end-of-suite [`cleanup::sweep_orphans`] pass so
+    /// dust + retained-`Failed` entries surfaced by per-test Drop
+    /// sweeps get one final retry without waiting for the next process
+    /// startup. (V27-004)
+    pub active_guards: AtomicUsize,
 }
 
 impl E2eContext {
@@ -181,6 +217,15 @@ impl E2eContext {
 
     pub fn manager(&self) -> &Arc<PlatformWalletManager<NoPlatformPersistence>> {
         &self.manager
+    }
+
+    /// Shared `Arc` over the SDK's [`TrustedHttpContextProvider`].
+    /// Use [`TrustedHttpContextProvider::add_known_contract`] to
+    /// register a freshly-deployed contract before any state
+    /// transition that references it; see the field-level docs on
+    /// [`Self::context_provider`]. (QA-900)
+    pub fn context_provider(&self) -> &Arc<TrustedHttpContextProvider> {
+        &self.context_provider
     }
 
     /// Pre-funded bank wallet — the funding source for tests.
@@ -212,6 +257,13 @@ impl E2eContext {
 
     pub fn wait_hub(&self) -> &Arc<WaitEventHub> {
         &self.wait_hub
+    }
+
+    /// `true` when the bank's Platform balance met the token-suite floor
+    /// (~50B credits) at init time. Token tests check this at startup and
+    /// skip cleanly when `false` (QA-V26-003).
+    pub fn bank_floor_satisfied(&self) -> bool {
+        self.bank.bank_floor_satisfied()
     }
 
     async fn build() -> FrameworkResult<E2eContext> {
@@ -261,7 +313,7 @@ impl E2eContext {
 
         let cancel_token = CancellationToken::new();
 
-        let sdk = sdk::build_sdk(&config)?;
+        let (sdk, context_provider) = sdk::build_sdk(&config)?;
 
         // Persister discards changesets (testnet re-sync is fast).
         // Event handler is the shared [`WaitEventHub`] so test
@@ -285,19 +337,38 @@ impl E2eContext {
         // Address-list seeding pins SPV peers to the same DAPI hosts
         // the SDK is talking to (port-swapped to the P2P port), so
         // tests don't drift between two independent peer pools.
-        let spv_runtime = spv::start_spv(&manager, &config, &workdir, sdk.address_list()).await?;
-        // Park the runtime in `IN_FLIGHT_SPV` BEFORE the next
-        // fallible step so any panic / Err inside the rest of `build`
-        // hands the runtime to the panic hook + retry path described
-        // on `IN_FLIGHT_SPV`. Cleared on success at the bottom of
-        // `build`. Drops the previous slot value (should be `None`
-        // already because we took it above; defensive).
-        *IN_FLIGHT_SPV.lock().expect("IN_FLIGHT_SPV poisoned") = Some(Arc::clone(&spv_runtime));
-        spv::wait_for_mn_list_synced(&spv_runtime, SPV_READY_TIMEOUT).await?;
-        let spv_runtime: Option<Arc<SpvRuntime>> = Some(spv_runtime);
+        //
+        // Operator escape hatch: `PLATFORM_WALLET_E2E_DISABLE_SPV=1`
+        // skips the spawn entirely so testnet ChainLock-cycle windows
+        // (rust-dashcore #470) don't block the whole suite. Core-
+        // dependent tests fail under this flag — see the warn below.
+        let spv_runtime: Option<Arc<SpvRuntime>> = if config.disable_spv {
+            tracing::warn!(
+                target: "platform_wallet::e2e::harness",
+                var = config::vars::DISABLE_SPV,
+                "PLATFORM_WALLET_E2E_DISABLE_SPV is set: skipping SPV runtime \
+                 spawn and mn-list-sync gate. Core-dependent tests (CR-003 \
+                 funded-asset-lock path, ID-007 Core-balance gates, anything \
+                 that walks Core blocks) WILL fail; Platform-only flows still \
+                 run. Use this only when testnet ChainLock cycles are blocking \
+                 progress."
+            );
+            None
+        } else {
+            let spv_runtime =
+                spv::start_spv(&manager, &config, &workdir, sdk.address_list()).await?;
+            // Park the runtime in `IN_FLIGHT_SPV` BEFORE the next
+            // fallible step so any panic / Err inside the rest of `build`
+            // hands the runtime to the panic hook + retry path described
+            // on `IN_FLIGHT_SPV`. Cleared on success at the bottom of
+            // `build`. Drops the previous slot value (should be `None`
+            // already because we took it above; defensive).
+            *IN_FLIGHT_SPV.lock().expect("IN_FLIGHT_SPV poisoned") = Some(Arc::clone(&spv_runtime));
+            spv::wait_for_mn_list_synced(&spv_runtime, SPV_READY_TIMEOUT).await?;
+            Some(spv_runtime)
+        };
 
-        // Panics on under-funded balance — see `BankWallet::load`.
-        let bank = BankWallet::load(&manager, &config).await?;
+        let mut bank = BankWallet::load(&manager, &config).await?;
 
         // Bank Core (Layer-1) funding gate. Marvin's QA-001 — first
         // cold-cache run on testnet walks ~1.47M compact filters from
@@ -313,7 +384,26 @@ impl E2eContext {
         // tests that don't need bank Core funding still run; the ones
         // that do panic at `send_core_to` with the operator-actionable
         // "top up at <addr>" message (see `BankWallet::send_core_to`).
-        match config.bank_core_gate_timeout {
+        //
+        // When `DISABLE_SPV` is set the gate is auto-skipped: it polls
+        // the SPV-fed `core_balance_confirmed`, which would never
+        // advance without a running SPV runtime — letting the gate run
+        // would just burn the full timeout for nothing.
+        let effective_gate_timeout = if config.disable_spv {
+            if config.bank_core_gate_timeout.is_some() {
+                tracing::warn!(
+                    target: "platform_wallet::e2e::bank",
+                    var = config::vars::DISABLE_SPV,
+                    "auto-disabling bank_core_gate because SPV is disabled (gate \
+                     polls SPV-fed Core balance and would burn its full timeout \
+                     for nothing)"
+                );
+            }
+            None
+        } else {
+            config.bank_core_gate_timeout
+        };
+        match effective_gate_timeout {
             Some(timeout) => {
                 let source = match config.bank_core_gate_source {
                     BankCoreGateSource::Default => "default",
@@ -427,21 +517,106 @@ impl E2eContext {
 
         let registry = PersistentTestWalletRegistry::open(workdir.join("test_wallets.json"))?;
 
-        // Best-effort startup sweep; failures don't abort init.
+        // Capture pre-sweep registry stats so `assert_floor` can name them
+        // in its panic message if the bank is still under-funded after sweep.
+        let pre_sweep_orphans = registry.list_orphans();
+        let pre_sweep_total = pre_sweep_orphans.len();
+        let pre_sweep_failed = pre_sweep_orphans
+            .iter()
+            .filter(|(_, e)| e.status == EntryStatus::Failed)
+            .count();
+
+        // Best-effort startup sweep. Runs BEFORE the floor check so orphan
+        // funds can flow back to the bank before we assert it's funded
+        // (QA-V26-007). Failures don't abort init.
         let network = bank.network();
-        match cleanup::sweep_orphans(&manager, &bank, &bank_identity, &registry, network).await {
-            Ok(0) => {}
-            Ok(n) => tracing::info!(
-                target: "platform_wallet::e2e::harness",
-                count = n,
-                "startup sweep recovered orphan wallets from prior runs"
-            ),
-            Err(err) => tracing::warn!(
+        let sweep_recovered =
+            match cleanup::sweep_orphans(&manager, &bank, &bank_identity, &registry, network).await
+            {
+                Ok(0) => 0_usize,
+                Ok(n) => {
+                    tracing::info!(
+                        target: "platform_wallet::e2e::harness",
+                        count = n,
+                        "startup sweep recovered orphan wallets from prior runs"
+                    );
+                    n
+                }
+                Err(err) => {
+                    tracing::warn!(
+                        target: "platform_wallet::e2e::harness",
+                        error = %err,
+                        "startup sweep encountered errors; continuing"
+                    );
+                    0
+                }
+            };
+
+        // Re-read the bank's balance after the sweep so the floor check
+        // counts any credits just swept back. `sync_and_refresh_floor`
+        // also updates `bank_floor_satisfied` so the token-suite gate
+        // reflects the post-sweep state rather than the load-time snapshot
+        // (QA-V26-007). If still under-funded after sweep, panic with a
+        // message that names sweep stats so operators know what ran.
+        if let Err(err) = bank.sync_and_refresh_floor().await {
+            tracing::warn!(
                 target: "platform_wallet::e2e::harness",
                 error = %err,
-                "startup sweep encountered errors; continuing"
-            ),
+                "post-sweep bank resync failed; floor check uses pre-sweep balance"
+            );
         }
+
+        // Independent DAPI cross-check of the bank's Platform balance
+        // (QA-V26-005 / QA-V26-013). Fires AFTER sync_and_refresh_floor so
+        // `harness_credits` reflects the post-sweep wallet cache — the same
+        // balance that assert_floor will evaluate. Firing pre-sweep (old
+        // location) used a stale load-time snapshot; the cross-check would
+        // agree with DAPI for well-funded banks (no mismatch → OK-only line)
+        // making it appear absent when filtered for the MISMATCH keyword
+        // (QA-V26-013). Never aborts init — warn is enough.
+        let bank_balance_cross_check = {
+            let network = bank.network();
+            let result = bank.cross_check_balance(&sdk).await;
+            let addr_bech32 = result.address.to_bech32m_string(network);
+            let addr_hex = match &result.address {
+                dpp::address_funds::PlatformAddress::P2pkh(hash) => hex::encode(hash),
+                dpp::address_funds::PlatformAddress::P2sh(hash) => hex::encode(hash),
+            };
+            let nonce = result.nonce.unwrap_or(0);
+            let drift = (result.harness_credits as i64 - result.independent_credits as i64).abs();
+            if drift <= BANK_CROSS_CHECK_TOLERANCE_CREDITS {
+                tracing::info!(
+                    target: "platform_wallet::e2e::bank",
+                    harness_credits = result.harness_credits,
+                    independent_credits = result.independent_credits,
+                    drift,
+                    tolerance = BANK_CROSS_CHECK_TOLERANCE_CREDITS,
+                    addr_bech32 = %addr_bech32,
+                    addr_hash160 = %addr_hex,
+                    nonce,
+                    "═══ BANK PLATFORM BALANCE CROSS-CHECK OK (QA-V26-005) ═══"
+                );
+            } else {
+                tracing::warn!(
+                    target: "platform_wallet::e2e::bank",
+                    harness_credits = result.harness_credits,
+                    independent_credits = result.independent_credits,
+                    drift,
+                    tolerance = BANK_CROSS_CHECK_TOLERANCE_CREDITS,
+                    addr_bech32 = %addr_bech32,
+                    addr_hash160 = %addr_hex,
+                    nonce,
+                    "bank Platform balance MISMATCH between harness cache and \
+                     independent DAPI fetch — drift exceeds tolerance; possible \
+                     DAPI replica lag (#3611) or accounting bug. Harness balance \
+                     is the authoritative value for funding gates"
+                );
+            }
+            Some(result)
+        };
+
+        bank.assert_floor(&config, sweep_recovered, pre_sweep_total, pre_sweep_failed)
+            .await;
 
         // Successful build — ownership of the runtime now lives on
         // the returned `E2eContext`. Clear `IN_FLIGHT_SPV` so the
@@ -455,6 +630,7 @@ impl E2eContext {
             workdir,
             workdir_lock,
             sdk,
+            context_provider,
             manager,
             spv_runtime,
             bank,
@@ -462,6 +638,8 @@ impl E2eContext {
             registry,
             cancel_token,
             wait_hub,
+            bank_balance_cross_check,
+            active_guards: AtomicUsize::new(0),
         })
     }
 }

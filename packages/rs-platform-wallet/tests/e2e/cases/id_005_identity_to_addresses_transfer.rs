@@ -67,11 +67,28 @@ async fn id_005_identity_to_addresses_transfer() {
         .await
         .expect("funding never observed");
 
+    // QA-802 — bias the funding-address gate toward more distinct DAPI
+    // replicas before handing the address to the registration broadcast.
+    wait_for_address_known_to_platform(s.ctx.sdk(), &funding_addr, FUNDING_FLOOR, STEP_TIMEOUT)
+        .await
+        .expect("funding address never reached strong-gate visibility");
+
     let registered = s
         .test_wallet
         .register_identity_from_addresses(funding_addr, REGISTRATION_FUNDING, 0)
         .await
         .expect("register_identity_from_addresses");
+
+    // QA-805 — the transfer below resolves the source identity through the
+    // SDK's round-robin DAPI handle; without this gate the transfer can land
+    // on a sibling replica that hasn't replicated the new identity yet and
+    // panic with `Identity ... not found`.
+    // TODO(PR #3609): cross-replica visibility should be guaranteed by the
+    // wallet/SDK upstream — drop this gate once the SDK awaits replication
+    // before returning from `register_from_addresses`.
+    wait_for_identity_visible_to_platform(s.ctx.sdk(), registered.id, STEP_TIMEOUT, 2)
+        .await
+        .expect("identity never reached cross-replica visibility");
 
     let pre_balance = Identity::fetch(s.ctx.sdk(), registered.id)
         .await
@@ -110,12 +127,27 @@ async fn id_005_identity_to_addresses_transfer() {
         .expect("transfer_credits_to_addresses_with_external_signer");
 
     // Cross-check the wallet-returned balance with an on-chain
-    // fetch.
-    let on_chain_post = Identity::fetch(s.ctx.sdk(), registered.id)
-        .await
-        .expect("fetch post")
-        .expect("identity still visible")
-        .balance();
+    // fetch. The chain may still reflect the pre-transfer balance
+    // when the wallet returns — wait for the on-chain view to
+    // converge to the wallet-returned value (QA-902-A wallet-sync
+    // race after transfer).
+    let on_chain_post = wait_for(
+        || {
+            let sdk = s.ctx.sdk().clone();
+            let id = registered.id;
+            async move {
+                match Identity::fetch(&sdk, id).await {
+                    Ok(Some(identity)) if identity.balance() == new_balance => {
+                        Some(identity.balance())
+                    }
+                    _ => None,
+                }
+            }
+        },
+        STEP_TIMEOUT,
+    )
+    .await
+    .expect("on-chain identity balance never converged to wallet-returned value after transfer");
     assert_eq!(
         on_chain_post, new_balance,
         "wallet-returned balance {new_balance} must match on-chain fetch {on_chain_post}"

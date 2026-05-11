@@ -15,6 +15,54 @@
 //! ```
 //!
 //! Convenience imports: [`prelude`].
+//!
+//! # Parallelism contract
+//!
+//! The harness is designed to support `--test-threads>1`. Tests share
+//! one [`E2eContext`] (`OnceCell`-backed singleton), one bank wallet,
+//! one SPV runtime, and one workdir slot. Per-test isolation comes
+//! from:
+//!
+//! 1. **Disjoint test wallets** — every [`setup`] call mints a fresh
+//!    OS-random 64-byte seed via [`wallet_factory::fresh_seed`]. Two
+//!    parallel tests have distinct wallet ids with cryptographic
+//!    probability; their on-chain identities, addresses, and nonces
+//!    don't collide.
+//! 2. **Serialised bank funding** — [`bank::BankWallet::fund_address`]
+//!    and [`bank::BankWallet::send_core_to`] take an in-process
+//!    [`tokio::sync::Mutex`] (`FUNDING_MUTEX`) so concurrent callers
+//!    can't race the bank's UTXO selection / nonce assignment. Tests
+//!    waiting on `wait_for_balance` and friends do NOT hold the mutex.
+//! 3. **Cross-process workdir slots** — [`workdir::pick_available_workdir`]
+//!    walks `0..MAX_SLOTS` and acquires an exclusive `flock` on each.
+//!    A second `cargo test` invocation against the same machine lands
+//!    on a separate slot, so SPV caches and registries don't share
+//!    state across processes. Slot 0 is reusable across runs of the
+//!    same process when its lock is released cleanly.
+//! 4. **Process-shared singletons** are limited to thread-safe
+//!    primitives: [`tokio::sync::OnceCell`] for `CTX`,
+//!    `std::sync::Mutex<Option<Arc<SpvRuntime>>>` for `IN_FLIGHT_SPV`,
+//!    `tokio::sync::Mutex<()>` for `FUNDING_MUTEX`, `parking_lot::Mutex`
+//!    for the registry's in-memory map.
+//!
+//! ## Tests that need special handling under parallelism
+//!
+//! - [`cases::pa_008c_funding_mutex_observable`] reads the
+//!   process-global `FUNDING_MUTEX_HISTORY` ring buffer. The buffer is
+//!   written to by EVERY `bank.fund_address` call across all tests, so
+//!   the test asserts a **lower bound** on entry count (`>= 3`) and the
+//!   pairwise non-overlap property that holds across ALL entries — not
+//!   strict equality on its own three entries.
+//! - [`cases::pa_010_bank_starvation`] is `#[ignore]`'d pending a
+//!   per-test bank instance API (the bank is process-shared by design).
+//!
+//! All other cases mint fresh seeds and reach for shared resources only
+//! via the serialised paths above.
+//!
+//! Background reading: `dash-evo-tool/tests/backend-e2e/framework/`
+//! pioneered this pattern (`harness.rs::FUNDING_MUTEX`,
+//! `BackendTestContext::create_funded_test_wallet`); the structure
+//! here mirrors it.
 
 #![allow(dead_code)]
 
@@ -23,7 +71,9 @@ pub mod bank_identity;
 pub mod cleanup;
 pub mod config;
 pub mod context_provider;
+pub mod gap_limit;
 pub mod harness;
+pub mod identities;
 pub mod registry;
 pub mod sdk;
 pub mod signer;
@@ -68,7 +118,10 @@ pub mod prelude {
     pub use super::config::Config;
     pub use super::harness::E2eContext;
     pub use super::wait::{
-        wait_for, wait_for_balance, wait_for_bank_funded, wait_for_core_balance,
+        wait_for, wait_for_address_balance_chain_confirmed,
+        wait_for_address_balance_chain_confirmed_strong, wait_for_address_known_to_platform,
+        wait_for_balance, wait_for_bank_funded, wait_for_core_balance,
+        wait_for_identity_visible_to_platform,
     };
     pub use super::wait_hub::WaitEventHub;
     pub use super::{setup, FrameworkError, FrameworkResult, SetupGuard};
@@ -77,6 +130,16 @@ pub mod prelude {
 pub use wallet_factory::SetupGuard;
 
 use harness::E2eContext;
+
+// Parallelism guard rails: enforce at compile time that the types
+// shared across worker threads under `--test-threads>1` are `Send + Sync`.
+// `E2eContext` is held behind a `&'static` so all tests reach for the
+// same instance; `SetupGuard` is held by the running test body. Any
+// future field addition that breaks `Send + Sync` (e.g. an `Rc`, a
+// non-`Send` future, an inadvertent `RefCell`) trips this static assert
+// at compile time rather than at runtime through a flaky parallel run.
+static_assertions::assert_impl_all!(E2eContext: Send, Sync);
+static_assertions::assert_impl_all!(SetupGuard: Send, Sync);
 
 /// Errors surfaced by the e2e framework.
 #[derive(Debug, thiserror::Error)]
@@ -168,11 +231,10 @@ pub async fn setup() -> FrameworkResult<SetupGuard> {
     };
     ctx.registry().insert(test_wallet.id(), entry)?;
 
-    Ok(SetupGuard {
-        ctx,
-        test_wallet,
-        teardown_called: false,
-    })
+    // Constructor wires up the counter increment AFTER struct
+    // assembly so a pre-construction panic doesn't leak a slot —
+    // see [`SetupGuard::new`] / V27-004.
+    Ok(SetupGuard::new(ctx, test_wallet))
 }
 
 /// Multi-identity counterpart of [`setup`]. Builds a fresh test
@@ -195,9 +257,34 @@ pub async fn setup_with_n_identities(
     n: u32,
     funding_per: dpp::fee::Credits,
 ) -> FrameworkResult<MultiIdentitySetupGuard> {
-    use std::time::Duration;
+    setup_with_n_identities_with_step_timeout(n, funding_per, DEFAULT_SETUP_STEP_TIMEOUT).await
+}
 
-    use super::framework::wait::wait_for_balance;
+/// Default per-step propagation budget used by [`setup_with_n_identities`]
+/// and the token-suite `setup_with_token_*` helpers. Sized for the common
+/// case (per-identity funding under a few-hundred-million credits clearing
+/// inside ~30 s); raise it via [`setup_with_n_identities_with_step_timeout`]
+/// when a single test is known to need a larger budget — typically the
+/// "transfer multiple billions of credits while seven sibling guards
+/// compete on the bank under `--test-threads=8`" shape that TK-005 hits.
+pub const DEFAULT_SETUP_STEP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Per-test override of [`setup_with_n_identities`]'s propagation budget.
+///
+/// Each waiter inside the per-identity loop (the local `wait_for_balance`,
+/// the strong chain-confirmed gate, and the identity-visibility gate) uses
+/// `step_timeout` independently. Raising it lets a single test (e.g.
+/// TK-005's high-credit funding under contention) survive without softening
+/// the global default — keeping a tight default surfaces genuinely-stuck
+/// tests in the majority of cases.
+pub async fn setup_with_n_identities_with_step_timeout(
+    n: u32,
+    funding_per: dpp::fee::Credits,
+    step_timeout: std::time::Duration,
+) -> FrameworkResult<MultiIdentitySetupGuard> {
+    use super::framework::wait::{
+        wait_for_address_known_to_platform, wait_for_balance, wait_for_identity_visible_to_platform,
+    };
 
     let base = setup().await?;
     let mut identities = Vec::with_capacity(n as usize);
@@ -225,11 +312,20 @@ pub async fn setup_with_n_identities(
             .bank()
             .fund_address(&funding_addr, bank_amount)
             .await?;
-        wait_for_balance(
-            &base.test_wallet,
+        wait_for_balance(&base.test_wallet, &funding_addr, bank_amount, step_timeout).await?;
+
+        // QA-802 — `wait_for_balance` already runs a 2-success chain-confirmed
+        // gate, but Marvin's TK-007 / ID-007 timeline shows the streak
+        // clearing while a third Platform replica is still lagging — the
+        // immediately-following `register_identity_from_addresses` lands on
+        // that lagging node and panics with `AddressDoesNotExistError`.
+        // The strong gate (4 successes × 1 s gap) samples more distinct
+        // sockets before we hand the address to the registration broadcast.
+        wait_for_address_known_to_platform(
+            base.ctx.sdk(),
             &funding_addr,
             bank_amount,
-            Duration::from_secs(60),
+            step_timeout,
         )
         .await?;
 
@@ -237,6 +333,16 @@ pub async fn setup_with_n_identities(
             .test_wallet
             .register_identity_from_addresses(funding_addr, funding_per, identity_index)
             .await?;
+
+        // QA-805 — registration returned `Ok` on whichever DAPI node served
+        // the broadcast, but the next state transition referencing this
+        // identity (transfer, top-up, contract update) may round-robin onto
+        // a sibling that hasn't replicated the new identity yet. A
+        // 2-success visibility gate on `Identity::fetch` mirrors the
+        // existing `wait_for_data_contract_visible` pattern from QA-802.
+        wait_for_identity_visible_to_platform(base.ctx.sdk(), registered.id, step_timeout, 2)
+            .await?;
+
         identities.push(registered);
     }
 

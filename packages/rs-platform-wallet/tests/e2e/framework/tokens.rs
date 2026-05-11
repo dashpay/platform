@@ -16,15 +16,21 @@
 //! test cases that exercise these. Runtime correctness is verified
 //! in Wave 4 against a live testnet.
 //!
-//! Editorial notes (vs. Diziet's investigation sketch):
+//! Editorial notes:
 //! - `register_token_contract_via_sdk` signs with the
-//!   [`RegisteredIdentity::master_key`] (MASTER, KeyID 0). The
-//!   wallet's `create_data_contract_with_signer` filters for
-//!   CRITICAL keys (see `wallet/identity/network/contract.rs:158`),
-//!   but the SDK-direct path does not — so MASTER is accepted at
-//!   build-time and the chain-side security-level decision is
-//!   exercised in Wave 4. If testnet rejects MASTER on
-//!   `DataContractCreate`, swap to the wallet helper.
+//!   [`RegisteredIdentity::high_key`] (HIGH, KeyID 1).
+//!   `DataContractCreateTransitionV0::security_level_requirement`
+//!   accepts only CRITICAL or HIGH (see
+//!   `rs-dpp/.../data_contract_create_transition/v0/identity_signed.rs`),
+//!   so signing with MASTER triggers
+//!   `InvalidSignaturePublicKeySecurityLevelError` at chain validation.
+//! - All token-batch state transitions (`mint_to` and the per-case
+//!   `token_*` calls in TK-NNN) MUST sign with
+//!   [`RegisteredIdentity::critical_key`] (AUTHENTICATION + CRITICAL,
+//!   KeyID 3). `TokenBaseTransition`'s
+//!   `IdentitySignedV0::security_level_requirement` returns only
+//!   `vec![SecurityLevel::CRITICAL]`; HIGH or MASTER yields
+//!   `InvalidSignaturePublicKeySecurityLevelError` at chain validation.
 //! - `token_frozen_balance_of` returns a [`TokenAmount`] (the
 //!   identity's full token balance when `IdentityTokenInfo.frozen`
 //!   is `true`, else `0`). DPP only stores a `frozen: bool`; the
@@ -41,6 +47,7 @@ use dash_sdk::Sdk;
 use dpp::balances::credits::TokenAmount;
 use dpp::balances::total_single_token_balance::TotalSingleTokenBalance;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::data_contract::{DataContract, TokenContractPosition};
 use dpp::identity::accessors::IdentityGettersV0;
@@ -73,9 +80,14 @@ pub const DEFAULT_MAX_SUPPLY: TokenAmount = 1_000_000_000_000_000;
 /// Default TK-NNN decimals (8, mirrors DET).
 pub const DEFAULT_DECIMALS: u8 = 8;
 
-/// Default per-identity funding for TK setup helpers — covers
-/// contract-create + a few state transitions with headroom.
-pub const DEFAULT_TK_FUNDING: dpp::fee::Credits = 1_000_000_000;
+/// Default per-identity funding for TK setup helpers — covers the
+/// token contract-create fee floor (~20 B credits for permissive
+/// owner-only contracts, ~30 B for the pre-programmed-distribution
+/// path) plus a few follow-up state transitions with headroom. The
+/// previous 1 B value undershot the chain-side floor and made every
+/// TK case fail at setup with `Insufficient identity ... balance
+/// 1000000000 required 20000100000`.
+pub const DEFAULT_TK_FUNDING: dpp::fee::Credits = 35_000_100_000;
 
 /// Pre-programmed distribution rule passed to
 /// [`setup_with_token_pre_programmed_distribution`].
@@ -91,6 +103,35 @@ pub struct PreProgrammedDistribution {
     /// identities — Wave 2 TK-013 uses a single past timestamp with
     /// the owner as the sole recipient.
     pub distributions: BTreeMap<TimestampMillis, BTreeMap<Identifier, TokenAmount>>,
+}
+
+/// Perpetual distribution rule passed to
+/// [`setup_with_token_perpetual_distribution`].
+///
+/// Wraps the simplest workable BlockBasedDistribution config (fixed
+/// amount per N-block interval, recipient = ContractOwner). The
+/// harness embeds this under
+/// `tokens["0"].distributionRules.perpetualDistribution` in the V1
+/// JSON envelope so `token_claim` with `TokenDistributionType::
+/// Perpetual` can claim once `interval_blocks` of platform block
+/// height have elapsed since contract creation.
+///
+/// Only the BlockBased shape is exposed — TimeBased and EpochBased
+/// would need their own min-interval headroom (testnet floors:
+/// 600_000 ms / 1 epoch) and aren't required by TK-002.
+///
+/// Testnet enforces a minimum of 5 blocks for BlockBased intervals
+/// (see `RewardDistributionType::validate_structure_interval_v0`);
+/// passing a smaller value will trip
+/// `InvalidTokenDistributionBlockIntervalTooShortError` at chain
+/// validation.
+#[derive(Debug, Clone)]
+pub struct PerpetualDistribution {
+    /// Block interval between emissions. Platform block height —
+    /// not Core chain height. Must be ≥ 5 on testnet.
+    pub interval_blocks: u64,
+    /// Tokens emitted to the contract owner per interval.
+    pub amount_per_interval: TokenAmount,
 }
 
 /// Single-identity TK setup. Returned by
@@ -158,10 +199,8 @@ pub struct TokenThreeIdentitiesSetup {
 /// `create_data_contract_with_signer` path so the schema-drift
 /// surface stays in one shape.
 ///
-/// Signs with [`RegisteredIdentity::master_key`] (MASTER). On chain
-/// the contract-create transition validates the signing key against
-/// the contract's CRITICAL requirement — Wave 4 confirms
-/// real-world fitness.
+/// Signs with [`RegisteredIdentity::high_key`] (HIGH) — the chain
+/// rejects MASTER on `DataContractCreate` (CRITICAL or HIGH only).
 pub async fn register_token_contract_via_sdk(
     ctx: &E2eContext,
     owner: &RegisteredIdentity,
@@ -201,14 +240,68 @@ pub async fn register_token_contract_via_sdk(
     let confirmed = data_contract
         .put_to_platform_and_wait_for_response(
             ctx.sdk(),
-            owner.master_key.clone(),
+            owner.high_key.clone(),
             owner.signer.as_ref(),
             None,
         )
         .await
         .map_err(|err| FrameworkError::Sdk(format!("put_to_platform: {err}")))?;
 
-    Ok(confirmed.id())
+    let contract_id = confirmed.id();
+
+    // Gate against DAPI propagation lag: a follow-up state transition
+    // (e.g. token_mint) may land on a replica that hasn't replicated
+    // the new contract yet. Wait until 2 consecutive fetches succeed.
+    crate::framework::wait::wait_for_data_contract_visible(
+        ctx.sdk(),
+        contract_id,
+        Duration::from_secs(60),
+        2,
+    )
+    .await?;
+
+    // QA-900 — register the just-deployed contract (and any token
+    // configurations it carries) with the SDK's
+    // `TrustedHttpContextProvider`. Without this, the next proof
+    // verification that resolves the contract id (e.g. the chain
+    // round-trip on `Sdk::token_mint`) walks the static system-contract
+    // map, misses, and surfaces
+    // `DriveProofError(UnknownContract("... in token verification"))`.
+    register_contract_with_context_provider(ctx, &confirmed);
+
+    Ok(contract_id)
+}
+
+/// Register a freshly-deployed [`DataContract`] (plus all of its V1
+/// token slots) with the harness's shared
+/// [`TrustedHttpContextProvider`]. Idempotent — repeated calls just
+/// re-insert the same entries. Lifts the post-deploy registration step
+/// that otherwise needs to be repeated at every contract-creating
+/// site. (QA-900)
+pub fn register_contract_with_context_provider(ctx: &E2eContext, contract: &DataContract) {
+    let contract_id = contract.id();
+    ctx.context_provider().add_known_contract(contract.clone());
+
+    // Token-slot configurations let the proof verifier resolve
+    // per-token settings (decimals, freeze rules, etc.) without a
+    // round-trip through the (still-unfetched) contract. Mirrors the
+    // same canonical token-id derivation used by the read accessors
+    // below — `calculate_token_id(contract_id, position)`.
+    let positions: Vec<TokenContractPosition> = contract.tokens().keys().copied().collect();
+    for position in positions {
+        let token_id = Identifier::from(calculate_token_id(contract_id.as_bytes(), position));
+        if let Some(config) = contract.tokens().get(&position).cloned() {
+            ctx.context_provider()
+                .add_known_token_configuration(token_id, config);
+        }
+    }
+
+    tracing::debug!(
+        target: "platform_wallet::e2e::tokens",
+        ?contract_id,
+        token_positions = ?contract.tokens().keys().copied().collect::<Vec<_>>(),
+        "registered freshly-deployed contract with TrustedHttpContextProvider (QA-900)"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -315,8 +408,29 @@ pub async fn setup_with_token_contract(
     ctx: &E2eContext,
     owner_funding: dpp::fee::Credits,
 ) -> FrameworkResult<TokenSetup> {
+    setup_with_token_contract_with_step_timeout(
+        ctx,
+        owner_funding,
+        super::DEFAULT_SETUP_STEP_TIMEOUT,
+    )
+    .await
+}
+
+/// Per-test override of [`setup_with_token_contract`]'s propagation budget.
+///
+/// Routes through [`super::setup_with_n_identities_with_step_timeout`] so
+/// each waiter inside the identity-bootstrap loop honours `step_timeout`.
+/// TK-005 — the only test that funds 35 B credits in a single hop — uses
+/// this entry point with a 120 s budget; the 60 s default remains in force
+/// for every other token-suite caller.
+pub async fn setup_with_token_contract_with_step_timeout(
+    ctx: &E2eContext,
+    owner_funding: dpp::fee::Credits,
+    step_timeout: Duration,
+) -> FrameworkResult<TokenSetup> {
     let _ = ctx;
-    let setup_guard = setup_with_n_identities(1, owner_funding).await?;
+    let setup_guard =
+        super::setup_with_n_identities_with_step_timeout(1, owner_funding, step_timeout).await?;
     let owner = setup_guard
         .identities
         .first()
@@ -460,6 +574,95 @@ pub async fn setup_with_token_pre_programmed_distribution(
 }
 
 // ---------------------------------------------------------------------------
+// 15b. setup_with_token_perpetual_distribution
+// ---------------------------------------------------------------------------
+
+/// Single-identity TK setup with a live perpetual distribution rule
+/// (TK-002). The owner receives `amount_per_interval` tokens every
+/// `interval_blocks` of platform block height; recipient is pinned
+/// to `ContractOwner`, distribution function is
+/// `FixedAmount { amount }`.
+///
+/// Tests must wait for at least one interval boundary to pass before
+/// issuing `token_claim` with `TokenDistributionType::Perpetual` —
+/// platform-block-time is ~3 s on testnet so a 5-block interval
+/// implies ~15 s wall-clock plus headroom.
+///
+/// Only BlockBasedDistribution is wired up; TimeBased / EpochBased
+/// would need their own per-network minimum interval handling and
+/// aren't on the TK-002 path.
+pub async fn setup_with_token_perpetual_distribution(
+    ctx: &E2eContext,
+    owner_funding: dpp::fee::Credits,
+    distribution: PerpetualDistribution,
+) -> FrameworkResult<TokenSetup> {
+    let _ = ctx;
+    let setup_guard = setup_with_n_identities(1, owner_funding).await?;
+    let owner = setup_guard.identities[0].clone_for_token_setup();
+
+    let json = permissive_owner_token_contract_with_perpetual_distribution_json(
+        owner.id,
+        DEFAULT_TOKEN_POSITION,
+        DEFAULT_MAX_SUPPLY,
+        &distribution,
+    );
+    let contract_id = register_token_contract_via_sdk(setup_guard.base.ctx, &owner, json).await?;
+
+    Ok(TokenSetup {
+        setup_guard,
+        owner,
+        contract_id,
+        token_position: DEFAULT_TOKEN_POSITION,
+    })
+}
+
+/// Sibling of [`permissive_owner_token_contract_json`] that injects a
+/// BlockBased perpetual-distribution rule under
+/// `tokens["0"].distributionRules.perpetualDistribution`. The rest of
+/// the contract envelope is identical to the permissive
+/// owner-only baseline (8 decimals, owner-only ChangeControlRules,
+/// `mintingAllowChoosingDestination = true`, no pre-programmed
+/// schedule) — the perpetual node is the only deviation.
+///
+/// Schema mirrors the round-trip example in
+/// `rs-dpp/src/data_contract/conversion/json/mod.rs`:
+/// `{ "distributionType": { "BlockBasedDistribution": { "interval", "function": { "FixedAmount": { "amount" } } } }, "distributionRecipient": "ContractOwner" }`.
+pub fn permissive_owner_token_contract_with_perpetual_distribution_json(
+    owner_id: Identifier,
+    position: u16,
+    supply: TokenAmount,
+    distribution: &PerpetualDistribution,
+) -> serde_json::Value {
+    let mut json = permissive_owner_token_contract_json(owner_id, position, supply);
+    let token_slot = json
+        .get_mut(position.to_string())
+        .and_then(|v| v.as_object_mut())
+        .expect("permissive token JSON missing slot just inserted");
+    let distribution_rules = token_slot
+        .get_mut("distributionRules")
+        .and_then(|v| v.as_object_mut())
+        .expect("permissive token JSON missing distributionRules");
+
+    distribution_rules.insert(
+        "perpetualDistribution".into(),
+        json!({
+            "$formatVersion": "0",
+            "distributionType": {
+                "BlockBasedDistribution": {
+                    "interval": distribution.interval_blocks,
+                    "function": {
+                        "FixedAmount": { "amount": distribution.amount_per_interval },
+                    },
+                },
+            },
+            "distributionRecipient": "ContractOwner",
+        }),
+    );
+
+    json
+}
+
+// ---------------------------------------------------------------------------
 // 16. mint_to — owner-mints-to-recipient shortcut
 // ---------------------------------------------------------------------------
 
@@ -467,9 +670,10 @@ pub async fn setup_with_token_pre_programmed_distribution(
 /// [`Sdk::token_mint`]. Resolves only after the proof confirms the
 /// new balance.
 ///
-/// The owner signs with [`RegisteredIdentity::high_key`] (HIGH) —
-/// mint is a token-action transition, not a contract-mutate one,
-/// so HIGH is the canonical signing level.
+/// The owner signs with [`RegisteredIdentity::critical_key`]
+/// (AUTHENTICATION + CRITICAL). `TokenBaseTransition` accepts only
+/// `SecurityLevel::CRITICAL`; HIGH yields
+/// `InvalidSignaturePublicKeySecurityLevelError`.
 pub async fn mint_to(
     ctx: &E2eContext,
     contract_id: Identifier,
@@ -490,7 +694,7 @@ pub async fn mint_to(
     ctx.sdk()
         .token_mint(
             builder,
-            &owner_signer.high_key,
+            &owner_signer.critical_key,
             owner_signer.signer.as_ref(),
         )
         .await
@@ -799,6 +1003,7 @@ impl CloneForTokenSetup for RegisteredIdentity {
             master_key: self.master_key.clone(),
             high_key: self.high_key.clone(),
             transfer_key: self.transfer_key.clone(),
+            critical_key: self.critical_key.clone(),
             signer: Arc::clone(&self.signer),
             identity_index: self.identity_index,
             funding: self.funding,

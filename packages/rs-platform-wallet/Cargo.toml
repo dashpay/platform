@@ -90,8 +90,12 @@ tokio-util = { version = "0.7", features = ["rt"] }
 # and `framework/context_provider.rs` and is currently disabled
 # (see harness.rs) — re-enable when SPV cold-start is stable
 # (Task #15).
-rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider" }
-
+rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider", features = ["dpns-contract"] }
+# In-memory test runs (NoPlatformPersistence) need finalized txs retained in RAM.
+# Re-declaring here enables the feature for the test target only; production
+# builds pay no memory overhead. Per upstream rust-dashcore maintainer guidance.
+key-wallet = { workspace = true, features = ["keep-finalized-transactions"] }
+key-wallet-manager = { workspace = true, features = ["keep-finalized-transactions"] }
 
 [features]
 default = ["bls", "eddsa"]

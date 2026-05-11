@@ -8,11 +8,12 @@
 //! once into [`Network`]; `p2p_port` is resolved against the
 //! network-specific default at construction time.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::Duration;
 
 use dashcore::Network;
+use dpp::fee::Credits;
 
 use super::{FrameworkError, FrameworkResult};
 
@@ -52,12 +53,15 @@ pub mod vars {
     /// that don't need Core duffs; any positive integer overrides the
     /// timeout (in seconds).
     pub const BANK_CORE_GATE: &str = "PLATFORM_WALLET_E2E_BANK_CORE_GATE";
-    /// Operator escape hatch for SPV-gated cases (CR-001, anything
-    /// asserting on `SpvRuntime` post-conditions). When truthy
-    /// (`1` / `true` / `yes` / `on`, case-insensitive), the case body
-    /// skips with an informative log. The harness itself does NOT
-    /// read this flag — `E2eContext::build` always starts SPV; the
-    /// gate is consumed test-side via [`super::spv_disabled_from_env`].
+    /// Operator escape hatch: when truthy (`1` / `true` / `yes` / `on`,
+    /// case-insensitive), the harness skips starting the SPV runtime and
+    /// the `wait_for_mn_list_synced` gate; SPV-gated case bodies (CR-001,
+    /// anything asserting on `SpvRuntime` post-conditions) skip via
+    /// [`super::spv_disabled_from_env`]. Use this to keep the suite making
+    /// progress when testnet is in a ChainLock-cycle window blocking
+    /// mn-list advance (rust-dashcore #470). Core-dependent tests
+    /// (CR-003 funded-asset-lock, ID-007 Core-balance gates, any helper
+    /// walking Core blocks) WILL fail when SPV is disabled.
     /// See `TEST_SPEC.md` CR-001 for the SPEC-level reference.
     pub const DISABLE_SPV: &str = "PLATFORM_WALLET_E2E_DISABLE_SPV";
     /// Opt-in switch for FAILING-by-design tests that would otherwise
@@ -83,13 +87,20 @@ pub mod vars {
 /// cache and clear the gate in seconds.
 pub const DEFAULT_BANK_CORE_GATE_TIMEOUT: Duration = Duration::from_secs(900);
 
-/// Default minimum bank balance in credits.
+/// Default minimum bank balance in credits required to start the suite.
 ///
-/// Set at 5x the largest single-run cost (FUNDING_CREDITS=100M + ~15M chain-time
-/// fee ≈ 115M per run) following DET's safety-factor pattern (dash-evo-tool#513).
-/// Keeps the bank covering several consecutive runs even with the fee underestimate
-/// from platform #3040 in play.
+/// 500M is sufficient for non-token identity tests (ID-*, CR-*, PA-*).
+/// Operators who observe the "Bank under-funded" panic should top up the
+/// Platform address shown in the message to at least this value.
 pub const DEFAULT_MIN_BANK_CREDITS: u64 = 500_000_000;
+
+/// Informational floor for the token test suite.
+///
+/// Token tests (12+ cases, 1-3 identities each) cost ~35B credits per setup.
+/// When the bank balance is below this value the harness emits a `warn!` so
+/// operators know a token-suite run may exhaust funds mid-way, but this
+/// threshold is NOT enforced as a panic — non-token tests are unaffected.
+pub const EXPECTED_TOKEN_SUITE_FLOOR: Credits = 50_000_000_000;
 
 /// E2E framework configuration — fully resolved.
 ///
@@ -141,6 +152,13 @@ pub struct Config {
     /// Source of [`bank_core_gate_timeout`]'s value, kept for the init
     /// log line so operators can tell defaulted-on from env-set.
     pub bank_core_gate_source: BankCoreGateSource,
+    /// Operator escape hatch: when `true`, the harness skips the SPV
+    /// runtime spawn and the `wait_for_mn_list_synced` gate. The bank-
+    /// Core gate is auto-disabled in tandem (it polls the SPV-fed
+    /// confirmed-Core balance, which would never advance). Tests that
+    /// rely on Core observation will fail; Platform-only flows still
+    /// run. Set via [`vars::DISABLE_SPV`].
+    pub disable_spv: bool,
 }
 
 /// Provenance of the resolved bank-Core-gate timeout — surfaced in the
@@ -175,6 +193,7 @@ impl std::fmt::Debug for Config {
             .field("bank_identity_id", &self.bank_identity_id)
             .field("bank_core_gate_timeout", &self.bank_core_gate_timeout)
             .field("bank_core_gate_source", &self.bank_core_gate_source)
+            .field("disable_spv", &self.disable_spv)
             .finish()
     }
 }
@@ -193,8 +212,61 @@ impl Default for Config {
             bank_identity_id: None,
             bank_core_gate_timeout: Some(DEFAULT_BANK_CORE_GATE_TIMEOUT),
             bank_core_gate_source: BankCoreGateSource::Default,
+            disable_spv: false,
         }
     }
+}
+
+/// Walk up from `start` looking for a `.claude` path component; if found,
+/// the parent of that component is the parent-repo root. Returns the
+/// `tests/.env` path under `packages/rs-platform-wallet/` in that root,
+/// or `/dev/null` (which never passes `.exists()`) when not found.
+fn find_parent_repo_env(start: &std::path::Path) -> PathBuf {
+    for ancestor in start.ancestors() {
+        let components: Vec<_> = ancestor.components().collect();
+        if let Some(idx) = components.iter().position(|c| c.as_os_str() == ".claude") {
+            let parent_root: PathBuf = components[..idx].iter().collect();
+            let candidate = parent_root.join("packages/rs-platform-wallet/tests/.env");
+            if candidate.exists() {
+                return candidate;
+            }
+        }
+    }
+    PathBuf::from("/dev/null")
+}
+
+/// Try each candidate path in order; load the first one that exists.
+fn load_e2e_env() {
+    let manifest_env = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/.env");
+    let parent_env = find_parent_repo_env(Path::new(env!("CARGO_MANIFEST_DIR")));
+
+    for candidate in [&manifest_env, &parent_env] {
+        if candidate.exists() {
+            match dotenvy::from_path(candidate) {
+                Ok(()) => {
+                    tracing::info!(
+                        target: "platform_wallet::e2e::config",
+                        path = %candidate.display(),
+                        "loaded e2e .env"
+                    );
+                }
+                Err(err) => {
+                    tracing::warn!(
+                        target: "platform_wallet::e2e::config",
+                        path = %candidate.display(),
+                        ?err,
+                        "failed to load e2e .env (process env vars still apply)"
+                    );
+                }
+            }
+            return;
+        }
+    }
+
+    tracing::warn!(
+        target: "platform_wallet::e2e::config",
+        "no e2e .env found in any candidate location (process env vars still apply)"
+    );
 }
 
 impl Config {
@@ -203,17 +275,7 @@ impl Config {
     /// fallback. `bank_mnemonic` is required; everything else
     /// resolves to its final value via the per-field defaults.
     pub fn from_env() -> FrameworkResult<Self> {
-        // Anchor the `.env` path at the crate's manifest dir so
-        // CWD doesn't change behaviour; a missing file is expected.
-        let path: String = env!("CARGO_MANIFEST_DIR").to_owned() + "/tests/.env";
-        if let Err(err) = dotenvy::from_path(&path) {
-            tracing::warn!(
-                target: "platform_wallet::e2e::config",
-                path = %path,
-                ?err,
-                "failed to load e2e .env (process env vars still apply)"
-            );
-        }
+        load_e2e_env();
 
         let bank_mnemonic = std::env::var(vars::BANK_MNEMONIC).map_err(|_| {
             FrameworkError::Bank(format!(
@@ -283,6 +345,8 @@ impl Config {
         let (bank_core_gate_timeout, bank_core_gate_source) =
             parse_bank_core_gate(std::env::var(vars::BANK_CORE_GATE).ok().as_deref());
 
+        let disable_spv = parse_truthy(std::env::var(vars::DISABLE_SPV).ok().as_deref());
+
         Ok(Self {
             bank_mnemonic,
             network,
@@ -294,6 +358,7 @@ impl Config {
             bank_identity_id,
             bank_core_gate_timeout,
             bank_core_gate_source,
+            disable_spv,
         })
     }
 
@@ -386,7 +451,7 @@ pub(crate) fn parse_bank_core_gate(raw: Option<&str>) -> (Option<Duration>, Bank
 ///
 /// Truthy: `1`, `true`, `yes`, `on` (case-insensitive, trimmed).
 /// Everything else — including empty / unset / unparseable — is `false`.
-/// Used by [`vars::RUN_FAILING_BY_DESIGN`].
+/// Used by [`vars::DISABLE_SPV`] and [`vars::RUN_FAILING_BY_DESIGN`].
 pub(crate) fn parse_truthy(raw: Option<&str>) -> bool {
     let Some(raw) = raw else { return false };
     let trimmed = raw.trim();
@@ -404,8 +469,8 @@ pub(crate) fn parse_truthy(raw: Option<&str>) -> bool {
 /// SPV-gated cases (e.g. CR-001) call this at the top of the test body
 /// and `return` early when it reports `true`, so the operator can opt
 /// out of SPV-only assertions without burning the cold-cache timeout.
-/// The harness itself never reads the flag: `E2eContext::build` always
-/// starts SPV.
+/// The harness reads the same flag in `E2eContext::build` to skip
+/// starting the SPV runtime altogether.
 pub fn spv_disabled_from_env() -> bool {
     is_truthy_env(vars::DISABLE_SPV)
 }
@@ -490,6 +555,27 @@ mod tests {
     }
 
     #[test]
+    fn disable_spv_unset_is_false() {
+        assert!(!parse_truthy(None));
+    }
+
+    #[test]
+    fn disable_spv_truthy_aliases() {
+        for raw in [
+            "1", "true", "TRUE", "True", "yes", "YES", "on", "ON", "  true  ",
+        ] {
+            assert!(parse_truthy(Some(raw)), "{raw}");
+        }
+    }
+
+    #[test]
+    fn disable_spv_falsy_or_unparseable_is_false() {
+        for raw in ["", "  ", "0", "false", "no", "off", "disabled", "abc"] {
+            assert!(!parse_truthy(Some(raw)), "{raw}");
+        }
+    }
+
+    #[test]
     fn bank_core_gate_invalid_falls_back_to_default() {
         let (timeout, src) = parse_bank_core_gate(Some("abc"));
         assert_eq!(timeout, Some(DEFAULT_BANK_CORE_GATE_TIMEOUT));
@@ -498,6 +584,48 @@ mod tests {
         let (timeout, src) = parse_bank_core_gate(Some("-1"));
         assert_eq!(timeout, Some(DEFAULT_BANK_CORE_GATE_TIMEOUT));
         assert_eq!(src, BankCoreGateSource::EnvInvalidFallback);
+    }
+
+    #[test]
+    fn find_parent_repo_env_no_claude_component_returns_dev_null() {
+        let result = find_parent_repo_env(std::path::Path::new("/usr/local/bin"));
+        assert_eq!(result, PathBuf::from("/dev/null"));
+    }
+
+    #[test]
+    fn find_parent_repo_env_with_claude_in_path_returns_candidate() {
+        use std::io::Write;
+
+        let tmp = tempfile::tempdir().expect("tempdir");
+        // Build a fake parent-repo tree under tmp: .claude/worktrees/agent-X/packages/...
+        let worktree_pkg = tmp
+            .path()
+            .join(".claude/worktrees/agent-test/packages/rs-platform-wallet");
+        std::fs::create_dir_all(&worktree_pkg).expect("create dirs");
+
+        // Create the parent-repo tests/.env that the function should find.
+        let parent_tests_env = tmp.path().join("packages/rs-platform-wallet/tests/.env");
+        std::fs::create_dir_all(parent_tests_env.parent().unwrap()).expect("create dirs");
+        std::fs::File::create(&parent_tests_env)
+            .expect("create .env")
+            .write_all(b"TEST=1\n")
+            .expect("write .env");
+
+        let result = find_parent_repo_env(&worktree_pkg);
+        assert_eq!(result, parent_tests_env);
+    }
+
+    #[test]
+    fn find_parent_repo_env_claude_present_but_no_env_file_returns_dev_null() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let worktree_pkg = tmp
+            .path()
+            .join(".claude/worktrees/agent-test/packages/rs-platform-wallet");
+        std::fs::create_dir_all(&worktree_pkg).expect("create dirs");
+        // No .env file created — should fall through to /dev/null.
+
+        let result = find_parent_repo_env(&worktree_pkg);
+        assert_eq!(result, PathBuf::from("/dev/null"));
     }
 
     /// Process-wide env-var flag used to exercise [`is_truthy_env`].

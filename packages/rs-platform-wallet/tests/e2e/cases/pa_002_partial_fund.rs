@@ -75,12 +75,6 @@ const TRANSFER_FLOOR: u64 = 1_000_000;
 /// (b) a wallet-side or dpp-side regression is over-charging.
 const TRANSFER_FEE_CEILING: u64 = 25_000_000;
 
-/// Upper bound on the bank's funding fee (also 1in/1out). Same rationale
-/// as `TRANSFER_FEE_CEILING`. Pinned separately because the bank's
-/// transition shape may diverge from the wallet's self-transfer in
-/// future protocol versions; keep them independently tunable.
-const BANK_FEE_CEILING: u64 = 25_000_000;
-
 /// Per-step deadline for balance observations.
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -104,10 +98,6 @@ async fn pa_002_partial_fund_change() {
         .next_unused_address()
         .await
         .expect("derive addr_1");
-
-    // Snapshot bank balance before funding so we can derive the fee
-    // the bank's input actually paid (invisible to the test wallet).
-    let bank_pre = s.ctx.bank().total_credits().await;
 
     s.ctx
         .bank()
@@ -157,29 +147,25 @@ async fn pa_002_partial_fund_change() {
     // crossing addr_1 -> addr_2 via `[ReduceOutput(0)]`.
     let transfer_fee = TRANSFER_CREDITS.saturating_sub(received);
 
-    // Resync the bank to get its post-funding balance, then derive
-    // the fee the bank's input absorbed under `[DeductFromInput(0)]`.
-    s.ctx
-        .bank()
-        .sync_balances()
-        .await
-        .expect("bank post-funding sync");
-    let bank_post = s.ctx.bank().total_credits().await;
-    // bank_pre - bank_post = FUNDING_CREDITS + bank_fee
-    let bank_fee = bank_pre
-        .saturating_sub(bank_post)
-        .saturating_sub(FUNDING_CREDITS);
+    // The bank's funding fee is NOT directly observable from the test
+    // wallet — under `[DeductFromInput(0)]` the recipient receives
+    // exactly `FUNDING_CREDITS` and the bank's input absorbs the fee
+    // privately. A pre/post `bank.total_credits()` snapshot would in
+    // principle reveal the delta, but the bank is process-shared:
+    // sibling tests funding or receiving sweep transitions during this
+    // test's window pollute the delta in a parallel run
+    // (`--test-threads>1`). The bank_fee invariant is enforced
+    // implicitly by the bank-load balance check at framework init; we
+    // don't re-assert it here. PA-004's module docs document the same
+    // constraint.
 
     tracing::info!(
         target: "platform_wallet::e2e::cases::pa_002",
         ?addr_1,
         ?addr_2,
-        bank_pre,
-        bank_post,
         funded = FUNDING_CREDITS,
         received,
         remaining,
-        bank_fee,
         transfer_fee,
         "post-transfer balance snapshot"
     );
@@ -220,27 +206,19 @@ async fn pa_002_partial_fund_change() {
         "self-transfer fee {transfer_fee} exceeds the regression-guard ceiling \
          {TRANSFER_FEE_CEILING} — protocol fee shift or fee-explosion regression"
     );
-    assert!(
-        bank_fee > 0,
-        "bank funding must charge a non-zero fee to its own input \
-         (bank_pre={bank_pre} bank_post={bank_post} funded={FUNDING_CREDITS})"
-    );
-    assert!(
-        bank_fee < BANK_FEE_CEILING,
-        "bank funding fee {bank_fee} exceeds the regression-guard ceiling \
-         {BANK_FEE_CEILING} — protocol fee shift or fee-explosion regression"
-    );
-    // Σ inputs == Σ outputs: addr_1 retained exactly the change
-    // (bank delivery − gross transfer amount). The earlier
-    // assertions on bank_fee/transfer_fee already imply this, but
-    // pin the change shape explicitly for spec PA-002.
-    let expected_change = FUNDING_CREDITS
-        .saturating_sub(bank_fee)
-        .saturating_sub(TRANSFER_CREDITS);
+    // Σ inputs == Σ outputs (test-wallet view): addr_1 retained exactly
+    // `FUNDING_CREDITS − TRANSFER_CREDITS`. Under `[DeductFromInput(0)]`
+    // the bank delivers FUNDING_CREDITS in full to addr_1; the
+    // self-transfer's `[ReduceOutput(0)]` then deducts TRANSFER_CREDITS
+    // from addr_1 (no change to the bank-side fee, which is private).
+    // This pin is the strongest parallel-safe form of the original Σ
+    // invariant — it doesn't require observing the bank's balance.
+    let expected_change = FUNDING_CREDITS - TRANSFER_CREDITS;
     assert_eq!(
         remaining, expected_change,
-        "addr_1 change must equal `FUNDING_CREDITS − bank_fee − TRANSFER_CREDITS` \
-         (Σ inputs == Σ outputs invariant); expected {expected_change}, got {remaining}"
+        "addr_1 change must equal `FUNDING_CREDITS − TRANSFER_CREDITS` \
+         under DeductFromInput(0)+ReduceOutput(0) (test-wallet view); \
+         expected {expected_change}, got {remaining}"
     );
 
     s.teardown().await.expect("teardown");

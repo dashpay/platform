@@ -41,6 +41,15 @@ async fn tk_009_token_destroy_frozen() {
         .try_init();
 
     let ctx = E2eContext::init().await.expect("e2e ctx init");
+    if !ctx.bank_floor_satisfied() {
+        eprintln!(
+            "Skipping tk_009: bank Platform balance below 50B floor; refill {} to run token suite",
+            ctx.bank()
+                .primary_receive_address()
+                .to_bech32m_string(ctx.bank().network())
+        );
+        return;
+    }
     let two = setup_with_token_and_two_identities(ctx, TK_FUNDING_PER)
         .await
         .expect("two-identity token setup");
@@ -81,7 +90,7 @@ async fn tk_009_token_destroy_frozen() {
             owner.id,
             peer.id,
             TRANSFER_TO_PEER,
-            &owner.high_key,
+            &owner.critical_key,
             owner.signer.as_ref(),
             None,
             None,
@@ -116,7 +125,7 @@ async fn tk_009_token_destroy_frozen() {
             position,
             owner.id,
             peer.id,
-            &owner.high_key,
+            &owner.critical_key,
             owner.signer.as_ref(),
             None,
             None,
@@ -142,7 +151,7 @@ async fn tk_009_token_destroy_frozen() {
             position,
             owner.id,
             peer.id,
-            &owner.high_key,
+            &owner.critical_key,
             owner.signer.as_ref(),
             None,
             None,

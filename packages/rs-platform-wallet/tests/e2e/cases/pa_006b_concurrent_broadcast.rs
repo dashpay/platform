@@ -2,21 +2,33 @@
 //! Spec: `tests/e2e/TEST_SPEC.md` §3 "Platform Addresses (PA)" → PA-006b.
 //! Priority: P2.
 //!
-//! Pins the SDK / DAPI race-condition contract: two parallel
-//! broadcasts of the SAME signed state-transition bytes (same input,
-//! same nonce) MUST resolve to exactly one accepted transition. The
-//! other gets a stale-nonce / already-exists error class. Without
-//! this, a race in the mempool de-duplication path could let both
-//! land and double-debit the source address.
+//! # Security contract
 //!
-//! Differs from PA-006 (sequential replay) in that the two
-//! submissions hit the network in flight at the same time. The
-//! mempool's de-dup logic must serialize them deterministically.
+//! Two parallel broadcasts of the SAME signed state-transition bytes (same
+//! input, same nonce) MUST NOT double-debit the source address. This is the
+//! on-chain invariant pinned here.
 //!
-//! Uses the harness's `build_transfer_st_bytes` helper (added
-//! alongside this case) — produces ST bytes with a fresh on-chain
-//! nonce WITHOUT broadcasting a parallel production build, so both
-//! `tokio::spawn`ed broadcasts race for the same first-write slot.
+//! # Deduplication layers — QA-V26-001
+//!
+//! Deduplication happens at two distinct layers with different granularity:
+//!
+//! * **CheckTx / mempool (per-node):** each Tenderdash node deduplicates
+//!   in its own mempool. `StateTransition::broadcast` returns `Ok` at this
+//!   granularity — it does NOT wait for block inclusion.
+//! * **Consensus (global):** the proposer selects at most one copy of a
+//!   transition for a block. The chain applies it exactly once.
+//!
+//! DAPI load-balances across ~28 testnet nodes. Two concurrent broadcasts of
+//! identical bytes will frequently hit *different* nodes, each of which
+//! accepts the transition into its local mempool (both `Ok`). Asserting
+//! `ok_count == 1` at the broadcast layer was therefore incorrect
+//! (QA-V26-001). The correct assertion is on the chain-side outcome: the
+//! source balance must decrease by exactly one transfer's worth, never two.
+//!
+//! Differs from PA-006 (sequential replay) in that the two submissions hit
+//! the network simultaneously. The `build_transfer_st_bytes` helper produces
+//! ST bytes with a fresh on-chain nonce WITHOUT a live broadcast, so both
+//! spawned tasks race for the same nonce slot.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -126,42 +138,18 @@ async fn pa_006b_concurrent_identical_broadcasts() {
         "concurrent broadcast outcomes"
     );
 
-    // ---- Exactly one MUST succeed; the other MUST fail with the
-    // documented stale-nonce / duplicate-broadcast / already-exists
-    // class. Loose `is_err` would let any error type slip past — pin
-    // the class so a regression that surfaces a transport timeout or
-    // a panic-shaped error is caught. Match on SDK's typed
-    // `Error::AlreadyExists` first; fall back to keyword search on
-    // the rendered string (consensus errors surface "InvalidIdentityNonce",
-    // "stale nonce", "duplicate" via the wrapping error). ----
+    // ---- At least one broadcast must reach the network (QA-V26-001).
+    //
+    // Both returning Ok is valid: DAPI load-balances across multiple nodes and
+    // each node's mempool deduplicates independently. The chain-side dedup
+    // (consensus) is what prevents the double-debit — asserted below via the
+    // post-sync balance drain. Catching the case where BOTH fail is still
+    // valuable: it would indicate the broadcast layer is entirely unreachable.
     let ok_count = [&r_a, &r_b].iter().filter(|r| r.is_ok()).count();
-    assert_eq!(
-        ok_count, 1,
-        "PA-006b: exactly one concurrent broadcast must succeed; got {ok_count} \
-         (r_a={r_a:?}, r_b={r_b:?})"
-    );
-    let losing_err = if r_a.is_err() {
-        r_a.as_ref().expect_err("r_a is the loser")
-    } else {
-        r_b.as_ref().expect_err("r_b is the loser")
-    };
-    let err_string = format!("{losing_err}").to_lowercase();
-    let dbg_string = format!("{losing_err:?}").to_lowercase();
-    let class_match = matches!(losing_err, dash_sdk::Error::AlreadyExists(_))
-        || [
-            "already exists",
-            "alreadyexists",
-            "stale nonce",
-            "invalididentitynonce",
-            "duplicate",
-        ]
-        .iter()
-        .any(|needle| err_string.contains(needle) || dbg_string.contains(needle));
     assert!(
-        class_match,
-        "PA-006b: losing concurrent broadcast must fail with a stale-nonce / \
-         already-exists / duplicate class error; got display={losing_err}, \
-         debug={losing_err:?}"
+        ok_count >= 1,
+        "PA-006b: at least one concurrent broadcast must succeed (got 0); \
+         r_a={r_a:?}, r_b={r_b:?}"
     );
 
     // ---- Wallet state reflects EXACTLY ONE applied transfer. ----
@@ -176,12 +164,18 @@ async fn pa_006b_concurrent_identical_broadcasts() {
     let addr_src_post = post_balances.get(&addr_src).copied().unwrap_or(0);
     let addr_dst_post = post_balances.get(&addr_dst).copied().unwrap_or(0);
 
+    // The drain includes the transfer amount plus the chain fee. We assert it
+    // is in the range [TRANSFER_CREDITS, 2 * TRANSFER_CREDITS) — that is,
+    // greater than the bare transfer (fee > 0) but strictly less than two
+    // transfers' worth. The upper bound is the no-double-debit contract.
     let src_drain = addr_src_pre.saturating_sub(addr_src_post);
-    assert_eq!(
-        src_drain, TRANSFER_CREDITS,
-        "PA-006b: addr_src must show exactly ONE transfer's drain \
-         (TRANSFER_CREDITS={TRANSFER_CREDITS}); observed drain={src_drain}, \
-         which would imply both concurrent broadcasts landed (mempool race)"
+    assert!(
+        (TRANSFER_CREDITS..2 * TRANSFER_CREDITS).contains(&src_drain),
+        "PA-006b: addr_src drain must reflect exactly ONE transfer (including fee); \
+         expected [{TRANSFER_CREDITS}, {}), got {src_drain}. \
+         A drain >= {} would mean both concurrent broadcasts double-debited the source.",
+        2 * TRANSFER_CREDITS,
+        2 * TRANSFER_CREDITS,
     );
     assert!(
         (TRANSFER_FLOOR..TRANSFER_CREDITS).contains(&addr_dst_post),

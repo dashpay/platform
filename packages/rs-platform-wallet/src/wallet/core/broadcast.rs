@@ -194,6 +194,16 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                             "Wallet not found in wallet manager".to_string(),
                         )
                     })?;
+            tracing::debug!(
+                target: "platform_wallet::core::broadcast",
+                txid = %tx.txid(),
+                account_type = ?account_type,
+                account_index,
+                inputs = tx.input.len(),
+                outputs = tx.output.len(),
+                "post-broadcast: dispatching check_core_transaction(Mempool) — \
+                 must mark consumed UTXOs spent on the matching account collection"
+            );
             info.check_core_transaction(&tx, TransactionContext::Mempool, wallet, true, true)
                 .await;
         }

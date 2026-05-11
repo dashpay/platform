@@ -52,6 +52,15 @@ async fn tk_001_token_transfer_between_identities() {
         .try_init();
 
     let ctx = E2eContext::init().await.expect("init e2e context");
+    if !ctx.bank_floor_satisfied() {
+        eprintln!(
+            "Skipping tk_001: bank Platform balance below 50B floor; refill {} to run token suite",
+            ctx.bank()
+                .primary_receive_address()
+                .to_bech32m_string(ctx.bank().network())
+        );
+        return;
+    }
 
     let two = setup_with_token_and_two_identities(ctx, DEFAULT_TK_FUNDING)
         .await
@@ -115,7 +124,7 @@ async fn tk_001_token_transfer_between_identities() {
             owner.id,
             peer.id,
             TRANSFER_AMOUNT,
-            &owner.high_key,
+            &owner.critical_key,
             owner.signer.as_ref(),
             None,
             None,

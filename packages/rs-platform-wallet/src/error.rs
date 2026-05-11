@@ -74,6 +74,20 @@ pub enum PlatformWalletError {
     #[error("Address operation failed: {0}")]
     AddressOperation(String),
 
+    #[error(
+        "gap-limit exceeded: requested {requested} fresh unused addresses but only \
+         {available} are derivable past the current gap-limit boundary \
+         (highest_used={highest_used:?}, highest_generated={highest_generated:?}, \
+         gap_limit={gap_limit})"
+    )]
+    GapLimitExceeded {
+        requested: usize,
+        available: u32,
+        highest_used: Option<u32>,
+        highest_generated: Option<u32>,
+        gap_limit: u32,
+    },
+
     #[error("{}", format_no_selectable_inputs(funded_outputs, *sub_min_count, *sub_min_aggregate, *min_input_amount))]
     NoSelectableInputs {
         /// Funded addresses dropped by the input-equals-output filter.

@@ -16,10 +16,13 @@
 //! helper is worth promoting.
 //!
 //! Editorial note: the owner mint and both transfers sign with
-//! [`RegisteredIdentity::high_key`] (HIGH, KeyID 1), matching
-//! `tokens::mint_to`. Token-action transitions take HIGH (not
-//! CRITICAL); see the Wave 1 editorial note in `tokens.rs` for the
-//! contract-create case where the master_key fallback applies.
+//! [`RegisteredIdentity::critical_key`] (AUTHENTICATION + CRITICAL,
+//! KeyID 3), matching `tokens::mint_to`. `TokenBaseTransition`'s
+//! `IdentitySignedV0::security_level_requirement` returns only
+//! `vec![SecurityLevel::CRITICAL]`; signing with HIGH yields
+//! `InvalidSignaturePublicKeySecurityLevelError` at chain validation.
+//! See the editorial note in `tokens.rs` for the contract-create
+//! case where HIGH is the canonical signing level.
 //!
 //! Gated behind `#[ignore]` so a stock `cargo test -p platform-wallet`
 //! stays green for contributors and CI jobs that lack a funded
@@ -70,6 +73,15 @@ async fn tk_004_token_transfer_round_trip() {
         .try_init();
 
     let ctx = E2eContext::init().await.expect("e2e context init failed");
+    if !ctx.bank_floor_satisfied() {
+        eprintln!(
+            "Skipping tk_004: bank Platform balance below 50B floor; refill {} to run token suite",
+            ctx.bank()
+                .primary_receive_address()
+                .to_bech32m_string(ctx.bank().network())
+        );
+        return;
+    }
 
     // Two identities funded for one contract-create + a handful of
     // token-action broadcasts each. `setup_with_token_and_two_identities`
@@ -332,7 +344,7 @@ async fn transfer_token(
     );
 
     ctx.sdk()
-        .token_transfer(builder, &sender.high_key, sender.signer.as_ref())
+        .token_transfer(builder, &sender.critical_key, sender.signer.as_ref())
         .await
         .map_err(|err| format!("token_transfer {} -> {}: {err}", sender.id, recipient_id))?;
 
@@ -364,6 +376,7 @@ impl CloneForTokenSetupLocal for crate::framework::wallet_factory::RegisteredIde
             master_key: self.master_key.clone(),
             high_key: self.high_key.clone(),
             transfer_key: self.transfer_key.clone(),
+            critical_key: self.critical_key.clone(),
             signer: Arc::clone(&self.signer),
             identity_index: self.identity_index,
             funding: self.funding,

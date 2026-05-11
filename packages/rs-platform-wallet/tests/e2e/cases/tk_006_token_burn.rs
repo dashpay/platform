@@ -48,6 +48,15 @@ async fn tk_006_token_burn() {
         .try_init();
 
     let ctx = E2eContext::init().await.expect("e2e ctx init");
+    if !ctx.bank_floor_satisfied() {
+        eprintln!(
+            "Skipping tk_006: bank Platform balance below 50B floor; refill {} to run token suite",
+            ctx.bank()
+                .primary_receive_address()
+                .to_bech32m_string(ctx.bank().network())
+        );
+        return;
+    }
     let setup = setup_with_token_contract(ctx, DEFAULT_TK_FUNDING)
         .await
         .expect("setup_with_token_contract");
@@ -110,7 +119,11 @@ async fn tk_006_token_burn() {
 
     let _burn_result = ctx
         .sdk()
-        .token_burn(builder, &setup.owner.high_key, setup.owner.signer.as_ref())
+        .token_burn(
+            builder,
+            &setup.owner.critical_key,
+            setup.owner.signer.as_ref(),
+        )
         .await
         .expect("token_burn");
 

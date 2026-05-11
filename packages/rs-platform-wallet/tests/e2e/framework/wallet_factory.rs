@@ -361,7 +361,10 @@ impl TestWallet {
         use dpp::state_transition::address_funds_transfer_transition::methods::AddressFundsTransferTransitionMethodsV0;
         use dpp::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
 
-        let inputs_with_nonce = fetch_inputs_with_nonce(self.wallet.sdk(), &inputs)
+        let platform_version = PlatformVersion::latest();
+        let balanced_inputs = balance_explicit_inputs(&inputs, &outputs, platform_version)?;
+
+        let inputs_with_nonce = fetch_inputs_with_nonce(self.wallet.sdk(), &balanced_inputs)
             .await
             .map_err(|err| FrameworkError::Wallet(format!("nonce fetch: {err}")))?;
         let inputs_with_nonce = nonce_inc(inputs_with_nonce);
@@ -396,14 +399,21 @@ impl TestWallet {
     ///    under-funded address surfaces as a registration failure
     ///    downstream rather than a clear error here.
     /// 2. Derives MASTER + HIGH ECDSA auth keys at DIP-9 slot
-    ///    `(identity_index, 0)` and `(identity_index, 1)`, plus a
-    ///    TRANSFER + CRITICAL ECDSA key at slot
-    ///    `(identity_index, 2)`. The TRANSFER key is required by DPP
+    ///    `(identity_index, 0)` and `(identity_index, 1)`, a
+    ///    TRANSFER + CRITICAL ECDSA key at slot `(identity_index, 2)`,
+    ///    and an AUTHENTICATION + CRITICAL ECDSA key at slot
+    ///    `(identity_index, 3)`. The TRANSFER key is required by DPP
     ///    (`identity_credit_transfer_transition` v0_methods.rs:63-83)
     ///    for credit-transfer transitions; without it id_003 / id_005
-    ///    / id-sweep all fail with "no transfer public key".
+    ///    / id-sweep all fail with "no transfer public key". The
+    ///    CRITICAL auth key is required for token-batch state
+    ///    transitions (mint, burn, transfer, freeze, unfreeze,
+    ///    destroy_frozen, pause/resume, set_price, purchase,
+    ///    update_config) — DPP's `TokenBaseTransition` accepts ONLY
+    ///    `SecurityLevel::CRITICAL` and rejects HIGH with
+    ///    `InvalidSignaturePublicKeySecurityLevelError`.
     /// 3. Builds a placeholder [`Identity`] populated with those
-    ///    three keys.
+    ///    four keys.
     /// 4. Calls
     ///    [`IdentityWallet::register_from_addresses`](platform_wallet::wallet::identity::IdentityWallet::register_from_addresses)
     ///    with the funding map `{addr_1 → funding}`.
@@ -423,14 +433,18 @@ impl TestWallet {
             identity_index,
         )?);
 
-        // Slot 0 → MASTER, slot 1 → HIGH, slot 2 → TRANSFER. Match
-        // the DET / DPNS register_name pattern: MASTER is required
-        // for identity mutation, HIGH covers signing for most state
-        // transitions, and TRANSFER is enforced by DPP for credit
-        // transfers (rs-dpp identity_credit_transfer_transition
-        // v0_methods.rs:63-83 calls
-        // `identity.get_first_public_key_matching(Purpose::TRANSFER, ...)`
-        // and rejects if absent).
+        // Slot 0 → MASTER, slot 1 → HIGH, slot 2 → TRANSFER, slot 3 →
+        // CRITICAL auth. MASTER is required for identity mutation,
+        // HIGH covers `DataContractCreate` (which accepts HIGH or
+        // CRITICAL) and most credit-balance state transitions,
+        // TRANSFER is enforced by DPP for credit transfers (rs-dpp
+        // `identity_credit_transfer_transition/v0/v0_methods.rs:63-83`
+        // calls `identity.get_first_public_key_matching(Purpose::TRANSFER, ...)`
+        // and rejects if absent), and CRITICAL is required for every
+        // token-batch transition (`TokenBaseTransition`'s
+        // `IdentitySignedV0::security_level_requirement` returns only
+        // `SecurityLevel::CRITICAL` — see rs-dpp
+        // `state_transition/batch_transition/batched_transition/token_base_transition/identity_signed/v0/`).
         let master_key = derive_identity_key(
             &self.seed_bytes,
             network,
@@ -455,6 +469,14 @@ impl TestWallet {
             Purpose::TRANSFER,
             SecurityLevel::CRITICAL,
         )?;
+        let critical_key = derive_identity_key(
+            &self.seed_bytes,
+            network,
+            identity_index,
+            3,
+            Purpose::AUTHENTICATION,
+            SecurityLevel::CRITICAL,
+        )?;
 
         // Build the placeholder identity. `id` is recomputed from
         // the input-address map by the SDK at submit time; we set
@@ -464,6 +486,7 @@ impl TestWallet {
         public_keys.insert(master_key.id(), master_key.clone());
         public_keys.insert(high_key.id(), high_key.clone());
         public_keys.insert(transfer_key.id(), transfer_key.clone());
+        public_keys.insert(critical_key.id(), critical_key.clone());
         let placeholder = Identity::V0(IdentityV0 {
             id: Identifier::default(),
             public_keys,
@@ -508,6 +531,7 @@ impl TestWallet {
             master_key,
             high_key,
             transfer_key,
+            critical_key,
             signer: identity_signer,
             identity_index,
             funding,
@@ -645,24 +669,50 @@ fn balance_explicit_inputs(
 /// to observe the new identity on chain.
 const DEFAULT_IDENTITY_VISIBILITY_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Hard cap on the per-test [`SetupGuard::Drop`] sweep (QA-V28-402).
+/// Prior to this, a `std::thread::spawn(...).join()` could block the
+/// dropping (often panicking) test thread indefinitely when the freshly
+/// built sweep runtime contended with the main test runtime for shared
+/// async locks (funding mutex / SPV runtime). At `--test-threads=8`
+/// every thread parked in `futex_wait_queue`, requiring SIGKILL. The
+/// timeout fires inside the sweep's tokio runtime — tokio's mutexes and
+/// the timer driver are futures-aware, so even when the sweep future is
+/// pending on a contended lock the timer still resolves and surfaces
+/// `Elapsed`. The dropped sweep registers as a best-effort failure;
+/// next-run [`super::cleanup::sweep_orphans`] retries.
+const DROP_SWEEP_TIMEOUT: Duration = Duration::from_secs(20);
+
 /// A registered identity returned by
 /// [`TestWallet::register_identity_from_addresses`].
 ///
-/// Bundles the on-chain identifier with the two placeholder keys
-/// (MASTER + HIGH) and the seed-backed identity signer so callers
-/// can drive identity-side state transitions (top-up, transfer,
-/// DPNS register, ...) without re-deriving anything.
+/// Bundles the on-chain identifier with the four placeholder keys
+/// (MASTER + HIGH + TRANSFER + CRITICAL auth) and the seed-backed
+/// identity signer so callers can drive identity-side state
+/// transitions (top-up, transfer, DPNS register, token mint/burn/...)
+/// without re-deriving anything.
 pub struct RegisteredIdentity {
     /// On-chain identity identifier.
     pub id: Identifier,
-    /// MASTER auth key (DPP `KeyID = 0`).
+    /// MASTER auth key (DPP `KeyID = 0`). Required for
+    /// identity-mutation transitions (e.g. `IdentityUpdate`).
     pub master_key: IdentityPublicKey,
-    /// HIGH auth key (DPP `KeyID = 1`).
+    /// HIGH auth key (DPP `KeyID = 1`). Used for `DataContractCreate`
+    /// (CRITICAL or HIGH accepted) and most credit-balance state
+    /// transitions.
     pub high_key: IdentityPublicKey,
     /// TRANSFER + CRITICAL key (DPP `KeyID = 2`). Required by DPP
     /// for `IdentityCreditTransferTransition` — see rs-dpp
     /// `identity_credit_transfer_transition/v0/v0_methods.rs:63-83`.
     pub transfer_key: IdentityPublicKey,
+    /// AUTHENTICATION + CRITICAL key (DPP `KeyID = 3`). Required for
+    /// every token-batch state transition (mint, burn, transfer,
+    /// freeze, unfreeze, destroy_frozen, pause, resume, set_price,
+    /// purchase, update_config). DPP's `TokenBaseTransition`
+    /// `security_level_requirement` returns only
+    /// `SecurityLevel::CRITICAL`; signing with HIGH yields
+    /// `InvalidSignaturePublicKeySecurityLevelError` at chain
+    /// validation.
+    pub critical_key: IdentityPublicKey,
     /// `Arc`-shared signer pre-derived for this identity's DIP-9 slot.
     /// `Arc` lets callers hand the same signer to multiple state-transition
     /// builders without re-creating the key cache.
@@ -707,9 +757,18 @@ pub fn registry_entry_from_seed(seed: &[u8; 64], note: Option<String>) -> Regist
 /// Guard returned by [`super::setup`].
 ///
 /// Tests SHOULD call [`SetupGuard::teardown`] explicitly once
-/// they're done; the [`Drop`] impl is a panic-safety fallback that
-/// logs a warning and relies on the next-startup
-/// `cleanup::sweep_orphans` to recover funds.
+/// they're done. The [`Drop`] impl runs a best-effort async sweep
+/// for guards that were dropped without an explicit teardown — fires
+/// on test success, normal completion, AND panic-unwind (V27-004).
+/// Process abort / SIGKILL is unrecoverable; bootstrap
+/// [`super::cleanup::sweep_orphans`] covers that on the next run.
+///
+/// In addition, every drop atomically decrements
+/// [`E2eContext::active_guards`] (regardless of teardown path); the
+/// guard whose decrement observes a previous value of `1` fires an
+/// end-of-suite [`super::cleanup::sweep_orphans`] pass so any dust /
+/// retained-`Failed` entries surfaced by per-test sweeps get one final
+/// retry without waiting for the next process startup.
 pub struct SetupGuard {
     /// Process-shared context (`&'static` — `E2eContext::init`
     /// returns a singleton).
@@ -717,11 +776,30 @@ pub struct SetupGuard {
     /// Fresh-seed test wallet, already registered for cleanup.
     pub test_wallet: TestWallet,
     /// Set to `true` by a successful [`SetupGuard::teardown`] so
-    /// [`Drop`] skips its warning.
+    /// [`Drop`] skips the per-test sweep (the explicit call already
+    /// did it). The end-of-suite counter decrement still fires.
     pub(crate) teardown_called: bool,
 }
 
 impl SetupGuard {
+    /// Construct a freshly-set-up guard and atomically register it
+    /// with [`E2eContext::active_guards`].
+    ///
+    /// Increment fires AFTER the struct is fully constructed so a
+    /// panic earlier in `setup` (registry insert, wallet build,
+    /// etc.) doesn't leak a counter slot — symmetric with the
+    /// unconditional decrement in [`Drop`]. (V27-004)
+    pub(crate) fn new(ctx: &'static E2eContext, test_wallet: TestWallet) -> Self {
+        let guard = Self {
+            ctx,
+            test_wallet,
+            teardown_called: false,
+        };
+        ctx.active_guards
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        guard
+    }
+
     /// Sweep the test wallet's funds back to the bank and remove
     /// its registry entry.
     ///
@@ -746,12 +824,94 @@ impl SetupGuard {
 
 impl Drop for SetupGuard {
     fn drop(&mut self) {
+        // Per-test sweep — only when the test body didn't run
+        // [`SetupGuard::teardown`] itself (panic-unwind path, or a
+        // test that simply forgot).
+        //
+        // The async sweep is driven by [`drop_sweep_one`], which
+        // spawns a dedicated OS thread + fresh current-thread tokio
+        // runtime. This sidesteps two problems at once: (a) many e2e
+        // tests run under `tokio_shared_rt::test(shared)`'s default
+        // current-thread flavor where `tokio::task::block_in_place`
+        // panics, and (b) rust-lang/rust#100013 prevents the inferred
+        // sweep future from satisfying `Send + 'static` even though
+        // every captured type is `Sync`. See `drop_sweep_one`'s
+        // module-level docs for the full reasoning.
+        //
+        // The bridge is wrapped in [`std::panic::catch_unwind`] with
+        // [`AssertUnwindSafe`]: a panic inside the sweep WHILE we're
+        // already unwinding (e.g. `Drop` fired by a panicking test)
+        // would otherwise abort the process. `AssertUnwindSafe` is
+        // correct here — sweep failures only log; the
+        // partially-modified state (registry, manager) is already
+        // designed to tolerate next-run retry.
         if !self.teardown_called {
-            tracing::warn!(
-                wallet_id = %hex::encode(self.test_wallet.id()),
-                "SetupGuard dropped without explicit teardown — wallet will be \
-                 swept on next test process startup"
+            let wallet_id = self.test_wallet.id();
+            let ctx: &'static E2eContext = self.ctx;
+            let test_wallet_ptr: *const TestWallet = &self.test_wallet;
+            let test_wallet_addr = test_wallet_ptr as usize;
+            let unwind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                drop_sweep_one(ctx, test_wallet_addr)
+            }));
+            match unwind {
+                Ok(Ok(())) => tracing::debug!(
+                    target: "platform_wallet::e2e::wallet_factory",
+                    wallet_id = %hex::encode(wallet_id),
+                    "SetupGuard::Drop: per-test sweep completed"
+                ),
+                Ok(Err(err)) => tracing::warn!(
+                    target: "platform_wallet::e2e::wallet_factory",
+                    wallet_id = %hex::encode(wallet_id),
+                    error = %err,
+                    "SetupGuard::Drop: per-test sweep returned error; registry \
+                     entry retained for next-run sweep_orphans"
+                ),
+                Err(_) => tracing::error!(
+                    target: "platform_wallet::e2e::wallet_factory",
+                    wallet_id = %hex::encode(wallet_id),
+                    "SetupGuard::Drop: per-test sweep panicked; suppressed via \
+                     catch_unwind to avoid double-panic abort. Registry entry \
+                     retained for next-run sweep_orphans"
+                ),
+            }
+        }
+
+        // Counter decrement runs unconditionally — including the
+        // explicit-teardown path — so the last in-flight guard always
+        // fires the end-of-suite sweep. `fetch_sub(AcqRel)` returns
+        // the *previous* value atomically: exactly one thread observes
+        // `prev == 1`, so the end-of-suite sweep fires exactly once.
+        // Same `catch_unwind` wrapping as above — see that block's
+        // rationale.
+        let prev = self
+            .ctx
+            .active_guards
+            .fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+        if prev == 1 {
+            let ctx: &'static E2eContext = self.ctx;
+            tracing::info!(
+                target: "platform_wallet::e2e::wallet_factory",
+                "last SetupGuard dropped — firing end-of-suite sweep_orphans"
             );
+            let unwind =
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop_sweep_orphans(ctx)));
+            match unwind {
+                Ok(Ok(n)) => tracing::info!(
+                    target: "platform_wallet::e2e::wallet_factory",
+                    swept = n,
+                    "end-of-suite sweep_orphans completed"
+                ),
+                Ok(Err(err)) => tracing::warn!(
+                    target: "platform_wallet::e2e::wallet_factory",
+                    error = %err,
+                    "end-of-suite sweep_orphans returned error"
+                ),
+                Err(_) => tracing::error!(
+                    target: "platform_wallet::e2e::wallet_factory",
+                    "end-of-suite sweep_orphans panicked; suppressed via \
+                     catch_unwind to avoid double-panic abort"
+                ),
+            }
         }
     }
 }
@@ -759,6 +919,126 @@ impl Drop for SetupGuard {
 /// `PlatformWalletError` → framework error envelope.
 fn wallet_err(err: PlatformWalletError) -> FrameworkError {
     FrameworkError::Wallet(err.to_string())
+}
+
+/// Synchronous bridge for the [`SetupGuard::Drop`] per-test sweep.
+///
+/// Spawns a dedicated OS thread, builds a fresh current-thread tokio
+/// runtime there, and `block_on`s [`super::cleanup::teardown_one`]
+/// wrapped in [`tokio::time::timeout`] (cap [`DROP_SWEEP_TIMEOUT`]).
+/// Joins the thread before returning so the dropping thread's stack
+/// (which owns `*test_wallet`) outlives the sweep.
+///
+/// Why a hand-rolled thread instead of [`dash_async::block_on`]:
+/// `block_on` requires the future to be `Send + 'static` (so it can
+/// hand it to either `tokio::task::spawn` on a multi-thread runtime
+/// or to a freshly-spawned worker thread). The future returned by
+/// `teardown_one` borrows `&PlatformWalletManager`, `&SimpleSigner`,
+/// etc. through a chain of accessors, and rust-lang/rust#100013
+/// ("implementation of `Send` is not general enough") prevents the
+/// auto-trait analysis from concluding `Send` even though every
+/// underlying type is `Sync`. Driving the future from a fresh
+/// current-thread runtime side-steps the `Send` requirement entirely
+/// — the future never crosses a thread boundary; only the
+/// inputs (a `&'static E2eContext` reference and a `usize` address)
+/// do, and both are trivially `Send`.
+///
+/// Why the timeout (QA-V28-402): the fresh runtime contends with the
+/// main test runtime for shared async locks (funding mutex, SPV
+/// runtime, manager state). When the dropping thread is the panicking
+/// one, the main runtime can't make forward progress on its in-flight
+/// holders while it sits in `join()` — every test thread parks in
+/// `futex_wait_queue`. The timeout aborts the sweep future deterministically
+/// so `join()` always returns, and an unswept wallet falls through to
+/// next-run [`super::cleanup::sweep_orphans`].
+///
+/// `test_wallet_addr` is `&self.test_wallet as *const TestWallet`
+/// round-tripped through `usize` so it can cross the
+/// `std::thread::spawn` `Send + 'static` boundary. Dereferenced
+/// exactly once on the worker thread; the dropping thread is blocked
+/// in `join()` for the duration so the wallet cannot move.
+fn drop_sweep_one(ctx: &'static E2eContext, test_wallet_addr: usize) -> FrameworkResult<()> {
+    let join = std::thread::spawn(move || -> FrameworkResult<()> {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| FrameworkError::Cleanup(format!("drop sweep runtime: {e}")))?;
+        rt.block_on(async move {
+            // SAFETY: the dropping thread that called this helper is
+            // blocked in `join()` for the entire body, so the
+            // `TestWallet` at `test_wallet_addr` (owned by the
+            // dropping `SetupGuard` on that thread's stack) is alive
+            // and stationary throughout.
+            let test_wallet: &TestWallet = unsafe { &*(test_wallet_addr as *const TestWallet) };
+            match tokio::time::timeout(
+                DROP_SWEEP_TIMEOUT,
+                super::cleanup::teardown_one(
+                    ctx.manager(),
+                    ctx.bank(),
+                    ctx.bank_identity(),
+                    ctx.registry(),
+                    test_wallet,
+                ),
+            )
+            .await
+            {
+                Ok(result) => result,
+                Err(_) => Err(FrameworkError::Cleanup(format!(
+                    "drop sweep timed out after {:?}; registry entry retained \
+                     for next-run sweep_orphans",
+                    DROP_SWEEP_TIMEOUT
+                ))),
+            }
+        })
+    });
+    match join.join() {
+        Ok(result) => result,
+        Err(_) => Err(FrameworkError::Cleanup(
+            "drop sweep worker thread panicked".into(),
+        )),
+    }
+}
+
+/// Synchronous bridge for the end-of-suite [`super::cleanup::sweep_orphans`]
+/// pass. Same rationale as [`drop_sweep_one`] — fresh current-thread
+/// runtime on a dedicated OS thread sidesteps rust-lang/rust#100013, and
+/// [`DROP_SWEEP_TIMEOUT`] caps the in-runtime sweep so a contended lock
+/// can never wedge `join()` (QA-V28-402).
+fn drop_sweep_orphans(ctx: &'static E2eContext) -> FrameworkResult<usize> {
+    let join = std::thread::spawn(move || -> FrameworkResult<usize> {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| FrameworkError::Cleanup(format!("drop sweep_orphans runtime: {e}")))?;
+        rt.block_on(async move {
+            let network = ctx.bank().network();
+            match tokio::time::timeout(
+                DROP_SWEEP_TIMEOUT,
+                super::cleanup::sweep_orphans(
+                    ctx.manager(),
+                    ctx.bank(),
+                    ctx.bank_identity(),
+                    ctx.registry(),
+                    network,
+                ),
+            )
+            .await
+            {
+                Ok(result) => result,
+                Err(_) => Err(FrameworkError::Cleanup(format!(
+                    "drop sweep_orphans timed out after {:?}; orphans deferred \
+                     to next-run startup sweep",
+                    DROP_SWEEP_TIMEOUT
+                ))),
+            }
+        })
+    });
+    match join.join() {
+        Ok(result) => result,
+        Err(_) => Err(FrameworkError::Cleanup(
+            "drop sweep_orphans worker thread panicked".into(),
+        )),
+    }
 }
 
 /// Generate the address at DIP-17 slot-0 of (account=0, key_class=0)

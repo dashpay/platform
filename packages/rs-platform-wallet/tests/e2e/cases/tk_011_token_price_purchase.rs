@@ -16,6 +16,7 @@
 //! the credit landing in the owner's account).
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use dash_sdk::platform::tokens::builders::purchase::TokenDirectPurchaseTransitionBuilder;
 use dash_sdk::platform::tokens::builders::set_price::TokenChangeDirectPurchasePriceTransitionBuilder;
@@ -29,11 +30,13 @@ use crate::framework::tokens::{
     mint_to, setup_with_token_and_two_identities, token_balance_of, token_pricing_of,
     DEFAULT_TK_FUNDING, DEFAULT_TOKEN_POSITION,
 };
+use crate::framework::wait::wait_for_token_predicate;
 
 const MINT_AMOUNT: u64 = 1_000;
 const PRICE_PER_TOKEN: u64 = 1_000;
 const PURCHASE_AMOUNT: u64 = 10;
 const TOTAL_AGREED_PRICE: u64 = 10_000;
+const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 #[ignore = "requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access; run with `cargo test -- --ignored`"]
@@ -47,6 +50,15 @@ async fn tk_011_set_price_and_direct_purchase_round_trip() {
         .try_init();
 
     let ctx = E2eContext::init().await.expect("init e2e context");
+    if !ctx.bank_floor_satisfied() {
+        eprintln!(
+            "Skipping tk_011: bank Platform balance below 50B floor; refill {} to run token suite",
+            ctx.bank()
+                .primary_receive_address()
+                .to_bech32m_string(ctx.bank().network())
+        );
+        return;
+    }
     let s = setup_with_token_and_two_identities(ctx, DEFAULT_TK_FUNDING)
         .await
         .expect("token + two identities setup");
@@ -61,13 +73,28 @@ async fn tk_011_set_price_and_direct_purchase_round_trip() {
         .await
         .expect("owner mint to self");
 
-    let owner_token_pre = token_balance_of(ctx, contract_id, position, owner.id)
-        .await
-        .expect("owner token balance pre-purchase");
+    // QA-V28-405 — the mint state-transition lands on whichever DAPI
+    // node served the broadcast; the immediate `token_balance_of` can
+    // round-robin onto a sibling that hasn't applied it yet and read
+    // `0` for a freshly-deployed contract. Gate on a 3-success streak
+    // of `balance == MINT_AMOUNT` before the assertion.
+    let owner_token_pre = wait_for_token_predicate(
+        "owner token_balance_of == MINT_AMOUNT (post-mint)",
+        || async {
+            match token_balance_of(ctx, contract_id, position, owner.id).await {
+                Ok(b) if b == MINT_AMOUNT => Ok(Some(b)),
+                Ok(_) => Ok(None),
+                Err(err) => Err(err),
+            }
+        },
+        3,
+        STEP_TIMEOUT,
+    )
+    .await
+    .expect("owner balance must equal the freshly-minted amount on a fresh contract");
     assert_eq!(
         owner_token_pre, MINT_AMOUNT,
-        "owner balance must equal the freshly-minted amount on a fresh contract \
-         (got {owner_token_pre})"
+        "wait_for_token_predicate returned a non-matching balance ({owner_token_pre})"
     );
 
     let buyer_token_pre = token_balance_of(ctx, contract_id, position, buyer.id)
@@ -102,7 +129,7 @@ async fn tk_011_set_price_and_direct_purchase_round_trip() {
     ctx.sdk()
         .token_set_price_for_direct_purchase(
             set_price_builder,
-            &owner.high_key,
+            &owner.critical_key,
             owner.signer.as_ref(),
         )
         .await
@@ -139,7 +166,7 @@ async fn tk_011_set_price_and_direct_purchase_round_trip() {
         TOTAL_AGREED_PRICE,
     );
     ctx.sdk()
-        .token_purchase(purchase_builder, &buyer.high_key, buyer.signer.as_ref())
+        .token_purchase(purchase_builder, &buyer.critical_key, buyer.signer.as_ref())
         .await
         .expect("purchase transition");
 
@@ -150,16 +177,18 @@ async fn tk_011_set_price_and_direct_purchase_round_trip() {
     let owner_token_post = token_balance_of(ctx, contract_id, position, owner.id)
         .await
         .expect("owner token balance post-purchase");
+    // Direct purchase with keepsDirectPurchaseHistory=true mints new
+    // tokens to the buyer — owner stock is not the source.
     assert_eq!(
-        buyer_token_post, PURCHASE_AMOUNT,
-        "buyer must hold exactly PURCHASE_AMOUNT after the purchase \
-         (got {buyer_token_post})"
+        buyer_token_post,
+        buyer_token_pre + PURCHASE_AMOUNT,
+        "buyer token balance must increase by PURCHASE_AMOUNT after mint-on-purchase \
+         (pre={buyer_token_pre} post={buyer_token_post})"
     );
     assert_eq!(
-        owner_token_post,
-        owner_token_pre - PURCHASE_AMOUNT,
-        "owner stock must decrease by PURCHASE_AMOUNT \
-         (pre={owner_token_pre} post={owner_token_post})"
+        owner_token_post, owner_token_pre,
+        "owner stock must be unchanged — direct purchase mints new tokens, \
+         does not transfer from owner (pre={owner_token_pre} post={owner_token_post})"
     );
 
     let buyer_credits_post = <IdentityBalance as Fetch>::fetch(ctx.sdk(), buyer.id)

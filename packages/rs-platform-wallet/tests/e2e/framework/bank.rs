@@ -10,11 +10,15 @@ use std::collections::BTreeMap;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use bip39::Mnemonic as Bip39Mnemonic;
+use dash_sdk::platform::Fetch;
+use dash_sdk::query_types::AddressInfo;
+use dash_sdk::Sdk;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
+use dpp::prelude::AddressNonce;
 use dpp::util::hash::ripemd160_sha256;
 use dpp::version::PlatformVersion;
 use key_wallet::account::account_type::StandardAccountType;
@@ -29,13 +33,37 @@ use tokio::sync::Mutex as AsyncMutex;
 
 use simple_signer::signer::SimpleSigner;
 
-use super::config::Config;
+use super::config::{Config, EXPECTED_TOKEN_SUITE_FLOOR};
 use super::wallet_factory::{bank_fee_strategy, DEFAULT_ACCOUNT_INDEX_PUB, DEFAULT_KEY_CLASS_PUB};
 use super::{make_platform_signer, FrameworkError, FrameworkResult};
 
 /// In-process funding mutex — serialises concurrent
 /// `bank.fund_address` calls so nonces don't race.
+///
+/// **Scope (QA-V20-001):** held for **broadcast AND chain
+/// observation**. The SDK's `transfer_address_funds` already does
+/// `broadcast_and_wait` and only returns Ok once *some* DAPI node has
+/// the proof, but the very next `fund_address` caller's
+/// `fetch_inputs_with_nonce` round-robins across DAPI replicas — and
+/// a sibling node still lagging the funded block returns the pre-tx
+/// nonce. The next caller then builds `provided_nonce = N` against an
+/// already-incremented chain expected-nonce of `N+1` and the
+/// validator rejects with `AddressInvalidNonceError`. To close the
+/// race, `fund_address` polls
+/// [`super::wait::wait_for_address_nonces_chain_confirmed`] over the
+/// just-spent input addresses **before** dropping the guard, so the
+/// next caller's nonce fetch is far less likely to land on a
+/// still-lagging node. Same shape as the QA-802 / Marvin
+/// chain-confirmed-balance gate, on the nonce axis.
 static FUNDING_MUTEX: AsyncMutex<()> = AsyncMutex::const_new(());
+
+/// Hard ceiling on the post-broadcast chain-confirmation wait inside
+/// [`BankWallet::fund_address`]. Testnet block production is usually
+/// 2–5 s but has been observed at ~75 s under contention (TK-013
+/// QA-V19-001 timeline). 120 s is a safety net: if the chain hasn't
+/// caught up in two minutes, something else is wrong and the test
+/// should fail fast with a clear panic rather than hang the suite.
+const FUNDING_TX_CONFIRMATION_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// Monotonic sequence for [`FUNDING_MUTEX`] entries. Each successful
 /// acquisition of [`FUNDING_MUTEX`] inside [`BankWallet::fund_address`]
@@ -119,6 +147,26 @@ fn record_funding_mutex_entry(entry: FundingMutexHistoryEntry) {
     guard.push_back(entry);
 }
 
+/// Result of an independent `AddressInfo::fetch` cross-check against
+/// the harness's wallet-cached Platform balance. Stored on
+/// [`super::harness::E2eContext`] for test introspection; logged at
+/// `info` (agreement) or `warn` (disagreement) during framework init
+/// (QA-V26-005).
+#[derive(Debug, Clone)]
+pub struct CrossCheckResult {
+    /// Balance read from the harness wallet cache (via
+    /// `wallet.platform().total_credits()`).
+    pub harness_credits: Credits,
+    /// Balance returned by a proof-verified `AddressInfo::fetch`
+    /// against DAPI — independent of the wallet/manager layer.
+    pub independent_credits: Credits,
+    /// The bank's primary Platform address (DIP-17 `m/9'/1'/17'/0'/0'/0`).
+    pub address: PlatformAddress,
+    /// Address nonce from the independent fetch (`None` if the address
+    /// had no on-chain record yet).
+    pub nonce: Option<AddressNonce>,
+}
+
 /// Bank wallet handle wrapping a synced `PlatformWallet` and its
 /// signer. All funding flows through `fund_address` so the
 /// `FUNDING_MUTEX` invariant lives in one place.
@@ -130,6 +178,10 @@ pub struct BankWallet {
     seed_bytes: [u8; 64],
     /// Cached for under-funded panic messages and log breadcrumbs.
     primary_receive_address: PlatformAddress,
+    /// `true` when the bank's Platform balance meets the token-suite
+    /// floor (`EXPECTED_TOKEN_SUITE_FLOOR`). Token tests check this at
+    /// startup and skip cleanly when `false` (QA-V26-003).
+    pub bank_floor_satisfied: bool,
 }
 
 impl std::fmt::Debug for BankWallet {
@@ -142,12 +194,11 @@ impl std::fmt::Debug for BankWallet {
 }
 
 impl BankWallet {
-    /// Load the bank from its BIP-39 mnemonic, sync once, and check
-    /// the balance covers [`Config::min_bank_credits`].
+    /// Load the bank from its BIP-39 mnemonic and sync once.
     ///
-    /// Under-funded balances PANIC with a "top up at <address>"
-    /// pointer; surfacing one clear actionable failure beats burying
-    /// it under per-test "insufficient balance" errors.
+    /// Does NOT enforce the minimum-credit floor — call
+    /// [`Self::assert_floor`] after [`sweep_orphans`] so the sweep can
+    /// recover stranded funds before the floor check fires (QA-V26-007).
     pub async fn load(
         manager: &Arc<PlatformWalletManager<NoPlatformPersistence>>,
         config: &Config,
@@ -205,20 +256,24 @@ impl BankWallet {
         .await?;
 
         let total = wallet.platform().total_credits().await;
-        if total < config.min_bank_credits {
-            // Under-funded bank is a hard operator error; panic with
-            // the README's bank-pre-funding format so operators hit
-            // the same actionable pointer in CI as in the docs.
+        let bank_floor_satisfied = total >= EXPECTED_TOKEN_SUITE_FLOOR;
+        if !bank_floor_satisfied {
             let address_bech32m = primary_receive_address.to_bech32m_string(network);
-            panic!(
-                "Bank wallet under-funded.\n  \
-                 balance : {balance} credits\n  \
-                 required: {required} credits\n  \
-                 top up at: {address_bech32m}\n\
-                 \n\
-                 Send testnet platform credits to the address above, then re-run the tests.",
+            tracing::warn!(
+                target: "platform_wallet::e2e::bank",
                 balance = total,
-                required = config.min_bank_credits,
+                floor = EXPECTED_TOKEN_SUITE_FLOOR,
+                address = %address_bech32m,
+                "Bank balance is below the token-suite floor (~50B credits); \
+                 token tests may exhaust funds mid-run. \
+                 Top up the Platform address to continue token testing."
+            );
+        } else {
+            tracing::info!(
+                target: "platform_wallet::e2e::bank",
+                balance = total,
+                floor = EXPECTED_TOKEN_SUITE_FLOOR,
+                "bank floor satisfied"
             );
         }
 
@@ -226,7 +281,7 @@ impl BankWallet {
             address = %primary_receive_address.to_bech32m_string(network),
             balance = total,
             network = %network,
-            "Bank wallet ready",
+            "Bank wallet loaded",
         );
 
         let signer = make_platform_signer(&seed_bytes, network)?;
@@ -235,7 +290,52 @@ impl BankWallet {
             signer,
             seed_bytes,
             primary_receive_address,
+            bank_floor_satisfied,
         })
+    }
+
+    /// Assert the bank has enough credits to run the test suite.
+    ///
+    /// Panics with an operator-actionable message if the current
+    /// cached balance is below `min_bank_credits`. Call this AFTER
+    /// [`sweep_orphans`] and a fresh [`Self::sync_balances`] so
+    /// recovered orphan funds are counted (QA-V26-007).
+    ///
+    /// `sweep_recovered` is the number of orphan wallets successfully
+    /// swept; `registry_total` and `registry_failed` are used to enrich
+    /// the panic message when the balance is still below floor after
+    /// sweep so operators know whether the sweep had anything to drain.
+    pub async fn assert_floor(
+        &self,
+        config: &Config,
+        sweep_recovered: usize,
+        registry_total: usize,
+        registry_failed: usize,
+    ) {
+        let network = self.wallet.sdk().network;
+        let total = self.wallet.platform().total_credits().await;
+        if total >= config.min_bank_credits {
+            return;
+        }
+        let address_bech32m = self.primary_receive_address.to_bech32m_string(network);
+        if sweep_recovered > 0 || registry_total > 0 {
+            panic!(
+                "Bank under-funded after sweep recovery: have {balance}M credits, need at least {required}M.\n  \
+                 Sweep recovered {sweep_recovered} orphan wallets; registry had {registry_total} entries \
+                 ({registry_failed} Failed, {removed} removed).\n  \
+                 Top up Platform address: {address_bech32m}",
+                balance = total / 1_000_000,
+                required = config.min_bank_credits / 1_000_000,
+                removed = registry_total.saturating_sub(registry_failed),
+            );
+        } else {
+            panic!(
+                "Bank under-funded: have {balance}M credits, need at least {required}M.\n  \
+                 Top up Platform address: {address_bech32m}",
+                balance = total / 1_000_000,
+                required = config.min_bank_credits / 1_000_000,
+            );
+        }
     }
 
     /// 64-byte BIP-39 seed used to derive both the bank's address keys
@@ -268,6 +368,12 @@ impl BankWallet {
     /// Network the bank is operating against.
     pub fn network(&self) -> Network {
         self.wallet.sdk().network
+    }
+
+    /// `true` when the bank's Platform balance met the token-suite
+    /// floor at init time. Token tests skip cleanly when `false`.
+    pub fn bank_floor_satisfied(&self) -> bool {
+        self.bank_floor_satisfied
     }
 
     /// Fund `target` with `credits` from the bank's primary
@@ -307,6 +413,7 @@ impl BankWallet {
 
         let outputs: BTreeMap<PlatformAddress, Credits> =
             std::iter::once((*target, credits)).collect();
+        let broadcast_started = Instant::now();
         let result = self
             .wallet
             .platform()
@@ -321,6 +428,74 @@ impl BankWallet {
             .await
             .map_err(wallet_err);
 
+        // Hold FUNDING_MUTEX until the chain-confirmed nonce is
+        // observable on enough DAPI replicas that the next caller's
+        // `fetch_inputs_with_nonce` won't round-robin onto a lagging
+        // node and collide on the same address nonce
+        // (QA-V20-001 / `AddressInvalidNonceError`). On Ok we collect
+        // the post-tx nonces from the changeset (these come from the
+        // proof returned by `broadcast_and_wait`, so they reflect the
+        // committed state) and gate on the standard
+        // chain-confirmed-streak helper. A timeout panics rather than
+        // returning a typed error: 120 s without chain catch-up is a
+        // platform-level failure, and silently retrying would mask it.
+        let result = match result {
+            Ok(cs) => {
+                let expected_nonces: Vec<(PlatformAddress, AddressNonce)> = cs
+                    .addresses
+                    .iter()
+                    .map(|entry| {
+                        (
+                            PlatformAddress::P2pkh(entry.address.to_bytes()),
+                            entry.funds.nonce,
+                        )
+                    })
+                    .collect();
+                tracing::info!(
+                    target: "platform_wallet::e2e::bank",
+                    addresses = expected_nonces.len(),
+                    seq,
+                    elapsed_ms = broadcast_started.elapsed().as_millis() as u64,
+                    "bank.fund_address: transfer broadcast accepted, waiting for chain confirmation"
+                );
+                let confirm_started = Instant::now();
+                match super::wait::wait_for_address_nonces_chain_confirmed(
+                    self.wallet.sdk(),
+                    &expected_nonces,
+                    FUNDING_TX_CONFIRMATION_TIMEOUT,
+                )
+                .await
+                {
+                    Ok(()) => {
+                        tracing::info!(
+                            target: "platform_wallet::e2e::bank",
+                            addresses = expected_nonces.len(),
+                            seq,
+                            elapsed_ms = confirm_started.elapsed().as_millis() as u64,
+                            "bank.fund_address: chain confirmation observed"
+                        );
+                        Ok(cs)
+                    }
+                    Err(err) => {
+                        tracing::error!(
+                            target: "platform_wallet::e2e::bank",
+                            error = %err,
+                            seq,
+                            elapsed_ms = confirm_started.elapsed().as_millis() as u64,
+                            timeout_secs = FUNDING_TX_CONFIRMATION_TIMEOUT.as_secs(),
+                            "bank.fund_address: chain confirmation timeout"
+                        );
+                        panic!(
+                            "bank.fund_address: chain-confirmed nonce did not catch up within \
+                             {timeout:?} (seq={seq}); platform-level failure, see error log: {err}",
+                            timeout = FUNDING_TX_CONFIRMATION_TIMEOUT,
+                        );
+                    }
+                }
+            }
+            Err(err) => Err(err),
+        };
+
         // Sample exit BEFORE `_guard` drops so the recorded interval
         // is a strict subset of the time the lock was actually held.
         // Errors are still recorded — PA-008c cares about
@@ -332,6 +507,22 @@ impl BankWallet {
             exit_ns,
         });
         result
+    }
+
+    /// Resync balances and refresh the cached `bank_floor_satisfied` flag.
+    ///
+    /// Called after [`sweep_orphans`] so the token-suite floor reflects
+    /// the post-sweep balance rather than the stale load-time snapshot
+    /// (QA-V26-007).
+    pub async fn sync_and_refresh_floor(&mut self) -> FrameworkResult<()> {
+        self.wallet
+            .platform()
+            .sync_balances(None)
+            .await
+            .map_err(wallet_err)?;
+        let total = self.wallet.platform().total_credits().await;
+        self.bank_floor_satisfied = total >= EXPECTED_TOKEN_SUITE_FLOOR;
+        Ok(())
     }
 
     /// Resync the bank's balances.
@@ -349,6 +540,41 @@ impl BankWallet {
     /// view.
     pub async fn total_credits(&self) -> Credits {
         self.wallet.platform().total_credits().await
+    }
+
+    /// Independent balance cross-check via `AddressInfo::fetch` (QA-V26-005).
+    ///
+    /// Reads the bank's Platform-side balance through a single proof-verified
+    /// DAPI round-trip, bypassing the wallet/manager layer entirely. Call this
+    /// AFTER [`Self::sync_balances`] so `harness_credits` reflects a fresh
+    /// wallet-cache snapshot at the same point in time.
+    ///
+    /// Returns a [`CrossCheckResult`] containing both readings. The caller
+    /// is responsible for logging the comparison — see `harness.rs` for the
+    /// `info` / `warn` log sites.
+    pub async fn cross_check_balance(&self, sdk: &Sdk) -> CrossCheckResult {
+        let harness_credits = self.wallet.platform().total_credits().await;
+        let addr = self.primary_receive_address;
+        let fetch_result = AddressInfo::fetch(sdk, addr).await;
+        let (independent_credits, nonce) = match fetch_result {
+            Ok(Some(info)) => (info.balance, Some(info.nonce)),
+            Ok(None) => (0, None),
+            Err(err) => {
+                tracing::warn!(
+                    target: "platform_wallet::e2e::bank",
+                    error = %err,
+                    "bank balance cross-check: AddressInfo::fetch failed; \
+                     independent reading unavailable"
+                );
+                (0, None)
+            }
+        };
+        CrossCheckResult {
+            harness_credits,
+            independent_credits,
+            address: addr,
+            nonce,
+        }
     }
 
     /// Drain and return the [`FUNDING_MUTEX`] critical-section

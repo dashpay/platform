@@ -2311,4 +2311,111 @@ Each question's answer changes the spec; numbered for reference.
 
 ---
 
+## 7. Known Issues
+
+Tracked production bugs and harness gaps that affect test outcomes. Tests are
+`#[ignore]`d in these cases — but **`#[ignore]` does NOT mean "never runs"**:
+
+- `cargo test` (default): ignored tests are **skipped**.
+- `cargo test -- --ignored`: runs **only** ignored tests. PA-004b, PA-009, and PA-010 execute under this flag and fail by design. Any failure mode other than the one documented per-entry below is a regression.
+
+Do not modify production code in this section — these are documentation entries only.
+
+### V27-007 — `PlatformAddressWallet::transfer` ledger pollution (production bug)
+
+**Status**: tracked, fix deferred. Tests `pa_004b_sweep_below_dust_gate_no_broadcast`
+and `pa_009_cleanup_gate_tracks_platform_version_min_input_amount` are `#[ignore]`'d
+with reason `"FAILING — production bug in PlatformAddressWallet::transfer pollutes local ledger with non-owned addresses. See TEST_SPEC.md (V27-007) and TODO comment below."` — they run under `cargo test -- --ignored` and fail by design until the production fix lands.
+
+**Expected failure mode** (PA-004b and PA-009): the `assert_eq!(addr_1_residual, TARGET_RESIDUAL, ...)` assertion panics because `total_credits()` returns the bank's full balance (~40.8 tDASH) instead of the wallet's actual residual (`TARGET_RESIDUAL = 1_000`). Any failure at a different assertion or with a different value is a regression.
+
+**PA-010 — harness gap** (`pa_010_bank_starvation_typed_error`): this test is also `#[ignore]`'d (`"BLOCKED — needs harness refactor: per-test bank instance (Bank::with_test_balance) OR injectable balance override on the singleton, plus a typed BankError::Underfunded variant. See spec status."`) and fails under `cargo test -- --ignored` by design — it always panics with:
+
+```
+PA-010 is BLOCKED on a harness refactor. The bank is a process-shared singleton (E2eContext.bank, OnceCell-backed); building a `with_test_balance(5_000_000)` underfunded instance for ONE test conflicts with that lifecycle. The current under-funded fail mode is also a generic AddressOperation error, not a typed BankError::Underfunded. See TEST_SPEC.md → PA-010 → **Status**.
+```
+
+This is a harness gap (not a production bug); fix path is tracked in the harness roadmap (Wave 4 / `Bank::with_test_balance` constructor). Any panic message other than the one above, or a failure that propagates past the `panic!` call, is a regression.
+
+**Bug**: `PlatformAddressWallet::transfer` at
+`packages/rs-platform-wallet/src/wallet/platform_addresses/transfer.rs:160` calls
+`account.set_address_credit_balance(p2pkh, funds.balance, key_source.as_ref())`
+for every address in the transition (inputs ∪ outputs), with no ownership check.
+When a wallet transfers to an externally-owned address (e.g., bank's primary
+receive address), the externally-owned post-balance gets staged into the source
+wallet's local `address_balances` ledger.
+
+**Symptom**: `wallet.total_credits()` after a transfer-to-external returns the
+external address's balance summed in. PA-004b/PA-009 see the bank's full
+~40.8 tDASH on what should be a dust-residual wallet → assertions panic.
+
+**Same unguarded primitive** also exists at:
+- `packages/rs-platform-wallet/src/wallet/platform_addresses/withdrawal.rs:141`
+- `packages/rs-platform-wallet/src/wallet/platform_addresses/fund_from_asset_lock.rs:129`
+
+Currently safe by caller behavior (those iterate only-owned addresses), but
+identical shape; defense-in-depth fix should apply there too.
+
+**Severity**:
+- **Tests**: HIGH — every `total_credits()` post-transfer-to-external is a false read.
+- **SDK consumers**: HIGH — anyone following `transfer → read total_credits` sees
+  inflated balances and could make wrong spend decisions.
+- **Production sweep path**: MEDIUM-LOW — sweep would build inputs against the
+  external address, but the source wallet can't sign for it; Drive rejects the
+  transition; error swallowed → no on-chain leak.
+
+**Fix sketch** (~6 LOC, do not apply in this PR):
+Filter the loop in `transfer.rs:145-160` so `set_address_credit_balance` is
+called only for addresses the source account owns:
+
+```rust
+for (addr, maybe_info) in address_infos.iter() {
+    let PlatformAddress::P2pkh(hash) = addr else { continue };
+    let p2pkh = PlatformP2PKHAddress::new(*hash);
+    // Skip addresses the source account doesn't own; address_infos covers
+    // inputs ∪ outputs and outputs we don't own must not pollute the local
+    // credit ledger.
+    if !account.address_balances.contains_key(&p2pkh)
+        && account.addresses.address_info_by_p2pkh(&p2pkh).is_none()
+    {
+        continue;
+    }
+    // ... existing set_address_credit_balance + changeset push
+}
+```
+
+Defense-in-depth: apply same filter at `withdrawal.rs:141` and
+`fund_from_asset_lock.rs:129`. Optionally make `set_address_credit_balance`
+itself reject addresses not in the pool (wider change in `key-wallet`).
+
+**Confirmation audit**:
+- Search for any aggregate that sums `total_credits()` across multiple wallets in the manager (production code, dashboards, telemetry) — would double-count.
+- Run e2e suite with the fix in place, verify PA-004b/PA-009 pass.
+- Add debug assertion in `set_address_credit_balance` that the address is in the pool — every callsite that violates would surface.
+
+**Investigated**: Bilby read-only audit, 2026-05-08, agent ID `a2d81349f872a0c6a`.
+
+---
+
+### V28-303 — PA-003 partial fix: deficit closed, contention timeout remains
+
+**Status**: partial. PA-003 (`pa_003_fee_scaling`) is NOT `#[ignore]`'d — it runs in the default `cargo test` cohort. However, it is not reliably green under concurrency.
+
+**What V28-303 did**: bumped `FUNDING_CREDITS` from 400M to 500M and `FUNDING_FLOOR` from 350M to 450M (`cases/pa_003_fee_scaling.rs`). This closed the "available 240,524,980 credits, required 250,000,000" deficit that caused a deterministic failure on the 5-output transfer leg: with 400M pre-fund, `addr_src` retained only ~200M after the 1-out transfer and five marker transfers, giving ~235M of reachable candidate balance against a 250M requirement. With 500M pre-fund, `addr_src` retains ≥300M post-setup and the auto-selector has comfortable headroom.
+
+**What V28-303 did NOT fix**: at `threads=8` (standard CI concurrency), the `wait_for_balance` call on funding confirmation hits the 60s deadline before the balance settles. Current observed failure mode:
+
+```
+wait_for_balance timed out after 60s — addr_src balance never reached FUNDING_FLOOR (450_000_000)
+```
+
+This is a contention symptom: eight concurrent tests competing for DAPI bandwidth and bank-wallet nonce slots delay the funding broadcast confirmation beyond the per-step `STEP_TIMEOUT = Duration::from_secs(60)`.
+
+**Claiming "V28-303 fixes PA-003" or "PA-003 first time passing" is wrong.** V28-303 narrows the failure surface (one deterministic failure mode removed) but does not green-light PA-003 in standard CI.
+
+**Real fix path**: QA-V28-403 — raise `STEP_TIMEOUT` per step (or use a dynamic deadline tied to observed DAPI latency under load). Until that lands, PA-003 may pass in low-concurrency or low-load runs and fail under the standard 8-thread CI tier.
+
+---
+
+
 <sub>Catalogued by Marvin (QA), with the resigned competence of someone who has read every line of this code twice. Edge-case expansion by Trillian, who knows that the difference between "tested" and "tested at the boundary" is the difference between "ships" and "ships back".</sub>

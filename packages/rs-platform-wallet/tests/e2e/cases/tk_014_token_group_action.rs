@@ -50,10 +50,9 @@ use crate::framework::tokens::{
 };
 use crate::framework::wallet_factory::RegisteredIdentity;
 
-/// Per-identity bank funding. Three identities each broadcast at
-/// least one state transition; the floor leaves headroom for the
-/// extra contract-create + mint propose / co-sign legs.
-const FUNDING: dpp::fee::Credits = 1_500_000_000;
+/// Per-identity bank funding. Mirrors `DEFAULT_TK_FUNDING` — sized to
+/// cover the contract-deploy fee floor (~30 B credits) across all three identities.
+const FUNDING: dpp::fee::Credits = 35_000_100_000;
 
 /// Tokens minted via the group-gated proposal. Small enough that any
 /// arithmetic regression (extra credit, dropped co-sign) surfaces as
@@ -73,6 +72,17 @@ async fn tk_014_token_group_action_mint_co_sign() {
         )
         .with_test_writer()
         .try_init();
+
+    {
+        let floor_ctx = E2eContext::init().await.expect("init e2e context");
+        if !floor_ctx.bank_floor_satisfied() {
+            eprintln!(
+                "Skipping tk_014: bank Platform balance below 50B floor; refill {} to run token suite",
+                floor_ctx.bank().primary_receive_address().to_bech32m_string(floor_ctx.bank().network())
+            );
+            return;
+        }
+    }
 
     // Register three identities only — TK-014 needs a group-gated
     // contract that the framework's `setup_with_token_and_three_identities`
@@ -298,7 +308,7 @@ async fn mint_with_group_info(
             .issued_to_identity_id(recipient_id)
             .with_using_group_info(group_info);
     ctx.sdk()
-        .token_mint(builder, &actor.high_key, actor.signer.as_ref())
+        .token_mint(builder, &actor.critical_key, actor.signer.as_ref())
         .await
 }
 
@@ -462,7 +472,7 @@ async fn publish_token_contract_with_groups(
         "description": "TK-014 group-gated mint token (rs-platform-wallet e2e).",
         "marketplaceRules": {
             "$formatVersion": "0",
-            "tradeMode": 1,
+            "tradeMode": "NotTradeable",
             "tradeModeChangeRules": owner_only,
         },
     });
@@ -498,12 +508,30 @@ async fn publish_token_contract_with_groups(
     let confirmed = data_contract
         .put_to_platform_and_wait_for_response(
             ctx.sdk(),
-            owner.master_key.clone(),
+            owner.high_key.clone(),
             owner.signer.as_ref(),
             None,
         )
         .await
         .map_err(|err| FrameworkError::Sdk(format!("put_to_platform: {err}")))?;
 
-    Ok(confirmed.id())
+    let contract_id = confirmed.id();
+
+    crate::framework::wait::wait_for_data_contract_visible(
+        ctx.sdk(),
+        contract_id,
+        std::time::Duration::from_secs(60),
+        2,
+    )
+    .await?;
+
+    // QA-900 — same register-with-trusted-context dance as
+    // `register_token_contract_via_sdk`. TK-014 publishes its
+    // group-gated contract inline (the framework helper doesn't
+    // surface a `groups` injection point), so the registration has
+    // to happen here too — otherwise `mint_with_group_info` lands on
+    // `DriveProofError(UnknownContract)`.
+    crate::framework::tokens::register_contract_with_context_provider(ctx, &confirmed);
+
+    Ok(contract_id)
 }

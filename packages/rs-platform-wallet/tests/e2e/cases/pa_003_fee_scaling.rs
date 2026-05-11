@@ -24,15 +24,30 @@ use std::time::Duration;
 use crate::framework::prelude::*;
 
 /// Gross credits the bank submits when funding the source address.
-/// Bank uses `[ReduceOutput(0)]`; the source receives
-/// `FUNDING_CREDITS − bank_fee`. Sized to cover one 1-output transfer
-/// plus one 5-output transfer (six destinations × `OUTPUT_AMOUNT`)
-/// plus chain-time fees on every transition.
-const FUNDING_CREDITS: u64 = 400_000_000;
+/// Bank uses `[DeductFromInput(0)]`; the source receives
+/// `FUNDING_CREDITS` exactly (the bank's input absorbs its own fee).
+///
+/// Sizing rationale (QA-V28-303): the auto-selector excludes any
+/// address that already appears in the destination set, so the
+/// 5-output transfer can only draw from `addr_src` plus `dest_1`.
+/// Setup drains `addr_src` by `OUTPUT_AMOUNT` (1-out transfer) +
+/// `5 × marker_amount` (the five marker transfers used to advance
+/// the unused-address cursor), leaving roughly
+/// `FUNDING_CREDITS − 50M − 150M = 200M` on `addr_src`. `dest_1`
+/// holds at most `OUTPUT_AMOUNT − fee_1 ≈ 35M`. Together that's
+/// ~235M of candidate input — short of the 250M required by the
+/// 5-output transfer (5 × `OUTPUT_AMOUNT`). With `FUNDING_CREDITS =
+/// 400M` (the prior value) the test failed deterministically with
+/// "available 240,524,980 credits, required 250,000,000". Pre-fund
+/// 500M so post-setup `addr_src` retains ≥300M, yielding ≥335M of
+/// reachable candidate balance with comfortable headroom.
+const FUNDING_CREDITS: u64 = 500_000_000;
 
 /// Lower bound on the source's post-fee balance before the test
-/// proceeds.
-const FUNDING_FLOOR: u64 = 350_000_000;
+/// proceeds. Bank uses `[DeductFromInput(0)]`, so `addr_src` should
+/// receive `FUNDING_CREDITS` exactly; the floor leaves a small
+/// allowance for any reconciliation drift.
+const FUNDING_FLOOR: u64 = 450_000_000;
 
 /// Per-output gross credit amount used in BOTH the 1-output and the
 /// 5-output transfer, so the only variable between the two is the

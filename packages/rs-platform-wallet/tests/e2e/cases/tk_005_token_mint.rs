@@ -12,6 +12,7 @@
 //! - Post-mint supply equals the sum of both mint amounts.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use dash_sdk::platform::tokens::builders::mint::TokenMintTransitionBuilder;
 use dash_sdk::platform::Fetch;
@@ -19,8 +20,19 @@ use dpp::data_contract::DataContract;
 
 use crate::framework::prelude::*;
 use crate::framework::tokens::{
-    mint_to, setup_with_token_contract, token_balance_of, token_supply_of, DEFAULT_TK_FUNDING,
+    mint_to, setup_with_token_contract_with_step_timeout, token_balance_of, token_supply_of,
+    DEFAULT_TK_FUNDING,
 };
+
+/// Per-step propagation budget for TK-005's bootstrap (QA-V28-403). The
+/// default 60 s framework timeout is too tight when this test funds 35 B
+/// credits in a single hop while seven sibling guards compete for the
+/// bank under `--test-threads=8`: the funding broadcast lands but
+/// `wait_for_balance`'s chain-confirmed gate doesn't clear inside the
+/// deadline. 120 s is plenty without softening the global default — the
+/// rest of the suite keeps the tight 60 s budget so a genuinely-stuck
+/// test still surfaces fast.
+const SETUP_STEP_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// First mint amount — owner mints to self with implicit recipient.
 const MINT_AMOUNT_A: u64 = 500_000;
@@ -46,9 +58,19 @@ async fn tk_005_token_mint() {
         .try_init();
 
     let ctx = E2eContext::init().await.expect("e2e ctx init");
-    let setup = setup_with_token_contract(ctx, DEFAULT_TK_FUNDING)
-        .await
-        .expect("setup_with_token_contract");
+    if !ctx.bank_floor_satisfied() {
+        eprintln!(
+            "Skipping tk_005: bank Platform balance below 50B floor; refill {} to run token suite",
+            ctx.bank()
+                .primary_receive_address()
+                .to_bech32m_string(ctx.bank().network())
+        );
+        return;
+    }
+    let setup =
+        setup_with_token_contract_with_step_timeout(ctx, DEFAULT_TK_FUNDING, SETUP_STEP_TIMEOUT)
+            .await
+            .expect("setup_with_token_contract");
 
     let contract_id = setup.contract_id;
     let position = setup.token_position;
@@ -94,7 +116,7 @@ async fn tk_005_token_mint() {
     ctx.sdk()
         .token_mint(
             builder_implicit,
-            &setup.owner.high_key,
+            &setup.owner.critical_key,
             setup.owner.signer.as_ref(),
         )
         .await

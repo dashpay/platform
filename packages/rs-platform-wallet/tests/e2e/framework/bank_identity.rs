@@ -20,9 +20,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use dash_sdk::platform::types::identity::PublicKeyHash;
+use dash_sdk::platform::Fetch;
+use dash_sdk::Sdk;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::hash::IdentityPublicKeyHashMethodsV0;
 use dpp::identity::v0::IdentityV0;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, Purpose, SecurityLevel};
 use dpp::prelude::Identifier;
@@ -165,9 +169,55 @@ pub async fn resolve_bank_identity(
         });
     }
 
-    // Bootstrap path — register a fresh identity from the bank's
-    // primary receive address.
-    let id = bootstrap_register(manager, bank, network).await?;
+    // Bootstrap path — derive the deterministic master auth key first
+    // so we can decide between two cases without re-running derivation:
+    //   (a) the on-chain identity already exists (workdir was wiped
+    //       between runs but Drive still holds the prior registration)
+    //       — fetch by master-key public-key hash and reuse the id;
+    //   (b) genuinely fresh — register from the bank's primary receive
+    //       address.
+    // Without (a) the second run after a wipe panics inside Drive with
+    // `a unique key with that hash already exists` and cascades into
+    // `tx already exists in cache` failures across the whole suite
+    // (QA-100).
+    let bank_seed = bank.seed_bytes();
+    let master_key = derive_identity_key(
+        bank_seed,
+        network,
+        BANK_IDENTITY_INDEX,
+        0,
+        Purpose::AUTHENTICATION,
+        SecurityLevel::MASTER,
+    )?;
+    let high_key = derive_identity_key(
+        bank_seed,
+        network,
+        BANK_IDENTITY_INDEX,
+        1,
+        Purpose::AUTHENTICATION,
+        SecurityLevel::HIGH,
+    )?;
+
+    let id = if let Some(existing_id) =
+        try_recover_on_chain(bank.platform_wallet().sdk(), &master_key).await?
+    {
+        tracing::info!(
+            target: "platform_wallet::e2e::bank_identity",
+            identity_id = %hex::encode(existing_id),
+            path = %path.display(),
+            "bank identity recovered from on-chain state (workdir was wiped, identity already registered)"
+        );
+        existing_id
+    } else {
+        let id = bootstrap_register(manager, bank, network, &master_key, &high_key).await?;
+        tracing::info!(
+            target: "platform_wallet::e2e::bank_identity",
+            identity_id = %hex::encode(id),
+            path = %path.display(),
+            "registered bank identity and persisted to workdir slot"
+        );
+        id
+    };
 
     write_persisted(
         &path,
@@ -178,13 +228,6 @@ pub async fn resolve_bank_identity(
         },
     )?;
 
-    tracing::info!(
-        target: "platform_wallet::e2e::bank_identity",
-        identity_id = %hex::encode(id),
-        path = %path.display(),
-        "registered bank identity and persisted to workdir slot"
-    );
-
     Ok(BankIdentity {
         id,
         signer,
@@ -192,12 +235,44 @@ pub async fn resolve_bank_identity(
     })
 }
 
+/// Try to recover the bank identity by looking it up on chain via the
+/// deterministic master auth key's public-key hash.
+///
+/// Returns `Ok(Some(id))` when Drive already has an identity owning
+/// that unique key (the workdir-wipe-after-prior-run case), `Ok(None)`
+/// when the network confirms no such identity exists. Network errors
+/// surface as [`FrameworkError::Bank`] — we cannot safely fall through
+/// to a fresh registration because the collision-on-register would
+/// then panic the whole suite (QA-100).
+async fn try_recover_on_chain(
+    sdk: &Sdk,
+    master_key: &IdentityPublicKey,
+) -> FrameworkResult<Option<Identifier>> {
+    let pkh = master_key.public_key_hash().map_err(|err| {
+        FrameworkError::Bank(format!(
+            "computing public-key hash for bank-identity recovery: {err}"
+        ))
+    })?;
+    match Identity::fetch(sdk, PublicKeyHash(pkh)).await {
+        Ok(Some(identity)) => Ok(Some(identity.id())),
+        Ok(None) => Ok(None),
+        Err(err) => Err(FrameworkError::Bank(format!(
+            "looking up bank identity by public-key hash {} for recovery: {err}",
+            hex::encode(pkh)
+        ))),
+    }
+}
+
 /// Register a fresh bank identity from the bank's primary receive
-/// address. Caller is responsible for persistence.
+/// address. Caller is responsible for persistence and for having
+/// already verified that the on-chain identity does not yet exist
+/// for `master_key`'s public-key hash (see [`try_recover_on_chain`]).
 async fn bootstrap_register(
     _manager: &Arc<PlatformWalletManager<NoPlatformPersistence>>,
     bank: &BankWallet,
     network: Network,
+    master_key: &IdentityPublicKey,
+    high_key: &IdentityPublicKey,
 ) -> FrameworkResult<Identifier> {
     let bank_wallet = bank.platform_wallet();
     let seed = bank.seed_bytes();
@@ -224,22 +299,6 @@ async fn bootstrap_register(
     }
 
     let identity_signer = SeedBackedIdentitySigner::new(seed, network, BANK_IDENTITY_INDEX)?;
-    let master_key = derive_identity_key(
-        seed,
-        network,
-        BANK_IDENTITY_INDEX,
-        0,
-        Purpose::AUTHENTICATION,
-        SecurityLevel::MASTER,
-    )?;
-    let high_key = derive_identity_key(
-        seed,
-        network,
-        BANK_IDENTITY_INDEX,
-        1,
-        Purpose::AUTHENTICATION,
-        SecurityLevel::HIGH,
-    )?;
 
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     let mut public_keys: BTreeMap<KeyID, IdentityPublicKey> = BTreeMap::new();

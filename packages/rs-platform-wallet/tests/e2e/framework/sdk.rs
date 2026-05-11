@@ -22,22 +22,39 @@ const TRUSTED_CONTEXT_CACHE_SIZE: usize = 256;
 
 /// Build a fresh `Sdk` with [`TrustedHttpContextProvider`] wired
 /// (network-builtin URL, or [`Config::trusted_context_url`] override).
-pub fn build_sdk(config: &Config) -> FrameworkResult<Arc<Sdk>> {
+///
+/// Returns the SDK plus a shared handle to the trusted context
+/// provider so test helpers can call `add_known_contract` /
+/// `add_known_token_configuration` after deploying contracts at
+/// runtime — the SDK's proof verifier reads back through the same
+/// provider, so dynamically-registered contracts must land in its
+/// `known_contracts` cache before any state transition that touches
+/// them is broadcast (otherwise `DriveProofError(UnknownContract)`).
+///
+/// The provider is `Clone` and its inner caches are `Arc<Mutex<...>>`,
+/// so the clone handed to `SdkBuilder::with_context_provider` shares
+/// state with the [`Arc`]-wrapped handle returned alongside the SDK —
+/// any `add_known_*` call on the returned `Arc` is visible to the
+/// SDK's verifier immediately. (QA-900)
+pub fn build_sdk(config: &Config) -> FrameworkResult<(Arc<Sdk>, Arc<TrustedHttpContextProvider>)> {
     let network = config.network;
     let builder = build_sdk_builder(config, network)?;
 
     let cache_size = NonZeroUsize::new(TRUSTED_CONTEXT_CACHE_SIZE).expect("cache size > 0");
     let context_provider = build_trusted_context_provider(network, config, cache_size)?;
 
+    // `TrustedHttpContextProvider: Clone` and its caches are `Arc<Mutex<...>>`,
+    // so the clone passed into the SDK shares the `known_contracts` /
+    // `known_token_configurations` maps with the `Arc` we hand back.
     let sdk = builder
-        .with_context_provider(context_provider)
+        .with_context_provider(context_provider.clone())
         .build()
         .map_err(|e| {
             tracing::error!(target: "platform_wallet::e2e::sdk", "SdkBuilder::build failed: {e}");
             FrameworkError::Sdk(format!("SdkBuilder::build failed: {e}"))
         })?;
 
-    Ok(Arc::new(sdk))
+    Ok((Arc::new(sdk), Arc::new(context_provider)))
 }
 
 /// Build the trusted HTTP context provider, honoring the optional
