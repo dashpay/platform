@@ -14,7 +14,7 @@
 | 2.7 | Tag-shape convention sweep — flatten every `tag = "type", content = "data"` adjacent enum to internal tagging; apply `$`-prefix discriminator rule | ✅ done — 7/7 enums migrated, zero adjacent-tagged enums remain |
 | 2.8 | Broader `#[json_safe_fields]` rollout — apply to V0 transition leaves and base structs | ✅ done — 11 V0 structs + base transitions + DocumentBaseTransition wrapper. Step 9 added 5 more (address transitions). Step 9 follow-up rolled out the BatchTransition family: V0/V1 + 8 sub-transition V0 inners + 7 manual JsonSafeFields impls (3 wrapper enums + 4 sub-types). |
 | 3 | Deprecate non-canonical mechanisms (§3.11 of this doc) | ✅ done — Phase D steps 1–11 complete. DataContract family final shape: canonical (no validation) + `from_*_validated(value, &pv)` (opt-in validation). `_versioned` family deleted. |
-| 4 | wasm-dpp2 migration `_serde!` → `_inner!` | ⬜ not started — re-survey needed (step 9 audit found no actual blockers there) |
+| 4 | wasm-dpp2 migration `_serde!` → `_inner!` | ✅ done within reach; 17 sites remain on `_serde!` and are confirmed infeasible to migrate. See Phase E for the full audit — those 17 are wasm-only DTOs in `state_transitions/proof_result/` with no rs-dpp counterpart. Re-survey 2026-05-11 confirms count is still 17 across `proof_result/{voting,token,shielded,identity}.rs`. |
 | 5 | Delete `wasm-dpp` legacy crate | ⬜ blocked on team decision |
 
 ### All 5 Critical findings resolved
