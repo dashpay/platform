@@ -25,14 +25,14 @@ use crate::framework::prelude::*;
 use crate::framework::wait::wait_for_dpns_name_visible;
 
 /// Pre-fee credits committed to the new identity. KEPT LARGER than
-/// 0.001 tDASH: DPNS name registration runs a preorder + register
-/// document pair, each charged against the identity balance. The
-/// chain-time fee for the two documents is empirically ~50M; sized
-/// at 60M (preorder/register fee + buffer for protocol-version
-/// drift). Below `IDENTITY_SWEEP_FLOOR` (50M is checked post-sweep);
-/// residual on the identity is intentional stranded loss to keep
-/// per-test bank pull modest.
-const REGISTRATION_FUNDING: u64 = 60_000_000;
+/// 0.001 tDASH for two reasons: (a) DPNS name registration runs a
+/// preorder + register document pair which consumes ~50M from the
+/// identity balance, and (b) the post-DPNS residual must stay above
+/// `IDENTITY_SWEEP_FLOOR` (50M, `cleanup.rs`) so the teardown sweep
+/// recovers credits back to the bank identity instead of silently
+/// skipping (Marvin v32 forensics). 150M = 50M DPNS + 100M sweep
+/// margin (50M floor + sweep transfer fee ~6.5M + buffer).
+const REGISTRATION_FUNDING: u64 = 150_000_000;
 
 /// Headroom carried on the funding address residual so the chain-time
 /// `IdentityCreateFromAddresses` dynamic fee (~110.86M observed on

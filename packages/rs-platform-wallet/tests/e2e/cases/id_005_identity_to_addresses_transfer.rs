@@ -21,12 +21,13 @@ use dpp::identity::Identity;
 use crate::framework::prelude::*;
 
 /// Credits committed to the identity. KEPT LARGER than 0.001 tDASH:
-/// the identity then transfers `TRANSFER_AMOUNT` to an address AND
-/// pays the chain-time transfer fee (~5M). Identity must hold
-/// `TRANSFER_AMOUNT + transfer_fee`; sized at 10M so the test
-/// exercises the transfer path. Below `IDENTITY_SWEEP_FLOOR` (50M)
-/// — residual stranded on the identity by design.
-const REGISTRATION_FUNDING: u64 = 10_000_000;
+/// must stay above `IDENTITY_SWEEP_FLOOR` (50M, `cleanup.rs`) so
+/// the teardown sweep recovers credits to the bank identity
+/// instead of silently skipping (Marvin v32 forensics). 100M
+/// provides 50M margin above floor + sweep transfer fee (~6.5M). The
+/// identity transfers `TRANSFER_AMOUNT` to an address and pays the
+/// chain-time transfer fee (~5M) from its balance.
+const REGISTRATION_FUNDING: u64 = 100_000_000;
 
 /// Bank-funded credits. `REGISTRATION_FUNDING + 150M` headroom for
 /// the chain-time IdentityCreateFromAddresses dynamic fee (~125M).

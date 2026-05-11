@@ -19,18 +19,21 @@ use dpp::identity::Identity;
 use crate::framework::prelude::*;
 use crate::framework::wait::wait_for_identity_balance;
 
-// REGISTER_FUNDING_CREDITS: REGISTRATION_FUNDING + 150M headroom for
-// the chain-time IdentityCreateFromAddresses dynamic fee (~125M).
-// Identity is committed exactly REGISTRATION_FUNDING (0.001 tDASH).
-const REGISTRATION_FUNDING: u64 = 100_000;
+// REGISTRATION_FUNDING: KEPT LARGER than 0.001 tDASH so the
+// post-top-up identity balance stays above `IDENTITY_SWEEP_FLOOR`
+// (50M in `cleanup.rs`) — without that, teardown silently skips the
+// sweep and the credits stay stranded (Marvin v32 forensics).
+// 100M sits 50M above the floor with margin for the chain-time
+// sweep transfer fee (~6.5M per `state_transition_min_fees`).
+// REGISTER_FUNDING_CREDITS = REGISTRATION_FUNDING + 150M headroom
+// for the chain-time IdentityCreateFromAddresses fee (~125M).
+const REGISTRATION_FUNDING: u64 = 100_000_000;
 const REGISTER_FUNDING_CREDITS: u64 = REGISTRATION_FUNDING + 150_000_000;
 const REGISTER_FUNDING_FLOOR: u64 = REGISTER_FUNDING_CREDITS;
 
 // TOP_UP_FUNDING_CREDITS: TOP_UP_AMOUNT + 15M headroom — the
-// chain-time IdentityTopUp dynamic fee is ~13M and is paid from the
-// address residual, NOT from the topped-up credits. Cannot drop
-// below ~15M total or the chain rejects with insufficient-address-
-// balance.
+// chain-time IdentityTopUp dynamic fee (~13M) is paid from the
+// address residual, NOT from the topped-up credits.
 const TOP_UP_AMOUNT: Credits = 100_000;
 const TOP_UP_FUNDING_CREDITS: u64 = TOP_UP_AMOUNT + 15_000_000;
 const TOP_UP_FUNDING_FLOOR: u64 = TOP_UP_FUNDING_CREDITS;

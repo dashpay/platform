@@ -29,10 +29,15 @@ const FUNDING_CREDITS: u64 = REGISTRATION_FUNDING + 150_000_000;
 /// Under Option C the address receives exactly FUNDING_CREDITS.
 const FUNDING_FLOOR: u64 = FUNDING_CREDITS;
 
-/// Credits committed to the new identity (0.001 tDASH). The
-/// assertion below pins `on_chain.balance() == REGISTRATION_FUNDING`
-/// exactly, so this is what the identity ends up with.
-const REGISTRATION_FUNDING: u64 = 100_000;
+/// Credits committed to the new identity. KEPT LARGER than
+/// 0.001 tDASH: must stay above `IDENTITY_SWEEP_FLOOR` (50M,
+/// hardcoded in `cleanup.rs`) so the teardown sweep recovers
+/// credits back to the bank identity instead of silently skipping
+/// (~30M IDENTITY_SWEEP_FEE_RESERVE gets paid; the rest comes back).
+/// 100M provides 50M margin above floor + the sweep fee reserve
+/// (sweep transfer fee is ~6.5M per `state_transition_min_fees`).
+/// Up from 50M (which was AT-floor — sweep ran but barely).
+const REGISTRATION_FUNDING: u64 = 100_000_000;
 
 /// Floor the on-chain identity balance must clear post-registration.
 /// `register_identity_from_addresses` already waits on

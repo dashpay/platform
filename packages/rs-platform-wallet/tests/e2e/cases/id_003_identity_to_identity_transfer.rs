@@ -19,12 +19,13 @@ use crate::framework::setup_with_n_identities;
 use crate::framework::wait::wait_for_identity_balance;
 
 /// Credits committed to each identity. KEPT LARGER than 0.001 tDASH:
-/// the sender then pays `TRANSFER_AMOUNT + transfer_fee` from its
-/// balance. Identity must hold ≥ TRANSFER_AMOUNT + chain transfer
-/// fee (~5M). 10M provides comfortable headroom. Below the
-/// `IDENTITY_SWEEP_FLOOR` (50M) so teardown skips — residual is
-/// intentional stranded loss to keep per-test bank pull modest.
-const FUNDING_PER: u64 = 10_000_000;
+/// must stay above `IDENTITY_SWEEP_FLOOR` (50M, `cleanup.rs`) so the
+/// teardown sweep recovers credits to the bank identity instead of
+/// silently skipping (Marvin v32 forensics). 100M provides 50M
+/// margin above floor + sweep transfer fee (~6.5M). The sender then pays
+/// `TRANSFER_AMOUNT + transfer_fee` from its balance; receiver gains
+/// `TRANSFER_AMOUNT`. Both end up ≥ 50M so both sweep.
+const FUNDING_PER: u64 = 100_000_000;
 
 /// Credits sent from `identity_a` to `identity_b` (0.001 tDASH).
 const TRANSFER_AMOUNT: Credits = 100_000;

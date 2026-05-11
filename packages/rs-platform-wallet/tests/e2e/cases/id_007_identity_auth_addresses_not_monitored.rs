@@ -44,13 +44,14 @@ use platform_wallet::wallet::identity::network::derive_ecdsa_identity_auth_keypa
 
 use crate::framework::prelude::*;
 
-/// Funding committed to the registered identity. The scenario
-/// doesn't need a fat identity, only one that exists so the
-/// `identity_index = 0` slot is canonically "in use". 0.001 tDASH
-/// — the identity ends below `IDENTITY_SWEEP_FLOOR` (50M) so the
-/// teardown sweep skips it; the 100k credit residual is intentional
-/// stranded loss in exchange for not pulling 30M from the bank.
-const REGISTRATION_FUNDING: u64 = 100_000;
+/// Funding committed to the registered identity. KEPT LARGER than
+/// 0.001 tDASH: must stay above `IDENTITY_SWEEP_FLOOR` (50M,
+/// `cleanup.rs`) so the teardown sweep recovers credits back to
+/// the bank identity (Marvin v32 forensics — silent leak when an
+/// identity ends below the floor). 100M provides 50M margin above
+/// floor + sweep transfer fee (~6.5M). Up from the prior 30M which
+/// was itself below-floor and leaking ~30M per run invisibly.
+const REGISTRATION_FUNDING: u64 = 100_000_000;
 
 /// Layer-1 send amount targeted at the identity-auth address. ~0.001
 /// DASH; well above the dust threshold so the bank's Core path
