@@ -18,14 +18,16 @@ use dpp::identity::Identity;
 use crate::framework::setup_with_n_identities;
 use crate::framework::wait::wait_for_identity_balance;
 
-/// Credits committed to each identity's registration transition.
-/// `setup_with_n_identities` funds each address with
-/// FUNDING_PER + 20_000_000 so the residual (20M) clears the
-/// chain-time identity_create_fee minimum (~15.5M).
-const FUNDING_PER: u64 = 60_000_000;
+/// Credits committed to each identity. KEPT LARGER than 0.001 tDASH:
+/// the sender then pays `TRANSFER_AMOUNT + transfer_fee` from its
+/// balance. Identity must hold ≥ TRANSFER_AMOUNT + chain transfer
+/// fee (~5M). 10M provides comfortable headroom. Below the
+/// `IDENTITY_SWEEP_FLOOR` (50M) so teardown skips — residual is
+/// intentional stranded loss to keep per-test bank pull modest.
+const FUNDING_PER: u64 = 10_000_000;
 
-/// Credits sent from `identity_a` to `identity_b`.
-const TRANSFER_AMOUNT: Credits = 10_000_000;
+/// Credits sent from `identity_a` to `identity_b` (0.001 tDASH).
+const TRANSFER_AMOUNT: Credits = 100_000;
 
 /// Identity-balance wait floor for the receiver after transfer
 /// (post-registration balance + a fraction of the transfer amount).

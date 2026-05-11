@@ -19,28 +19,21 @@ use dpp::identity::Identity;
 use crate::framework::prelude::*;
 use crate::framework::wait::wait_for_identity_balance;
 
-// Option C (DeductFromInput) delivers exactly the requested credits
-// to the recipient. Floors equal the funded amount.
-//
-// REGISTER: residual = 180M - 50M = 130M, which covers the chain-time
-// IdentityCreateFromAddresses dynamic fee (~110.86M; grew from ~96M
-// after the slot-2 TRANSFER key was added in `173b2e15ce`, +~550 bytes
-// × 27_000 credits/byte ≈ +14.85M) with ~19M buffer.
-const REGISTER_FUNDING_CREDITS: u64 = 180_000_000;
-const REGISTER_FUNDING_FLOOR: u64 = 180_000_000;
-const REGISTRATION_FUNDING: u64 = 50_000_000;
+// REGISTER_FUNDING_CREDITS: REGISTRATION_FUNDING + 150M headroom for
+// the chain-time IdentityCreateFromAddresses dynamic fee (~125M).
+// Identity is committed exactly REGISTRATION_FUNDING (0.001 tDASH).
+const REGISTRATION_FUNDING: u64 = 100_000;
+const REGISTER_FUNDING_CREDITS: u64 = REGISTRATION_FUNDING + 150_000_000;
+const REGISTER_FUNDING_FLOOR: u64 = REGISTER_FUNDING_CREDITS;
 
-// Top-up funding sized so the address holds enough to cover both
-// `TOP_UP_AMOUNT` (committed to the identity) AND the chain-time
-// IdentityTopUp dynamic fee (~13M observed), with a small buffer.
-// Layout: 25M (top-up) + ~13M (fee) + 7M (buffer) = 45M.
-const TOP_UP_FUNDING_CREDITS: u64 = 45_000_000;
-const TOP_UP_FUNDING_FLOOR: u64 = 45_000_000;
-
-/// Credits the top-up commits to the identity. Below
-/// `TOP_UP_FUNDING_CREDITS` so the second address keeps a non-zero
-/// residual that absorbs the chain-time top-up fee.
-const TOP_UP_AMOUNT: Credits = 25_000_000;
+// TOP_UP_FUNDING_CREDITS: TOP_UP_AMOUNT + 15M headroom — the
+// chain-time IdentityTopUp dynamic fee is ~13M and is paid from the
+// address residual, NOT from the topped-up credits. Cannot drop
+// below ~15M total or the chain rejects with insufficient-address-
+// balance.
+const TOP_UP_AMOUNT: Credits = 100_000;
+const TOP_UP_FUNDING_CREDITS: u64 = TOP_UP_AMOUNT + 15_000_000;
+const TOP_UP_FUNDING_FLOOR: u64 = TOP_UP_FUNDING_CREDITS;
 
 // 60 s is too tight under `--test-threads=14` when ID-002 funds
 // 45 000 000 duff on the top-up address while sibling cases broadcast

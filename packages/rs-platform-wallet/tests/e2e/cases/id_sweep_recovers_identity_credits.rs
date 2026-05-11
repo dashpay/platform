@@ -30,10 +30,12 @@ const FUNDING_CREDITS: u64 = 240_000_000;
 /// Under Option C the address receives exactly FUNDING_CREDITS.
 const FUNDING_FLOOR: u64 = 240_000_000;
 
-/// Credits committed to the swept identity. Sized comfortably above
-/// `IDENTITY_SWEEP_FLOOR` (50M, hardcoded in `cleanup.rs`) so the
-/// sweep actually broadcasts a CreditTransfer rather than skipping
-/// the identity as below-floor.
+/// Credits committed to the swept identity. KEPT LARGER than
+/// 0.001 tDASH: this test exists to exercise the sweep path, which
+/// only broadcasts when identity balance ≥ `IDENTITY_SWEEP_FLOOR`
+/// (50M, hardcoded in `cleanup.rs`). 90M sits comfortably above the
+/// floor so the sweep actually fires; the swept credits return to
+/// the bank identity at teardown.
 const REGISTRATION_FUNDING: u64 = 90_000_000;
 
 /// Lower bound on the bank-identity gain we must observe within

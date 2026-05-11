@@ -20,23 +20,21 @@ use dpp::identity::Identity;
 
 use crate::framework::prelude::*;
 
-/// Bank-funded credits the funding address starts with. Option C
-/// (DeductFromInput) delivers exactly this amount. Sized so the
-/// residual after 70M registration (130M) covers the chain-time
-/// IdentityCreateFromAddresses dynamic fee (~110.86M; grew from ~96M
-/// after the slot-2 TRANSFER key was added in `173b2e15ce`, +~550
-/// bytes × 27_000 credits/byte ≈ +14.85M) with ~19M buffer.
-const FUNDING_CREDITS: u64 = 200_000_000;
-/// Under Option C the address receives exactly FUNDING_CREDITS.
-const FUNDING_FLOOR: u64 = 200_000_000;
+/// Credits committed to the identity. KEPT LARGER than 0.001 tDASH:
+/// the identity then transfers `TRANSFER_AMOUNT` to an address AND
+/// pays the chain-time transfer fee (~5M). Identity must hold
+/// `TRANSFER_AMOUNT + transfer_fee`; sized at 10M so the test
+/// exercises the transfer path. Below `IDENTITY_SWEEP_FLOOR` (50M)
+/// — residual stranded on the identity by design.
+const REGISTRATION_FUNDING: u64 = 10_000_000;
 
-/// Credits the registration commits to the identity. Sized so the
-/// post-registration balance comfortably covers the 20M transfer
-/// plus the chain-time transfer fee.
-const REGISTRATION_FUNDING: u64 = 70_000_000;
+/// Bank-funded credits. `REGISTRATION_FUNDING + 150M` headroom for
+/// the chain-time IdentityCreateFromAddresses dynamic fee (~125M).
+const FUNDING_CREDITS: u64 = REGISTRATION_FUNDING + 150_000_000;
+const FUNDING_FLOOR: u64 = FUNDING_CREDITS;
 
 /// Credits transferred from identity to the destination address.
-const TRANSFER_AMOUNT: Credits = 20_000_000;
+const TRANSFER_AMOUNT: Credits = 100_000;
 
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 

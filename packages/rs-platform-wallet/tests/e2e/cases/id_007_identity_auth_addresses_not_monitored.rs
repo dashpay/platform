@@ -44,10 +44,13 @@ use platform_wallet::wallet::identity::network::derive_ecdsa_identity_auth_keypa
 
 use crate::framework::prelude::*;
 
-/// Funding committed to the registered identity. Modest — the
-/// scenario doesn't need a fat identity, only one that exists so the
-/// `identity_index = 0` slot is canonically "in use".
-const REGISTRATION_FUNDING: u64 = 30_000_000;
+/// Funding committed to the registered identity. The scenario
+/// doesn't need a fat identity, only one that exists so the
+/// `identity_index = 0` slot is canonically "in use". 0.001 tDASH
+/// — the identity ends below `IDENTITY_SWEEP_FLOOR` (50M) so the
+/// teardown sweep skips it; the 100k credit residual is intentional
+/// stranded loss in exchange for not pulling 30M from the bank.
+const REGISTRATION_FUNDING: u64 = 100_000;
 
 /// Layer-1 send amount targeted at the identity-auth address. ~0.001
 /// DASH; well above the dust threshold so the bank's Core path

@@ -18,26 +18,21 @@ use dpp::identity::Identity;
 
 use crate::framework::prelude::*;
 
-/// Funds the bank submits to the funding address. Option C
-/// (DeductFromInput) delivers exactly this amount to the address.
-/// Sized so that after the 50M registration, the residual (160M)
-/// covers the chain-time IdentityCreateFromAddresses dynamic fee
-/// (~125.71M, from validate_fees_of_event_v0 PaidFromAddressInputs;
-/// grew from ~110.86M after QA-800 added the CRITICAL key in slot 4,
-/// +~550 bytes × 27_000 credits/byte ≈ +14.85M) with ~30M buffer for
-/// the teardown sweep fee.
-const FUNDING_CREDITS: u64 = 210_000_000;
+/// Funds the bank submits to the funding address. Sized at
+/// `REGISTRATION_FUNDING + 150M`: the 150M residual covers the
+/// chain-time IdentityCreateFromAddresses dynamic fee (~125.71M
+/// observed) with buffer for protocol-version drift. Mirrors the
+/// `setup_with_n_identities` `REGISTRATION_HEADROOM` constant.
+const FUNDING_CREDITS: u64 = REGISTRATION_FUNDING + 150_000_000;
 
 /// Floor the wait_for_balance keys on before registration runs.
-/// Under Option C the address receives exactly FUNDING_CREDITS, so
-/// the floor equals the funded amount.
-const FUNDING_FLOOR: u64 = 210_000_000;
+/// Under Option C the address receives exactly FUNDING_CREDITS.
+const FUNDING_FLOOR: u64 = FUNDING_CREDITS;
 
-/// Credits committed to the new identity in the registration
-/// transition. The address loses this exact amount minus the bank's
-/// fee already deducted upstream and the registration fee deducted
-/// at chain time.
-const REGISTRATION_FUNDING: u64 = 50_000_000;
+/// Credits committed to the new identity (0.001 tDASH). The
+/// assertion below pins `on_chain.balance() == REGISTRATION_FUNDING`
+/// exactly, so this is what the identity ends up with.
+const REGISTRATION_FUNDING: u64 = 100_000;
 
 /// Floor the on-chain identity balance must clear post-registration.
 /// `register_identity_from_addresses` already waits on
