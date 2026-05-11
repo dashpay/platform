@@ -36,10 +36,10 @@ use dash_sdk::platform::tokens::transitions::ClaimResult;
 use dash_sdk::platform::Fetch;
 
 use crate::framework::prelude::*;
-use crate::framework::setup_with_n_identities;
+use crate::framework::setup_with_n_identities_with_step_timeout;
 use crate::framework::tokens::{
     register_token_contract_via_sdk, token_balance_of, DEFAULT_BASE_SUPPLY, DEFAULT_DECIMALS,
-    DEFAULT_MAX_SUPPLY, DEFAULT_TOKEN_POSITION,
+    DEFAULT_MAX_SUPPLY, DEFAULT_TOKEN_POSITION, TK_SETUP_WAIT_TIMEOUT,
 };
 
 /// Per-epoch payout the schedule credits to the owner. Small enough
@@ -80,7 +80,14 @@ async fn tk_013_token_claim_from_pre_programmed_distribution() {
     // can't see the owner id ahead of time, so for the
     // owner-claims-its-own-payout shape (TK-013) we drive the lower
     // primitives directly.
-    let setup_guard = setup_with_n_identities(1, FUNDING)
+    //
+    // QA-V40-001 — under `worker_threads = 12` parallel churn on the
+    // shared bank wallet, the 35 B-credit funding wait routinely needs
+    // more than the 60 s `DEFAULT_SETUP_STEP_TIMEOUT`. Route through the
+    // explicit-budget entry point with `TK_SETUP_WAIT_TIMEOUT` (120 s)
+    // for headroom on cross-replica replication lag — same pattern the
+    // five `setup_with_token_*` helpers and TK-003 already use.
+    let setup_guard = setup_with_n_identities_with_step_timeout(1, FUNDING, TK_SETUP_WAIT_TIMEOUT)
         .await
         .expect("register owner identity");
     let ctx = setup_guard.base.ctx;

@@ -43,10 +43,10 @@ use dash_sdk::platform::transition::put_contract::PutContract;
 use dash_sdk::platform::Fetch;
 
 use crate::framework::prelude::*;
-use crate::framework::setup_with_n_identities;
+use crate::framework::setup_with_n_identities_with_step_timeout;
 use crate::framework::tokens::{
     token_balance_of, token_supply_of, DEFAULT_BASE_SUPPLY, DEFAULT_DECIMALS, DEFAULT_MAX_SUPPLY,
-    DEFAULT_TOKEN_POSITION,
+    DEFAULT_TOKEN_POSITION, TK_SETUP_WAIT_TIMEOUT,
 };
 use crate::framework::wallet_factory::RegisteredIdentity;
 
@@ -89,7 +89,13 @@ async fn tk_014_token_group_action_mint_co_sign() {
     // helper does not yet support, so we skip the helper's
     // permissive-contract deploy and publish the group-gated contract
     // ourselves below. Saves one full contract-create fee per run.
-    let setup_guard = setup_with_n_identities(3, FUNDING)
+    //
+    // QA-V40-001 — three concurrent 35 B-credit funding waits under
+    // `worker_threads = 12` shared-bank churn exceed the 60 s
+    // `DEFAULT_SETUP_STEP_TIMEOUT`. Route through the explicit-budget
+    // entry point with `TK_SETUP_WAIT_TIMEOUT` (120 s), mirroring the
+    // five `setup_with_token_*` helpers and TK-003 / TK-013.
+    let setup_guard = setup_with_n_identities_with_step_timeout(3, FUNDING, TK_SETUP_WAIT_TIMEOUT)
         .await
         .expect("register three identities");
     let ctx = setup_guard.base.ctx;
