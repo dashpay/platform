@@ -83,8 +83,6 @@ struct PruneArgs {
     keep_last: Option<usize>,
     #[arg(long, value_parser = parse_duration)]
     max_age: Option<Duration>,
-    #[arg(long)]
-    dry_run: bool,
 }
 
 #[derive(Debug, Args)]
@@ -328,64 +326,12 @@ fn run_prune(args: &PruneArgs) -> Result<ExitCode, CliError> {
         keep_last_n: args.keep_last,
         max_age: args.max_age,
     };
-    // For `--dry-run`, list candidates without invoking prune's
-    // unlink path. We re-implement the filtering inline (small enough
-    // to duplicate cleanly).
-    if args.dry_run {
-        let candidates = list_backup_dir_for_dry_run(&args.in_dir)
-            .map_err(|e| CliError::runtime(e.to_string()))?;
-        let now = std::time::SystemTime::now();
-        let mut to_remove: Vec<std::path::PathBuf> = Vec::new();
-        for (idx, (ts, path)) in candidates.into_iter().enumerate() {
-            let keep_count = policy.keep_last_n.map(|n| idx < n).unwrap_or(true);
-            let keep_age = policy
-                .max_age
-                .map(|max| now.duration_since(ts).map(|d| d <= max).unwrap_or(true))
-                .unwrap_or(true);
-            if !(keep_count && keep_age) {
-                to_remove.push(path);
-            }
-        }
-        to_remove.sort();
-        for p in &to_remove {
-            println!("{}", p.display());
-        }
-        return Ok(ExitCode::SUCCESS);
-    }
-    // We don't need a persister handle — call the static prune.
     let report = platform_wallet_storage::sqlite::backup::prune(&args.in_dir, policy)
         .map_err(|e| CliError::runtime(e.to_string()))?;
     for p in &report.removed {
         println!("{}", p.display());
     }
     Ok(ExitCode::SUCCESS)
-}
-
-fn list_backup_dir_for_dry_run(
-    dir: &Path,
-) -> std::io::Result<Vec<(std::time::SystemTime, std::path::PathBuf)>> {
-    let mut out = Vec::new();
-    for entry in std::fs::read_dir(dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
-            continue;
-        };
-        let recognised = name.ends_with(".db")
-            && (name.starts_with("wallet-")
-                || name.starts_with("pre-migration-")
-                || name.starts_with("pre-delete-"));
-        if !recognised {
-            continue;
-        }
-        let ts = entry
-            .metadata()
-            .and_then(|m| m.modified())
-            .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-        out.push((ts, path));
-    }
-    out.sort_by(|a, b| b.0.cmp(&a.0));
-    Ok(out)
 }
 
 fn run_inspect(persister: &SqlitePersister, args: InspectArgs) -> Result<ExitCode, CliError> {

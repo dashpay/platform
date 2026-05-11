@@ -10,6 +10,7 @@ notes.
 
 ### Changed
 
+- Dropped `--dry-run` flag from the `prune` CLI subcommand.
 - **Blob encoder swapped to bincode-serde.** Every `_blob` column
   (`core_transactions.record_blob`, `core_instant_locks.islock_blob`,
   `identities.entry_blob`, `identity_keys.public_key_blob`,
