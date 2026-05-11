@@ -140,9 +140,9 @@ pub struct CoreChangeSet {
     /// serde derive upstream and there's no `key-wallet-manager/serde`
     /// feature to activate. Persisters that need the breadcrumb write
     /// it to a dedicated typed table (see
-    /// `rs-platform-wallet-sqlite::schema::core_state`) rather than
-    /// serialising the parent changeset wholesale, so a `skip` here
-    /// has no functional cost.
+    /// `platform_wallet_storage::sqlite::schema::core_state`) rather
+    /// than serialising the parent changeset wholesale, so a `skip`
+    /// here has no functional cost.
     #[cfg_attr(feature = "serde", serde(skip))]
     pub addresses_derived: Vec<key_wallet_manager::DerivedAddress>,
 }
