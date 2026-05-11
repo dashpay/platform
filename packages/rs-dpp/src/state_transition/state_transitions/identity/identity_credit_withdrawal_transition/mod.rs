@@ -460,4 +460,59 @@ pub(crate) mod json_convertible_tests {
             IdentityCreditWithdrawalTransition::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
     }
+
+    // --- Unknown `$formatVersion` error coverage ---
+    //
+    // Representative test for the canonical `serde(tag = "$formatVersion")`
+    // dispatch error path. We assert that an unknown version (`"99"`) is
+    // rejected by both `from_json` and `from_object` paths. This pattern
+    // is unified across every `$formatVersion`-tagged outer enum in the
+    // codebase, so one representative test on a multi-variant enum
+    // (V0 + V1) demonstrates the contract; per-enum coverage would be
+    // mechanical noise.
+    #[test]
+    fn from_json_rejects_unknown_format_version() {
+        use crate::serialization::JsonConvertible;
+        let bad = json!({
+            "$formatVersion": "99",
+            "identityId": Identifier::new([0x33; 32]),
+            "amount": 1u64,
+            "coreFeePerByte": 1u32,
+            "pooling": "never",
+            "outputScript": "AA==",
+            "nonce": 1u64,
+            "userFeeIncrease": 1u16,
+            "signaturePublicKeyId": 1u32,
+            "signature": "AA==",
+        });
+        let result = IdentityCreditWithdrawalTransition::from_json(bad);
+        assert!(
+            result.is_err(),
+            "from_json should reject an unknown $formatVersion (got: {:?})",
+            result.as_ref().map(|_| "Ok")
+        );
+    }
+
+    #[test]
+    fn from_object_rejects_unknown_format_version() {
+        use crate::serialization::ValueConvertible;
+        let bad = platform_value!({
+            "$formatVersion": "99",
+            "identityId": Identifier::new([0x33; 32]),
+            "amount": 1u64,
+            "coreFeePerByte": 1u32,
+            "pooling": 0u8,
+            "outputScript": BinaryData::new(vec![]),
+            "nonce": 1u64,
+            "userFeeIncrease": 1u16,
+            "signaturePublicKeyId": 1u32,
+            "signature": BinaryData::new(vec![]),
+        });
+        let result = IdentityCreditWithdrawalTransition::from_object(bad);
+        assert!(
+            result.is_err(),
+            "from_object should reject an unknown $formatVersion (got: {:?})",
+            result.as_ref().map(|_| "Ok")
+        );
+    }
 }
