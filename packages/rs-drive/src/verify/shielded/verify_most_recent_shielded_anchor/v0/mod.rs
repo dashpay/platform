@@ -65,8 +65,8 @@ impl Drive {
 mod tests {
     use super::*;
     use crate::drive::shielded::paths::{
-        shielded_credit_pool_anchors_by_height_path_vec, SHIELDED_ANCHORS_BY_HEIGHT_KEY,
-        SHIELDED_CREDIT_POOL_KEY,
+        shielded_credit_pool_anchors_by_height_path_vec, MAIN_SHIELDED_CREDIT_POOL_KEY,
+        SHIELDED_ANCHORS_BY_HEIGHT_KEY,
     };
     use crate::drive::RootTree;
     use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
@@ -82,8 +82,8 @@ mod tests {
         platform_version: &PlatformVersion,
     ) {
         let by_height_path = vec![
-            vec![RootTree::AddressBalances as u8],
-            SHIELDED_CREDIT_POOL_KEY.to_vec(),
+            vec![RootTree::ShieldedBalances as u8],
+            MAIN_SHIELDED_CREDIT_POOL_KEY.to_vec(),
             vec![SHIELDED_ANCHORS_BY_HEIGHT_KEY],
         ];
         let op = QualifiedGroveDbOp::insert_only_known_to_not_already_exist_op(

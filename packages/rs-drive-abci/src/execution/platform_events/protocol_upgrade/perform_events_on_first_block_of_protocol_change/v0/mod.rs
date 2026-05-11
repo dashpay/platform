@@ -27,9 +27,14 @@ use drive::drive::saved_block_transactions::{
     ADDRESS_BALANCES_KEY_U8, COMPACTED_ADDRESSES_EXPIRATION_TIME_KEY_U8,
     COMPACTED_ADDRESS_BALANCES_KEY_U8,
 };
+use drive::drive::shielded::nullifiers::queries::{
+    SHIELDED_COMPACTED_NULLIFIERS_KEY_U8, SHIELDED_NULLIFIERS_EXPIRATION_TIME_KEY_U8,
+    SHIELDED_RECENT_NULLIFIERS_KEY_U8,
+};
 use drive::drive::shielded::paths::{
-    shielded_credit_pool_path, SHIELDED_ANCHORS_IN_POOL_KEY, SHIELDED_CREDIT_POOL_KEY_U8,
-    SHIELDED_NOTES_KEY, SHIELDED_NULLIFIERS_KEY, SHIELDED_TOTAL_BALANCE_KEY,
+    shielded_credit_pool_path, MAIN_SHIELDED_CREDIT_POOL_KEY_U8, SHIELDED_ANCHORS_BY_HEIGHT_KEY,
+    SHIELDED_ANCHORS_IN_POOL_KEY, SHIELDED_NOTES_CHUNK_POWER, SHIELDED_NOTES_KEY,
+    SHIELDED_NULLIFIERS_KEY, SHIELDED_TOTAL_BALANCE_KEY,
 };
 use drive::drive::system::misc_path;
 use drive::drive::tokens::paths::{
@@ -607,45 +612,62 @@ impl<C> Platform<C> {
         Ok(())
     }
 
-    /// We introduced in version 12 Shielded Pools
+    /// We introduced in version 12 Shielded Pools.
+    ///
+    /// Mirrors the layout produced by `Drive::create_initial_state_structure_v3`
+    /// for a fresh genesis-12 chain: a top-level `ShieldedBalances` SumTree
+    /// containing the main shielded credit pool at `MAIN_SHIELDED_CREDIT_POOL_KEY`,
+    /// and all eight pool subtrees inserted breadth-first. The recent-nullifiers
+    /// `CountSumTree` is wrapped in `Element::NotSummed` so its sum side does
+    /// not propagate into the pool's "credits" aggregate.
     fn transition_to_version_12(
         &self,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let addresses_path = Drive::addresses_path();
-
-        // Shielded credit pool SumTree under AddressBalances: [AddressBalances] / "s"
+        // Top-level ShieldedBalances SumTree — separate from AddressBalances so
+        // per-pool internal trees cannot contaminate the address-credit
+        // aggregate via sum propagation.
         self.drive.grove_insert_if_not_exists(
-            addresses_path.as_slice().into(),
-            &[SHIELDED_CREDIT_POOL_KEY_U8],
+            SubtreePath::empty(),
+            &[RootTree::ShieldedBalances as u8],
             Element::empty_sum_tree(),
             Some(transaction),
             None,
             &platform_version.drive,
         )?;
 
-        // The four child inserts below are ordered breadth-first to match the
+        // Main shielded credit pool SumTree: [ShieldedBalances] / "M"
+        self.drive.grove_insert_if_not_exists(
+            SubtreePath::from(&[&[RootTree::ShieldedBalances as u8] as &[u8]]),
+            &[MAIN_SHIELDED_CREDIT_POOL_KEY_U8],
+            Element::empty_sum_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
+        // The eight child inserts below are ordered breadth-first to match the
         // intended balanced shape of the parent Merk tree (see the layout
-        // diagram in `drive::drive::shielded::paths`): root first, then both
-        // depth-1 children, then the depth-2 leaf. AVL rebalancing is
+        // diagram in `drive::drive::shielded::paths`). AVL rebalancing is
         // order-sensitive, so this ordering is what actually places
         // `SHIELDED_NOTES_KEY` at the root and the spend-path keys at depth 1.
 
         // Level 0 (root): notes tree (CommitmentTree = CountTree items + Sinsemilla Frontier)
-        // [AddressBalances, "s"] / [128]
+        // [ShieldedBalances, "M"] / [128]
         let shielded_pool_path = shielded_credit_pool_path();
         self.drive.grove_insert_if_not_exists(
             (&shielded_pool_path).into(),
             &[SHIELDED_NOTES_KEY],
-            Element::empty_commitment_tree(11).expect("chunk_power 11 is valid"),
+            Element::empty_commitment_tree(SHIELDED_NOTES_CHUNK_POWER)
+                .expect("SHIELDED_NOTES_CHUNK_POWER is valid"),
             Some(transaction),
             None,
             &platform_version.drive,
         )?;
 
         // Level 1 (left): nullifiers tree (ProvableCountTree)
-        // [AddressBalances, "s"] / [64]
+        // [ShieldedBalances, "M"] / [64]
         self.drive.grove_insert_if_not_exists(
             (&shielded_pool_path).into(),
             &[SHIELDED_NULLIFIERS_KEY],
@@ -656,7 +678,7 @@ impl<C> Platform<C> {
         )?;
 
         // Level 1 (right): anchors tree (NormalTree) — anchor_bytes → block_height_be
-        // [AddressBalances, "s"] / [192]
+        // [ShieldedBalances, "M"] / [192]
         self.drive.grove_insert_if_not_exists(
             (&shielded_pool_path).into(),
             &[SHIELDED_ANCHORS_IN_POOL_KEY],
@@ -667,11 +689,59 @@ impl<C> Platform<C> {
         )?;
 
         // Level 2: total balance SumItem(0)
-        // [AddressBalances, "s"] / [32]
+        // [ShieldedBalances, "M"] / [32]
         self.drive.grove_insert_if_not_exists(
             (&shielded_pool_path).into(),
             &[SHIELDED_TOTAL_BALANCE_KEY],
             Element::new_sum_item(0),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
+        // Level 2: anchors-by-height tree (NormalTree) — block_height_be → anchor_bytes.
+        // [ShieldedBalances, "M"] / [96]
+        self.drive.grove_insert_if_not_exists(
+            (&shielded_pool_path).into(),
+            &[SHIELDED_ANCHORS_BY_HEIGHT_KEY],
+            Element::empty_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
+        // Level 2: per-block recent-nullifiers CountSumTree wrapped in
+        // NotSummed — the sum side (per-block nullifier count) is suppressed
+        // so it does NOT propagate into the enclosing shielded pool SumTree.
+        // [ShieldedBalances, "M"] / [160]
+        self.drive.grove_insert_if_not_exists(
+            (&shielded_pool_path).into(),
+            &[SHIELDED_RECENT_NULLIFIERS_KEY_U8],
+            Element::new_not_summed(Element::empty_count_sum_tree())
+                .expect("count sum tree is a valid NotSummed inner"),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
+        // Level 2: compacted nullifiers NormalTree —
+        // (start_block, end_block) → serialized Vec<[u8;32]>.
+        // [ShieldedBalances, "M"] / [224]
+        self.drive.grove_insert_if_not_exists(
+            (&shielded_pool_path).into(),
+            &[SHIELDED_COMPACTED_NULLIFIERS_KEY_U8],
+            Element::empty_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
+        // Level 3: nullifiers-expiration-time NormalTree (deepest leaf).
+        // [ShieldedBalances, "M"] / [240]
+        self.drive.grove_insert_if_not_exists(
+            (&shielded_pool_path).into(),
+            &[SHIELDED_NULLIFIERS_EXPIRATION_TIME_KEY_U8],
+            Element::empty_tree(),
             Some(transaction),
             None,
             &platform_version.drive,
@@ -823,10 +893,10 @@ mod tests {
             .transition_to_version_12(&transaction, platform_version)
             .expect("expected version 12 transition to succeed");
 
-        // Verify shielded credit pool tree was created under AddressBalances
+        // Verify shielded credit pool tree was created under ShieldedBalances
         let shielded_pool_element = platform.drive.grove.get(
-            SubtreePath::from(&[&[RootTree::AddressBalances as u8] as &[u8]]),
-            &[SHIELDED_CREDIT_POOL_KEY_U8],
+            SubtreePath::from(&[&[RootTree::ShieldedBalances as u8] as &[u8]]),
+            &[MAIN_SHIELDED_CREDIT_POOL_KEY_U8],
             Some(&transaction),
             &platform_version.drive.grove_version,
         );
@@ -920,8 +990,8 @@ mod tests {
 
         // Verify version 12 artifacts: shielded credit pool tree should exist
         let shielded_pool = platform.drive.grove.get(
-            SubtreePath::from(&[&[RootTree::AddressBalances as u8] as &[u8]]),
-            &[SHIELDED_CREDIT_POOL_KEY_U8],
+            SubtreePath::from(&[&[RootTree::ShieldedBalances as u8] as &[u8]]),
+            &[MAIN_SHIELDED_CREDIT_POOL_KEY_U8],
             Some(&transaction),
             &platform_version.drive.grove_version,
         );
