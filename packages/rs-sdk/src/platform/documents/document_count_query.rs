@@ -143,25 +143,6 @@ impl<'a> From<DriveDocumentQuery<'a>> for DocumentCountQuery {
     }
 }
 
-impl<'a> TryFrom<&'a DocumentCountQuery> for DriveDocumentQuery<'a> {
-    type Error = Error;
-
-    fn try_from(query: &'a DocumentCountQuery) -> Result<Self, Self::Error> {
-        // Force the underlying DriveDocumentQuery to be unbounded.
-        //
-        // The proof verifier counts documents from the verified proof, so
-        // any limit set on the wrapped DocumentQuery would silently cap the
-        // returned count. The server-side count handler also runs with no
-        // limit, so the client must match. Without this, callers (e.g. the
-        // WASM SDK, which defaults DocumentQuery.limit to 100) would see
-        // a count truncated at their pagination limit instead of the actual
-        // total.
-        let mut drive_query: DriveDocumentQuery = (&query.document_query).try_into()?;
-        drive_query.limit = None;
-        Ok(drive_query)
-    }
-}
-
 impl TryFrom<DocumentCountQuery> for GetDocumentsCountRequest {
     type Error = Error;
 
@@ -472,16 +453,16 @@ impl FromProof<DocumentCountQuery> for DocumentSplitCounts {
             // Match the prover's defaults for limit and order so
             // the verifier helper can rebuild the same path query
             // internally. The server's prove-distinct dispatcher
-            // applies `request.limit.unwrap_or(default_query_limit)`
-            // and rejects any value above `max_query_limit` — so by
-            // the time we get back proof bytes, the server has used
-            // either the explicit request limit or the shared
-            // default. Mirror that here using
-            // `drive::config::DEFAULT_QUERY_LIMIT`, which both
-            // sides share, so the path query bytes match exactly.
-            // (Operators who override `default_query_limit` away
-            // from the shared constant must require clients to set
-            // `limit` explicitly on prove-distinct queries.)
+            // anchors its fallback to `crate::config::DEFAULT_QUERY_LIMIT`
+            // (the same compile-time constant we read here) and
+            // rejects any value above its `max_query_limit` —
+            // explicitly NOT the operator-tunable
+            // `drive_config.default_query_limit`, since the SDK
+            // can't know an operator's tuned config. With both
+            // sides anchored to the shared constant, the path
+            // query bytes match regardless of operator configuration.
+            // See `drive_dispatcher.rs`'s `RangeDistinctProof` arm
+            // for the symmetric reasoning on the server side.
             //
             // Direction comes from the first `order_by` clause; empty
             // `order_by` defaults to ascending — the server's

@@ -658,6 +658,242 @@ fn test_prove_count_rejects_in_on_neither_last_nor_before_last() {
     );
 }
 
+/// Pins the consensus-sensitive limit-fallback invariant on the
+/// `RangeDistinctProof` dispatch path: when the request's `limit`
+/// is `None`, the dispatcher MUST fall back to the compile-time
+/// `crate::config::DEFAULT_QUERY_LIMIT` constant (which the SDK
+/// verifier also reads), NOT the operator-tunable
+/// `drive_config.default_query_limit`. The two values are often
+/// equal in practice (both default to 100), so a regression where
+/// the dispatcher reads from `drive_config.default_query_limit`
+/// would only manifest on operators who tuned the runtime value
+/// away from the constant — exactly the silent verify-failure
+/// surface the CodeRabbit review flagged.
+///
+/// Mechanism: we build a `DocumentCountRequest` whose
+/// `drive_config.default_query_limit` is **deliberately set to 50**
+/// (≠ `DEFAULT_QUERY_LIMIT` = 100). If the dispatcher uses
+/// `drive_config.default_query_limit`, the proof embeds
+/// `SizedQuery::limit = 50`; if it uses `DEFAULT_QUERY_LIMIT`, the
+/// proof embeds `SizedQuery::limit = 100`. We then reconstruct the
+/// path query with `Some(DEFAULT_QUERY_LIMIT)` — exactly what the
+/// SDK verifier does — and run `GroveDb::verify_query` on the
+/// proof bytes. The merk-root recomputation only succeeds if the
+/// prover signed with `limit = 100`; if it signed with `limit = 50`
+/// the reconstructed path query bytes differ and `verify_query`
+/// returns an error.
+///
+/// Without the fix in `drive_dispatcher.rs`'s `RangeDistinctProof`
+/// arm this test fails. The "fix" is the one-line change from
+/// `request.drive_config.default_query_limit` to
+/// `crate::config::DEFAULT_QUERY_LIMIT` on the prove path — see
+/// the comment in that arm for the symmetric reasoning.
+#[test]
+fn test_range_distinct_proof_uses_compile_time_default_query_limit_not_operator_config() {
+    use crate::config::{DriveConfig, DEFAULT_QUERY_LIMIT};
+    use crate::query::drive_document_count_query::drive_dispatcher::{
+        DocumentCountRequest, DocumentCountResponse,
+    };
+    use dpp::data_contract::DataContractFactory;
+    use dpp::platform_value::platform_value;
+    use grovedb::GroveDb;
+
+    const PROTOCOL_VERSION_V12: u32 = 12;
+    // Set the operator's tuned limit to **1** — a value small
+    // enough that the prover's walk would actually stop after one
+    // element instead of just covering the entire result set
+    // (which 50 or 100 both would, masking any limit-mismatch by
+    // producing identical proof bytes). With 2+ in-range distinct
+    // keys below and `OPERATOR_TUNED_LIMIT = 1`, the prover-side
+    // limit choice **materially affects which elements end up in
+    // the proof** and the merk-root recomputation. If the
+    // dispatcher (incorrectly) used `default_query_limit = 1`,
+    // the prover would emit a 1-key proof; the verifier
+    // (rebuilding with `DEFAULT_QUERY_LIMIT = 100`) would expect
+    // up to 100 keys and the boundary-subtree hash chain would
+    // not match → `verify_query` returns Err.
+    const OPERATOR_TUNED_LIMIT: u16 = 1;
+    assert_ne!(
+        DEFAULT_QUERY_LIMIT, OPERATOR_TUNED_LIMIT,
+        "test invariant: OPERATOR_TUNED_LIMIT must differ from the \
+         compile-time DEFAULT_QUERY_LIMIT for the regression check \
+         to be load-bearing"
+    );
+
+    let drive = setup_drive_with_initial_state_structure(None);
+    let platform_version = PlatformVersion::latest();
+
+    let factory =
+        DataContractFactory::new(PROTOCOL_VERSION_V12).expect("expected to create factory");
+    let document_schema = platform_value!({
+        "type": "object",
+        "properties": {
+            "color": {"type": "string", "position": 0, "maxLength": 32},
+        },
+        "indices": [{
+            "name": "byColor",
+            "properties": [{"color": "asc"}],
+            "countable": "countable",
+            "rangeCountable": true,
+        }],
+        "additionalProperties": false,
+    });
+    let schemas = platform_value!({ "widget": document_schema });
+    let data_contract = factory
+        .create_with_value_config(
+            dpp::tests::utils::generate_random_identifier_struct(),
+            0,
+            schemas,
+            None,
+            None,
+        )
+        .expect("expected to create data contract")
+        .data_contract_owned();
+
+    drive
+        .apply_contract(
+            &data_contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            platform_version,
+        )
+        .expect("apply contract");
+
+    let document_type = data_contract
+        .document_type_for_name("widget")
+        .expect("widget doc type exists");
+
+    // Spread docs across distinct color values so the
+    // RangeDistinctProof path actually carries per-key counts in
+    // its proof (an empty range would still verify trivially and
+    // mask the limit mismatch). 2 red + 3 green + 1 blue; the
+    // `color > "blue"` clause excludes blue, leaving 2 distinct
+    // in-range keys (red, green).
+    for (i, color) in ["red", "red", "green", "green", "green", "blue"]
+        .iter()
+        .enumerate()
+    {
+        let mut properties = StdBTreeMap::new();
+        properties.insert("color".to_string(), Value::Text(color.to_string()));
+        let document: Document = DocumentV0 {
+            id: Identifier::from([(i + 1) as u8; 32]),
+            owner_id: Identifier::from([0u8; 32]),
+            properties,
+            revision: None,
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+        }
+        .into();
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&document, storage_flags)),
+                        owner_id: None,
+                    },
+                    contract: &data_contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to insert widget");
+    }
+
+    // Operator-tuned DriveConfig with `default_query_limit = 50`.
+    // The dispatcher MUST NOT propagate this onto the prove path's
+    // path query.
+    let drive_config = DriveConfig {
+        default_query_limit: OPERATOR_TUNED_LIMIT,
+        ..Default::default()
+    };
+
+    // Range clause `color > "blue"` as wire-shape (Value::Array of
+    // [field, op, value] tuples) — the dispatcher CBOR-decodes
+    // this internally into structured WhereClauses.
+    let raw_where_value = Value::Array(vec![Value::Array(vec![
+        Value::Text("color".to_string()),
+        Value::Text(">".to_string()),
+        Value::Text("blue".to_string()),
+    ])]);
+    let request = DocumentCountRequest {
+        contract: &data_contract,
+        document_type,
+        raw_where_value,
+        raw_order_by_value: Value::Null,
+        return_distinct_counts_in_range: true,
+        limit: None,
+        prove: true,
+        drive_config: &drive_config,
+    };
+
+    let response = drive
+        .execute_document_count_request(request, None, platform_version)
+        .expect("expected dispatcher to succeed on RangeDistinctProof path");
+    let proof_bytes = match response {
+        DocumentCountResponse::Proof(p) => p,
+        other => panic!("expected Proof response, got {:?}", other),
+    };
+    assert!(
+        !proof_bytes.is_empty(),
+        "expected non-empty proof bytes from RangeDistinctProof path"
+    );
+
+    // Reconstruct the path query the way the SDK verifier does:
+    // anchored to the compile-time `DEFAULT_QUERY_LIMIT`, not the
+    // operator's runtime value. If the dispatcher used
+    // `OPERATOR_TUNED_LIMIT` instead, the reconstructed path
+    // query's `SizedQuery::limit` bytes will differ from what the
+    // prover signed and `verify_query` returns Err.
+    let color_gt_blue = WhereClause {
+        field: "color".to_string(),
+        operator: WhereOperator::GreaterThan,
+        value: Value::Text("blue".to_string()),
+    };
+    let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+        document_type.indexes(),
+        std::slice::from_ref(&color_gt_blue),
+    )
+    .expect("byColor range_countable index covers `color > blue`");
+    let count_query = DriveDocumentCountQuery {
+        document_type,
+        contract_id: data_contract.id().to_buffer(),
+        document_type_name: "widget".to_string(),
+        index,
+        where_clauses: vec![color_gt_blue],
+    };
+    let verifier_path_query = count_query
+        .distinct_count_path_query(Some(DEFAULT_QUERY_LIMIT), true, platform_version)
+        .expect("path query builder should accept the same shape the prover used");
+
+    let (_root_hash, _elements) = GroveDb::verify_query(
+        &proof_bytes,
+        &verifier_path_query,
+        &platform_version.drive.grove_version,
+    )
+    .expect(
+        "expected proof to verify against a path query rebuilt with \
+         DEFAULT_QUERY_LIMIT; a failure here means the dispatcher signed \
+         the proof with the operator-tunable default_query_limit instead — \
+         a consensus-adjacent silent-verify-failure regression",
+    );
+}
+
 /// `execute_document_count_per_in_value_no_proof` runs one GroveDB walk
 /// per `In` value, so its iteration cost is proportional to the array's
 /// length rather than the configured `max_query_limit`. That makes the

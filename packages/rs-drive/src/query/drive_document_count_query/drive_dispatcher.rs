@@ -781,13 +781,31 @@ impl Drive {
                 // path query (so the merk-root recomputation
                 // matches). Silent clamping would invisibly break
                 // verification on any request with `limit >
-                // max_query_limit`. Default to `default_query_limit`
-                // when `None` (the SDK and server share the same
-                // `DEFAULT_QUERY_LIMIT` constant in
-                // `drive::config`).
+                // max_query_limit`.
+                //
+                // **Limit fallback uses `crate::config::DEFAULT_QUERY_LIMIT`
+                // (the compile-time constant), NOT
+                // `drive_config.default_query_limit` (the
+                // operator-tunable runtime value).** The SDK verifier
+                // can't know an operator's tuned config, so any
+                // operator who tuned `default_query_limit` away from
+                // `DEFAULT_QUERY_LIMIT` would produce proofs whose
+                // `SizedQuery::limit` byte-differs from the
+                // verifier's reconstruction — silent verify failure
+                // on a consensus-adjacent path. Anchoring the
+                // fallback to the shared compile-time constant
+                // removes that operator-tunable degree of freedom
+                // from proof bytes entirely; the runtime
+                // `default_query_limit` continues to govern no-proof
+                // dispatch paths where there's no verifier to match.
+                // `max_query_limit` still gates the request as a
+                // DoS-protection knob (proofs never cross the
+                // operator-set ceiling, but the ceiling itself doesn't
+                // affect proof bytes — it only decides whether the
+                // request gets served).
                 let effective_limit = request
                     .limit
-                    .unwrap_or(request.drive_config.default_query_limit as u32);
+                    .unwrap_or(crate::config::DEFAULT_QUERY_LIMIT as u32);
                 if effective_limit > request.drive_config.max_query_limit as u32 {
                     return Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(
                         "limit {} exceeds max_query_limit {} on the prove + \

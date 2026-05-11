@@ -220,11 +220,13 @@ async fn parse_documents_query(
 /// [`DocumentQuery`] is built from the same `DocumentsQueryInput`
 /// (data-contract / document-type / where-clauses / orderBy), and the
 /// count-specific knobs (`return_distinct_counts_in_range`, `limit`)
-/// are forwarded to the outer `DocumentCountQuery` rather than the
-/// inner `DocumentQuery`. The SDK-side `TryFrom<&DocumentCountQuery>
-/// for DriveDocumentQuery` forcibly nulls the inner limit anyway (so
-/// the proof verifier counts every matched doc, not a paginated
-/// slice), making the outer-field forwarding load-bearing.
+/// are forwarded to the outer `DocumentCountQuery`. The inner
+/// `DocumentQuery.limit` is unused on the count path — count queries
+/// route through `FromProof<DocumentCountQuery>` straight to the
+/// count-tree / aggregate / distinct verifiers, never through
+/// `DriveDocumentQuery`'s document-materialization path — so the
+/// outer-field forwarding is the only thing that controls split-mode
+/// entry pagination.
 ///
 /// `orderBy` clauses ARE consumed by `build_documents_query` and
 /// stored on `document_query.order_by_clauses`, which the SDK request
