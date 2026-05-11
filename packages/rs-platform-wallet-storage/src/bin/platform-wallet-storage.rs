@@ -387,22 +387,21 @@ fn run_inspect(persister: &SqlitePersister, args: InspectArgs) -> Result<ExitCod
             }
         }
         InspectFormat::Json => {
-            let mut first = true;
-            print!("[");
-            for (table, n) in counts {
-                if !first {
-                    print!(",");
-                }
-                first = false;
-                match &wallet_id {
-                    None => print!("{{\"table\":\"{table}\",\"count\":{n}}}"),
-                    Some(id) => print!(
-                        "{{\"table\":\"{table}\",\"count\":{n},\"wallet_id\":\"{}\"}}",
-                        hex::encode(id)
-                    ),
-                }
-            }
-            println!("]");
+            let entries: Vec<serde_json::Value> = counts
+                .into_iter()
+                .map(|(table, n)| match &wallet_id {
+                    None => serde_json::json!({ "table": table, "count": n }),
+                    Some(id) => serde_json::json!({
+                        "table": table,
+                        "count": n,
+                        "wallet_id": hex::encode(id),
+                    }),
+                })
+                .collect();
+            println!(
+                "{}",
+                serde_json::to_string(&entries).map_err(|e| CliError::runtime(e.to_string()))?
+            );
         }
     }
     Ok(ExitCode::SUCCESS)

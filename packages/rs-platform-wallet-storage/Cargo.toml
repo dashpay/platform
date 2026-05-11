@@ -61,6 +61,7 @@ sha2 = { version = "0.10", optional = true }
 # CLI deps (gated by the `cli` feature)
 clap = { version = "4", features = ["derive"], optional = true }
 humantime = { version = "2", optional = true }
+serde_json = { version = "1", optional = true }
 tracing-subscriber = { version = "0.3", features = [
     "env-filter",
 ], optional = true }
@@ -93,7 +94,13 @@ sqlite = [
 ]
 # Maintenance CLI binary. Requires `sqlite` because the only subcommands
 # in scope today operate on the SQLite persister.
-cli = ["sqlite", "dep:clap", "dep:humantime", "dep:tracing-subscriber"]
+cli = [
+    "sqlite",
+    "dep:clap",
+    "dep:humantime",
+    "dep:serde_json",
+    "dep:tracing-subscriber",
+]
 # Future `SecretStore` submodule. Slot is reserved; the module is not
 # implemented in this build — enabling the feature today is a no-op
 # beyond a `// pub mod secrets;` marker in `src/lib.rs`.

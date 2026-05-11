@@ -14,7 +14,7 @@ pub fn apply_registrations(
     entries: &[AccountRegistrationEntry],
 ) -> Result<(), WalletStorageError> {
     for entry in entries {
-        let account_type = format!("{:?}", entry.account_type);
+        let account_type = account_type_db_label(&entry.account_type);
         let account_index = account_index(&entry.account_type);
         // `account_xpub_bytes` carries the bincode-serde encoded
         // `AccountRegistrationEntry` (xpub + account_type). The
@@ -44,9 +44,9 @@ pub fn apply_pools(
     entries: &[AccountAddressPoolEntry],
 ) -> Result<(), WalletStorageError> {
     for entry in entries {
-        let account_type = format!("{:?}", entry.account_type);
+        let account_type = account_type_db_label(&entry.account_type);
         let account_index = account_index(&entry.account_type);
-        let pool_type = format!("{:?}", entry.pool_type);
+        let pool_type = pool_type_db_label(&entry.pool_type);
         let payload = blob::encode(entry)?;
         tx.execute(
             "INSERT INTO account_address_pools \
@@ -64,6 +64,51 @@ pub fn apply_pools(
         )?;
     }
     Ok(())
+}
+
+/// Stable database label for an `AccountType` variant.
+///
+/// Used for the `account_type` text column on `account_registrations`,
+/// `account_address_pools`, and `core_derived_addresses`. The
+/// `Debug` impl on `AccountType` is NOT a stable serialisation
+/// format; this match is the contract. Variants identical in
+/// label are distinguished by the companion `account_index` column.
+///
+/// Adding a variant to upstream `AccountType` makes this match
+/// exhaustive-check fail at compile time, forcing an explicit label
+/// decision rather than silent garbage.
+pub(crate) fn account_type_db_label(at: &key_wallet::account::AccountType) -> &'static str {
+    use key_wallet::account::AccountType;
+    match at {
+        AccountType::Standard { .. } => "standard",
+        AccountType::CoinJoin { .. } => "coinjoin",
+        AccountType::IdentityRegistration => "identity_registration",
+        AccountType::IdentityTopUp { .. } => "identity_topup",
+        AccountType::IdentityTopUpNotBoundToIdentity => "identity_topup_unbound",
+        AccountType::IdentityInvitation => "identity_invitation",
+        AccountType::AssetLockAddressTopUp => "asset_lock_address_topup",
+        AccountType::AssetLockShieldedAddressTopUp => "asset_lock_shielded_topup",
+        AccountType::ProviderVotingKeys => "provider_voting",
+        AccountType::ProviderOwnerKeys => "provider_owner",
+        AccountType::ProviderOperatorKeys => "provider_operator",
+        AccountType::ProviderPlatformKeys => "provider_platform",
+        AccountType::DashpayReceivingFunds { .. } => "dashpay_receiving",
+        AccountType::DashpayExternalAccount { .. } => "dashpay_external",
+        AccountType::PlatformPayment { .. } => "platform_payment",
+    }
+}
+
+/// Stable database label for an `AddressPoolType` variant.
+pub(crate) fn pool_type_db_label(
+    pool: &key_wallet::managed_account::address_pool::AddressPoolType,
+) -> &'static str {
+    use key_wallet::managed_account::address_pool::AddressPoolType;
+    match pool {
+        AddressPoolType::External => "external",
+        AddressPoolType::Internal => "internal",
+        AddressPoolType::Absent => "absent",
+        AddressPoolType::AbsentHardened => "absent_hardened",
+    }
 }
 
 fn account_index(at: &key_wallet::account::AccountType) -> u32 {

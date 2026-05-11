@@ -198,14 +198,12 @@ fn tc007_identity_key_entry_roundtrip() {
     let decoded =
         platform_wallet_storage::sqlite::schema::identity_keys::decode_entry(&blob_bytes).unwrap();
     assert_eq!(decoded, entry);
-    // NFR-10 substring scan: blob carries only public material.
-    for needle in ["private", "mnemonic", "seed", "xpriv"] {
-        let lower: String = String::from_utf8_lossy(&blob_bytes).to_lowercase();
-        assert!(
-            !lower.contains(needle),
-            "identity_keys blob contained `{needle}` — public-key boundary violated"
-        );
-    }
+    // The load-bearing NFR-10 check is `tests/secrets_scan.rs`,
+    // which greps every file under `src/sqlite/schema/` and
+    // `migrations/` for forbidden secret-material substrings —
+    // bincode wire bytes carry no field names, so any runtime
+    // substring scan against the blob would be a false-confidence
+    // smoke test.
     drop(tmp);
 }
 

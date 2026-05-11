@@ -74,13 +74,19 @@ validation failure (e.g. corrupt backup source).
 | `test-helpers` | no | Crate-private `lock_conn_for_test` / `config_for_test` accessors. Downstream MUST NOT enable. |
 
 `cargo build -p platform-wallet-storage --no-default-features` builds
-the bare crate (no backend, no CLI) and is the entry point for the
-future `secrets`-only build.
+the crate with neither the SQLite backend nor the CLI compiled in.
+The resulting library has no public surface today; the build mode
+exists to support a future split where one cargo target wants only
+the secrets feature.
 
 ## Schema
 
 See [`migrations/V001__initial.rs`](./migrations/V001__initial.rs) for
-the canonical schema. Foreign-key integrity is emulated with triggers
-because barrel's column builder does not emit composite-key `FK`
-clauses portably; the result is identical to native FKs from the
-caller's perspective.
+the canonical schema and
+[`migrations/V002__defensive_update_triggers.rs`](./migrations/V002__defensive_update_triggers.rs)
+for the `BEFORE UPDATE` FK-column guards. Foreign-key integrity is
+emulated with triggers because barrel's column builder does not emit
+composite-key `FK` clauses portably; INSERT, DELETE-cascade, and
+UPDATE of `wallet_id` / `identity_id` are all covered. The result
+matches native FKs for the persister's own write path, which never
+mutates those columns directly.

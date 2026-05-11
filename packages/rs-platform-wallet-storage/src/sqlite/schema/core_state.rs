@@ -56,11 +56,10 @@ pub fn apply(
         upsert_sync_state(tx, wallet_id, cs.last_processed_height, cs.synced_height)?;
     }
     for da in &cs.addresses_derived {
-        // `account_type` and `pool_type` are stored Debug-rendered for
-        // disambiguation across pools sharing the same address space.
-        let account_type = format!("{:?}", da.account_type);
+        let account_type = crate::sqlite::schema::accounts::account_type_db_label(&da.account_type);
+        let pool_type = crate::sqlite::schema::accounts::pool_type_db_label(&da.pool_type);
         let address = da.address.to_string();
-        let path = format!("{:?}/{}", da.pool_type, da.derivation_index);
+        let path = format!("{}/{}", pool_type, da.derivation_index);
         tx.execute(
             "INSERT INTO core_derived_addresses (wallet_id, account_type, address, derivation_path, used) \
              VALUES (?1, ?2, ?3, ?4, ?5) \

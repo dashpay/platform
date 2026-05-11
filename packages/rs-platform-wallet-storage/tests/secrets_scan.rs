@@ -1,18 +1,26 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! SEC-006 — schema-file substring scan for forbidden secret-material
-//! tokens.
+//! Schema-file substring scan for forbidden secret-material tokens
+//! (the load-bearing test for the NFR-10 / SECRETS.md boundary).
 //!
-//! The persister never stores mnemonics / seeds / private keys (see
-//! SECRETS.md). This test grep-scans every file under `src/schema/`
-//! and `migrations/` for ASCII substrings associated with secret
-//! material. A new column or migration that smuggles in `private`,
-//! `mnemonic`, `seed`, or `xpriv` breaks the test.
+//! The persister never stores mnemonics / seeds / private keys.
+//! This test grep-scans every file under `src/sqlite/schema/` and
+//! `migrations/` for ASCII substrings associated with secret material.
+//! A new column, blob field, or comment that uses `private`,
+//! `mnemonic`, `seed`, `xpriv`, or `secret` breaks the test, forcing
+//! the author to rename or add an allow-list entry with rationale.
+//!
+//! Out of scope by design: files in `src/sqlite/` outside of
+//! `schema/` (`persister.rs`, `backup.rs`, `buffer.rs`, `config.rs`,
+//! `error.rs`, `migrations.rs`, `util/`) are NOT scanned. They never
+//! define database columns and may legitimately reference the
+//! forbidden tokens in doc comments. The future `src/secrets/`
+//! submodule slot is exempt for the same reason.
 //!
 //! The check is intentionally string-level: it does not parse SQL or
 //! Rust. A column literally named `private_X` is the kind of mistake
-//! we want to catch; legitimate uses of these words inside doc
-//! comments are allow-listed via `tests/secrets_allowlist`.
+//! we want to catch; legitimate uses inside doc comments are
+//! allow-listed via the `ALLOWLIST` constant below.
 
 use std::path::Path;
 
