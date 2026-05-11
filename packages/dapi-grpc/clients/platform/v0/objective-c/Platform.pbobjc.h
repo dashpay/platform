@@ -2658,10 +2658,8 @@ typedef GPB_ENUM(GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountResu
  * Non-proof count result. Shape is mode-dependent and made
  * explicit on the wire via the inner `variant` oneof:
  *   * `aggregate_count`: total-count and range-without-distinct
- *     modes — a single u64 with no per-key breakdown. Replaces
- *     the previous "single CountEntry with empty key" encoding
- *     so callers don't have to special-case the empty-key
- *     entry to recover the total.
+ *     modes — a single u64 with no per-key breakdown. Callers
+ *     read the total directly without scanning an entries list.
  *   * `entries`: per-`In`-value and per-distinct-value-in-range
  *     modes — one CountEntry per distinct value, in serialized-
  *     key order subject to the first `order_by` clause's

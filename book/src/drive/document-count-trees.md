@@ -118,7 +118,7 @@ Tests pinning these guards live in `packages/rs-dpp/src/data_contract/document_t
 
 ## Counting Documents at Query Time
 
-A single unified gRPC endpoint exposes the feature: `GetDocumentsCount`. The response shape varies by request mode (total / per-`In`-value / per-distinct-value-in-range / total-over-range), see [Range Modes](#range-modes) below. The wire-level shape makes that split explicit: on the no-proof path the response's `CountResults` carries an inner `oneof variant { uint64 aggregate_count; CountEntries entries; }` — total-count and range-without-distinct modes return `aggregate_count` (a single `u64`), per-`In`-value and per-distinct-value-in-range modes return `entries` (a list of `CountEntry { key, count }`). Callers no longer have to special-case an empty-key entry to recover the total. The endpoint has two underlying paths (prove vs. no-prove); every mode — including `return_distinct_counts_in_range = true` — is valid on both paths. The prove path uses two different proof shapes depending on whether you want a single aggregate or per-distinct-value entries (see [Prove (Client-Side Verify-Then-Aggregate or Aggregate-Count Proof)](#prove-client-side-verify-then-aggregate-or-aggregate-count-proof) below).
+A single unified gRPC endpoint exposes the feature: `GetDocumentsCount`. The response shape varies by request mode (total / per-`In`-value / per-distinct-value-in-range / total-over-range), see [Range Modes](#range-modes) below. The wire-level shape makes that split explicit: on the no-proof path the response's `CountResults` carries an inner `oneof variant { uint64 aggregate_count; CountEntries entries; }` — total-count and range-without-distinct modes return `aggregate_count` (a single `u64`), per-`In`-value and per-distinct-value-in-range modes return `entries` (a list of `CountEntry { optional bytes in_key; bytes key; uint64 count }` where `in_key` is the prefix value for compound `In + range` shapes and absent for flat queries). The endpoint has two underlying paths (prove vs. no-prove); every mode — including `return_distinct_counts_in_range = true` — is valid on both paths. The prove path uses two different proof shapes depending on whether you want a single aggregate or per-distinct-value entries (see [Prove (Client-Side Verify-Then-Aggregate or Aggregate-Count Proof)](#prove-client-side-verify-then-aggregate-or-aggregate-count-proof) below).
 
 ### No-Prove (Server-Side O(1) or O(log n))
 
@@ -157,6 +157,8 @@ When `prove=true`, the proof shape depends on whether the query carries a range 
 
 Because the materialize-and-count proof path actually returns documents, drive-abci caps it at `u16::MAX` matching documents per request as a defensive bound on response size. Result sets larger than that need a covering countable index and `prove=false`, OR a covering `range_countable: true` index where the range proof primitive is unbounded. The SDK side explicitly clears the underlying `DocumentQuery.limit` so the verifier counts every document in the proof rather than truncating at the caller's pagination limit.
 
+`In + prove` requires the request to carry an `order_by` clause on the In field (e.g. `[["age", "asc"]]`). The materialize-and-count walker needs a deterministic walk order so the SDK can reconstruct the same path query for proof verification; without it the request errors with `MissingOrderByForRange` before any proof is produced. The SDK and server derive `left_to_right` from the same first `order_by` clause direction, so prover and verifier stay in lockstep.
+
 Aggregation for the per-`In`-value mode needs the split-property name, but `DriveDocumentQuery` does not carry it. The proof verifier exposes a dedicated entry point that takes it explicitly:
 
 ```rust
@@ -170,7 +172,7 @@ DocumentSplitCounts::maybe_from_proof_with_split_property(
 )
 ```
 
-The generic `FromProof<Q>` impl on `DocumentSplitCounts` is intentionally *not* the way to reach split counts under proof — calling it returns an explicit error. This is a load-bearing design choice: an earlier version of this code silently returned `Some(BTreeMap::new())` from the generic path, so any caller using `prove=true` got a valid-looking but empty result. Erroring loudly forces every caller to thread the split property through.
+The generic `FromProof<Q>` impl on `DocumentSplitCounts` is intentionally *not* the way to reach split counts under proof — calling it returns an explicit error. This is a load-bearing footgun guard: without the split property, the generic path has no way to group verified documents by anything, and silently returning an empty result would mask `prove=true` callers' bugs as "no documents matched." Erroring loudly forces every caller to thread the split property through `maybe_from_proof_with_split_property` (or use the SDK's `Fetch` impl on `DocumentCountQuery`, which threads it from the request's `In` clause automatically).
 
 ### Supported Where Operators
 
@@ -393,14 +395,15 @@ A migration check from `dapi-grpc` server logic: if you ask for `GetDocumentsCou
 
 ### `rs-sdk` (native Rust)
 
-Both endpoints land on the standard `Fetch` trait:
+Both shapes land on the standard `Fetch` trait against a single `DocumentCountQuery`:
 
 ```rust
 use dash_sdk::platform::documents::document_count_query::DocumentCountQuery;
-use dash_sdk::platform::documents::document_split_count_query::DocumentSplitCountQuery;
 use dash_sdk::platform::Fetch;
+use drive::query::{WhereClause, WhereOperator};
 use drive_proof_verifier::{DocumentCount, DocumentSplitCounts};
 
+// Total count: no In clause.
 let DocumentCount(count) = DocumentCount::fetch(
     &sdk,
     DocumentCountQuery::new(contract.clone(), "widget")?,
@@ -408,46 +411,61 @@ let DocumentCount(count) = DocumentCount::fetch(
 .await?
 .expect("DocumentCount::fetch always returns a value on success");
 
-let DocumentSplitCounts(splits) = DocumentSplitCounts::fetch(
-    &sdk,
-    DocumentSplitCountQuery::new(contract, "widget", "color")?,
-)
-.await?
-.expect("DocumentSplitCounts::fetch always returns a value on success");
+// Split count: signal split by including an `In` clause whose field
+// is the split property. The In's values enumerate the keys to count.
+let split_query = DocumentCountQuery::new(contract, "widget")?
+    .with_where(WhereClause {
+        field: "color".to_string(),
+        operator: WhereOperator::In,
+        value: platform_value::Value::Array(vec![
+            "red".into(),
+            "blue".into(),
+            "green".into(),
+        ]),
+    });
+let splits = DocumentSplitCounts::fetch(&sdk, split_query)
+    .await?
+    .expect("DocumentSplitCounts::fetch always returns a value on success");
+// `splits` is `DocumentSplitCounts(Vec<SplitCountEntry>)` — for the
+// flat-histogram view, collapse via `splits.into_flat_map()`.
 ```
 
-`DocumentCountQuery` and `DocumentSplitCountQuery` wrap an internal `DocumentQuery` (so they reuse where-clause / order-by / contract-id machinery) and expose a `with_where(WhereClause)` builder for filters. Both target the unified `GetDocumentsCountRequest`. The SDK picks the request mode (total / per-`In`-value / total-range / per-distinct-range) from query *shape* — Equal/`In`/range operators in the where clauses — *plus* explicit request flags. `return_distinct_counts_in_range = true` (set via `.with_distinct_counts_in_range(true)`) is what selects per-distinct-range over the default total-range when a range clause is present; without it a range query returns a single sum.
+`DocumentCountQuery` wraps an internal `DocumentQuery` (so it reuses where-clause / order-by / contract-id machinery) and exposes `with_where(WhereClause)` + `with_order_by(OrderClause)` builders. The SDK picks the request mode (total / per-`In`-value / total-range / per-distinct-range) from query *shape* — Equal/`In`/range operators in the where clauses — *plus* explicit request flags. `return_distinct_counts_in_range = true` (set via `.with_distinct_counts_in_range(true)`) selects per-distinct-range over the default total-range when a range clause is present; without it a range query returns a single sum.
 
 ### `wasm-sdk` (browser)
 
-Four methods on the `WasmSdk` JS class:
+Two methods on the `WasmSdk` JS class — one entry per `[plain | withProofInfo]` variant covers every count mode, because the underlying `DocumentSplitCounts::fetch` dispatches on the query shape:
 
 ```typescript
-sdk.getDocumentsCount(query: DocumentsQuery): Promise<bigint>;
+sdk.getDocumentsCount(
+  query: DocumentsQuery,
+): Promise<Map<string, bigint>>;
+
 sdk.getDocumentsCountWithProofInfo(
   query: DocumentsQuery,
-): Promise<ProofMetadataResponseTyped<bigint>>;
-
-sdk.getDocumentsSplitCount(
-  query: DocumentsQuery,
-  splitProperty: string,
-): Promise<Map<string, bigint>>;
-sdk.getDocumentsSplitCountWithProofInfo(
-  query: DocumentsQuery,
-  splitProperty: string,
 ): Promise<ProofMetadataResponseTyped<Map<string, bigint>>>;
 ```
 
-The split-count map's keys are *hex-encoded bytes*. They correspond to the canonical `serialize_value_for_key` encoding of each property value, so callers that need a typed key (`"red"`, `42`, etc.) need to hex-decode and interpret per the contract's index-property type. This shape matches the no-prove server response too, so a caller that wants to merge or compare count maps from both paths doesn't need a transformation step.
+Result shapes:
+
+- **No `where`, or Equal-only `where`** — single map entry with the empty-string key carrying the total count.
+- **`where` includes an `In` clause** — one entry per (deduped) In value, keyed by the hex-encoded canonical bytes of that value.
+- **`where` includes a range clause + `returnDistinctCountsInRange: true`** — one entry per distinct property value in the range. For compound `In + range + distinct` queries, entries are summed by terminator `key` into a flat map (callers needing the unmerged per-(in_key, key) view should use a richer binding).
+
+Map keys are always *hex-encoded bytes* matching the canonical `serialize_value_for_key` encoding of each property value, so callers that need a typed key (`"red"`, `42`, etc.) need to hex-decode and interpret per the contract's index-property type. The hex-encoded shape matches the no-prove server response, so merging or comparing count maps from prove and no-prove paths needs no transformation.
 
 ### `rs-sdk-ffi` (iOS / native bindings)
 
 ```rust
-dash_sdk_document_count(sdk, data_contract, document_type, where_json)
-    -> JSON {"count": <u64>}
-
-dash_sdk_document_split_count(sdk, data_contract, document_type, split_property, where_json)
-    -> JSON {"counts": {"<hex-key>": <u64>, ...}}
+dash_sdk_document_count(
+    sdk,
+    data_contract,
+    document_type,
+    where_json,                          // null or JSON [{field, operator, value}]
+    order_by_json,                       // null or JSON [{field, direction}]
+    return_distinct_counts_in_range,     // bool
+    limit,                               // i64; -1 = server default, >= 0 = explicit cap
+) -> JSON {"counts": {"<hex-key>": <u64>, ...}}
 ```
 
-`where_json` is the same JSON shape `dash_sdk_document_search` already accepts (`[{field, operator, value}]`), so iOS callers can reuse their where-clause encoding. Both endpoints return their results as a JSON-encoded C string allocated on the heap — caller frees it via the standard SDK string-free routine.
+Single FFI entry covers every count mode — the result is always `{"counts": {...}}` with hex-encoded keys. For total counts (no `where`/`In`, distinct flag off), the map carries a single entry with the empty-string key. `where_json` is the same JSON shape `dash_sdk_document_search` already accepts (`[{field, operator, value}]`), so iOS callers can reuse their where-clause encoding. `order_by_json` is required on the `(In + prove)` path for walk determinism (proof reconstruction needs an explicit order); pass `null` on every other path to use server defaults. The endpoint returns its result as a JSON-encoded C string allocated on the heap — caller frees it via the standard SDK string-free routine.
