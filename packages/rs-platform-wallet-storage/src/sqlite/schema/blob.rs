@@ -1,48 +1,28 @@
 //! BLOB-column codec helpers.
 //!
-//! Every `_blob` column on disk is laid out as `<u8 schema-rev>
-//! || <bincode-serde body>`. The schema-rev tag lets a future
-//! migration add new encoders without losing existing rows. Today
-//! only one revision exists.
+//! Thin error-mapping wrappers around `bincode::serde` so every
+//! `_blob` column in the SQLite schema uses one encoding path. Schema
+//! evolution is gated by the refinery migration version on the
+//! database as a whole — there is no per-blob revision tag.
 //!
-//! The body uses `bincode::serde::encode_to_vec` /
-//! `decode_from_slice` with `bincode::config::standard()` against
-//! the platform-wallet changeset types (serde-derived via the
-//! `platform-wallet/serde` feature).
-//!
-//! [`encode_outpoint`] / [`decode_outpoint`] live here too because
-//! they're a typed-column helper, not a blob — outpoints serve as
-//! primary-key fragments.
+//! [`encode_outpoint`] / [`decode_outpoint`] are a separate concern:
+//! outpoints serve as primary-key fragments in typed columns, not as
+//! blob payloads, and need a fixed on-disk layout for indexed lookups.
 
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
 use crate::sqlite::error::SqlitePersisterError;
 
-/// Schema-revision tag prepended to every blob.
-pub const BLOB_REV: u8 = 1;
-
 /// Encode a serde-derived value into a `BLOB` payload.
 pub fn encode<T: Serialize>(value: &T) -> Result<Vec<u8>, SqlitePersisterError> {
-    let body = bincode::serde::encode_to_vec(value, bincode::config::standard())
-        .map_err(SqlitePersisterError::serialization)?;
-    let mut out = Vec::with_capacity(1 + body.len());
-    out.push(BLOB_REV);
-    out.extend_from_slice(&body);
-    Ok(out)
+    bincode::serde::encode_to_vec(value, bincode::config::standard())
+        .map_err(SqlitePersisterError::serialization)
 }
 
 /// Decode a `BLOB` payload back into a serde-derived value.
 pub fn decode<T: DeserializeOwned>(blob: &[u8]) -> Result<T, SqlitePersisterError> {
-    let Some((&rev, body)) = blob.split_first() else {
-        return Err(SqlitePersisterError::serialization("empty blob"));
-    };
-    if rev != BLOB_REV {
-        return Err(SqlitePersisterError::serialization(format!(
-            "unknown blob schema revision: {rev}"
-        )));
-    }
-    let (value, _) = bincode::serde::decode_from_slice(body, bincode::config::standard())
+    let (value, _) = bincode::serde::decode_from_slice(blob, bincode::config::standard())
         .map_err(SqlitePersisterError::serialization)?;
     Ok(value)
 }
@@ -90,22 +70,8 @@ mod tests {
             b: "hello".into(),
         };
         let blob = encode(&value).unwrap();
-        assert_eq!(blob[0], BLOB_REV);
         let decoded: Dummy = decode(&blob).unwrap();
         assert_eq!(decoded, value);
-    }
-
-    #[test]
-    fn decode_rejects_unknown_rev() {
-        let bad = [99u8, 0, 0, 0];
-        let err = decode::<Dummy>(&bad).unwrap_err().to_string();
-        assert!(err.contains("unknown blob schema revision: 99"), "{err}");
-    }
-
-    #[test]
-    fn decode_rejects_empty_blob() {
-        let err = decode::<Dummy>(&[]).unwrap_err().to_string();
-        assert!(err.contains("empty blob"), "{err}");
     }
 
     #[test]

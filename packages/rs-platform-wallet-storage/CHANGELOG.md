@@ -16,11 +16,13 @@ notes.
   `contacts_*.entry_blob`, `asset_locks.lifecycle_blob`,
   `dashpay_*.{profile,overlay}_blob`,
   `account_registrations.account_xpub_bytes`,
-  `account_address_pools.snapshot_blob`) is now a single
-  `bincode::serde::encode_to_vec` payload prefixed with a 1-byte
-  schema-revision tag. The hand-rolled `BlobWriter` / `BlobReader`
-  walker from the initial implementation is gone; the schema-writer
-  modules each shed ~30-100 LOC of field-by-field plumbing.
+  `account_address_pools.snapshot_blob`) is the raw
+  `bincode::serde::encode_to_vec` output. Schema evolution is gated
+  by the refinery migration version on the database — individual
+  blobs carry no inline revision tag. The hand-rolled
+  `BlobWriter` / `BlobReader` walker from the initial implementation
+  is gone; the schema-writer modules each shed ~30-100 LOC of
+  field-by-field plumbing.
   `IdentityKeyEntry` keeps a tiny wire-shape adapter
   (`IdentityKeyWire`) inside the storage crate because dpp's
   `IdentityPublicKey` uses `serde(tag = "$formatVersion")`, which

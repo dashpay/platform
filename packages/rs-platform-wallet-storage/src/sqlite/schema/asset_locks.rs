@@ -2,8 +2,7 @@
 //!
 //! Each row stores the lifecycle status as a string column for direct
 //! SQL queries, plus a bincode-serde encoded `AssetLockEntry` in the
-//! `lifecycle_blob` column. The schema-rev tag in [`blob::encode`]
-//! lets future migrations swap encoders without touching this code.
+//! `lifecycle_blob` column.
 
 use std::collections::BTreeMap;
 
