@@ -13,15 +13,16 @@ impl DriveDocumentCountQuery<'_> {
     /// `(path, key, Option<Element>)` triples to build the per-branch
     /// entry list.
     ///
-    /// For the compound shapes (`In` on the last property, or `In` on
-    /// the before-last property with a trailing Equal) the In value
-    /// sits at `path[base_path_len]` — the first extra path segment
-    /// beyond the path query's `path`. Both shapes stop the
-    /// `base_path` at the In-bearing property's property-name subtree
-    /// (see [`Self::point_lookup_count_path_query`]), so the In value
-    /// lands at the same offset whether or not a trailing Equal is
-    /// also part of the descent. For the Equal-only shape the emitted
-    /// path equals `path_query.path` so the entry's `key` stays empty.
+    /// For the compound shape (`In` at any index position, with 0..N
+    /// trailing Equals afterwards) the In value sits at
+    /// `path[base_path_len]` — the first extra path segment beyond
+    /// the path query's `path`. The builder stops `base_path` at the
+    /// In-bearing property's property-name subtree (see
+    /// [`Self::point_lookup_count_path_query`]), regardless of how
+    /// many trailing Equals exist, so the In value lands at the same
+    /// offset in every compound emission. For the Equal-only shape
+    /// the emitted path equals `path_query.path` so the entry's `key`
+    /// stays empty.
     ///
     /// `GroveDb::verify_query` is appropriate here for the same reason
     /// as the distinct-count verifier: because each branch's count is
@@ -42,8 +43,10 @@ impl DriveDocumentCountQuery<'_> {
         let path_query = self.point_lookup_count_path_query(platform_version)?;
         let base_path_len = path_query.path.len();
         // Set once an `In` clause is present anywhere on the covering
-        // index — both supported In positions (last and before-last)
-        // produce the same `base_path_len`-prefixed compound shape.
+        // index — the builder stops `base_path` at the In-bearing
+        // property's name subtree regardless of how many trailing
+        // Equals descend further, so the In value always sits at
+        // `path[base_path_len]` in the compound emission.
         let has_in_clause = self
             .where_clauses
             .iter()
@@ -64,16 +67,19 @@ impl DriveDocumentCountQuery<'_> {
             if count == 0 {
                 continue;
             }
-            // Compound shape (In on last or before-last): the In
-            // value sits at `path[base_path_len]` — the first extra
-            // segment past the path query's base path. For the In-
-            // on-before-last shape the descent continues through
-            // `[trailing_prop_name, trailing_value, 0]` but the In
-            // value is still at the same offset because the path
-            // query's base path stops at the In-bearing property's
-            // property-name subtree in both shapes. Equal-only shape:
-            // the emitted path equals `path_query.path` (no extra
-            // segments) so the `key` field is empty.
+            // Compound shape (In at any index position, 0..N
+            // trailing Equals afterwards): the In value sits at
+            // `path[base_path_len]` — the first extra segment past
+            // the path query's base path. When trailing Equals are
+            // present the descent continues through
+            // `[trailing_prop_name_1, trailing_value_1, ...,
+            // trailing_prop_name_n, trailing_value_n, 0]`, but the
+            // In value is still at the same offset because
+            // `base_path` stops at the In-bearing property's
+            // property-name subtree regardless of how many trailing
+            // segments follow. Equal-only shape: the emitted path
+            // equals `path_query.path` (no extra segments) so the
+            // `key` field is empty.
             let key = if has_in_clause && path.len() > base_path_len {
                 path[base_path_len].clone()
             } else {

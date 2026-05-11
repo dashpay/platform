@@ -28,14 +28,15 @@ impl DriveDocumentCountQuery<'_> {
     /// - **Equal-only, fully covered**: a single entry with
     ///   `in_key: None`, `key: vec![]`, and `count` equal to the
     ///   covered branch's CountTree `count_value`.
-    /// - **Equal prefix + `In` on last or before-last property**: one
-    ///   entry per In value, with `in_key: None`,
+    /// - **`In` at any index position (with any number of trailing
+    ///   Equals)**: one entry per In value, with `in_key: None`,
     ///   `key: <serialized_in_value>`, and `count` equal to that In
-    ///   branch's CountTree `count_value`. For the In-on-before-last
-    ///   shape the trailing Equal is part of the descent (so each
-    ///   branch's count is "docs with `in_field == in_value AND
-    ///   trailing_field == trailing_value`"); the entry's `key`
-    ///   still records the In value because the trailing Equal is
+    ///   branch's CountTree `count_value`. When the In has trailing
+    ///   Equal clauses after it (e.g. `a IN [..] AND b = y AND c = z`
+    ///   on index `[a, b, c]`), those Equals are part of the descent
+    ///   so each branch's count is "docs with `in_field == in_value
+    ///   AND <every trailing Equal>`"; the entry's `key` still
+    ///   records just the In value because the trailing Equals are
     ///   fixed across all entries. Matches the no-proof `PerInValue`
     ///   shape (`in_key` is reserved for the range-distinct compound
     ///   case where In sits on a prefix of a range index).

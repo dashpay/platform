@@ -592,17 +592,52 @@ fn test_count_query_in_on_before_last_with_trailing_equal_succeeds_on_both_paths
     );
 }
 
-/// `In` on a property that is neither the last nor the before-last
-/// of the covering index is rejected by the prove count builder, in
-/// lockstep with `Index::matches` on the regular document query
-/// path. Uses the 3-property `byFirstNameMiddleLastName` index with
-/// In on `firstName` (position 0 of 3) — position 0 is neither
-/// last (= 2) nor before-last (= 1), so the builder returns
-/// `InvalidWhereClauseComponents` with a clear directive.
+/// `In` on the **first** property of a 3-property index, with two
+/// trailing Equals (`firstName IN [..] AND middleName = m AND
+/// lastName = ln` on the unique `byFirstNameMiddleLastName` index)
+/// — exercises the most aggressive shape the relaxed prove count
+/// builder accepts: In at position 0 with two trailing Equals
+/// rolling through `subquery_path_extension`. The count path is
+/// deliberately more permissive than the regular document query
+/// path here because the no-proof count executor
+/// (`expand_paths_and_count`) has always handled In at any
+/// position; relaxing the prove builder brings both count paths
+/// into the same surface. See the builder's docstring for the
+/// divergence rationale vs. `Index::matches` on the regular doc
+/// query path.
+///
+/// Index used: `byFirstNameMiddleLastName` (unique, 3 props).
+/// Where: `firstName IN ["Alice", "Bob"] AND middleName = "M" AND
+/// lastName = "Smith"`.
+/// - (Alice, M, Smith): 1 doc
+/// - (Bob, M, Smith): 1 doc
+/// - (Carol, M, Smith): 1 doc (excluded — firstName not in In)
+/// - (Alice, N, Smith): 1 doc (excluded — middleName ≠ M)
+///
+/// Pins:
+/// - Strict picker accepts the 3-prop covering index.
+/// - No-proof executor sums per-In-value: 1 + 1 = 2.
+/// - Prove executor builds a compound path query with `base_path`
+///   stopping at `[..., "firstName"]`, `outer_query` keys = sorted
+///   serialized In values, `set_subquery_path` =
+///   `["middleName", serialize("M"), "lastName", serialize("Smith")]`,
+///   subquery `Key([0])`.
+/// - Proof verifies and the verified per-branch entries' counts
+///   sum to the no-proof count.
 #[test]
-fn test_prove_count_rejects_in_on_neither_last_nor_before_last() {
-    let (_drive, data_contract) = setup_drive_and_contract();
+fn test_count_query_in_on_first_of_three_with_two_trailing_equals_succeeds_on_both_paths() {
+    let (drive, data_contract) = setup_drive_and_contract();
     let platform_version = PlatformVersion::latest();
+
+    // Pick distinct (firstName, middleName, lastName) tuples so the
+    // unique 3-prop index doesn't reject any inserts. The picker
+    // will route the count query through that same 3-prop index
+    // because the where clauses cover exactly its properties.
+    insert_person_doc(&drive, &data_contract, [1u8; 32], "Alice", "M", "Smith", 30);
+    insert_person_doc(&drive, &data_contract, [2u8; 32], "Bob", "M", "Smith", 40);
+    insert_person_doc(&drive, &data_contract, [3u8; 32], "Carol", "M", "Smith", 50);
+    insert_person_doc(&drive, &data_contract, [4u8; 32], "Alice", "N", "Smith", 31);
+    insert_person_doc(&drive, &data_contract, [5u8; 32], "Bob", "N", "Jones", 41);
 
     let document_type = data_contract
         .document_type_for_name("person")
@@ -633,6 +668,8 @@ fn test_prove_count_rejects_in_on_neither_last_nor_before_last() {
         &where_clauses,
     )
     .expect("expected picker to accept the 3-prop covering index");
+    // Sanity-pin the picker actually chose the 3-prop unique
+    // countable index rather than some weaker variant.
     assert_eq!(index.properties.len(), 3);
 
     let query = DriveDocumentCountQuery {
@@ -643,18 +680,35 @@ fn test_prove_count_rejects_in_on_neither_last_nor_before_last() {
         where_clauses,
     };
 
-    // Builder rejects: In is at position 0 of 3, neither last nor
-    // before-last. The strict picker happily accepts (it only checks
-    // set-equality, not position), so the rejection has to happen
-    // at the builder.
-    let err = query
-        .point_lookup_count_path_query(platform_version)
-        .expect_err("expected builder to reject In at position 0 of 3");
-    let msg = err.to_string();
+    // No-proof: 1 (Alice,M,Smith) + 1 (Bob,M,Smith) = 2.
+    let results = query
+        .execute_no_proof(&drive, None, platform_version)
+        .expect("expected no-proof count to succeed");
+    assert_eq!(results.len(), 1);
+    assert_eq!(
+        results[0].count, 2,
+        "expected 2 docs covered by firstName IN [Alice, Bob] AND \
+         middleName = M AND lastName = Smith"
+    );
+
+    // Prove: builder emits compound shape with 2-segment
+    // `subquery_path_extension`. Verifier round-trips and returns
+    // per-In-value entries.
+    let proof = query
+        .execute_point_lookup_count_with_proof(&drive, None, platform_version)
+        .expect("expected prove count to succeed on In-on-first-of-3 shape");
     assert!(
-        msg.contains("last or before-last"),
-        "expected position-rejection error mentioning last-or-before-last, got: {}",
-        msg
+        !proof.is_empty(),
+        "expected non-empty proof bytes for In-on-first-of-3 prove count"
+    );
+
+    let (_root_hash, entries) = query
+        .verify_point_lookup_count_proof(&proof, platform_version)
+        .expect("expected proof verification to succeed");
+    let summed: u64 = entries.iter().map(|e| e.count).sum();
+    assert_eq!(
+        summed, 2,
+        "verified per-branch entries should sum to the no-proof total"
     );
 }
 

@@ -496,42 +496,52 @@ impl DriveDocumentCountQuery<'_> {
     /// a recursive subquery enumeration that this builder does not
     /// implement (and that the strict picker already rejects upstream).
     ///
-    /// `In` position matches the regular document query path's
-    /// `Index::matches` rule (`packages/rs-dpp/src/data_contract/
-    /// document_type/index/mod.rs:503`): `In` may sit on the **last**
-    /// or **before-last** index property. At most one Equal may come
-    /// after the In on the chosen index. Earlier positions would
-    /// require multi-segment `subquery_path` expansion that the
-    /// regular query path itself doesn't support, so the count path
-    /// deliberately stays in lockstep with it.
+    /// **`In` may appear at any position in the index.** Equal
+    /// clauses before the In contribute to `base_path`; Equal clauses
+    /// after the In feed `set_subquery_path` on the outer Query so the
+    /// descent under each matched In value lands at the right
+    /// CountTree leaf. At most one `In` clause per query (multiple
+    /// would cartesian-fork beyond what a single `set_subquery`
+    /// expresses).
     ///
-    /// Three output shapes:
+    /// This is **more permissive than the regular document query
+    /// path's `Index::matches` rule** (`packages/rs-dpp/src/
+    /// data_contract/document_type/index/mod.rs:503`), which restricts
+    /// `In` to the last or before-last index property because its
+    /// path-construction code positionally zips intermediate index
+    /// names with Equal-clause values (see
+    /// `DriveDocumentQuery::get_non_primary_key_path_query`). The
+    /// count path doesn't have that constraint: it's a pure CountTree
+    /// element lookup with no document-key terminator descent, no
+    /// `order_by` interpretation, and no `limit/offset` semantics, so
+    /// `set_subquery_path` with an arbitrary trailing tail just
+    /// works. The no-proof count executor (`expand_paths_and_count`)
+    /// has always handled `In` at any position; this builder now
+    /// matches that surface so prove and no-proof accept the same
+    /// query shapes.
+    ///
+    /// Output shapes:
     /// - **Equal-only, fully covered**: flat path query at
     ///   `[..., last_field, last_value]` with a single `Key([0])`
     ///   item. Returns one element (the CountTree).
-    /// - **Equal prefix + `In` on last property**: compound query
-    ///   with `base_path` ending at the In-bearing property's
-    ///   property-name subtree; outer Query has one `Key` per In
-    ///   value (sorted lex-asc for prove/no-proof parity and pushed-
-    ///   limit safety — same convention as
-    ///   [`Self::distinct_count_path_query`]); subquery descends one
-    ///   layer via `Key([0])` to grab the CountTree under each
-    ///   matched In value.
-    /// - **Equal prefix + `In` on before-last + trailing Equal**:
-    ///   same compound shape, but `set_subquery_path` carries the
-    ///   trailing Equal's `(prop_name, serialized_value)` pair so the
-    ///   descent under each matched In value lands at
-    ///   `[..., in_field, in_value, trailing_field, trailing_value]`
-    ///   before the `Key([0])` subquery picks off the CountTree.
-    ///   Same `set_subquery_path` + `set_subquery` mechanism as
-    ///   [`Self::distinct_count_path_query`] uses for compound
-    ///   In-on-prefix range counts.
+    /// - **Equal prefix + `In` (any position) [+ trailing Equals]**:
+    ///   compound query with `base_path` ending at the In-bearing
+    ///   property's property-name subtree (so any Equal clauses
+    ///   *before* the In are baked into `base_path`); outer Query
+    ///   has one `Key` per In value (sorted lex-asc for prove/no-
+    ///   proof parity and pushed-limit safety — same convention as
+    ///   [`Self::distinct_count_path_query`]). `set_subquery_path`
+    ///   carries the post-In Equal clauses' `(prop_name,
+    ///   serialized_value)` pairs in index order, and the subquery's
+    ///   `Key([0])` picks off the CountTree at the resolved leaf
+    ///   under each matched In branch. Same `set_subquery_path` +
+    ///   `set_subquery` mechanism as [`Self::distinct_count_path_query`]
+    ///   uses for compound In-on-prefix range counts.
     ///
     /// ## Errors
     ///
     /// Rejects shapes the builder doesn't support:
     /// - Partial coverage (uncovered index property)
-    /// - `In` on neither last nor before-last property
     /// - More than one `In` clause
     /// - Any non-`Equal` / non-`In` operator (defense-in-depth; mode
     ///   detection already filters these out)
@@ -547,8 +557,6 @@ impl DriveDocumentCountQuery<'_> {
             ));
         }
 
-        let last_prop_idx = self.index.properties.len() - 1;
-
         let mut base_path: Vec<Vec<u8>> = vec![
             vec![RootTree::DataContractDocuments as u8],
             self.contract_id.to_vec(),
@@ -557,15 +565,23 @@ impl DriveDocumentCountQuery<'_> {
         ];
 
         // `in_outer_keys` is populated when we encounter the (single)
-        // `In` clause. Everything before it must be `Equal` and
-        // contributes to `base_path`. Any trailing `Equal` after the
-        // In (legal only in the "In on before-last" shape) goes into
-        // `subquery_path_extension`, which feeds `set_subquery_path`
-        // on the outer Query.
+        // `In` clause. Equal clauses *before* the In contribute to
+        // `base_path`; Equal clauses *after* the In feed
+        // `subquery_path_extension`, which becomes the outer Query's
+        // `set_subquery_path` — i.e., the descent under each matched
+        // In value walks `[trailing_field_1, trailing_value_1, ...,
+        // trailing_field_n, trailing_value_n]` before the
+        // `Key([0])` subquery picks off the CountTree leaf.
+        //
+        // No position restriction on the In clause: any index
+        // position works because the count path doesn't have the
+        // positional path-construction assumption the regular
+        // document query path makes (see this method's docstring for
+        // the divergence rationale).
         let mut in_outer_keys: Option<Vec<Vec<u8>>> = None;
         let mut subquery_path_extension: Vec<Vec<u8>> = vec![];
 
-        for (i, prop) in self.index.properties.iter().enumerate() {
+        for prop in self.index.properties.iter() {
             let clause = self
                 .where_clauses
                 .iter()
@@ -590,10 +606,9 @@ impl DriveDocumentCountQuery<'_> {
                     if in_outer_keys.is_some() {
                         // Trailing Equal after the (already-seen) In:
                         // descend through it as part of the subquery
-                        // path. The In-on-before-last shape produces
-                        // exactly one such pair; earlier-position In
-                        // is rejected below, so we never accumulate
-                        // more than one trailing pair here.
+                        // path. Any number of these may accumulate —
+                        // one for each Equal that sits *after* the In
+                        // in the index ordering.
                         subquery_path_extension.push(prop.name.as_bytes().to_vec());
                         subquery_path_extension.push(serialized);
                     } else {
@@ -607,22 +622,6 @@ impl DriveDocumentCountQuery<'_> {
                             QuerySyntaxError::InvalidWhereClauseComponents(
                                 "prove count: at most one `in` clause is supported on \
                                  the covering countable index",
-                            ),
-                        ));
-                    }
-                    // Match the regular document query path's
-                    // `Index::matches` rule: `In` lives on the last
-                    // or before-last index property. `saturating_sub`
-                    // collapses to 0 for a single-property index, in
-                    // which case both bounds equal `i == 0` and the
-                    // check correctly admits In on the sole property.
-                    if i != last_prop_idx && i != last_prop_idx.saturating_sub(1) {
-                        return Err(Error::Query(
-                            QuerySyntaxError::InvalidWhereClauseComponents(
-                                "prove count with `in` requires the `in` clause to be \
-                                 on the last or before-last property of the covering \
-                                 countable index (same constraint the regular document \
-                                 query path enforces via `Index::matches`)",
                             ),
                         ));
                     }
@@ -653,7 +652,7 @@ impl DriveDocumentCountQuery<'_> {
                     return Err(Error::Query(
                         QuerySyntaxError::InvalidWhereClauseComponents(
                             "point_lookup_count_path_query: index properties must use \
-                             `==` (or `in` on the last/before-last property)",
+                             `==` or `in`",
                         ),
                     ));
                 }
@@ -684,15 +683,17 @@ impl DriveDocumentCountQuery<'_> {
                 // descends to the CountTree element under each
                 // matched In value.
                 //
-                // - **In on LAST property**: `subquery_path_extension`
-                //   is empty; the subquery's `Key([0])` runs directly
+                // `subquery_path_extension` carries 0..N segments,
+                // one `(prop_name, serialized_value)` pair per Equal
+                // clause that sits *after* the In in the index
+                // ordering:
+                // - **In on last property**: `subquery_path_extension`
+                //   is empty; subquery's `Key([0])` runs directly
                 //   under each In value's value tree.
-                // - **In on BEFORE-LAST property**: the trailing Equal
-                //   contributed one `(prop_name, serialized_value)`
-                //   pair to `subquery_path_extension`, which
-                //   `set_subquery_path` consumes so the subquery
-                //   descends through that Equal before grabbing the
-                //   `Key([0])` CountTree.
+                // - **In with any number of trailing Equals**:
+                //   `set_subquery_path` consumes those segments so
+                //   the subquery descends through them before grabbing
+                //   the `Key([0])` CountTree at the resolved leaf.
                 let mut outer_query = Query::new();
                 for key in keys {
                     outer_query.insert_key(key);
