@@ -81,32 +81,39 @@ pub const DEFAULT_MAX_SUPPLY: TokenAmount = 1_000_000_000_000_000;
 pub const DEFAULT_DECIMALS: u8 = 8;
 
 /// Owner funding for permissive owner-only token contracts (TK-001,
-/// 003, 005, 007, 008, 009, 010, 011, 014). Sized to cover the chain-
-/// enforced `base_contract_registration_fee + token_registration_fee`
-/// floor (20 B credits) plus a ~200M follow-up-state-transition
-/// headroom. (#348)
-pub const TK_OWNER_FUNDING_SIMPLE: dpp::fee::Credits = 20_200_000_000;
+/// 003, 005, 007, 008, 009, 010, 011, 014). Covers the chain-enforced
+/// `base_contract_registration_fee + token_registration_fee` floor
+/// (20B credits) plus 1B follow-up headroom. Observed v42 shortfall
+/// was ~67M against a ~205M typical mint; 1B headroom gives ~15×
+/// margin against future protocol fee changes.
+pub const TK_OWNER_FUNDING_SIMPLE: dpp::fee::Credits = 21_000_000_000;
 
 /// Owner funding for token contracts with a perpetual or pre-programmed
-/// distribution (TK-002, TK-013). Adds the `distribution_fee × 1` charge
-/// on top of [`TK_OWNER_FUNDING_SIMPLE`]'s floor, then keeps the same
-/// follow-up headroom. (#348)
-pub const TK_OWNER_FUNDING_DISTRIBUTION: dpp::fee::Credits = 30_200_000_000;
+/// distribution (TK-002, TK-013). Adds the `distribution_fee × 1`
+/// charge on top of [`TK_OWNER_FUNDING_SIMPLE`]'s 20B floor (→ 30B
+/// chain floor) plus the same 1B follow-up headroom.
+pub const TK_OWNER_FUNDING_DISTRIBUTION: dpp::fee::Credits = 31_000_000_000;
+
+/// Owner funding for token contracts that follow up with a
+/// token-config-update transition (TK-012). Token-config-update costs
+/// ~664M on testnet (3× a typical mint), so the 1B follow-up headroom
+/// in [`TK_OWNER_FUNDING_SIMPLE`] doesn't cover it. 20B chain floor
+/// + 2B follow-up headroom.
+pub const TK_OWNER_FUNDING_CONFIG_UPDATE: dpp::fee::Credits = 22_000_000_000;
 
 /// Peer funding for passive receivers — identities that never create a
 /// contract and never sign their own state transitions (TK-001's
-/// transfer destination, TK-005b's mint recipient). Sized to cover the
-/// `IdentityCreate` floor plus a small headroom for the
-/// registration-fee dynamic charge. (#348)
-pub const TK_PEER_FUNDING: dpp::fee::Credits = 200_000_000;
+/// transfer destination, TK-005b's mint recipient). Passive peers need
+/// ~200M for basic state transitions; 500M gives safety headroom
+/// against fee-tick noise.
+pub const TK_PEER_FUNDING: dpp::fee::Credits = 500_000_000;
 
 /// Peer funding for "active" peers — identities that themselves sign
 /// state transitions during the test body (TK-007 frozen-transfer
 /// attempt, TK-008 post-unfreeze transfer, TK-011 token purchase,
-/// TK-014 group co-sign). Sized at 1 B so a single chain-fee tick
-/// can't starve the peer mid-test; still ~35× cheaper than the legacy
-/// 35 B "one-size-fits-all" amount peers used to receive. (#348)
-pub const TK_PEER_FUNDING_ACTIVE: dpp::fee::Credits = 1_000_000_000;
+/// TK-014 group co-sign). Group co-sign (TK-014) needs up to ~230M
+/// post-registration; 2.5B leaves comfortable headroom.
+pub const TK_PEER_FUNDING_ACTIVE: dpp::fee::Credits = 2_500_000_000;
 
 /// Per-step propagation budget used by the TK-NNN suite. The TK
 /// setup funds ~35 B credits per identity in a single hop and runs
