@@ -52,48 +52,19 @@ impl Drive {
         }
     }
 
-    /// Pushes an "insert empty `NormalTree` wrapped in `Element::NonCounted`"
+    /// Pushes an "insert empty `tree_type` wrapped in `Element::NonCounted`"
     /// operation to `drive_operations`, but only if the path/key doesn't
     /// already exist (in current state OR in pending operations).
     ///
     /// Used by the index walker for sibling continuations that live inside a
     /// `range_countable` value tree (a `CountTree`). Without the `NonCounted`
-    /// wrapper, an empty `NormalTree` child would contribute 1 to the parent
+    /// wrapper, an empty child tree would contribute 1 to the parent
     /// `CountTree`'s aggregate (per grovedb's default
     /// `count_value_or_default()`); the wrapper makes it contribute 0 so the
     /// value tree's count cleanly reflects "documents at this value" rather
-    /// than "documents + sibling-continuation-trees".
-    #[allow(clippy::too_many_arguments)]
-    pub fn batch_insert_empty_non_counted_normal_tree_if_not_exists<const N: usize>(
-        &self,
-        path_key_info: PathKeyInfo<N>,
-        storage_flags: Option<&StorageFlags>,
-        apply_type: BatchInsertTreeApplyType,
-        transaction: TransactionArg,
-        check_existing_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
-        drive_operations: &mut Vec<LowLevelDriveOperation>,
-        drive_version: &DriveVersion,
-    ) -> Result<bool, Error> {
-        self.batch_insert_empty_non_counted_tree_if_not_exists(
-            path_key_info,
-            TreeType::NormalTree,
-            storage_flags,
-            apply_type,
-            transaction,
-            check_existing_operations,
-            drive_operations,
-            drive_version,
-        )
-    }
-
-    /// Pushes an "insert empty `tree_type` wrapped in `Element::NonCounted`"
-    /// operation to `drive_operations`, but only if the path/key doesn't
-    /// already exist. Generalizes
-    /// [`batch_insert_empty_non_counted_normal_tree_if_not_exists`] to
-    /// arbitrary tree variants — required for nested-`range_countable`
-    /// scenarios where a continuation property-name tree under a
-    /// `CountTree` value tree is itself a `ProvableCountTree` and still
-    /// needs to contribute 0 to the parent count.
+    /// than "documents + sibling-continuation-trees". `tree_type` is left
+    /// general so nested-`range_countable` shapes can pass `CountTree` /
+    /// `ProvableCountTree` continuations through the same helper.
     #[allow(clippy::too_many_arguments)]
     pub fn batch_insert_empty_non_counted_tree_if_not_exists<const N: usize>(
         &self,
