@@ -512,7 +512,6 @@ fn test_count_query_in_operator_rejects_oversized_array() {
             super::RangeCountOptions {
                 distinct: false,
                 limit: Some(50),
-                start_after_split_key: None,
                 order_by_ascending: true,
             },
             None,

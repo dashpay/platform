@@ -164,7 +164,6 @@ pub unsafe extern "C" fn dash_sdk_document_count(
             return_distinct_counts_in_range: false,
             order_by_ascending: None,
             limit: None,
-            start_after_split_key: None,
         };
 
         let count = DocumentCount::fetch(&wrapper.sdk, count_query)
@@ -235,7 +234,6 @@ pub unsafe extern "C" fn dash_sdk_document_split_count(
             return_distinct_counts_in_range: false,
             order_by_ascending: None,
             limit: None,
-            start_after_split_key: None,
         };
 
         // `DocumentSplitCounts` now carries per-(in_key, key)

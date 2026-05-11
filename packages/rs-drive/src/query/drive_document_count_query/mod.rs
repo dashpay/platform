@@ -761,12 +761,15 @@ pub struct RangeCountOptions {
     /// (empty `key`) summing all per-value counts.
     pub distinct: bool,
     /// Maximum number of entries to return. Only meaningful when
-    /// `distinct = true`. Applied after `start_after_split_key`. `None`
-    /// means no limit.
+    /// `distinct = true`. `None` means no limit.
+    ///
+    /// To paginate, callers should narrow the range itself
+    /// (`color > <last-key-from-previous-page>`) — a server-side
+    /// cursor field used to exist but added no expressivity over
+    /// client-side range adjustment and was ambiguous for compound
+    /// (`In + range + distinct`) shapes, so it was removed before
+    /// v12 shipped.
     pub limit: Option<u32>,
-    /// Pagination cursor: skip entries up to and including this
-    /// serialized key. Only meaningful when `distinct = true`.
-    pub start_after_split_key: Option<Vec<u8>>,
     /// Sort order for distinct entries. `true` (default) is ascending by
     /// serialized key bytes. Ignored when `distinct = false`.
     pub order_by_ascending: bool,
@@ -801,10 +804,8 @@ impl<'a> DriveDocumentCountQuery<'a> {
     /// `in_key = None`, empty `key`, and `count` equal to the sum of
     /// all matched per-value counts (the natural reduction). When
     /// `options.distinct = true`, returns one entry per emitted
-    /// `(in_key, key)` pair, after applying `order_by_ascending`,
-    /// `start_after_split_key`, and `limit`. Cursor / ordering are
-    /// applied to the lexicographic `(in_key, key)` tuple so that
-    /// pagination is stable across compound shapes.
+    /// `(in_key, key)` pair, after applying `order_by_ascending`
+    /// and `limit` over the lexicographic `(in_key, key)` tuple.
     pub fn execute_range_count_no_proof(
         &self,
         drive: &Drive,
@@ -910,8 +911,8 @@ impl<'a> DriveDocumentCountQuery<'a> {
             }]);
         }
 
-        // Distinct mode: order, cursor, limit — applied to the
-        // lexicographic `(in_key, key)` tuple so pagination is
+        // Distinct mode: order, then limit — applied to the
+        // lexicographic `(in_key, key)` tuple so ordering is
         // stable across compound shapes.
         //
         // The natural emit order from grovedb is already
@@ -931,26 +932,9 @@ impl<'a> DriveDocumentCountQuery<'a> {
         if !options.order_by_ascending {
             entries.reverse();
         }
-        if let Some(cursor) = options.start_after_split_key.as_ref() {
-            // Cursor compares against the `key` field — keeps the
-            // protobuf contract semantics ("split key") stable for
-            // flat queries. For compound queries the cursor still
-            // applies to `key`; clients walking compound shapes
-            // should be aware that pagination is per-(in_key, key)
-            // but cursor matches only on `key`. (A future revision
-            // could carry a structured cursor.)
-            let kept: Vec<SplitCountEntry> = entries
-                .into_iter()
-                .skip_while(|e| {
-                    if options.order_by_ascending {
-                        e.key.as_slice() <= cursor.as_slice()
-                    } else {
-                        e.key.as_slice() >= cursor.as_slice()
-                    }
-                })
-                .collect();
-            entries = kept;
-        }
+        // For pagination, callers narrow the range bound itself
+        // (`color > <last-key>` for the next page) rather than
+        // passing a cursor — see `RangeCountOptions::limit` doc.
         if let Some(limit) = options.limit {
             entries.truncate(limit as usize);
         }
@@ -1487,12 +1471,12 @@ impl Drive {
     /// `(serialized_value, count)` entry. Used by
     /// [`DocumentCountMode::PerInValue`] dispatch.
     ///
-    /// `options` (limit / order / cursor / distinct) applies to the
-    /// returned entry list — split-mode pagination per the proto
-    /// contract on `GetDocumentsCountRequestV0.{order_by_ascending,
-    /// limit, start_after_split_key}`. The `distinct` flag has no
-    /// effect here (PerInValue is always per-value); it's accepted
-    /// for symmetry with the range-mode executor.
+    /// `options` (limit / order / distinct) applies to the returned
+    /// entry list — split-mode pagination per the proto contract on
+    /// `GetDocumentsCountRequestV0.{order_by_ascending, limit}`.
+    /// The `distinct` flag has no effect here (PerInValue is always
+    /// per-value); it's accepted for symmetry with the range-mode
+    /// executor.
     ///
     /// Caller has already verified via [`DriveDocumentCountQuery::detect_mode`]
     /// that exactly one `In` clause is present in `where_clauses`.
@@ -1602,21 +1586,9 @@ impl Drive {
         if !options.order_by_ascending {
             entries.reverse();
         }
-        if let Some(cursor) = options.start_after_split_key.as_ref() {
-            // Drop everything up to AND including the cursor key, in
-            // the requested order.
-            let kept: Vec<SplitCountEntry> = entries
-                .into_iter()
-                .skip_while(|e| {
-                    if options.order_by_ascending {
-                        e.key.as_slice() <= cursor.as_slice()
-                    } else {
-                        e.key.as_slice() >= cursor.as_slice()
-                    }
-                })
-                .collect();
-            entries = kept;
-        }
+        // For pagination, callers chunk the `In` array client-side
+        // (the values are caller-supplied to begin with); no
+        // server-side cursor is needed or supported.
         if let Some(limit) = options.limit {
             entries.truncate(limit as usize);
         }
@@ -1822,8 +1794,6 @@ pub struct DocumentCountRequest<'a> {
     /// dispatch, the limit forwarded to
     /// [`RangeCountOptions::limit`] is always `Some(_)` ≤ system cap.
     pub limit: Option<u32>,
-    /// Pagination cursor for distinct-mode entries.
-    pub start_after_split_key: Option<Vec<u8>>,
     /// Whether to produce a proof (vs. raw counts).
     pub prove: bool,
     /// Drive-side query config — only consumed by the materialize-and-
@@ -1959,9 +1929,9 @@ impl Drive {
             DocumentCountMode::PerInValue => {
                 // Per-`In`-value → entries. The proto contract on
                 // `GetDocumentsCountRequestV0.{order_by_ascending,
-                // limit, start_after_split_key}` applies; clamp
-                // `limit` defensively (the abci handler passes raw,
-                // see `DocumentCountRequest::limit` doc).
+                // limit}` applies; clamp `limit` defensively (the
+                // abci handler passes raw, see
+                // `DocumentCountRequest::limit` doc).
                 let effective_limit = request
                     .limit
                     .unwrap_or(request.drive_config.default_query_limit as u32)
@@ -1969,7 +1939,6 @@ impl Drive {
                 let options = RangeCountOptions {
                     distinct: false, // ignored by PerInValue executor
                     limit: Some(effective_limit),
-                    start_after_split_key: request.start_after_split_key,
                     order_by_ascending: request.order_by_ascending.unwrap_or(true),
                 };
                 Ok(DocumentCountResponse::Entries(
@@ -1996,7 +1965,6 @@ impl Drive {
                 let options = RangeCountOptions {
                     distinct: request.return_distinct_counts_in_range,
                     limit: Some(effective_limit),
-                    start_after_split_key: request.start_after_split_key,
                     order_by_ascending: request.order_by_ascending.unwrap_or(true),
                 };
                 let entries = self.execute_document_count_range_no_proof(

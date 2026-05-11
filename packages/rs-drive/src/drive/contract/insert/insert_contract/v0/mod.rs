@@ -1630,7 +1630,6 @@ mod range_countable_index_e2e_tests {
                 &RangeCountOptions {
                     distinct: false,
                     limit: None,
-                    start_after_split_key: None,
                     order_by_ascending: true,
                 },
                 None,
@@ -1653,7 +1652,6 @@ mod range_countable_index_e2e_tests {
                 &RangeCountOptions {
                     distinct: true,
                     limit: None,
-                    start_after_split_key: None,
                     order_by_ascending: true,
                 },
                 None,
@@ -1673,7 +1671,6 @@ mod range_countable_index_e2e_tests {
                 &RangeCountOptions {
                     distinct: true,
                     limit: Some(1),
-                    start_after_split_key: None,
                     order_by_ascending: true,
                 },
                 None,
@@ -1683,14 +1680,32 @@ mod range_countable_index_e2e_tests {
         assert_eq!(limited.len(), 1);
         assert_eq!(limited[0].key, b"green".to_vec());
 
-        // distinct=true with start_after_split_key=green: only red.
-        let after = query
+        // Pagination via range adjustment: `color > "green"` (rather
+        // than `color > "blue"` + a cursor field) yields the same
+        // "everything past green" page, which here is just red.
+        let after_clauses = vec![WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: dpp::platform_value::Value::Text("green".to_string()),
+        }];
+        let after_index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+            document_type.indexes(),
+            &after_clauses,
+        )
+        .expect("range_countable index should be picked");
+        let after_query = DriveDocumentCountQuery {
+            document_type,
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "widget".to_string(),
+            index: after_index,
+            where_clauses: after_clauses,
+        };
+        let after = after_query
             .execute_range_count_no_proof(
                 &drive,
                 &RangeCountOptions {
                     distinct: true,
                     limit: None,
-                    start_after_split_key: Some(b"green".to_vec()),
                     order_by_ascending: true,
                 },
                 None,
@@ -1707,7 +1722,6 @@ mod range_countable_index_e2e_tests {
                 &RangeCountOptions {
                     distinct: true,
                     limit: None,
-                    start_after_split_key: None,
                     order_by_ascending: false,
                 },
                 None,
@@ -1796,7 +1810,6 @@ mod range_countable_index_e2e_tests {
                 &RangeCountOptions {
                     distinct: true,
                     limit: None,
-                    start_after_split_key: None,
                     order_by_ascending: true,
                 },
                 None,
@@ -2058,7 +2071,6 @@ mod range_countable_index_e2e_tests {
                 &RangeCountOptions {
                     distinct: true,
                     limit: None,
-                    start_after_split_key: None,
                     order_by_ascending: true,
                 },
                 None,
@@ -2100,7 +2112,6 @@ mod range_countable_index_e2e_tests {
                 &RangeCountOptions {
                     distinct: false,
                     limit: None,
-                    start_after_split_key: None,
                     order_by_ascending: true,
                 },
                 None,
@@ -2210,7 +2221,6 @@ mod range_countable_index_e2e_tests {
                 &RangeCountOptions {
                     distinct: false,
                     limit: None,
-                    start_after_split_key: None,
                     order_by_ascending: true,
                 },
                 None,
@@ -2232,7 +2242,6 @@ mod range_countable_index_e2e_tests {
                 &RangeCountOptions {
                     distinct: true,
                     limit: None,
-                    start_after_split_key: None,
                     order_by_ascending: true,
                 },
                 None,
@@ -2360,7 +2369,6 @@ mod range_countable_index_e2e_tests {
                 &RangeCountOptions {
                     distinct: false,
                     limit: None,
-                    start_after_split_key: None,
                     order_by_ascending: true,
                 },
                 None,
@@ -3213,7 +3221,6 @@ mod range_countable_index_e2e_tests {
                 &RangeCountOptions {
                     distinct: true,
                     limit: None,
-                    start_after_split_key: None,
                     order_by_ascending: true,
                 },
                 None,
@@ -3847,7 +3854,6 @@ mod range_countable_index_e2e_tests {
             return_distinct_counts_in_range: true,
             order_by_ascending: None,
             limit: Some(too_large),
-            start_after_split_key: None,
             prove: true,
             drive_config: &drive_config,
         };

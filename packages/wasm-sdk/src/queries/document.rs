@@ -472,7 +472,6 @@ impl WasmSdk {
             return_distinct_counts_in_range: false,
             order_by_ascending: None,
             limit: None,
-            start_after_split_key: None,
         };
 
         let count = DocumentCount::fetch(self.as_ref(), count_query)
@@ -503,7 +502,6 @@ impl WasmSdk {
             return_distinct_counts_in_range: false,
             order_by_ascending: None,
             limit: None,
-            start_after_split_key: None,
         };
 
         let (count_opt, metadata, proof) =
@@ -542,7 +540,6 @@ impl WasmSdk {
             return_distinct_counts_in_range: false,
             order_by_ascending: None,
             limit: None,
-            start_after_split_key: None,
         };
         let splits = DocumentSplitCounts::fetch(self.as_ref(), count_query).await?;
         Ok(split_counts_to_js_map(splits))
@@ -568,7 +565,6 @@ impl WasmSdk {
             return_distinct_counts_in_range: false,
             order_by_ascending: None,
             limit: None,
-            start_after_split_key: None,
         };
         let (splits_opt, metadata, proof) =
             DocumentSplitCounts::fetch_with_metadata_and_proof(self.as_ref(), count_query, None)

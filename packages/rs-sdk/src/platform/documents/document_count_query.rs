@@ -66,11 +66,13 @@ pub struct DocumentCountQuery {
     /// `limit` cap for distinct-mode entries. The server clamps this
     /// to its `max_query_limit` config; passing a larger value here
     /// just gets clamped, not rejected.
+    ///
+    /// For pagination, callers narrow the underlying range itself
+    /// (`color > <last-key-from-previous-page>`) — a server-side
+    /// cursor field existed earlier but added no expressivity over
+    /// client-side range adjustment, so it was removed before v12
+    /// shipped.
     pub limit: Option<u32>,
-    /// `start_after_split_key` pagination cursor for distinct-mode
-    /// entries. Skips up to AND including this serialized key, in
-    /// the requested order.
-    pub start_after_split_key: Option<Vec<u8>>,
 }
 
 impl DocumentCountQuery {
@@ -84,7 +86,6 @@ impl DocumentCountQuery {
             return_distinct_counts_in_range: false,
             order_by_ascending: None,
             limit: None,
-            start_after_split_key: None,
         })
     }
 
@@ -114,13 +115,6 @@ impl DocumentCountQuery {
         self.limit = limit;
         self
     }
-
-    /// Pagination cursor: skip distinct-mode entries up to and
-    /// including this serialized key, in the requested order.
-    pub fn with_start_after_split_key(mut self, cursor: Option<Vec<u8>>) -> Self {
-        self.start_after_split_key = cursor;
-        self
-    }
 }
 
 impl<'a> From<&'a DriveDocumentQuery<'a>> for DocumentCountQuery {
@@ -130,7 +124,6 @@ impl<'a> From<&'a DriveDocumentQuery<'a>> for DocumentCountQuery {
             return_distinct_counts_in_range: false,
             order_by_ascending: None,
             limit: None,
-            start_after_split_key: None,
         }
     }
 }
@@ -142,7 +135,6 @@ impl<'a> From<DriveDocumentQuery<'a>> for DocumentCountQuery {
             return_distinct_counts_in_range: false,
             order_by_ascending: None,
             limit: None,
-            start_after_split_key: None,
         }
     }
 }
@@ -180,7 +172,6 @@ impl TryFrom<DocumentCountQuery> for GetDocumentsCountRequest {
                     return_distinct_counts_in_range: query.return_distinct_counts_in_range,
                     order_by_ascending: query.order_by_ascending,
                     limit: query.limit,
-                    start_after_split_key: query.start_after_split_key.clone(),
                     // SDK Fetch path always requests a proof; users
                     // wanting no-proof distinct-mode would need a
                     // separate transport entry point that doesn't

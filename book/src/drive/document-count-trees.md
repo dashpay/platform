@@ -208,8 +208,9 @@ Distinct mode accepts pagination knobs:
 | Field | Effect |
 |---|---|
 | `order_by_ascending` | `true` (default) walks the range in BTreeMap natural order; `false` reverses |
-| `start_after_split_key` | Skip entries up to AND including this serialized key; pair with `limit` to walk in chunks |
-| `limit` | Truncate after `min(requested, max_query_limit)` entries; applied last (after order + cursor). **Unset (`None`) is normalized to `default_query_limit` before the cap is applied** — the server never walks an unbounded distinct-mode result set, even if the client omits the field. Clients that want a tight working-set should still set this explicitly. |
+| `limit` | Truncate after `min(requested, max_query_limit)` entries; applied last (after order). **Unset (`None`) is normalized to `default_query_limit` before the cap is applied** — the server never walks an unbounded distinct-mode result set, even if the client omits the field. Clients that want a tight working-set should still set this explicitly. |
+
+For pagination, clients narrow the underlying range itself rather than passing a cursor — page 2 is just `color > <last-key-from-page-1>` with the same `limit`. A `start_after_split_key` cursor field existed in earlier drafts of the v12 endpoint but was removed before shipping: it added no expressivity over client-side range adjustment, and the single-`bytes` shape was ambiguous for compound (`In + range + distinct`) queries whose natural sort is `(in_key, key)`. Field number 7 on `GetDocumentsCountRequestV0` is reserved for a future structured cursor if compound pagination ever needs to be addressable without range tricks.
 
 These knobs are ignored on summed mode (they have no defined meaning for a single aggregate).
 
@@ -225,7 +226,7 @@ For point-lookup count proofs (no range clause), the handler still falls back to
 
 Range count queries (`>`, `<`, `between*`) over an index with `range_countable: true` are answered in O(log n) by walking the property-name `ProvableCountTree`'s boundary nodes. The proof path uses grovedb's `AggregateCountOnRange`, which lets clients verify a range count without ever materializing the underlying documents.
 
-> Offset-style queries ("the next 50 items starting after item 7") are a separate primitive that will likely build on the same `ProvableCountTree` shape. They are not exposed via `GetDocumentsCount` today — the existing `start_after_split_key` cursor on the count endpoint is for *paginating per-distinct-value entries* in distinct-mode, not for offsetting into the underlying documents.
+> Offset-style queries ("the next 50 items starting after item 7") are a separate primitive that will likely build on the same `ProvableCountTree` shape. They are not exposed via `GetDocumentsCount` today — pagination of distinct-mode entries is done by narrowing the range itself (e.g. `color > <last-key-from-previous-page>`), not by offsetting into the underlying documents.
 
 ### Why Internal-Node Counts Make Range Counts O(log n)
 

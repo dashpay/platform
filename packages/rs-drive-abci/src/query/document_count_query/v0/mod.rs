@@ -84,7 +84,6 @@ impl<C> Platform<C> {
             return_distinct_counts_in_range,
             order_by_ascending,
             limit,
-            start_after_split_key,
             prove,
         }: GetDocumentsCountRequestV0,
         platform_state: &PlatformState,
@@ -150,7 +149,6 @@ impl<C> Platform<C> {
             return_distinct_counts_in_range,
             order_by_ascending,
             limit,
-            start_after_split_key,
             prove,
             drive_config: &self.config.drive,
         };
@@ -241,7 +239,6 @@ mod tests {
             return_distinct_counts_in_range: false,
             order_by_ascending: None,
             limit: None,
-            start_after_split_key: None,
             prove: false,
         };
 
@@ -296,7 +293,6 @@ mod tests {
             return_distinct_counts_in_range: false,
             order_by_ascending: None,
             limit: None,
-            start_after_split_key: None,
             prove: false,
         };
 
@@ -467,7 +463,6 @@ mod tests {
             return_distinct_counts_in_range: false,
             order_by_ascending: None,
             limit: None,
-            start_after_split_key: None,
             prove: false,
         };
 
@@ -530,7 +525,6 @@ mod tests {
             return_distinct_counts_in_range: false,
             order_by_ascending: None,
             limit: None,
-            start_after_split_key: None,
             prove: false,
         };
 
@@ -601,7 +595,6 @@ mod tests {
             return_distinct_counts_in_range: false,
             order_by_ascending: None,
             limit: None,
-            start_after_split_key: None,
             prove: true,
         };
 
@@ -699,7 +692,6 @@ mod tests {
                 return_distinct_counts_in_range: distinct,
                 order_by_ascending: ascending,
                 limit,
-                start_after_split_key: None,
                 prove: false,
             }
         };
@@ -889,7 +881,6 @@ mod tests {
             return_distinct_counts_in_range: true,
             order_by_ascending: None,
             limit: None,
-            start_after_split_key: None,
             prove: true,
         };
 
