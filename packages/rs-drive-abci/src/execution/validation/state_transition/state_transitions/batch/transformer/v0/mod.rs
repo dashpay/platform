@@ -326,6 +326,27 @@ impl BatchTransitionTransformerV0 for BatchTransition {
 }
 
 impl BatchTransitionInternalTransformerV0 for BatchTransition {
+    /// Roll up the per-token-transition results via the versioned
+    /// [`ConsensusValidationResult::merge_many`] facade.
+    ///
+    /// The aggregator's v0→v1 change at PROTOCOL_VERSION_12 (see issue
+    /// #2867) also affects this token path. **Tokens-always-pay
+    /// invariant**: every per-token sub-transformer
+    /// (`try_from_borrowed_token_*_transition_with_contract_lookup`)
+    /// emits a `BumpIdentityDataContractNonce` action on its
+    /// base-validation failure path, so each per-token result carries
+    /// `data: Some(...)` even when validation fails. The v1 aggregator
+    /// therefore never collapses an all-failed token batch to
+    /// `data: None`, and token failures continue to land as
+    /// `PaidConsensusError` (tx stays in the block, user pays for the
+    /// validation work) under both v11 and v12.
+    ///
+    /// A future change to a token sub-transformer that drops the bump
+    /// emission on a failure path would silently route that failure to
+    /// `UnpaidConsensusError` (tx removed from the block by
+    /// `prepare_proposal`). See
+    /// `tests/token/burn/mod.rs::test_token_burn_trying_to_burn_more_than_we_have`
+    /// and its `_protocol_version_11` sibling for the regression pin.
     fn transform_token_transitions_within_contract_v0(
         platform: &PlatformStateRef,
         data_contract_id: &Identifier,
