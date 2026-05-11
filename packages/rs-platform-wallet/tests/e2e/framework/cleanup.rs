@@ -8,6 +8,8 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+use dash_sdk::platform::Fetch;
+use dash_sdk::query_types::IdentityBalance;
 use dpp::address_funds::{AddressFundsFeeStrategyStep, PlatformAddress};
 use dpp::fee::Credits;
 use dpp::identity::signer::Signer;
@@ -621,9 +623,16 @@ async fn sweep_identities_with_seed(
         }
     }
 
-    // Phase 2 — collect (identity_id, balance, registration_index)
+    // Phase 2 — collect (identity_id, cached_balance, registration_index)
     // tuples under a short read lock so we don't hold the wallet
-    // manager lock across SDK round-trips.
+    // manager lock across SDK round-trips. The cached balance is kept
+    // only for diagnostic logging — the authoritative value used for
+    // the floor check and amount computation is refetched from chain
+    // below (the cache reflects the last seen balance, typically
+    // post-funding / post-registration, and goes stale once the test
+    // body runs state transitions like `data_contract_create` or token
+    // ops; using it leads to over-amount sweep transfers that the
+    // chain rejects with `IdentityInsufficientBalance`).
     let wallet_id = wallet.wallet_id();
     let candidates: Vec<(Identifier, Credits, u32)> = {
         let state = wallet.state().await;
@@ -642,7 +651,55 @@ async fn sweep_identities_with_seed(
         out
     };
 
-    for (identity_id, balance, identity_index) in candidates {
+    let sdk = wallet.sdk();
+    for (identity_id, cached_balance, identity_index) in candidates {
+        // Refresh the balance from chain. Lightweight balance-only
+        // query — full `Identity::fetch` would also work but is
+        // heavier and we only need the credits value.
+        let balance: Credits = match IdentityBalance::fetch(sdk, identity_id).await {
+            Ok(Some(b)) => b,
+            Ok(None) => {
+                tracing::warn!(
+                    target: "platform_wallet::e2e::cleanup",
+                    wallet_id = %hex::encode(wallet_id),
+                    %identity_id,
+                    identity_index,
+                    cached_balance,
+                    "identity sweep: chain reports identity absent; skipping"
+                );
+                continue;
+            }
+            Err(err) => {
+                tracing::warn!(
+                    target: "platform_wallet::e2e::cleanup",
+                    wallet_id = %hex::encode(wallet_id),
+                    %identity_id,
+                    identity_index,
+                    cached_balance,
+                    error = %err,
+                    "identity sweep: balance refresh failed; skipping identity"
+                );
+                continue;
+            }
+        };
+
+        // Surface material divergence between the local cache and the
+        // chain so future investigations of "where did the credits
+        // go?" have a breadcrumb.
+        let delta = cached_balance.abs_diff(balance);
+        if delta > IDENTITY_BALANCE_REFRESH_LOG_THRESHOLD {
+            tracing::info!(
+                target: "platform_wallet::e2e::cleanup",
+                wallet_id = %hex::encode(wallet_id),
+                %identity_id,
+                identity_index,
+                cached_balance,
+                chain_balance = balance,
+                delta,
+                "identity sweep: cached balance diverged from chain; using chain value"
+            );
+        }
+
         if balance < IDENTITY_SWEEP_FLOOR {
             tracing::debug!(
                 target: "platform_wallet::e2e::cleanup",
@@ -746,6 +803,14 @@ const IDENTITY_SWEEP_FLOOR: Credits = 50_000_000;
 /// exceeds the identity's balance, so the floor must comfortably
 /// exceed the chain-time fee. Empirically ~12-15M on testnet.
 const IDENTITY_SWEEP_FEE_RESERVE: Credits = 30_000_000;
+
+/// `|cached - chain| > THRESHOLD` triggers an INFO-level breadcrumb
+/// during the sweep so we can spot caches that have gone materially
+/// stale (e.g. the TK-cohort silent leak — owner cache holds the
+/// ~35B post-funding value while the chain holds ~14.5B after
+/// `data_contract_create` + token ops). 100M is well above ordinary
+/// fee-tick noise yet small enough to flag suspicious gaps.
+const IDENTITY_BALANCE_REFRESH_LOG_THRESHOLD: Credits = 100_000_000;
 
 /// Drain Core (Layer-1) UTXOs to the bank's primary BIP-44 receive
 /// address. No-op when the wallet's confirmed Core balance is at or
