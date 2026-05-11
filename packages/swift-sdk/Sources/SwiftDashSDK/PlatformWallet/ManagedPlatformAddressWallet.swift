@@ -21,29 +21,6 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
         platform_address_wallet_destroy(handle).discard()
     }
 
-    /// Reset the incremental sync watermark.
-    ///
-    /// Passing `(0, 0, 0)` clears the provider's last-sync state so the
-    /// next `sync_balances` call does a full trunk/branch scan instead
-    /// of an incremental recent-query. Useful when the in-memory
-    /// `account.address_credit_balance` map is empty after a wallet
-    /// restore: the persisted provider state is in place but balances
-    /// only flow into the account via the `on_address_found` callback
-    /// during a sync, which incremental mode skips when nothing has
-    /// changed.
-    public func restoreSyncState(
-        syncHeight: UInt64,
-        syncTimestamp: UInt64,
-        lastKnownRecentBlock: UInt64
-    ) throws {
-        try platform_address_wallet_restore_sync_state(
-            handle,
-            syncHeight,
-            syncTimestamp,
-            lastKnownRecentBlock
-        ).check()
-    }
-
     // MARK: - Balance queries
 
     /// Platform address with its credit balance.

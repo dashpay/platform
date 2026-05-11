@@ -167,39 +167,6 @@ struct SendTransactionView: View {
                             let managed = walletManager.wallet(for: wallet.walletId)
                             let coreWallet = try? managed?.coreWallet()
                             let platformAddressWallet = try? managed?.platformAddressWallet()
-                            // The in-memory account.address_credit_balance map
-                            // is only hydrated by BLAST sync via the provider's
-                            // on_address_found callback (provider.rs:578).
-                            // After wallet restore the provider has a watermark
-                            // set, which forces sync into incremental ("recent
-                            // query") mode that skips known addresses — so the
-                            // callback never fires and the account stays empty.
-                            // Reset the watermark to force a full trunk/branch
-                            // scan that re-emits on_address_found for every
-                            // known address.
-                            //
-                            // Both calls run before we hand off to
-                            // `executeSend`; surface failures via the
-                            // viewModel's existing error-alert binding
-                            // and abort the send so we don't fall
-                            // through to a misleading "available 0
-                            // credits" downstream.
-                            do {
-                                try platformAddressWallet?.restoreSyncState(
-                                    syncHeight: 0, syncTimestamp: 0, lastKnownRecentBlock: 0
-                                )
-                            } catch {
-                                viewModel.error =
-                                    "Couldn't reset sync state: \(error.localizedDescription)"
-                                return
-                            }
-                            do {
-                                try await walletManager.syncPlatformAddressNow()
-                            } catch {
-                                viewModel.error =
-                                    "Couldn't refresh platform balance before sending: \(error.localizedDescription)"
-                                return
-                            }
                             // Pick the account holding the platform
                             // balance. Most wallets have a single
                             // PlatformPayment account (index 0);
