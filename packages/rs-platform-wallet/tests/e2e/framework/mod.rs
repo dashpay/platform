@@ -53,8 +53,6 @@
 //!   the test asserts a **lower bound** on entry count (`>= 3`) and the
 //!   pairwise non-overlap property that holds across ALL entries — not
 //!   strict equality on its own three entries.
-//! - [`cases::pa_010_bank_starvation`] is `#[ignore]`'d pending a
-//!   per-test bank instance API (the bank is process-shared by design).
 //!
 //! All other cases mint fresh seeds and reach for shared resources only
 //! via the serialised paths above.

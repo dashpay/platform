@@ -193,13 +193,11 @@ wallet, one SPV runtime, and one workdir slot. Per-test isolation comes from:
   asserted thread-safe (`framework/mod.rs`). A future field addition that breaks
   thread-safety fails to compile.
 
-Two cases need a note under parallel execution:
+One case needs a note under parallel execution:
 
 - **PA-008c** observes the process-global `FUNDING_MUTEX_HISTORY` ring buffer to
   prove the mutex serialises. Asserts a lower bound on entry count (`>= 3`) and
   the pairwise non-overlap property — both hold regardless of sibling traffic.
-- **PA-010** is `#[ignore]`'d pending a per-test bank instance API; bank is
-  process-shared by design.
 
 ### Cross-process (concurrent `cargo test` invocations)
 

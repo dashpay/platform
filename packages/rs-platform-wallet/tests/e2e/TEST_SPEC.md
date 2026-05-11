@@ -60,9 +60,8 @@ listing order within a section and CI gating tier.
 Within each feature-area subsection (Platform Addresses, Identity, Tokens,
 DPNS, Dashpay, etc.), test cases are listed P0 first, then P1, then P2. The
 suffix-letter convention (e.g. `PA-001b`, `PA-002c`) groups variant cases next
-to their parent; new top-level edge cases get fresh dense IDs (e.g. `PA-009`,
-`PA-010`). No existing case ID is renumbered; new cases slot in adjacent to
-their parent.
+to their parent; new top-level edge cases get fresh dense IDs (e.g. `PA-009`).
+No existing case ID is renumbered; new cases slot in adjacent to their parent.
 
 ### 1.2 Mnemonic / seed source
 
