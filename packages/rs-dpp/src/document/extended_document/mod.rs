@@ -755,15 +755,21 @@ mod test {
         let owner_id = vec![12_u8; 32];
         let data_contract_id = vec![13_u8; 32];
 
+        // JSON binary/identifier fields use the canonical encoded forms
+        // (Identifier=bs58, BinaryData=base64). The previous fixture relied
+        // on the `From<JsonValue> for Value` array→bytes heuristic (Critical-2)
+        // to silently turn `[10, 10, ..., 10]` (32 entries) into Value::Bytes;
+        // that heuristic has been removed, so fixtures must use string
+        // encoding directly.
         let raw_document = json!({
             "$protocolVersion"  : 0,
-            "$id" : id,
-            "$ownerId" : owner_id,
+            "$id" : bs58::encode(&id).into_string(),
+            "$ownerId" : bs58::encode(&owner_id).into_string(),
             "$type" : "test",
-            "$dataContractId" : data_contract_id,
+            "$dataContractId" : bs58::encode(&data_contract_id).into_string(),
             "$revision" : 1,
-            "alphaBinary" : alpha_value,
-            "alphaIdentifier" : alpha_value,
+            "alphaBinary" : BASE64_STANDARD.encode(&alpha_value),
+            "alphaIdentifier" : bs58::encode(&alpha_value).into_string(),
         });
 
         let document = ExtendedDocument::from_raw_json_document(

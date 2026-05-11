@@ -183,13 +183,17 @@ These are the bug / risk findings that must be addressed before or during the mi
 
 **Plan impact**: do **not** assume "value-then-into-json ≡ direct-json". Round-trip tests must exercise both paths and assert equivalence per-type, or document divergence.
 
-#### Critical-2: Silent array→bytes coercion in `From<JsonValue> for Value`
+#### Critical-2: Silent array→bytes coercion in `From<JsonValue> for Value`  ✅ RESOLVED
 
-`rs-platform-value/src/converter/serde_json.rs:222-243`: any JSON array with `len ≥ 10` and every element a `u64 ≤ 255` is silently reclassified as `Value::Bytes`. Source comment confirms: *"todo: hacky solution, to fix"*.
+**Was**: `rs-platform-value/src/converter/serde_json.rs:222-243`: any JSON array with `len ≥ 10` and every element a `u64 ≤ 255` was silently reclassified as `Value::Bytes`. Source comment confirmed: *"todo: hacky solution, to fix"*.
 
-**Surface**: every `from_json` call in rs-dpp routes through `JsonValue::into()`. A document property typed as "array of small integers" of length 10+ is silently corrupted to a `Bytes` variant; round-trip back through `to_json_value` produces a base64 string instead of an array.
+**Surface**: every `from_json` call in rs-dpp routed through `JsonValue::into()`. A document property typed as "array of small integers" of length 10+ was silently corrupted to a `Bytes` variant; round-trip back through `to_json_value` produced a base64 string instead of an array.
 
-**Plan impact**: must be fixed before any migration that changes which conversion path is used, or correctness regressions will appear. This is its own pre-requisite work item.
+**Fix** (May 2026, this branch): removed the heuristic from both `From<JsonValue> for Value` impls (owned + borrowed). Conversion is now faithful: JSON array → `Value::Array`. The heuristic was a JS-DPP-era workaround for clients that sent binary as `[u8, ...]` arrays; after the canonical-trait unification (HR=base64 strings, non-HR=`Value::Bytes`; `BinaryData`/`Identifier`/`Bytes*` Deserialize impls handle both forms), it was unnecessary and actively corrupting genuine integer-array properties.
+
+**Audit + caller migration**: only 2 test fixtures in rs-dpp depended on the heuristic — both used `vec![u8; N]` literals in `json!()` macros expecting silent coercion. Migrated to canonical encoded forms (base64 for binary fields, bs58 for identifier-typed fields). Production code paths all already use canonical strings.
+
+**Pin tests added** in `rs-platform-value/src/converter/serde_json.rs`: `from_json_array_10_u8_range_stays_array_not_bytes`, `from_json_array_all_255_stays_array_not_bytes`, `from_json_long_byte_like_array_stays_array_not_bytes` (1000-element round-trip), plus the borrowed-variant mirror. The old "becomes_bytes" assertions were flipped to "stays_array_not_bytes" with reference comments explaining the Critical-2 history.
 
 #### Critical-3: `ExtendedDocument` is non-round-trippable today  ✅ RESOLVED
 
@@ -407,7 +411,7 @@ Ordered to fix bugs first, then easy wins, then long-pole work. Each step gates 
 
 1. **Bug-fix prerequisites** (must come first):
    - **G1**: Resolve `ExtendedDocument` Serialize/Deserialize key mismatch (`version` ↔ `$version`, missing `data_contract`). Round-trip test mandatory. (Critical-3.)
-   - **G2**: Address `From<JsonValue> for Value` array→bytes heuristic. Either remove (with `replace_at_paths` cleanup at every `from_json` site) or formally document with safe-paths list. (Critical-2.)
+   - **G2**: Address `From<JsonValue> for Value` array→bytes heuristic. ✅ DONE (May 2026, this branch) — heuristic removed from both owned/borrowed impls in `rs-platform-value/src/converter/serde_json.rs`, replaced with faithful array→array conversion. Only 2 test fixtures in rs-dpp depended on the heuristic; both migrated to canonical encoded forms (base64 / bs58). Pin tests added. See Critical-2 ✅ RESOLVED above for full details. (Critical-2.)
    - **G3**: Document the `is_human_readable` divergence in a comment block on `JsonConvertible` and `ValueConvertible`. ✅ DONE (May 2026, this branch) — both traits in `serialization/serialization_traits.rs` now carry: (a) a divergence-table comparing `to_json()` HR vs `to_object()` non-HR output for `Identifier`/`BinaryData`/`Bytes*`/`CoreScript`; (b) a "do not assume `to_object().try_into_json()` ≡ `to_json()`" warning; (c) the `ContentDeserializer` caveat (always reports HR=true; manual `Deserialize` impls in tagged-enum contexts need dual-shape visitors) with a pointer to `Bytes32::deserialize` and `serde_bytes.rs` as canonical examples. The property-test idea is deferred — adding equivalence checks across all ~80 types is high-cost / low-marginal-value given the divergences are documented and the round-trip tests we already have catch concrete regressions. (Critical-1.)
 
 2. **Trivially redundant inherent methods** (zero behavior change) ✅ DONE in commit `30b43dc87b`:

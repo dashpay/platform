@@ -513,6 +513,8 @@ impl DocumentFromCreateTransitionV0 for Document {
 mod test {
     use crate::data_contract::v0::DataContractV0;
     use crate::state_transition::batch_transition::document_create_transition::DocumentCreateTransition;
+    use base64::prelude::BASE64_STANDARD;
+    use base64::Engine;
     use platform_value::btreemap_extensions::BTreeValueMapHelper;
     use platform_value::{platform_value, BinaryData, Bytes32, Identifier};
     use platform_version::version::LATEST_PLATFORM_VERSION;
@@ -658,17 +660,26 @@ mod test {
         let data_contract_id = vec![13_u8; 32];
         let entropy = vec![11_u8; 32];
 
+        // Binary / identifier fields use the canonical encoded forms
+        // (Identifier=bs58, BinaryData/byteArray=base64). The previous
+        // fixture relied on the `From<JsonValue> for Value` array→bytes
+        // heuristic (Critical-2) to silently coerce JSON arrays into
+        // Value::Bytes; that heuristic has been removed.
         let raw_document = json!({
             "$protocolVersion"  : 0,
             "$version"  : "0",
-            "$id" : id,
+            "$id" : bs58::encode(&id).into_string(),
             "$type" : "test",
-            "$dataContractId" : data_contract_id,
+            "$dataContractId" : bs58::encode(&data_contract_id).into_string(),
             "$identityContractNonce": 0u64,
             "revision" : 1,
-            "alphaBinary" : alpha_value,
-            "alphaIdentifier" : alpha_value,
-            "$entropy" : entropy,
+            // NOTE field naming is misleading: `alphaBinary` is the one with
+            // `contentMediaType: ...identifier` in the contract schema above,
+            // so it gets bs58-decoded. `alphaIdentifier` is plain byteArray
+            // and gets base64-decoded.
+            "alphaBinary" : bs58::encode(&alpha_value).into_string(),
+            "alphaIdentifier" : BASE64_STANDARD.encode(&alpha_value),
+            "$entropy" : BASE64_STANDARD.encode(&entropy),
             "$action": 0 ,
         });
 
