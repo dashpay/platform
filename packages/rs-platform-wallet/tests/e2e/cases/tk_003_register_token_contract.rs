@@ -68,9 +68,20 @@ async fn tk_003_register_token_contract() {
         );
         return;
     }
-    let setup_guard = crate::framework::setup_with_n_identities(1, DEFAULT_TK_FUNDING)
-        .await
-        .expect("register owner identity");
+    // QA-V39-002 — funding 35 B credits on a freshly-funded test wallet
+    // address under `worker_threads = 12` parallel churn on the shared
+    // bank wallet routinely needs more than the 60 s
+    // `DEFAULT_SETUP_STEP_TIMEOUT`. Route through the explicit-budget
+    // entry point with [`crate::framework::tokens::TK_SETUP_WAIT_TIMEOUT`]
+    // (120 s) so the funding wait_for_balance has headroom for the
+    // cross-replica replication lag.
+    let setup_guard = crate::framework::setup_with_n_identities_with_step_timeout(
+        1,
+        DEFAULT_TK_FUNDING,
+        crate::framework::tokens::TK_SETUP_WAIT_TIMEOUT,
+    )
+    .await
+    .expect("register owner identity");
     let owner = setup_guard
         .identities
         .first()

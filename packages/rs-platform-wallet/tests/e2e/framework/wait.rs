@@ -102,6 +102,16 @@ pub async fn wait_for_balance(
     let start = Instant::now();
     let deadline = Instant::now() + timeout;
 
+    // QA-V39-002 — capture last-observed balance, poll count, and the
+    // "did anything ever move?" signal so timeout panics distinguish
+    // SPV/replication lag (some change observed, just didn't reach
+    // target) from a non-confirmed fund tx (no change observed at all).
+    let mut polls: u32 = 0;
+    let mut last_observed: Credits = 0;
+    let mut last_observed_initialised = false;
+    let mut first_observed: Option<Credits> = None;
+    let mut any_balance_change_observed = false;
+
     loop {
         // Capture `Notified` BEFORE the sync so a notification
         // arriving mid-sync isn't lost; pin + `as_mut()` lets us
@@ -111,8 +121,16 @@ pub async fn wait_for_balance(
 
         match test_wallet.sync_balances().await {
             Ok(()) => {
+                polls = polls.saturating_add(1);
                 let balances = test_wallet.balances().await;
                 let current = balances.get(addr).copied().unwrap_or(0);
+                if !last_observed_initialised {
+                    first_observed = Some(current);
+                    last_observed_initialised = true;
+                } else if current != last_observed {
+                    any_balance_change_observed = true;
+                }
+                last_observed = current;
                 if current >= expected {
                     tracing::info!(
                         target: "platform_wallet::e2e::wait",
@@ -143,6 +161,7 @@ pub async fn wait_for_balance(
                     addr = ?addr,
                     current,
                     expected,
+                    polls,
                     "balance below target; waiting on event hub"
                 );
             }
@@ -157,7 +176,9 @@ pub async fn wait_for_balance(
         if remaining.is_zero() {
             return Err(FrameworkError::Cleanup(format!(
                 "wait_for_balance timed out after {timeout:?} \
-                 (addr={addr:?} expected={expected})"
+                 (addr={addr:?} expected={expected} last_observed={last_observed} \
+                  first_observed={first_observed:?} polls={polls} \
+                  any_balance_change_observed={any_balance_change_observed})"
             )));
         }
         // Backstop wake on idle chains; real activity wakes us

@@ -65,7 +65,7 @@ use dash_sdk::platform::tokens::token_info::IdentityTokenInfosQuery;
 
 use super::harness::E2eContext;
 use super::wallet_factory::RegisteredIdentity;
-use super::{setup_with_n_identities, FrameworkError, FrameworkResult, MultiIdentitySetupGuard};
+use super::{FrameworkError, FrameworkResult, MultiIdentitySetupGuard};
 
 /// Default TK-NNN token slot. The permissive owner-only contract
 /// always deploys a single token at position `0`.
@@ -88,6 +88,15 @@ pub const DEFAULT_DECIMALS: u8 = 8;
 /// TK case fail at setup with `Insufficient identity ... balance
 /// 1000000000 required 20000100000`.
 pub const DEFAULT_TK_FUNDING: dpp::fee::Credits = 35_000_100_000;
+
+/// Per-step propagation budget used by the TK-NNN suite. The TK
+/// setup funds ~35 B credits per identity in a single hop and runs
+/// under high parallel churn on the process-shared bank wallet
+/// (`worker_threads = 12`); the 60 s `DEFAULT_SETUP_STEP_TIMEOUT`
+/// undershoots the cross-replica replication lag we see when sibling
+/// guards are simultaneously draining the bank's funding pool.
+/// (QA-V39-002.)
+pub const TK_SETUP_WAIT_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// Pre-programmed distribution rule passed to
 /// [`setup_with_token_pre_programmed_distribution`].
@@ -408,12 +417,7 @@ pub async fn setup_with_token_contract(
     ctx: &E2eContext,
     owner_funding: dpp::fee::Credits,
 ) -> FrameworkResult<TokenSetup> {
-    setup_with_token_contract_with_step_timeout(
-        ctx,
-        owner_funding,
-        super::DEFAULT_SETUP_STEP_TIMEOUT,
-    )
-    .await
+    setup_with_token_contract_with_step_timeout(ctx, owner_funding, TK_SETUP_WAIT_TIMEOUT).await
 }
 
 /// Per-test override of [`setup_with_token_contract`]'s propagation budget.
@@ -461,12 +465,8 @@ pub async fn setup_with_token_and_two_identities(
     ctx: &E2eContext,
     funding_per: dpp::fee::Credits,
 ) -> FrameworkResult<TokenTwoIdentitiesSetup> {
-    setup_with_token_and_two_identities_with_step_timeout(
-        ctx,
-        funding_per,
-        super::DEFAULT_SETUP_STEP_TIMEOUT,
-    )
-    .await
+    setup_with_token_and_two_identities_with_step_timeout(ctx, funding_per, TK_SETUP_WAIT_TIMEOUT)
+        .await
 }
 
 /// Per-test override of [`setup_with_token_and_two_identities`]'s
@@ -513,7 +513,9 @@ pub async fn setup_with_token_and_three_identities(
     funding_per: dpp::fee::Credits,
 ) -> FrameworkResult<TokenThreeIdentitiesSetup> {
     let _ = ctx;
-    let setup_guard = setup_with_n_identities(3, funding_per).await?;
+    let setup_guard =
+        super::setup_with_n_identities_with_step_timeout(3, funding_per, TK_SETUP_WAIT_TIMEOUT)
+            .await?;
     let owner = setup_guard.identities[0].clone_for_token_setup();
     let peers = [
         setup_guard.identities[1].clone_for_token_setup(),
@@ -553,7 +555,9 @@ pub async fn setup_with_token_pre_programmed_distribution(
     distribution: PreProgrammedDistribution,
 ) -> FrameworkResult<TokenSetup> {
     let _ = ctx;
-    let setup_guard = setup_with_n_identities(1, owner_funding).await?;
+    let setup_guard =
+        super::setup_with_n_identities_with_step_timeout(1, owner_funding, TK_SETUP_WAIT_TIMEOUT)
+            .await?;
     let owner = setup_guard.identities[0].clone_for_token_setup();
 
     let mut json =
@@ -618,7 +622,9 @@ pub async fn setup_with_token_perpetual_distribution(
     distribution: PerpetualDistribution,
 ) -> FrameworkResult<TokenSetup> {
     let _ = ctx;
-    let setup_guard = setup_with_n_identities(1, owner_funding).await?;
+    let setup_guard =
+        super::setup_with_n_identities_with_step_timeout(1, owner_funding, TK_SETUP_WAIT_TIMEOUT)
+            .await?;
     let owner = setup_guard.identities[0].clone_for_token_setup();
 
     let json = permissive_owner_token_contract_with_perpetual_distribution_json(
