@@ -46,58 +46,38 @@ impl DriveDocumentCountQuery<'_> {
         }])
     }
 
-    /// Executes the count query and generates a GroveDB proof.
+    /// Generates a grovedb proof of the CountTree elements covering a
+    /// fully-covered Equal/`In` count query against a `countable: true`
+    /// index. Returns the raw proof bytes; the SDK-side
+    /// [`Self::verify_point_lookup_count_proof`] walks the proof and
+    /// extracts `count_value_or_default()` from each verified CountTree
+    /// element.
     ///
-    /// Returns the raw proof bytes. The caller is responsible for verifying
-    /// the proof and extracting the count from the verified result.
-    pub fn execute_with_proof(
+    /// Builds the path query via
+    /// [`Self::point_lookup_count_path_query`] (shared with the
+    /// verifier so the merk-root recomputation matches). Errors surface
+    /// from the builder when the query shape isn't supported — partial
+    /// coverage, `In` on a non-last property, etc. — see that builder's
+    /// docstring for the exhaustive contract.
+    ///
+    /// Proof size is O(k × log n) where k is the number of covered
+    /// (Equal/In) branches and n is the tree depth: one merk path proof
+    /// per CountTree element, not per matching document. Replaces the
+    /// pre-this-PR materialize-and-count proof which scaled with
+    /// matching docs and was capped at `u16::MAX`.
+    pub fn execute_point_lookup_count_with_proof(
         &self,
         drive: &Drive,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
         let drive_version = &platform_version.drive;
-
-        // Build the same path as execute_no_proof
-        let mut path = vec![
-            vec![RootTree::DataContractDocuments as u8],
-            self.contract_id.to_vec(),
-            vec![1u8],
-            self.document_type_name.as_bytes().to_vec(),
-        ];
-
-        // Walk the index properties, pushing property keys and equality values
-        for prop in &self.index.properties {
-            let matching_clause = self
-                .where_clauses
-                .iter()
-                .find(|wc| wc.field == prop.name && wc.operator == WhereOperator::Equal);
-
-            if let Some(clause) = matching_clause {
-                path.push(prop.name.as_bytes().to_vec());
-                let serialized_value = self.document_type.serialize_value_for_key(
-                    prop.name.as_str(),
-                    &clause.value,
-                    platform_version,
-                )?;
-                path.push(serialized_value);
-            } else {
-                break;
-            }
-        }
-
-        // Build a path query that covers the count tree and its contents
-        let mut query = Query::new();
-        query.insert_all();
-
-        let path_query = PathQuery::new(path, SizedQuery::new(query, None, None));
-
+        let path_query = self.point_lookup_count_path_query(platform_version)?;
         let proof = drive
             .grove
             .get_proved_path_query(&path_query, None, transaction, &drive_version.grove_version)
             .unwrap()
             .map_err(|e| Error::GroveDB(Box::new(e)))?;
-
         Ok(proof)
     }
 

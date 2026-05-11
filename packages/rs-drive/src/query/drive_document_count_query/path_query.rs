@@ -473,4 +473,181 @@ impl DriveDocumentCountQuery<'_> {
             }
         }
     }
+
+    /// Build the grovedb `PathQuery` for a point-lookup count proof
+    /// against a `countable: true` index. Returns one element per
+    /// covered branch — the `CountTree` element at
+    /// `[..., last_field, last_value, 0]` whose `count_value` is the
+    /// per-branch document count.
+    ///
+    /// Shared between the server-side prove path
+    /// ([`Self::execute_point_lookup_count_with_proof`]) and the
+    /// client-side verify path
+    /// ([`Self::verify_point_lookup_count_proof`]). Both sides must
+    /// produce the *exact same* `PathQuery` for the merk-root
+    /// recomputation to match.
+    ///
+    /// ## Shape support
+    ///
+    /// The builder requires the where clauses to **fully cover** the
+    /// index — every property in `self.index.properties` must have a
+    /// matching `Equal` or (for the last property only) `In` clause.
+    /// This matches the no-proof `Total` / `PerInValue` modes'
+    /// fully-covered case; partial-coverage shapes (where some
+    /// trailing index properties have no matching clause) require a
+    /// recursive subquery enumeration that this builder does not yet
+    /// implement.
+    ///
+    /// Two output shapes:
+    /// - **Equal-only, fully covered**: flat path query at
+    ///   `[..., last_field, last_value]` with a single `Key([0])`
+    ///   item. Returns one element (the CountTree).
+    /// - **Equal prefix + `In` on last property**: compound query
+    ///   with `base_path` ending at the In-bearing property's
+    ///   property-name subtree; outer Query has one `Key` per In
+    ///   value (sorted lex-asc for prove/no-proof parity and pushed-
+    ///   limit safety — same convention as
+    ///   [`Self::distinct_count_path_query`]); subquery descends one
+    ///   layer via `Key([0])` to grab the CountTree under each
+    ///   matched In value.
+    ///
+    /// ## Errors
+    ///
+    /// Rejects shapes the builder doesn't support:
+    /// - Partial coverage (trailing uncovered properties)
+    /// - `In` on a non-last property
+    /// - More than one `In` clause
+    /// - Any non-`Equal` / non-`In` operator (defense-in-depth; mode
+    ///   detection already filters these out)
+    pub fn point_lookup_count_path_query(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<PathQuery, Error> {
+        if self.index.properties.is_empty() {
+            return Err(Error::Query(
+                QuerySyntaxError::InvalidWhereClauseComponents(
+                    "point_lookup_count_path_query: index must have at least one property",
+                ),
+            ));
+        }
+
+        let last_prop_idx = self.index.properties.len() - 1;
+
+        let mut base_path: Vec<Vec<u8>> = vec![
+            vec![RootTree::DataContractDocuments as u8],
+            self.contract_id.to_vec(),
+            vec![1u8],
+            self.document_type_name.as_bytes().to_vec(),
+        ];
+
+        // `in_outer_keys` is populated when we encounter the (single,
+        // last-property) `In` clause; everything before it must be
+        // `Equal` and contributes to `base_path`.
+        let mut in_outer_keys: Option<Vec<Vec<u8>>> = None;
+
+        for (i, prop) in self.index.properties.iter().enumerate() {
+            let clause = self
+                .where_clauses
+                .iter()
+                .find(|wc| wc.field == prop.name)
+                .ok_or_else(|| {
+                    Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
+                        "prove count requires the where clauses to fully cover the \
+                         countable index; one or more index properties have no \
+                         matching `==` or `in` clause — use a more specific index \
+                         (define a `countable: true` index whose properties exactly \
+                         match the clauses) or use `prove=false`",
+                    ))
+                })?;
+
+            match clause.operator {
+                WhereOperator::Equal => {
+                    let serialized = self.document_type.serialize_value_for_key(
+                        prop.name.as_str(),
+                        &clause.value,
+                        platform_version,
+                    )?;
+                    base_path.push(prop.name.as_bytes().to_vec());
+                    base_path.push(serialized);
+                }
+                WhereOperator::In => {
+                    if i != last_prop_idx {
+                        return Err(Error::Query(
+                            QuerySyntaxError::InvalidWhereClauseComponents(
+                                "prove count with `in` requires the `in` clause to be \
+                                 on the last property of the covering countable index",
+                            ),
+                        ));
+                    }
+                    // Stops `base_path` at the In-bearing property's
+                    // property-name subtree; outer Query lives at
+                    // that level.
+                    base_path.push(prop.name.as_bytes().to_vec());
+                    let in_values = clause.in_values().into_data_with_error()??;
+                    let mut keys: Vec<Vec<u8>> = in_values
+                        .iter()
+                        .map(|v| {
+                            self.document_type.serialize_value_for_key(
+                                prop.name.as_str(),
+                                v,
+                                platform_version,
+                            )
+                        })
+                        .collect::<Result<_, _>>()?;
+                    // Sort lex-asc for prove/no-proof entry-order
+                    // parity and so the pushed-limit (if any) gives
+                    // the documented "first N by lex" semantics.
+                    // Same convention as `distinct_count_path_query`.
+                    keys.sort();
+                    in_outer_keys = Some(keys);
+                }
+                _ => {
+                    return Err(Error::Query(
+                        QuerySyntaxError::InvalidWhereClauseComponents(
+                            "point_lookup_count_path_query: prefix properties must use \
+                             `==` (or `in` on the last property)",
+                        ),
+                    ));
+                }
+            }
+        }
+
+        // CountTree storage convention: the count lives at the `[0]`
+        // child of the value tree. See the book's "Count Trees and
+        // Provable Counts" chapter for the layout.
+        const COUNT_TREE_KEY: u8 = 0;
+
+        match in_outer_keys {
+            None => {
+                // Equal-only, fully covered. `base_path` ends at
+                // `[..., last_field, last_value]`; query asks for the
+                // single key `[0]` (the CountTree element).
+                let mut query = Query::new();
+                query.insert_key(vec![COUNT_TREE_KEY]);
+                Ok(PathQuery::new(
+                    base_path,
+                    SizedQuery::new(query, None, None),
+                ))
+            }
+            Some(keys) => {
+                // Equal prefix + In on last. `base_path` ends at the
+                // In-bearing property's property-name subtree; outer
+                // Query enumerates serialized In values; subquery
+                // grabs the `[0]` CountTree under each matched In
+                // value's value tree.
+                let mut outer_query = Query::new();
+                for key in keys {
+                    outer_query.insert_key(key);
+                }
+                let mut subquery = Query::new();
+                subquery.insert_key(vec![COUNT_TREE_KEY]);
+                outer_query.set_subquery(subquery);
+
+                Ok(PathQuery::new(
+                    base_path,
+                    SizedQuery::new(outer_query, None, None),
+                ))
+            }
+        }
+    }
 }

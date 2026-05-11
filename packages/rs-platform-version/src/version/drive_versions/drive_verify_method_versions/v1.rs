@@ -21,6 +21,7 @@ pub const DRIVE_VERIFY_METHOD_VERSIONS_V1: DriveVerifyMethodVersions = DriveVeri
     document_count: DriveVerifyDocumentCountMethodVersions {
         verify_aggregate_count_proof: 0,
         verify_distinct_count_proof: 0,
+        verify_point_lookup_count_proof: 0,
     },
     identity: DriveVerifyIdentityMethodVersions {
         verify_full_identities_by_public_key_hashes: 0,

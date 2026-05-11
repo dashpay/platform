@@ -30,8 +30,8 @@ use drive::query::{
     DriveDocumentCountQuery, DriveDocumentQuery, OrderClause, WhereClause, WhereOperator,
 };
 use drive_proof_verifier::{
-    verify_aggregate_count_proof, verify_distinct_count_proof, DocumentCount, DocumentSplitCounts,
-    FromProof,
+    verify_aggregate_count_proof, verify_distinct_count_proof, verify_point_lookup_count_proof,
+    DocumentCount, DocumentSplitCounts, FromProof,
 };
 use rs_dapi_client::transport::{
     AppliedRequestSettings, BoxFuture, TransportError, TransportRequest,
@@ -232,7 +232,7 @@ impl FromProof<DocumentCountQuery> for DocumentCount {
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
-        network: Network,
+        _network: Network,
         platform_version: &PlatformVersion,
         provider: &'a dyn ContextProvider,
     ) -> Result<(Option<Self>, ResponseMetadata, Proof), drive_proof_verifier::Error>
@@ -301,23 +301,57 @@ impl FromProof<DocumentCountQuery> for DocumentCount {
             return Ok((Some(DocumentCount(count)), mtd.clone(), proof.clone()));
         }
 
-        let drive_query: DriveDocumentQuery =
-            (&request)
-                .try_into()
-                .map_err(|e| drive_proof_verifier::Error::RequestError {
-                    error: format!(
-                        "Failed to convert DocumentCountQuery to DriveDocumentQuery: {}",
-                        e
-                    ),
-                })?;
-
-        <DocumentCount as FromProof<DriveDocumentQuery>>::maybe_from_proof_with_metadata(
-            drive_query,
-            response,
-            network,
-            platform_version,
-            provider,
+        // No range clause: prove count requires a covering countable
+        // index. Sum the per-branch entries from the CountTree element
+        // proof. Symmetric with the no-proof side, which rejects when
+        // no countable index covers the where clauses; the rejection
+        // here surfaces from `point_lookup_count_path_query` (called
+        // by `verify_point_lookup_count_proof` below) when the index
+        // doesn't fully cover or the wrong operator shapes appear.
+        let response: Self::Response = response.into();
+        let document_type = request
+            .document_query
+            .data_contract
+            .document_type_for_name(&request.document_query.document_type_name)
+            .map_err(|e| drive_proof_verifier::Error::RequestError {
+                error: format!(
+                    "document type {} not found in contract: {}",
+                    request.document_query.document_type_name, e
+                ),
+            })?;
+        let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+            document_type.indexes(),
+            &request.document_query.where_clauses,
         )
+        .ok_or_else(|| drive_proof_verifier::Error::RequestError {
+            error: "prove count requires a `countable: true` index on the \
+                    document type that matches the where clause properties"
+                .to_string(),
+        })?;
+        let count_query = DriveDocumentCountQuery {
+            document_type,
+            contract_id: request.document_query.data_contract.id().to_buffer(),
+            document_type_name: request.document_query.document_type_name.clone(),
+            index,
+            where_clauses: request.document_query.where_clauses.clone(),
+        };
+        let proof = response
+            .proof()
+            .or(Err(drive_proof_verifier::Error::NoProofInResult))?;
+        let mtd = response
+            .metadata()
+            .or(Err(drive_proof_verifier::Error::EmptyResponseMetadata))?;
+
+        let entries =
+            verify_point_lookup_count_proof(&count_query, proof, mtd, platform_version, provider)?;
+        // `DocumentCount` is a single aggregate u64 — sum the per-
+        // branch CountTree entries. For Equal-only fully-covered the
+        // verifier returns a single entry (empty `key`) and the sum
+        // is just that entry's count; for Equal-prefix + In-on-last
+        // it sums the per-In-value counts. A branch with zero docs is
+        // omitted by the verifier so missing entries contribute 0.
+        let total: u64 = entries.iter().map(|e| e.count).sum();
+        Ok((Some(DocumentCount(total)), mtd.clone(), proof.clone()))
     }
 }
 
@@ -343,7 +377,7 @@ impl FromProof<DocumentCountQuery> for DocumentSplitCounts {
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
-        network: Network,
+        _network: Network,
         platform_version: &PlatformVersion,
         provider: &'a dyn ContextProvider,
     ) -> Result<(Option<Self>, ResponseMetadata, Proof), drive_proof_verifier::Error>
@@ -352,14 +386,16 @@ impl FromProof<DocumentCountQuery> for DocumentSplitCounts {
     {
         let request: Self::Request = request.into();
 
-        // The split property comes from the In clause's field name (if any).
-        // No In → no split; result is a single entry with empty key.
-        let split_property = request
+        // `has_in` controls the single-empty-key-entry guarantee on
+        // the no-range prove path: Equal-only fully-covered queries
+        // promise one entry with empty key (the verified count, even
+        // if zero); In-on-last queries promise one entry per emitted
+        // In value (zero-count branches are simply absent).
+        let has_in = request
             .document_query
             .where_clauses
             .iter()
-            .find(|wc| wc.operator == WhereOperator::In)
-            .map(|wc| wc.field.clone());
+            .any(|wc| wc.operator == WhereOperator::In);
 
         let has_range = request
             .document_query
@@ -464,67 +500,67 @@ impl FromProof<DocumentCountQuery> for DocumentSplitCounts {
             ));
         }
 
-        if let Some(split_property) = split_property {
-            // Per-In-value split case: groups verified docs by the In
-            // field's serialized value. Goes through the materialize-
-            // and-count path (no per-In-value aggregate primitive
-            // exists yet), so the DriveDocumentQuery conversion is
-            // load-bearing here.
-            let drive_query: DriveDocumentQuery =
-                (&request)
-                    .try_into()
-                    .map_err(|e| drive_proof_verifier::Error::RequestError {
-                        error: format!(
-                            "Failed to convert DocumentCountQuery to DriveDocumentQuery: {}",
-                            e
-                        ),
-                    })?;
-            DocumentSplitCounts::maybe_from_proof_with_split_property::<DriveDocumentQuery, _, _>(
-                drive_query,
-                &split_property,
-                response,
-                network,
-                platform_version,
-                provider,
-            )
-        } else {
-            // Total-count case: a single entry with empty key. Route
-            // through `FromProof<DocumentCountQuery> for DocumentCount`
-            // (not the underlying `FromProof<DriveDocumentQuery>`) so
-            // range-only requests use the merk-level
-            // `verify_aggregate_count_proof` rather than the materialize-
-            // and-count path. The materialize path can't decode an
-            // `AggregateCountOnRange` proof, so without this dispatch
-            // `DocumentSplitCounts::fetch` with a range clause and no
-            // `In` would fail verifier-side.
-            <DocumentCount as FromProof<DocumentCountQuery>>::maybe_from_proof_with_metadata(
-                request,
-                response,
-                network,
-                platform_version,
-                provider,
-            )
-            .map(|(opt, mtd, proof)| {
-                // Total-count mode: a verified count of zero is a valid
-                // result, not absence — emit a single empty-key entry
-                // unconditionally so callers can distinguish "no docs
-                // matched" from "no proof returned" purely by structure.
-                let entries = opt
-                    .map(|DocumentCount(count)| {
-                        vec![drive_proof_verifier::SplitCountEntry {
-                            in_key: None,
-                            key: Vec::new(),
-                            count,
-                        }]
-                    })
-                    .unwrap_or_default();
-                (
-                    Some(DocumentSplitCounts::from_verified(entries)),
-                    mtd,
-                    proof,
-                )
-            })
+        // No range clause + `prove = true`: use the CountTree element
+        // proof. For Equal-only fully-covered the verifier returns one
+        // empty-key entry; for Equal-prefix + In-on-last it returns
+        // one entry per In value (key = serialized In value). Both
+        // shapes match what callers expect from `DocumentSplitCounts`:
+        // total-count is a single empty-key entry, per-In-value is one
+        // entry per value. Requires a covering countable index;
+        // rejection surfaces from the builder.
+        //
+        let response: Self::Response = response.into();
+        let document_type = request
+            .document_query
+            .data_contract
+            .document_type_for_name(&request.document_query.document_type_name)
+            .map_err(|e| drive_proof_verifier::Error::RequestError {
+                error: format!(
+                    "document type {} not found in contract: {}",
+                    request.document_query.document_type_name, e
+                ),
+            })?;
+        let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+            document_type.indexes(),
+            &request.document_query.where_clauses,
+        )
+        .ok_or_else(|| drive_proof_verifier::Error::RequestError {
+            error: "prove count requires a `countable: true` index on the \
+                    document type that matches the where clause properties"
+                .to_string(),
+        })?;
+        let count_query = DriveDocumentCountQuery {
+            document_type,
+            contract_id: request.document_query.data_contract.id().to_buffer(),
+            document_type_name: request.document_query.document_type_name.clone(),
+            index,
+            where_clauses: request.document_query.where_clauses.clone(),
+        };
+        let proof = response
+            .proof()
+            .or(Err(drive_proof_verifier::Error::NoProofInResult))?;
+        let mtd = response
+            .metadata()
+            .or(Err(drive_proof_verifier::Error::EmptyResponseMetadata))?;
+
+        let mut entries =
+            verify_point_lookup_count_proof(&count_query, proof, mtd, platform_version, provider)?;
+        // Total-count case (Equal-only fully-covered) MUST surface as
+        // a single empty-key entry — callers distinguish "verified
+        // zero" from "no proof returned" purely by structure. If the
+        // verifier dropped the entry because count was 0, re-emit it.
+        if !has_in && entries.is_empty() {
+            entries.push(drive_proof_verifier::SplitCountEntry {
+                in_key: None,
+                key: Vec::new(),
+                count: 0,
+            });
         }
+        Ok((
+            Some(DocumentSplitCounts::from_verified(entries)),
+            mtd.clone(),
+            proof.clone(),
+        ))
     }
 }
 

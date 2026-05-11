@@ -150,29 +150,16 @@ When `prove=true`, the proof shape depends on whether the query carries a range 
 
 - **Distinct (`return_distinct_counts_in_range = true`)**: drive-abci builds a *regular* range path query (no `AggregateCountOnRange` wrapper) against the same `ProvableCountTree`. Because the leaf is a `ProvableCountTree`, merk emits one `Node::KVCount(key, value, count)` op per matched in-range key, with each `count` cryptographically committed to the merk root via `node_hash_with_count(kv_hash, l_hash, r_hash, count)` — same forge-resistance as the aggregate path's `HashWithCount` collapse. The SDK's [`drive_proof_verifier::verify_distinct_count_proof`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive-proof-verifier/src/proof/document_count.rs) runs the standard hash-chain check, then walks the proof's op stream to extract the counts as a `BTreeMap<Vec<u8>, u64>`. Trade-off: proof size is O(distinct values matched) rather than O(log n), because each distinct in-range key emits its own `KVCount` op instead of being collapsed into a boundary subtree. Still strictly smaller than materialize-and-count.
 
-**Without a range clause** (point-lookup with prove): drive-abci falls back to a standard `DriveDocumentQuery` proof of the matching documents themselves — there is no signed-count primitive for `CountTree`-direct point lookups today. The client verifies the proof, deserializes the documents, and aggregates locally:
+**Without a range clause** (point-lookup with prove): drive-abci uses a CountTree element proof against a `countable: true` index. The proof carries one `Element::CountTree` per covered branch (Equal-only fully-covered → one element; Equal-prefix + `In`-on-last → one element per In value, fetched via outer Query + `[0]` subquery). The SDK's [`drive_proof_verifier::verify_point_lookup_count_proof`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive-proof-verifier/src/proof/document_count.rs) verifies the proof and extracts `count_value_or_default()` from each verified element — no documents are materialized, no per-key bookkeeping client-side.
 
-- For total counts the aggregation is `documents.len() as u64` ([`packages/rs-drive-proof-verifier/src/proof/document_count.rs`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive-proof-verifier/src/proof/document_count.rs)).
-- For per-`In`-value counts the aggregation walks each verified document, reads `properties.get(split_property)`, encodes the value via `document_type.serialize_value_for_key`, and increments the per-key counter.
+Proof size: **O(k × log n)** where k is the number of covered branches and n is the tree depth. One merk path proof per CountTree element, regardless of how many underlying documents it counts. The CountTree's `count_value` is cryptographically bound to the merk root via `node_hash_with_count(kv_hash, l_hash, r_hash, count)`, the same forge-resistance guarantee the range-distinct path relies on.
 
-Because the materialize-and-count proof path actually returns documents, drive-abci caps it at `u16::MAX` matching documents per request as a defensive bound on response size. Result sets larger than that need a covering countable index and `prove=false`, OR a covering `range_countable: true` index where the range proof primitive is unbounded. The SDK side explicitly clears the underlying `DocumentQuery.limit` so the verifier counts every document in the proof rather than truncating at the caller's pagination limit.
+**Symmetric rejection contract**: prove count requires a `countable: true` index whose properties fully cover the where clauses, same requirement as the no-proof `Total` / `PerInValue` modes (which use `find_countable_index_for_where_clauses` + `count_recursive` for sum-across-uncovered-levels). The prove path rejects partial coverage with a `WhereClauseOnNonIndexedProperty`-class error pointing the caller at the index-design fix — no fallback to materializing every matching document. Callers wanting counts on non-countable or partially-covering indexes use `prove = false`.
 
-`In + prove` requires the request to carry an `order_by` clause on the In field (e.g. `[["age", "asc"]]`). The materialize-and-count walker needs a deterministic walk order so the SDK can reconstruct the same path query for proof verification; without it the request errors with `MissingOrderByForRange` before any proof is produced. The SDK and server derive `left_to_right` from the same first `order_by` clause direction, so prover and verifier stay in lockstep.
-
-Aggregation for the per-`In`-value mode needs the split-property name, but `DriveDocumentQuery` does not carry it. The proof verifier exposes a dedicated entry point that takes it explicitly:
-
-```rust
-DocumentSplitCounts::maybe_from_proof_with_split_property(
-    drive_query,
-    split_property,
-    response,
-    network,
-    platform_version,
-    provider,
-)
-```
-
-The generic `FromProof<Q>` impl on `DocumentSplitCounts` is intentionally *not* the way to reach split counts under proof — calling it returns an explicit error. This is a load-bearing footgun guard: without the split property, the generic path has no way to group verified documents by anything, and silently returning an empty result would mask `prove=true` callers' bugs as "no documents matched." Erroring loudly forces every caller to thread the split property through `maybe_from_proof_with_split_property` (or use the SDK's `Fetch` impl on `DocumentCountQuery`, which threads it from the request's `In` clause automatically).
+Implementation reference:
+- Path query: [`DriveDocumentCountQuery::point_lookup_count_path_query`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/src/query/drive_document_count_query/path_query.rs) — shared by prover and verifier.
+- Server executor: [`DriveDocumentCountQuery::execute_point_lookup_count_with_proof`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/src/query/drive_document_count_query/execute_point_lookup.rs).
+- Verifier: [`DriveDocumentCountQuery::verify_point_lookup_count_proof`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/src/verify/document_count/verify_point_lookup_count_proof/mod.rs); SDK wrapper [`drive_proof_verifier::verify_point_lookup_count_proof`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive-proof-verifier/src/proof/document_count.rs) composes tenderdash signature verification on top.
 
 ### Supported Where Operators
 
@@ -224,7 +211,7 @@ When `prove = true` and the query carries a range clause, the handler picks one 
 
 A `"desc"` direction in the first `order_by` clause is supported on the distinct sub-path. The derived direction flows into grovedb's `Query.left_to_right` on both the outer In-keys Query and the inner range subquery, so descending iteration walks `(in_key_desc, key_desc)` tuples. The prover and verifier MUST agree on this direction — the path query bytes include it, and disagreement breaks merk-root recomputation. The SDK derives `left_to_right` from the first `request.document_query.order_by_clauses` direction, matching the server's derivation in `drive_dispatcher`, so the two stay in lockstep by construction. Combined with `limit`, descending order returns the LAST `limit` matched entries (the largest keys) rather than the first `limit` reversed — exactly what callers paginating from the end expect.
 
-For point-lookup count proofs (no range clause), the handler still falls back to the materialize-and-count flow with the `u16::MAX` cap. A future change can wire per-`CountTree` count proofs through a similar aggregate primitive.
+For point-lookup count proofs (no range clause), drive emits a CountTree element proof against the covering countable index — proof size is O(k × log n) where k is the number of covered branches, with no cap on the underlying document count. See [the Prove path section above](#prove-client-side-verify-then-aggregate-or-aggregate-count-proof) for the symmetric-rejection contract.
 
 ## Range Queries and ProvableCountTree
 
@@ -385,7 +372,7 @@ A few notes about the index-level flag:
 | Per-`In`-value sub-counts: one `CountEntry` per value in an `In` clause | `documentsCountable: true` plus `countable: true` on an index whose leading columns cover any other equality predicates and whose next column is the `In` property |
 | O(log n) range count: `count(*) WHERE col BETWEEN A AND B` | `rangeCountable: true` on an index whose last property is `col` and whose other properties cover any equality predicates as a prefix. Implies `countable: true`. |
 | Per-distinct-value range histogram: one `CountEntry` per distinct value in a range | Same `rangeCountable: true` index as above, plus `return_distinct_counts_in_range = true` on the request. Available on both prove and no-prove paths; the prove path returns a regular range proof against the property-name `ProvableCountTree` and the SDK extracts per-key counts from the proof's `KVCount` ops via [`drive_proof_verifier::verify_distinct_count_proof`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive-proof-verifier/src/proof/document_count.rs). |
-| Range count proof (`prove = true` + range clause) | Same `rangeCountable: true` index. The handler uses grovedb's `AggregateCountOnRange` proof primitive, which is unbounded (no `u16::MAX` cap). |
+| Range count proof (`prove = true` + range clause) | Same `rangeCountable: true` index. The handler uses grovedb's `AggregateCountOnRange` proof primitive — proof is O(log n), no cap on matched docs. |
 | Future offset-style range queries (not yet released — see above) | `rangeCountable: true` on the document type |
 | Nothing count-aware (default) | Don't set any of these flags. Primary-key tree stays a `NormalTree`. |
 

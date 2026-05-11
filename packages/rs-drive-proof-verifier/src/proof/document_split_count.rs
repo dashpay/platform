@@ -1,12 +1,6 @@
-use crate::error::MapGroveDbError;
-use crate::verify::verify_tenderdash_proof;
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{GetDocumentsCountResponse, Proof, ResponseMetadata};
-use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::dashcore::Network;
-use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
-use dpp::document::Document;
-use dpp::document::DocumentV0Getters;
 use dpp::version::PlatformVersion;
 use drive::query::{DriveDocumentQuery, SplitCountEntry};
 use std::collections::BTreeMap;
@@ -52,14 +46,14 @@ impl DocumentSplitCounts {
 
 /// Reject the generic [`FromProof`] entry point for [`DocumentSplitCounts`].
 ///
-/// Splitting requires the split-property name, which isn't carried by
-/// `DriveDocumentQuery`. Earlier versions of this impl silently returned an
-/// empty map under proof, which made `prove=true` callers think there were
-/// zero documents per group. To stop that footgun, the generic
-/// [`FromProof`] now returns an explicit error; SDK-level callers must use
-/// [`DocumentSplitCounts::maybe_from_proof_with_split_property`] (or, in
-/// `rs-sdk`, the [`Fetch`](dash_sdk::platform::Fetch) impl on
-/// `DocumentSplitCountQuery`) which threads the split property through.
+/// `DocumentSplitCounts` is reached from rs-sdk via
+/// `FromProof<DocumentCountQuery>` (which routes to the count-tree
+/// element proof / aggregate-count proof / distinct-count proof based
+/// on the request shape — see
+/// `rs-sdk/src/platform/documents/document_count_query.rs`). The
+/// generic `FromProof<Q>` path doesn't carry enough information to
+/// pick a proof shape, so it errors out explicitly. Calling this
+/// directly is a programmer mistake.
 impl<'dq, Q> FromProof<Q> for DocumentSplitCounts
 where
     Q: TryInto<DriveDocumentQuery<'dq>> + Clone + 'dq,
@@ -79,130 +73,14 @@ where
         Self: 'a,
     {
         Err(Error::RequestError {
-            error: "DocumentSplitCounts requires a split-property; call \
-                 DocumentSplitCounts::maybe_from_proof_with_split_property \
-                 (or use the rs-sdk Fetch impl on DocumentSplitCountQuery)"
+            error: "DocumentSplitCounts can't be verified via the generic FromProof path; \
+                 use the rs-sdk Fetch impl on DocumentCountQuery, which routes to the \
+                 correct proof shape (CountTree element / aggregate / distinct) based \
+                 on the request"
                 .to_string(),
         })
     }
 }
-
-impl DocumentSplitCounts {
-    /// Verify a `GetDocumentsCount` proof and aggregate the verified
-    /// documents into per-key counts using `split_property` as the grouping
-    /// key.
-    ///
-    /// `Q` is anything that can be turned into a [`DriveDocumentQuery`] —
-    /// typically a `DocumentSplitCountQuery` from `rs-sdk` or a
-    /// `DriveDocumentQuery` directly.
-    ///
-    /// Returns `(Some(splits), metadata, proof)` even when no documents
-    /// matched (in which case `splits.0` is empty).
-    pub fn maybe_from_proof_with_split_property<'dq, 'a, Q, I, O>(
-        request: I,
-        split_property: &str,
-        response: O,
-        _network: Network,
-        platform_version: &PlatformVersion,
-        provider: &'a dyn ContextProvider,
-    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
-    where
-        Q: TryInto<DriveDocumentQuery<'dq>> + Clone + 'dq,
-        Q::Error: std::fmt::Display,
-        I: Into<Q>,
-        O: Into<GetDocumentsCountResponse>,
-        Self: 'a,
-    {
-        let request: Q = request.into();
-        let response: GetDocumentsCountResponse = response.into();
-
-        let drive_query: DriveDocumentQuery<'dq> =
-            request
-                .clone()
-                .try_into()
-                .map_err(|e: Q::Error| Error::RequestError {
-                    error: e.to_string(),
-                })?;
-
-        let proof = response.proof().or(Err(Error::NoProofInResult))?;
-        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
-
-        let (root_hash, documents) = drive_query
-            .verify_proof(&proof.grovedb_proof, platform_version)
-            .map_drive_error(proof, mtd)?;
-
-        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
-
-        let aggregated = aggregate_documents_by_property(
-            &documents,
-            drive_query.document_type,
-            split_property,
-            platform_version,
-        )?;
-
-        // PerInValue mode (materialize-and-count path) has no In
-        // dimension distinct from the value being counted — the
-        // split property IS the In field. So `in_key = None` and
-        // `key = serialized In value` per SplitCountEntry's flat
-        // convention.
-        let entries: Vec<SplitCountEntry> = aggregated
-            .into_iter()
-            .map(|(key, count)| SplitCountEntry {
-                in_key: None,
-                key,
-                count,
-            })
-            .collect();
-
-        Ok((
-            Some(DocumentSplitCounts(entries)),
-            mtd.clone(),
-            proof.clone(),
-        ))
-    }
-}
-
-/// Group documents by the byte-encoded value of `split_property` and return
-/// the per-key counts. Documents that don't carry the property are skipped
-/// (mirroring the server-side CountTree path, which only counts documents
-/// whose primary-key tree path includes the property).
-fn aggregate_documents_by_property(
-    documents: &[Document],
-    document_type: dpp::data_contract::document_type::DocumentTypeRef<'_>,
-    split_property: &str,
-    platform_version: &PlatformVersion,
-) -> Result<BTreeMap<Vec<u8>, u64>, Error> {
-    let mut counts: BTreeMap<Vec<u8>, u64> = BTreeMap::new();
-
-    for document in documents {
-        let value = match document.properties().get(split_property) {
-            Some(v) => v,
-            None => continue,
-        };
-
-        let key = document_type
-            .serialize_value_for_key(split_property, value, platform_version)
-            .map_err(|e| Error::ResponseDecodeError {
-                error: format!(
-                    "Failed to serialize split property `{}` for grouping: {}",
-                    split_property, e
-                ),
-            })?;
-
-        *counts.entry(key).or_insert(0) += 1;
-    }
-
-    Ok(counts)
-}
-
-// Aggregation unit tests live in higher-level crates with full test fixtures:
-//   - SDK: packages/rs-sdk/tests/fetch/document_split_count.rs
-//   - drive-abci: src/query/document_split_count_query/v0/mod.rs tests
-// (drive-proof-verifier's feature surface doesn't expose dpp test helpers)
-//
-// Below are unit tests that don't require a real `DriveDocumentQuery`
-// or a populated Drive — they cover the helpers and the
-// generic-`FromProof`-rejection footgun guard.
 
 #[cfg(test)]
 mod tests {
@@ -217,11 +95,12 @@ mod tests {
     //! - The generic `FromProof<Q>` impl that intentionally errors
     //!   to prevent the silently-empty footgun documented above.
     //!
-    //! The actual `maybe_from_proof_with_split_property` flow is
-    //! covered by the SDK integration tests at
-    //! `packages/rs-sdk/tests/fetch/document_split_count.rs` —
-    //! exercising it here would need a populated Drive + a real
-    //! proof, which is outside this crate's feature surface.
+    //! The actual proof verification (CountTree-element /
+    //! aggregate / distinct) is exercised end-to-end by drive's
+    //! `range_countable_index_e2e_tests` (running the prover and
+    //! verifier on a real Drive); exercising it here would need a
+    //! populated Drive + a real proof, which is outside this
+    //! crate's feature surface.
     use super::*;
 
     /// Helper to make a `SplitCountEntry` with the given fields

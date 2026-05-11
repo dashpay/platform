@@ -188,11 +188,26 @@ fn test_count_query_total_count_with_documents() {
         "expected empty key for total count"
     );
 
-    // Also verify proof generation works
-    let proof = query
-        .execute_with_proof(&drive, None, platform_version)
-        .expect("expected proof generation to succeed");
-    assert!(!proof.is_empty(), "expected non-empty proof");
+    // Prove-path symmetry: when the index has uncovered properties
+    // (no where clauses), `execute_point_lookup_count_with_proof`
+    // rejects with `WhereClauseOnNonIndexedProperty`-class error.
+    // No-proof handles partial coverage via per-level summing
+    // (`count_recursive`); the prove path requires a fully-covering
+    // index. Symmetric rejection — see the prove path's docstring
+    // for the contract.
+    let proof_err = query
+        .execute_point_lookup_count_with_proof(&drive, None, platform_version)
+        .expect_err("partial-coverage prove count should reject");
+    assert!(
+        matches!(
+            proof_err,
+            crate::error::Error::Query(
+                crate::error::query::QuerySyntaxError::InvalidWhereClauseComponents(_)
+            )
+        ),
+        "expected InvalidWhereClauseComponents rejection, got: {:?}",
+        proof_err,
+    );
 }
 
 #[test]
@@ -225,11 +240,23 @@ fn test_count_query_total_count_empty() {
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].count, 0, "expected count of 0 documents");
 
-    // Also verify proof generation works on empty index
-    let proof = query
-        .execute_with_proof(&drive, None, platform_version)
-        .expect("expected proof generation to succeed");
-    assert!(!proof.is_empty(), "expected non-empty proof");
+    // Same partial-coverage rejection as the with-documents case
+    // above — no where clauses → no covered prefix → prove path
+    // rejects. Empty-index variant pins that the rejection happens
+    // pre-storage-read (the builder rejects before grovedb).
+    let proof_err = query
+        .execute_point_lookup_count_with_proof(&drive, None, platform_version)
+        .expect_err("partial-coverage prove count should reject");
+    assert!(
+        matches!(
+            proof_err,
+            crate::error::Error::Query(
+                crate::error::query::QuerySyntaxError::InvalidWhereClauseComponents(_)
+            )
+        ),
+        "expected InvalidWhereClauseComponents rejection, got: {:?}",
+        proof_err,
+    );
 }
 
 #[test]

@@ -570,10 +570,17 @@ mod tests {
         );
     }
 
+    /// `prove = true` + Equal-on-single-property-countable-index =
+    /// the fully-covered fast path that produces a real grovedb proof
+    /// of the CountTree element at `[..., firstName, "Alice", 0]`.
+    /// Asserts the response is a `Proof` variant with non-empty bytes
+    /// — drive emits a CountTree element proof here, not the legacy
+    /// materialize-and-count document proof.
     #[test]
-    fn test_documents_count_with_prove() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+    fn test_documents_count_with_prove_and_covering_equal() {
+        use dpp::document::DocumentV0Setters;
 
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
         let platform_version = PlatformVersion::latest();
 
         let data_contract = json_document_to_contract_with_ids(
@@ -587,30 +594,42 @@ mod tests {
 
         store_data_contract(&platform, &data_contract, version);
 
-        let data_contract_id = data_contract.id();
-        let document_type_name = "person";
         let document_type = data_contract
-            .document_type_for_name(document_type_name)
+            .document_type_for_name("person")
             .expect("expected document type");
 
+        // Insert 2 docs at firstName=Alice and 1 at firstName=Bob so
+        // the targeted CountTree (`byFirstName` index, value=Alice)
+        // has count_value > 0.
         let mut std_rng = StdRng::seed_from_u64(500);
-        for _ in 0..3 {
-            let random_document = document_type
+        for first_name in ["Alice", "Alice", "Bob"] {
+            let mut doc = document_type
                 .random_document_with_rng(&mut std_rng, platform_version)
                 .expect("expected to get random document");
+            let mut props = std::collections::BTreeMap::new();
+            props.insert("firstName".to_string(), Value::Text(first_name.to_string()));
+            props.insert("lastName".to_string(), Value::Text("Smith".to_string()));
+            props.insert("age".to_string(), Value::U64(30));
+            doc.set_properties(props);
             store_document(
                 &platform,
                 &data_contract,
                 document_type,
-                &random_document,
+                &doc,
                 platform_version,
             );
         }
 
+        let where_clauses = vec![Value::Array(vec![
+            Value::Text("firstName".to_string()),
+            Value::Text("==".to_string()),
+            Value::Text("Alice".to_string()),
+        ])];
+
         let request = GetDocumentsCountRequestV0 {
-            data_contract_id: data_contract_id.to_vec(),
-            document_type: document_type_name.to_string(),
-            r#where: vec![],
+            data_contract_id: data_contract.id().to_vec(),
+            document_type: "person".to_string(),
+            r#where: serialize_where_clauses_to_cbor(where_clauses),
             return_distinct_counts_in_range: false,
             order_by: Vec::new(),
             limit: None,
@@ -623,13 +642,67 @@ mod tests {
 
         assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
 
-        assert!(matches!(
-            result.data,
+        match result.data {
             Some(GetDocumentsCountResponseV0 {
-                result: Some(get_documents_count_response_v0::Result::Proof(_)),
+                result: Some(get_documents_count_response_v0::Result::Proof(proof)),
                 metadata: Some(_),
-            })
-        ));
+            }) => {
+                assert!(
+                    !proof.grovedb_proof.is_empty(),
+                    "expected non-empty grovedb proof bytes for covered prove count",
+                );
+            }
+            other => panic!("expected Proof response, got {:?}", other),
+        }
+    }
+
+    /// Symmetric-rejection contract: `prove = true` with no where
+    /// clauses (or any where shape that doesn't fully cover a
+    /// `countable: true` index) rejects with
+    /// `WhereClauseOnNonIndexedProperty`. Matches the no-proof Total
+    /// mode's behaviour when no covering countable index exists, and
+    /// makes contract authors' index-design defects visible at the
+    /// API boundary rather than silently materializing every doc.
+    #[test]
+    fn test_documents_count_prove_without_covering_index_returns_clear_error() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let platform_version = PlatformVersion::latest();
+
+        let data_contract = json_document_to_contract_with_ids(
+            "tests/supporting_files/contract/family/family-contract-countable.json",
+            None,
+            None,
+            false,
+            platform_version,
+        )
+        .expect("expected to get json based contract");
+
+        store_data_contract(&platform, &data_contract, version);
+
+        let request = GetDocumentsCountRequestV0 {
+            data_contract_id: data_contract.id().to_vec(),
+            document_type: "person".to_string(),
+            r#where: vec![],
+            return_distinct_counts_in_range: false,
+            order_by: Vec::new(),
+            limit: None,
+            prove: true,
+        };
+
+        let result = platform
+            .query_documents_count_v0(request, &state, version)
+            .expect("expected query to surface a validation error");
+
+        assert!(
+            matches!(
+                result.errors.as_slice(),
+                [QueryError::Query(
+                    QuerySyntaxError::InvalidWhereClauseComponents(msg),
+                )] if msg.contains("countable")
+            ),
+            "expected fully-covered-index rejection, got {:?}",
+            result.errors,
+        );
     }
 
     /// End-to-end pin for `prove = true` + `In`. Two distinct

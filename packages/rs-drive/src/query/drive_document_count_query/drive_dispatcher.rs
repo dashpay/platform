@@ -339,49 +339,48 @@ impl Drive {
         )
     }
 
-    /// Materialize-and-count proof fallback for point-lookup count
-    /// queries with `prove = true`. Capped at `u16::MAX` matching docs
-    /// because each document is materialized client-side. Used by
-    /// [`DocumentCountMode::PointLookupProof`] dispatch.
+    /// Point-lookup count proof against a `countable: true` index for
+    /// `prove = true` Equal/`In` count queries. Returns proof bytes of
+    /// the CountTree elements covering the requested branches — the
+    /// SDK-side verifier extracts each branch's `count_value` directly,
+    /// no document materialization.
     ///
-    /// `where_clause` and `order_by` are the raw decoded `Value`s
-    /// (matching what `DriveDocumentQuery::from_decomposed_values`
-    /// expects), not parsed clause vectors — the materialize-path uses
-    /// the broader `DriveDocumentQuery` which has its own internal
-    /// clause model. The walker rejects `In` / range operators on the
-    /// where clause when `order_by` doesn't carry a matching field, so
-    /// the SDK MUST set `order_by` for the `(false, true, true, _)`
-    /// dispatch arm to succeed end-to-end.
-    #[allow(clippy::too_many_arguments)]
+    /// Requires a covering countable index, mirroring the no-proof
+    /// `Total` / `PerInValue` modes: if no `countable: true` index
+    /// covers the where clauses, rejects with
+    /// `WhereClauseOnNonIndexedProperty`. Same contract on both prove
+    /// and no-proof paths — no silent fallback.
+    ///
+    /// Used by [`DocumentCountMode::PointLookupProof`] dispatch.
     pub fn execute_document_count_point_lookup_proof(
         &self,
-        where_clause: dpp::platform_value::Value,
-        order_by: dpp::platform_value::Value,
-        contract: &dpp::data_contract::DataContract,
+        contract_id: [u8; 32],
         document_type: DocumentTypeRef,
-        drive_config: &crate::config::DriveConfig,
+        document_type_name: String,
+        where_clauses: Vec<WhereClause>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
-        let mut drive_query = crate::query::DriveDocumentQuery::from_decomposed_values(
-            where_clause,
-            Some(order_by),
-            Some(drive_config.default_query_limit),
-            None,
-            true,
-            None,
-            contract,
+        let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+            document_type.indexes(),
+            &where_clauses,
+        )
+        .ok_or_else(|| {
+            Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
+                "prove count requires a `countable: true` index on the \
+                 document type that matches the where clause properties — \
+                 same requirement as the no-proof path"
+                    .to_string(),
+            ))
+        })?;
+        let count_query = DriveDocumentCountQuery {
             document_type,
-            drive_config,
-        )?;
-        // Defensive cap: the proof verifier deserializes every doc.
-        // Until per-CountTree count proofs are wired through, callers
-        // that need exact counts on larger result sets must use
-        // `prove=false` with a covering countable index.
-        drive_query.limit = Some(u16::MAX);
-        Ok(drive_query
-            .execute_with_proof(self, None, transaction, platform_version)?
-            .0)
+            contract_id,
+            document_type_name,
+            index,
+            where_clauses,
+        };
+        count_query.execute_point_lookup_count_with_proof(self, transaction, platform_version)
     }
 }
 
@@ -726,11 +725,10 @@ impl Drive {
             }
             DocumentCountMode::PointLookupProof => Ok(DocumentCountResponse::Proof(
                 self.execute_document_count_point_lookup_proof(
-                    request.raw_where_value,
-                    request.raw_order_by_value,
-                    request.contract,
+                    contract_id,
                     request.document_type,
-                    request.drive_config,
+                    document_type_name,
+                    where_clauses,
                     transaction,
                     platform_version,
                 )?,

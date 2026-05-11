@@ -14,3 +14,8 @@ pub mod verify_aggregate_count_proof;
 /// `ProvableCountTree`) — returns the per-`(in_key, key)` entries the
 /// proof commits to.
 pub mod verify_distinct_count_proof;
+/// Point-lookup count proof verification (CountTree element proof for
+/// Equal/`In` counts on a `countable: true` index) — returns one entry
+/// per covered branch, with each `count` extracted from the verified
+/// CountTree element's `count_value`.
+pub mod verify_point_lookup_count_proof;

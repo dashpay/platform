@@ -47,12 +47,13 @@ pub struct DriveVerifyDocumentMethodVersions {
 
 /// Versions for the `GetDocumentsCount` prove-path verifiers
 /// (grovedb-level — the tenderdash composition layer lives in
-/// rs-drive-proof-verifier). Both methods are implemented on
+/// rs-drive-proof-verifier). All three methods are implemented on
 /// `DriveDocumentCountQuery` and return `(RootHash, T)`.
 #[derive(Clone, Debug, Default)]
 pub struct DriveVerifyDocumentCountMethodVersions {
     pub verify_aggregate_count_proof: FeatureVersion,
     pub verify_distinct_count_proof: FeatureVersion,
+    pub verify_point_lookup_count_proof: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

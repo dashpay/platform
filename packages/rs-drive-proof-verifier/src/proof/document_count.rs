@@ -131,6 +131,50 @@ pub fn verify_distinct_count_proof(
     Ok(entries)
 }
 
+/// Verify a grovedb point-lookup count proof against a
+/// `countable: true` index and return the per-branch entries.
+///
+/// Thin tenderdash-composition wrapper over
+/// [`DriveDocumentCountQuery::verify_point_lookup_count_proof`] in
+/// rs-drive (which does the merk-level verification and walks the
+/// verified elements to extract `count_value`).
+///
+/// ## Entry shape
+///
+/// - **Equal-only, fully covered**: a single entry with empty `key`
+///   and `count` equal to the covered branch's CountTree
+///   `count_value`.
+/// - **Equal prefix + `In` on last property**: one entry per In
+///   value, `key = <serialized_in_value>`, `count` equal to that In
+///   value's CountTree `count_value`. Branches with zero documents
+///   are omitted from the result (callers can detect "I asked for 3
+///   In values but got entries for 2" directly).
+///
+/// ## Replaces materialize-and-count
+///
+/// Before this primitive landed, prove count queries with no range
+/// clause used `DriveDocumentQuery::execute_with_proof` to prove
+/// every matching document and counted them client-side. That path
+/// scaled with matching docs and was capped at `u16::MAX`. The
+/// CountTree element proof is O(k × log n) where k is the number of
+/// covered branches — bandwidth and CPU drop by orders of magnitude
+/// on counted indexes and the cap disappears.
+pub fn verify_point_lookup_count_proof(
+    query: &DriveDocumentCountQuery,
+    proof: &Proof,
+    mtd: &ResponseMetadata,
+    platform_version: &PlatformVersion,
+    provider: &dyn ContextProvider,
+) -> Result<Vec<SplitCountEntry>, Error> {
+    let (root_hash, entries) = query
+        .verify_point_lookup_count_proof(&proof.grovedb_proof, platform_version)
+        .map_drive_error(proof, mtd)?;
+
+    verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+    Ok(entries)
+}
+
 #[cfg(test)]
 mod tests {
     //! Local-only tests for parts of this module that don't need a
