@@ -21,13 +21,17 @@ struct DashAddress {
 
             // Check HRP validity
             // Platform and Orchard share the same HRP: "dash" (mainnet) / "tdash" (testnet/regtest)
-            // Distinguished by type byte: 0x00/0xb0/0x80 = platform, 0x10 = orchard
+            // Distinguished by type byte: 0xb0/0x80 = platform, 0x10 = orchard
             let validHrp = (network == .mainnet) ? "dash" : "tdash"
 
             if hrp == validHrp && data.count == 21 {
-                // Platform address: type byte 0x00 (P2PKH) or 0xb0/0x80 + 20-byte hash
+                // Platform address bech32m wire bytes per
+                // rs-dpp/src/address_funds/platform_address.rs:41-47:
+                //   0xb0 = P2PKH, 0x80 = P2SH.
+                // 0x00/0x01 are the *storage* bytes (GroveDB keys) and must
+                // never appear in a `tdash1…`/`dash1…` string.
                 let typeByte = data[0]
-                if typeByte == 0x00 || typeByte == 0xb0 || typeByte == 0x80 {
+                if typeByte == 0xb0 || typeByte == 0x80 {
                     return DashAddress(type: .platform(data), displayString: input)
                 }
             }

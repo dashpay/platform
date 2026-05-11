@@ -177,10 +177,29 @@ struct SendTransactionView: View {
                             // Reset the watermark to force a full trunk/branch
                             // scan that re-emits on_address_found for every
                             // known address.
-                            try? platformAddressWallet?.restoreSyncState(
-                                syncHeight: 0, syncTimestamp: 0, lastKnownRecentBlock: 0
-                            )
-                            try? await walletManager.syncPlatformAddressNow()
+                            //
+                            // Both calls run before we hand off to
+                            // `executeSend`; surface failures via the
+                            // viewModel's existing error-alert binding
+                            // and abort the send so we don't fall
+                            // through to a misleading "available 0
+                            // credits" downstream.
+                            do {
+                                try platformAddressWallet?.restoreSyncState(
+                                    syncHeight: 0, syncTimestamp: 0, lastKnownRecentBlock: 0
+                                )
+                            } catch {
+                                viewModel.error =
+                                    "Couldn't reset sync state: \(error.localizedDescription)"
+                                return
+                            }
+                            do {
+                                try await walletManager.syncPlatformAddressNow()
+                            } catch {
+                                viewModel.error =
+                                    "Couldn't refresh platform balance before sending: \(error.localizedDescription)"
+                                return
+                            }
                             // Pick the account holding the platform
                             // balance. Most wallets have a single
                             // PlatformPayment account (index 0);

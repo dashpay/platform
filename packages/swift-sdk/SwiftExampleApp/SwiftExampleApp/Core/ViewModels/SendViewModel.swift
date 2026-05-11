@@ -229,10 +229,19 @@ class SendViewModel: ObservableObject {
                 let bech32mByte = payload[0]
                 let ffiAddressType: UInt8
                 switch bech32mByte {
-                case 0xb0, 0x00: ffiAddressType = 0  // P2PKH
-                case 0x80, 0x01: ffiAddressType = 1  // P2SH
+                case 0xb0: ffiAddressType = 0  // P2PKH
+                case 0x80: ffiAddressType = 1  // P2SH
                 default:
                     error = "Unknown platform address type byte 0x\(String(bech32mByte, radix: 16))"
+                    return
+                }
+                // The Rust FFI's `PlatformAddressFFI → PlatformAddress`
+                // conversion (rs-platform-wallet-ffi/src/platform_address_types.rs:42)
+                // only accepts P2PKH; sending to a P2SH platform address
+                // would surface a raw "Unsupported address type" string
+                // from Rust. Fail fast with a user-readable message.
+                guard ffiAddressType == 0 else {
+                    error = "P2SH platform addresses aren't supported yet. Use a P2PKH recipient."
                     return
                 }
                 let hash = payload.subdata(in: 1..<21)
@@ -244,17 +253,16 @@ class SendViewModel: ObservableObject {
                 // If the view passed a fresh unused HD address from the
                 // pool, use it as the dedicated change destination —
                 // matches the Receive screen's lowest-unused selection.
-                let changeOutput: ManagedPlatformAddressWallet.TransferOutput? = changeAddressRow.map {
-                    ManagedPlatformAddressWallet.TransferOutput(
+                let change: ManagedPlatformAddressWallet.ChangeAddress? = changeAddressRow.map {
+                    ManagedPlatformAddressWallet.ChangeAddress(
                         addressType: $0.addressType,
-                        hash: $0.addressHash,
-                        credits: 0  // value gets overwritten by the wrapper
+                        hash: $0.addressHash
                     )
                 }
                 _ = try await addressWallet.transfer(
                     accountIndex: senderAccountIndex,
                     outputs: [output],
-                    changeAddress: changeOutput,
+                    changeAddress: change,
                     signer: signer
                 )
                 successMessage = "Platform transfer sent"

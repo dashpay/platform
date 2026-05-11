@@ -106,6 +106,21 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
         }
     }
 
+    /// Destination address for the change output the wrapper appends to
+    /// every transfer. Carries no `credits` field — the wrapper computes
+    /// the change amount itself as `sum(inputs) - sum(outputs)`.
+    public struct ChangeAddress: Sendable {
+        /// `0 = P2PKH`, `1 = P2SH`. Mirrors the Rust-side `PlatformAddress` discriminant.
+        public let addressType: UInt8
+        /// 20-byte address hash.
+        public let hash: Data
+
+        public init(addressType: UInt8, hash: Data) {
+            self.addressType = addressType
+            self.hash = hash
+        }
+    }
+
     /// Updated balance for an address after a transfer.
     public struct UpdatedBalance: Sendable {
         public let addressType: UInt8
@@ -139,18 +154,27 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
     /// the `KeychainSigner` resolves their derivation paths via
     /// SwiftData + the wallet mnemonic (the `0xFF` branch in
     /// `KeychainSigner.swift`).
+    /// Cushion held back so the change output stays positive after the on-chain
+    /// fee is deducted (the transfer uses `ReduceOutput(change_index)`).
+    /// Observed fee for a 1-input/2-output transition is ~6.5M credits;
+    /// this is intentionally an order of magnitude larger so estimation
+    /// drift doesn't force an "insufficient" failure in normal use.
+    private static let feeBuffer: UInt64 = 100_000_000
+
     @discardableResult
     public func transfer(
         accountIndex: UInt32,
         outputs: [TransferOutput],
-        changeAddress: TransferOutput? = nil,
+        changeAddress: ChangeAddress? = nil,
         signer: KeychainSigner
     ) async throws -> [UpdatedBalance] {
         guard !outputs.isEmpty else {
             throw PlatformWalletError.invalidParameter("outputs is empty")
         }
 
-        // Sum recipient amounts.
+        // Sum recipient amounts. Reject overflow rather than silently
+        // wrapping (would let a caller smuggle bogus amounts past the
+        // protocol's sum check).
         var totalRecipientCredits: UInt64 = 0
         for out in outputs {
             guard out.hash.count == 20 else {
@@ -158,13 +182,18 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
                     "TransferOutput.hash must be exactly 20 bytes (got \(out.hash.count))"
                 )
             }
-            totalRecipientCredits = totalRecipientCredits.addingReportingOverflow(out.credits).0
+            let sum = totalRecipientCredits.addingReportingOverflow(out.credits)
+            if sum.overflow {
+                throw PlatformWalletError.invalidParameter(
+                    "Output credits sum overflowed UInt64"
+                )
+            }
+            totalRecipientCredits = sum.partialValue
         }
 
         // Read available balances. We pick inputs from balance-bearing
         // addresses; the change destination must differ from both the
         // recipient set and the chosen inputs.
-        let feeBuffer: UInt64 = 100_000_000  // 0.001 DASH cushion
         let recipientHashes = Set(outputs.map { $0.hash })
 
         // Validate explicit change-address up front if the caller supplied one.
@@ -199,11 +228,11 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
             if let cc = changeAddress, b.hash == cc.hash { continue }
             selectedInputs.append(b)
             totalInputs += b.balance
-            if totalInputs >= totalRecipientCredits + feeBuffer { break }
+            if totalInputs >= totalRecipientCredits + Self.feeBuffer { break }
         }
-        guard totalInputs >= totalRecipientCredits + feeBuffer else {
+        guard totalInputs >= totalRecipientCredits + Self.feeBuffer else {
             throw PlatformWalletError.walletOperation(
-                "Insufficient platform balance: have \(totalInputs) credits across \(selectedInputs.count) input(s), need at least \(totalRecipientCredits + feeBuffer)"
+                "Insufficient platform balance: have \(totalInputs) credits across \(selectedInputs.count) input(s), need at least \(totalRecipientCredits + Self.feeBuffer)"
             )
         }
         let selectedHashes = Set(selectedInputs.map { $0.hash })
