@@ -846,7 +846,7 @@ The five Critical findings in §3.0 are real but most surface naturally during P
 **Remaining coverage gaps** (small, branch-scoped follow-ups):
 - ✅ V1 withdrawal `output_script: None` round-trip — restored coverage lost in step 9 (May 2026, this branch). Added `fixture_v1_no_script` + JSON/Value round-trip tests in `identity_credit_withdrawal_transition/mod.rs::json_convertible_tests`.
 - ✅ Unknown `$formatVersion` error coverage — added representative `from_json_rejects_unknown_format_version` and `from_object_rejects_unknown_format_version` tests on `IdentityCreditWithdrawalTransition` (the multi-variant V0+V1 enum is structurally diverse enough to demonstrate the unified serde tag-dispatch contract). Per-enum tests across all 70 `$formatVersion`-tagged outer enums would be mechanical noise; one good representative documents the pattern.
-- ⬜ `json_preserves_format_version_tag` symmetry on `DataContractUpdateTransition` (exists for the create twin).
+- ✅ `json_preserves_format_version_tag` symmetry on `DataContractUpdateTransition` — verified present (`data_contract_update_transition/mod.rs:297`), matching the create twin (`data_contract_create_transition/mod.rs:398`). The earlier "missing on update" note was stale.
 
 Status by step (see §3.11 below for full step list):
 - ✅ **Steps 1–9** complete — pure-delegation deletions, `to_cleaned_object` skip, `disabled_at` skip-serializing, Identity-family canonical, AssetLockProof, ExtendedDocument refactor (C1), Document family A10/A11, state-transition trait deletion.
