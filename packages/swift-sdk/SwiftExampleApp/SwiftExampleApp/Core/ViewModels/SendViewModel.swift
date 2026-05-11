@@ -93,16 +93,19 @@ class SendViewModel: ObservableObject {
         self.network = network
     }
 
+    /// Amount in duffs (1 DASH = 1e8). Used by core/L1 flows.
+    /// Backed by `Decimal` parsing — typing 0.0001 deterministically
+    /// yields exactly 10_000 duffs, not 9_999 or 10_001 depending on
+    /// binary-float rounding.
     var amount: UInt64? {
-        guard let double = Double(amountString), double > 0 else { return nil }
-        return UInt64(double * 100_000_000)
+        parseTokenAmount(amountString, decimals: 8)
     }
 
-    /// Amount in platform credits (1 DASH = 1e11 credits).
-    /// Used by platform-credit flows; `amount` (above) is duffs (1e8) for core.
+    /// Amount in platform credits (1 DASH = 1e11 credits). Used by
+    /// platform-credit flows. Same `Decimal`-backed parsing as
+    /// `amount`; the divisor difference is just the `decimals` arg.
     var amountCredits: UInt64? {
-        guard let double = Double(amountString), double > 0 else { return nil }
-        return UInt64(double * 100_000_000_000)
+        parseTokenAmount(amountString, decimals: 11)
     }
 
     var canSend: Bool {

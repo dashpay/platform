@@ -178,9 +178,16 @@ struct SendTransactionView: View {
                             // the lowest-indexed HD address that has
                             // never been used. Used as the change
                             // destination so the transition doesn't
-                            // collide with any input address.
+                            // collide with any input address. Scoped
+                            // to `senderAccountIndex` so multi-account
+                            // wallets don't land change on a different
+                            // platform-payment account than the inputs.
                             let changeAddressRow = addressBalances
-                                .filter { !$0.isUsed && $0.balance == 0 }
+                                .filter {
+                                    $0.accountIndex == senderAccountIndex
+                                        && !$0.isUsed
+                                        && $0.balance == 0
+                                }
                                 .min(by: { $0.addressIndex < $1.addressIndex })
                             let signer = KeychainSigner(
                                 modelContainer: modelContext.container

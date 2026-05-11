@@ -69,10 +69,15 @@ struct DashAddress {
         return Bech32m.encode(hrp: hrp, data: payload)
     }
 
-    /// Encode 21-byte platform address to bech32m display string
+    /// Encode 21-byte platform address to bech32m display string.
+    ///
+    /// HRP matches what `parse(...)` accepts (`dash` / `tdash`) so a
+    /// round-trip through `encodePlatform` → `parse` resolves as
+    /// `.platform(...)`. The type byte at `rawBytes[0]` (0xb0 / 0x80)
+    /// is what distinguishes platform from Orchard, not the HRP.
     static func encodePlatform(rawBytes: Data, network: Network) -> String? {
         guard rawBytes.count == 21 else { return nil }
-        let hrp = (network == .mainnet) ? "dashevo" : "tdashevo"
+        let hrp = (network == .mainnet) ? "dash" : "tdash"
         return Bech32m.encode(hrp: hrp, data: rawBytes)
     }
 
