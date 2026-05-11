@@ -34,8 +34,11 @@ const REGISTER_FUNDING_FLOOR: u64 = REGISTER_FUNDING_CREDITS;
 // TOP_UP_FUNDING_CREDITS: TOP_UP_AMOUNT + 15M headroom — the
 // chain-time IdentityTopUp dynamic fee (~13M) is paid from the
 // address residual, NOT from the topped-up credits.
-const TOP_UP_AMOUNT: Credits = 100_000;
-const TOP_UP_FUNDING_CREDITS: u64 = TOP_UP_AMOUNT + 15_000_000;
+// >= 200_000 protocol minimum for asset-lock top-up
+// (input_sum - output_sum >= minimum_difference=200_000).
+// See dashpay/platform DPP top-up state-transition validation.
+const TOP_UP_AMOUNT: Credits = 1_000_000;
+const TOP_UP_FUNDING_CREDITS: u64 = 16_000_000; // 1M top-up + 15M fee headroom
 const TOP_UP_FUNDING_FLOOR: u64 = TOP_UP_FUNDING_CREDITS;
 
 // 60 s is too tight under `--test-threads=14` when ID-002 funds

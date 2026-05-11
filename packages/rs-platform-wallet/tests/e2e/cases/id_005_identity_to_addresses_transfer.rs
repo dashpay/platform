@@ -34,8 +34,10 @@ const REGISTRATION_FUNDING: u64 = 100_000_000;
 const FUNDING_CREDITS: u64 = REGISTRATION_FUNDING + 150_000_000;
 const FUNDING_FLOOR: u64 = FUNDING_CREDITS;
 
-/// Credits transferred from identity to the destination address.
-const TRANSFER_AMOUNT: Credits = 100_000;
+// >= 500_000 protocol minimum for identity→address transfer output.
+// See dashpay/platform DPP state-transition validation:
+// "Output amount X is below minimum 500000".
+const TRANSFER_AMOUNT: Credits = 1_000_000;
 
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
