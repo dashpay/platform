@@ -466,7 +466,7 @@ pub struct MultiIdentitySetupGuard {
 
 impl MultiIdentitySetupGuard {
     /// Forward to the inner [`SetupGuard::teardown`].
-    pub async fn teardown(self) -> FrameworkResult<()> {
+    pub async fn teardown(self) -> FrameworkResult<cleanup::SweepReport> {
         self.base.teardown().await
     }
 }

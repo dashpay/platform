@@ -1,8 +1,8 @@
 //! Sweep self-test — registers a fresh identity with a known
 //! balance, runs `teardown` (which invokes
-//! `cleanup::sweep_identities_with_seed`), and asserts that the bank's
-//! Platform address pool gains at least the swept amount minus the
-//! `IdentityCreditTransferToAddresses` fee.
+//! `cleanup::sweep_identities_with_seed`), and asserts that the
+//! returned [`SweepReport::swept_identity_credits`] cleared at least
+//! [`SWEEP_GAIN_FLOOR`].
 //!
 //! Pinned status: Pass.
 //!
@@ -12,11 +12,16 @@
 //! address (see [`super::super::framework::bank_rebalance`]'s
 //! single-funding-pool invariant); the bank identity is no longer
 //! the sweep target.
+//!
+//! QA-V39-001 — the prior contract observed the bank address pool's
+//! post-sweep delta, but the bank address is process-shared and
+//! sibling tests' `fund_address` spends drain it during the wait
+//! window. Asserting on the sweep's own return value sidesteps the
+//! observability race entirely.
 
 use std::time::Duration;
 
 use dash_sdk::platform::Fetch;
-use dash_sdk::query_types::AddressInfo;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
 
@@ -64,20 +69,9 @@ async fn id_sweep_recovers_identity_credits() {
     let s = setup().await.expect("e2e setup failed");
 
     let bank_identity_id = s.ctx.bank_identity().id;
-    let bank_addr = *s.ctx.bank().primary_receive_address();
     // Clone the SDK handle so post-teardown fetches keep working —
     // `SetupGuard::teardown` consumes `self`.
     let sdk = std::sync::Arc::clone(s.ctx.sdk());
-
-    // Snapshot the bank Platform address pre-balance — the new sweep
-    // destination after the bank-flow refactor. Address may not yet
-    // be visible on chain (e.g. brand-new bank), in which case 0 is
-    // the right floor.
-    let bank_addr_pre_balance = AddressInfo::fetch(s.ctx.sdk(), bank_addr)
-        .await
-        .expect("fetch bank address pre")
-        .map(|info| info.balance)
-        .unwrap_or(0);
 
     // Invariant snapshot — the bank identity should remain flat
     // across this test (sweeps no longer pool credits on it).
@@ -117,45 +111,30 @@ async fn id_sweep_recovers_identity_credits() {
         target: "platform_wallet::e2e::cases::id_sweep",
         identity_id = %registered.id,
         bank_identity_id = %bank_identity_id,
-        %bank_addr,
-        bank_addr_pre_balance,
         bank_identity_pre_balance,
         pre_sweep_balance,
         "snapshot before sweep"
     );
 
     // Teardown invokes `cleanup::teardown_one` which calls
-    // `sweep_identities_with_seed` — the production sweep path.
-    s.teardown().await.expect("teardown");
+    // `sweep_identities_with_seed` — the production sweep path. The
+    // returned [`SweepReport`] surfaces the per-broadcast `amount`
+    // Σ as [`SweepReport::swept_identity_credits`]: direct evidence
+    // that our sweep moved credits, immune to the bank-address pool
+    // contention that plagued the prior bank-delta contract.
+    let report = s.teardown().await.expect("teardown");
 
-    // Wait for the bank's Platform-address pool to reflect the swept
-    // credits. The exact gain depends on the
-    // `IDENTITY_SWEEP_FEE_RESERVE` headroom plus the chain-time
-    // `IdentityCreditTransferToAddresses` fee — assert the looser
-    // lower bound.
-    let bank_addr_post_balance = wait_for_address_balance_chain_confirmed(
-        &sdk,
-        &bank_addr,
-        bank_addr_pre_balance + SWEEP_GAIN_FLOOR,
-        STEP_TIMEOUT,
-    )
-    .await
-    .expect("bank address balance never reflected swept credits");
-
-    let bank_gain = bank_addr_post_balance.saturating_sub(bank_addr_pre_balance);
     assert!(
-        bank_gain >= SWEEP_GAIN_FLOOR,
-        "bank-address gain {bank_gain} must clear SWEEP_GAIN_FLOOR {SWEEP_GAIN_FLOOR} \
-         (pre={bank_addr_pre_balance} post={bank_addr_post_balance})"
+        report.swept_identity_credits >= SWEEP_GAIN_FLOOR,
+        "sweep must have moved at least SWEEP_GAIN_FLOOR ({SWEEP_GAIN_FLOOR}) credits; \
+         observed swept_identity_credits={swept} (broadcasts_succeeded={succ} \
+         broadcast_failures={fails:?} had_funds_to_recover={had} pre_sweep_balance={pre})",
+        swept = report.swept_identity_credits,
+        succ = report.broadcasts_succeeded,
+        fails = report.broadcast_failures,
+        had = report.had_funds_to_recover,
+        pre = pre_sweep_balance,
     );
-    // The bank ADDRESS is process-shared, so under parallel test
-    // execution (`--test-threads>1`) other tests' `teardown_one`
-    // identity sweeps land on the same pool inside this test's
-    // window. We therefore cannot assert `bank_gain <=
-    // pre_sweep_balance` — sibling sweeps inflate
-    // `bank_addr_post_balance` legitimately. The lower bound above
-    // remains the meaningful contract: OUR sweep DID move credits to
-    // the bank's Platform address pool.
 
     // Bank-identity invariant: sweeps no longer pool credits on the
     // bank identity. Fetch post-test and verify it has not grown
@@ -177,9 +156,8 @@ async fn id_sweep_recovers_identity_credits() {
 
     tracing::info!(
         target: "platform_wallet::e2e::cases::id_sweep",
-        bank_addr_pre_balance,
-        bank_addr_post_balance,
-        bank_gain,
+        swept_identity_credits = report.swept_identity_credits,
+        broadcasts_succeeded = report.broadcasts_succeeded,
         bank_identity_pre_balance,
         bank_identity_post_balance,
         pre_sweep_balance,

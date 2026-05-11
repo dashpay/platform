@@ -99,6 +99,15 @@ pub struct SweepReport {
     /// dust without a bank top-up — so this counter is the only
     /// surface for tracking how much was abandoned.
     pub dust_abandoned: Credits,
+    /// Σ of `amount` across every successful
+    /// `transfer_credits_to_addresses` broadcast in
+    /// [`sweep_identities_with_seed`]. Direct evidence that this
+    /// sweep moved identity credits to the bank's Platform address —
+    /// preferred over post-hoc bank-address balance deltas, which
+    /// are contaminated by sibling tests' funding spends on the
+    /// process-shared bank wallet under parallel execution.
+    /// (QA-V39-001.)
+    pub swept_identity_credits: Credits,
 }
 
 impl SweepReport {
@@ -320,7 +329,7 @@ pub async fn teardown_one(
     bank_identity: &BankIdentity,
     registry: &PersistentTestWalletRegistry,
     test_wallet: &TestWallet,
-) -> FrameworkResult<()> {
+) -> FrameworkResult<SweepReport> {
     test_wallet.sync_balances().await?;
     let platform_version = PlatformVersion::latest();
     let dust_gate = min_input_amount(platform_version);
@@ -399,7 +408,7 @@ pub async fn teardown_one(
                 "manager unregister failed after teardown-with-failures"
             );
         }
-        return Ok(());
+        return Ok(report);
     }
 
     // Drop the registry entry first so an unregister failure
@@ -413,7 +422,7 @@ pub async fn teardown_one(
             "manager unregister failed after teardown; wallet remains tracked"
         );
     }
-    Ok(())
+    Ok(report)
 }
 
 /// Parse the registry's hex-encoded 64-byte seed. Bad length /
@@ -786,6 +795,8 @@ async fn sweep_identities_with_seed(
                     "identity sweep: drained credits to bank Platform address"
                 );
                 report.broadcasts_succeeded = report.broadcasts_succeeded.saturating_add(1);
+                report.swept_identity_credits =
+                    report.swept_identity_credits.saturating_add(amount);
             }
             Err(err) => {
                 tracing::warn!(

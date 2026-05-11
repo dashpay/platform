@@ -806,7 +806,7 @@ impl SetupGuard {
     /// Best-effort: a transient sync / transfer failure retains the
     /// registry entry, so the next process startup retries via
     /// [`super::cleanup::sweep_orphans`].
-    pub async fn teardown(mut self) -> FrameworkResult<()> {
+    pub async fn teardown(mut self) -> FrameworkResult<super::cleanup::SweepReport> {
         let result = super::cleanup::teardown_one(
             self.ctx.manager(),
             self.ctx.bank(),
@@ -982,7 +982,7 @@ fn drop_sweep_one(ctx: &'static E2eContext, test_wallet_addr: usize) -> Framewor
             )
             .await
             {
-                Ok(result) => result,
+                Ok(result) => result.map(|_| ()),
                 Err(_) => Err(FrameworkError::Cleanup(format!(
                     "drop sweep timed out after {:?}; registry entry retained \
                      for next-run sweep_orphans",
