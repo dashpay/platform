@@ -7,12 +7,14 @@ use dpp::fee::Credits;
 pub use dpp::prelude::AddressNonce;
 
 mod fund_from_asset_lock;
+mod fund_from_core;
 pub(crate) mod provider;
 mod sync;
 mod transfer;
 mod wallet;
 mod withdrawal;
 
+pub use fund_from_core::FundPlatformAddressFromCoreResult;
 pub use provider::{
     PerAccountPlatformAddressState, PerWalletPlatformAddressState, PlatformAddressTag,
 };

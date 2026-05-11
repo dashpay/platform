@@ -552,6 +552,90 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         }.value
     }
 
+    // MARK: - Core → Platform address funding
+
+    public struct FundPlatformAddressFromCoreResult: Sendable {
+        public let assetLockTxid: Data
+        public let assetLockVout: UInt32
+
+        public init(assetLockTxid: Data, assetLockVout: UInt32) {
+            self.assetLockTxid = assetLockTxid
+            self.assetLockVout = assetLockVout
+        }
+    }
+
+    /// Mint platform credits on one of the wallet's own addresses by
+    /// locking Core L1 funds. `targetAddressHash` is the 20-byte P2PKH
+    /// hash of an address owned by the wallet.
+    public func fundPlatformAddressFromCore(
+        amountDuffs: UInt64,
+        coreAccountIndex: UInt32 = 0,
+        platformAccountIndex: UInt32 = 0,
+        targetAddressType: UInt8 = 0,
+        targetAddressHash: Data,
+        signer: KeychainSigner
+    ) async throws -> FundPlatformAddressFromCoreResult {
+        guard targetAddressHash.count == 20 else {
+            throw PlatformWalletError.invalidParameter(
+                "targetAddressHash must be 20 bytes, got \(targetAddressHash.count)"
+            )
+        }
+
+        let mnemonicResolver = MnemonicResolver()
+        guard let resolverHandle = mnemonicResolver.handle else {
+            throw PlatformWalletError.invalidParameter(
+                "MnemonicResolver has no handle"
+            )
+        }
+
+        let handle = self.handle
+        let addressSignerHandle = signer.handle
+
+        return try await Task.detached(priority: .userInitiated) {
+            () -> FundPlatformAddressFromCoreResult in
+            var hashTuple = hashTupleInit()
+            withUnsafeMutableBytes(of: &hashTuple) { raw in
+                for (i, byte) in targetAddressHash.prefix(20).enumerated() {
+                    raw[i] = byte
+                }
+            }
+            let target = PlatformAddressFFI(
+                address_type: targetAddressType,
+                hash: hashTuple
+            )
+
+            var txidTuple: FFIByteTuple32 =
+                (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+            var vout: UInt32 = 0
+
+            // Pin signer + resolver across the FFI call so Rust still
+            // sees the vtable ctx valid.
+            let result = withExtendedLifetime((signer, mnemonicResolver)) {
+                withUnsafeMutablePointer(to: &txidTuple) { txidPtr in
+                    platform_wallet_fund_platform_address_from_core(
+                        handle,
+                        resolverHandle,
+                        amountDuffs,
+                        coreAccountIndex,
+                        platformAccountIndex,
+                        target,
+                        addressSignerHandle,
+                        txidPtr,
+                        &vout
+                    )
+                }
+            }
+            try result.check()
+
+            let txidData = withUnsafeBytes(of: txidTuple) { Data($0) }
+            return FundPlatformAddressFromCoreResult(
+                assetLockTxid: txidData,
+                assetLockVout: vout
+            )
+        }.value
+    }
+
     /// Pin every pubkey buffer simultaneously and call `body` with a
     /// freshly-built `[IdentityPubkeyFFI]` whose `pubkey_bytes`
     /// pointers all reference the pinned bytes. Recursive shape

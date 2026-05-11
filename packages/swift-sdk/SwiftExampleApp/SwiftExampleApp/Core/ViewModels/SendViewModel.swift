@@ -5,6 +5,7 @@ import SwiftDashSDK
 /// Available send flow types based on source and destination.
 enum SendFlow: Equatable {
     case coreToCore              // Standard L1 payment
+    case coreToPlatform          // Asset lock — fund own platform address
     case platformToPlatform      // Platform-address → platform-address transfer
     case platformToShielded      // Shield credits
     case shieldedToShielded      // Private transfer
@@ -14,6 +15,7 @@ enum SendFlow: Equatable {
     var displayName: String {
         switch self {
         case .coreToCore: return "Core Payment"
+        case .coreToPlatform: return "Fund Platform Address"
         case .platformToPlatform: return "Platform Transfer"
         case .platformToShielded: return "Shield Credits"
         case .shieldedToShielded: return "Shielded Transfer"
@@ -25,6 +27,7 @@ enum SendFlow: Equatable {
     var iconName: String {
         switch self {
         case .coreToCore: return "arrow.right"
+        case .coreToPlatform: return "arrow.up.forward.square"
         case .platformToPlatform: return "arrow.right"
         case .platformToShielded: return "lock.shield"
         case .shieldedToShielded: return "arrow.left.arrow.right"
@@ -36,6 +39,7 @@ enum SendFlow: Equatable {
     var estimatedFee: UInt64 {
         switch self {
         case .coreToCore: return 500_000             // ~0.005 DASH
+        case .coreToPlatform: return 700_000         // asset-lock tx + state transition
         case .platformToPlatform: return 100_000_000 // ~0.001 DASH in credits
         case .platformToShielded: return 200_000
         case .shieldedToShielded: return 300_000
@@ -127,6 +131,7 @@ class SendViewModel: ObservableObject {
             if shieldedBalance > 0 { sources.append(.shielded) }
             if platformBalance > 0 { sources.append(.platform) }
         case .platform:
+            if coreBalance > 0 { sources.append(.core) }
             if platformBalance > 0 { sources.append(.platform) }
             if shieldedBalance > 0 { sources.append(.shielded) }
         case .unknown:
@@ -157,6 +162,8 @@ class SendViewModel: ObservableObject {
             detectedFlow = .coreToCore
         case (.core, .shielded):
             detectedFlow = .shieldedToCore
+        case (.platform, .core):
+            detectedFlow = .coreToPlatform
         case (.orchard, .shielded):
             detectedFlow = .shieldedToShielded
         case (.orchard, .platform):
@@ -180,6 +187,7 @@ class SendViewModel: ObservableObject {
         wallet: PersistentWallet,
         coreWallet: ManagedCoreWallet?,
         platformAddressWallet: ManagedPlatformAddressWallet?,
+        managedWallet: ManagedPlatformWallet?,
         signer: KeychainSigner?,
         senderAccountIndex: UInt32,
         changeAddressRow: PersistentPlatformAddress?,
@@ -306,6 +314,42 @@ class SendViewModel: ObservableObject {
                 }
 
                 successMessage = "Platform transfer sent"
+
+            case .coreToPlatform:
+                guard let managedWallet else {
+                    error = "Platform wallet not available"
+                    return
+                }
+                guard let signer = signer else {
+                    error = "Signer not available"
+                    return
+                }
+                guard let amount = amount else { return }
+                guard case .platform(let payload) = detectedAddressType,
+                      payload.count == 21 else {
+                    error = "Recipient is not a platform address"
+                    return
+                }
+                // DIP-0018 bech32m type byte → FFI `address_type` (0/1).
+                let targetAddressType: UInt8
+                switch payload[0] {
+                case 0xb0: targetAddressType = 0
+                case 0x80: targetAddressType = 1
+                default:
+                    error = "Unsupported platform address variant (type byte 0x\(String(payload[0], radix: 16)))"
+                    return
+                }
+                let targetAddressHash = payload.subdata(in: 1..<21)
+
+                let result = try await managedWallet.fundPlatformAddressFromCore(
+                    amountDuffs: amount,
+                    coreAccountIndex: senderAccountIndex,
+                    platformAccountIndex: 0,
+                    targetAddressType: targetAddressType,
+                    targetAddressHash: targetAddressHash,
+                    signer: signer
+                )
+                successMessage = "Funded platform address (asset lock tx \(result.assetLockTxid.prefix(4).map { String(format: "%02x", $0) }.joined())…)"
 
             case .platformToShielded,
                  .shieldedToShielded,

@@ -68,4 +68,67 @@ impl AddressFundingFromAssetLockTransitionMethodsV0 for AddressFundingFromAssetL
         tracing::debug!("try_from_asset_lock_with_signer: Successfully created transition");
         Ok(address_funding_transition.into())
     }
+
+    #[cfg(all(feature = "state-transition-signing", feature = "core_key_wallet"))]
+    async fn try_from_asset_lock_with_external_signer<AS, S>(
+        asset_lock_proof: AssetLockProof,
+        asset_lock_proof_path: &::key_wallet::bip32::DerivationPath,
+        asset_lock_signer: &AS,
+        inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        outputs: BTreeMap<PlatformAddress, Option<Credits>>,
+        fee_strategy: AddressFundsFeeStrategy,
+        signer: &S,
+        user_fee_increase: UserFeeIncrease,
+        _platform_version: &PlatformVersion,
+    ) -> Result<StateTransition, ProtocolError>
+    where
+        AS: ::key_wallet::signer::Signer,
+        S: Signer<PlatformAddress>,
+    {
+        tracing::debug!(
+            input_count = inputs.len(),
+            output_count = outputs.len(),
+            "try_from_asset_lock_with_external_signer"
+        );
+
+        let address_funding_transition = AddressFundingFromAssetLockTransitionV0 {
+            asset_lock_proof,
+            inputs: inputs.clone(),
+            outputs,
+            fee_strategy,
+            user_fee_increase,
+            signature: Default::default(),
+            input_witnesses: Vec::new(),
+        };
+
+        let mut state_transition: StateTransition = address_funding_transition.into();
+
+        state_transition
+            .sign_with_core_signer(asset_lock_proof_path, asset_lock_signer)
+            .await?;
+
+        let signable_bytes = state_transition.signable_bytes()?;
+
+        let mut input_witnesses: Vec<AddressWitness> = Vec::with_capacity(inputs.len());
+        for address in inputs.keys() {
+            input_witnesses.push(signer.sign_create_witness(address, &signable_bytes).await?);
+        }
+
+        // `input_witnesses` is a v0-only field — reach into the variant.
+        match &mut state_transition {
+            StateTransition::AddressFundingFromAssetLock(
+                crate::state_transition::AddressFundingFromAssetLockTransition::V0(v0),
+            ) => {
+                v0.input_witnesses = input_witnesses;
+            }
+            other => {
+                return Err(ProtocolError::Generic(format!(
+                    "Expected AddressFundingFromAssetLock state transition after sign_with_core_signer, got {:?}",
+                    other.name()
+                )));
+            }
+        }
+
+        Ok(state_transition)
+    }
 }

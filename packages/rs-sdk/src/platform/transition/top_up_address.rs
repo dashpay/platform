@@ -35,6 +35,27 @@ pub trait TopUpAddress<S: Signer<PlatformAddress>> {
     ) -> Result<AddressInfos, Error>;
 }
 
+/// Signer-driven counterpart to [`TopUpAddress`]: signs the asset-lock
+/// proof via `asset_lock_signer` at `asset_lock_proof_path` instead of
+/// a raw private key.
+#[cfg(feature = "core_key_wallet")]
+#[async_trait::async_trait]
+pub trait TopUpAddressWithSigner<S: Signer<PlatformAddress>> {
+    #[allow(clippy::too_many_arguments)]
+    async fn top_up_with_signer<AS>(
+        &self,
+        sdk: &Sdk,
+        asset_lock_proof: AssetLockProof,
+        asset_lock_proof_path: &dpp::key_wallet::bip32::DerivationPath,
+        asset_lock_signer: &AS,
+        fee_strategy: AddressFundsFeeStrategy,
+        signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<AddressInfos, Error>
+    where
+        AS: dpp::key_wallet::signer::Signer + Send + Sync;
+}
+
 pub type AddressWithBalance = (PlatformAddress, Option<Credits>);
 pub type AddressesWithBalances = BTreeMap<PlatformAddress, Option<Credits>>;
 
@@ -137,4 +158,61 @@ async fn create_address_funding_from_asset_lock_transition<S: Signer<PlatformAdd
         sdk.version(),
     )
     .await
+}
+
+#[cfg(feature = "core_key_wallet")]
+#[async_trait::async_trait]
+impl<S: Signer<PlatformAddress>> TopUpAddressWithSigner<S> for AddressesWithBalances {
+    async fn top_up_with_signer<AS>(
+        &self,
+        sdk: &Sdk,
+        asset_lock_proof: AssetLockProof,
+        asset_lock_proof_path: &dpp::key_wallet::bip32::DerivationPath,
+        asset_lock_signer: &AS,
+        fee_strategy: AddressFundsFeeStrategy,
+        signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<AddressInfos, Error>
+    where
+        AS: dpp::key_wallet::signer::Signer + Send + Sync,
+    {
+        if self.is_empty() {
+            return Err(Error::from(TransitionNoOutputsError::new()));
+        }
+
+        let user_fee_increase = settings
+            .as_ref()
+            .and_then(|settings| settings.user_fee_increase)
+            .unwrap_or_default();
+
+        let state_transition =
+            AddressFundingFromAssetLockTransition::try_from_asset_lock_with_external_signer(
+                asset_lock_proof,
+                asset_lock_proof_path,
+                asset_lock_signer,
+                BTreeMap::new(),
+                self.clone(),
+                fee_strategy,
+                signer,
+                user_fee_increase,
+                sdk.version(),
+            )
+            .await?;
+
+        ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
+        let st_result = state_transition
+            .broadcast_and_wait::<StateTransitionProofResult>(sdk, settings)
+            .await?;
+        match st_result {
+            StateTransitionProofResult::VerifiedAddressInfos(address_infos) => {
+                let expected_addresses =
+                    self.keys().copied().collect::<BTreeSet<PlatformAddress>>();
+                collect_address_infos_from_proof(address_infos, &expected_addresses)
+            }
+            other => Err(Error::InvalidProvedResponse(format!(
+                "address info proof was expected for {:?}, but received {:?}",
+                state_transition, other
+            ))),
+        }
+    }
 }

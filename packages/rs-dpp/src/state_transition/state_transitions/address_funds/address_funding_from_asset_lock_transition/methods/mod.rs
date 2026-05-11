@@ -63,4 +63,49 @@ impl AddressFundingFromAssetLockTransitionMethodsV0 for AddressFundingFromAssetL
             }),
         }
     }
+
+    #[cfg(all(feature = "state-transition-signing", feature = "core_key_wallet"))]
+    async fn try_from_asset_lock_with_external_signer<AS, S>(
+        asset_lock_proof: AssetLockProof,
+        asset_lock_proof_path: &::key_wallet::bip32::DerivationPath,
+        asset_lock_signer: &AS,
+        inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        outputs: BTreeMap<PlatformAddress, Option<Credits>>,
+        fee_strategy: AddressFundsFeeStrategy,
+        signer: &S,
+        user_fee_increase: UserFeeIncrease,
+        platform_version: &PlatformVersion,
+    ) -> Result<StateTransition, ProtocolError>
+    where
+        AS: ::key_wallet::signer::Signer,
+        S: Signer<PlatformAddress>,
+    {
+        match platform_version
+            .dpp
+            .state_transition_conversion_versions
+            .address_funding_from_asset_lock_transition
+        {
+            0 => Ok(
+                AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_external_signer::<AS, S>(
+                    asset_lock_proof,
+                    asset_lock_proof_path,
+                    asset_lock_signer,
+                    inputs,
+                    outputs,
+                    fee_strategy,
+                    signer,
+                    user_fee_increase,
+                    platform_version,
+                )
+                .await?,
+            ),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method:
+                    "AddressFundingFromAssetLockTransition::try_from_asset_lock_with_external_signer"
+                        .to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
 }

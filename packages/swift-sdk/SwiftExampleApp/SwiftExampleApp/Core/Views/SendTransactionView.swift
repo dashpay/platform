@@ -164,9 +164,9 @@ struct SendTransactionView: View {
                             // the Rust manager holds all wallets
                             // and this view's `wallet` may not
                             // be the one that was last created.
-                            let managed = walletManager.wallet(for: wallet.walletId)
-                            let coreWallet = try? managed?.coreWallet()
-                            let platformAddressWallet = try? managed?.platformAddressWallet()
+                            let managedWallet = walletManager.wallet(for: wallet.walletId)
+                            let coreWallet = try? managedWallet?.coreWallet()
+                            let platformAddressWallet = try? managedWallet?.platformAddressWallet()
                             // Pick the account holding the platform
                             // balance. Most wallets have a single
                             // PlatformPayment account (index 0);
@@ -199,6 +199,7 @@ struct SendTransactionView: View {
                                 wallet: wallet,
                                 coreWallet: coreWallet,
                                 platformAddressWallet: platformAddressWallet,
+                                managedWallet: managedWallet,
                                 signer: signer,
                                 senderAccountIndex: senderAccountIndex,
                                 changeAddressRow: changeAddressRow,
@@ -302,6 +303,7 @@ struct SendTransactionView: View {
     private func flowColor(for flow: SendFlow) -> Color {
         switch flow {
         case .coreToCore: return .green
+        case .coreToPlatform: return .blue
         case .platformToPlatform: return .blue
         case .platformToShielded: return .purple
         case .shieldedToShielded: return .purple
