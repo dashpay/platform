@@ -140,7 +140,7 @@ struct SendTransactionView: View {
                             HStack {
                                 Text("Estimated Fee:")
                                 Spacer()
-                                Text("~\(formatBalance(fee))")
+                                Text("~\(formatBalance(fee, unit: unit(for: viewModel.selectedSource)))")
                                     .foregroundColor(.secondary)
                             }
                         }
@@ -164,15 +164,51 @@ struct SendTransactionView: View {
                             // the Rust manager holds all wallets
                             // and this view's `wallet` may not
                             // be the one that was last created.
-                            let coreWallet = try? walletManager
-                                .wallet(for: wallet.walletId)?
-                                .coreWallet()
+                            let managed = walletManager.wallet(for: wallet.walletId)
+                            let coreWallet = try? managed?.coreWallet()
+                            let platformAddressWallet = try? managed?.platformAddressWallet()
+                            // The in-memory account.address_credit_balance map
+                            // is only hydrated by BLAST sync via the provider's
+                            // on_address_found callback (provider.rs:578).
+                            // After wallet restore the provider has a watermark
+                            // set, which forces sync into incremental ("recent
+                            // query") mode that skips known addresses — so the
+                            // callback never fires and the account stays empty.
+                            // Reset the watermark to force a full trunk/branch
+                            // scan that re-emits on_address_found for every
+                            // known address.
+                            try? platformAddressWallet?.restoreSyncState(
+                                syncHeight: 0, syncTimestamp: 0, lastKnownRecentBlock: 0
+                            )
+                            try? await walletManager.syncPlatformAddressNow()
+                            // Pick the account holding the platform
+                            // balance. Most wallets have a single
+                            // PlatformPayment account (index 0);
+                            // fallback handles that case too.
+                            let senderAccountIndex = addressBalances
+                                .first(where: { $0.balance > 0 })?
+                                .accountIndex ?? 0
+                            // Mirror ReceiveAddressView's selection:
+                            // the lowest-indexed HD address that has
+                            // never been used. Used as the change
+                            // destination so the transition doesn't
+                            // collide with any input address.
+                            let changeAddressRow = addressBalances
+                                .filter { !$0.isUsed && $0.balance == 0 }
+                                .min(by: { $0.addressIndex < $1.addressIndex })
+                            let signer = KeychainSigner(
+                                modelContainer: modelContext.container
+                            )
                             await viewModel.executeSend(
                                 sdk: sdk,
                                 shieldedService: shieldedService,
                                 platformState: platformState,
                                 wallet: wallet,
                                 coreWallet: coreWallet,
+                                platformAddressWallet: platformAddressWallet,
+                                signer: signer,
+                                senderAccountIndex: senderAccountIndex,
+                                changeAddressRow: changeAddressRow,
                                 modelContext: modelContext
                             )
                         }
@@ -273,6 +309,7 @@ struct SendTransactionView: View {
     private func flowColor(for flow: SendFlow) -> Color {
         switch flow {
         case .coreToCore: return .green
+        case .platformToPlatform: return .blue
         case .platformToShielded: return .purple
         case .shieldedToShielded: return .purple
         case .shieldedToPlatform: return .blue
