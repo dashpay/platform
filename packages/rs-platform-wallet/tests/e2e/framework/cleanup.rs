@@ -600,7 +600,7 @@ fn build_sweep_plan(
 ///    discovery the sweep would observe nothing.
 /// 2. Iterate every identity in the manager whose `wallet_id` matches
 ///    `wallet.wallet_id()` and whose balance is at least
-///    [`identity_sweep_floor`]. For each, build a
+///    [`IDENTITY_SWEEP_FLOOR`]. For each, build a
 ///    [`SeedBackedIdentitySigner`] at that DIP-9 slot and issue a
 ///    `transfer_credits_to_addresses_with_external_signer(..,
 ///    outputs = {bank_addr: amount}, ..)`. The bank's Platform address
@@ -614,7 +614,7 @@ fn build_sweep_plan(
 /// Platform address ([`BankWallet::primary_receive_address`]), not the
 /// bank identity.
 /// Skips identities whose balance is below
-/// [`identity_sweep_floor`] — the network-level transfer fee is
+/// [`IDENTITY_SWEEP_FLOOR`] — the network-level transfer fee is
 /// non-negligible, so attempting to drain dust just burns more
 /// credits than it recovers.
 ///
@@ -629,17 +629,6 @@ async fn sweep_identities_with_seed(
     bank_identity: &BankIdentity,
     report: &mut SweepReport,
 ) -> FrameworkResult<()> {
-    let platform_version = PlatformVersion::latest();
-    let sweep_floor = identity_sweep_floor(platform_version);
-    let fee_reserve = identity_sweep_fee_reserve(platform_version);
-    tracing::debug!(
-        target: "platform_wallet::e2e::cleanup",
-        wallet_id = %hex::encode(wallet.wallet_id()),
-        sweep_floor,
-        fee_reserve,
-        "identity sweep: derived chain-fee floor and reserve from PlatformVersion"
-    );
-
     // Phase 1 — discovery walk.
     for identity_index in 0..IDENTITY_DISCOVERY_GAP {
         match wallet
@@ -743,14 +732,14 @@ async fn sweep_identities_with_seed(
             );
         }
 
-        if balance < sweep_floor {
+        if balance < IDENTITY_SWEEP_FLOOR {
             tracing::debug!(
                 target: "platform_wallet::e2e::cleanup",
                 wallet_id = %hex::encode(wallet_id),
                 %identity_id,
                 identity_index,
                 balance,
-                floor = sweep_floor,
+                floor = IDENTITY_SWEEP_FLOOR,
                 "identity sweep: balance below floor; skipping"
             );
             continue;
@@ -772,11 +761,11 @@ async fn sweep_identities_with_seed(
         };
 
         // Reserve a credit headroom for the CreditTransfer fee. The
-        // exact fee is protocol-version-dependent; subtract the
-        // chain-derived reserve (matches the min-fee formula for a
-        // single-output transfer) so the transition has room to land
-        // without "InsufficientIdentityBalance".
-        let amount = balance.saturating_sub(fee_reserve);
+        // exact fee is protocol-version-dependent; subtract the floor
+        // (~30M, sized well above empirical fee on testnet) so the
+        // transition has room to land without
+        // "InsufficientIdentityBalance".
+        let amount = balance.saturating_sub(IDENTITY_SWEEP_FEE_RESERVE);
         if amount == 0 {
             continue;
         }
@@ -836,44 +825,28 @@ async fn sweep_identities_with_seed(
 /// the discovery cost bounded.
 const IDENTITY_DISCOVERY_GAP: u32 = 8;
 
-/// Chain-derived floor below which the sweep refuses to broadcast a
-/// `transfer_credits_to_addresses` transition: any amount under this
-/// can't even cover the protocol's min fee, so the transition would
-/// be rejected with `IdentityInsufficientBalance`. Computed lazily
-/// against the active [`PlatformVersion`] so a fee-schedule bump
-/// shifts the floor without code changes — replaces the historical
-/// hardcoded `50_000_000` constant that would silently stale-out.
-///
-/// Formula mirrors
-/// [`IdentityCreditTransferToAddressesTransition::calculate_min_required_fee`]
-/// for a single-output sweep:
-/// `credit_transfer_to_addresses + address_funds_transfer_output_cost`.
-/// We then multiply by 2 for headroom — fee-tick noise and the
-/// occasional protocol bump shouldn't trip a sweep that's only one
-/// unit above the bare minimum.
-fn identity_sweep_floor(version: &PlatformVersion) -> Credits {
-    let min_fees = &version.fee_version.state_transition_min_fees;
-    // Single-output sweep (the bank's primary receive address).
-    min_fees
-        .credit_transfer_to_addresses
-        .saturating_add(min_fees.address_funds_transfer_output_cost)
-        .saturating_mul(2)
-}
+/// Below this balance the sweep refuses to broadcast a
+/// `transfer_credits_to_addresses` transition — protocol-level
+/// transfer fees would consume most of the would-be transferred
+/// amount. Calibrated against observed testnet realized fees (~100M
+/// for a single-output transfer) with headroom; the DPP
+/// `state_transition_min_fees` schedule covers only base fees and
+/// excludes dynamic per-output storage costs (proof tree updates,
+/// signature verification) that dominate on testnet, so a
+/// chain-schedule-derived floor would let broadcasts through at fee
+/// levels the chain rejects with `IdentityInsufficientBalance`.
+/// Identities below this floor are abandoned for the duration of the
+/// run; future sweeps may pick them up once natural chain activity
+/// nudges them above the floor.
+pub const IDENTITY_SWEEP_FLOOR: Credits = 50_000_000;
 
 /// Headroom reserved for the on-chain fee when computing the
 /// `CreditTransfer` amount. Protocol returns a typed
 /// `InsufficientIdentityBalance` if the requested amount plus fee
 /// exceeds the identity's balance, so the reserve must comfortably
-/// exceed the chain-time fee. Derived from the same
-/// `state_transition_min_fees` schedule as [`identity_sweep_floor`]
-/// — a single-output `IdentityCreditTransferToAddresses` costs
-/// `credit_transfer_to_addresses + address_funds_transfer_output_cost`.
-fn identity_sweep_fee_reserve(version: &PlatformVersion) -> Credits {
-    let min_fees = &version.fee_version.state_transition_min_fees;
-    min_fees
-        .credit_transfer_to_addresses
-        .saturating_add(min_fees.address_funds_transfer_output_cost)
-}
+/// exceed the chain-time fee. Calibrated against observed testnet
+/// fees (~12-15M base + dynamic per-output costs).
+pub const IDENTITY_SWEEP_FEE_RESERVE: Credits = 30_000_000;
 
 /// `|cached - chain| > THRESHOLD` triggers an INFO-level breadcrumb
 /// during the sweep so we can spot caches that have gone materially
