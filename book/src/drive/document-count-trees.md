@@ -220,6 +220,8 @@ When `prove = true` and the query carries a range clause, the handler picks one 
 
 `In` on a prefix property is supported on the distinct sub-path: grovedb's outer Query enumerates `Key(in_value)` entries at the In-bearing prop's property-name subtree, `set_subquery_path` carries any post-In Equal pairs + terminator name, and `set_subquery` is the range item. The aggregate sub-path still rejects `In` on prefix because `AggregateCountOnRange` is a single-range merk primitive that can't fork at the merk layer — for compound aggregates, callers use `return_distinct_counts_in_range = true` and reduce client-side via `DocumentSplitCounts::into_flat_map`.
 
+`order_by_ascending = false` is supported on the distinct sub-path. The request's flag flows into grovedb's `Query.left_to_right` on both the outer In-keys Query and the inner range subquery, so descending iteration walks `(in_key_desc, key_desc)` tuples. The prover and verifier MUST agree on this flag — the path query bytes include it, and disagreement breaks merk-root recomputation. The SDK derives it from the same `request.order_by_ascending` field the server uses, so the two stay in lockstep by construction. Combined with `limit`, descending order returns the LAST `limit` matched entries (the largest keys) rather than the first `limit` reversed — exactly what callers paginating from the end expect.
+
 For point-lookup count proofs (no range clause), the handler still falls back to the materialize-and-count flow with the `u16::MAX` cap. A future change can wire per-`CountTree` count proofs through a similar aggregate primitive.
 
 ## Range Queries and ProvableCountTree

@@ -2289,14 +2289,14 @@ mod range_countable_index_e2e_tests {
         // (matching the docs handler / distinct verifier pattern).
         const TEST_LIMIT: u16 = crate::config::DEFAULT_QUERY_LIMIT;
         let proof_bytes = query
-            .execute_distinct_count_with_proof(&drive, TEST_LIMIT, None, pv)
+            .execute_distinct_count_with_proof(&drive, TEST_LIMIT, true, None, pv)
             .expect("distinct count proof over StartsWith");
         assert!(
             !proof_bytes.is_empty(),
             "distinct count proof must not be empty"
         );
         let path_query = query
-            .distinct_count_path_query(Some(TEST_LIMIT), pv)
+            .distinct_count_path_query(Some(TEST_LIMIT), true, pv)
             .expect("distinct path query builds for StartsWith");
         let (root_hash, _elements) =
             GroveDb::verify_query(&proof_bytes, &path_query, &pv.drive.grove_version)
@@ -3394,7 +3394,7 @@ mod range_countable_index_e2e_tests {
         // 100 so all entries land in the proof.
         const TEST_LIMIT: u16 = crate::config::DEFAULT_QUERY_LIMIT;
         let proof_bytes = query
-            .execute_distinct_count_with_proof(&drive, TEST_LIMIT, None, pv)
+            .execute_distinct_count_with_proof(&drive, TEST_LIMIT, true, None, pv)
             .expect("should generate distinct count proof");
         assert!(!proof_bytes.is_empty(), "proof must not be empty");
 
@@ -3403,7 +3403,7 @@ mod range_countable_index_e2e_tests {
         // bound to root_hash via node_hash_with_count, so once this
         // returns we just read each element's count.
         let path_query = query
-            .distinct_count_path_query(Some(TEST_LIMIT), pv)
+            .distinct_count_path_query(Some(TEST_LIMIT), true, pv)
             .expect("path query should build");
 
         // Mirror the normal docs query's verify pattern: `verify_query`
@@ -3741,10 +3741,10 @@ mod range_countable_index_e2e_tests {
 
         const LIMIT: u16 = 5;
         let proof_bytes = query
-            .execute_distinct_count_with_proof(&drive, LIMIT, None, pv)
+            .execute_distinct_count_with_proof(&drive, LIMIT, true, None, pv)
             .expect("proof");
         let path_query = query
-            .distinct_count_path_query(Some(LIMIT), pv)
+            .distinct_count_path_query(Some(LIMIT), true, pv)
             .expect("path query");
 
         let (root_hash, elements) =
@@ -3788,6 +3788,161 @@ mod range_countable_index_e2e_tests {
                 "each lot has exactly 1 doc in this fixture"
             );
             // Suppress unused-import if nothing else uses Element.
+            let _: Element = elem;
+        }
+    }
+
+    /// `order_by_ascending = false` on the prove-distinct path
+    /// flips grovedb's `Query.left_to_right` to `false`, so the
+    /// proof covers the last `limit` matched keys in descending
+    /// order instead of the first `limit` in ascending order.
+    ///
+    /// Same parking-lot fixture as
+    /// [`distinct_count_proof_honors_request_limit`] (one car per
+    /// letter `a..=z`, queried with `lot > "b"` so 24 lots are
+    /// in-range). With `LIMIT = 5` and descending iteration the
+    /// proof should cover `z, y, x, w, v` — pinning that:
+    /// (1) `left_to_right = false` propagates end-to-end through
+    /// `execute_document_count_range_distinct_proof` →
+    /// `execute_distinct_count_with_proof` →
+    /// `distinct_count_path_query`;
+    /// (2) the prover and verifier agree on the descending path
+    /// query so the merk-root recomputation matches;
+    /// (3) descending order under `limit` is semantically
+    /// correct — we get the LAST `limit` keys, not the first
+    /// `limit` keys reversed (which would be `c, d, e, f, g`
+    /// reversed, i.e. `g, f, e, d, c` — wrong).
+    #[test]
+    fn distinct_count_proof_descending_returns_last_limit_keys() {
+        use crate::query::{DriveDocumentCountQuery, WhereClause, WhereOperator};
+        use dpp::platform_value::Value;
+        use grovedb::{Element, GroveDb};
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let pv = PlatformVersion::latest();
+        let factory =
+            dpp::data_contract::DataContractFactory::new(PROTOCOL_VERSION_V12).expect("factory");
+        let document_schema = platform_value!({
+            "type": "object",
+            "properties": { "lot": { "type": "string", "position": 0, "maxLength": 4 } },
+            "indices": [{
+                "name": "byLot",
+                "properties": [{"lot": "asc"}],
+                "countable": "countable",
+                "rangeCountable": true,
+            }],
+            "additionalProperties": false,
+        });
+        let schemas = platform_value!({ "car": document_schema });
+        let contract = factory
+            .create_with_value_config(generate_random_identifier_struct(), 0, schemas, None, None)
+            .expect("create contract")
+            .data_contract_owned();
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("apply parking-lot contract");
+        let document_type = contract.document_type_for_name("car").expect("car");
+
+        // One car per letter a..=z.
+        let mut seed = 1u64;
+        for letter in 'a'..='z' {
+            let mut doc = document_type
+                .random_document(Some(seed), pv)
+                .expect("random doc");
+            let mut props = std::collections::BTreeMap::new();
+            props.insert("lot".to_string(), Value::Text(letter.to_string()));
+            doc.set_properties(props);
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&doc, None)),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    pv,
+                    None,
+                )
+                .expect("insert");
+            seed += 1;
+        }
+
+        let where_clauses = vec![WhereClause {
+            field: "lot".to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: Value::Text("b".to_string()),
+        }];
+        let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+            document_type.indexes(),
+            &where_clauses,
+        )
+        .expect("byLot picked");
+        let query = DriveDocumentCountQuery {
+            document_type,
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "car".to_string(),
+            index,
+            where_clauses,
+        };
+
+        const LIMIT: u16 = 5;
+        // left_to_right = false → descending. Both prove and verify
+        // sides MUST pass the same value or the merk-root chain
+        // check below fails.
+        let proof_bytes = query
+            .execute_distinct_count_with_proof(&drive, LIMIT, false, None, pv)
+            .expect("proof");
+        let path_query = query
+            .distinct_count_path_query(Some(LIMIT), false, pv)
+            .expect("path query");
+
+        let (root_hash, elements) =
+            GroveDb::verify_query(&proof_bytes, &path_query, &pv.drive.grove_version)
+                .expect("descending path query must verify against the prover's proof");
+        assert_ne!(root_hash, [0u8; 32]);
+
+        // Proof should cover exactly LIMIT entries — the LAST 5 in
+        // descending key order: z, y, x, w, v. Critically, NOT the
+        // first 5 ascending reversed (that would be g, f, e, d, c).
+        let keys: Vec<Vec<u8>> = elements
+            .iter()
+            .filter_map(|(_p, k, e)| e.as_ref().map(|_| k.clone()))
+            .collect();
+        assert_eq!(
+            keys.len(),
+            LIMIT as usize,
+            "proof should cover exactly {} matched keys, got {}",
+            LIMIT,
+            keys.len()
+        );
+        assert_eq!(
+            keys,
+            vec![
+                b"z".to_vec(),
+                b"y".to_vec(),
+                b"x".to_vec(),
+                b"w".to_vec(),
+                b"v".to_vec()
+            ],
+            "last {} matched keys in descending order",
+            LIMIT
+        );
+        for (_p, _k, elem) in elements {
+            let elem = elem.expect("matched element");
+            assert_eq!(elem.count_value_or_default(), 1);
             let _: Element = elem;
         }
     }
@@ -4013,12 +4168,12 @@ mod range_countable_index_e2e_tests {
 
         const LIMIT: u16 = 100;
         let proof_bytes = query
-            .execute_distinct_count_with_proof(&drive, LIMIT, None, pv)
+            .execute_distinct_count_with_proof(&drive, LIMIT, true, None, pv)
             .expect("proof");
         assert!(!proof_bytes.is_empty(), "proof must not be empty");
 
         let path_query = query
-            .distinct_count_path_query(Some(LIMIT), pv)
+            .distinct_count_path_query(Some(LIMIT), true, pv)
             .expect("path query");
 
         // `lot > "blue"` is one-sided — disable absence proofs

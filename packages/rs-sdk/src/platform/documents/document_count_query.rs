@@ -422,8 +422,17 @@ impl FromProof<DocumentCountQuery> for DocumentSplitCounts {
                 .limit
                 .map(|l| l as u16)
                 .unwrap_or(drive::config::DEFAULT_QUERY_LIMIT);
+            // Mirror the server's default when the request omits
+            // `order_by_ascending`: ascending. The server's prove-
+            // distinct dispatcher uses the same fallback (see
+            // `RangeDistinctProof` arm in
+            // `execute_document_count_request`); both sides must
+            // land on the same `left_to_right` value or the merk-
+            // root recomputation in `verify_distinct_count_proof`
+            // fails.
+            let left_to_right = request.order_by_ascending.unwrap_or(true);
             let path_query = count_query
-                .distinct_count_path_query(Some(limit_u16), platform_version)
+                .distinct_count_path_query(Some(limit_u16), left_to_right, platform_version)
                 .map_err(|e| drive_proof_verifier::Error::RequestError {
                     error: format!("failed to build distinct-count path query: {}", e),
                 })?;

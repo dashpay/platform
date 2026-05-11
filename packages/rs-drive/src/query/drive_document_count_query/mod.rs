@@ -830,7 +830,17 @@ impl<'a> DriveDocumentCountQuery<'a> {
         // total. For distinct mode we apply `limit` post-query
         // below — the per-query DoS bound is the index size, which
         // is the same bound the prior merge-based code lived under.
-        let path_query = self.distinct_count_path_query(None, platform_version)?;
+        // Always build the path query in ascending order on the
+        // no-proof path; the Rust-side sort+reverse below applies
+        // the user's `order_by_ascending` to the final result set.
+        // We don't need to push direction into grovedb here because
+        // we don't push `limit` either (we need every element to
+        // either compute the summed total or to apply ordering and
+        // truncation post-emit). Keeping the grovedb walk in a
+        // canonical direction means the unit tests that pin
+        // `distinct_count_path_query`'s bytes don't have to care
+        // about the caller's order preference.
+        let path_query = self.distinct_count_path_query(None, true, platform_version)?;
         let base_path_len = path_query.path.len();
         let has_in_on_prefix = self
             .where_clauses
@@ -997,11 +1007,13 @@ impl<'a> DriveDocumentCountQuery<'a> {
         &self,
         drive: &Drive,
         limit: u16,
+        left_to_right: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
         let drive_version = &platform_version.drive;
-        let path_query = self.distinct_count_path_query(Some(limit), platform_version)?;
+        let path_query =
+            self.distinct_count_path_query(Some(limit), left_to_right, platform_version)?;
         let proof = drive
             .grove
             .get_proved_path_query(&path_query, None, transaction, &drive_version.grove_version)
@@ -1265,6 +1277,19 @@ impl<'a> DriveDocumentCountQuery<'a> {
     /// every emitted element before the result-set-level limit is
     /// applied in post-processing.
     ///
+    /// `left_to_right` controls grovedb's iteration direction:
+    /// `true` (the default, used for ascending `order_by_ascending`)
+    /// walks the range from low key to high key; `false` reverses.
+    /// On the prove path this is load-bearing: the path query's
+    /// `Query.left_to_right` is part of the serialized PathQuery
+    /// bytes, so the prover and verifier must agree on the value or
+    /// the merk-root recomputation fails. For compound queries the
+    /// flag is applied to BOTH the outer In-keys Query and the
+    /// inner range subquery, so descending iteration walks
+    /// `(in_key_desc, key_desc)` tuples (matching what
+    /// `RangeCountOptions::order_by_ascending = false` callers
+    /// expect).
+    ///
     /// Errors:
     /// - No range where-clause / multiple range where-clauses
     /// - Multiple In clauses on prefix props
@@ -1273,6 +1298,7 @@ impl<'a> DriveDocumentCountQuery<'a> {
     pub fn distinct_count_path_query(
         &self,
         limit: Option<u16>,
+        left_to_right: bool,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
         let range_clause = self
@@ -1381,7 +1407,7 @@ impl<'a> DriveDocumentCountQuery<'a> {
                 // Flat shape — path includes terminator, single
                 // range-only Query.
                 base_path.push(terminator_name.as_bytes().to_vec());
-                let mut query = Query::new();
+                let mut query = Query::new_with_direction(left_to_right);
                 query.insert_item(range_item);
                 Ok(PathQuery::new(
                     base_path,
@@ -1393,13 +1419,20 @@ impl<'a> DriveDocumentCountQuery<'a> {
                 // value at the In-bearing prop's property-name
                 // subtree. `subquery_path` carries any post-In Equal
                 // pairs + terminator. Subquery is the range item.
-                let mut outer_query = Query::new();
+                //
+                // `left_to_right` applies to BOTH the outer Query
+                // and the subquery so descending iteration walks
+                // `(in_key_desc, key_desc)` tuples — otherwise we'd
+                // get e.g. In keys ascending but per-fork terminator
+                // values descending, which is a weird order no
+                // user would expect.
+                let mut outer_query = Query::new_with_direction(left_to_right);
                 for key in keys {
                     outer_query.insert_key(key);
                 }
                 subquery_path_extension.push(terminator_name.as_bytes().to_vec());
 
-                let mut subquery = Query::new();
+                let mut subquery = Query::new_with_direction(left_to_right);
                 subquery.insert_item(range_item);
 
                 outer_query.set_subquery_path(subquery_path_extension);
@@ -1686,6 +1719,7 @@ impl Drive {
         document_type_name: String,
         where_clauses: Vec<WhereClause>,
         limit: u16,
+        left_to_right: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
@@ -1707,7 +1741,13 @@ impl Drive {
             index,
             where_clauses,
         };
-        count_query.execute_distinct_count_with_proof(self, limit, transaction, platform_version)
+        count_query.execute_distinct_count_with_proof(
+            self,
+            limit,
+            left_to_right,
+            transaction,
+            platform_version,
+        )
     }
 
     /// Materialize-and-count proof fallback for point-lookup count
@@ -2019,6 +2059,15 @@ impl Drive {
                     ))));
                 }
                 let limit_u16 = effective_limit as u16;
+                // Default to ascending if the request didn't specify
+                // — matches the no-proof default. The verifier reads
+                // the same field to reconstruct the matching path
+                // query (see SDK's
+                // `FromProof<DocumentCountQuery>` for
+                // `DocumentSplitCounts`); both sides MUST land on the
+                // same `left_to_right` value or the merk-root
+                // recomputation fails.
+                let left_to_right = request.order_by_ascending.unwrap_or(true);
                 Ok(DocumentCountResponse::Proof(
                     self.execute_document_count_range_distinct_proof(
                         contract_id,
@@ -2026,6 +2075,7 @@ impl Drive {
                         document_type_name,
                         where_clauses,
                         limit_u16,
+                        left_to_right,
                         transaction,
                         platform_version,
                     )?,
