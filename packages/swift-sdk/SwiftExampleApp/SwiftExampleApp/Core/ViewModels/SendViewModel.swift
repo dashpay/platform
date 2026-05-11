@@ -266,26 +266,22 @@ class SendViewModel: ObservableObject {
                     signer: signer
                 )
 
-                // Apply the post-broadcast balances/nonces returned by
-                // Rust to SwiftData so the UI doesn't display stale
-                // values until the next BLAST sync. The Rust-side
-                // `transfer` updates its in-memory state but does not
-                // call the persister, so without this the
-                // PersistentPlatformAddress rows that drive the Send
-                // screen's @Query stay frozen at their pre-send
-                // values — change-address selection could re-pick the
-                // same fresh address on the next send, and a cold
-                // restart would rehydrate the wallet from the stale
-                // rows.
+                // Belt-and-suspenders: apply the post-broadcast
+                // balances/nonces returned by `transfer` to SwiftData
+                // directly. The Rust side already pushes the same
+                // changeset through the persister, so this loop is
+                // idempotent (same hash → same balance/nonce), but
+                // doing it here too keeps the @Query-bound
+                // PersistentPlatformAddress rows fresh even if the
+                // persister callback ordering ever changes.
                 //
-                // Mirrors PlatformWalletPersistenceHandler.persistAddressBalances
-                // (PlatformWalletPersistenceHandler.swift:88-114): fetch
-                // each row by `addressHash`, set the volatile fields,
-                // stamp `lastUpdated`. Every entry Rust returned was
-                // touched by the transition, so `isUsed = true`
-                // unconditionally. Rows that aren't found are
-                // silently skipped — the same defensive shape the
-                // BLAST handler uses.
+                // Mirrors PlatformWalletPersistenceHandler.persistAddressBalances:
+                // fetch each row by `addressHash`, update the
+                // volatile fields, stamp `lastUpdated`. Every entry
+                // returned was touched by the transition, so
+                // `isUsed = true` unconditionally. Rows that aren't
+                // found are silently skipped — same defensive shape
+                // the BLAST handler uses.
                 for entry in updated {
                     let entryHash = entry.hash
                     let descriptor = FetchDescriptor<PersistentPlatformAddress>(

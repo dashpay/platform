@@ -139,19 +139,19 @@ impl PlatformAddressWallet {
         }
         drop(wm);
 
-        // Mirror `sync.rs:79-83`: push the post-broadcast balances
-        // through the persister so SwiftData (and any other consumer
-        // of the persister callback) stays in sync with the in-memory
-        // account state we just updated above. Without this the
-        // SwiftExampleApp's `PersistentPlatformAddress` rows stay
-        // frozen at pre-send values until the next BLAST sync —
-        // causing the Batch 2 cold-start hydration to load stale
-        // balances and the wrapper's next `auto_select_inputs` to
-        // declare a stale input balance the protocol then rejects.
+        // Mirror `sync.rs`: push the post-broadcast balances through
+        // the persister so any external store stays in sync with the
+        // in-memory account state we just updated above. Without
+        // this, persisted rows for these addresses stay frozen at
+        // pre-send values until the next BLAST sync, and
+        // `initialize_from_persisted` on the next process start would
+        // seed `account.address_credit_balance` from those stale rows
+        // — leaving `auto_select_inputs` to declare an input balance
+        // the protocol then rejects.
         //
         // Log-on-error rather than propagate: the on-chain transition
         // already succeeded, and a persistence hiccup shouldn't mask
-        // that. A subsequent BLAST round would reconcile.
+        // that. A subsequent sync reconciles.
         if !cs.is_empty() {
             if let Err(e) = self.persister.store(cs.clone().into()) {
                 tracing::error!("Failed to persist transfer changeset: {}", e);
