@@ -10,13 +10,29 @@ use dpp::data_contract::document_type::Index;
 use std::collections::{BTreeMap, BTreeSet};
 
 impl DriveDocumentCountQuery<'_> {
-    /// Finds a countable index whose properties form a prefix that matches the
-    /// indexable (Equal / In) where-clause fields. For a count query:
-    /// - All indexable where-clause fields must appear as a prefix of the index properties
-    /// - The index must have `countable = true`
-    /// - Returns `None` if any where clause uses an operator other than `Equal` / `In`
-    /// - Among matching indexes, we prefer the one with the most properties
-    ///   matched by where clauses (most specific)
+    /// Finds a `countable: true` index whose properties **exactly match** the
+    /// indexable (Equal/In) where-clause fields — every index property has a
+    /// corresponding clause AND every clause's field appears in the index.
+    ///
+    /// Exact coverage is the contract for both no-proof and prove count
+    /// paths: a countable index counts exactly what it indexes, and queries
+    /// against partially-covered indexes are rejected with a clear error
+    /// directing the caller at the index-design fix. This avoids the
+    /// product-of-uncovered-branching-factors walk that a prefix-match
+    /// approach would silently fall through to, and keeps the storage's
+    /// "count maintained only at the terminal level" trade-off intact (no
+    /// need to maintain counts at intermediate index levels just to serve
+    /// partial-coverage queries cheaply).
+    ///
+    /// Returns `None` if:
+    /// - Any where clause uses an operator other than `Equal` / `In`.
+    /// - The set of indexable where-clause fields doesn't exactly equal the
+    ///   set of properties of any single `countable: true` index.
+    ///
+    /// For the `documents_countable: true` case (total count with no where
+    /// clauses), the dispatcher reads the document-type primary-key tree's
+    /// CountTree directly — that path doesn't use this picker because no
+    /// index is involved.
     pub fn find_countable_index_for_where_clauses<'b>(
         indexes: &'b BTreeMap<String, Index>,
         where_clauses: &[WhereClause],
@@ -31,40 +47,35 @@ impl DriveDocumentCountQuery<'_> {
             .map(|wc| wc.field.as_str())
             .collect();
 
-        let mut best_match: Option<(&Index, usize)> = None;
+        // Need a clause for every property of the index, so empty
+        // `indexable_fields` only matches an empty-properties index
+        // (which doesn't exist — indexes always have at least one
+        // property — so empty where clauses never match here).
+        if indexable_fields.is_empty() {
+            return None;
+        }
 
         for index in indexes.values() {
             if !index.countable.is_countable() {
                 continue;
             }
-
-            // Check that the indexable where-clause fields form a prefix of
-            // the index properties.
-            let mut prefix_len = 0;
-            for prop in &index.properties {
-                if indexable_fields.contains(prop.name.as_str()) {
-                    prefix_len += 1;
-                } else {
-                    break;
-                }
-            }
-
-            // All indexable where-clause fields must be consumed as a prefix.
-            if prefix_len < indexable_fields.len() {
+            if index.properties.len() != indexable_fields.len() {
                 continue;
             }
-
-            // Prefer the index with the longest matching prefix (most specific).
-            match &best_match {
-                None => best_match = Some((index, prefix_len)),
-                Some((_, best_len)) if prefix_len > *best_len => {
-                    best_match = Some((index, prefix_len));
-                }
-                _ => {}
+            // Every index property must have a matching where-clause
+            // field. Because lengths match, this also implies every
+            // where-clause field appears in the index (no orphan
+            // clauses).
+            let all_covered = index
+                .properties
+                .iter()
+                .all(|prop| indexable_fields.contains(prop.name.as_str()));
+            if all_covered {
+                return Some(index);
             }
         }
 
-        best_match.map(|(index, _)| index)
+        None
     }
 
     /// Finds a `range_countable` index that can serve a range-count query.

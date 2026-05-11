@@ -52,9 +52,14 @@ impl Drive {
     //! and lets each executor's index-picking + clause-handling logic
     //! stay close to the executor it feeds.
 
-    /// Total count for the given where clauses against the best
-    /// covering countable index. Single summed entry with empty key.
-    /// Used by [`DocumentCountMode::Total`] dispatch.
+    /// Total count for the given where clauses against an exactly-
+    /// covering countable index, OR — when the where clauses are
+    /// empty and the document type has `documents_countable: true` —
+    /// the type's primary-key CountTree (O(1) read at the doctype
+    /// tree's root).
+    ///
+    /// Single summed entry with empty key. Used by
+    /// [`DocumentCountMode::Total`] dispatch.
     pub fn execute_document_count_total_no_proof(
         &self,
         contract_id: [u8; 32],
@@ -64,14 +69,37 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<SplitCountEntry>, Error> {
+        use dpp::data_contract::document_type::accessors::{
+            DocumentTypeV0Getters, DocumentTypeV2Getters,
+        };
+
+        // Fast path: unfiltered total count on a `documents_countable:
+        // true` document type reads the primary-key CountTree directly
+        // (O(1)). No index needed — the doctype tree itself carries
+        // the count.
+        if where_clauses.is_empty() && document_type.documents_countable() {
+            let count = self.read_primary_key_count_tree(
+                &contract_id,
+                &document_type_name,
+                transaction,
+                platform_version,
+            )?;
+            return Ok(vec![SplitCountEntry {
+                in_key: None,
+                key: vec![],
+                count,
+            }]);
+        }
+
         let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
             document_type.indexes(),
             &where_clauses,
         )
         .ok_or_else(|| {
             Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
-                "count query requires a countable index on the document type that \
-                     matches the where clause properties"
+                "count query requires a `countable: true` index whose properties \
+                     exactly match the where clause fields, or `documentsCountable: \
+                     true` on the document type for unfiltered total counts"
                     .to_string(),
             ))
         })?;
@@ -83,6 +111,44 @@ impl Drive {
             where_clauses,
         };
         count_query.execute_no_proof(self, transaction, platform_version)
+    }
+
+    /// Reads the document-type primary-key tree's `CountTree` element
+    /// (`[contract_doc, contract_id, [1], doctype, 0]`) and returns
+    /// `count_value_or_default()`. Used by the `documents_countable:
+    /// true` fast path on the total-count flows (both no-proof and
+    /// prove builder).
+    ///
+    /// Returns 0 when the element doesn't exist (e.g. fresh contract
+    /// with no documents inserted). Caller is responsible for ensuring
+    /// `documents_countable` is set on the document type before
+    /// calling — without it the element at `[..., doctype, 0]` is a
+    /// regular `NormalTree` and `count_value_or_default()` returns 0
+    /// regardless of how many documents the type actually has.
+    fn read_primary_key_count_tree(
+        &self,
+        contract_id: &[u8; 32],
+        document_type_name: &str,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<u64, Error> {
+        let drive_version = &platform_version.drive;
+        let path = [
+            &[crate::drive::RootTree::DataContractDocuments as u8] as &[u8],
+            contract_id,
+            &[1u8],
+            document_type_name.as_bytes(),
+        ];
+        let mut drive_operations = vec![];
+        let element = self.grove_get_raw_optional(
+            grovedb_path::SubtreePath::from(path.as_slice()),
+            &[0],
+            crate::util::grove_operations::DirectQueryType::StatefulDirectQuery,
+            transaction,
+            &mut drive_operations,
+            drive_version,
+        )?;
+        Ok(element.map_or(0, |e| e.count_value_or_default()))
     }
 
     /// Per-`In`-value entries: cartesian-fork the single `In` clause
@@ -340,16 +406,20 @@ impl Drive {
     }
 
     /// Point-lookup count proof against a `countable: true` index for
-    /// `prove = true` Equal/`In` count queries. Returns proof bytes of
-    /// the CountTree elements covering the requested branches — the
-    /// SDK-side verifier extracts each branch's `count_value` directly,
-    /// no document materialization.
+    /// `prove = true` Equal/`In` count queries, OR — when the where
+    /// clauses are empty and the document type has
+    /// `documents_countable: true` — a proof of the type's primary-key
+    /// CountTree (one merk path proof, O(log n) bytes).
     ///
-    /// Requires a covering countable index, mirroring the no-proof
-    /// `Total` / `PerInValue` modes: if no `countable: true` index
-    /// covers the where clauses, rejects with
-    /// `WhereClauseOnNonIndexedProperty`. Same contract on both prove
-    /// and no-proof paths — no silent fallback.
+    /// In both cases the SDK-side verifier extracts each verified
+    /// CountTree element's `count_value` directly, no document
+    /// materialization.
+    ///
+    /// Mirrors the no-proof `Total` / `PerInValue` modes' rejection
+    /// contract: if no `countable: true` index exactly covers the
+    /// where clauses (and the documents_countable fast path doesn't
+    /// apply), rejects with `WhereClauseOnNonIndexedProperty`. Same
+    /// contract on both prove and no-proof paths — no silent fallback.
     ///
     /// Used by [`DocumentCountMode::PointLookupProof`] dispatch.
     pub fn execute_document_count_point_lookup_proof(
@@ -361,15 +431,41 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
+        use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+
+        // Fast path: unfiltered prove count on a `documents_countable:
+        // true` document type proves the primary-key CountTree
+        // element directly. Same path-query shape as the index-based
+        // case, just rooted at `[..., doctype]` instead of inside an
+        // index.
+        if where_clauses.is_empty() && document_type.documents_countable() {
+            let path_query = DriveDocumentCountQuery::primary_key_count_tree_path_query(
+                contract_id,
+                &document_type_name,
+            );
+            let proof = self
+                .grove
+                .get_proved_path_query(
+                    &path_query,
+                    None,
+                    transaction,
+                    &platform_version.drive.grove_version,
+                )
+                .unwrap()
+                .map_err(|e| Error::GroveDB(Box::new(e)))?;
+            return Ok(proof);
+        }
+
         let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
             document_type.indexes(),
             &where_clauses,
         )
         .ok_or_else(|| {
             Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
-                "prove count requires a `countable: true` index on the \
-                 document type that matches the where clause properties — \
-                 same requirement as the no-proof path"
+                "prove count requires a `countable: true` index whose properties \
+                 exactly match the where clause fields, or `documentsCountable: \
+                 true` on the document type for unfiltered total counts — same \
+                 requirement as the no-proof path"
                     .to_string(),
             ))
         })?;

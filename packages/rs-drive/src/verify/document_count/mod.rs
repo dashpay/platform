@@ -19,3 +19,7 @@ pub mod verify_distinct_count_proof;
 /// per covered branch, with each `count` extracted from the verified
 /// CountTree element's `count_value`.
 pub mod verify_point_lookup_count_proof;
+/// Primary-key CountTree proof verification — used by the
+/// `documents_countable: true` fast path for unfiltered total counts
+/// at the doctype level. Returns a single `u64` count.
+pub mod verify_primary_key_count_tree_proof;

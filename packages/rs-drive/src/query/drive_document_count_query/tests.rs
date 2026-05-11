@@ -7,14 +7,11 @@ use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::document::{Document, DocumentV0};
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
 use dpp::tests::json_document::json_document_to_contract_with_ids;
 use dpp::version::PlatformVersion;
-use rand::rngs::StdRng;
-use rand::SeedableRng;
 use std::borrow::Cow;
 use std::collections::BTreeMap as StdBTreeMap;
 
@@ -43,47 +40,6 @@ fn setup_drive_and_contract() -> (Drive, dpp::prelude::DataContract) {
         .expect("expected to apply contract successfully");
 
     (drive, data_contract)
-}
-
-fn insert_random_documents(
-    drive: &Drive,
-    data_contract: &dpp::prelude::DataContract,
-    document_type_name: &str,
-    count: usize,
-    seed: u64,
-) {
-    let platform_version = PlatformVersion::latest();
-    let document_type = data_contract
-        .document_type_for_name(document_type_name)
-        .expect("expected document type");
-
-    let mut std_rng = StdRng::seed_from_u64(seed);
-    for _ in 0..count {
-        let random_document = document_type
-            .random_document_with_rng(&mut std_rng, platform_version)
-            .expect("expected to get random document");
-
-        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
-
-        drive
-            .add_document_for_contract(
-                DocumentAndContractInfo {
-                    owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefInfo((&random_document, storage_flags)),
-                        owner_id: None,
-                    },
-                    contract: data_contract,
-                    document_type,
-                },
-                false,
-                BlockInfo::default(),
-                true,
-                None,
-                platform_version,
-                None,
-            )
-            .expect("expected to insert document");
-    }
 }
 
 /// Inserts a person document with a controlled set of property values,
@@ -152,111 +108,131 @@ fn insert_person_doc(
         .expect("expected to insert document");
 }
 
+/// Exact-coverage query (`age == 30` against the single-property
+/// `byAge` countable index) — the strict-picker happy path on both
+/// no-proof and prove. Pins:
+/// - Picker accepts a 1-property index whose property exactly matches
+///   the where-clause field.
+/// - No-proof executor reads the CountTree at the resolved path and
+///   returns the count.
+/// - Prove executor builds a CountTree-element proof returning
+///   non-empty bytes.
 #[test]
-fn test_count_query_total_count_with_documents() {
+fn test_count_query_fully_covered_equal_succeeds_on_both_paths() {
     let (drive, data_contract) = setup_drive_and_contract();
     let platform_version = PlatformVersion::latest();
 
-    insert_random_documents(&drive, &data_contract, "person", 5, 500);
+    // 3 docs at age=30, 2 at age=40 → byAge count at 30 should be 3.
+    insert_person_doc(&drive, &data_contract, [1u8; 32], "Alice", "", "Smith", 30);
+    insert_person_doc(&drive, &data_contract, [2u8; 32], "Bob", "", "Jones", 30);
+    insert_person_doc(&drive, &data_contract, [3u8; 32], "Carol", "", "Brown", 30);
+    insert_person_doc(&drive, &data_contract, [4u8; 32], "Dave", "", "Smith", 40);
+    insert_person_doc(&drive, &data_contract, [5u8; 32], "Eve", "", "Jones", 40);
 
     let document_type = data_contract
         .document_type_for_name("person")
         .expect("expected document type");
 
+    let age_eq_30 = WhereClause {
+        field: "age".to_string(),
+        operator: WhereOperator::Equal,
+        value: Value::U64(30),
+    };
     let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
         document_type.indexes(),
-        &[],
+        std::slice::from_ref(&age_eq_30),
     )
-    .expect("expected to find countable index");
+    .expect("expected picker to accept fully-covered byAge index");
 
     let query = DriveDocumentCountQuery {
         document_type,
         contract_id: data_contract.id().to_buffer(),
         document_type_name: "person".to_string(),
         index,
-        where_clauses: vec![],
+        where_clauses: vec![age_eq_30],
     };
 
+    // No-proof path
     let results = query
         .execute_no_proof(&drive, None, platform_version)
-        .expect("expected query to succeed");
-
+        .expect("expected no-proof count to succeed");
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0].count, 5, "expected count of 5 documents");
+    assert_eq!(results[0].count, 3, "expected count of 3 docs at age=30");
     assert!(
         results[0].key.is_empty(),
-        "expected empty key for total count"
+        "expected empty key for fully-covered Equal-only count"
     );
 
-    // Prove-path symmetry: when the index has uncovered properties
-    // (no where clauses), `execute_point_lookup_count_with_proof`
-    // rejects with `WhereClauseOnNonIndexedProperty`-class error.
-    // No-proof handles partial coverage via per-level summing
-    // (`count_recursive`); the prove path requires a fully-covering
-    // index. Symmetric rejection — see the prove path's docstring
-    // for the contract.
-    let proof_err = query
+    // Prove path — emits the CountTree element proof for the resolved
+    // branch. Non-empty bytes guarantee the prover walked a real merk
+    // path (not a degenerate empty envelope).
+    let proof = query
         .execute_point_lookup_count_with_proof(&drive, None, platform_version)
-        .expect_err("partial-coverage prove count should reject");
+        .expect("expected prove count to succeed on fully-covered Equal query");
     assert!(
-        matches!(
-            proof_err,
-            crate::error::Error::Query(
-                crate::error::query::QuerySyntaxError::InvalidWhereClauseComponents(_)
-            )
-        ),
-        "expected InvalidWhereClauseComponents rejection, got: {:?}",
-        proof_err,
+        !proof.is_empty(),
+        "expected non-empty proof bytes for fully-covered Equal prove count"
     );
 }
 
+/// Strict-picker rejection contract: a where clause that doesn't
+/// exactly cover any `countable: true` index returns `None` from the
+/// picker. Pre-rewrite the picker would have returned a longer-prefix
+/// index and downstream code would have walked partially-covered
+/// trees via `count_recursive`; now the responsibility for index
+/// design sits cleanly with the contract author, and queries against
+/// partially-covered indexes fail loudly at the picker level.
 #[test]
-fn test_count_query_total_count_empty() {
-    let (drive, data_contract) = setup_drive_and_contract();
-    let platform_version = PlatformVersion::latest();
-
+fn test_count_query_picker_rejects_partial_coverage() {
+    let (_drive, data_contract) = setup_drive_and_contract();
     let document_type = data_contract
         .document_type_for_name("person")
         .expect("expected document type");
 
-    let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+    // family-contract-countable.json has byFirstNameLastName (2 props),
+    // byFirstNameMiddleLastName (3 props, unique), and byAge (1 prop).
+    // Empty where doesn't exactly cover any of them.
+    let no_match = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
         document_type.indexes(),
         &[],
-    )
-    .expect("expected to find countable index");
-
-    let query = DriveDocumentCountQuery {
-        document_type,
-        contract_id: data_contract.id().to_buffer(),
-        document_type_name: "person".to_string(),
-        index,
-        where_clauses: vec![],
-    };
-
-    let results = query
-        .execute_no_proof(&drive, None, platform_version)
-        .expect("expected query to succeed");
-
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0].count, 0, "expected count of 0 documents");
-
-    // Same partial-coverage rejection as the with-documents case
-    // above — no where clauses → no covered prefix → prove path
-    // rejects. Empty-index variant pins that the rejection happens
-    // pre-storage-read (the builder rejects before grovedb).
-    let proof_err = query
-        .execute_point_lookup_count_with_proof(&drive, None, platform_version)
-        .expect_err("partial-coverage prove count should reject");
-    assert!(
-        matches!(
-            proof_err,
-            crate::error::Error::Query(
-                crate::error::query::QuerySyntaxError::InvalidWhereClauseComponents(_)
-            )
-        ),
-        "expected InvalidWhereClauseComponents rejection, got: {:?}",
-        proof_err,
     );
+    assert!(
+        no_match.is_none(),
+        "strict picker must reject empty where clauses (no index has 0 properties)"
+    );
+
+    // `firstName = X` alone is a prefix of byFirstNameLastName but
+    // not an exact match — there's no 1-property `[firstName]` index
+    // in this contract. Strict picker rejects.
+    let first_name_only = vec![WhereClause {
+        field: "firstName".to_string(),
+        operator: WhereOperator::Equal,
+        value: Value::Text("Alice".to_string()),
+    }];
+    let no_match_partial = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+        document_type.indexes(),
+        &first_name_only,
+    );
+    assert!(
+        no_match_partial.is_none(),
+        "`firstName = X` doesn't exactly cover any index (only as prefix of \
+         2- and 3-property indexes) → picker returns None"
+    );
+
+    // `age = X` exactly covers byAge (1-prop) → picker accepts.
+    // Confirms the strict contract isn't over-rejecting.
+    let age_only = vec![WhereClause {
+        field: "age".to_string(),
+        operator: WhereOperator::Equal,
+        value: Value::U64(30),
+    }];
+    let picked = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+        document_type.indexes(),
+        &age_only,
+    )
+    .expect("byAge is exactly covered");
+    assert_eq!(picked.properties.len(), 1);
+    assert_eq!(picked.properties[0].name, "age");
 }
 
 #[test]
@@ -752,13 +728,24 @@ fn test_countable_allowing_offset_variant_end_to_end() {
         )
         .expect("expected to apply contract");
 
-    insert_random_documents(&drive, &data_contract, "person", 4, 700);
+    // 2 Alices + 2 Bobs so the byFirstName count at "Alice" is 2.
+    // Using fully-covered `firstName == "Alice"` because the strict
+    // picker requires exact coverage.
+    insert_person_doc(&drive, &data_contract, [1u8; 32], "Alice", "", "", 30);
+    insert_person_doc(&drive, &data_contract, [2u8; 32], "Alice", "", "", 31);
+    insert_person_doc(&drive, &data_contract, [3u8; 32], "Bob", "", "", 40);
+    insert_person_doc(&drive, &data_contract, [4u8; 32], "Bob", "", "", 41);
 
-    // The picker should still find this index — `is_countable()` covers both
-    // `Countable` and `CountableAllowingOffset`.
+    let first_name_eq_alice = WhereClause {
+        field: "firstName".to_string(),
+        operator: WhereOperator::Equal,
+        value: Value::Text("Alice".to_string()),
+    };
+    // The picker should accept this index — `is_countable()` covers
+    // both `Countable` and `CountableAllowingOffset` variants.
     let picked = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
         document_type.indexes(),
-        &[],
+        std::slice::from_ref(&first_name_eq_alice),
     )
     .expect("expected picker to accept CountableAllowingOffset index");
     assert_eq!(picked.countable, IndexCountability::CountableAllowingOffset);
@@ -768,7 +755,7 @@ fn test_countable_allowing_offset_variant_end_to_end() {
         contract_id: data_contract.id().to_buffer(),
         document_type_name: "person".to_string(),
         index: picked,
-        where_clauses: vec![],
+        where_clauses: vec![first_name_eq_alice],
     };
 
     let results = query
@@ -776,8 +763,8 @@ fn test_countable_allowing_offset_variant_end_to_end() {
         .expect("expected count query to succeed against ProvableCountTree");
     assert_eq!(results.len(), 1);
     assert_eq!(
-        results[0].count, 4,
-        "ProvableCountTree should report total count = 4"
+        results[0].count, 2,
+        "ProvableCountTree should report 2 Alices"
     );
 }
 

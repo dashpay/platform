@@ -175,6 +175,37 @@ pub fn verify_point_lookup_count_proof(
     Ok(entries)
 }
 
+/// Verify a grovedb proof of the document type's primary-key
+/// `CountTree` element and return the unfiltered total count.
+///
+/// Thin tenderdash-composition wrapper over
+/// [`DriveDocumentCountQuery::verify_primary_key_count_tree_proof`].
+/// Used by the prove path's `documents_countable: true` fast path —
+/// when the where clauses are empty and the document type has
+/// `documents_countable: true`, the server proves the type-level
+/// CountTree element directly and the SDK extracts the count from
+/// the verified element.
+pub fn verify_primary_key_count_tree_proof(
+    contract_id: [u8; 32],
+    document_type_name: &str,
+    proof: &Proof,
+    mtd: &ResponseMetadata,
+    platform_version: &PlatformVersion,
+    provider: &dyn ContextProvider,
+) -> Result<u64, Error> {
+    let (root_hash, count) = DriveDocumentCountQuery::verify_primary_key_count_tree_proof(
+        &proof.grovedb_proof,
+        contract_id,
+        document_type_name,
+        platform_version,
+    )
+    .map_drive_error(proof, mtd)?;
+
+    verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+    Ok(count)
+}
+
 #[cfg(test)]
 mod tests {
     //! Local-only tests for parts of this module that don't need a

@@ -23,15 +23,17 @@ use dpp::dashcore::Network;
 use dpp::version::PlatformVersion;
 use dpp::{
     data_contract::accessors::v0::DataContractV0Getters,
-    data_contract::document_type::accessors::DocumentTypeV0Getters, platform_value::Value,
-    prelude::DataContract, ProtocolError,
+    data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters},
+    platform_value::Value,
+    prelude::DataContract,
+    ProtocolError,
 };
 use drive::query::{
     DriveDocumentCountQuery, DriveDocumentQuery, OrderClause, WhereClause, WhereOperator,
 };
 use drive_proof_verifier::{
     verify_aggregate_count_proof, verify_distinct_count_proof, verify_point_lookup_count_proof,
-    DocumentCount, DocumentSplitCounts, FromProof,
+    verify_primary_key_count_tree_proof, DocumentCount, DocumentSplitCounts, FromProof,
 };
 use rs_dapi_client::transport::{
     AppliedRequestSettings, BoxFuture, TransportError, TransportRequest,
@@ -301,13 +303,18 @@ impl FromProof<DocumentCountQuery> for DocumentCount {
             return Ok((Some(DocumentCount(count)), mtd.clone(), proof.clone()));
         }
 
-        // No range clause: prove count requires a covering countable
-        // index. Sum the per-branch entries from the CountTree element
-        // proof. Symmetric with the no-proof side, which rejects when
-        // no countable index covers the where clauses; the rejection
-        // here surfaces from `point_lookup_count_path_query` (called
-        // by `verify_point_lookup_count_proof` below) when the index
-        // doesn't fully cover or the wrong operator shapes appear.
+        // No range clause: route through the count-tree proof
+        // primitives. Two sub-cases mirror the server-side dispatch:
+        //
+        // 1. **documents_countable + empty where**: the doctype's
+        //    primary-key tree is itself a CountTree. The server
+        //    proves that element directly; the SDK verifies and
+        //    extracts `count_value`. O(log n) proof, no index.
+        // 2. **Else**: must have a `countable: true` index whose
+        //    properties exactly match the where clauses. Server
+        //    proves the per-branch CountTree elements; SDK sums their
+        //    `count_value`s. Rejection on missing covering index is
+        //    symmetric with the no-proof side.
         let response: Self::Response = response.into();
         let document_type = request
             .document_query
@@ -319,13 +326,35 @@ impl FromProof<DocumentCountQuery> for DocumentCount {
                     request.document_query.document_type_name, e
                 ),
             })?;
+        let proof = response
+            .proof()
+            .or(Err(drive_proof_verifier::Error::NoProofInResult))?;
+        let mtd = response
+            .metadata()
+            .or(Err(drive_proof_verifier::Error::EmptyResponseMetadata))?;
+
+        // documents_countable fast path
+        if request.document_query.where_clauses.is_empty() && document_type.documents_countable() {
+            let contract_id = request.document_query.data_contract.id().to_buffer();
+            let count = verify_primary_key_count_tree_proof(
+                contract_id,
+                &request.document_query.document_type_name,
+                proof,
+                mtd,
+                platform_version,
+                provider,
+            )?;
+            return Ok((Some(DocumentCount(count)), mtd.clone(), proof.clone()));
+        }
+
         let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
             document_type.indexes(),
             &request.document_query.where_clauses,
         )
         .ok_or_else(|| drive_proof_verifier::Error::RequestError {
-            error: "prove count requires a `countable: true` index on the \
-                    document type that matches the where clause properties"
+            error: "prove count requires a `countable: true` index whose properties \
+                    exactly match the where clause fields, or `documentsCountable: \
+                    true` on the document type for unfiltered total counts"
                 .to_string(),
         })?;
         let count_query = DriveDocumentCountQuery {
@@ -335,12 +364,6 @@ impl FromProof<DocumentCountQuery> for DocumentCount {
             index,
             where_clauses: request.document_query.where_clauses.clone(),
         };
-        let proof = response
-            .proof()
-            .or(Err(drive_proof_verifier::Error::NoProofInResult))?;
-        let mtd = response
-            .metadata()
-            .or(Err(drive_proof_verifier::Error::EmptyResponseMetadata))?;
 
         let entries =
             verify_point_lookup_count_proof(&count_query, proof, mtd, platform_version, provider)?;
@@ -500,15 +523,20 @@ impl FromProof<DocumentCountQuery> for DocumentSplitCounts {
             ));
         }
 
-        // No range clause + `prove = true`: use the CountTree element
-        // proof. For Equal-only fully-covered the verifier returns one
-        // empty-key entry; for Equal-prefix + In-on-last it returns
-        // one entry per In value (key = serialized In value). Both
-        // shapes match what callers expect from `DocumentSplitCounts`:
-        // total-count is a single empty-key entry, per-In-value is one
-        // entry per value. Requires a covering countable index;
-        // rejection surfaces from the builder.
+        // No range clause + `prove = true`: route through the count-
+        // tree proof primitives, mirroring `DocumentCount`'s dispatch.
+        // Two sub-cases:
         //
+        // 1. **documents_countable + empty where**: prove the
+        //    doctype's primary-key CountTree directly. Result is a
+        //    single empty-key entry with the verified count.
+        // 2. **Else**: require a covering countable index. Server
+        //    proves the per-branch CountTree elements; SDK returns
+        //    them as Vec<SplitCountEntry>. For Equal-only fully-
+        //    covered the verifier returns one empty-key entry
+        //    (re-emitted as zero-count if absent); for Equal-prefix
+        //    + In-on-last it returns one entry per In value (zero-
+        //    count In branches are simply absent).
         let response: Self::Response = response.into();
         let document_type = request
             .document_query
@@ -520,13 +548,44 @@ impl FromProof<DocumentCountQuery> for DocumentSplitCounts {
                     request.document_query.document_type_name, e
                 ),
             })?;
+        let proof = response
+            .proof()
+            .or(Err(drive_proof_verifier::Error::NoProofInResult))?;
+        let mtd = response
+            .metadata()
+            .or(Err(drive_proof_verifier::Error::EmptyResponseMetadata))?;
+
+        // documents_countable fast path → single empty-key entry.
+        if request.document_query.where_clauses.is_empty() && document_type.documents_countable() {
+            let contract_id = request.document_query.data_contract.id().to_buffer();
+            let count = verify_primary_key_count_tree_proof(
+                contract_id,
+                &request.document_query.document_type_name,
+                proof,
+                mtd,
+                platform_version,
+                provider,
+            )?;
+            let entries = vec![drive_proof_verifier::SplitCountEntry {
+                in_key: None,
+                key: Vec::new(),
+                count,
+            }];
+            return Ok((
+                Some(DocumentSplitCounts::from_verified(entries)),
+                mtd.clone(),
+                proof.clone(),
+            ));
+        }
+
         let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
             document_type.indexes(),
             &request.document_query.where_clauses,
         )
         .ok_or_else(|| drive_proof_verifier::Error::RequestError {
-            error: "prove count requires a `countable: true` index on the \
-                    document type that matches the where clause properties"
+            error: "prove count requires a `countable: true` index whose properties \
+                    exactly match the where clause fields, or `documentsCountable: \
+                    true` on the document type for unfiltered total counts"
                 .to_string(),
         })?;
         let count_query = DriveDocumentCountQuery {
@@ -536,12 +595,6 @@ impl FromProof<DocumentCountQuery> for DocumentSplitCounts {
             index,
             where_clauses: request.document_query.where_clauses.clone(),
         };
-        let proof = response
-            .proof()
-            .or(Err(drive_proof_verifier::Error::NoProofInResult))?;
-        let mtd = response
-            .metadata()
-            .or(Err(drive_proof_verifier::Error::EmptyResponseMetadata))?;
 
         let mut entries =
             verify_point_lookup_count_proof(&count_query, proof, mtd, platform_version, provider)?;

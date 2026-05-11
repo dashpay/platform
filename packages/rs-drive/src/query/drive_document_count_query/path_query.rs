@@ -650,4 +650,35 @@ impl DriveDocumentCountQuery<'_> {
             }
         }
     }
+
+    /// Build the grovedb `PathQuery` for proving the document type's
+    /// primary-key `CountTree` element at `[contract_doc, contract_id,
+    /// 1, doctype, 0]`. Used for unfiltered total counts when the
+    /// document type has `documents_countable: true` — the
+    /// type-level CountTree's `count_value` IS the total document
+    /// count, no index walk needed.
+    ///
+    /// Shared between the server-side prove path
+    /// ([`Drive::execute_document_count_point_lookup_proof`]'s
+    /// documents_countable fast path) and the client-side verify path
+    /// ([`Self::verify_primary_key_count_tree_proof`]). Both sides
+    /// produce the exact same `PathQuery` for merk-root recomputation.
+    ///
+    /// Free function rather than a method on `DriveDocumentCountQuery`
+    /// because the documents_countable case isn't tied to any index —
+    /// it operates at the doctype level directly.
+    pub fn primary_key_count_tree_path_query(
+        contract_id: [u8; 32],
+        document_type_name: &str,
+    ) -> PathQuery {
+        let path = vec![
+            vec![RootTree::DataContractDocuments as u8],
+            contract_id.to_vec(),
+            vec![1u8],
+            document_type_name.as_bytes().to_vec(),
+        ];
+        let mut query = Query::new();
+        query.insert_key(vec![0]);
+        PathQuery::new(path, SizedQuery::new(query, None, None))
+    }
 }

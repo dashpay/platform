@@ -11,7 +11,7 @@ mod verify;
 pub use error::Error;
 pub use proof::document_count::{
     verify_aggregate_count_proof, verify_distinct_count_proof, verify_point_lookup_count_proof,
-    DocumentCount,
+    verify_primary_key_count_tree_proof, DocumentCount,
 };
 pub use proof::document_split_count::DocumentSplitCounts;
 // Re-export `SplitCountEntry` from rs-drive at the proof-verifier

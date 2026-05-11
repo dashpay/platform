@@ -124,14 +124,19 @@ A single unified gRPC endpoint exposes the feature: `GetDocumentsCount`. The res
 
 When `prove=false`, drive-abci calls into `DriveDocumentCountQuery` (in [`packages/rs-drive/src/query/drive_document_count_query/mod.rs`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/src/query/drive_document_count_query/mod.rs)). The handler picks a path based on the where clauses:
 
+**Unfiltered total (no where clauses) on a `documentsCountable: true` document type** ([`Drive::read_primary_key_count_tree`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/src/query/drive_document_count_query/drive_dispatcher.rs)):
+
+The doctype's primary-key tree at `[contract_doc, contract_id, 1, doctype, 0]` is itself a `CountTree`. One grovedb read gives `count_value` — the total document count. O(1).
+
 **Equal/In only** ([`execute_no_proof`](https://docs.rs/drive/latest/drive/query/struct.DriveDocumentCountQuery.html#method.execute_no_proof)):
 
-1. Pick a `CountTree`-typed primary-key index whose properties cover all `Equal` / `In` `WhereClause` predicates (a covering index — see the supported-operators note below).
-2. Walk the tree from the root down to the deepest covered level, pushing `prop_name` and `serialize_value_for_key(prop_name, value)` at each step. `Equal` extends one path; `In` clones the current path once per value in its array (a cartesian fork) and the per-branch counts are summed.
-3. If every index property was covered: read the `CountTree` element at the resulting path and return its built-in `u64` count. O(1) per branch.
-4. If only a prefix was covered: sum the counts of all `CountTree` children at the deepest covered level.
+1. Pick a `countable: true` index whose properties **exactly match** the Equal/In where-clause fields — every index property has a matching clause, no orphan clauses, no uncovered properties. If no such index exists the request rejects with `WhereClauseOnNonIndexedProperty` (the strict-coverage contract; see "Index design" below).
+2. Walk the tree from the root down to the terminal level, pushing `prop_name` and `serialize_value_for_key(prop_name, value)` at each step. `Equal` extends one path; `In` clones the current path once per value in its array (a cartesian fork) and the per-branch counts are summed.
+3. Read the `CountTree` element at the resulting path and return its `count_value`. O(1) per branch.
 
 If the request carries an `In` clause, the response is the `entries` variant — one `CountEntry` per `In` value (the per-value split mode). Otherwise the response is the `aggregate_count` variant — a single `u64`.
+
+**Index design contract**: a `countable: true` index counts exactly its declared properties. Want `count(*) WHERE color = X`? Define a `[color]` countable index. Want `count(*) WHERE color = X AND shape = Y`? Define a `[color, shape]` countable index. Want both? Define both. Partial coverage (e.g. `color = X` against a `[color, shape]` index) is rejected — define a more specific countable index, or set `documentsCountable: true` on the document type for unfiltered total counts. The prove path enforces the same contract, so `prove=true` and `prove=false` reject in the same situations with the same error.
 
 **Range** ([`execute_range_count_no_proof`](https://docs.rs/drive/latest/drive/query/struct.DriveDocumentCountQuery.html#method.execute_range_count_no_proof)):
 
@@ -150,11 +155,17 @@ When `prove=true`, the proof shape depends on whether the query carries a range 
 
 - **Distinct (`return_distinct_counts_in_range = true`)**: drive-abci builds a *regular* range path query (no `AggregateCountOnRange` wrapper) against the same `ProvableCountTree`. Because the leaf is a `ProvableCountTree`, merk emits one `Node::KVCount(key, value, count)` op per matched in-range key, with each `count` cryptographically committed to the merk root via `node_hash_with_count(kv_hash, l_hash, r_hash, count)` — same forge-resistance as the aggregate path's `HashWithCount` collapse. The SDK's [`drive_proof_verifier::verify_distinct_count_proof`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive-proof-verifier/src/proof/document_count.rs) runs the standard hash-chain check, then walks the proof's op stream to extract the counts as a `BTreeMap<Vec<u8>, u64>`. Trade-off vs. the aggregate path: proof size is O(distinct values matched) rather than O(log n), because each distinct in-range key emits its own `KVCount` op instead of being collapsed into a boundary subtree. Acceptable for typical histograms (a few dozen distinct values in range); for "give me a single count" use the aggregate path instead.
 
-**Without a range clause** (point-lookup with prove): drive-abci uses a CountTree element proof against a `countable: true` index. The proof carries one `Element::CountTree` per covered branch (Equal-only fully-covered → one element; Equal-prefix + `In`-on-last → one element per In value, fetched via outer Query + `[0]` subquery). The SDK's [`drive_proof_verifier::verify_point_lookup_count_proof`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive-proof-verifier/src/proof/document_count.rs) verifies the proof and extracts `count_value_or_default()` from each verified element — no documents are materialized, no per-key bookkeeping client-side.
+**Without a range clause** (point-lookup with prove): two sub-paths based on the request shape.
 
-Proof size: **O(k × log n)** where k is the number of covered branches and n is the tree depth. One merk path proof per CountTree element, regardless of how many underlying documents it counts. The CountTree's `count_value` is cryptographically bound to the merk root via `node_hash_with_count(kv_hash, l_hash, r_hash, count)`, the same forge-resistance guarantee the range-distinct path relies on.
+- **Unfiltered total + `documentsCountable: true`**: drive-abci proves the doctype's primary-key `CountTree` element at `[contract_doc, contract_id, 1, doctype, 0]`. One merk path proof; the SDK's [`drive_proof_verifier::verify_primary_key_count_tree_proof`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive-proof-verifier/src/proof/document_count.rs) reads `count_value` off the verified element. O(log n) bytes.
 
-**Symmetric rejection contract**: prove count requires a `countable: true` index whose properties fully cover the where clauses, same requirement as the no-proof `Total` / `PerInValue` modes (which use `find_countable_index_for_where_clauses` + `count_recursive` for sum-across-uncovered-levels). The prove path rejects partial coverage with a `WhereClauseOnNonIndexedProperty`-class error pointing the caller at the index-design fix — no fallback to materializing every matching document. Callers wanting counts on non-countable or partially-covering indexes use `prove = false`.
+- **Equal/In against a fully-covering `countable: true` index**: drive-abci proves one `Element::CountTree` per covered branch (Equal-only fully-covered → one element at `[..., last_field, last_value, 0]`; Equal-prefix + `In`-on-last → one element per In value, fetched via outer Query + `[0]` subquery). The SDK's [`drive_proof_verifier::verify_point_lookup_count_proof`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive-proof-verifier/src/proof/document_count.rs) verifies and extracts `count_value_or_default()` from each verified element.
+
+Both sub-paths share the proof shape: each CountTree element's `count_value` is cryptographically bound to the merk root via `node_hash_with_count(kv_hash, l_hash, r_hash, count)`, same forge-resistance guarantee the range-distinct path relies on. Neither materializes documents or runs per-key bookkeeping client-side.
+
+Proof size: **O(k × log n)** where k is the number of covered branches (1 for the documents_countable fast path and Equal-only fully-covered case; ≤ |In values| for Equal-prefix + In-on-last).
+
+**Symmetric rejection contract**: prove count requires a `countable: true` index whose properties exactly match the where clauses — same requirement as the no-proof `Total` / `PerInValue` modes. Partial coverage (where the where clauses are a strict prefix of the index, or the index has uncovered properties) rejects with a `WhereClauseOnNonIndexedProperty`-class error pointing the caller at the index-design fix. The `documents_countable: true` fast path handles unfiltered total counts in O(log n) proof bytes when set on the document type. No silent fallback to materializing matching documents — that path doesn't exist anymore.
 
 Implementation reference:
 - Path query: [`DriveDocumentCountQuery::point_lookup_count_path_query`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/src/query/drive_document_count_query/path_query.rs) — shared by prover and verifier.

@@ -214,37 +214,63 @@ mod tests {
     use rand::rngs::StdRng;
     use rand::SeedableRng;
 
+    /// Builds an in-memory v12 contract with a `widget` document type
+    /// that has `documentsCountable: true` — the type's primary-key
+    /// tree becomes a CountTree, enabling the unfiltered total-count
+    /// fast path on both no-proof and prove paths.
+    fn build_documents_countable_widget_contract() -> dpp::prelude::DataContract {
+        use dpp::data_contract::DataContractFactory;
+        use dpp::platform_value::platform_value;
+
+        const PROTOCOL_VERSION_V12: u32 = 12;
+        let factory =
+            DataContractFactory::new(PROTOCOL_VERSION_V12).expect("expected to create factory");
+        let document_schema = platform_value!({
+            "type": "object",
+            "documentsCountable": true,
+            "properties": {
+                "color": {"type": "string", "position": 0, "maxLength": 32},
+            },
+            "additionalProperties": false,
+        });
+        let schemas = platform_value!({ "widget": document_schema });
+        factory
+            .create_with_value_config(
+                dpp::tests::utils::generate_random_identifier_struct(),
+                0,
+                schemas,
+                None,
+                None,
+            )
+            .expect("create contract")
+            .data_contract_owned()
+    }
+
+    /// Unfiltered total count via the `documentsCountable: true` fast
+    /// path. Asserts O(1) read of the primary-key CountTree returns
+    /// the correct count after a few inserts.
     #[test]
     fn test_documents_count_no_prove() {
-        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
         let platform_version = PlatformVersion::latest();
 
-        let data_contract = json_document_to_contract_with_ids(
-            "tests/supporting_files/contract/family/family-contract-countable.json",
-            None,
-            None,
-            false,
-            platform_version,
-        )
-        .expect("expected to get json based contract");
+        let contract = build_documents_countable_widget_contract();
+        store_data_contract(&platform, &contract, version);
 
-        store_data_contract(&platform, &data_contract, version);
+        let document_type = contract
+            .document_type_for_name("widget")
+            .expect("widget exists");
 
-        let data_contract_id = data_contract.id();
-        let document_type_name = "person";
-        let document_type = data_contract
-            .document_type_for_name(document_type_name)
-            .expect("expected document type");
-
-        let mut std_rng = StdRng::seed_from_u64(500);
-        for _ in 0..5 {
+        // Insert 5 widgets.
+        for i in 1..=5u8 {
             let random_document = document_type
-                .random_document_with_rng(&mut std_rng, platform_version)
+                .random_document(Some(i as u64), platform_version)
                 .expect("expected to get random document");
             store_document(
                 &platform,
-                &data_contract,
+                &contract,
                 document_type,
                 &random_document,
                 platform_version,
@@ -252,8 +278,8 @@ mod tests {
         }
 
         let request = GetDocumentsCountRequestV0 {
-            data_contract_id: data_contract_id.to_vec(),
-            document_type: document_type_name.to_string(),
+            data_contract_id: contract.id().to_vec(),
+            document_type: "widget".to_string(),
             r#where: vec![],
             return_distinct_counts_in_range: false,
             order_by: Vec::new(),
@@ -285,29 +311,22 @@ mod tests {
         }
     }
 
+    /// Same fast-path query as `test_documents_count_no_prove`, but
+    /// against an empty contract (no documents inserted). Asserts the
+    /// path returns 0 cleanly rather than erroring.
     #[test]
     fn test_documents_count_empty_result() {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let _platform_version = PlatformVersion::latest();
 
-        let platform_version = PlatformVersion::latest();
-
-        let data_contract = json_document_to_contract_with_ids(
-            "tests/supporting_files/contract/family/family-contract-countable.json",
-            None,
-            None,
-            false,
-            platform_version,
-        )
-        .expect("expected to get json based contract");
-
-        store_data_contract(&platform, &data_contract, version);
-
-        let data_contract_id = data_contract.id();
-        let document_type_name = "person";
+        let contract = build_documents_countable_widget_contract();
+        store_data_contract(&platform, &contract, version);
 
         let request = GetDocumentsCountRequestV0 {
-            data_contract_id: data_contract_id.to_vec(),
-            document_type: document_type_name.to_string(),
+            data_contract_id: contract.id().to_vec(),
+            document_type: "widget".to_string(),
             r#where: vec![],
             return_distinct_counts_in_range: false,
             order_by: Vec::new(),
@@ -697,10 +716,10 @@ mod tests {
             matches!(
                 result.errors.as_slice(),
                 [QueryError::Query(
-                    QuerySyntaxError::InvalidWhereClauseComponents(msg),
+                    QuerySyntaxError::WhereClauseOnNonIndexedProperty(msg),
                 )] if msg.contains("countable")
             ),
-            "expected fully-covered-index rejection, got {:?}",
+            "expected covering-index rejection, got {:?}",
             result.errors,
         );
     }

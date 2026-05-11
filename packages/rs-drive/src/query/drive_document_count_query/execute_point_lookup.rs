@@ -20,11 +20,9 @@ use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::util::grove_operations::DirectQueryType;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
-use dpp::data_contract::document_type::IndexProperty;
 use dpp::version::drive_versions::DriveVersion;
 use dpp::version::PlatformVersion;
-use grovedb::query_result_type::QueryResultType;
-use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
+use grovedb::TransactionArg;
 use grovedb_path::SubtreePath;
 use std::collections::BTreeSet;
 
@@ -81,11 +79,18 @@ impl DriveDocumentCountQuery<'_> {
         Ok(proof)
     }
 
-    /// Executes the total count query, returning a single u64 count.
+    /// Executes the count query, returning a single `u64` count.
     ///
-    /// Walks the index level-by-level, branching on `In` clauses (each value
-    /// adds a path) and falling through to [`Self::count_recursive`] for any
-    /// trailing index properties that have no matching where clause.
+    /// Builds the path that lands exactly on the terminal CountTree for the
+    /// covered Equal/`In` branches and reads `count_value_or_default()`. The
+    /// picker (`find_countable_index_for_where_clauses`) is strict — it only
+    /// returns an index when every index property has a matching `Equal`/`In`
+    /// clause — so by the time we reach this executor every level has a
+    /// resolved key.
+    ///
+    /// For `In` clauses (set-membership), each value forks a separate path
+    /// and the per-branch counts are summed. Duplicate values that share a
+    /// canonical encoding collapse to one fork.
     fn execute_total_count(
         &self,
         drive: &Drive,
@@ -103,19 +108,17 @@ impl DriveDocumentCountQuery<'_> {
         self.expand_paths_and_count(drive, base_path, 0, transaction, platform_version)
     }
 
-    /// Recursive helper for [`Self::execute_total_count`].
+    /// Walks the index property levels Equal-by-Equal (or forks on `In`),
+    /// and reads the terminal CountTree's `count_value`.
     ///
-    /// Visits the index property at `prop_idx`. If a matching where clause is
-    /// found:
-    /// - `Equal` → extend the current path with `(prop_name, value)` and recurse.
-    /// - `In` → for each value in the clause's array, clone the path, extend
-    ///   with that value, recurse, and sum the per-branch counts. This is the
-    ///   cartesian fork.
-    /// - anything else → unreachable; the index picker rejects the query.
-    ///
-    /// If no clause matches the current property, hand off to
-    /// [`Self::count_recursive`] which sums all sub-counts at the remaining
-    /// levels.
+    /// Contract: every index property MUST have a matching `Equal`/`In`
+    /// clause. The strict picker
+    /// ([`Self::find_countable_index_for_where_clauses`]) guarantees this
+    /// upstream; the "missing clause for an index property" branch here is
+    /// defensive — it returns
+    /// `InvalidWhereClauseComponents` directing the caller at the
+    /// index-design fix rather than silently falling through to a
+    /// partial-coverage walk.
     fn expand_paths_and_count(
         &self,
         drive: &Drive,
@@ -132,20 +135,20 @@ impl DriveDocumentCountQuery<'_> {
         }
 
         let prop = &self.index.properties[prop_idx];
-        let matching_clause = self.where_clauses.iter().find(|wc| wc.field == prop.name);
-
-        let Some(clause) = matching_clause else {
-            // No clause for this property. Walk all values at the remaining
-            // levels and sum.
-            let remaining = &self.index.properties[prop_idx..];
-            return Self::count_recursive(
-                drive,
-                current_path,
-                remaining,
-                transaction,
-                drive_version,
-            );
-        };
+        let clause = self
+            .where_clauses
+            .iter()
+            .find(|wc| wc.field == prop.name)
+            .ok_or_else(|| {
+                Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
+                    "count query requires the where clauses to fully cover the \
+                     countable index; one or more index properties have no \
+                     matching `==` or `in` clause — use a more specific index \
+                     (define a `countable: true` index whose properties exactly \
+                     match the clauses) or set `documentsCountable: true` on the \
+                     document type for unfiltered total counts",
+                ))
+            })?;
 
         match clause.operator {
             WhereOperator::Equal => {
@@ -228,76 +231,5 @@ impl DriveDocumentCountQuery<'_> {
         )?;
 
         Ok(element.map_or(0, |e| e.count_value_or_default()))
-    }
-
-    /// Recursively descends through remaining index property levels,
-    /// iterating over all values at each level, and sums the CountTree
-    /// counts at the terminal level.
-    fn count_recursive(
-        drive: &Drive,
-        current_path: Vec<Vec<u8>>,
-        remaining_properties: &[IndexProperty],
-        transaction: TransactionArg,
-        drive_version: &DriveVersion,
-    ) -> Result<u64, Error> {
-        if remaining_properties.is_empty() {
-            return Self::fetch_count_at_path(drive, &current_path, transaction, drive_version);
-        }
-
-        let prop = &remaining_properties[0];
-        let rest = &remaining_properties[1..];
-
-        // Push the index property key to descend into that level
-        let mut property_path = current_path;
-        property_path.push(prop.name.as_bytes().to_vec());
-
-        // Query all children (value subtrees) at this property level
-        let mut query = Query::new();
-        query.insert_all();
-
-        let path_query = PathQuery::new(property_path.clone(), SizedQuery::new(query, None, None));
-
-        let mut drive_operations = vec![];
-        let result = drive.grove_get_raw_path_query(
-            &path_query,
-            transaction,
-            QueryResultType::QueryKeyElementPairResultType,
-            &mut drive_operations,
-            drive_version,
-        );
-
-        let (elements, _) = match result {
-            Ok(result) => result,
-            Err(Error::GroveDB(e))
-                if matches!(
-                    e.as_ref(),
-                    grovedb::Error::PathNotFound(_)
-                        | grovedb::Error::PathParentLayerNotFound(_)
-                        | grovedb::Error::PathKeyNotFound(_)
-                ) =>
-            {
-                return Ok(0);
-            }
-            Err(e) => return Err(e),
-        };
-
-        let key_elements = elements.to_key_elements();
-
-        if key_elements.is_empty() {
-            return Ok(0);
-        }
-
-        let mut total_count: u64 = 0;
-
-        for (key, _element) in key_elements {
-            let mut value_path = property_path.clone();
-            value_path.push(key);
-
-            let sub_count =
-                Self::count_recursive(drive, value_path, rest, transaction, drive_version)?;
-            total_count = total_count.saturating_add(sub_count);
-        }
-
-        Ok(total_count)
     }
 }
