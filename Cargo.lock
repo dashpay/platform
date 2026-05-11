@@ -4985,7 +4985,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "platform-wallet-sqlite"
+name = "platform-wallet-storage"
 version = "3.1.0-dev.1"
 dependencies = [
  "assert_cmd",
@@ -5003,7 +5003,7 @@ dependencies = [
  "key-wallet",
  "key-wallet-manager",
  "platform-wallet",
- "platform-wallet-sqlite",
+ "platform-wallet-storage",
  "predicates",
  "proptest",
  "refinery",

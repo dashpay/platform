@@ -53,6 +53,7 @@ jobs:
             wasm-sdk
             platform-wallet
             wallet-sqlite
+            wallet-storage
             swift-example-app
             kotlin-sdk
             kotlin-example-app

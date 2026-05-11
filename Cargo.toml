@@ -42,7 +42,7 @@ members = [
     "packages/rs-dash-event-bus",
     "packages/rs-platform-wallet",
     "packages/rs-platform-wallet-ffi",
-    "packages/rs-platform-wallet-sqlite",
+    "packages/rs-platform-wallet-storage",
     "packages/rs-platform-encryption",
     "packages/wasm-sdk",
     "packages/rs-unified-sdk-ffi",
