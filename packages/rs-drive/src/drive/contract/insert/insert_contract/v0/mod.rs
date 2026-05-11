@@ -2082,12 +2082,204 @@ mod range_countable_index_e2e_tests {
         assert_eq!(summed[0].count, 6);
     }
 
-    /// `StartsWith` is in the picker's range-operator set but the
-    /// executor rejects it because the upper-bound encoding is
-    /// key-dependent. The error must surface clearly rather than
-    /// silently using a wrong range.
+    /// `StartsWith "r"` is encoded as `Range(serialize("r")..
+    /// serialize("r") with last byte +1)` — the same half-open
+    /// byte-incremented encoding `conditions.rs:1129`'s `StartsWith`
+    /// arm uses for the normal docs path. On the count fast path this
+    /// becomes a `QueryItem::Range(..)` no different in structure from
+    /// `betweenExcludeRight`, so all four executor modes (no-proof
+    /// aggregate, no-proof distinct, prove aggregate, prove distinct)
+    /// should serve it via the same code paths that already cover
+    /// `>` / `<` / `between*`. This test pins acceptance across all
+    /// four — earlier commits rejected `StartsWith` with a clear
+    /// error, this is the rewrite that drops that rejection.
     #[test]
-    fn range_count_executor_rejects_starts_with() {
+    fn range_count_executor_accepts_starts_with_in_all_four_modes() {
+        use crate::query::{
+            DriveDocumentCountQuery, RangeCountOptions, WhereClause, WhereOperator,
+        };
+        use grovedb::GroveDb;
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let pv = PlatformVersion::latest();
+        let contract = build_widget_with_color_index(false);
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("apply contract");
+
+        let document_type = contract
+            .document_type_for_name("widget")
+            .expect("widget exists");
+
+        // Three colors share the `r` prefix (red, rose, ruby) and
+        // one doesn't (blue). The half-open range `[r, s)` should
+        // hit the three `r*` colors and miss `blue` entirely.
+        //   red ×2, rose ×3, ruby ×1, blue ×4 → 6 in-range docs
+        // across 3 distinct values.
+        for (i, color) in [
+            "red", "red", "rose", "rose", "rose", "ruby", "blue", "blue", "blue", "blue",
+        ]
+        .iter()
+        .enumerate()
+        {
+            let doc = build_widget_doc(&contract, color, "small", (i + 1) as u64);
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&doc, None)),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    pv,
+                    None,
+                )
+                .expect("insert document");
+        }
+
+        let where_clauses = vec![WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::StartsWith,
+            value: dpp::platform_value::Value::Text("r".to_string()),
+        }];
+        let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+            document_type.indexes(),
+            &where_clauses,
+        )
+        .expect("picker accepts StartsWith");
+        let query = DriveDocumentCountQuery {
+            document_type,
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "widget".to_string(),
+            index,
+            where_clauses,
+        };
+
+        // Mode 1: no-proof aggregate. red(2) + rose(3) + ruby(1) = 6.
+        let summed = query
+            .execute_range_count_no_proof(
+                &drive,
+                &RangeCountOptions {
+                    distinct: false,
+                    limit: None,
+                    start_after_split_key: None,
+                    order_by_ascending: true,
+                },
+                None,
+                pv,
+            )
+            .expect("no-proof aggregate over StartsWith");
+        assert_eq!(summed.len(), 1, "summed mode → one entry");
+        assert!(summed[0].key.is_empty(), "summed entry has empty key");
+        assert_eq!(
+            summed[0].count, 6,
+            "color startsWith 'r' should sum to 2 (red) + 3 (rose) + 1 (ruby) = 6"
+        );
+
+        // Mode 2: no-proof distinct. Per-distinct-value entries,
+        // ascending. red < rose < ruby alphabetically.
+        let split = query
+            .execute_range_count_no_proof(
+                &drive,
+                &RangeCountOptions {
+                    distinct: true,
+                    limit: None,
+                    start_after_split_key: None,
+                    order_by_ascending: true,
+                },
+                None,
+                pv,
+            )
+            .expect("no-proof distinct over StartsWith");
+        assert_eq!(
+            split.len(),
+            3,
+            "distinct mode → one entry per matching color"
+        );
+        assert_eq!(split[0].key, b"red".to_vec());
+        assert_eq!(split[0].count, 2);
+        assert_eq!(split[1].key, b"rose".to_vec());
+        assert_eq!(split[1].count, 3);
+        assert_eq!(split[2].key, b"ruby".to_vec());
+        assert_eq!(split[2].count, 1);
+
+        // Mode 3: prove aggregate. Verifies via
+        // `GroveDb::verify_aggregate_count_query` against the path
+        // query the SDK would rebuild — same shape the existing `>`
+        // prove tests use, just with a half-open `[r, s)` range
+        // instead of `(b, ∞)`.
+        let proof_bytes = query
+            .execute_aggregate_count_with_proof(&drive, None, pv)
+            .expect("aggregate count proof over StartsWith");
+        let path_query = query
+            .aggregate_count_path_query(pv)
+            .expect("aggregate path query builds for StartsWith");
+        let (root_hash, count) = GroveDb::verify_aggregate_count_query(
+            &proof_bytes,
+            &path_query,
+            &pv.drive.grove_version,
+        )
+        .expect("aggregate-count proof should verify");
+        assert_ne!(root_hash, [0u8; 32], "root hash should not be zero");
+        assert_eq!(
+            count, 6,
+            "verified aggregate count should match no-proof sum"
+        );
+
+        // Mode 4: prove distinct. The KVCount ops in the leaf merk
+        // proof carry per-key counts bound to the merk root via
+        // `node_hash_with_count`. Verify with standard `verify_query`
+        // (matching the docs handler / distinct verifier pattern).
+        const TEST_LIMIT: u16 = crate::config::DEFAULT_QUERY_LIMIT;
+        let proof_bytes = query
+            .execute_distinct_count_with_proof(&drive, TEST_LIMIT, None, pv)
+            .expect("distinct count proof over StartsWith");
+        assert!(
+            !proof_bytes.is_empty(),
+            "distinct count proof must not be empty"
+        );
+        let path_query = query
+            .distinct_count_path_query(Some(TEST_LIMIT), pv)
+            .expect("distinct path query builds for StartsWith");
+        let (root_hash, _elements) =
+            GroveDb::verify_query(&proof_bytes, &path_query, &pv.drive.grove_version)
+                .expect("distinct-count proof should verify");
+        assert_ne!(root_hash, [0u8; 32], "root hash should not be zero");
+    }
+
+    /// Empty `startsWith` prefix: `encode_value_for_tree_keys` maps
+    /// `Value::Text("")` to `[0]` (the explicit empty-string
+    /// sentinel — see `DocumentPropertyType::String`'s arm in
+    /// `packages/rs-dpp/src/data_contract/document_type/property/mod.rs`,
+    /// "we don't want to collide with the definition of an empty
+    /// string"). The half-open range becomes `[[0], [1])`, which
+    /// matches the empty-string sentinel value itself but nothing
+    /// else. Since no widget in this fixture has `color = ""` the
+    /// result is a successful sum of `0` — verifying the executor
+    /// reaches the count walk rather than panicking on the
+    /// `last_mut()` branch.
+    ///
+    /// The `last_mut().ok_or(InvalidStartsWithClause)` branch in
+    /// `range_clause_to_query_item` is unreachable in practice
+    /// through this entry point because the empty-string sentinel
+    /// produces a non-empty serialized buffer; the check is purely
+    /// defense-in-depth against future encoding changes.
+    #[test]
+    fn range_count_executor_accepts_empty_starts_with_prefix_via_sentinel() {
         use crate::query::{
             DriveDocumentCountQuery, RangeCountOptions, WhereClause, WhereOperator,
         };
@@ -2113,14 +2305,13 @@ mod range_countable_index_e2e_tests {
         let where_clauses = vec![WhereClause {
             field: "color".to_string(),
             operator: WhereOperator::StartsWith,
-            value: dpp::platform_value::Value::Text("re".to_string()),
+            value: dpp::platform_value::Value::Text(String::new()),
         }];
         let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
             document_type.indexes(),
             &where_clauses,
         )
-        .expect("picker accepts StartsWith");
-
+        .expect("picker accepts StartsWith with any value");
         let query = DriveDocumentCountQuery {
             document_type,
             contract_id: contract.id().to_buffer(),
@@ -2129,26 +2320,23 @@ mod range_countable_index_e2e_tests {
             where_clauses,
         };
 
-        let result = query.execute_range_count_no_proof(
-            &drive,
-            &RangeCountOptions {
-                distinct: false,
-                limit: None,
-                start_after_split_key: None,
-                order_by_ascending: true,
-            },
-            None,
-            pv,
-        );
-        assert!(
-            matches!(
-                result,
-                Err(crate::error::Error::Query(
-                    crate::error::query::QuerySyntaxError::InvalidWhereClauseComponents(msg)
-                )) if msg.contains("startsWith")
-            ),
-            "expected startsWith rejection, got {:?}",
-            result
+        let result = query
+            .execute_range_count_no_proof(
+                &drive,
+                &RangeCountOptions {
+                    distinct: false,
+                    limit: None,
+                    start_after_split_key: None,
+                    order_by_ascending: true,
+                },
+                None,
+                pv,
+            )
+            .expect("empty startsWith prefix should succeed (matches empty-string sentinel only)");
+        assert_eq!(result.len(), 1, "summed mode → one entry");
+        assert_eq!(
+            result[0].count, 0,
+            "no docs have color = empty-string sentinel"
         );
     }
 

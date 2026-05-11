@@ -193,21 +193,16 @@ impl<'a> DriveDocumentCountQuery<'a> {
         // (Equal/In) nor a range operator. Defense-in-depth: the request
         // shape forbids these elsewhere, but folding the check in here
         // keeps the mode-detection contract self-contained.
+        //
+        // `startsWith` IS in `is_range_operator` and routes through the
+        // same `Range(a..b)` path as `betweenExcludeRight` — the
+        // half-open upper bound is computed by byte-incrementing the
+        // serialized prefix's last byte (see `range_clause_to_query_item`,
+        // mirroring `conditions.rs:1129`'s normal-docs encoding).
         for wc in where_clauses {
             if !Self::is_indexable_for_count(wc.operator) && !Self::is_range_operator(wc.operator) {
                 return Err(QuerySyntaxError::InvalidWhereClauseComponents(
                     "count query supports only `==`, `in`, and range operators",
-                ));
-            }
-            // `startsWith` is in `is_range_operator` but the executor
-            // can't yet encode the byte-incremented upper bound for
-            // arbitrary key types. Reject up front so the picker
-            // doesn't accept a query that the dispatcher would later
-            // fail at execution. When `range_clause_to_query_item`
-            // grows StartsWith support, drop this branch.
-            if wc.operator == WhereOperator::StartsWith {
-                return Err(QuerySyntaxError::InvalidWhereClauseComponents(
-                    "startsWith is not yet supported on count queries",
                 ));
             }
         }
@@ -982,9 +977,13 @@ impl<'a> DriveDocumentCountQuery<'a> {
     ///   exclude-bounds)
     /// - `between (a, b]` → `RangeAfterToInclusive(a..=b)`
     /// - `between [a, b)` → `Range(a..b)`
-    /// - `startsWith` is rejected here — its grovedb encoding requires
-    ///   a byte-incremented upper bound that depends on key encoding,
-    ///   which we don't compute generically.
+    /// - `startsWith "p"` → `Range(serialize("p")..serialize("p") with
+    ///   last byte +1)` — same byte-incremented half-open encoding the
+    ///   normal docs path uses (see `conditions.rs:1129`'s `StartsWith`
+    ///   arm). `value_shape_ok` constrains the prefix to `Value::Text`,
+    ///   and valid UTF-8 never contains `0xFF`, so the `+1` doesn't
+    ///   overflow for valid string keys; the unlikely 0xFF-tail case is
+    ///   caught via `checked_add` and rejected with a clear error.
     fn range_clause_to_query_item(
         &self,
         clause: &WhereClause,
@@ -1057,11 +1056,26 @@ impl<'a> DriveDocumentCountQuery<'a> {
                 QueryItem::Range(a..b)
             }
             WhereOperator::StartsWith => {
-                return Err(Error::Query(
-                    QuerySyntaxError::InvalidWhereClauseComponents(
-                        "startsWith is not yet supported on the range_countable count fast path",
-                    ),
-                ));
+                let left_key = serialize(&clause.value)?;
+                let mut right_key = left_key.clone();
+                // Byte-increment the last byte to form the half-open
+                // upper bound `[prefix, prefix+1)`. Mirrors the
+                // normal-docs encoding in `conditions.rs:1129`'s
+                // `StartsWith` arm; we use `checked_add` so the
+                // pathological `0xFF`-tail input fails loudly instead
+                // of wrapping silently (UTF-8 never contains 0xFF so
+                // valid string keys never hit this).
+                let last = right_key.last_mut().ok_or_else(|| {
+                    Error::Query(QuerySyntaxError::InvalidStartsWithClause(
+                        "startsWith prefix must have at least one byte",
+                    ))
+                })?;
+                *last = last.checked_add(1).ok_or_else(|| {
+                    Error::Query(QuerySyntaxError::InvalidStartsWithClause(
+                        "startsWith prefix ends in 0xFF; cannot form half-open upper bound",
+                    ))
+                })?;
+                QueryItem::Range(left_key..right_key)
             }
             _ => {
                 return Err(Error::Query(
