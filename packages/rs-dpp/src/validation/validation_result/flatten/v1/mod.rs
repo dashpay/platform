@@ -9,6 +9,25 @@
 //! downstream code (e.g. `process_validation_result_v0:241`) relies on to
 //! choose between `PaidConsensusError` and `UnpaidConsensusError`.
 //!
+//! # Caller-intent ambiguity
+//!
+//! `flatten_v1` keys on `aggregate_data.is_empty()` to decide between
+//! `data: None` and `data: Some(_)`. This collapses two distinct
+//! caller-side intents into the same output:
+//!
+//! * **Truly no work**: every input had `data: None`.
+//! * **Validated but produced no output**: every input had
+//!   `data: Some(empty_vec)`.
+//!
+//! v1 cannot distinguish those two cases at the aggregate level — both
+//! end up as `data: None` and are routed to `UnpaidConsensusError`
+//! downstream. For the documents-batch path under PROTOCOL_VERSION_12 this
+//! is safe: every per-transition handler emits at least one action on
+//! success and a bump action on failure, so no caller produces
+//! `Some(empty_vec)`. A future caller that needs "validated, but no
+//! actions to apply" must signal that with at least one non-empty entry,
+//! not with `Some(empty_vec)`.
+//!
 //! See issue #2867 for context.
 //!
 //! [`ConsensusValidationResult::flatten`]: crate::validation::ConsensusValidationResult::flatten

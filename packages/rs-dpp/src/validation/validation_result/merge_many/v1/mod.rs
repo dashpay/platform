@@ -8,6 +8,17 @@
 //! downstream code (e.g. `process_validation_result_v0:241`) relies on to
 //! choose between `PaidConsensusError` and `UnpaidConsensusError`.
 //!
+//! # Caller-intent ambiguity
+//!
+//! `merge_many_v1` keys on `aggregate_data.is_empty()` to decide between
+//! `data: None` and `data: Some(_)`. Every `Some(_)` input contributes one
+//! element to `aggregate_data`, so the only way to get `data: None` is to
+//! have zero inputs with `data: Some(_)`. There is no `Some(empty_vec)`
+//! input shape at this layer (the per-item `data` is `TData`, not
+//! `Vec<TData>`), so the collapse hazard described for `flatten_v1`
+//! doesn't apply here. The dispatcher facade ([`ValidationResult::merge_many`])
+//! shares the limitation note for symmetry.
+//!
 //! See issue #2867 for context.
 //!
 //! [`ValidationResult::merge_many`]: crate::validation::ValidationResult::merge_many

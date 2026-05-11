@@ -50,6 +50,17 @@ impl<TData: Clone, E: Debug> ValidationResult<Vec<TData>, E> {
     ///   `process_validation_result_v0:241`) relies on to choose between
     ///   `PaidConsensusError` and `UnpaidConsensusError`.
     ///
+    /// # v1 caller-intent ambiguity
+    ///
+    /// v1 keys on `aggregate_data.is_empty()` to decide between
+    /// `data: None` and `data: Some(_)`, which collapses two distinct
+    /// caller intents into the same output: every input had `data: None`
+    /// (truly no work) and every input had `data: Some(empty_vec)`
+    /// (validated but produced no output). v1 cannot distinguish those
+    /// at the aggregate level — both yield `data: None` and are routed
+    /// to `UnpaidConsensusError` downstream. Callers that need "validated
+    /// but no actions" must signal that with at least one non-empty entry.
+    ///
     /// See issue #2867 for context on the v0 → v1 change.
     pub fn flatten<I: IntoIterator<Item = ValidationResult<Vec<TData>, E>>>(
         items: I,
@@ -78,6 +89,11 @@ impl<TData: Clone, E: Debug> ValidationResult<TData, E> {
     /// - **v1** (`PROTOCOL_VERSION_12`+): returns `data: None` when no input
     ///   contributed any data. See [`flatten`] for the invariant this
     ///   restores.
+    ///
+    /// Unlike [`flatten`], `merge_many` operates on per-item `TData` (not
+    /// `Vec<TData>`), so each `Some(_)` input contributes exactly one
+    /// element — there is no `Some(empty_vec)`-input collapse hazard at
+    /// this layer.
     ///
     /// See issue #2867 for context on the v0 → v1 change.
     ///
