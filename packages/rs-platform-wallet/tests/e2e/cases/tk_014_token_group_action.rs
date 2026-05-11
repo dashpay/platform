@@ -43,16 +43,12 @@ use dash_sdk::platform::transition::put_contract::PutContract;
 use dash_sdk::platform::Fetch;
 
 use crate::framework::prelude::*;
-use crate::framework::setup_with_n_identities_with_step_timeout;
+use crate::framework::setup_with_per_identity_funding;
 use crate::framework::tokens::{
     token_balance_of, token_supply_of, DEFAULT_BASE_SUPPLY, DEFAULT_DECIMALS, DEFAULT_MAX_SUPPLY,
-    DEFAULT_TOKEN_POSITION, TK_SETUP_WAIT_TIMEOUT,
+    DEFAULT_TOKEN_POSITION, TK_OWNER_FUNDING_SIMPLE, TK_PEER_FUNDING_ACTIVE, TK_SETUP_WAIT_TIMEOUT,
 };
 use crate::framework::wallet_factory::RegisteredIdentity;
-
-/// Per-identity bank funding. Mirrors `DEFAULT_TK_FUNDING` — sized to
-/// cover the contract-deploy fee floor (~30 B credits) across all three identities.
-const FUNDING: dpp::fee::Credits = 35_000_100_000;
 
 /// Tokens minted via the group-gated proposal. Small enough that any
 /// arithmetic regression (extra credit, dropped co-sign) surfaces as
@@ -95,9 +91,16 @@ async fn tk_014_token_group_action_mint_co_sign() {
     // `DEFAULT_SETUP_STEP_TIMEOUT`. Route through the explicit-budget
     // entry point with `TK_SETUP_WAIT_TIMEOUT` (120 s), mirroring the
     // five `setup_with_token_*` helpers and TK-003 / TK-013.
-    let setup_guard = setup_with_n_identities_with_step_timeout(3, FUNDING, TK_SETUP_WAIT_TIMEOUT)
-        .await
-        .expect("register three identities");
+    let setup_guard = setup_with_per_identity_funding(
+        &[
+            TK_OWNER_FUNDING_SIMPLE,
+            TK_PEER_FUNDING_ACTIVE,
+            TK_PEER_FUNDING_ACTIVE,
+        ],
+        TK_SETUP_WAIT_TIMEOUT,
+    )
+    .await
+    .expect("register three identities");
     let ctx = setup_guard.base.ctx;
     let owner = &setup_guard.identities[0];
     let peer_a = &setup_guard.identities[1];

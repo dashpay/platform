@@ -21,7 +21,7 @@ use dpp::data_contract::DataContract;
 use crate::framework::prelude::*;
 use crate::framework::tokens::{
     mint_to, setup_with_token_contract_with_step_timeout, token_balance_of, token_supply_of,
-    DEFAULT_TK_FUNDING,
+    TK_OWNER_FUNDING_SIMPLE,
 };
 
 /// Per-step propagation budget for TK-005's bootstrap (QA-V28-403). The
@@ -67,10 +67,13 @@ async fn tk_005_token_mint() {
         );
         return;
     }
-    let setup =
-        setup_with_token_contract_with_step_timeout(ctx, DEFAULT_TK_FUNDING, SETUP_STEP_TIMEOUT)
-            .await
-            .expect("setup_with_token_contract");
+    let setup = setup_with_token_contract_with_step_timeout(
+        ctx,
+        TK_OWNER_FUNDING_SIMPLE,
+        SETUP_STEP_TIMEOUT,
+    )
+    .await
+    .expect("setup_with_token_contract");
 
     let contract_id = setup.contract_id;
     let position = setup.token_position;

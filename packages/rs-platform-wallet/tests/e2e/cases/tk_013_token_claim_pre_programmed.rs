@@ -36,20 +36,17 @@ use dash_sdk::platform::tokens::transitions::ClaimResult;
 use dash_sdk::platform::Fetch;
 
 use crate::framework::prelude::*;
-use crate::framework::setup_with_n_identities_with_step_timeout;
+use crate::framework::setup_with_per_identity_funding;
 use crate::framework::tokens::{
     register_token_contract_via_sdk, token_balance_of, DEFAULT_BASE_SUPPLY, DEFAULT_DECIMALS,
-    DEFAULT_MAX_SUPPLY, DEFAULT_TOKEN_POSITION, TK_SETUP_WAIT_TIMEOUT,
+    DEFAULT_MAX_SUPPLY, DEFAULT_TOKEN_POSITION, TK_OWNER_FUNDING_DISTRIBUTION,
+    TK_SETUP_WAIT_TIMEOUT,
 };
 
 /// Per-epoch payout the schedule credits to the owner. Small enough
 /// that an over-shoot regression (multiple credits, double-mint)
 /// surfaces as an unmistakable balance mismatch.
 const PAYOUT: TokenAmount = 100;
-
-/// Per-identity bank funding for the setup helper. Mirrors `DEFAULT_TK_FUNDING`
-/// — sized to cover the contract-deploy fee floor (~30 B credits).
-const FUNDING: dpp::fee::Credits = 35_000_100_000;
 
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 #[ignore = "requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access; run with `cargo test -- --ignored`"]
@@ -87,9 +84,10 @@ async fn tk_013_token_claim_from_pre_programmed_distribution() {
     // explicit-budget entry point with `TK_SETUP_WAIT_TIMEOUT` (120 s)
     // for headroom on cross-replica replication lag — same pattern the
     // five `setup_with_token_*` helpers and TK-003 already use.
-    let setup_guard = setup_with_n_identities_with_step_timeout(1, FUNDING, TK_SETUP_WAIT_TIMEOUT)
-        .await
-        .expect("register owner identity");
+    let setup_guard =
+        setup_with_per_identity_funding(&[TK_OWNER_FUNDING_DISTRIBUTION], TK_SETUP_WAIT_TIMEOUT)
+            .await
+            .expect("register owner identity");
     let ctx = setup_guard.base.ctx;
     let owner = &setup_guard.identities[0];
     let owner_id = owner.id;

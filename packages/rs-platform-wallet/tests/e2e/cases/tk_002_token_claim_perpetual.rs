@@ -39,7 +39,7 @@ use dash_sdk::platform::Fetch;
 use crate::framework::harness::E2eContext;
 use crate::framework::tokens::{
     setup_with_token_perpetual_distribution, token_balance_of, PerpetualDistribution,
-    DEFAULT_TK_FUNDING, DEFAULT_TOKEN_POSITION,
+    DEFAULT_TOKEN_POSITION, TK_OWNER_FUNDING_DISTRIBUTION,
 };
 
 /// Per-interval payout. Small enough that a multi-credit regression
@@ -89,7 +89,7 @@ async fn tk_002_token_claim_perpetual_distribution() {
 
     let setup = setup_with_token_perpetual_distribution(
         ctx,
-        DEFAULT_TK_FUNDING,
+        TK_OWNER_FUNDING_DISTRIBUTION,
         PerpetualDistribution {
             interval_blocks: INTERVAL_BLOCKS,
             amount_per_interval: PAYOUT,

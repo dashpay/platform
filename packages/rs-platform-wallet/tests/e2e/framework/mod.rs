@@ -284,12 +284,30 @@ pub async fn setup_with_n_identities_with_step_timeout(
     funding_per: dpp::fee::Credits,
     step_timeout: std::time::Duration,
 ) -> FrameworkResult<MultiIdentitySetupGuard> {
+    let funding = vec![funding_per; n as usize];
+    setup_with_per_identity_funding(&funding, step_timeout).await
+}
+
+/// Per-identity-funding counterpart to
+/// [`setup_with_n_identities_with_step_timeout`]. Each entry in
+/// `funding_per_identity` is the credits charged to its identity's
+/// fresh funding address — registers identity at DIP-9 slot `i` with
+/// `funding_per_identity[i]`.
+///
+/// Used by the token-suite `setup_with_token_*` helpers to fund the
+/// contract owner separately from the peer(s) — the owner pays the
+/// 20.2 B / 30.2 B contract-create floor while peers only need
+/// transition-fee headroom. (#348)
+pub async fn setup_with_per_identity_funding(
+    funding_per_identity: &[dpp::fee::Credits],
+    step_timeout: std::time::Duration,
+) -> FrameworkResult<MultiIdentitySetupGuard> {
     use super::framework::wait::{
         wait_for_address_known_to_platform, wait_for_balance, wait_for_identity_visible_to_platform,
     };
 
     let base = setup().await?;
-    let mut identities = Vec::with_capacity(n as usize);
+    let mut identities = Vec::with_capacity(funding_per_identity.len());
 
     // Each identity gets a distinct funding address so the bank's
     // FUNDING_MUTEX serialises funding without contending on the
@@ -307,7 +325,8 @@ pub async fn setup_with_n_identities_with_step_timeout(
     // the dynamic fee with ~39M buffer for protocol-version drift.
     const REGISTRATION_HEADROOM: u64 = 150_000_000;
 
-    for identity_index in 0..n {
+    for (identity_index, &funding_per) in funding_per_identity.iter().enumerate() {
+        let identity_index = identity_index as u32;
         let funding_addr = base.test_wallet.next_unused_address().await?;
         let bank_amount = funding_per + REGISTRATION_HEADROOM;
         base.ctx

@@ -34,7 +34,7 @@ use dpp::data_contract::associated_token::token_configuration_convention::access
 use dpp::data_contract::DataContract;
 
 use crate::framework::prelude::*;
-use crate::framework::tokens::{DEFAULT_DECIMALS, DEFAULT_MAX_SUPPLY, DEFAULT_TK_FUNDING};
+use crate::framework::tokens::{DEFAULT_DECIMALS, DEFAULT_MAX_SUPPLY, TK_OWNER_FUNDING_SIMPLE};
 
 /// Per-step deadline for the post-broadcast contract fetch. The
 /// register helper already awaits the broadcast proof, so the fetch
@@ -75,9 +75,8 @@ async fn tk_003_register_token_contract() {
     // entry point with [`crate::framework::tokens::TK_SETUP_WAIT_TIMEOUT`]
     // (120 s) so the funding wait_for_balance has headroom for the
     // cross-replica replication lag.
-    let setup_guard = crate::framework::setup_with_n_identities_with_step_timeout(
-        1,
-        DEFAULT_TK_FUNDING,
+    let setup_guard = crate::framework::setup_with_per_identity_funding(
+        &[TK_OWNER_FUNDING_SIMPLE],
         crate::framework::tokens::TK_SETUP_WAIT_TIMEOUT,
     )
     .await

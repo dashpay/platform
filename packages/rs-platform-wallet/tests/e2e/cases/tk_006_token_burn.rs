@@ -23,7 +23,7 @@ use dpp::data_contract::DataContract;
 
 use crate::framework::prelude::*;
 use crate::framework::tokens::{
-    mint_to, setup_with_token_contract, token_balance_of, token_supply_of, DEFAULT_TK_FUNDING,
+    mint_to, setup_with_token_contract, token_balance_of, token_supply_of, TK_OWNER_FUNDING_SIMPLE,
 };
 use crate::framework::wait::wait_for_identity_balance_change;
 
@@ -59,7 +59,7 @@ async fn tk_006_token_burn() {
         );
         return;
     }
-    let setup = setup_with_token_contract(ctx, DEFAULT_TK_FUNDING)
+    let setup = setup_with_token_contract(ctx, TK_OWNER_FUNDING_SIMPLE)
         .await
         .expect("setup_with_token_contract");
 

@@ -39,7 +39,7 @@ use dpp::data_contract::DataContract;
 use crate::framework::prelude::*;
 use crate::framework::tokens::{
     mint_to, setup_with_token_and_two_identities_with_step_timeout, token_balance_of,
-    token_supply_of, wait_for_token_balance, DEFAULT_TK_FUNDING,
+    token_supply_of, wait_for_token_balance, TK_OWNER_FUNDING_SIMPLE, TK_PEER_FUNDING_ACTIVE,
 };
 
 /// Tokens minted to the owner before the round-trip starts. Picked
@@ -98,7 +98,8 @@ async fn tk_004_token_transfer_round_trip() {
     // the test summary as a fixture build failure.
     let two = setup_with_token_and_two_identities_with_step_timeout(
         ctx,
-        DEFAULT_TK_FUNDING,
+        TK_OWNER_FUNDING_SIMPLE,
+        TK_PEER_FUNDING_ACTIVE,
         SETUP_STEP_TIMEOUT,
     )
     .await

@@ -80,14 +80,33 @@ pub const DEFAULT_MAX_SUPPLY: TokenAmount = 1_000_000_000_000_000;
 /// Default TK-NNN decimals (8, mirrors DET).
 pub const DEFAULT_DECIMALS: u8 = 8;
 
-/// Default per-identity funding for TK setup helpers — covers the
-/// token contract-create fee floor (~20 B credits for permissive
-/// owner-only contracts, ~30 B for the pre-programmed-distribution
-/// path) plus a few follow-up state transitions with headroom. The
-/// previous 1 B value undershot the chain-side floor and made every
-/// TK case fail at setup with `Insufficient identity ... balance
-/// 1000000000 required 20000100000`.
-pub const DEFAULT_TK_FUNDING: dpp::fee::Credits = 35_000_100_000;
+/// Owner funding for permissive owner-only token contracts (TK-001,
+/// 003, 005, 007, 008, 009, 010, 011, 014). Sized to cover the chain-
+/// enforced `base_contract_registration_fee + token_registration_fee`
+/// floor (20 B credits) plus a ~200M follow-up-state-transition
+/// headroom. (#348)
+pub const TK_OWNER_FUNDING_SIMPLE: dpp::fee::Credits = 20_200_000_000;
+
+/// Owner funding for token contracts with a perpetual or pre-programmed
+/// distribution (TK-002, TK-013). Adds the `distribution_fee × 1` charge
+/// on top of [`TK_OWNER_FUNDING_SIMPLE`]'s floor, then keeps the same
+/// follow-up headroom. (#348)
+pub const TK_OWNER_FUNDING_DISTRIBUTION: dpp::fee::Credits = 30_200_000_000;
+
+/// Peer funding for passive receivers — identities that never create a
+/// contract and never sign their own state transitions (TK-001's
+/// transfer destination, TK-005b's mint recipient). Sized to cover the
+/// `IdentityCreate` floor plus a small headroom for the
+/// registration-fee dynamic charge. (#348)
+pub const TK_PEER_FUNDING: dpp::fee::Credits = 200_000_000;
+
+/// Peer funding for "active" peers — identities that themselves sign
+/// state transitions during the test body (TK-007 frozen-transfer
+/// attempt, TK-008 post-unfreeze transfer, TK-011 token purchase,
+/// TK-014 group co-sign). Sized at 1 B so a single chain-fee tick
+/// can't starve the peer mid-test; still ~35× cheaper than the legacy
+/// 35 B "one-size-fits-all" amount peers used to receive. (#348)
+pub const TK_PEER_FUNDING_ACTIVE: dpp::fee::Credits = 1_000_000_000;
 
 /// Per-step propagation budget used by the TK-NNN suite. The TK
 /// setup funds ~35 B credits per identity in a single hop and runs
@@ -460,30 +479,41 @@ pub async fn setup_with_token_contract_with_step_timeout(
 // ---------------------------------------------------------------------------
 
 /// Two-identity TK setup. Identity #0 owns the contract, identity
-/// #1 is a peer for transfer / freeze / purchase scenarios.
+/// #1 is a peer for transfer / freeze / purchase scenarios. Owner and
+/// peer are funded independently — typically
+/// [`TK_OWNER_FUNDING_SIMPLE`] + [`TK_PEER_FUNDING`] (or
+/// [`TK_PEER_FUNDING_ACTIVE`] when the peer itself signs transitions).
 pub async fn setup_with_token_and_two_identities(
     ctx: &E2eContext,
-    funding_per: dpp::fee::Credits,
+    owner_funding: dpp::fee::Credits,
+    peer_funding: dpp::fee::Credits,
 ) -> FrameworkResult<TokenTwoIdentitiesSetup> {
-    setup_with_token_and_two_identities_with_step_timeout(ctx, funding_per, TK_SETUP_WAIT_TIMEOUT)
-        .await
+    setup_with_token_and_two_identities_with_step_timeout(
+        ctx,
+        owner_funding,
+        peer_funding,
+        TK_SETUP_WAIT_TIMEOUT,
+    )
+    .await
 }
 
 /// Per-test override of [`setup_with_token_and_two_identities`]'s
 /// propagation budget. Routes through
-/// [`super::setup_with_n_identities_with_step_timeout`] so each waiter
+/// [`super::setup_with_per_identity_funding`] so each waiter
 /// inside the identity-bootstrap loop honours `step_timeout`. Used by
 /// the round-trip cases that fund 35 B+ credits across two identities
 /// concurrently under `--test-threads=14` — the 60 s default is too
 /// tight when sibling guards compete for the bank lane.
 pub async fn setup_with_token_and_two_identities_with_step_timeout(
     ctx: &E2eContext,
-    funding_per: dpp::fee::Credits,
+    owner_funding: dpp::fee::Credits,
+    peer_funding: dpp::fee::Credits,
     step_timeout: Duration,
 ) -> FrameworkResult<TokenTwoIdentitiesSetup> {
     let _ = ctx;
     let setup_guard =
-        super::setup_with_n_identities_with_step_timeout(2, funding_per, step_timeout).await?;
+        super::setup_with_per_identity_funding(&[owner_funding, peer_funding], step_timeout)
+            .await?;
     let owner = setup_guard.identities[0].clone_for_token_setup();
     let peer = setup_guard.identities[1].clone_for_token_setup();
 
@@ -507,15 +537,21 @@ pub async fn setup_with_token_and_two_identities_with_step_timeout(
 // ---------------------------------------------------------------------------
 
 /// Three-identity TK setup — owner plus two peers (TK-014 group
-/// co-sign happy path).
+/// co-sign happy path). Owner and the two peers are funded
+/// independently — TK-014 has both peers sign group-action
+/// transitions, so [`TK_PEER_FUNDING_ACTIVE`] is the typical peer
+/// amount.
 pub async fn setup_with_token_and_three_identities(
     ctx: &E2eContext,
-    funding_per: dpp::fee::Credits,
+    owner_funding: dpp::fee::Credits,
+    peer_funding: dpp::fee::Credits,
 ) -> FrameworkResult<TokenThreeIdentitiesSetup> {
     let _ = ctx;
-    let setup_guard =
-        super::setup_with_n_identities_with_step_timeout(3, funding_per, TK_SETUP_WAIT_TIMEOUT)
-            .await?;
+    let setup_guard = super::setup_with_per_identity_funding(
+        &[owner_funding, peer_funding, peer_funding],
+        TK_SETUP_WAIT_TIMEOUT,
+    )
+    .await?;
     let owner = setup_guard.identities[0].clone_for_token_setup();
     let peers = [
         setup_guard.identities[1].clone_for_token_setup(),

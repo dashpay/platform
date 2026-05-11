@@ -28,7 +28,7 @@ use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
 use crate::framework::prelude::*;
 use crate::framework::tokens::{
     mint_to, setup_with_token_and_two_identities, token_balance_of, token_pricing_of,
-    DEFAULT_TK_FUNDING, DEFAULT_TOKEN_POSITION,
+    DEFAULT_TOKEN_POSITION, TK_OWNER_FUNDING_SIMPLE, TK_PEER_FUNDING_ACTIVE,
 };
 use crate::framework::wait::wait_for_token_predicate;
 
@@ -59,9 +59,10 @@ async fn tk_011_set_price_and_direct_purchase_round_trip() {
         );
         return;
     }
-    let s = setup_with_token_and_two_identities(ctx, DEFAULT_TK_FUNDING)
-        .await
-        .expect("token + two identities setup");
+    let s =
+        setup_with_token_and_two_identities(ctx, TK_OWNER_FUNDING_SIMPLE, TK_PEER_FUNDING_ACTIVE)
+            .await
+            .expect("token + two identities setup");
 
     let owner = &s.setup.owner;
     let buyer = &s.peer;

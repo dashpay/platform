@@ -29,7 +29,7 @@ use dpp::data_contract::DataContract;
 
 use crate::framework::prelude::*;
 use crate::framework::tokens::{
-    setup_with_token_contract, DEFAULT_MAX_SUPPLY, DEFAULT_TK_FUNDING, DEFAULT_TOKEN_POSITION,
+    setup_with_token_contract, DEFAULT_MAX_SUPPLY, DEFAULT_TOKEN_POSITION, TK_OWNER_FUNDING_SIMPLE,
 };
 
 /// Doubled max_supply target — `TEST_SPEC.md` TK-012 step 2.
@@ -56,7 +56,7 @@ async fn tk_012_update_token_config_max_supply() {
         );
         return;
     }
-    let s = setup_with_token_contract(ctx, DEFAULT_TK_FUNDING)
+    let s = setup_with_token_contract(ctx, TK_OWNER_FUNDING_SIMPLE)
         .await
         .expect("token + owner setup");
 

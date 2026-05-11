@@ -25,7 +25,7 @@ use std::time::Duration;
 use crate::framework::prelude::*;
 use crate::framework::tokens::{
     setup_with_token_and_two_identities, token_balance_of, token_frozen_balance_of,
-    wait_for_token_balance, DEFAULT_TK_FUNDING,
+    wait_for_token_balance, TK_OWNER_FUNDING_SIMPLE, TK_PEER_FUNDING_ACTIVE,
 };
 use crate::framework::wait::wait_for_identity_balance_change;
 
@@ -33,10 +33,6 @@ use dash_sdk::platform::Fetch;
 use dash_sdk::query_types::IdentityBalance;
 use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::DataContract;
-
-/// Per-identity bank funding for the TK-007 wallet. Headroom for the
-/// contract create + mint + transfer + freeze chain.
-const TK_FUNDING_PER: dpp::fee::Credits = DEFAULT_TK_FUNDING;
 
 /// Token amount the owner mints to itself before transferring some
 /// to the peer. Sized well above `TRANSFER_TO_PEER` so the owner's
@@ -72,9 +68,10 @@ async fn tk_007_token_freeze() {
         );
         return;
     }
-    let two = setup_with_token_and_two_identities(ctx, TK_FUNDING_PER)
-        .await
-        .expect("two-identity token setup");
+    let two =
+        setup_with_token_and_two_identities(ctx, TK_OWNER_FUNDING_SIMPLE, TK_PEER_FUNDING_ACTIVE)
+            .await
+            .expect("two-identity token setup");
     let test_wallet = &two.setup.setup_guard.base.test_wallet;
     let owner = &two.setup.owner;
     let peer = &two.peer;

@@ -21,7 +21,7 @@ use dpp::identity::Identity;
 use crate::framework::harness::E2eContext;
 use crate::framework::tokens::{
     mint_to, setup_with_token_and_two_identities, token_balance_of, wait_for_token_balance,
-    DEFAULT_TK_FUNDING,
+    TK_OWNER_FUNDING_SIMPLE, TK_PEER_FUNDING,
 };
 
 /// Tokens minted to the sender so the pre-condition (sender holds a
@@ -53,7 +53,7 @@ async fn tk_001b_token_transfer_zero_rejected() {
         return;
     }
 
-    let two = setup_with_token_and_two_identities(ctx, DEFAULT_TK_FUNDING)
+    let two = setup_with_token_and_two_identities(ctx, TK_OWNER_FUNDING_SIMPLE, TK_PEER_FUNDING)
         .await
         .expect("setup token + 2 identities");
     let contract_id = two.setup.contract_id;

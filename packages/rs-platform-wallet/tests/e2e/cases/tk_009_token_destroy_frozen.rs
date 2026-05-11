@@ -16,7 +16,7 @@ use std::time::Duration;
 use crate::framework::prelude::*;
 use crate::framework::tokens::{
     setup_with_token_and_two_identities, token_balance_of, token_frozen_balance_of,
-    token_supply_of, wait_for_token_balance, DEFAULT_TK_FUNDING,
+    token_supply_of, wait_for_token_balance, TK_OWNER_FUNDING_SIMPLE, TK_PEER_FUNDING,
 };
 
 use dash_sdk::platform::Fetch;
@@ -24,7 +24,6 @@ use dash_sdk::query_types::IdentityBalance;
 use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::DataContract;
 
-const TK_FUNDING_PER: dpp::fee::Credits = DEFAULT_TK_FUNDING;
 const MINT_TO_OWNER: TokenAmount = 1_000;
 const TRANSFER_TO_PEER: TokenAmount = 200;
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
@@ -50,7 +49,7 @@ async fn tk_009_token_destroy_frozen() {
         );
         return;
     }
-    let two = setup_with_token_and_two_identities(ctx, TK_FUNDING_PER)
+    let two = setup_with_token_and_two_identities(ctx, TK_OWNER_FUNDING_SIMPLE, TK_PEER_FUNDING)
         .await
         .expect("two-identity token setup");
     let test_wallet = &two.setup.setup_guard.base.test_wallet;

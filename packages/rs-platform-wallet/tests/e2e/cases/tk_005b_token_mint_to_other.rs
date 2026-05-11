@@ -13,7 +13,7 @@
 use crate::framework::prelude::*;
 use crate::framework::tokens::{
     mint_to, setup_with_token_and_two_identities, token_balance_of, token_supply_of,
-    DEFAULT_TK_FUNDING,
+    TK_OWNER_FUNDING_SIMPLE, TK_PEER_FUNDING,
 };
 
 /// Single cross-identity mint amount — sized small (the spec reads
@@ -41,7 +41,7 @@ async fn tk_005b_token_mint_to_other() {
         );
         return;
     }
-    let two = setup_with_token_and_two_identities(ctx, DEFAULT_TK_FUNDING)
+    let two = setup_with_token_and_two_identities(ctx, TK_OWNER_FUNDING_SIMPLE, TK_PEER_FUNDING)
         .await
         .expect("setup_with_token_and_two_identities");
 
