@@ -191,19 +191,6 @@ mod json_convertible_tests {
     }
 
     #[test]
-    #[ignore = "Pending dashcore PR https://github.com/dashpay/rust-dashcore/pull/729 \
-                (adds dual-shape visitor to `hashes::serde_macros::SerdeHash` — \
-                companion to #708 which fixed the same root cause for `OutPoint`'s \
-                separate `serde_struct_human_string_impl!` macro). Wrapping \
-                `Validator` in `tag = \"$formatVersion\"` routes deserialization \
-                through serde's `ContentDeserializer` which always reports \
-                `is_human_readable=true`; the bytes from a non-HR \
-                `platform_value::Value` source are then replayed into the HR \
-                branch and the old `HexVisitor::visit_str` sees a 32-byte \
-                sequence (interpreted as 32 UTF-8 chars) instead of the \
-                expected 64-char hex form, failing with 'bad hex string \
-                length 32 (expected 64)'. Affects `ProTxHash`/`PubkeyHash`/`QuorumHash`. \
-                Once #729 lands and we bump dashcore, drop this `#[ignore]`."]
     fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
         let original = fixture();

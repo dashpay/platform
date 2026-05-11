@@ -236,19 +236,15 @@ mod json_convertible_tests {
     }
 
     #[test]
-    #[ignore = "Pending dashcore PR https://github.com/dashpay/rust-dashcore/pull/729 \
-                (adds dual-shape visitor to `hashes::serde_macros::SerdeHash` — \
-                companion to #708 which fixed the same root cause for `OutPoint`'s \
-                separate `serde_struct_human_string_impl!` macro). Wrapping \
-                `ValidatorSet` in `tag = \"$formatVersion\"` routes deserialization \
-                through serde's `ContentDeserializer` which always reports \
-                `is_human_readable=true`; the bytes from a non-HR \
-                `platform_value::Value` source are then replayed into the HR \
-                branch and the old `HexVisitor::visit_str` sees a 32-byte \
-                sequence (interpreted as 32 UTF-8 chars) instead of the \
-                expected 64-char hex form. Affects \
-                `ProTxHash`/`PubkeyHash`/`QuorumHash`. Once #729 lands and \
-                we bump dashcore, drop this `#[ignore]`."]
+    #[ignore = "Pending blstrs_plus upstream fix for BLS public-key dual-shape deserialize \
+                (separate from dashcore #708/#729 which are now merged). \
+                `ValidatorSetV0::threshold_public_key: BlsPublicKey<Bls12381G2Impl>` routes \
+                through the local `bls_pubkey_serde` wrapper, but the inner blstrs_plus \
+                Deserialize uses a borrowed `<&str>::deserialize(d)?` that fails through \
+                ContentDeserializer's HR-quirk with 'invalid type: sequence, expected a \
+                string'. Validator (this file's twin) doesn't hit it because its fixture \
+                has `public_key: None`. Once the blstrs_plus upstream PR merges and we \
+                bump that dep, drop this `#[ignore]` and the `bls_pubkey_serde` wrapper."]
     fn value_round_trip_with_full_wire_shape() {
         use crate::serialization::ValueConvertible;
         let (original, validator_pubkey, threshold_pubkey) = build_fixture();

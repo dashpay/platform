@@ -27,11 +27,18 @@
 | Critical-4 | DataContract serde impurity (platform-version coupling + hardcoded `full_validation`) | ✅ platform-version coupling pinned in tests; validation flipped to opt-in; KEEP-AS-EXCEPTION docs |
 | Critical-5 | `to_canonical_object` sorts keys (signature-load-bearing) | ✅ falsified — signing uses bincode, methods had zero production callers; deleted |
 
-### Final test count (May 2026)
+### Final test count (May 2026, post-merge with v3.1-dev)
 
-**3716 dpp lib tests pass, 8 ignored**. Of the 8 ignored:
+**3619 dpp lib tests pass, 7 ignored**. Of the 7 ignored:
 - 6 are pre-existing `recursive_schema_validator` ignores unrelated to the unification work.
-- 2 are the `Validator` / `ValidatorSet` value-side round-trip tests, blocked on dashcore PR #729 merging + a dependency bump (not a code bug — `hashes::serde_macros::SerdeHash` upstream needs a dual-shape visitor; same root cause as the open #708 for `OutPoint`).
+- 1 is `ValidatorSet::value_round_trip_with_full_wire_shape`, blocked on the **blstrs_plus** upstream PR for BLS `PublicKey` dual-shape deserialize (separate from dashcore #708/#729 which are now merged). `Validator`'s twin test (with `public_key: None`) was unignored this branch.
+
+### Upstream PRs status (May 2026, post-merge)
+
+- ✅ **dashcore #708** (`OutPoint` dual-shape visitor) — merged 2026-05-06.
+- ✅ **dashcore #729** (`hashes::serde_macros::SerdeHash` dual-shape visitor) — merged 2026-05-06.
+- Branch merged v3.1-dev (commit `0ded869e21`) which carries the post-#708/#729 dashcore rev (`d6dd5da1`). Local `outpoint_serde` wrapper in `chain_asset_lock_proof.rs` deleted — upstream #708 handles the case. `Validator` value-round-trip test unignored.
+- ⬜ **blstrs_plus** BLS `PublicKey` dual-shape deserialize — pending. Local `bls_pubkey_serde` wrapper retained; `ValidatorSet` value-round-trip test remains `#[ignore]` until this lands.
 
 **1036 platform-value lib tests pass.**
 
