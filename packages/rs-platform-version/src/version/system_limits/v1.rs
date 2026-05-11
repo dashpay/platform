@@ -12,7 +12,7 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     //     well-defined: it is unclear whether to bump the nonce for the
     //     failed transition only, for all transitions, or for none — and the
     //     transformer/dispatch code does not consistently express any of
-    //     those policies (see issue #2867 and PR #3608).
+    //     those policies (see issue #2867).
     // Before lifting this cap above 1, the whole batch validation +
     // transformer + nonce-bump path must be reviewed and the atomicity /
     // nonce semantics fixed. Pulling the cap higher today would expose
