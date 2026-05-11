@@ -16,6 +16,8 @@ pub mod core_bridge;
 pub mod identity_manager_start_state;
 pub mod merge;
 pub mod platform_address_sync_start_state;
+#[cfg(feature = "serde")]
+pub mod serde_adapters;
 pub mod traits;
 
 pub use changeset::{
