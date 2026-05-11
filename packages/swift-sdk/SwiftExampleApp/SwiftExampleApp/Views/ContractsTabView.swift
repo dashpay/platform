@@ -41,7 +41,7 @@ struct ContractsTabView: View {
     /// predicates below; the parent re-creates the view when the
     /// active network changes (SwiftUI sees `network` move and
     /// re-runs `init`, which rebuilds the `@Query` predicate).
-    private let network: AppNetwork
+    private let network: Network
 
     @Query private var dataContracts: [PersistentDataContract]
 
@@ -53,7 +53,7 @@ struct ContractsTabView: View {
     /// name in different contracts stay distinguishable.
     @Query private var allTokens: [PersistentToken]
 
-    init(network: AppNetwork) {
+    init(network: Network) {
         self.network = network
         let target = network.rawValue
         // `PersistentDataContract.predicate(network:)` already exists

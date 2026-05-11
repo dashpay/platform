@@ -1,4 +1,5 @@
 import Foundation
+import DashSDKFFI
 
 /// One row of the per-(identity, token) sync cache held by the
 /// Rust-side `IdentitySyncManager`. Mirrors the FFI
@@ -39,52 +40,36 @@ extension PlatformWalletManager {
     /// Start the identity-token sync background loop.
     public func startIdentityTokenSync() throws {
         guard isConfigured, handle != NULL_HANDLE else {
-            throw PlatformWalletError.invalidHandle
+            throw PlatformWalletError.invalidHandle("PlatformWalletManager not configured")
         }
-        var error = PlatformWalletFFIError()
-        let result = platform_wallet_manager_identity_sync_start(handle, &error)
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
-        }
+        try platform_wallet_manager_identity_sync_start(handle).check()
     }
 
     /// Stop the identity-token sync background loop.
     public func stopIdentityTokenSync() throws {
         guard isConfigured, handle != NULL_HANDLE else {
-            throw PlatformWalletError.invalidHandle
+            throw PlatformWalletError.invalidHandle("PlatformWalletManager not configured")
         }
-        var error = PlatformWalletFFIError()
-        let result = platform_wallet_manager_identity_sync_stop(handle, &error)
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
-        }
+        try platform_wallet_manager_identity_sync_stop(handle).check()
     }
 
     /// Whether the identity-token sync background loop is running.
     public func isIdentityTokenSyncRunning() throws -> Bool {
         guard isConfigured, handle != NULL_HANDLE else {
-            throw PlatformWalletError.invalidHandle
+            throw PlatformWalletError.invalidHandle("PlatformWalletManager not configured")
         }
         var running = false
-        var error = PlatformWalletFFIError()
-        let result = platform_wallet_manager_identity_sync_is_running(handle, &running, &error)
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
-        }
+        try platform_wallet_manager_identity_sync_is_running(handle, &running).check()
         return running
     }
 
     /// Whether an identity-token sync pass is currently in flight.
     public func isIdentityTokenSyncing() throws -> Bool {
         guard isConfigured, handle != NULL_HANDLE else {
-            throw PlatformWalletError.invalidHandle
+            throw PlatformWalletError.invalidHandle("PlatformWalletManager not configured")
         }
         var syncing = false
-        var error = PlatformWalletFFIError()
-        let result = platform_wallet_manager_identity_sync_is_syncing(handle, &syncing, &error)
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
-        }
+        try platform_wallet_manager_identity_sync_is_syncing(handle, &syncing).check()
         return syncing
     }
 
@@ -92,23 +77,20 @@ extension PlatformWalletManager {
     /// the given identity, or 0 if it has never been synced.
     public func lastIdentityTokenSyncUnixSeconds(for identityId: Identifier) throws -> UInt64 {
         guard isConfigured, handle != NULL_HANDLE else {
-            throw PlatformWalletError.invalidHandle
+            throw PlatformWalletError.invalidHandle("PlatformWalletManager not configured")
         }
         guard identityId.count == 32 else {
-            throw PlatformWalletError.invalidIdentifier
-        }
-        var lastSync: UInt64 = 0
-        var error = PlatformWalletFFIError()
-        let result = identityId.withUnsafeBytes { idPtr -> PlatformWalletFFIResult in
-            platform_wallet_manager_identity_sync_last_sync_unix_seconds(
-                handle,
-                idPtr.bindMemory(to: UInt8.self).baseAddress,
-                &lastSync,
-                &error
+            throw PlatformWalletError.invalidIdentifier(
+                "identityId must be 32 bytes, got \(identityId.count)"
             )
         }
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
+        var lastSync: UInt64 = 0
+        try identityId.withUnsafeBytes { idPtr in
+            try platform_wallet_manager_identity_sync_last_sync_unix_seconds(
+                handle,
+                idPtr.bindMemory(to: UInt8.self).baseAddress,
+                &lastSync
+            ).check()
         }
         return lastSync
     }
@@ -116,13 +98,9 @@ extension PlatformWalletManager {
     /// Set the polling interval (clamped to >= 1 second on the Rust side).
     public func setIdentityTokenSyncInterval(seconds: UInt64) throws {
         guard isConfigured, handle != NULL_HANDLE else {
-            throw PlatformWalletError.invalidHandle
+            throw PlatformWalletError.invalidHandle("PlatformWalletManager not configured")
         }
-        var error = PlatformWalletFFIError()
-        let result = platform_wallet_manager_identity_sync_set_interval(handle, seconds, &error)
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
-        }
+        try platform_wallet_manager_identity_sync_set_interval(handle, seconds).check()
     }
 
     /// Run one identity-token sync pass across every registered
@@ -131,15 +109,11 @@ extension PlatformWalletManager {
     /// without doing extra work.
     public func syncIdentityTokensNow() async throws {
         guard isConfigured, handle != NULL_HANDLE else {
-            throw PlatformWalletError.invalidHandle
+            throw PlatformWalletError.invalidHandle("PlatformWalletManager not configured")
         }
         let handle = self.handle
         try await Task.detached(priority: .userInitiated) {
-            var error = PlatformWalletFFIError()
-            let result = platform_wallet_manager_identity_sync_sync_now(handle, &error)
-            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-                throw PlatformWalletError(result: result, error: error)
-            }
+            try platform_wallet_manager_identity_sync_sync_now(handle).check()
         }.value
     }
 
@@ -153,55 +127,51 @@ extension PlatformWalletManager {
         tokenIds: [Identifier]
     ) throws {
         guard isConfigured, handle != NULL_HANDLE else {
-            throw PlatformWalletError.invalidHandle
+            throw PlatformWalletError.invalidHandle("PlatformWalletManager not configured")
         }
         guard identityId.count == 32 else {
-            throw PlatformWalletError.invalidIdentifier
+            throw PlatformWalletError.invalidIdentifier(
+                "identityId must be 32 bytes, got \(identityId.count)"
+            )
         }
-        var error = PlatformWalletFFIError()
         // Flatten token ids into one contiguous 32*N buffer so the
         // FFI can read them as back-to-back chunks.
         var flat = Data(capacity: 32 * tokenIds.count)
         for tid in tokenIds {
             guard tid.count == 32 else {
-                throw PlatformWalletError.invalidIdentifier
+                throw PlatformWalletError.invalidIdentifier(
+                    "token id must be 32 bytes, got \(tid.count)"
+                )
             }
             flat.append(tid)
         }
-        let result = identityId.withUnsafeBytes { idPtr -> PlatformWalletFFIResult in
-            flat.withUnsafeBytes { tokensPtr -> PlatformWalletFFIResult in
-                platform_wallet_manager_identity_sync_register_identity(
+        try identityId.withUnsafeBytes { idPtr in
+            try flat.withUnsafeBytes { tokensPtr in
+                try platform_wallet_manager_identity_sync_register_identity(
                     handle,
                     idPtr.bindMemory(to: UInt8.self).baseAddress,
                     tokensPtr.bindMemory(to: UInt8.self).baseAddress,
-                    UInt(tokenIds.count),
-                    &error
-                )
+                    UInt(tokenIds.count)
+                ).check()
             }
-        }
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
         }
     }
 
     /// Remove `identityId` from the sync registry. Idempotent.
     public func unregisterIdentityForTokenSync(identityId: Identifier) throws {
         guard isConfigured, handle != NULL_HANDLE else {
-            throw PlatformWalletError.invalidHandle
+            throw PlatformWalletError.invalidHandle("PlatformWalletManager not configured")
         }
         guard identityId.count == 32 else {
-            throw PlatformWalletError.invalidIdentifier
-        }
-        var error = PlatformWalletFFIError()
-        let result = identityId.withUnsafeBytes { idPtr -> PlatformWalletFFIResult in
-            platform_wallet_manager_identity_sync_unregister_identity(
-                handle,
-                idPtr.bindMemory(to: UInt8.self).baseAddress,
-                &error
+            throw PlatformWalletError.invalidIdentifier(
+                "identityId must be 32 bytes, got \(identityId.count)"
             )
         }
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
+        try identityId.withUnsafeBytes { idPtr in
+            try platform_wallet_manager_identity_sync_unregister_identity(
+                handle,
+                idPtr.bindMemory(to: UInt8.self).baseAddress
+            ).check()
         }
     }
 
@@ -213,32 +183,31 @@ extension PlatformWalletManager {
         tokenIds: [Identifier]
     ) throws {
         guard isConfigured, handle != NULL_HANDLE else {
-            throw PlatformWalletError.invalidHandle
+            throw PlatformWalletError.invalidHandle("PlatformWalletManager not configured")
         }
         guard identityId.count == 32 else {
-            throw PlatformWalletError.invalidIdentifier
+            throw PlatformWalletError.invalidIdentifier(
+                "identityId must be 32 bytes, got \(identityId.count)"
+            )
         }
-        var error = PlatformWalletFFIError()
         var flat = Data(capacity: 32 * tokenIds.count)
         for tid in tokenIds {
             guard tid.count == 32 else {
-                throw PlatformWalletError.invalidIdentifier
+                throw PlatformWalletError.invalidIdentifier(
+                    "token id must be 32 bytes, got \(tid.count)"
+                )
             }
             flat.append(tid)
         }
-        let result = identityId.withUnsafeBytes { idPtr -> PlatformWalletFFIResult in
-            flat.withUnsafeBytes { tokensPtr -> PlatformWalletFFIResult in
-                platform_wallet_manager_identity_sync_update_watched_tokens(
+        try identityId.withUnsafeBytes { idPtr in
+            try flat.withUnsafeBytes { tokensPtr in
+                try platform_wallet_manager_identity_sync_update_watched_tokens(
                     handle,
                     idPtr.bindMemory(to: UInt8.self).baseAddress,
                     tokensPtr.bindMemory(to: UInt8.self).baseAddress,
-                    UInt(tokenIds.count),
-                    &error
-                )
+                    UInt(tokenIds.count)
+                ).check()
             }
-        }
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
         }
     }
 
@@ -248,28 +217,25 @@ extension PlatformWalletManager {
         for identityId: Identifier
     ) throws -> IdentityTokenSyncSnapshot? {
         guard isConfigured, handle != NULL_HANDLE else {
-            throw PlatformWalletError.invalidHandle
+            throw PlatformWalletError.invalidHandle("PlatformWalletManager not configured")
         }
         guard identityId.count == 32 else {
-            throw PlatformWalletError.invalidIdentifier
+            throw PlatformWalletError.invalidIdentifier(
+                "identityId must be 32 bytes, got \(identityId.count)"
+            )
         }
 
         var rowsPtr: UnsafeMutablePointer<IdentityTokenSyncInfoFFI>? = nil
         var rowsCount: UInt = 0
         var lastSync: UInt64 = 0
-        var error = PlatformWalletFFIError()
-        let result = identityId.withUnsafeBytes { idPtr -> PlatformWalletFFIResult in
-            platform_wallet_manager_identity_sync_state_for_identity(
+        try identityId.withUnsafeBytes { idPtr in
+            try platform_wallet_manager_identity_sync_state_for_identity(
                 handle,
                 idPtr.bindMemory(to: UInt8.self).baseAddress,
                 &rowsPtr,
                 &rowsCount,
-                &lastSync,
-                &error
-            )
-        }
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
+                &lastSync
+            ).check()
         }
 
         defer {
@@ -290,20 +256,15 @@ extension PlatformWalletManager {
     /// identity in one flat array.
     public func allIdentityTokenSyncRows() throws -> [IdentityTokenSyncRow] {
         guard isConfigured, handle != NULL_HANDLE else {
-            throw PlatformWalletError.invalidHandle
+            throw PlatformWalletError.invalidHandle("PlatformWalletManager not configured")
         }
         var rowsPtr: UnsafeMutablePointer<IdentityTokenSyncInfoFFI>? = nil
         var rowsCount: UInt = 0
-        var error = PlatformWalletFFIError()
-        let result = platform_wallet_manager_identity_sync_state_all(
+        try platform_wallet_manager_identity_sync_state_all(
             handle,
             &rowsPtr,
-            &rowsCount,
-            &error
-        )
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
-        }
+            &rowsCount
+        ).check()
 
         defer {
             if let rowsPtr {

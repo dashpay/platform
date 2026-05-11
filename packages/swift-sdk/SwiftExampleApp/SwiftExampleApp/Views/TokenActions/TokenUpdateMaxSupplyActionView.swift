@@ -33,6 +33,10 @@ struct TokenUpdateMaxSupplyActionView: View {
     @State private var publicNote: String = ""
     @State private var isSubmitting: Bool = false
     @State private var submitError: AlertMessage?
+    /// Generation counter so a late `MainActor.run` from a previous
+    /// `submit()` Task can't write back to a re-entered view instance
+    /// after the user pops + repushes mid-broadcast.
+    @State private var submitGeneration: Int = 0
 
     private struct AlertMessage: Identifiable {
         let id = UUID()
@@ -71,7 +75,7 @@ struct TokenUpdateMaxSupplyActionView: View {
             Section("New max supply") {
                 Toggle("Remove cap", isOn: $removeCap)
                 TextField("Amount", text: $newMaxSupplyText)
-                    .keyboardType(.numberPad)
+                    .keyboardType(.decimalPad)
                     .disabled(removeCap)
                     .foregroundColor(removeCap ? .secondary : .primary)
                 if !removeCap, let parsed = parsedNewMaxSupply, parsed == 0 {
@@ -122,15 +126,21 @@ struct TokenUpdateMaxSupplyActionView: View {
         return walletManager.wallet(for: walletId)
     }
 
-    /// Display the current max supply as it's stored on `PersistentToken`.
-    /// `maxSupply` is a string-encoded u64; missing means "uncapped".
+    /// Display the current max supply scaled to display units, so the
+    /// number the user sees here is in the same unit they're about to
+    /// type in the input below. `token.maxSupply` is a string-encoded
+    /// raw u64; missing means "uncapped".
     private var currentMaxSupplyDisplay: String {
-        token.maxSupply ?? "Uncapped"
+        guard let raw = token.maxSupply, let value = UInt64(raw) else {
+            return "Uncapped"
+        }
+        return formatTokenAmount(value, decimals: token.decimals)
     }
 
+    /// User input is in display units; scale to raw on-chain units for
+    /// the FFI / config-change payload.
     private var parsedNewMaxSupply: UInt64? {
-        let trimmed = newMaxSupplyText.trimmingCharacters(in: .whitespacesAndNewlines)
-        return UInt64(trimmed)
+        parseTokenAmount(newMaxSupplyText, decimals: token.decimals)
     }
 
     private var canSubmit: Bool {
@@ -198,11 +208,21 @@ struct TokenUpdateMaxSupplyActionView: View {
         }
 
         isSubmitting = true
+        submitGeneration &+= 1
+        let gen = submitGeneration
         let signer = KeychainSigner(modelContainer: modelContext.container)
         let identityId = identity.identityId
         let contractId = token.contractId
         let note = publicNote.trimmingCharacters(in: .whitespacesAndNewlines)
         let publicNoteOrNil: String? = note.isEmpty ? nil : note
+        // `PersistentToken.maxSupply` is a string-encoded raw u64 (see
+        // `currentMaxSupplyDisplay` — it parses via `UInt64(raw)`),
+        // with `nil` representing "no cap" / Unlimited. Materialize the
+        // post-success target value here so the Task closure can write
+        // it back without re-touching @State from a non-main context.
+        let newMaxSupplyValue: String? = removeCap
+            ? nil
+            : parsedNewMaxSupply.map(String.init)
 
         Task {
             do {
@@ -216,11 +236,34 @@ struct TokenUpdateMaxSupplyActionView: View {
                     signer: signer
                 )
                 await MainActor.run {
+                    guard self.submitGeneration == gen else { return }
                     self.isSubmitting = false
+                    // Single-signer submissions execute on this call —
+                    // flip the local maxSupply so the view (and any
+                    // surfaces reading `token.maxSupply`) reflects the
+                    // new cap without waiting for a manual contract
+                    // refetch. Propose-mode just stores a pending
+                    // group action; the chain config doesn't change
+                    // until the threshold-crossing co-signer submits,
+                    // so leave the field alone in that branch.
+                    if case .none = groupAction {
+                        token.maxSupply = newMaxSupplyValue
+                        // The chain action has already succeeded, so a
+                        // SwiftData persistence hiccup isn't user-facing
+                        // (worst case the in-memory write survives until
+                        // the next contract re-parse reconciles). Log
+                        // for diagnosability instead of swallowing.
+                        do {
+                            try modelContext.save()
+                        } catch {
+                            print("⚠️ TokenUpdateMaxSupplyActionView: failed to persist maxSupply: \(error)")
+                        }
+                    }
                     self.dismiss()
                 }
             } catch {
                 await MainActor.run {
+                    guard self.submitGeneration == gen else { return }
                     self.submitError = .init(message: error.localizedDescription)
                     self.isSubmitting = false
                 }

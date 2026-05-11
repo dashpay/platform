@@ -10,10 +10,13 @@ use key_wallet::account::account_collection::AccountCollection;
 use key_wallet::account::{Account, AccountType, StandardAccountType};
 use key_wallet::bip32::ExtendedPubKey;
 use key_wallet::managed_account::address_pool::{AddressPoolType, PublicKeyType};
+use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
-use key_wallet::{AddressInfo, Network};
+use key_wallet::AddressInfo;
 use parking_lot::RwLock;
+
+use crate::types::{FFINetwork, Network};
 use platform_wallet::changeset::{
     AccountAddressPoolEntry, AccountRegistrationEntry, ClientStartState, ClientWalletStartState,
     Merge, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
@@ -39,7 +42,7 @@ use crate::token_persistence::{TokenBalanceRemovalFFI, TokenBalanceUpsertFFI};
 use crate::wallet_registration_persistence::AccountAddressPoolFFI;
 use crate::wallet_restore_types::{
     AccountSpecFFI, AccountTypeTagFFI, IdentityKeyRestoreFFI, IdentityRestoreEntryFFI,
-    LoadWalletListFreeFn, StandardAccountTypeTagFFI, WalletRestoreEntryFFI,
+    LoadWalletListFreeFn, StandardAccountTypeTagFFI, UtxoRestoreEntryFFI, WalletRestoreEntryFFI,
 };
 use dpp::address_funds::PlatformAddress;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -139,7 +142,11 @@ pub struct PersistenceCallbacks {
         ) -> i32,
     >,
     /// Invoked on [`FFIPersister::load`] to pull the persisted wallet
-    /// list back into Rust for watch-only reconstruction.
+    /// list back into Rust for external-signable reconstruction.
+    /// (The function name still reads "watch-only" in older docs; the
+    /// reconstructed `Wallet` is built via
+    /// `Wallet::new_external_signable` so the signer surface routes
+    /// back to the host's keychain.)
     ///
     /// Implementations must set `*out_entries` to a Swift-allocated
     /// array of `WalletRestoreEntryFFI` and `*out_count` to the
@@ -177,7 +184,7 @@ pub struct PersistenceCallbacks {
         unsafe extern "C" fn(
             context: *mut c_void,
             wallet_id: *const u8,
-            network: u8,
+            network: FFINetwork,
             birth_height: u32,
         ) -> i32,
     >,
@@ -280,6 +287,74 @@ pub struct PersistenceCallbacks {
             removed_incoming_count: usize,
         ) -> i32,
     >,
+    /// Look up a single core transaction record by `txid` for the
+    /// asset-lock proof flow's persister fallback.
+    ///
+    /// With upstream's `keep-finalized-transactions` Cargo feature OFF
+    /// (the default), chain-locked records are evicted from the
+    /// in-memory `transactions()` map and only their txids retained in
+    /// `finalized_txids` for dedup. The asset-lock proof flow needs to
+    /// recover the chain-lock height to construct a
+    /// `ChainAssetLockProof`; the persister has the record (it
+    /// received it on the chain-lock-transition `store` call before
+    /// eviction) and answers this lookup.
+    ///
+    /// Output contract:
+    /// - Set `*out_found = true` when a row exists for `txid`. Set
+    ///   `*out_context_kind` to the row's actual context (0=Mempool,
+    ///   1=InstantSend, 2=InBlock, 3=InChainLockedBlock). For
+    ///   context kinds 2 and 3, populate `out_block_height`,
+    ///   `out_block_hash` (32 bytes), and `out_block_timestamp` from
+    ///   the row's block info; the Rust side ignores those fields
+    ///   for kinds 0 and 1.
+    /// - Hand back the row's raw transaction bytes via
+    ///   `*out_tx_bytes` + `*out_tx_bytes_len`. The buffer is
+    ///   caller-allocated and must remain valid until the Rust side
+    ///   invokes [`Self::on_get_core_tx_record_free_fn`]. Set
+    ///   `*out_tx_bytes = null` + `*out_tx_bytes_len = 0` if the
+    ///   row exists but the persister never stored the bytes (the
+    ///   Rust side will surface `None` rather than synthesize a
+    ///   placeholder).
+    /// - Set `*out_found = false` when no row exists for `txid`.
+    /// - Return `0` on a successful lookup (whether found or not).
+    ///   Non-zero values are treated as a transient backend failure
+    ///   by the Rust side and surfaced as `None` (no error
+    ///   propagation through the proof flow).
+    ///
+    /// The Rust side faithfully reconstructs the
+    /// [`TransactionContext`](key_wallet::transaction_checking::TransactionContext)
+    /// from `*out_context_kind` and decodes the tx bytes into a real
+    /// [`dashcore::Transaction`]. InstantSend rows are reported back
+    /// with the kind tag but not currently consumed (the persister
+    /// doesn't store the IS-lock blob), so for an IS hit the Rust
+    /// side surfaces `None` to the proof flow — same outcome as a
+    /// miss. The proof flow then falls through to its existing
+    /// SPV-event-driven wait path, which is what would have happened
+    /// without the fallback at all.
+    pub on_get_core_tx_record_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            txid: *const u8,
+            out_context_kind: *mut u8,
+            out_block_height: *mut u32,
+            out_block_hash: *mut u8,
+            out_block_timestamp: *mut u32,
+            out_tx_bytes: *mut *const u8,
+            out_tx_bytes_len: *mut usize,
+            out_found: *mut bool,
+        ) -> i32,
+    >,
+    /// Paired free callback for the tx-bytes buffer returned by
+    /// [`Self::on_get_core_tx_record_fn`]. The Rust side invokes
+    /// this with the same `(tx_bytes, tx_bytes_len)` pair the lookup
+    /// callback wrote into the output pointers, exactly once per
+    /// hit. Implementations should release the buffer (e.g.
+    /// `UnsafeMutablePointer<UInt8>.deallocate()` on the Swift
+    /// side).
+    pub on_get_core_tx_record_free_fn: Option<
+        unsafe extern "C" fn(context: *mut c_void, tx_bytes: *const u8, tx_bytes_len: usize),
+    >,
 }
 
 // SAFETY: The context pointer is managed by the FFI caller who must ensure
@@ -329,12 +404,11 @@ impl PlatformWalletPersistence for FFIPersister {
         // `wallet_metadata: None` so no callback fires).
         if let Some(meta) = changeset.wallet_metadata.as_ref() {
             if let Some(cb) = self.callbacks.on_persist_wallet_metadata_fn {
-                let network_tag = network_tag_for(meta.network);
                 let result = unsafe {
                     cb(
                         self.callbacks.context,
                         wallet_id.as_ptr(),
-                        network_tag,
+                        meta.network.into(),
                         meta.birth_height,
                     )
                 };
@@ -460,6 +534,49 @@ impl PlatformWalletPersistence for FFIPersister {
 
         // Send core wallet changeset (accounts, transactions, UTXOs).
         if let Some(ref core_cs) = changeset.core {
+            // Fan out gap-limit-extension addresses BEFORE the wallet
+            // changeset itself: the changeset's UTXOs reference these
+            // addresses, and the Swift-side `upsertUtxo`'s
+            // `coreAddress` link lookup is keyed on the address row
+            // existing. Emitting the pool snapshot first means a
+            // brand-new TXO landing on a freshly-derived address
+            // finds the matching `PersistentCoreAddress` in the same
+            // changeset round and the cascade-delete chain stays
+            // intact. Reuses `on_persist_account_address_pools_fn`
+            // so the Swift side handles both registration-time emit
+            // and event-time emit through `persistAccountAddresses`
+            // — single Swift code path covers both.
+            if !core_cs.addresses_derived.is_empty() {
+                if let Some(cb) = self.callbacks.on_persist_account_address_pools_fn {
+                    match build_address_pools_from_derived(&core_cs.addresses_derived) {
+                        Ok((pools, _address_storage, _string_storage)) => {
+                            let result = unsafe {
+                                cb(
+                                    self.callbacks.context,
+                                    wallet_id.as_ptr(),
+                                    pools.as_ptr(),
+                                    pools.len(),
+                                )
+                            };
+                            drop(pools);
+                            drop(_address_storage);
+                            drop(_string_storage);
+                            if result != 0 {
+                                eprintln!(
+                                    "Derived-address persistence callback returned error code {}",
+                                    result
+                                );
+                                round_success = false;
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to encode derived address pool entries: {}", e);
+                            round_success = false;
+                        }
+                    }
+                }
+            }
+
             if let Some(cb) = self.callbacks.on_persist_wallet_changeset_fn {
                 let ffi_cs = WalletChangeSetFFI::from_changeset(core_cs);
                 let result = unsafe { cb(self.callbacks.context, wallet_id.as_ptr(), &ffi_cs) };
@@ -853,17 +970,206 @@ impl PlatformWalletPersistence for FFIPersister {
         }
         Ok(out)
     }
-}
 
-/// Reverse of [`network_from_tag`] — keeps the discriminant in sync
-/// with `platform_wallet_manager_create_wallet_from_seed` (0 = Mainnet,
-/// 1 = Testnet, 2 = Devnet, 3 = Regtest).
-fn network_tag_for(network: Network) -> u8 {
-    match network {
-        Network::Mainnet => 0,
-        Network::Testnet => 1,
-        Network::Devnet => 2,
-        Network::Regtest => 3,
+    /// Look up a transaction record by `txid` via the
+    /// `on_get_core_tx_record_fn` callback and reconstruct the
+    /// [`TransactionRecord`] for the asset-lock proof flow.
+    ///
+    /// The proof-flow callers in
+    /// `platform-wallet/src/wallet/asset_lock/sync/` only read
+    /// `record.context`, `record.height()`, and (for site 4)
+    /// `record.transaction.txid`. The Swift side hands back the
+    /// row's actual context kind plus the raw transaction bytes, so
+    /// `txid` / `context` / `transaction` are all reliable. Other
+    /// fields (`account_type`, `transaction_type`, `direction`,
+    /// `input_details`, `output_details`, `net_amount`, `fee`,
+    /// `label`) are best-effort placeholders per the trait field
+    /// contract; see
+    /// [`PlatformWalletPersistence::get_core_tx_record`].
+    ///
+    /// The InstantSend variant requires an
+    /// [`InstantLock`](dashcore::ephemerealdata::instant_lock::InstantLock)
+    /// blob that the persister doesn't currently store, so for an IS
+    /// hit we surface `None` (treat as miss) and let the proof
+    /// flow's existing SPV-event-driven wait path complete the
+    /// proof.
+    ///
+    /// Returns `Ok(None)` when the callback is unset, when the
+    /// callback reports `out_found = false`, when the callback
+    /// returns a non-zero result code (treated as a transient backend
+    /// failure per the trait contract — surfaced as `None` rather
+    /// than propagating), when the callback hands back a null /
+    /// empty tx-bytes buffer, when the bytes don't decode as a
+    /// `dashcore::Transaction`, or for an IS hit (see above).
+    fn get_core_tx_record(
+        &self,
+        wallet_id: WalletId,
+        txid: &dashcore::Txid,
+    ) -> Result<
+        Option<key_wallet::managed_account::transaction_record::TransactionRecord>,
+        PersistenceError,
+    > {
+        use dashcore::consensus::Decodable;
+        use dashcore::hashes::Hash;
+        use key_wallet::account::{AccountType, StandardAccountType};
+        use key_wallet::managed_account::transaction_record::{
+            TransactionDirection, TransactionRecord,
+        };
+        use key_wallet::transaction_checking::{BlockInfo, TransactionContext, TransactionType};
+
+        let Some(get_cb) = self.callbacks.on_get_core_tx_record_fn else {
+            return Ok(None);
+        };
+
+        let txid_bytes: [u8; 32] = *txid.as_byte_array();
+        let mut context_kind: u8 = 0;
+        let mut block_height: u32 = 0;
+        let mut block_hash: [u8; 32] = [0u8; 32];
+        let mut block_timestamp: u32 = 0;
+        let mut tx_bytes_ptr: *const u8 = std::ptr::null();
+        let mut tx_bytes_len: usize = 0;
+        let mut found: bool = false;
+
+        // SAFETY: All output pointers reference Rust-owned stack
+        // locals that outlive the callback invocation. `wallet_id`
+        // and `txid` are fixed-size byte arrays.
+        let rc = unsafe {
+            get_cb(
+                self.callbacks.context,
+                wallet_id.as_ptr(),
+                txid_bytes.as_ptr(),
+                &mut context_kind,
+                &mut block_height,
+                block_hash.as_mut_ptr(),
+                &mut block_timestamp,
+                &mut tx_bytes_ptr,
+                &mut tx_bytes_len,
+                &mut found,
+            )
+        };
+
+        // RAII guard so the tx-bytes free callback fires on every
+        // exit path past this point — early returns for unknown
+        // context kinds, decode failures, and the IS-skip case all
+        // correctly hand the buffer back to Swift.
+        struct TxBytesGuard<'a> {
+            ptr: *const u8,
+            len: usize,
+            free_fn: Option<
+                unsafe extern "C" fn(
+                    context: *mut c_void,
+                    tx_bytes: *const u8,
+                    tx_bytes_len: usize,
+                ),
+            >,
+            ctx: *mut c_void,
+            _marker: std::marker::PhantomData<&'a ()>,
+        }
+        impl<'a> Drop for TxBytesGuard<'a> {
+            fn drop(&mut self) {
+                if let (Some(free), false) = (self.free_fn, self.ptr.is_null()) {
+                    // SAFETY: ptr+len match the values the lookup
+                    // callback wrote; Swift owns the allocation
+                    // until this free fires.
+                    unsafe { free(self.ctx, self.ptr, self.len) };
+                }
+            }
+        }
+        let _bytes_guard = TxBytesGuard {
+            ptr: tx_bytes_ptr,
+            len: tx_bytes_len,
+            free_fn: self.callbacks.on_get_core_tx_record_free_fn,
+            ctx: self.callbacks.context,
+            _marker: std::marker::PhantomData,
+        };
+
+        if rc != 0 {
+            tracing::debug!(
+                txid = %txid,
+                rc,
+                "on_get_core_tx_record_fn returned a non-zero result; \
+                 treating as miss"
+            );
+            return Ok(None);
+        }
+        if !found {
+            return Ok(None);
+        }
+
+        let context = match context_kind {
+            0 => TransactionContext::Mempool,
+            1 => {
+                // InstantSend requires the IS-lock blob, which the
+                // persister doesn't currently store. Treat as miss
+                // so the proof flow's SPV wait path completes the
+                // proof from the live event stream.
+                return Ok(None);
+            }
+            2 => TransactionContext::InBlock(BlockInfo::new(
+                block_height,
+                dashcore::BlockHash::from_byte_array(block_hash),
+                block_timestamp,
+            )),
+            3 => TransactionContext::InChainLockedBlock(BlockInfo::new(
+                block_height,
+                dashcore::BlockHash::from_byte_array(block_hash),
+                block_timestamp,
+            )),
+            unknown => {
+                tracing::debug!(
+                    txid = %txid,
+                    unknown,
+                    "on_get_core_tx_record_fn returned an unknown \
+                     context kind; treating as miss"
+                );
+                return Ok(None);
+            }
+        };
+
+        if tx_bytes_ptr.is_null() || tx_bytes_len == 0 {
+            tracing::debug!(
+                txid = %txid,
+                "on_get_core_tx_record_fn reported a hit but no tx \
+                 bytes; treating as miss"
+            );
+            return Ok(None);
+        }
+        // SAFETY: Swift guarantees `tx_bytes_ptr` points to
+        // `tx_bytes_len` valid bytes for the duration of the
+        // callback window — `_bytes_guard` keeps that window open
+        // until this function returns.
+        let tx_slice = unsafe { slice::from_raw_parts(tx_bytes_ptr, tx_bytes_len) };
+        let transaction = match dashcore::blockdata::transaction::Transaction::consensus_decode(
+            &mut &tx_slice[..],
+        ) {
+            Ok(tx) => tx,
+            Err(err) => {
+                tracing::debug!(
+                    txid = %txid,
+                    error = %err,
+                    "on_get_core_tx_record_fn returned undecodable \
+                     tx bytes; treating as miss"
+                );
+                return Ok(None);
+            }
+        };
+
+        Ok(Some(TransactionRecord {
+            transaction,
+            txid: *txid,
+            account_type: AccountType::Standard {
+                index: 0,
+                standard_account_type: StandardAccountType::BIP44Account,
+            },
+            context,
+            transaction_type: TransactionType::Standard,
+            direction: TransactionDirection::Internal,
+            input_details: Vec::new(),
+            output_details: Vec::new(),
+            net_amount: 0,
+            fee: None,
+            label: String::new(),
+        }))
     }
 }
 
@@ -878,8 +1184,8 @@ fn build_account_spec_ffi(account_type: &AccountType, xpub_bytes: &[u8]) -> Acco
     // variants stay at their zero value and are ignored on the
     // receiving side per the struct docs.
     let mut spec = AccountSpecFFI {
-        type_tag: AccountTypeTagFFI::Standard,
-        standard_tag: StandardAccountTypeTagFFI::Bip44,
+        type_tag: AccountTypeTagFFI::Standard as u8,
+        standard_tag: StandardAccountTypeTagFFI::Bip44 as u8,
         index: 0,
         registration_index: 0,
         key_class: 0,
@@ -888,59 +1194,64 @@ fn build_account_spec_ffi(account_type: &AccountType, xpub_bytes: &[u8]) -> Acco
         account_xpub_bytes: xpub_bytes.as_ptr(),
         account_xpub_bytes_len: xpub_bytes.len(),
     };
+    // The producer side casts each `AccountTypeTagFFI` /
+    // `StandardAccountTypeTagFFI` variant to `u8` because both fields
+    // are now FFI-typed as plain `u8` (see the field comments on
+    // `AccountSpecFFI`). The consumer validates the byte via
+    // `try_from_u8` before any `match`.
     match account_type {
         AccountType::Standard {
             index,
             standard_account_type,
         } => {
-            spec.type_tag = AccountTypeTagFFI::Standard;
+            spec.type_tag = AccountTypeTagFFI::Standard as u8;
             spec.standard_tag = match standard_account_type {
-                StandardAccountType::BIP44Account => StandardAccountTypeTagFFI::Bip44,
-                StandardAccountType::BIP32Account => StandardAccountTypeTagFFI::Bip32,
+                StandardAccountType::BIP44Account => StandardAccountTypeTagFFI::Bip44 as u8,
+                StandardAccountType::BIP32Account => StandardAccountTypeTagFFI::Bip32 as u8,
             };
             spec.index = *index;
         }
         AccountType::CoinJoin { index } => {
-            spec.type_tag = AccountTypeTagFFI::CoinJoin;
+            spec.type_tag = AccountTypeTagFFI::CoinJoin as u8;
             spec.index = *index;
         }
         AccountType::IdentityRegistration => {
-            spec.type_tag = AccountTypeTagFFI::IdentityRegistration;
+            spec.type_tag = AccountTypeTagFFI::IdentityRegistration as u8;
         }
         AccountType::IdentityTopUp { registration_index } => {
-            spec.type_tag = AccountTypeTagFFI::IdentityTopUp;
+            spec.type_tag = AccountTypeTagFFI::IdentityTopUp as u8;
             spec.registration_index = *registration_index;
         }
         AccountType::IdentityTopUpNotBoundToIdentity => {
-            spec.type_tag = AccountTypeTagFFI::IdentityTopUpNotBoundToIdentity;
+            spec.type_tag = AccountTypeTagFFI::IdentityTopUpNotBoundToIdentity as u8;
         }
         AccountType::IdentityInvitation => {
-            spec.type_tag = AccountTypeTagFFI::IdentityInvitation;
+            spec.type_tag = AccountTypeTagFFI::IdentityInvitation as u8;
         }
         AccountType::AssetLockAddressTopUp => {
-            spec.type_tag = AccountTypeTagFFI::AssetLockAddressTopUp;
+            spec.type_tag = AccountTypeTagFFI::AssetLockAddressTopUp as u8;
         }
         AccountType::AssetLockShieldedAddressTopUp => {
-            spec.type_tag = AccountTypeTagFFI::AssetLockShieldedAddressTopUp;
+            spec.type_tag = AccountTypeTagFFI::AssetLockShieldedAddressTopUp as u8;
         }
         AccountType::ProviderVotingKeys => {
-            spec.type_tag = AccountTypeTagFFI::ProviderVotingKeys;
+            spec.type_tag = AccountTypeTagFFI::ProviderVotingKeys as u8;
         }
         AccountType::ProviderOwnerKeys => {
-            spec.type_tag = AccountTypeTagFFI::ProviderOwnerKeys;
+            spec.type_tag = AccountTypeTagFFI::ProviderOwnerKeys as u8;
         }
         AccountType::ProviderOperatorKeys => {
-            spec.type_tag = AccountTypeTagFFI::ProviderOperatorKeys;
+            spec.type_tag = AccountTypeTagFFI::ProviderOperatorKeys as u8;
         }
         AccountType::ProviderPlatformKeys => {
-            spec.type_tag = AccountTypeTagFFI::ProviderPlatformKeys;
+            spec.type_tag = AccountTypeTagFFI::ProviderPlatformKeys as u8;
         }
         AccountType::DashpayReceivingFunds {
             index,
             user_identity_id,
             friend_identity_id,
         } => {
-            spec.type_tag = AccountTypeTagFFI::DashpayReceivingFunds;
+            spec.type_tag = AccountTypeTagFFI::DashpayReceivingFunds as u8;
             spec.index = *index;
             spec.user_identity_id = *user_identity_id;
             spec.friend_identity_id = *friend_identity_id;
@@ -950,13 +1261,13 @@ fn build_account_spec_ffi(account_type: &AccountType, xpub_bytes: &[u8]) -> Acco
             user_identity_id,
             friend_identity_id,
         } => {
-            spec.type_tag = AccountTypeTagFFI::DashpayExternalAccount;
+            spec.type_tag = AccountTypeTagFFI::DashpayExternalAccount as u8;
             spec.index = *index;
             spec.user_identity_id = *user_identity_id;
             spec.friend_identity_id = *friend_identity_id;
         }
         AccountType::PlatformPayment { account, key_class } => {
-            spec.type_tag = AccountTypeTagFFI::PlatformPayment;
+            spec.type_tag = AccountTypeTagFFI::PlatformPayment as u8;
             spec.index = *account;
             spec.key_class = *key_class;
         } // TODO(events): the `IdentityAuthenticationEcdsa` /
@@ -1133,6 +1444,154 @@ fn build_core_address_entry_ffi(
     })
 }
 
+/// Bucket a slice of upstream-emitted `DerivedAddress` entries into the
+/// same `AccountAddressPoolFFI` shape `build_address_pools_for_callback`
+/// produces, so the event-driven gap-limit-extension flow can fan out
+/// through the existing `on_persist_account_address_pools_fn` pipeline
+/// rather than introducing a parallel callback.
+///
+/// Each upstream entry already carries `(account_type, pool_type,
+/// derivation_index, address, public_key)`; we group on
+/// `(account_type, pool_type)` so a single block that pushed the
+/// gap-limit boundary on multiple pools (e.g. an internal change
+/// receive that extends Internal AND a separate external receive that
+/// extends External) emits one pool snapshot per pool variant.
+///
+/// `derivation_path` is computed deterministically per-entry by
+/// [`platform_wallet::derivation_path_string_for_derived_address`]
+/// from the same `(account_type, pool_type, derivation_index)`
+/// triple the pool itself uses at derive time. Falls back to an
+/// empty string only when the account-level path can't be resolved
+/// (`AccountType` variants whose `derivation_path` errors); the
+/// address string remains the authoritative join key in that case.
+#[allow(clippy::type_complexity)]
+fn build_address_pools_from_derived(
+    derived: &[platform_wallet::DerivedAddress],
+) -> Result<
+    (
+        Vec<AccountAddressPoolFFI>,
+        Vec<Vec<CoreAddressEntryFFI>>,
+        Vec<CString>,
+    ),
+    String,
+> {
+    use std::collections::BTreeMap;
+    if derived.is_empty() {
+        return Ok((Vec::new(), Vec::new(), Vec::new()));
+    }
+
+    // Bucket key: (account_type, pool_type). Preserve arrival order
+    // within a bucket — the upstream `project_derived_addresses`
+    // already deduped by `(account_type, pool_type, derivation_index)`,
+    // so two entries in the same bucket here always have distinct
+    // indices.
+    let mut buckets: BTreeMap<(usize, AddressPoolType), Vec<&platform_wallet::DerivedAddress>> =
+        BTreeMap::new();
+    // We can't use AccountType as the BTreeMap key directly (no `Ord`
+    // upstream), so keep an account-type index per bucket and look it
+    // up by the discriminant order entries arrive in.
+    let mut account_types: Vec<AccountType> = Vec::new();
+    let mut account_type_to_idx: Vec<(AccountType, usize)> = Vec::new();
+    for d in derived {
+        let idx = account_type_to_idx
+            .iter()
+            .find(|(at, _)| *at == d.account_type)
+            .map(|(_, i)| *i)
+            .unwrap_or_else(|| {
+                let i = account_types.len();
+                account_types.push(d.account_type);
+                account_type_to_idx.push((d.account_type, i));
+                i
+            });
+        buckets.entry((idx, d.pool_type)).or_default().push(d);
+    }
+
+    let mut owned_strings: Vec<CString> = Vec::new();
+    let mut address_storage: Vec<Vec<CoreAddressEntryFFI>> = Vec::with_capacity(buckets.len());
+    let mut pools: Vec<AccountAddressPoolFFI> = Vec::with_capacity(buckets.len());
+
+    for ((account_idx, pool_type), bucket) in buckets {
+        let account_type = account_types[account_idx];
+        let pool_tag = match pool_type {
+            AddressPoolType::External => AddressPoolTypeTagFFI::External,
+            AddressPoolType::Internal => AddressPoolTypeTagFFI::Internal,
+            AddressPoolType::Absent => AddressPoolTypeTagFFI::Absent,
+            AddressPoolType::AbsentHardened => AddressPoolTypeTagFFI::AbsentHardened,
+        } as u8;
+        let is_platform_payment = matches!(account_type, AccountType::PlatformPayment { .. });
+
+        let mut pool_entries: Vec<CoreAddressEntryFFI> = Vec::with_capacity(bucket.len());
+        for d in bucket {
+            // Re-render the address. PlatformPayment uses DIP-0018
+            // bech32m; everything else base58check (matching
+            // `build_core_address_entry_ffi`'s logic).
+            let rendered_address = if is_platform_payment {
+                let network = *d.address.network();
+                let converted: Result<PlatformAddress, _> =
+                    PlatformAddress::try_from(d.address.clone());
+                converted
+                    .map(|p| p.to_bech32m_string(network))
+                    .unwrap_or_else(|_| d.address.to_string())
+            } else {
+                d.address.to_string()
+            };
+            let address_c = CString::new(rendered_address)
+                .map_err(|e| format!("derived address contained NUL byte: {}", e))?;
+            // Render the BIP32 derivation path via the
+            // platform-wallet helper. Path-shape decisions are
+            // protocol-aware and live next to other key-derivation
+            // logic in the non-FFI crate; the FFI shim's job is
+            // only to marshal the resulting string into the C ABI.
+            // Falls back to an empty string for non-Standard
+            // variants whose account-level path doesn't render —
+            // the address string remains the authoritative join
+            // key on the persister side regardless.
+            let path_str =
+                platform_wallet::derivation_path_string_for_derived_address(d).unwrap_or_default();
+            let path_c = CString::new(path_str)
+                .map_err(|e| format!("derivation path contained NUL byte: {}", e))?;
+            let address_ptr = address_c.as_ptr();
+            let path_ptr = path_c.as_ptr();
+            owned_strings.push(address_c);
+            owned_strings.push(path_c);
+
+            pool_entries.push(CoreAddressEntryFFI {
+                public_key: d.public_key,
+                has_public_key: true,
+                pool_type_tag: pool_tag,
+                address_index: d.derivation_index,
+                // Newly-derived addresses haven't been seen in any
+                // tx yet (they came from gap-limit extension,
+                // not from observing the address as used). The
+                // upstream `mark_address_used` flow that triggered
+                // this derivation marks the OLD address that got
+                // matched, not these new ones; their `is_used`
+                // stays false until SPV later observes a tx paying
+                // to one of them.
+                is_used: false,
+                balance: 0,
+                address_base58: address_ptr,
+                derivation_path: path_ptr,
+            });
+        }
+
+        let empty_xpub: &[u8] = &[];
+        let spec = build_account_spec_ffi(&account_type, empty_xpub);
+        let addresses_ptr = pool_entries.as_ptr();
+        let addresses_count = pool_entries.len();
+        address_storage.push(pool_entries);
+
+        pools.push(AccountAddressPoolFFI {
+            account: spec,
+            pool_type_tag: pool_tag,
+            addresses_ptr,
+            addresses_count,
+        });
+    }
+
+    Ok((pools, address_storage, owned_strings))
+}
+
 /// RAII drop-guard that invokes the paired free callback on exit, so
 /// any error path through `FFIPersister::load` still returns memory
 /// to Swift.
@@ -1154,8 +1613,12 @@ impl Drop for LoadGuard {
     }
 }
 
-/// Reconstruct a watch-only [`Wallet`] + matching start-state bucket
-/// from a single `WalletRestoreEntryFFI`.
+/// Reconstruct an external-signable [`Wallet`] + matching start-state
+/// bucket from a single `WalletRestoreEntryFFI`. The mnemonic / seed
+/// stays in the host's keychain; signing requests route back through
+/// the configured signer surface (see
+/// `Wallet::new_external_signable`). Earlier revisions of this code
+/// path produced a `WatchOnly` wallet — that has been replaced.
 fn build_wallet_start_state(
     entry: &WalletRestoreEntryFFI,
 ) -> Result<
@@ -1165,7 +1628,7 @@ fn build_wallet_start_state(
     ),
     PersistenceError,
 > {
-    let network = network_from_tag(entry.network)?;
+    let network: Network = entry.network.into();
 
     // Build the per-account collection from the typed spec array.
     let mut accounts = AccountCollection::new();
@@ -1175,7 +1638,34 @@ fn build_wallet_start_state(
         unsafe { slice::from_raw_parts(entry.accounts, entry.accounts_count) }
     };
     for spec in specs {
-        let account_type = account_type_from_spec(spec)?;
+        // Skip-and-continue on legacy `IdentityAuthentication{Ecdsa,Bls}`
+        // rows — those `AccountTypeTagFFI` discriminants are still ABI-
+        // valid but their upstream `AccountType` variants were removed,
+        // so `account_type_from_spec` deliberately returns `Err` for
+        // them. Propagating that with `?` would abort the entire
+        // `load()` (every wallet, every launch) the moment a single
+        // such row exists in SwiftData. Treating it as recoverable
+        // snapshot drift matches how the UTXO loop a few lines below
+        // handles the same failure mode.
+        //
+        // Only the *legacy* tag bytes (15 / 16) are skip-and-continue;
+        // real validation errors (out-of-range bytes from a corrupt
+        // SwiftData row) propagate so the corruption surfaces rather
+        // than silently under-restoring accounts.
+        let account_type = match account_type_from_spec(spec) {
+            Ok(t) => t,
+            Err(e) => {
+                if is_legacy_removed_account_tag(spec.type_tag) {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(entry.wallet_id),
+                        type_tag = spec.type_tag,
+                        "load: skipping legacy IdentityAuthentication account tag"
+                    );
+                    continue;
+                }
+                return Err(e);
+            }
+        };
         let xpub_bytes =
             unsafe { slice_from_raw(spec.account_xpub_bytes, spec.account_xpub_bytes_len) };
         let (account_xpub, _): (ExtendedPubKey, usize) =
@@ -1189,13 +1679,218 @@ fn build_wallet_start_state(
             .map_err(|e| format!("AccountCollection::insert failed: {}", e))?;
     }
 
-    // Watch-only wallet via the new unit-variant constructor — takes
-    // the wallet_id directly (no recomputation from a root xpub we
-    // don't store anymore). Signing ops error out until a follow-up
-    // unlock path builds a signing wallet from the mnemonic.
-    let wallet = Wallet::new_watch_only(network, entry.wallet_id, accounts);
+    // External-signable wallet — the mnemonic / seed lives in the
+    // iOS Keychain, not in this Rust handle. Signing requests route
+    // back to the host through the configured signer surface; the
+    // host fetches the mnemonic from the Keychain on demand. The
+    // wallet_id is passed in directly (no recomputation from a root
+    // xpub the snapshot doesn't carry).
+    let wallet = Wallet::new_external_signable(network, entry.wallet_id, accounts);
 
-    let wallet_info = ManagedWalletInfo::from_wallet(&wallet);
+    // Stamp the persisted core-chain sync metadata onto the rebuilt
+    // managed-info. `from_wallet` seeds `synced_height` and
+    // `last_processed_height` to `birth_height - 1`; we then override
+    // with the values Swift actually persisted, treating zero as
+    // "unknown" so we don't clobber the seeded default for fresh /
+    // never-synced wallets.
+    let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, entry.birth_height);
+    if entry.synced_height > 0 {
+        wallet_info.metadata.synced_height = entry.synced_height;
+    }
+    if entry.last_processed_height > 0 {
+        wallet_info.metadata.last_processed_height = entry.last_processed_height;
+    }
+    if entry.last_synced > 0 {
+        wallet_info.metadata.last_synced = Some(entry.last_synced);
+    }
+
+    // Persisted unspent UTXOs → funds-bearing accounts. Keys-only and
+    // PlatformPayment variants are skipped: the former never carry
+    // UTXOs, the latter route through `PlatformAddressSyncStartState`.
+    // Each row is mapped from `(prev_txid, vout, script_pubkey,
+    // value, height, flags)` into the target account's `utxos` map.
+    let utxo_entries: &[UtxoRestoreEntryFFI] = if entry.utxos.is_null() || entry.utxos_count == 0 {
+        &[]
+    } else {
+        unsafe { slice::from_raw_parts(entry.utxos, entry.utxos_count) }
+    };
+    // Track each skip reason separately so a non-zero `dropped` value
+    // is debuggable without a native trace. The four categories have
+    // very different operational meanings — corruption (bad txid /
+    // unrenderable script), legitimate drift (no matching account),
+    // and ABI-only-present-tag (unmappable type for keys-only / legacy
+    // identity-auth rows). Each emits a `tracing::warn!` so a host
+    // running a subscriber sees the breakdown in real time.
+    let mut routed = 0usize;
+    let mut dropped_account_type = 0usize;
+    let mut dropped_bad_txid = 0usize;
+    let mut dropped_bad_script = 0usize;
+    let mut dropped_no_account = 0usize;
+    for u in utxo_entries {
+        // Bring `Hash` into scope locally so `Txid::from_slice` is
+        // available — matches the pattern used elsewhere in this
+        // crate (see e.g. asset_lock/sync.rs).
+        use dashcore::hashes::Hash;
+        let script_bytes = unsafe { slice_from_raw(u.script_pubkey, u.script_pubkey_len) };
+        // Build the AccountType via the same helper the per-spec path
+        // uses, repackaged as an `AccountSpecFFI` so we can reuse
+        // `account_type_from_spec` (it ignores `account_xpub_bytes`).
+        let spec = AccountSpecFFI {
+            type_tag: u.type_tag,
+            standard_tag: u.standard_tag,
+            index: u.account_index,
+            registration_index: u.registration_index,
+            key_class: u.key_class,
+            user_identity_id: u.user_identity_id,
+            friend_identity_id: u.friend_identity_id,
+            account_xpub_bytes: std::ptr::null(),
+            account_xpub_bytes_len: 0,
+        };
+        // Skip-and-continue is correct ONLY for the legacy
+        // `IdentityAuthentication{Ecdsa,Bls}` tag bytes (15 / 16)
+        // whose upstream `AccountType` variants were removed. Real
+        // validation errors (out-of-range bytes from a corrupt
+        // SwiftData row, etc.) propagate so the corruption surfaces
+        // rather than silently under-restoring the UTXO set.
+        let account_type = match account_type_from_spec(&spec) {
+            Ok(t) => t,
+            Err(e) => {
+                if is_legacy_removed_account_tag(u.type_tag) {
+                    dropped_account_type += 1;
+                    tracing::warn!(
+                        wallet_id = %hex::encode(entry.wallet_id),
+                        type_tag = u.type_tag,
+                        "load: skipping persisted UTXO on legacy IdentityAuthentication tag"
+                    );
+                    continue;
+                }
+                return Err(e);
+            }
+        };
+        let Ok(txid) = dashcore::Txid::from_slice(&u.prev_txid) else {
+            dropped_bad_txid += 1;
+            tracing::warn!(
+                wallet_id = %hex::encode(entry.wallet_id),
+                "load: skipping persisted UTXO with malformed txid bytes"
+            );
+            continue;
+        };
+        let outpoint = dashcore::OutPoint { txid, vout: u.vout };
+        let script_pubkey = dashcore::ScriptBuf::from_bytes(script_bytes.to_vec());
+        let Ok(address) = dashcore::Address::from_script(&script_pubkey, network) else {
+            dropped_bad_script += 1;
+            tracing::warn!(
+                wallet_id = %hex::encode(entry.wallet_id),
+                txid = %txid,
+                vout = u.vout,
+                "load: skipping persisted UTXO with un-decodable script_pubkey"
+            );
+            continue;
+        };
+        let txout = dashcore::TxOut {
+            value: u.value_duffs,
+            script_pubkey,
+        };
+        let utxo = key_wallet::Utxo {
+            outpoint,
+            txout,
+            address,
+            height: u.height,
+            is_coinbase: u.is_coinbase,
+            is_confirmed: u.is_confirmed,
+            is_instantlocked: u.is_instantlocked,
+            is_locked: u.is_locked,
+            // `is_trusted` is a runtime-only flag derived from the
+            // tx graph (we created it ourselves and it pays back to
+            // us). Recompute on the next SPV pass; default to false.
+            is_trusted: false,
+        };
+        // Route into the target funds-bearing account. Match on the
+        // resolved `AccountType` and look up the right map field. Keys
+        // and Platform variants are intentionally no-ops.
+        let target_funds = match account_type {
+            AccountType::Standard {
+                index,
+                standard_account_type: StandardAccountType::BIP44Account,
+            } => wallet_info.accounts.standard_bip44_accounts.get_mut(&index),
+            AccountType::Standard {
+                index,
+                standard_account_type: StandardAccountType::BIP32Account,
+            } => wallet_info.accounts.standard_bip32_accounts.get_mut(&index),
+            AccountType::CoinJoin { index } => {
+                wallet_info.accounts.coinjoin_accounts.get_mut(&index)
+            }
+            AccountType::DashpayReceivingFunds {
+                index,
+                user_identity_id,
+                friend_identity_id,
+            } => wallet_info.accounts.dashpay_receival_accounts.get_mut(
+                &key_wallet::account::account_collection::DashpayAccountKey {
+                    index,
+                    user_identity_id,
+                    friend_identity_id,
+                },
+            ),
+            AccountType::DashpayExternalAccount {
+                index,
+                user_identity_id,
+                friend_identity_id,
+            } => wallet_info.accounts.dashpay_external_accounts.get_mut(
+                &key_wallet::account::account_collection::DashpayAccountKey {
+                    index,
+                    user_identity_id,
+                    friend_identity_id,
+                },
+            ),
+            _ => None,
+        };
+        if let Some(funds_account) = target_funds {
+            funds_account.utxos.insert(utxo.outpoint, utxo);
+            routed += 1;
+        } else {
+            dropped_no_account += 1;
+            tracing::warn!(
+                wallet_id = %hex::encode(entry.wallet_id),
+                ?account_type,
+                "load: skipping persisted UTXO with no matching funds account in snapshot"
+            );
+        }
+    }
+    let dropped = dropped_account_type + dropped_bad_txid + dropped_bad_script + dropped_no_account;
+    if dropped > 0 {
+        // Surface a single rollup line so operators see the totals
+        // even with `tracing` set to ERROR-only (the per-row warns
+        // above are the breakdown).
+        tracing::warn!(
+            wallet_id = %hex::encode(entry.wallet_id),
+            routed,
+            dropped,
+            dropped_account_type,
+            dropped_bad_txid,
+            dropped_bad_script,
+            dropped_no_account,
+            "load: persisted UTXO restore completed with skipped rows"
+        );
+    }
+
+    // Recompute balances from the freshly-loaded UTXO set. Raw
+    // `account.utxos.insert` bypasses the normal `record_transaction`
+    // path that keeps the per-account `balance` field in sync, so
+    // the per-account confirmed/unconfirmed/immature/locked totals
+    // and the wallet-level rollup stay zero unless we tell the info
+    // to reread them. `update_balance` walks every funds account
+    // and recomputes from `utxos` against the wallet's
+    // `metadata.synced_height` (passed through to
+    // `ManagedCoreFundsAccount::update_balance` as the
+    // `last_processed_height` parameter — that's the maturity
+    // baseline upstream uses; the parameter naming is historical),
+    // then sums into `wallet_info.balance`. The lock-free
+    // `Arc<WalletBalance>` the UI reads is mirrored in
+    // `manager::load::load_from_persistor` (`WalletBalance::set` is
+    // `pub(crate)` to platform-wallet).
+    if routed > 0 {
+        wallet_info.update_balance();
+    }
 
     let mut per_account = PerWalletPlatformAddressState::new();
     for (&account_key, account) in &wallet.accounts.platform_payment_accounts {
@@ -1222,19 +1917,41 @@ fn build_wallet_start_state(
             )
         }
     };
+    let mut dropped_unknown_account = 0usize;
+    let mut dropped_unsupported_address_type = 0usize;
     for persisted in platform_balance_entries {
         if persisted.address.address_type != 0 {
-            return Err("only P2PKH platform address persistence is supported".into());
+            // Non-P2PKH rows aren't supported on the persistence path
+            // yet. Skip rather than abort the whole load — the next
+            // platform-address sync will repopulate from authoritative
+            // state.
+            dropped_unsupported_address_type += 1;
+            tracing::warn!(
+                wallet_id = %hex::encode(entry.wallet_id),
+                address_type = persisted.address.address_type,
+                account_index = persisted.account_index,
+                "load: skipping persisted platform-address row with unsupported address_type"
+            );
+            continue;
         }
 
-        let account_state = per_account
-            .get_mut(&persisted.account_index)
-            .ok_or_else(|| {
-                format!(
-                    "persisted platform address references unknown account {}",
-                    persisted.account_index
-                )
-            })?;
+        // `per_account` is built only from the reconstructed wallet's
+        // platform-payment account map; the cached
+        // `platform_address_balances` slice can include rows whose
+        // referenced account didn't make it into the snapshot
+        // (deleted, not-yet-hydrated, stale cache). Skip-and-warn so
+        // a single drift row doesn't abort the whole `load()` — the
+        // sync coordinator will recompute on the next pass.
+        let Some(account_state) = per_account.get_mut(&persisted.account_index) else {
+            dropped_unknown_account += 1;
+            tracing::warn!(
+                wallet_id = %hex::encode(entry.wallet_id),
+                account_index = persisted.account_index,
+                address_index = persisted.address_index,
+                "load: skipping persisted platform-address row referencing unknown account"
+            );
+            continue;
+        };
         let p2pkh = key_wallet::PlatformP2PKHAddress::new(persisted.address.hash);
         account_state.insert_persisted_entry(
             persisted.address_index,
@@ -1243,6 +1960,14 @@ fn build_wallet_start_state(
                 nonce: persisted.nonce,
                 balance: persisted.balance,
             },
+        );
+    }
+    if dropped_unknown_account > 0 || dropped_unsupported_address_type > 0 {
+        tracing::warn!(
+            wallet_id = %hex::encode(entry.wallet_id),
+            dropped_unknown_account,
+            dropped_unsupported_address_type,
+            "load: persisted platform-address rows skipped during restore"
         );
     }
 
@@ -1457,20 +2182,28 @@ fn identity_status_from_tag(tag: u8) -> IdentityStatus {
     }
 }
 
-fn network_from_tag(tag: u8) -> Result<Network, PersistenceError> {
-    match tag {
-        0 => Ok(Network::Mainnet),
-        1 => Ok(Network::Testnet),
-        2 => Ok(Network::Devnet),
-        3 => Ok(Network::Regtest),
-        other => Err(format!("unknown network tag {}", other).into()),
-    }
-}
-
 fn account_type_from_spec(spec: &AccountSpecFFI) -> Result<AccountType, PersistenceError> {
-    Ok(match spec.type_tag {
+    // Validate the foreign byte before matching — `spec.type_tag` and
+    // `spec.standard_tag` are now plain `u8` on the FFI surface
+    // (previously typed as `repr(u8)` enum fields, which would have
+    // been UB for out-of-range bytes from a corrupt SwiftData row /
+    // forward-versioned tag / malformed host buffer).
+    let type_tag = AccountTypeTagFFI::try_from_u8(spec.type_tag).ok_or_else(|| {
+        PersistenceError::Backend(format!(
+            "AccountSpecFFI carries unknown type_tag byte {} (out of declared range)",
+            spec.type_tag
+        ))
+    })?;
+    Ok(match type_tag {
         AccountTypeTagFFI::Standard => {
-            let standard_account_type = match spec.standard_tag {
+            let standard_tag = StandardAccountTypeTagFFI::try_from_u8(spec.standard_tag)
+                .ok_or_else(|| {
+                    PersistenceError::Backend(format!(
+                        "AccountSpecFFI(Standard) carries unknown standard_tag byte {}",
+                        spec.standard_tag
+                    ))
+                })?;
+            let standard_account_type = match standard_tag {
                 StandardAccountTypeTagFFI::Bip44 => StandardAccountType::BIP44Account,
                 StandardAccountTypeTagFFI::Bip32 => StandardAccountType::BIP32Account,
             };
@@ -1522,10 +2255,22 @@ fn account_type_from_spec(spec: &AccountSpecFFI) -> Result<AccountType, Persiste
         | AccountTypeTagFFI::IdentityAuthenticationBls => {
             return Err(PersistenceError::Backend(format!(
                 "AccountTypeTagFFI {:?} is no longer mappable to a key-wallet AccountType after the upstream event-bus refactor (TODO(events))",
-                spec.type_tag
+                type_tag
             )));
         }
     })
+}
+
+/// Returns `true` for the ABI-only `IdentityAuthentication{Ecdsa,Bls}`
+/// tag bytes whose upstream `AccountType` variants were removed
+/// (TODO(events)). These are the only tags `account_type_from_spec`
+/// deliberately returns `Err` for while still being valid
+/// discriminants — callers use this predicate to distinguish
+/// "recoverable drift" (warn + continue) from "real corruption /
+/// out-of-range byte" (propagate the error).
+fn is_legacy_removed_account_tag(type_tag: u8) -> bool {
+    type_tag == AccountTypeTagFFI::IdentityAuthenticationEcdsa as u8
+        || type_tag == AccountTypeTagFFI::IdentityAuthenticationBls as u8
 }
 
 /// Read `len` bytes from a Swift-owned pointer as a `&[u8]`.

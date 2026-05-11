@@ -4,12 +4,12 @@ import DashSDKFFI
 /// Swift wrapper for wallet manager that manages multiple wallets
 public class WalletManager {
     private let handle: UnsafeMutablePointer<FFIWalletManager>
-    internal let network: KeyWalletNetwork
+    internal let network: Network
     private let ownsHandle: Bool
 
     /// Create a new standalone wallet manager
     /// Note: Consider using SPVClient.getWalletManager() instead if you have an SPV client
-    public init(network: KeyWalletNetwork = .mainnet,) throws {
+    public init(network: Network = .mainnet,) throws {
         var error = FFIError()
       guard let managerHandle = wallet_manager_create(network.ffiValue, &error) else {
             defer {
@@ -43,7 +43,7 @@ public class WalletManager {
         }
 
         self.handle = handle
-        self.network = KeyWalletNetwork(ffiNetwork: network)
+        self.network = Network(ffiNetwork: network)
         self.ownsHandle = false
     }
 

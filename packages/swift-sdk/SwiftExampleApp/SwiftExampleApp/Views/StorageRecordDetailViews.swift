@@ -1228,12 +1228,6 @@ struct WalletStorageDetailView: View {
                 FieldRow(label: "Synced Height", value: "\(record.syncedHeight)")
                 FieldRow(label: "Imported", value: record.isImported ? "Yes" : "No")
             }
-            Section("Balance") {
-                FieldRow(label: "Confirmed", value: "\(record.balanceConfirmed)")
-                FieldRow(label: "Unconfirmed", value: "\(record.balanceUnconfirmed)")
-                FieldRow(label: "Immature", value: "\(record.balanceImmature)")
-                FieldRow(label: "Locked", value: "\(record.balanceLocked)")
-            }
             Section("Relationships") {
                 FieldRow(label: "Accounts", value: "\(record.accounts.count)")
                 // Inverse of `PersistentIdentity.wallet`. Surfaces
@@ -1483,16 +1477,67 @@ struct TransactionStorageDetailView: View {
             Section("Metadata") {
                 FieldRow(label: "Label", value: record.label.isEmpty ? "None" : record.label)
                 FieldRow(label: "First Seen", value: "\(record.firstSeen)")
-                if let size = record.transactionData?.count {
-                    FieldRow(label: "TX Size", value: "\(size) bytes")
-                }
+                FieldRow(label: "TX Size", value: "\(record.transactionData.count) bytes")
             }
-            Section("Relationships") {
-                // Transactions are no longer account-scoped. We
-                // surface the participating accounts (if any)
-                // indirectly via the output / input TXOs.
-                FieldRow(label: "Outputs", value: "\(record.outputs.count)")
-                FieldRow(label: "Inputs", value: "\(record.inputs.count)")
+            // Per-output drill-downs. Each row navigates to the
+            // owning `PersistentTxo` so the address / spent state /
+            // wallet linkage of that single output is one tap away.
+            // Sorted by `vout` so the order matches the on-chain
+            // serialization. The vout column is left-aligned and
+            // monospaced so columns line up across rows.
+            Section {
+                if record.outputs.isEmpty {
+                    Text("None")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } else {
+                    ForEach(record.outputs.sorted { $0.vout < $1.vout }) { txo in
+                        NavigationLink(destination: TxoStorageDetailView(record: txo)) {
+                            txoRowLabel(txo, indexLabel: "vout \(txo.vout)")
+                        }
+                    }
+                }
+            } header: {
+                Text("Outputs (\(record.outputs.count))")
+            }
+
+            // Per-input drill-downs. Each input is the
+            // `PersistentTxo` of the *previous* output that this tx
+            // consumed — tapping it surfaces where the funds came
+            // from (address, originating tx, amount). Rows are
+            // ordered by `spendingInputIndex` (the canonical vin
+            // position captured when the spend was reconciled), so
+            // row N matches input N in the serialized transaction.
+            // The fallback ordering (`outpointHex`) only kicks in
+            // for legacy rows that predate the column or for rows
+            // whose pending-input resolution didn't run with an
+            // index — both rare edge cases that drop to the bottom
+            // of the list with a sentinel "prev" label.
+            Section {
+                if record.inputs.isEmpty {
+                    Text("None")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } else {
+                    let orderedInputs = record.inputs.sorted { lhs, rhs in
+                        switch (lhs.spendingInputIndex, rhs.spendingInputIndex) {
+                        case let (.some(l), .some(r)): return l < r
+                        case (.some, .none): return true
+                        case (.none, .some): return false
+                        case (.none, .none): return lhs.outpointHex < rhs.outpointHex
+                        }
+                    }
+                    ForEach(orderedInputs) { txo in
+                        NavigationLink(destination: TxoStorageDetailView(record: txo)) {
+                            txoRowLabel(
+                                txo,
+                                indexLabel: txo.spendingInputIndex.map { "vin \($0)" } ?? "prev"
+                            )
+                        }
+                    }
+                }
+            } header: {
+                Text("Inputs (\(record.inputs.count))")
             }
             Section("Timestamps") {
                 FieldRow(label: "Created", value: dateString(record.createdAt))
@@ -1501,6 +1546,73 @@ struct TransactionStorageDetailView: View {
         }
         .navigationTitle("Transaction")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    /// Two-line row label for an input / output cell. Top line:
+    /// `<vout-or-prev>  <amount>  <spent-pill>`. Bottom line: the
+    /// canonical block-explorer outpoint string —
+    /// `<display-order txid hex>:<vout>` via `PersistentTxo.outpointHex`,
+    /// which is what users paste into DashScan / mempool explorers —
+    /// followed by the address when present. Address line stays
+    /// truncated-middle so a long Base58 doesn't push the right edge
+    /// off the screen. (If you ever need the raw 36-byte outpoint
+    /// hex instead, use `hexString(txo.outpoint)` — the
+    /// `outpointHex` accessor flips byte order on the txid half.)
+    @ViewBuilder
+    private func txoRowLabel(
+        _ txo: PersistentTxo,
+        indexLabel: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                Text(indexLabel)
+                    .font(.caption2.monospaced())
+                    .foregroundColor(.secondary)
+                Text(txo.formattedAmount)
+                    .font(.caption)
+                if txo.isSpent {
+                    Text("spent")
+                        .font(.caption2)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Color.red.opacity(0.15))
+                        .foregroundColor(.red)
+                        .clipShape(Capsule())
+                }
+                if txo.isCoinbase {
+                    Text("coinbase")
+                        .font(.caption2)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Color.orange.opacity(0.15))
+                        .foregroundColor(.orange)
+                        .clipShape(Capsule())
+                }
+                if txo.isInstantLocked {
+                    Text("IS")
+                        .font(.caption2)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Color.green.opacity(0.15))
+                        .foregroundColor(.green)
+                        .clipShape(Capsule())
+                }
+                Spacer()
+            }
+            Text(txo.outpointHex)
+                .font(.caption2.monospaced())
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            if !txo.address.isEmpty {
+                Text(txo.address)
+                    .font(.caption2.monospaced())
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+        }
+        .padding(.vertical, 2)
     }
 }
 
@@ -1563,6 +1675,78 @@ struct TxoStorageDetailView: View {
         }
         .navigationTitle("TXO")
         .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// MARK: - PersistentPendingInput
+
+struct PendingInputStorageDetailView: View {
+    let record: PersistentPendingInput
+
+    var body: some View {
+        Form {
+            Section("Core") {
+                FieldRow(label: "Outpoint", value: outpointHex(record.outpoint))
+                FieldRow(label: "Input Index", value: "\(record.inputIndex)")
+                // Display order matches the canonical block-explorer
+                // form (byte-reversed from on-disk wire order) — same
+                // convention `PersistentTransaction.txidHex` uses.
+                FieldRow(
+                    label: "Spending TXID",
+                    value: record.spendingTxid.reversed()
+                        .map { String(format: "%02x", $0) }
+                        .joined()
+                )
+                FieldRow(label: "Wallet ID", value: record.walletId.isEmpty ? "—" : hexString(record.walletId))
+            }
+            Section("Relationships") {
+                if let spending = record.spendingTransaction {
+                    NavigationLink(destination: TransactionStorageDetailView(record: spending)) {
+                        FieldRow(label: "Spending Transaction", value: spending.txidHex)
+                    }
+                } else {
+                    // The pending row's parent transaction may not have
+                    // faulted in (rare — the cascade-delete relationship
+                    // keeps them in lockstep, but the field is optional
+                    // for SwiftData's brief-window tolerance). Surface
+                    // explicitly so reviewers can spot the orphan.
+                    FieldRow(label: "Spending Transaction", value: "— (unlinked)")
+                }
+            }
+            Section("Timestamps") {
+                FieldRow(label: "Created", value: dateString(record.createdAt))
+            }
+            Section {
+                Text(
+                    "A pending input lives here until its previous-output "
+                    + "PersistentTxo arrives. On `upsertUtxo`, the matching "
+                    + "row is consumed: the new TXO is marked spent, "
+                    + "linked to this row's spendingTransaction, and the "
+                    + "pending entry is deleted in one pass."
+                )
+                .font(.caption2)
+                .foregroundColor(.secondary)
+            }
+        }
+        .navigationTitle("Pending Input")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    /// 36-byte outpoint as `<txid hex (display order)>:<vout>`.
+    /// Duplicates the helper in the list view rather than threading
+    /// it through a shared file — the function is small and the two
+    /// surfaces don't otherwise collaborate.
+    private func outpointHex(_ outpoint: Data) -> String {
+        guard outpoint.count == 36 else {
+            return outpoint.map { String(format: "%02x", $0) }.joined()
+        }
+        let txid = outpoint.prefix(32)
+        let voutBytes = outpoint.suffix(4)
+        let vout = voutBytes.withUnsafeBytes { raw in
+            raw.load(as: UInt32.self).littleEndian
+        }
+        let txidHex = txid.reversed().map { String(format: "%02x", $0) }.joined()
+        return "\(txidHex):\(vout)"
     }
 }
 

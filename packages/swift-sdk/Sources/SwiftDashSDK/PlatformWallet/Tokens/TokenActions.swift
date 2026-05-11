@@ -1,4 +1,5 @@
 import Foundation
+import DashSDKFFI
 
 // MARK: - Token distribution type
 
@@ -97,12 +98,11 @@ extension ManagedPlatformWallet {
 
         try await Task.detached(priority: .userInitiated) {
             _ = signer
-            var error = PlatformWalletFFIError()
-            let result = identityBytes.withUnsafeBufferPointer { idBp -> PlatformWalletFFIResult in
-                contractBytes.withUnsafeBufferPointer { contractBp in
-                    recipientBytes.withUnsafeBufferPointer { recipientBp in
-                        ManagedPlatformWallet.tokenWithOptionalCString(publicNote) { notePtr in
-                            platform_wallet_token_transfer(
+            try identityBytes.withUnsafeBufferPointer { idBp in
+                try contractBytes.withUnsafeBufferPointer { contractBp in
+                    try recipientBytes.withUnsafeBufferPointer { recipientBp in
+                        try ManagedPlatformWallet.tokenWithOptionalCString(publicNote) { notePtr in
+                            try platform_wallet_token_transfer(
                                 handle,
                                 idBp.baseAddress!,
                                 contractBp.baseAddress!,
@@ -111,15 +111,11 @@ extension ManagedPlatformWallet {
                                 amount,
                                 notePtr,
                                 signingKeyId,
-                                signerHandle,
-                                &error
-                            )
+                                signerHandle
+                            ).check()
                         }
                     }
                 }
-            }
-            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-                throw PlatformWalletError(result: result, error: error)
             }
         }.value
     }
@@ -151,12 +147,11 @@ extension ManagedPlatformWallet {
 
         try await Task.detached(priority: .userInitiated) {
             _ = signer
-            var error = PlatformWalletFFIError()
-            let result = identityBytes.withUnsafeBufferPointer { idBp -> PlatformWalletFFIResult in
-                contractBytes.withUnsafeBufferPointer { contractBp in
-                    ManagedPlatformWallet.tokenWithOptionalCString(publicNote) { notePtr in
-                        ManagedPlatformWallet.tokenWithOptionalActionId(groupTuple.actionId) { actionIdPtr in
-                            platform_wallet_token_burn(
+            try identityBytes.withUnsafeBufferPointer { idBp in
+                try contractBytes.withUnsafeBufferPointer { contractBp in
+                    try ManagedPlatformWallet.tokenWithOptionalCString(publicNote) { notePtr in
+                        try ManagedPlatformWallet.tokenWithOptionalActionId(groupTuple.actionId) { actionIdPtr in
+                            try platform_wallet_token_burn(
                                 handle,
                                 idBp.baseAddress!,
                                 contractBp.baseAddress!,
@@ -168,15 +163,11 @@ extension ManagedPlatformWallet {
                                 actionIdPtr,
                                 groupTuple.actionIsProposer,
                                 signingKeyId,
-                                signerHandle,
-                                &error
-                            )
+                                signerHandle
+                            ).check()
                         }
                     }
                 }
-            }
-            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-                throw PlatformWalletError(result: result, error: error)
             }
         }.value
     }
@@ -207,13 +198,12 @@ extension ManagedPlatformWallet {
 
         try await Task.detached(priority: .userInitiated) {
             _ = signer
-            var error = PlatformWalletFFIError()
-            let result = identityBytes.withUnsafeBufferPointer { idBp -> PlatformWalletFFIResult in
-                contractBytes.withUnsafeBufferPointer { contractBp in
-                    ManagedPlatformWallet.tokenWithOptionalRecipient(recipientBytes) { recipientPtr in
-                        ManagedPlatformWallet.tokenWithOptionalCString(publicNote) { notePtr in
-                            ManagedPlatformWallet.tokenWithOptionalActionId(groupTuple.actionId) { actionIdPtr in
-                                platform_wallet_token_mint(
+            try identityBytes.withUnsafeBufferPointer { idBp in
+                try contractBytes.withUnsafeBufferPointer { contractBp in
+                    try ManagedPlatformWallet.tokenWithOptionalRecipient(recipientBytes) { recipientPtr in
+                        try ManagedPlatformWallet.tokenWithOptionalCString(publicNote) { notePtr in
+                            try ManagedPlatformWallet.tokenWithOptionalActionId(groupTuple.actionId) { actionIdPtr in
+                                try platform_wallet_token_mint(
                                     handle,
                                     idBp.baseAddress!,
                                     contractBp.baseAddress!,
@@ -226,16 +216,12 @@ extension ManagedPlatformWallet {
                                     actionIdPtr,
                                     groupTuple.actionIsProposer,
                                     signingKeyId,
-                                    signerHandle,
-                                    &error
-                                )
+                                    signerHandle
+                                ).check()
                             }
                         }
                     }
                 }
-            }
-            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-                throw PlatformWalletError(result: result, error: error)
             }
         }.value
     }
@@ -262,11 +248,10 @@ extension ManagedPlatformWallet {
 
         try await Task.detached(priority: .userInitiated) {
             _ = signer
-            var error = PlatformWalletFFIError()
-            let result = identityBytes.withUnsafeBufferPointer { idBp -> PlatformWalletFFIResult in
-                contractBytes.withUnsafeBufferPointer { contractBp in
-                    ManagedPlatformWallet.tokenWithOptionalCString(publicNote) { notePtr in
-                        platform_wallet_token_claim(
+            try identityBytes.withUnsafeBufferPointer { idBp in
+                try contractBytes.withUnsafeBufferPointer { contractBp in
+                    try ManagedPlatformWallet.tokenWithOptionalCString(publicNote) { notePtr in
+                        try platform_wallet_token_claim(
                             handle,
                             idBp.baseAddress!,
                             contractBp.baseAddress!,
@@ -274,14 +259,10 @@ extension ManagedPlatformWallet {
                             distRaw,
                             notePtr,
                             signingKeyId,
-                            signerHandle,
-                            &error
-                        )
+                            signerHandle
+                        ).check()
                     }
                 }
-            }
-            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-                throw PlatformWalletError(result: result, error: error)
             }
         }.value
     }
@@ -311,13 +292,12 @@ extension ManagedPlatformWallet {
 
         try await Task.detached(priority: .userInitiated) {
             _ = signer
-            var error = PlatformWalletFFIError()
-            let result = identityBytes.withUnsafeBufferPointer { idBp -> PlatformWalletFFIResult in
-                contractBytes.withUnsafeBufferPointer { contractBp in
-                    frozenBytes.withUnsafeBufferPointer { frozenBp in
-                        ManagedPlatformWallet.tokenWithOptionalCString(publicNote) { notePtr in
-                            ManagedPlatformWallet.tokenWithOptionalActionId(groupTuple.actionId) { actionIdPtr in
-                                platform_wallet_token_freeze(
+            try identityBytes.withUnsafeBufferPointer { idBp in
+                try contractBytes.withUnsafeBufferPointer { contractBp in
+                    try frozenBytes.withUnsafeBufferPointer { frozenBp in
+                        try ManagedPlatformWallet.tokenWithOptionalCString(publicNote) { notePtr in
+                            try ManagedPlatformWallet.tokenWithOptionalActionId(groupTuple.actionId) { actionIdPtr in
+                                try platform_wallet_token_freeze(
                                     handle,
                                     idBp.baseAddress!,
                                     contractBp.baseAddress!,
@@ -329,16 +309,12 @@ extension ManagedPlatformWallet {
                                     actionIdPtr,
                                     groupTuple.actionIsProposer,
                                     signingKeyId,
-                                    signerHandle,
-                                    &error
-                                )
+                                    signerHandle
+                                ).check()
                             }
                         }
                     }
                 }
-            }
-            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-                throw PlatformWalletError(result: result, error: error)
             }
         }.value
     }
@@ -365,13 +341,12 @@ extension ManagedPlatformWallet {
 
         try await Task.detached(priority: .userInitiated) {
             _ = signer
-            var error = PlatformWalletFFIError()
-            let result = identityBytes.withUnsafeBufferPointer { idBp -> PlatformWalletFFIResult in
-                contractBytes.withUnsafeBufferPointer { contractBp in
-                    frozenBytes.withUnsafeBufferPointer { frozenBp in
-                        ManagedPlatformWallet.tokenWithOptionalCString(publicNote) { notePtr in
-                            ManagedPlatformWallet.tokenWithOptionalActionId(groupTuple.actionId) { actionIdPtr in
-                                platform_wallet_token_unfreeze(
+            try identityBytes.withUnsafeBufferPointer { idBp in
+                try contractBytes.withUnsafeBufferPointer { contractBp in
+                    try frozenBytes.withUnsafeBufferPointer { frozenBp in
+                        try ManagedPlatformWallet.tokenWithOptionalCString(publicNote) { notePtr in
+                            try ManagedPlatformWallet.tokenWithOptionalActionId(groupTuple.actionId) { actionIdPtr in
+                                try platform_wallet_token_unfreeze(
                                     handle,
                                     idBp.baseAddress!,
                                     contractBp.baseAddress!,
@@ -383,16 +358,12 @@ extension ManagedPlatformWallet {
                                     actionIdPtr,
                                     groupTuple.actionIsProposer,
                                     signingKeyId,
-                                    signerHandle,
-                                    &error
-                                )
+                                    signerHandle
+                                ).check()
                             }
                         }
                     }
                 }
-            }
-            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-                throw PlatformWalletError(result: result, error: error)
             }
         }.value
     }
@@ -420,13 +391,12 @@ extension ManagedPlatformWallet {
 
         try await Task.detached(priority: .userInitiated) {
             _ = signer
-            var error = PlatformWalletFFIError()
-            let result = identityBytes.withUnsafeBufferPointer { idBp -> PlatformWalletFFIResult in
-                contractBytes.withUnsafeBufferPointer { contractBp in
-                    frozenBytes.withUnsafeBufferPointer { frozenBp in
-                        ManagedPlatformWallet.tokenWithOptionalCString(publicNote) { notePtr in
-                            ManagedPlatformWallet.tokenWithOptionalActionId(groupTuple.actionId) { actionIdPtr in
-                                platform_wallet_token_destroy_frozen_funds(
+            try identityBytes.withUnsafeBufferPointer { idBp in
+                try contractBytes.withUnsafeBufferPointer { contractBp in
+                    try frozenBytes.withUnsafeBufferPointer { frozenBp in
+                        try ManagedPlatformWallet.tokenWithOptionalCString(publicNote) { notePtr in
+                            try ManagedPlatformWallet.tokenWithOptionalActionId(groupTuple.actionId) { actionIdPtr in
+                                try platform_wallet_token_destroy_frozen_funds(
                                     handle,
                                     idBp.baseAddress!,
                                     contractBp.baseAddress!,
@@ -438,16 +408,12 @@ extension ManagedPlatformWallet {
                                     actionIdPtr,
                                     groupTuple.actionIsProposer,
                                     signingKeyId,
-                                    signerHandle,
-                                    &error
-                                )
+                                    signerHandle
+                                ).check()
                             }
                         }
                     }
                 }
-            }
-            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-                throw PlatformWalletError(result: result, error: error)
             }
         }.value
     }
@@ -475,12 +441,11 @@ extension ManagedPlatformWallet {
 
         try await Task.detached(priority: .userInitiated) {
             _ = signer
-            var error = PlatformWalletFFIError()
-            let result = identityBytes.withUnsafeBufferPointer { idBp -> PlatformWalletFFIResult in
-                contractBytes.withUnsafeBufferPointer { contractBp in
-                    ManagedPlatformWallet.tokenWithOptionalCString(publicNote) { notePtr in
-                        ManagedPlatformWallet.tokenWithOptionalActionId(groupTuple.actionId) { actionIdPtr in
-                            platform_wallet_token_pause(
+            try identityBytes.withUnsafeBufferPointer { idBp in
+                try contractBytes.withUnsafeBufferPointer { contractBp in
+                    try ManagedPlatformWallet.tokenWithOptionalCString(publicNote) { notePtr in
+                        try ManagedPlatformWallet.tokenWithOptionalActionId(groupTuple.actionId) { actionIdPtr in
+                            try platform_wallet_token_pause(
                                 handle,
                                 idBp.baseAddress!,
                                 contractBp.baseAddress!,
@@ -491,15 +456,11 @@ extension ManagedPlatformWallet {
                                 actionIdPtr,
                                 groupTuple.actionIsProposer,
                                 signingKeyId,
-                                signerHandle,
-                                &error
-                            )
+                                signerHandle
+                            ).check()
                         }
                     }
                 }
-            }
-            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-                throw PlatformWalletError(result: result, error: error)
             }
         }.value
     }
@@ -527,12 +488,11 @@ extension ManagedPlatformWallet {
 
         try await Task.detached(priority: .userInitiated) {
             _ = signer
-            var error = PlatformWalletFFIError()
-            let result = identityBytes.withUnsafeBufferPointer { idBp -> PlatformWalletFFIResult in
-                contractBytes.withUnsafeBufferPointer { contractBp in
-                    ManagedPlatformWallet.tokenWithOptionalCString(publicNote) { notePtr in
-                        ManagedPlatformWallet.tokenWithOptionalActionId(groupTuple.actionId) { actionIdPtr in
-                            platform_wallet_token_resume(
+            try identityBytes.withUnsafeBufferPointer { idBp in
+                try contractBytes.withUnsafeBufferPointer { contractBp in
+                    try ManagedPlatformWallet.tokenWithOptionalCString(publicNote) { notePtr in
+                        try ManagedPlatformWallet.tokenWithOptionalActionId(groupTuple.actionId) { actionIdPtr in
+                            try platform_wallet_token_resume(
                                 handle,
                                 idBp.baseAddress!,
                                 contractBp.baseAddress!,
@@ -543,15 +503,11 @@ extension ManagedPlatformWallet {
                                 actionIdPtr,
                                 groupTuple.actionIsProposer,
                                 signingKeyId,
-                                signerHandle,
-                                &error
-                            )
+                                signerHandle
+                            ).check()
                         }
                     }
                 }
-            }
-            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-                throw PlatformWalletError(result: result, error: error)
             }
         }.value
     }
@@ -585,12 +541,11 @@ extension ManagedPlatformWallet {
 
         try await Task.detached(priority: .userInitiated) {
             _ = signer
-            var error = PlatformWalletFFIError()
-            let result = identityBytes.withUnsafeBufferPointer { idBp -> PlatformWalletFFIResult in
-                contractBytes.withUnsafeBufferPointer { contractBp in
-                    ManagedPlatformWallet.tokenWithOptionalCString(publicNote) { notePtr in
-                        ManagedPlatformWallet.tokenWithOptionalActionId(groupTuple.actionId) { actionIdPtr in
-                            platform_wallet_token_set_price(
+            try identityBytes.withUnsafeBufferPointer { idBp in
+                try contractBytes.withUnsafeBufferPointer { contractBp in
+                    try ManagedPlatformWallet.tokenWithOptionalCString(publicNote) { notePtr in
+                        try ManagedPlatformWallet.tokenWithOptionalActionId(groupTuple.actionId) { actionIdPtr in
+                            try platform_wallet_token_set_price(
                                 handle,
                                 idBp.baseAddress!,
                                 contractBp.baseAddress!,
@@ -602,15 +557,11 @@ extension ManagedPlatformWallet {
                                 actionIdPtr,
                                 groupTuple.actionIsProposer,
                                 signingKeyId,
-                                signerHandle,
-                                &error
-                            )
+                                signerHandle
+                            ).check()
                         }
                     }
                 }
-            }
-            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-                throw PlatformWalletError(result: result, error: error)
             }
         }.value
     }
@@ -644,10 +595,9 @@ extension ManagedPlatformWallet {
 
         try await Task.detached(priority: .userInitiated) {
             _ = signer
-            var error = PlatformWalletFFIError()
-            let result = identityBytes.withUnsafeBufferPointer { idBp -> PlatformWalletFFIResult in
-                contractBytes.withUnsafeBufferPointer { contractBp in
-                    platform_wallet_token_purchase(
+            try identityBytes.withUnsafeBufferPointer { idBp in
+                try contractBytes.withUnsafeBufferPointer { contractBp in
+                    try platform_wallet_token_purchase(
                         handle,
                         idBp.baseAddress!,
                         contractBp.baseAddress!,
@@ -655,13 +605,9 @@ extension ManagedPlatformWallet {
                         amount,
                         expectedTotalCost,
                         signingKeyId,
-                        signerHandle,
-                        &error
-                    )
+                        signerHandle
+                    ).check()
                 }
-            }
-            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-                throw PlatformWalletError(result: result, error: error)
             }
         }.value
     }
@@ -696,13 +642,12 @@ extension ManagedPlatformWallet {
 
         try await Task.detached(priority: .userInitiated) {
             _ = signer
-            var error = PlatformWalletFFIError()
-            let result = identityBytes.withUnsafeBufferPointer { idBp -> PlatformWalletFFIResult in
-                contractBytes.withUnsafeBufferPointer { contractBp in
-                    payload.withCString { payloadPtr in
-                        ManagedPlatformWallet.tokenWithOptionalCString(publicNote) { notePtr in
-                            ManagedPlatformWallet.tokenWithOptionalActionId(groupTuple.actionId) { actionIdPtr in
-                                platform_wallet_token_update_config(
+            try identityBytes.withUnsafeBufferPointer { idBp in
+                try contractBytes.withUnsafeBufferPointer { contractBp in
+                    try payload.withCString { payloadPtr in
+                        try ManagedPlatformWallet.tokenWithOptionalCString(publicNote) { notePtr in
+                            try ManagedPlatformWallet.tokenWithOptionalActionId(groupTuple.actionId) { actionIdPtr in
+                                try platform_wallet_token_update_config(
                                     handle,
                                     idBp.baseAddress!,
                                     contractBp.baseAddress!,
@@ -715,16 +660,12 @@ extension ManagedPlatformWallet {
                                     actionIdPtr,
                                     groupTuple.actionIsProposer,
                                     signingKeyId,
-                                    signerHandle,
-                                    &error
-                                )
+                                    signerHandle
+                                ).check()
                             }
                         }
                     }
                 }
-            }
-            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-                throw PlatformWalletError(result: result, error: error)
             }
         }.value
     }
@@ -736,12 +677,12 @@ extension ManagedPlatformWallet {
     /// `withOptionalCString`.
     fileprivate static func tokenWithOptionalCString<R>(
         _ value: String?,
-        _ body: (UnsafePointer<CChar>?) -> R
-    ) -> R {
+        _ body: (UnsafePointer<CChar>?) throws -> R
+    ) rethrows -> R {
         if let value = value {
-            return value.withCString { body($0) }
+            return try value.withCString { try body($0) }
         }
-        return body(nil)
+        return try body(nil)
     }
 
     /// Run `body` with a `*const u8` to the 32-byte action id, or
@@ -749,13 +690,13 @@ extension ManagedPlatformWallet {
     /// modes).
     fileprivate static func tokenWithOptionalActionId<R>(
         _ value: Data?,
-        _ body: (UnsafePointer<UInt8>?) -> R
-    ) -> R {
+        _ body: (UnsafePointer<UInt8>?) throws -> R
+    ) rethrows -> R {
         guard let value = value else {
-            return body(nil)
+            return try body(nil)
         }
-        return value.withUnsafeBytes { raw in
-            body(raw.bindMemory(to: UInt8.self).baseAddress)
+        return try value.withUnsafeBytes { raw in
+            try body(raw.bindMemory(to: UInt8.self).baseAddress)
         }
     }
 
@@ -764,13 +705,13 @@ extension ManagedPlatformWallet {
     /// (mint-to-self).
     fileprivate static func tokenWithOptionalRecipient<R>(
         _ value: [UInt8]?,
-        _ body: (UnsafePointer<UInt8>?) -> R
-    ) -> R {
+        _ body: (UnsafePointer<UInt8>?) throws -> R
+    ) rethrows -> R {
         guard let value = value else {
-            return body(nil)
+            return try body(nil)
         }
-        return value.withUnsafeBufferPointer { bp in
-            body(bp.baseAddress)
+        return try value.withUnsafeBufferPointer { bp in
+            try body(bp.baseAddress)
         }
     }
 }

@@ -462,7 +462,7 @@ pub fn process_transition(
 }
 
 /// Insert a fake anchor into the shielded anchors tree via GroveDB.
-/// Anchors are stored as anchor_bytes → block_height_be in [AddressBalances, "s", [6]].
+/// Anchors are stored as anchor_bytes → block_height_be in [AddressBalances, "s", [192]].
 pub fn insert_anchor_into_state(platform: &TempPlatform<MockCoreRPCLike>, anchor: &[u8; 32]) {
     let platform_version = PlatformVersion::latest();
     let grove_version = &platform_version.drive.grove_version;

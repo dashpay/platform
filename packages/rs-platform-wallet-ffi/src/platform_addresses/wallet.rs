@@ -1,8 +1,10 @@
 //! Handle management, queries, and memory deallocation for PlatformAddressWallet.
 
+use crate::check_ptr;
 use crate::error::*;
 use crate::handle::*;
 use crate::platform_address_types::*;
+use crate::{unwrap_option_or_return, unwrap_result_or_return};
 
 use super::runtime;
 
@@ -14,10 +16,9 @@ use super::runtime;
 #[no_mangle]
 pub unsafe extern "C" fn platform_address_wallet_destroy(
     handle: Handle,
-    _out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
     PLATFORM_ADDRESS_WALLET_STORAGE.remove(handle);
-    PlatformWalletFFIResult::Success
+    PlatformWalletFFIResult::ok()
 }
 
 /// Add a provider for a new account index.
@@ -25,24 +26,13 @@ pub unsafe extern "C" fn platform_address_wallet_destroy(
 pub unsafe extern "C" fn platform_address_wallet_add_provider(
     handle: Handle,
     account_index: u32,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    PLATFORM_ADDRESS_WALLET_STORAGE
-        .with_item(handle, |wallet| {
-            match runtime().block_on(wallet.add_provider(account_index)) {
-                Ok(()) => PlatformWalletFFIResult::Success,
-                Err(e) => {
-                    if !out_error.is_null() {
-                        *out_error = PlatformWalletFFIError::new(
-                            PlatformWalletFFIResult::ErrorWalletOperation,
-                            e.to_string(),
-                        );
-                    }
-                    PlatformWalletFFIResult::ErrorWalletOperation
-                }
-            }
-        })
-        .unwrap_or(PlatformWalletFFIResult::ErrorInvalidHandle)
+    let option = PLATFORM_ADDRESS_WALLET_STORAGE.with_item(handle, |wallet| {
+        runtime().block_on(wallet.add_provider(account_index))
+    });
+    let result = unwrap_option_or_return!(option);
+    unwrap_result_or_return!(result);
+    PlatformWalletFFIResult::ok()
 }
 
 /// Restore sync state from persisted values.
@@ -56,18 +46,16 @@ pub unsafe extern "C" fn platform_address_wallet_restore_sync_state(
     sync_height: u64,
     sync_timestamp: u64,
     last_known_recent_block: u64,
-    _out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    PLATFORM_ADDRESS_WALLET_STORAGE
-        .with_item(handle, |wallet| {
-            runtime().block_on(wallet.restore_sync_state(
-                sync_height,
-                sync_timestamp,
-                last_known_recent_block,
-            ));
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or(PlatformWalletFFIResult::ErrorInvalidHandle)
+    let option = PLATFORM_ADDRESS_WALLET_STORAGE.with_item(handle, |wallet| {
+        runtime().block_on(wallet.restore_sync_state(
+            sync_height,
+            sync_timestamp,
+            last_known_recent_block,
+        ));
+    });
+    unwrap_option_or_return!(option);
+    PlatformWalletFFIResult::ok()
 }
 
 // ---------------------------------------------------------------------------
@@ -79,19 +67,13 @@ pub unsafe extern "C" fn platform_address_wallet_restore_sync_state(
 pub unsafe extern "C" fn platform_address_wallet_total_credits(
     handle: Handle,
     out_credits: *mut u64,
-    _out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    if out_credits.is_null() {
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+    check_ptr!(out_credits);
 
-    PLATFORM_ADDRESS_WALLET_STORAGE
-        .with_item(handle, |wallet| {
-            let credits = runtime().block_on(wallet.total_credits());
-            *out_credits = credits;
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or(PlatformWalletFFIResult::ErrorInvalidHandle)
+    let option = PLATFORM_ADDRESS_WALLET_STORAGE
+        .with_item(handle, |wallet| runtime().block_on(wallet.total_credits()));
+    *out_credits = unwrap_option_or_return!(option);
+    PlatformWalletFFIResult::ok()
 }
 
 /// Get all platform addresses with their cached balances.
@@ -103,35 +85,31 @@ pub unsafe extern "C" fn platform_address_wallet_addresses_with_balances(
     handle: Handle,
     out_entries: *mut *mut AddressBalanceEntryFFI,
     out_count: *mut usize,
-    _out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    if out_entries.is_null() || out_count.is_null() {
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+    check_ptr!(out_entries);
+    check_ptr!(out_count);
 
-    PLATFORM_ADDRESS_WALLET_STORAGE
-        .with_item(handle, |wallet| {
-            let balances = runtime().block_on(wallet.addresses_with_balances());
-            let entries: Vec<AddressBalanceEntryFFI> = balances
-                .into_iter()
-                .map(|(address, balance)| AddressBalanceEntryFFI {
-                    address: address.into(),
-                    balance,
-                    nonce: 0,
-                    account_index: 0,
-                    address_index: 0,
-                })
-                .collect();
-            *out_count = entries.len();
-            if entries.is_empty() {
-                *out_entries = std::ptr::null_mut();
-            } else {
-                *out_entries =
-                    Box::into_raw(entries.into_boxed_slice()) as *mut AddressBalanceEntryFFI;
-            }
-            PlatformWalletFFIResult::Success
-        })
-        .unwrap_or(PlatformWalletFFIResult::ErrorInvalidHandle)
+    let option = PLATFORM_ADDRESS_WALLET_STORAGE.with_item(handle, |wallet| {
+        let balances = runtime().block_on(wallet.addresses_with_balances());
+        balances
+            .into_iter()
+            .map(|(address, balance)| AddressBalanceEntryFFI {
+                address: address.into(),
+                balance,
+                nonce: 0,
+                account_index: 0,
+                address_index: 0,
+            })
+            .collect::<Vec<_>>()
+    });
+    let entries = unwrap_option_or_return!(option);
+    *out_count = entries.len();
+    if entries.is_empty() {
+        *out_entries = std::ptr::null_mut();
+    } else {
+        *out_entries = Box::into_raw(entries.into_boxed_slice()) as *mut AddressBalanceEntryFFI;
+    }
+    PlatformWalletFFIResult::ok()
 }
 
 // ---------------------------------------------------------------------------

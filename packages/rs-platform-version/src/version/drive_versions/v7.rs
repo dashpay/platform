@@ -50,7 +50,7 @@ pub const DRIVE_VERSION_V7: DriveVersion = DriveVersion {
             add_to_system_credits_operations: 0,
             remove_from_system_credits: 0,
             remove_from_system_credits_operations: 0,
-            calculate_total_credits_balance: 1,
+            calculate_total_credits_balance: 2, // ShieldedBalances root tree adds a fifth term to the equation
         },
         document: DRIVE_DOCUMENT_METHOD_VERSIONS_V2,
         vote: DRIVE_VOTE_METHOD_VERSIONS_V2,

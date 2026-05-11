@@ -327,7 +327,23 @@ enum TokenActionResolver {
                 contract: contract,
                 token: token
             )
-            let final = applyPausedGuard(perm, token: token, allowWhenPaused: false)
+            // Even when the caller is authorized, mint is impossible
+            // when the contract neither allows runtime destination
+            // choice nor pins a fixed `newTokensDestinationIdentity` —
+            // Platform rejects with "Destination identity for minting
+            // not set". Surface that here instead of routing the user
+            // to a screen whose submission is guaranteed to fail.
+            let final: TokenActionPermission = {
+                let pausedGuarded = applyPausedGuard(perm, token: token, allowWhenPaused: false)
+                if case .allowed = pausedGuarded,
+                   !token.mintingAllowChoosingDestination,
+                   token.newTokensDestinationIdentity == nil {
+                    return .denied(
+                        reason: "Mint: no destination configured (contract forbids choosing one and didn't pin a recipient)"
+                    )
+                }
+                return pausedGuarded
+            }()
             rows.append(ResolvedTokenAction(kind: .mint, permission: final))
         } else {
             rows.append(ResolvedTokenAction(
@@ -604,16 +620,18 @@ enum TokenActionResolver {
         if token.isPaused {
             return .denied(reason: "Token is paused")
         }
-        // PersistentToken doesn't yet model the current "for sale"
-        // price, so we can't reject up front when the token isn't
-        // actively listed. Defer that check to Platform — the
-        // purchase form sends a sentinel `expectedTotalCost` and the
-        // server returns a readable error if the schedule is unset.
+        // Wave 1: PersistentToken doesn't carry the configured purchase
+        // price. `TokenPurchaseActionView.priceKnown` is hard-coded
+        // `false` until that field lands, so the Buy button is *always*
+        // disabled — routing the user to a permanently-broken screen
+        // is dishonest. Deny here with the same reason the action view
+        // shows. When the price field lands on PersistentToken, this
+        // becomes a real conditional check; until then it short-circuits.
         // TODO: surface direct-purchase price on PersistentToken and
         // gate this row on it (and pre-fill the form's total cost).
         _ = identity
         _ = contract
-        return .allowed
+        return .denied(reason: "Direct-purchase price not available locally yet")
     }
 }
 
@@ -633,12 +651,58 @@ struct TokenActionPermissionsView: View {
     @State private var pickedIdentity: PersistentIdentity?
     private let initialIdentity: PersistentIdentity?
 
+    /// Live balance for `(resolvedIdentity, token)`. Seeded from the
+    /// caller's `initialBalance` so the first paint isn't blank when
+    /// the parent screen already has the value, then refreshed via
+    /// `sdk.getIdentityTokenBalances` whenever the identity changes.
+    /// `PersistentTokenBalance` rows aren't reliably populated by the
+    /// time this screen opens, so we can't depend on them.
+    @State private var fetchedBalance: UInt64?
+    /// Monotonic counter for in-flight balance fetches. The previous
+    /// "compare identityId at start vs at end" guard didn't cover the
+    /// A → B → A case (an older A-fetch passes the equality check and
+    /// overwrites a newer one). Capture this at the top of every
+    /// refresh and reject any late assignment whose generation no
+    /// longer matches.
+    @State private var balanceFetchGeneration: Int = 0
+    /// Tracks which identity the current `fetchedBalance` belongs
+    /// to. The previous unconditional `fetchedBalance = nil` at the
+    /// top of every refresh wiped the parent-supplied
+    /// `initialBalance` before the async fetch returned and lost it
+    /// permanently on a failed fetch. Comparing against this marker
+    /// lets us only clear when the user has *actually* switched
+    /// identities — the case the clear was originally meant to guard
+    /// against. The `balanceFetchGeneration` counter still handles
+    /// the A→B→A overwrite race independently.
+    @State private var lastFetchedBalanceIdentityId: Data?
+    /// Mirrors `balanceFetchGeneration` for the on-chain pause-flag
+    /// reconciliation. Today the status `.task` only runs once per
+    /// view appearance, so a slow response can't be raced by a
+    /// fresher one — but adding a future trigger (pull-to-refresh,
+    /// post-action poll, etc.) without this guard would silently
+    /// reintroduce the same A→B→A overwrite bug the balance counter
+    /// exists to prevent.
+    @State private var tokenStatusGeneration: Int = 0
+
+    @EnvironmentObject var appState: AppState
+    @Environment(\.modelContext) private var modelContext
     @Query private var localIdentities: [PersistentIdentity]
 
-    init(token: PersistentToken, identity: PersistentIdentity? = nil) {
+    init(
+        token: PersistentToken,
+        identity: PersistentIdentity? = nil,
+        initialBalance: UInt64? = nil
+    ) {
         self.token = token
         self.initialIdentity = identity
         self._pickedIdentity = State(initialValue: identity)
+        self._fetchedBalance = State(initialValue: initialBalance)
+        // Seed the identity marker only when the parent gave us an
+        // `initialBalance` to seed from — otherwise the first refresh
+        // has nothing worth preserving and should clear normally.
+        self._lastFetchedBalanceIdentityId = State(
+            initialValue: initialBalance != nil ? identity?.identityId : nil
+        )
         // Filter to wallet-owned identities on the same network as
         // this token's parent contract; falls back to "any
         // wallet-owned" if the contract isn't loaded.
@@ -654,8 +718,8 @@ struct TokenActionPermissionsView: View {
         // crash from `ModelContext.fetch` (the `@Query` getter is the
         // visible frame). The helper captures the raw Int by a unique
         // name so the translator stays unambiguous.
-        let resolvedNetwork: AppNetwork? = token.dataContract
-            .flatMap { AppNetwork(rawValue: $0.networkRaw) }
+        let resolvedNetwork: Network? = token.dataContract
+            .flatMap { Network(rawValue: $0.networkRaw) }
         if let resolvedNetwork {
             self._localIdentities = Query(
                 filter: PersistentIdentity.walletOwnedIdentitiesPredicate(network: resolvedNetwork),
@@ -767,6 +831,136 @@ struct TokenActionPermissionsView: View {
                 pickedIdentity = localIdentities.first
             }
         }
+        // Refresh the balance for whichever identity is resolved.
+        // `.task(id:)` re-runs when the user switches identity via the
+        // picker, so the value forwarded into Transfer/Burn always
+        // matches the current selection.
+        .task(id: resolvedIdentity?.identityId) {
+            await refreshTokenBalance()
+        }
+        // Refresh the on-chain pause flag every time this screen
+        // appears. `PersistentToken.isPaused` is otherwise only
+        // populated from `startAsPaused` at initial contract parse and
+        // by the in-app pause/resume action success branches — it
+        // doesn't reflect a token paused in another session, on
+        // another device, or before this fix shipped. The
+        // Resume/Pause row gates depend on it, so without this fetch
+        // the user can land on this screen and see "Token is not
+        // paused" when the chain knows otherwise.
+        .task {
+            await refreshTokenStatus()
+        }
+    }
+
+    private func refreshTokenBalance() async {
+        balanceFetchGeneration &+= 1
+        let gen = balanceFetchGeneration
+
+        let currentIdentityId = resolvedIdentity?.identityId
+
+        // Only drop the seeded/previous balance when the active
+        // identity actually changed. The previous unconditional
+        // clear wiped the parent-supplied `initialBalance` before
+        // the async fetch returned and lost it permanently on a
+        // failed fetch. The `balanceFetchGeneration` counter below
+        // still guards the A→B→A overwrite race that motivated the
+        // original clear.
+        if currentIdentityId != lastFetchedBalanceIdentityId {
+            await MainActor.run { self.fetchedBalance = nil }
+        }
+
+        guard let identity = resolvedIdentity, let sdk = appState.sdk else {
+            return
+        }
+
+        // `PersistentToken.id` is a SwiftData uniqueness key
+        // (`contractId + position.bigEndian`) — *not* the on-chain
+        // canonical token id. The SDK's balance lookup is keyed by
+        // the canonical id, so derive it via `calculateTokenId` here
+        // (same shape `IdentityDetailView` uses).
+        guard let position = UInt16(exactly: token.position) else { return }
+        let contractIdString = token.contractId.toBase58String()
+        do {
+            let canonicalTokenId = try sdk.calculateTokenId(
+                contractId: contractIdString,
+                position: position
+            )
+            let balances = try await sdk.getIdentityTokenBalances(
+                identityId: identity.identityIdBase58,
+                tokenIds: [canonicalTokenId]
+            )
+            await MainActor.run {
+                // Generation guards against A → B → A: an older
+                // A-fetch resolving after a fresher one would
+                // otherwise pass an identity-equality check and
+                // overwrite the newer value with stale data.
+                guard self.balanceFetchGeneration == gen else { return }
+                // Default missing entries to 0 — the SDK omits tokens
+                // the identity has never held.
+                self.fetchedBalance = balances[canonicalTokenId] ?? 0
+                // Stamp the marker so the next refresh on the same
+                // identity skips the clear-on-entry branch.
+                self.lastFetchedBalanceIdentityId = currentIdentityId
+            }
+        } catch {
+            // Was previously a silent `catch { }`. Surface as a dev
+            // breadcrumb so failed fetches are at least observable
+            // from the console; per-action views still fall back to
+            // the persisted row when `fetchedBalance` stays nil.
+            print("⚠️ refreshTokenBalance failed for \(identity.identityIdBase58): \(error)")
+        }
+    }
+
+    /// Pull the token's pause flag from chain and reconcile it onto
+    /// the local `PersistentToken`. The action-row gates in this view
+    /// (Pause / Resume) read `token.isPaused` directly, so a stale
+    /// flag locks the user out of a legitimate next step. Cheap one-
+    /// shot query — `getTokenStatuses` returns just `{ paused: Bool }`
+    /// per token id — and idempotent (only writes when the value
+    /// actually changed). Failures fall back to the existing local
+    /// flag rather than wiping it.
+    private func refreshTokenStatus() async {
+        tokenStatusGeneration &+= 1
+        let gen = tokenStatusGeneration
+        guard let sdk = appState.sdk else { return }
+        guard let position = UInt16(exactly: token.position) else { return }
+        let contractIdString = token.contractId.toBase58String()
+        do {
+            let canonicalTokenId = try sdk.calculateTokenId(
+                contractId: contractIdString,
+                position: position
+            )
+            let statuses = try await sdk.getTokenStatuses(tokenIds: [canonicalTokenId])
+            // Shape: `{ "<base58_token_id>": { "paused": Bool } }`.
+            // rs-drive writes a `TokenStatus` row at token creation
+            // (including for `start_as_paused = true`), so a missing
+            // or shape-mismatched entry is *not* "this token is
+            // unpaused" — it's a transient parse edge, an FFI shape
+            // change, or a partial response. Treat that the same way
+            // the surrounding `catch` treats a transport error:
+            // preserve the existing local flag rather than silently
+            // relaxing the Pause / Resume gate.
+            guard let entry = statuses[canonicalTokenId] as? [String: Any],
+                  let chainPaused = entry["paused"] as? Bool else {
+                print("⚠️ refreshTokenStatus: missing/malformed status entry for \(canonicalTokenId) — preserving local isPaused=\(token.isPaused)")
+                return
+            }
+            await MainActor.run {
+                // Late-arriving status responses are dropped if a fresher
+                // refresh has already started — same shape as the balance
+                // path's generation guard.
+                guard self.tokenStatusGeneration == gen else { return }
+                guard token.isPaused != chainPaused else { return }
+                token.isPaused = chainPaused
+                do {
+                    try modelContext.save()
+                } catch {
+                    print("⚠️ refreshTokenStatus: failed to persist isPaused flip for \(contractIdString):\(token.position): \(error)")
+                }
+            }
+        } catch {
+            print("⚠️ refreshTokenStatus failed for token at \(contractIdString):\(token.position): \(error)")
+        }
     }
 
     private var identityPickerBinding: Binding<Data?> {
@@ -825,11 +1019,21 @@ struct TokenActionPermissionsView: View {
         _ row: ResolvedTokenAction,
         identity: PersistentIdentity
     ) -> some View {
+        // `fetchedBalance` is refreshed by `.task(id: resolvedIdentity)`
+        // so it's always for the identity the action will run as.
         switch row.kind {
         case .transfer:
-            TokenTransferActionView(token: token, identity: identity)
+            TokenTransferActionView(
+                token: token,
+                identity: identity,
+                initialBalance: fetchedBalance
+            )
         case .burn:
-            TokenBurnActionView(token: token, identity: identity)
+            TokenBurnActionView(
+                token: token,
+                identity: identity,
+                initialBalance: fetchedBalance
+            )
         case .mint:
             TokenMintActionView(token: token, identity: identity)
         case .claim:

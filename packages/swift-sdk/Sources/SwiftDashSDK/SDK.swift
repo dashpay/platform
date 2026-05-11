@@ -52,7 +52,7 @@ public final class SDK: @unchecked Sendable {
   public private(set) var handle: UnsafeMutablePointer<SDKHandle>?
 
   /// The network this SDK instance is connected to
-  public private(set) var network: Network = DashSDKNetwork(rawValue: 1) // Default to testnet
+  public private(set) var network: Network = .testnet
 
   /// Identities operations
   public lazy var identities = Identities(sdk: self)
@@ -152,16 +152,26 @@ public final class SDK: @unchecked Sendable {
   /// This is suitable for mobile applications where proof verification would be resource-intensive.
   public init(network: Network) throws {
     var config = DashSDKConfig()
-    config.network = network
+    config.network = network.ffiValue
     config.dapi_addresses = nil
     config.skip_asset_lock_proof_verification = false
     config.request_retry_count = 1
     config.request_timeout_ms = 8000 // 8 seconds
 
     // Create SDK with trusted setup — Rust side auto-detects local/regtest
-    // and uses the quorum sidecar at localhost:22444 instead of remote endpoints
+    // and uses the quorum sidecar at localhost:22444 instead of remote endpoints.
+    //
+    // Regtest has no remote DAPI defaults on the Rust side, so it
+    // *must* be constructed with a local DAPI address regardless of
+    // the user-facing `useDockerSetup` toggle. Without this, building
+    // a regtest SDK from a context where the toggle has been
+    // auto-disabled (e.g. orphan-mnemonic recovery routing wallets to
+    // their original network from a non-regtest active state) fails
+    // with `DAPI addresses not available for network: Regtest` and
+    // the recovery loop stalls.
     let result: DashSDKResult
-    let forceLocal = UserDefaults.standard.bool(forKey: "useDockerSetup")
+    let forceLocal = network == .regtest
+        || UserDefaults.standard.bool(forKey: "useDockerSetup")
     if forceLocal {
       let localAddresses = Self.platformDAPIAddresses
       result = localAddresses.withCString { addressesCStr -> DashSDKResult in

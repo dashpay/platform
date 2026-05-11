@@ -341,8 +341,12 @@ impl DocumentTypeV1 {
 
                         #[cfg(feature = "validation")]
                         if full_validation {
-                            // Countable indices are only supported starting from protocol version 12
-                            if index.countable && platform_version.protocol_version < 12 {
+                            // Countable indices are only supported starting from protocol version 12.
+                            // Both `Countable` and `CountableAllowingOffset` are gated together —
+                            // either form requires v12+ since it changes the GroveDB tree type.
+                            if index.countable.is_countable()
+                                && platform_version.protocol_version < 12
+                            {
                                 return Err(ProtocolError::ConsensusError(Box::new(
                                     UnsupportedFeatureError::new(
                                         "count index".to_string(),
@@ -682,6 +686,12 @@ impl DocumentTypeV1 {
                 })
                 .transpose()
         };
+
+        // Note: documentsCountable / rangeCountable schema keys are intentionally
+        // ignored here. The v1 parser produces DocumentTypeV1 which has no countable
+        // fields. When protocol v12+ is active, the v2 parser is used instead, which
+        // reads these keys and produces DocumentTypeV2. The v1 parser should never
+        // reject unknown keys — it simply doesn't map them to its output type.
 
         let token_costs = TokenCostsV0 {
             create: extract_cost("create")?,

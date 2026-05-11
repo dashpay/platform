@@ -1,6 +1,7 @@
+use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
 use grovedb::batch::KeyInfoPath;
 
-use grovedb::{EstimatedLayerInformation, MaybeTree, TransactionArg, TreeType};
+use grovedb::{EstimatedLayerInformation, MaybeTree, TransactionArg};
 
 use dpp::data_contract::document_type::DocumentTypeRef;
 
@@ -37,9 +38,11 @@ impl Drive {
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
+        let primary_key_tree_type = document_type.primary_key_tree_type(platform_version)?;
+
         let apply_type = if estimated_costs_only_with_layer_info.is_some() {
             StatelessBatchDelete {
-                in_tree_type: TreeType::NormalTree,
+                in_tree_type: primary_key_tree_type,
                 estimated_key_size: DEFAULT_HASH_SIZE_U32,
                 estimated_value_size: document_type.estimated_size(platform_version)? as u32,
             }

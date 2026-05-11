@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use dashcore::Address as DashAddress;
 use dashcore::{OutPoint, PrivateKey, Transaction, TxOut};
+use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::{
     AssetLockFundingType, CreditOutputFunding,
 };

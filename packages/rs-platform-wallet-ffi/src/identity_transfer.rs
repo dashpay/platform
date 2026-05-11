@@ -21,10 +21,12 @@ use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 use rs_sdk_ffi::{SignerHandle, VTableSigner};
 
+use crate::check_ptr;
 use crate::error::*;
 use crate::handle::*;
 use crate::runtime::block_on_worker;
 use crate::types::*;
+use crate::{unwrap_option_or_return, unwrap_result_or_return};
 
 /// One recipient of a credit transfer-to-addresses call.
 ///
@@ -57,8 +59,6 @@ pub struct PlatformAddressCreditOutputFFI {
 /// - `signer_handle` must be a valid, non-destroyed handle produced by
 ///   `dash_sdk_signer_create_with_ctx` (typically `KeychainSigner.handle`).
 ///   Caller retains ownership; this function does NOT destroy it.
-/// - `out_error` may be null only when the caller is willing to lose
-///   the diagnostic message.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_transfer_credits_with_signer(
     wallet_handle: Handle,
@@ -66,42 +66,11 @@ pub unsafe extern "C" fn platform_wallet_transfer_credits_with_signer(
     to_identity_id: *const u8,
     amount: u64,
     signer_handle: *mut SignerHandle,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    if signer_handle.is_null() {
-        if !out_error.is_null() {
-            *out_error = PlatformWalletFFIError::new(
-                PlatformWalletFFIResult::ErrorNullPointer,
-                "signer_handle is null",
-            );
-        }
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
+    check_ptr!(signer_handle);
 
-    let from_id = match read_identifier(from_identity_id) {
-        Ok(i) => i,
-        Err(e) => {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidIdentifier,
-                    format!("Invalid from_identity_id: {e}"),
-                );
-            }
-            return PlatformWalletFFIResult::ErrorInvalidIdentifier;
-        }
-    };
-    let to_id = match read_identifier(to_identity_id) {
-        Ok(i) => i,
-        Err(e) => {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidIdentifier,
-                    format!("Invalid to_identity_id: {e}"),
-                );
-            }
-            return PlatformWalletFFIResult::ErrorInvalidIdentifier;
-        }
-    };
+    let from_id = unwrap_result_or_return!(read_identifier(from_identity_id));
+    let to_id = unwrap_result_or_return!(read_identifier(to_identity_id));
 
     // Round-trip the signer pointer through `usize` so the spawned
     // future has a `Send + 'static` capture (raw pointers are `!Send`,
@@ -110,37 +79,18 @@ pub unsafe extern "C" fn platform_wallet_transfer_credits_with_signer(
     // `rs-sdk-ffi/src/signer.rs`).
     let signer_addr = signer_handle as usize;
 
-    PLATFORM_WALLET_STORAGE
-        .with_item(wallet_handle, |wallet| {
-            let identity_wallet = wallet.identity().clone();
-            let result = block_on_worker(async move {
-                let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
-                identity_wallet
-                    .transfer_credits_with_external_signer(&from_id, &to_id, amount, signer, None)
-                    .await
-            });
-            match result {
-                Ok(()) => PlatformWalletFFIResult::Success,
-                Err(e) => {
-                    if !out_error.is_null() {
-                        *out_error = PlatformWalletFFIError::new(
-                            PlatformWalletFFIResult::ErrorWalletOperation,
-                            format!("transfer_credits_with_signer failed: {e}"),
-                        );
-                    }
-                    PlatformWalletFFIResult::ErrorWalletOperation
-                }
-            }
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let identity_wallet = wallet.identity().clone();
+        block_on_worker(async move {
+            let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
+            identity_wallet
+                .transfer_credits_with_external_signer(&from_id, &to_id, amount, signer, None)
+                .await
         })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidHandle,
-                    "Invalid platform-wallet handle",
-                );
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    });
+    let result = unwrap_option_or_return!(option);
+    unwrap_result_or_return!(result);
+    PlatformWalletFFIResult::ok()
 }
 
 /// Transfer credits from `from_identity_id` to a set of
@@ -168,39 +118,17 @@ pub unsafe extern "C" fn platform_wallet_transfer_credits_to_addresses_with_sign
     outputs_count: usize,
     signer_handle: *mut SignerHandle,
     out_new_balance: *mut u64,
-    out_error: *mut PlatformWalletFFIError,
 ) -> PlatformWalletFFIResult {
-    if signer_handle.is_null() {
-        if !out_error.is_null() {
-            *out_error = PlatformWalletFFIError::new(
-                PlatformWalletFFIResult::ErrorNullPointer,
-                "signer_handle is null",
-            );
-        }
-        return PlatformWalletFFIResult::ErrorNullPointer;
-    }
-    if outputs.is_null() || outputs_count == 0 {
-        if !out_error.is_null() {
-            *out_error = PlatformWalletFFIError::new(
-                PlatformWalletFFIResult::ErrorNullPointer,
-                "outputs is null or empty",
-            );
-        }
-        return PlatformWalletFFIResult::ErrorNullPointer;
+    check_ptr!(signer_handle);
+    check_ptr!(outputs);
+    if outputs_count == 0 {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "`outputs_count` is zero",
+        );
     }
 
-    let from_id = match read_identifier(from_identity_id) {
-        Ok(i) => i,
-        Err(e) => {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidIdentifier,
-                    format!("Invalid from_identity_id: {e}"),
-                );
-            }
-            return PlatformWalletFFIResult::ErrorInvalidIdentifier;
-        }
-    };
+    let from_id = unwrap_result_or_return!(read_identifier(from_identity_id));
 
     let entries = slice::from_raw_parts(outputs, outputs_count);
     let mut output_map: BTreeMap<PlatformAddress, Credits> = BTreeMap::new();
@@ -209,13 +137,10 @@ pub unsafe extern "C" fn platform_wallet_transfer_credits_to_addresses_with_sign
             0 => PlatformAddress::P2pkh(entry.hash),
             1 => PlatformAddress::P2sh(entry.hash),
             _ => {
-                if !out_error.is_null() {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorInvalidParameter,
-                        "invalid address_type (expected 0 or 1)",
-                    );
-                }
-                return PlatformWalletFFIResult::ErrorInvalidParameter;
+                return PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                    "invalid address_type (expected 0 or 1)",
+                );
             }
         };
         output_map.insert(address, entry.credits);
@@ -223,42 +148,21 @@ pub unsafe extern "C" fn platform_wallet_transfer_credits_to_addresses_with_sign
 
     let signer_addr = signer_handle as usize;
 
-    PLATFORM_WALLET_STORAGE
-        .with_item(wallet_handle, |wallet| {
-            let identity_wallet = wallet.identity().clone();
-            let result = block_on_worker(async move {
-                let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
-                identity_wallet
-                    .transfer_credits_to_addresses_with_external_signer(
-                        &from_id, output_map, signer, None,
-                    )
-                    .await
-            });
-            match result {
-                Ok(new_balance) => {
-                    if !out_new_balance.is_null() {
-                        *out_new_balance = new_balance;
-                    }
-                    PlatformWalletFFIResult::Success
-                }
-                Err(e) => {
-                    if !out_error.is_null() {
-                        *out_error = PlatformWalletFFIError::new(
-                            PlatformWalletFFIResult::ErrorWalletOperation,
-                            format!("transfer_credits_to_addresses_with_signer failed: {e}"),
-                        );
-                    }
-                    PlatformWalletFFIResult::ErrorWalletOperation
-                }
-            }
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let identity_wallet = wallet.identity().clone();
+        block_on_worker(async move {
+            let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
+            identity_wallet
+                .transfer_credits_to_addresses_with_external_signer(
+                    &from_id, output_map, signer, None,
+                )
+                .await
         })
-        .unwrap_or_else(|| {
-            if !out_error.is_null() {
-                *out_error = PlatformWalletFFIError::new(
-                    PlatformWalletFFIResult::ErrorInvalidHandle,
-                    "Invalid platform-wallet handle",
-                );
-            }
-            PlatformWalletFFIResult::ErrorInvalidHandle
-        })
+    });
+    let result = unwrap_option_or_return!(option);
+    let new_balance = unwrap_result_or_return!(result);
+    if !out_new_balance.is_null() {
+        *out_new_balance = new_balance;
+    }
+    PlatformWalletFFIResult::ok()
 }

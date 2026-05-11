@@ -83,9 +83,9 @@ class SendViewModel: ObservableObject {
     @Published var error: String?
     @Published var successMessage: String?
 
-    private let network: AppNetwork
+    private let network: Network
 
-    init(network: AppNetwork) {
+    init(network: Network) {
         self.network = network
     }
 
@@ -184,132 +184,24 @@ class SendViewModel: ObservableObject {
                 )
                 successMessage = "Payment sent"
 
-            case .platformToShielded:
-                _ = platformState // quiet unused-param warnings
-                guard let poolClient = shieldedService.poolClient else {
-                    error = "Shielded pool not initialized"
-                    return
-                }
-                let bundle = try await poolClient.buildShieldBundle(amount: amount)
-
-                // Fetch a PersistentIdentity on this wallet/network
-                // that has enough platform balance to cover `amount`.
-                // `balance` is stored as Int64 (bit-pattern cast of
-                // the UInt64 DPP credits), so we compare against the
-                // same bit-pattern cast of the requested amount.
-                let walletId = wallet.walletId
-                // Identities are scoped to a network; match the
-                // wallet's resolved network directly. The `?? .testnet`
-                // keeps the predicate well-formed when the wallet row
-                // hasn't had its network stamped yet — a wallet in
-                // that state has no identities to find anyway.
-                //
-                // Filter against `networkRaw` (the Int-backed shadow
-                // field) because Foundation's predicate engine can't
-                // capture `AppNetwork`.
-                let walletNetworkRaw = (wallet.network ?? .testnet).rawValue
-                let amountThreshold = Int64(bitPattern: amount)
-                let descriptor = FetchDescriptor<PersistentIdentity>(
-                    predicate: #Predicate<PersistentIdentity> { identity in
-                        identity.wallet?.walletId == walletId &&
-                        identity.networkRaw == walletNetworkRaw &&
-                        identity.balance >= amountThreshold
-                    }
-                )
-                guard let identity = try? modelContext.fetch(descriptor).first else {
-                    error = "No identity with sufficient platform balance"
-                    return
-                }
-
-                // Pick the first public key that has an associated
-                // private key in the keychain. Private keys no
-                // longer live on the identity row.
-                guard let privateKey = identity.publicKeys.lazy
-                    .compactMap({ key -> Data? in
-                        KeychainManager.shared.retrievePrivateKey(
-                            identityId: identity.identityId,
-                            keyIndex: key.keyId
-                        )
-                    })
-                    .first else {
-                    error = "No private key available for identity"
-                    return
-                }
-
-                let addressBytes = identity.identityId.prefix(21)
-                let input = ShieldFundsInput(
-                    address: Data(addressBytes),
-                    amount: amount,
-                    privateKey: privateKey
-                )
-                try await sdk.shieldFunds(
-                    inputs: [input],
-                    bundle: bundle,
-                    amount: amount,
-                    feeFromInputIndex: 0
-                )
-                successMessage = "Shielding complete"
-
-            case .shieldedToShielded:
-                guard let poolClient = shieldedService.poolClient else {
-                    error = "Shielded pool not initialized"
-                    return
-                }
-                let parsed = DashAddress.parse(recipientAddress, network: network)
-                guard case .orchard(let rawAddress) = parsed.type else { return }
-                let bundle = try await poolClient.buildTransferBundle(
-                    recipientAddress: rawAddress,
-                    amount: amount
-                )
-                try await sdk.shieldedTransfer(
-                    bundle: bundle,
-                    valueBalance: flow.estimatedFee
-                )
-                successMessage = "Shielded transfer complete"
-
-            case .shieldedToPlatform:
-                guard let poolClient = shieldedService.poolClient else {
-                    error = "Shielded pool not initialized"
-                    return
-                }
-                let parsed = DashAddress.parse(recipientAddress, network: network)
-                guard case .platform(let addressBytes) = parsed.type else { return }
-                let bundle = try await poolClient.buildUnshieldBundle(
-                    outputAddress: addressBytes,
-                    amount: amount
-                )
-                try await sdk.unshieldFunds(
-                    outputAddress: addressBytes,
-                    amount: amount,
-                    bundle: bundle
-                )
-                successMessage = "Unshield complete"
-
-            case .shieldedToCore:
-                guard let poolClient = shieldedService.poolClient else {
-                    error = "Shielded pool not initialized"
-                    return
-                }
-                let parsed = DashAddress.parse(recipientAddress, network: network)
-                guard case .core(let outputScript) = parsed.type else { return }
-                let bundle = try await poolClient.buildWithdrawalBundle(
-                    outputScript: outputScript,
-                    amount: amount,
-                    coreFeePerByte: 1,
-                    pooling: .never
-                )
-                try await sdk.shieldedWithdraw(
-                    amount: amount,
-                    bundle: bundle,
-                    coreFeePerByte: 1,
-                    pooling: .never,
-                    outputScript: outputScript
-                )
-                successMessage = "Withdrawal submitted"
+            case .platformToShielded,
+                 .shieldedToShielded,
+                 .shieldedToPlatform,
+                 .shieldedToCore:
+                // Shielded send paths are being moved to the Rust
+                // platform-wallet shielded coordinator. The previous
+                // SDK-side bundle/build/broadcast surface was deleted
+                // along with the duplicate `ShieldedPoolClient` FFI;
+                // wiring back up against the new manager-driven path
+                // happens in a follow-up PR.
+                _ = platformState
+                _ = shieldedService
+                _ = wallet
+                _ = modelContext
+                _ = sdk
+                error = "Shielded sending is being rebuilt — see follow-up PR"
+                return
             }
-
-            // Refresh balances
-            shieldedService.refreshBalance()
 
         } catch {
             self.error = error.localizedDescription

@@ -48,7 +48,7 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 zeroize = "1"
 
 # Shielded pool (optional, behind `shielded` feature)
-grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "8f25b20d04bfc0e8bdfb3870676d647a0d74918b", optional = true }
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "dbd83dce59fbcf2866e9dd06be4ce6c320e37908", optional = true }
 zip32 = { version = "0.2.0", default-features = false, optional = true }
 
 [dev-dependencies]
@@ -65,3 +65,15 @@ default = ["bls", "eddsa"]
 bls = ["key-wallet/bls", "key-wallet-manager/bls"]
 eddsa = ["key-wallet/eddsa", "key-wallet-manager/eddsa"]
 shielded = ["dep:grovedb-commitment-tree", "dep:zip32", "dash-sdk/shielded", "dpp/shielded-client"]
+# Forward to the upstream `key-wallet` / `key-wallet-manager`
+# `keep-finalized-transactions` feature. With it OFF (the default),
+# chainlocked transactions are evicted from the in-memory
+# `transactions` map and only their txids are kept (in
+# `finalized_txids`) for dedup; tx history is delivered through the
+# event channel. Turn ON to keep the full `TransactionRecord` for
+# finalized transactions in memory for the wallet's lifetime — useful
+# for debug surfaces that page through history.
+keep-finalized-transactions = [
+    "key-wallet/keep-finalized-transactions",
+    "key-wallet-manager/keep-finalized-transactions",
+]

@@ -14,6 +14,13 @@ import SwiftDashSDK
 struct TokenTransferActionView: View {
     let token: PersistentToken
     let identity: PersistentIdentity
+    /// Balance the parent screen already fetched for this token via
+    /// `sdk.getIdentityTokenBalances`. When non-nil, it's the source of
+    /// truth; when nil, we fall back to the `PersistentTokenBalance`
+    /// row, which may not be populated yet (see file header). Declared
+    /// as `var` (not `let`) so the synthesized memberwise init exposes
+    /// it with the default of `nil`.
+    var initialBalance: UInt64? = nil
 
     @EnvironmentObject var walletManager: PlatformWalletManager
     @Environment(\.modelContext) private var modelContext
@@ -24,6 +31,10 @@ struct TokenTransferActionView: View {
     @State private var publicNote: String = ""
     @State private var isSubmitting: Bool = false
     @State private var submitError: AlertMessage?
+    /// Generation counter so a late `MainActor.run` from a previous
+    /// `submit()` Task can't write back to a re-entered view instance
+    /// after the user pops + repushes mid-broadcast.
+    @State private var submitGeneration: Int = 0
 
     private struct AlertMessage: Identifiable {
         let id = UUID()
@@ -54,7 +65,7 @@ struct TokenTransferActionView: View {
 
             Section("Amount") {
                 TextField("Amount", text: $amountText)
-                    .keyboardType(.numberPad)
+                    .keyboardType(.decimalPad)
                 if let amountValue = parsedAmount, amountValue > balanceValue {
                     Text("Amount exceeds your balance.")
                         .font(.caption)
@@ -104,6 +115,7 @@ struct TokenTransferActionView: View {
     }
 
     private var balanceValue: UInt64 {
+        if let initialBalance { return initialBalance }
         guard let balance = matchingBalance else { return 0 }
         // PersistentTokenBalance stores Int64; we treat it as
         // a UInt64 here (token amounts are non-negative on Platform).
@@ -111,20 +123,30 @@ struct TokenTransferActionView: View {
     }
 
     private var balanceDisplay: String {
+        if let initialBalance {
+            return formatTokenAmount(initialBalance, decimals: token.decimals)
+        }
         guard let balance = matchingBalance else { return "0" }
         return balance.displayBalance
     }
 
+    /// Match against the SwiftData relationship key. The earlier
+    /// `tb.tokenId == token.id.toBase58String()` arm of this matcher
+    /// was always false: `tb.tokenId` holds the canonical on-chain
+    /// token id while `token.id` is a `contractId + position` SwiftData
+    /// uniqueness key.
     private var matchingBalance: PersistentTokenBalance? {
-        identity.tokenBalances.first { tb in
-            tb.tokenId == token.id.toBase58String()
-                || tb.token?.id == token.id
-        }
+        identity.tokenBalances.first { $0.token?.id == token.id }
     }
 
+    /// Parse the user's input as a decimal number in display units and
+    /// scale it to raw on-chain units using `token.decimals`. Without
+    /// this, typing "5" against a token with 8 decimals would submit
+    /// 5 raw units (0.00000005 of a token) and silently sneak past the
+    /// balance check, since the displayed balance is also in display
+    /// units.
     private var parsedAmount: UInt64? {
-        let trimmed = amountText.trimmingCharacters(in: .whitespacesAndNewlines)
-        return UInt64(trimmed)
+        parseTokenAmount(amountText, decimals: token.decimals)
     }
 
     private var canSubmit: Bool {
@@ -138,13 +160,17 @@ struct TokenTransferActionView: View {
     // MARK: - Submit
 
     private func submit() {
+        // Re-check balance at submit time: the user could have spent
+        // the underlying tokens between render and tap. Mirror the
+        // shape used by `TokenBurnActionView.submit`.
         guard
             let wallet = managedWallet,
             let recipient = recipient,
             let amount = parsedAmount,
-            amount > 0
+            amount > 0,
+            amount <= balanceValue
         else {
-            submitError = .init(message: "Selection is incomplete.")
+            submitError = .init(message: "Amount is invalid or exceeds your balance.")
             return
         }
 
@@ -156,6 +182,8 @@ struct TokenTransferActionView: View {
         }
 
         isSubmitting = true
+        submitGeneration &+= 1
+        let gen = submitGeneration
         let signer = KeychainSigner(modelContainer: modelContext.container)
         let identityId = identity.identityId
         let contractId = token.contractId
@@ -175,11 +203,13 @@ struct TokenTransferActionView: View {
                     signer: signer
                 )
                 await MainActor.run {
+                    guard self.submitGeneration == gen else { return }
                     self.isSubmitting = false
                     self.dismiss()
                 }
             } catch {
                 await MainActor.run {
+                    guard self.submitGeneration == gen else { return }
                     self.submitError = .init(message: error.localizedDescription)
                     self.isSubmitting = false
                 }

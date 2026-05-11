@@ -10,7 +10,7 @@ impl Drive {
     /// Version 0 implementation of checking whether a shielded anchor exists.
     ///
     /// Performs an O(1) key lookup in the anchors tree at
-    /// `[AddressBalances, "s", [6]]`.
+    /// `[AddressBalances, "s", [192]]`.
     pub(in crate::drive) fn has_shielded_anchor_v0(
         &self,
         anchor: &[u8; 32],

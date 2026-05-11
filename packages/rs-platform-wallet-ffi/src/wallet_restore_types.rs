@@ -1,11 +1,16 @@
-//! C-compatible types for watch-only wallet restore via the load-side
-//! callbacks on [`PersistenceCallbacks`](crate::persistence::PersistenceCallbacks).
+//! C-compatible types for external-signable wallet restore via the
+//! load-side callbacks on
+//! [`PersistenceCallbacks`](crate::persistence::PersistenceCallbacks).
 //!
 //! On write: `on_persist_account_registrations_fn` fires with the
 //! `AccountSpecFFI` shape so Swift can store accounts in SwiftData.
 //! On load: `on_load_wallet_list_fn` returns an array of
-//! `WalletRestoreEntryFFI` which Rust assembles into a watch-only
-//! `Wallet` via `Wallet::new_watch_only` + per-account `Account::from_xpub`.
+//! `WalletRestoreEntryFFI` which Rust assembles into an
+//! external-signable `Wallet` via `Wallet::new_external_signable` +
+//! per-account `Account::from_xpub`. (The mnemonic stays in the
+//! host's keychain; signing routes back through the configured
+//! signer surface. Earlier revisions reconstructed a `WatchOnly`
+//! wallet — that path has been replaced.)
 //!
 //! All `*const u8` pointers must stay valid for the duration of the
 //! load callback. Swift owns the allocation and is asked to free it
@@ -22,11 +27,16 @@
 use std::os::raw::{c_char, c_void};
 
 use crate::platform_address_types::AddressBalanceEntryFFI;
+use crate::types::FFINetwork;
 
 /// Discriminant for [`key_wallet::account::AccountType`].
 ///
 /// Keep the integer values stable across releases — they end up in
-/// SwiftData rows on the client.
+/// SwiftData rows on the client. Carried across the FFI boundary as
+/// a plain `u8` (see `AccountSpecFFI.type_tag`); validated via
+/// [`AccountTypeTagFFI::try_from_u8`] before any `match`. Reading a
+/// foreign `u8` directly into a `repr(u8)` enum field would be UB
+/// for out-of-range values *before* the match runs.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AccountTypeTagFFI {
@@ -55,13 +65,54 @@ pub enum AccountTypeTagFFI {
     IdentityAuthenticationBls = 16,
 }
 
+impl AccountTypeTagFFI {
+    /// Validating constructor for an FFI byte. Out-of-range bytes
+    /// (corrupt SwiftData row, forward-versioned tag, malformed
+    /// host buffer) return `None` so callers surface a recoverable
+    /// validation error rather than triggering UB on an enum match.
+    pub fn try_from_u8(b: u8) -> Option<Self> {
+        Some(match b {
+            0 => Self::Standard,
+            1 => Self::CoinJoin,
+            2 => Self::IdentityRegistration,
+            3 => Self::IdentityTopUp,
+            4 => Self::IdentityTopUpNotBoundToIdentity,
+            5 => Self::IdentityInvitation,
+            6 => Self::AssetLockAddressTopUp,
+            7 => Self::AssetLockShieldedAddressTopUp,
+            8 => Self::ProviderVotingKeys,
+            9 => Self::ProviderOwnerKeys,
+            10 => Self::ProviderOperatorKeys,
+            11 => Self::ProviderPlatformKeys,
+            12 => Self::DashpayReceivingFunds,
+            13 => Self::DashpayExternalAccount,
+            14 => Self::PlatformPayment,
+            15 => Self::IdentityAuthenticationEcdsa,
+            16 => Self::IdentityAuthenticationBls,
+            _ => return None,
+        })
+    }
+}
+
 /// Discriminant for [`key_wallet::account::StandardAccountType`].
-/// Only meaningful when `AccountSpecFFI.type_tag == AccountTypeTagFFI::Standard`.
+/// Only meaningful when the parent `type_tag` is
+/// [`AccountTypeTagFFI::Standard`]. Same FFI-`u8`-with-validating-ctor
+/// shape as `AccountTypeTagFFI` for the same UB-avoidance reason.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StandardAccountTypeTagFFI {
     Bip44 = 0,
     Bip32 = 1,
+}
+
+impl StandardAccountTypeTagFFI {
+    pub fn try_from_u8(b: u8) -> Option<Self> {
+        Some(match b {
+            0 => Self::Bip44,
+            1 => Self::Bip32,
+            _ => return None,
+        })
+    }
 }
 
 /// Flat account spec carried in `WalletRestoreEntryFFI.accounts`.
@@ -86,8 +137,14 @@ pub enum StandardAccountTypeTagFFI {
 ///   * `IdentityAuthenticationBls`           — `index` (as `identity_index`)
 #[repr(C)]
 pub struct AccountSpecFFI {
-    pub type_tag: AccountTypeTagFFI,
-    pub standard_tag: StandardAccountTypeTagFFI,
+    /// Raw byte projection of [`AccountTypeTagFFI`]. Validated via
+    /// [`AccountTypeTagFFI::try_from_u8`] on the Rust side before any
+    /// `match` — reading a foreign byte directly into a `repr(u8)`
+    /// enum field would be UB for out-of-range values.
+    pub type_tag: u8,
+    /// Raw byte projection of [`StandardAccountTypeTagFFI`]. Same
+    /// validation pattern as `type_tag`.
+    pub standard_tag: u8,
     pub index: u32,
     pub registration_index: u32,
     pub key_class: u32,
@@ -214,6 +271,43 @@ pub struct IdentityRestoreEntryFFI {
     pub keys_count: usize,
 }
 
+/// One unspent UTXO row to rehydrate into a funds-bearing account's
+/// `ManagedCoreFundsAccount.utxos` map at startup.
+///
+/// The leading account-tag block is the same `(type_tag, standard_tag,
+/// index, registration_index, key_class, user_identity_id,
+/// friend_identity_id)` shape `AccountSpecFFI` uses, so the loader can
+/// reuse `account_type_from_spec` for routing. Keys-only and
+/// PlatformPayment variants are skipped on the receive side — they
+/// don't carry UTXOs.
+///
+/// `script_pubkey` is a Swift-owned byte buffer; the address string is
+/// reconstructed from `(script_pubkey, network)` on the Rust side, so
+/// no C-string field is needed here.
+#[repr(C)]
+pub struct UtxoRestoreEntryFFI {
+    /// Raw byte projection of [`AccountTypeTagFFI`]. Validated via
+    /// [`AccountTypeTagFFI::try_from_u8`] on the Rust side. See
+    /// `AccountSpecFFI.type_tag` for the UB-avoidance rationale.
+    pub type_tag: u8,
+    pub standard_tag: u8,
+    pub account_index: u32,
+    pub registration_index: u32,
+    pub key_class: u32,
+    pub user_identity_id: [u8; 32],
+    pub friend_identity_id: [u8; 32],
+    pub prev_txid: [u8; 32],
+    pub vout: u32,
+    pub value_duffs: u64,
+    pub script_pubkey: *const u8,
+    pub script_pubkey_len: usize,
+    pub height: u32,
+    pub is_coinbase: bool,
+    pub is_confirmed: bool,
+    pub is_instantlocked: bool,
+    pub is_locked: bool,
+}
+
 /// Per-wallet entry returned by `on_load_wallet_list_fn`.
 ///
 /// `accounts` points to a contiguous array of length `accounts_count`.
@@ -222,10 +316,9 @@ pub struct IdentityRestoreEntryFFI {
 #[repr(C)]
 pub struct WalletRestoreEntryFFI {
     pub wallet_id: [u8; 32],
-    /// [`key_wallet::Network`] discriminant, matching
-    /// `platform_wallet_manager_create_wallet_from_seed`:
-    /// 0 = Mainnet, 1 = Testnet, 2 = Devnet, 3 = Regtest.
-    pub network: u8,
+    /// Network this wallet was created on. Mirrors what was supplied to
+    /// `platform_wallet_manager_create_wallet_from_seed`.
+    pub network: FFINetwork,
     pub accounts: *const AccountSpecFFI,
     pub accounts_count: usize,
     /// Cached platform-address balances for this wallet. The pointer is
@@ -242,6 +335,20 @@ pub struct WalletRestoreEntryFFI {
     /// `null` / `0` when the wallet has no persisted identities.
     pub identities: *const IdentityRestoreEntryFFI,
     pub identities_count: usize,
+    /// Core-chain sync metadata stamped onto the rebuilt
+    /// `ManagedWalletInfo.metadata` at load time. Zero is treated as
+    /// "unknown" — the snapshot leaves the field at its default in
+    /// that case (which `from_wallet` already seeds from
+    /// `birth_height - 1`). `last_synced` is Unix seconds.
+    pub birth_height: u32,
+    pub synced_height: u32,
+    pub last_processed_height: u32,
+    pub last_synced: u64,
+    /// Persisted unspent UTXOs to repopulate funds-bearing accounts.
+    /// Swift-owned, freed by `LoadWalletListFreeFn` — including each
+    /// row's `script_pubkey` buffer.
+    pub utxos: *const UtxoRestoreEntryFFI,
+    pub utxos_count: usize,
 }
 
 // SAFETY: Pointers are Swift-owned and lifetime-scoped to the callback.
@@ -255,6 +362,8 @@ unsafe impl Send for IdentityRestoreEntryFFI {}
 unsafe impl Sync for IdentityRestoreEntryFFI {}
 unsafe impl Send for WalletRestoreEntryFFI {}
 unsafe impl Sync for WalletRestoreEntryFFI {}
+unsafe impl Send for UtxoRestoreEntryFFI {}
+unsafe impl Sync for UtxoRestoreEntryFFI {}
 
 /// Paired free callback for the wallet-list load callback. Releases
 /// any memory Swift allocated for the entries array, the per-wallet

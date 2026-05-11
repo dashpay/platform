@@ -1,4 +1,5 @@
 import Foundation
+import DashSDKFFI
 
 public struct PlatformAddressWalletSyncResult: Sendable {
     public let walletId: Data
@@ -47,6 +48,7 @@ final class PlatformWalletEventHandler {
         var callbacks = EventHandlerCallbacks()
         callbacks.context = Unmanaged.passUnretained(self).toOpaque()
         callbacks.on_platform_address_sync_completed_fn = platformAddressSyncCompletedCallback
+        callbacks.on_shielded_sync_completed_fn = shieldedSyncCompletedCallback
         return callbacks
     }
 }
@@ -105,7 +107,9 @@ extension PlatformWalletManager {
         config: AddressSyncConfig? = nil
     ) throws {
         guard isConfigured, handle != NULL_HANDLE else {
-            throw PlatformWalletError.invalidHandle
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
         }
 
         if let intervalSeconds {
@@ -115,102 +119,75 @@ extension PlatformWalletManager {
             try setPlatformAddressSyncConfig(config)
         }
 
-        var error = PlatformWalletFFIError()
-        let result = platform_wallet_manager_platform_address_sync_start(handle, &error)
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
-        }
+        try platform_wallet_manager_platform_address_sync_start(handle).check()
     }
 
     public func stopPlatformAddressSync() throws {
         guard isConfigured, handle != NULL_HANDLE else {
-            throw PlatformWalletError.invalidHandle
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
         }
 
-        var error = PlatformWalletFFIError()
-        let result = platform_wallet_manager_platform_address_sync_stop(handle, &error)
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
-        }
+        try platform_wallet_manager_platform_address_sync_stop(handle).check()
     }
 
     public func isPlatformAddressSyncRunning() throws -> Bool {
         guard isConfigured, handle != NULL_HANDLE else {
-            throw PlatformWalletError.invalidHandle
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
         }
 
         var running = false
-        var error = PlatformWalletFFIError()
-        let result = platform_wallet_manager_platform_address_sync_is_running(
-            handle,
-            &running,
-            &error
-        )
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
-        }
+        try platform_wallet_manager_platform_address_sync_is_running(handle, &running).check()
         return running
     }
 
     public func isPlatformAddressSyncing() throws -> Bool {
         guard isConfigured, handle != NULL_HANDLE else {
-            throw PlatformWalletError.invalidHandle
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
         }
 
         var syncing = false
-        var error = PlatformWalletFFIError()
-        let result = platform_wallet_manager_platform_address_sync_is_syncing(
-            handle,
-            &syncing,
-            &error
-        )
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
-        }
+        try platform_wallet_manager_platform_address_sync_is_syncing(handle, &syncing).check()
         return syncing
     }
 
     public func lastPlatformAddressSyncUnixSeconds() throws -> UInt64 {
         guard isConfigured, handle != NULL_HANDLE else {
-            throw PlatformWalletError.invalidHandle
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
         }
 
         var lastSyncUnixSeconds: UInt64 = 0
-        var error = PlatformWalletFFIError()
-        let result = platform_wallet_manager_platform_address_sync_last_sync_unix_seconds(
+        try platform_wallet_manager_platform_address_sync_last_sync_unix_seconds(
             handle,
-            &lastSyncUnixSeconds,
-            &error
-        )
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
-        }
+            &lastSyncUnixSeconds
+        ).check()
         return lastSyncUnixSeconds
     }
 
     public func setPlatformAddressSyncInterval(seconds: UInt64) throws {
         guard isConfigured, handle != NULL_HANDLE else {
-            throw PlatformWalletError.invalidHandle
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
         }
 
-        var error = PlatformWalletFFIError()
-        let result = platform_wallet_manager_platform_address_sync_set_interval(
-            handle,
-            seconds,
-            &error
-        )
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
-        }
+        try platform_wallet_manager_platform_address_sync_set_interval(handle, seconds).check()
     }
 
     public func setPlatformAddressSyncConfig(_ config: AddressSyncConfig?) throws {
         guard isConfigured, handle != NULL_HANDLE else {
-            throw PlatformWalletError.invalidHandle
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
         }
 
-        var error = PlatformWalletFFIError()
-        let result: PlatformWalletFFIResult
         if let config {
             var ffiConfig = AddressSyncConfigFFI(
                 min_privacy_count: config.minPrivacyCount,
@@ -218,30 +195,26 @@ extension PlatformWalletManager {
                 max_iterations: config.maxIterations,
                 full_rescan_after_time_s: config.fullRescanAfterTimeSeconds
             )
-            result = withUnsafePointer(to: &ffiConfig) { configPtr in
-                platform_wallet_manager_platform_address_sync_set_config(handle, configPtr, &error)
+            try withUnsafePointer(to: &ffiConfig) { configPtr in
+                try platform_wallet_manager_platform_address_sync_set_config(
+                    handle, configPtr
+                ).check()
             }
         } else {
-            result = platform_wallet_manager_platform_address_sync_set_config(handle, nil, &error)
-        }
-
-        guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-            throw PlatformWalletError(result: result, error: error)
+            try platform_wallet_manager_platform_address_sync_set_config(handle, nil).check()
         }
     }
 
     public func syncPlatformAddressNow() async throws {
         guard isConfigured, handle != NULL_HANDLE else {
-            throw PlatformWalletError.invalidHandle
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
         }
 
         let handle = self.handle
         try await Task.detached(priority: .userInitiated) {
-            var error = PlatformWalletFFIError()
-            let result = platform_wallet_manager_platform_address_sync_sync_now(handle, &error)
-            guard result == PLATFORM_WALLET_FFI_RESULT_SUCCESS else {
-                throw PlatformWalletError(result: result, error: error)
-            }
+            try platform_wallet_manager_platform_address_sync_sync_now(handle).check()
         }.value
     }
 }

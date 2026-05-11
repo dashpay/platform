@@ -98,7 +98,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         &self,
         wallet: Wallet,
     ) -> Result<Arc<PlatformWallet>, PlatformWalletError> {
-        let wallet_info = ManagedWalletInfo::from_wallet(&wallet);
+        let wallet_info = ManagedWalletInfo::from_wallet(&wallet, 0);
 
         let balance = Arc::new(WalletBalance::new());
 
@@ -129,9 +129,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             .all_managed_accounts()
             .iter()
             .map(|managed| {
-                let account_type = managed.account_type.to_account_type();
+                // `all_managed_accounts()` returns `ManagedAccountRef`;
+                // the upstream split made `managed_account_type` a
+                // delegating method (it was a field on the pre-split
+                // unified `ManagedCoreAccount`).
+                let account_type = managed.managed_account_type().to_account_type();
                 let pools = managed
-                    .account_type
+                    .managed_account_type()
                     .address_pools()
                     .iter()
                     .map(|pool| {
@@ -264,27 +268,40 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // `AddressPool` scan `initialize` would otherwise do.
         // Per-wallet UTXOs / unused asset locks ship in the snapshot
         // but don't have an active restore path yet.
+        //
+        // The two `?` returns below would otherwise leave the wallet
+        // half-registered (present in `wallet_manager` from the
+        // earlier `insert_wallet`, absent from `self.wallets`),
+        // poisoning every retry on `WalletAlreadyExists`. Roll back
+        // before bailing — same shape as `manager::load`.
         let crate::changeset::ClientStartState {
             mut platform_addresses,
             wallets: _,
-        } = platform_wallet.load_persisted().map_err(|e| {
-            PlatformWalletError::WalletCreation(format!(
-                "Failed to load persisted wallet state: {}",
-                e
-            ))
-        })?;
+        } = match platform_wallet.load_persisted() {
+            Ok(state) => state,
+            Err(e) => {
+                let mut wm = self.wallet_manager.write().await;
+                let _ = wm.remove_wallet(&wallet_id);
+                return Err(PlatformWalletError::WalletCreation(format!(
+                    "Failed to load persisted wallet state: {}",
+                    e
+                )));
+            }
+        };
 
         if let Some(persisted) = platform_addresses.remove(&wallet_id) {
-            platform_wallet
+            if let Err(e) = platform_wallet
                 .platform()
                 .initialize_from_persisted(persisted)
                 .await
-                .map_err(|e| {
-                    PlatformWalletError::WalletCreation(format!(
-                        "Failed to restore persisted platform address state: {}",
-                        e
-                    ))
-                })?;
+            {
+                let mut wm = self.wallet_manager.write().await;
+                let _ = wm.remove_wallet(&wallet_id);
+                return Err(PlatformWalletError::WalletCreation(format!(
+                    "Failed to restore persisted platform address state: {}",
+                    e
+                )));
+            }
         } else {
             platform_wallet.platform().initialize().await;
         }

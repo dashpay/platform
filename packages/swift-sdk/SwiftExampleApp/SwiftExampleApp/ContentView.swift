@@ -13,6 +13,7 @@ struct ContentView: View {
     let onRetry: () -> Void
 
     @EnvironmentObject var walletManager: PlatformWalletManager
+    @EnvironmentObject var walletManagerStore: WalletManagerStore
     @EnvironmentObject var appUIState: AppUIState
     @EnvironmentObject var platformState: AppState
     @Environment(\.modelContext) private var modelContext
@@ -26,12 +27,16 @@ struct ContentView: View {
 
     @State private var selectedTab: RootTab = .sync
 
-    // Orphan-mnemonic recovery flow. Prompts fire sequentially: one
-    // wallet at a time, starting with the head of `pendingOrphans`.
-    // `showRecoverAlert` drives the primary (Authorize / No) alert and
-    // `showDeletePrompt` drives the secondary (Recreate / Delete) one.
-    @State private var pendingOrphans: [Data] = []
+    // Orphan-mnemonic recovery flow. The whole batch surfaces in one
+    // alert + one sheet now: the primary "Recover Wallets?" alert
+    // gates the flow on user intent, the sheet collects per-wallet
+    // "Same pin code" choices, and a single auth covers every shared
+    // wallet (with separate auth prompts only for the rows the user
+    // unchecks). `showDeletePrompt` drives the "Keep these Wallets?"
+    // fallback when the user picks No.
+    @State private var orphanEntries: [OrphanWalletEntry] = []
     @State private var showRecoverAlert = false
+    @State private var showRecoverSheet = false
     @State private var showDeletePrompt = false
     @State private var recoveryInProgress = false
     @State private var recoveryError: String?
@@ -122,33 +127,39 @@ struct ContentView: View {
             .onChange(of: persistentWallets.count) { _, _ in
                 checkForOrphanMnemonic()
             }
-            .alert("Recover Wallet?", isPresented: $showRecoverAlert) {
+            .alert(recoverAlertTitle, isPresented: $showRecoverAlert) {
                 Button("Authorize") {
-                    Task { await authorizeAndRecover() }
+                    showRecoverSheet = true
                 }
                 Button("No", role: .cancel) {
                     showDeletePrompt = true
                 }
             } message: {
-                Text(
-                    "A wallet mnemonic is stored on this device, but no "
-                    + "wallet data was found. Authorize to re-derive the "
-                    + "wallet's public keys from the stored mnemonic."
+                Text(recoverAlertMessage)
+            }
+            .sheet(isPresented: $showRecoverSheet) {
+                RecoverWalletsSheet(
+                    entries: orphanEntries,
+                    onAuthorize: { choices in
+                        Task { await authorizeAndRecover(choices: choices) }
+                    },
+                    onCancel: {
+                        // Sheet cancel = "give me the keep/delete
+                        // path" so the user isn't trapped in a loop
+                        // between the alert and the sheet.
+                        showDeletePrompt = true
+                    }
                 )
             }
-            .alert("Keep this Wallet?", isPresented: $showDeletePrompt) {
+            .alert(deletePromptTitle, isPresented: $showDeletePrompt) {
                 Button("Recreate") {
                     showRecoverAlert = true
                 }
-                Button("Delete", role: .destructive) {
-                    deleteStoredMnemonic()
+                Button(deletePromptDestructiveLabel, role: .destructive) {
+                    deleteStoredMnemonics()
                 }
             } message: {
-                Text(
-                    "Recreate will re-derive the wallet from the stored "
-                    + "mnemonic. Delete will permanently remove the "
-                    + "mnemonic from this device."
-                )
+                Text(deletePromptMessage)
             }
             .alert(
                 "Recovery Failed",
@@ -167,54 +178,197 @@ struct ContentView: View {
 
     // MARK: - Orphan mnemonic recovery
 
+    private var recoverAlertTitle: String {
+        orphanEntries.count <= 1 ? "Recover Wallet?" : "Recover Wallets?"
+    }
+
+    private var recoverAlertMessage: String {
+        let count = orphanEntries.count
+        if count <= 1 {
+            return "A wallet mnemonic is stored on this device, but no "
+                + "wallet data was found. Authorize to re-derive the "
+                + "wallet's public keys from the stored mnemonic."
+        }
+        return "\(count) wallet mnemonics are stored on this device, but "
+            + "no matching wallet data was found. Authorize to re-derive "
+            + "their public keys from the stored mnemonics."
+    }
+
+    private var deletePromptTitle: String {
+        orphanEntries.count <= 1 ? "Keep this Wallet?" : "Keep these Wallets?"
+    }
+
+    private var deletePromptMessage: String {
+        if orphanEntries.count <= 1 {
+            return "Recreate will re-derive the wallet from the stored "
+                + "mnemonic. Delete will permanently remove the "
+                + "mnemonic from this device."
+        }
+        return "Recreate will re-derive every wallet from its stored "
+            + "mnemonic. Delete will permanently remove "
+            + "\(orphanEntries.count) mnemonics from this device."
+    }
+
+    private var deletePromptDestructiveLabel: String {
+        orphanEntries.count <= 1 ? "Delete" : "Delete All"
+    }
+
     /// Detect keychain mnemonics with no matching `PersistentWallet`
-    /// row and kick off the recovery alert for each in turn. Runs
-    /// once per launch after the first tab becomes visible.
-    /// Subsequent `persistentWallets` changes re-evaluate so
-    /// newly-recovered wallets drop out of the queue and we advance
-    /// to the next orphan.
+    /// row and prime the recovery flow. Runs once per launch after
+    /// the first tab becomes visible. Subsequent `persistentWallets`
+    /// changes re-evaluate so already-recovered wallets drop out of
+    /// the orphan set and the alert reflects the new count.
     @MainActor
     private func checkForOrphanMnemonic() {
         guard isInitialized, !orphanCheckDone else { return }
-        orphanCheckDone = true
 
         let storage = WalletStorage()
         let keychainIds = (try? storage.listWalletIdsWithMnemonic()) ?? []
         let localIds = Set(persistentWallets.map(\.walletId))
         let orphans = keychainIds.filter { !localIds.contains($0) }
 
-        guard !orphans.isEmpty else { return }
-        pendingOrphans = orphans
+        guard !orphans.isEmpty else {
+            // Nothing to do; mark the check done so we don't re-scan
+            // every time a wallet is added/removed mid-session.
+            orphanCheckDone = true
+            return
+        }
+
+        // Resolve display name + network for each orphan up-front so
+        // the alert + sheet render with stable, recognizable rows
+        // instead of bare 32-byte ids. Metadata reads are best-effort
+        // — older installs predate the metadata blob and just fall
+        // back to the generic placeholder name.
+        orphanEntries = orphans.map { walletId in
+            let metadata = (try? storage.metadata(for: walletId)) ?? nil
+            let displayName: String = {
+                guard let raw = metadata?.name else { return "Recovered Wallet" }
+                let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.isEmpty ? "Recovered Wallet" : trimmed
+            }()
+            return OrphanWalletEntry(
+                walletId: walletId,
+                displayName: displayName,
+                network: metadata?.resolvedNetworks.first,
+                samePinCode: true
+            )
+        }
+        orphanCheckDone = true
         showRecoverAlert = true
     }
 
-    /// Drop the just-handled orphan from the queue and re-arm the
-    /// primary alert for the next one (if any).
+    /// Run the auth + re-derivation pipeline for the user's choices.
+    /// All wallets with `samePinCode == true` collapse into a single
+    /// `LAContext.evaluatePolicy` call; everything else gets its own
+    /// prompt. A cancel / policy failure on the shared prompt aborts
+    /// the shared group and bounces to the keep/delete decision; a
+    /// failure on a per-wallet prompt skips just that wallet.
     @MainActor
-    private func advanceToNextOrphan() {
-        if !pendingOrphans.isEmpty {
-            pendingOrphans.removeFirst()
+    private func authorizeAndRecover(choices: [OrphanWalletEntry]) async {
+        guard !recoveryInProgress else { return }
+        recoveryInProgress = true
+        defer { recoveryInProgress = false }
+
+        let shared = choices.filter(\.samePinCode)
+        let separate = choices.filter { !$0.samePinCode }
+        var recovered: Set<Data> = []
+
+        if !shared.isEmpty {
+            let reason = shared.count == 1
+                ? "Re-derive your wallet from the stored recovery phrase."
+                : "Re-derive \(shared.count) wallets from the stored recovery phrases."
+            switch await runAuthPrompt(reason: reason) {
+            case .authorized:
+                for entry in shared {
+                    if await recoverWallet(entry: entry) {
+                        recovered.insert(entry.walletId)
+                    }
+                }
+            case .denied:
+                // User actively bailed on the shared prompt —
+                // surface the keep/delete decision and let them
+                // pick again from there.
+                showDeletePrompt = true
+                return
+            case .unavailable(let detail):
+                recoveryError = "Authentication is unavailable on this device: \(detail)"
+                showDeletePrompt = true
+                return
+            case .failed(let detail):
+                recoveryError = "Authorization failed: \(detail)"
+                showDeletePrompt = true
+                return
+            }
         }
-        if !pendingOrphans.isEmpty {
-            // Small defer so SwiftUI has a chance to tear the
-            // previous alert down before presenting the next.
+
+        // Per-wallet auth failures accumulate so the user sees every
+        // one when the loop ends rather than the last one clobbering
+        // earlier messages. Mirrors the same `[String]` pattern
+        // `deleteStoredMnemonics` uses for cross-wallet error
+        // aggregation.
+        var perWalletFailures: [String] = []
+        for entry in separate {
+            let reason = "Re-derive \"\(entry.displayName)\" from its stored recovery phrase."
+            switch await runAuthPrompt(reason: reason) {
+            case .authorized:
+                if await recoverWallet(entry: entry) {
+                    recovered.insert(entry.walletId)
+                }
+            case .denied:
+                // Skip this one — user said no to this specific
+                // wallet — but keep going through the rest.
+                continue
+            case .unavailable(let detail):
+                // Same shape as the shared-branch handler: surface
+                // the error AND route into the keep/delete prompt
+                // so the user has a path forward instead of being
+                // left with stale orphans queued internally with
+                // no UI to act on them.
+                recoveryError = "Authentication is unavailable on this device: \(detail)"
+                showDeletePrompt = true
+                return
+            case .failed(let detail):
+                perWalletFailures.append("\(entry.displayName): \(detail)")
+                continue
+            }
+        }
+        if !perWalletFailures.isEmpty {
+            // One combined prompt at the end, joining every wallet's
+            // failure into one message so none get lost.
+            let prefix = perWalletFailures.count == 1
+                ? "Authorization failed: "
+                : "Authorization failed for \(perWalletFailures.count) wallets:\n"
+            recoveryError = prefix + perWalletFailures.joined(separator: "\n")
+        }
+
+        // Drop the entries we just recreated. If the user skipped
+        // some (cancelled per-wallet auths) the remaining orphans
+        // stay queued — the next `checkForOrphanMnemonic()` (after
+        // `persistentWallets` reactivity fires) will re-arm the
+        // alert with the trimmed set.
+        orphanEntries.removeAll { recovered.contains($0.walletId) }
+        orphanCheckDone = false
+        if !orphanEntries.isEmpty {
+            // Small defer so the sheet dismiss has time to settle
+            // before the alert pops back up.
             Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 200_000_000)
+                try? await Task.sleep(nanoseconds: 250_000_000)
                 showRecoverAlert = true
             }
         }
     }
 
-    /// Authorize via device passcode / biometrics, then fetch the
-    /// keychain-stored mnemonic for the current orphan and re-create
-    /// the wallet.
-    @MainActor
-    private func authorizeAndRecover() async {
-        guard !recoveryInProgress else { return }
-        guard let walletId = pendingOrphans.first else { return }
-        recoveryInProgress = true
-        defer { recoveryInProgress = false }
+    private enum AuthOutcome {
+        case authorized
+        case denied
+        case unavailable(String)
+        case failed(String)
+    }
 
+    /// Single LAContext-backed system prompt. Maps every cancel /
+    /// policy / error path to a typed outcome so callers can decide
+    /// whether to abort or skip.
+    private func runAuthPrompt(reason: String) async -> AuthOutcome {
         let context = LAContext()
         context.localizedCancelTitle = "Cancel"
         var policyError: NSError?
@@ -222,76 +376,156 @@ struct ContentView: View {
             .deviceOwnerAuthentication,
             error: &policyError
         ) else {
-            recoveryError =
-                "Authentication is unavailable on this device: "
-                + (policyError?.localizedDescription ?? "unknown")
-            showDeletePrompt = true
-            return
+            return .unavailable(policyError?.localizedDescription ?? "unknown")
         }
-
         do {
             let authorized = try await context.evaluatePolicy(
                 .deviceOwnerAuthentication,
-                localizedReason: "Re-derive your wallet from the stored recovery phrase."
+                localizedReason: reason
             )
-            guard authorized else {
-                showDeletePrompt = true
-                return
-            }
+            return authorized ? .authorized : .denied
         } catch {
-            // User cancel or policy failure — bounce to the
-            // Keep/Delete choice so they don't lose the path forward.
-            recoveryError = "Authorization failed: \(error.localizedDescription)"
-            showDeletePrompt = true
-            return
+            return .failed(error.localizedDescription)
         }
+    }
 
+    /// Read the keychain mnemonic + metadata for `entry`, then
+    /// re-create the wallet. Returns `true` on success so the caller
+    /// can drop the entry from the orphan set.
+    @MainActor
+    private func recoverWallet(entry: OrphanWalletEntry) async -> Bool {
+        let storage = WalletStorage()
         let mnemonic: String
         do {
-            mnemonic = try WalletStorage().retrieveMnemonic(for: walletId)
+            mnemonic = try storage.retrieveMnemonic(for: entry.walletId)
         } catch {
             recoveryError = "Failed to read stored mnemonic: \(error.localizedDescription)"
-            return
+            return false
+        }
+
+        // Re-fetch metadata at recovery time rather than relying on
+        // what the alert captured — ensures the description /
+        // birth-height carried over reflect the current state of the
+        // keychain blob rather than a possibly-stale snapshot.
+        let metadata = (try? storage.metadata(for: entry.walletId)) ?? nil
+        let restoredName: String = {
+            guard let raw = metadata?.name else { return entry.displayName }
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? entry.displayName : trimmed
+        }()
+        let restoredDescription = metadata?.walletDescription
+        // First valid stored network wins; the
+        // `walletManager.createWallet` API still takes a single
+        // network. Multi-network support is a TODO on the Rust side
+        // — when it lands, `metadata?.resolvedNetworks` is already
+        // there to feed in directly. Final fallback is the user's
+        // active network rather than a hard-coded testnet — the
+        // only rows that hit the fallback are legacy / corrupted
+        // metadata blobs, and re-deriving them on whatever network
+        // the user is currently looking at matches their context
+        // far better than silently restoring on testnet.
+        let restoredNetwork: Network =
+            entry.network ?? metadata?.resolvedNetworks.first ?? platformState.currentNetwork
+        let restoredBirthHeight = metadata?.birthHeight
+
+        // Route recovery to the manager for the wallet's original
+        // network — not the active manager. The Rust side stamps
+        // `wallet.network = self.sdk.network` at registration time,
+        // so creating a regtest wallet through the testnet manager
+        // would persist the row as testnet. `backgroundManager`
+        // lazy-builds the per-network manager (and its SDK) without
+        // changing the user's currently visible network.
+        let targetManager: PlatformWalletManager
+        do {
+            targetManager = try walletManagerStore.backgroundManager(for: restoredNetwork)
+        } catch {
+            recoveryError = "Failed to prepare \(restoredNetwork.displayName) manager "
+                + "for \"\(entry.displayName)\": \(error.localizedDescription)"
+            return false
         }
 
         do {
-            // Default the restored wallet to testnet with a
-            // recognizable label. The user can rename via the
-            // wallet list afterwards. The `PersistentWallet` row
-            // is created by the persister callback downstream of
-            // `walletManager.createWallet` — we only need to
-            // stamp the `isImported` flag here.
-            let platformNetwork: PlatformNetwork = .testnet
-            let label = "Recovered Wallet"
-            let managed = try walletManager.createWallet(
+            let managed = try targetManager.createWallet(
                 mnemonic: mnemonic,
-                network: platformNetwork,
-                name: label
+                network: restoredNetwork,
+                name: restoredName
             )
             let walletIdMatch = managed.walletId
             let descriptor = FetchDescriptor<PersistentWallet>(
                 predicate: #Predicate { $0.walletId == walletIdMatch }
             )
-            if let row = try? modelContext.fetch(descriptor).first {
+
+            // Cross-context propagation: the row we just created
+            // landed in the target manager's background context,
+            // not in the main context that drives every `@Query`
+            // consumer in the UI. SwiftData merges sibling-context
+            // saves through `NSPersistentStoreRemoteChange`
+            // notifications, but that pipeline is asynchronous —
+            // an immediate `fetch` on the main context may still
+            // miss the row, in which case the post-recovery
+            // `isImported` / metadata flush is skipped *and* no
+            // main-context save fires, so `@Query` observers
+            // never re-evaluate. The wallet then "doesn't appear"
+            // until the next app launch when the main context is
+            // built fresh against disk. Retry a few times with a
+            // short yield between attempts so the merge has a
+            // chance to settle before we move on.
+            var row: PersistentWallet? = nil
+            for attempt in 0..<10 {
+                row = try? modelContext.fetch(descriptor).first
+                if row != nil { break }
+                if attempt < 9 {
+                    try? await Task.sleep(nanoseconds: 50_000_000)
+                }
+            }
+
+            if let row {
                 row.isImported = true
+                if row.walletDescription == nil {
+                    row.walletDescription = restoredDescription
+                }
+                // Persisted birth height wins over the synthetic
+                // value the persister stamped from the live SPV
+                // tip — otherwise a recovered wallet would scan
+                // forward from "now" and lose every transaction
+                // older than the recovery moment.
+                if let stored = restoredBirthHeight {
+                    row.birthHeight = stored
+                }
                 try? modelContext.save()
             }
-            advanceToNextOrphan()
+            return true
         } catch {
-            recoveryError = "Failed to recreate wallet: \(error.localizedDescription)"
+            recoveryError = "Failed to recreate \"\(entry.displayName)\": \(error.localizedDescription)"
+            return false
         }
     }
 
-    /// Remove the currently-selected orphan's mnemonic from the
-    /// keychain and advance to the next orphan in the queue.
+    /// Drop every queued orphan's mnemonic + metadata from the
+    /// keychain. Best-effort: failures on individual rows surface
+    /// in `recoveryError` but the loop continues so a single bad
+    /// row can't block the rest of the cleanup.
     @MainActor
-    private func deleteStoredMnemonic() {
-        guard let walletId = pendingOrphans.first else { return }
-        do {
-            try WalletStorage().deleteMnemonic(for: walletId)
-            advanceToNextOrphan()
-        } catch {
-            recoveryError = "Failed to delete mnemonic: \(error.localizedDescription)"
+    private func deleteStoredMnemonics() {
+        let storage = WalletStorage()
+        var failures: [String] = []
+        for entry in orphanEntries {
+            do {
+                try storage.deleteMnemonic(for: entry.walletId)
+            } catch {
+                failures.append("\(entry.displayName): \(error.localizedDescription)")
+                continue
+            }
+            // Metadata follows the mnemonic. If this fails the row
+            // is harmless (no secret material) and gets overwritten
+            // on the next `setMetadata`.
+            try? storage.deleteMetadata(for: entry.walletId)
+        }
+        orphanEntries.removeAll()
+        if !failures.isEmpty {
+            recoveryError = "Failed to delete mnemonic"
+                + (failures.count == 1 ? "" : "s")
+                + ": " + failures.joined(separator: "; ")
         }
     }
 }
