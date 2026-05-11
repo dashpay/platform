@@ -14,6 +14,7 @@ use crate::changeset::AssetLockEntry;
 
 /// Asset lock status on Core chain. Tracked until consumed, then removed.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum AssetLockStatus {
     Built,
     Broadcast,
