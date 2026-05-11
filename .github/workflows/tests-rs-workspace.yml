@@ -153,6 +153,7 @@ jobs:
             --package platform-value \
             --package rs-dapi \
             --package platform-wallet \
+            --package platform-wallet-sqlite \
             --package rs-sdk-ffi \
             --package platform-wallet-ffi \
             --package rs-dapi-client \
@@ -317,6 +318,7 @@ jobs:
             --package platform-value \
             --package rs-dapi \
             --package platform-wallet \
+            --package platform-wallet-sqlite \
             --package rs-sdk-ffi \
             --package platform-wallet-ffi \
             --package rs-dapi-client \
