@@ -1,7 +1,8 @@
 //! CR-004 — Legacy BIP32 account: balance + UTXO state updates after spend.
 //!
 //! Spec: `tests/e2e/TEST_SPEC.md` (### Core (CR) → CR-004).
-//! Status: ignored, env-gated via `PLATFORM_WALLET_E2E_RUN_FAILING_BY_DESIGN`.
+//! Status: FAILING-by-design — runs only via `cargo test -- --ignored`
+//! and is expected to fail until the upstream contract is fixed.
 //! Pins the post-broadcast UTXO-mutation contract on
 //! `standard_bip32_accounts` against
 //! [dashpay/dash-evo-tool#845](https://github.com/dashpay/dash-evo-tool/issues/845):
@@ -42,35 +43,17 @@ const CORE_BALANCE_TIMEOUT: Duration = Duration::from_secs(300);
 /// on stale UTXO" error path).
 const POST_DRAIN_PROBE_AMOUNT: u64 = 1_000_000;
 
-#[ignore = "CR-004 — FAILING-by-design until SPV runtime gates clear AND the \
-            harness exposes a stable BIP32-receive-address derivation point. \
-            Pins the post-broadcast UTXO-mutation contract on \
-            `standard_bip32_accounts` (dash-evo-tool#845). Requires testnet \
-            + bank Core (Layer-1) pre-funding (TOTAL_FUNDING duffs + per-tx \
-            fee reserve, twice — once per UTXO). The legacy BIP32 account \
-            derivation must NOT cross-contaminate the wallet's default \
-            BIP-44 Core account UTXO set; assertions read \
+#[ignore = "CR-004 — FAILING-by-design pin for dash-evo-tool#845; runs only \
+            via `cargo test -- --ignored` and is expected to fail until the \
+            SPV/BIP32 derivation contract is fixed. Pins the post-broadcast \
+            UTXO-mutation contract on `standard_bip32_accounts`. Requires \
+            testnet + bank Core (Layer-1) pre-funding (TOTAL_FUNDING duffs + \
+            per-tx fee reserve, twice — once per UTXO). The legacy BIP32 \
+            account derivation must NOT cross-contaminate the wallet's \
+            default BIP-44 Core account UTXO set; assertions read \
             `standard_bip32_accounts[0]` directly."]
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 async fn cr_004_legacy_bip32_utxo_update_after_spend() {
-    // FAILING-by-design guard: `#[ignore]` is bypassed by
-    // `cargo test -- --ignored`, which runs every ignored case. CR-004
-    // is intentionally pinning a not-yet-reproducible upstream bug and
-    // would pollute the standard `--ignored` cohort with a body-side
-    // panic. Require an explicit opt-in env var so the case can still
-    // be exercised on demand without being part of the default run.
-    if !crate::framework::config::parse_truthy(
-        std::env::var(crate::framework::config::vars::RUN_FAILING_BY_DESIGN)
-            .ok()
-            .as_deref(),
-    ) {
-        eprintln!(
-            "CR-004 skipped: set {}=1 to exercise (FAILING-by-design pin per spec)",
-            crate::framework::config::vars::RUN_FAILING_BY_DESIGN
-        );
-        return;
-    }
-
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()

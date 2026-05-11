@@ -64,21 +64,6 @@ pub mod vars {
     /// walking Core blocks) WILL fail when SPV is disabled.
     /// See `TEST_SPEC.md` CR-001 for the SPEC-level reference.
     pub const DISABLE_SPV: &str = "PLATFORM_WALLET_E2E_DISABLE_SPV";
-    /// Opt-in switch for FAILING-by-design tests that would otherwise
-    /// pollute a `cargo test -- --ignored` run with their pinned
-    /// failure (the `#[ignore]` attribute is bypassed by `--ignored`,
-    /// so a body-side guard is the only way to keep the standard
-    /// ignored-cohort run clean).
-    ///
-    /// Truthy values (`1` / `true` / `yes` / `on`, case-insensitive)
-    /// flip the guarded test bodies into "actually exercise the
-    /// pinned regression" mode; everything else (unset / empty /
-    /// falsy) makes them early-return as a passing no-op.
-    ///
-    /// Currently consumed by:
-    /// - CR-004 (`cr_004_legacy_bip32_utxo_update_after_spend`) —
-    ///   pins dash-evo-tool#845's UTXO-update-after-spend regression.
-    pub const RUN_FAILING_BY_DESIGN: &str = "PLATFORM_WALLET_E2E_RUN_FAILING_BY_DESIGN";
 }
 
 /// Default deadline for the bank Core funding gate when the env var is
@@ -451,7 +436,7 @@ pub(crate) fn parse_bank_core_gate(raw: Option<&str>) -> (Option<Duration>, Bank
 ///
 /// Truthy: `1`, `true`, `yes`, `on` (case-insensitive, trimmed).
 /// Everything else — including empty / unset / unparseable — is `false`.
-/// Used by [`vars::DISABLE_SPV`] and [`vars::RUN_FAILING_BY_DESIGN`].
+/// Used by [`vars::DISABLE_SPV`].
 pub(crate) fn parse_truthy(raw: Option<&str>) -> bool {
     let Some(raw) = raw else { return false };
     let trimmed = raw.trim();

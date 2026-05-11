@@ -11,7 +11,7 @@ presumably enumerate the joy of doing it.
 - **v3.1-dev (PR #3609 merged)** — TEST_SPEC reflects post-V20 state:
   - TK-013, PA-001b, PA-005b: previously failing or blocked → PASS after fix
   - TK-002, CR-003: stabilised
-  - CR-004: ENV-GATED FAILING-by-design escape (`PLATFORM_WALLET_E2E_RUN_FAILING_BY_DESIGN=1`)
+  - CR-004: FAILING-by-design — runs only via `cargo test -- --ignored` and is expected to fail until dash-evo-tool#845 is fixed
   - `bank.fund_address` now waits for chain-confirmed nonce before releasing `FUNDING_MUTEX` (DAPI replica lag — upstream issue #3611)
   - Parallelism: PA-002, PA-008c, Harness-ID-1 (`id_sweep`) made parallel-safe
   - SPV: enabled by default (v17/v18/v19/v21 all validated SPV-on); `PLATFORM_WALLET_E2E_DISABLE_SPV=1` is an escape hatch for ChainLock-cycle outages (rust-dashcore #470), not the operating mode
@@ -1418,7 +1418,7 @@ implies SPV-off is the default is incorrect.
 #### CR-004 — Legacy BIP32 account: balance + UTXO state updates after spend
 
 - **Priority**: P1 — open bug from upstream consumer
-- **Status**: ENV-GATED FAILING-by-design — runs only when `PLATFORM_WALLET_E2E_RUN_FAILING_BY_DESIGN=1` is set. Without that env var the test is skipped with an informative log message. The production bug (stale UTXO set after spend) is open; this test pins the contract so the fix becomes verifiable. PR #3609 carries both the test and the production fix together.
+- **Status**: FAILING-by-design — `#[ignore]`'d so the default `cargo test` cohort stays green; runs only when `cargo test -- --ignored` is used and is expected to fail until the upstream contract is fixed. The production bug (stale UTXO set after spend) is open; this test pins the contract so the fix becomes verifiable. PR #3609 carries both the test and the production fix together.
 - **Wallet feature exercised**: `wallet/core/wallet.rs:54` (`CoreWallet::balance`); `wallet/core/broadcast.rs:185` (`check_core_transaction` post-broadcast state mutation on `standard_bip32_accounts`).
 - **Bug repro (upstream)**: [dashpay/dash-evo-tool#845](https://github.com/dashpay/dash-evo-tool/issues/845) — sending all funds from a legacy BIP32 account (`StandardAccountType::BIP32Account`) leaves the wallet's local UTXO set stale; a follow-up `send_to_addresses` call fails with `TransactionBuild("Coin selection error: No UTXOs available for selection")` despite the original UTXOs being long since spent on-chain.
 - **DET parallel**: none yet — DET is the affected consumer; this test pins the contract on the rs-platform-wallet side so a fix becomes verifiable from a single repository.
