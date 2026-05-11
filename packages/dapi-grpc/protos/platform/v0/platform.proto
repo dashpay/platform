@@ -36,6 +36,10 @@ service Platform {
   rpc getDataContracts(GetDataContractsRequest)
       returns (GetDataContractsResponse);
   rpc getDocuments(GetDocumentsRequest) returns (GetDocumentsResponse);
+  rpc getDocumentsCount(GetDocumentsCountRequest)
+      returns (GetDocumentsCountResponse);
+  rpc getDocumentsSplitCount(GetDocumentsSplitCountRequest)
+      returns (GetDocumentsSplitCountResponse);
   rpc getIdentityByPublicKeyHash(GetIdentityByPublicKeyHashRequest)
       returns (GetIdentityByPublicKeyHashResponse);
   rpc getIdentityByNonUniquePublicKeyHash(
@@ -609,6 +613,60 @@ message GetDocumentsResponse {
     ResponseMetadata metadata = 3; // Metadata about the blockchain state
   }
   oneof version { GetDocumentsResponseV0 v0 = 1; }
+}
+
+
+message GetDocumentsCountRequest {
+  message GetDocumentsCountRequestV0 {
+    bytes data_contract_id = 1; // The ID of the data contract containing the documents
+    string document_type = 2;  // The type of document being requested
+    bytes where = 3;           // CBOR-encoded where clauses for filtering
+    bool prove = 4;            // Flag to request a proof as the response
+  }
+  oneof version { GetDocumentsCountRequestV0 v0 = 1; }
+}
+
+message GetDocumentsCountResponse {
+  message GetDocumentsCountResponseV0 {
+    oneof result {
+      uint64 count = 1;  // Total document count matching the query
+      Proof proof = 2;   // Cryptographic proof, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetDocumentsCountResponseV0 v0 = 1; }
+}
+
+message GetDocumentsSplitCountRequest {
+  message GetDocumentsSplitCountRequestV0 {
+    bytes data_contract_id = 1; // The ID of the data contract containing the documents
+    string document_type = 2;  // The type of document being requested
+    bytes where = 3;           // CBOR-encoded where clauses for filtering
+    string split_count_by_index_property = 4; // The index property to split counts by
+    bool prove = 5;            // Flag to request a proof as the response
+  }
+  oneof version { GetDocumentsSplitCountRequestV0 v0 = 1; }
+}
+
+message GetDocumentsSplitCountResponse {
+  message GetDocumentsSplitCountResponseV0 {
+    // A single entry: the key value and how many documents match
+    message SplitCountEntry {
+      bytes key = 1;     // The index property value
+      uint64 count = 2;  // Number of documents with this key value
+    }
+
+    message SplitCounts {
+      repeated SplitCountEntry entries = 1;
+    }
+
+    oneof result {
+      SplitCounts split_counts = 1; // Per-key counts
+      Proof proof = 2;              // Cryptographic proof, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetDocumentsSplitCountResponseV0 v0 = 1; }
 }
 
 message GetIdentityByPublicKeyHashRequest {

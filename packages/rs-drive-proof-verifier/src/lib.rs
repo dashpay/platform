@@ -9,6 +9,8 @@ mod proof;
 pub mod types;
 mod verify;
 pub use error::Error;
+pub use proof::document_count::DocumentCount;
+pub use proof::document_split_count::DocumentSplitCounts;
 pub use proof::{FromProof, Length};
 
 // Re-export context provider types from dash-context-provider

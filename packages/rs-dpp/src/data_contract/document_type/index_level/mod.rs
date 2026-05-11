@@ -3,6 +3,7 @@ use crate::consensus::basic::data_contract::DataContractInvalidIndexDefinitionUp
 use crate::consensus::basic::data_contract::DuplicateIndexError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
+use crate::data_contract::document_type::index::IndexCountability;
 use crate::data_contract::document_type::index_level::IndexType::{
     ContestedResourceIndex, NonUniqueIndex, UniqueIndex,
 };
@@ -35,8 +36,12 @@ pub struct IndexLevelTypeInfo {
     pub should_insert_with_all_null: bool,
     /// The index type
     pub index_type: IndexType,
-    /// Is this index countable. Uses sum trees to enable count operations
-    pub countable: bool,
+    /// Whether and how this index supports count fast paths. Drives the GroveDB
+    /// tree variant chosen at the terminal level of the index path:
+    /// `NotCountable` → `NormalTree`,
+    /// `Countable` → `CountTree`,
+    /// `CountableAllowingOffset` → `ProvableCountTree`.
+    pub countable: IndexCountability,
 }
 
 impl IndexType {
@@ -323,7 +328,7 @@ mod tests {
             unique: false,
             null_searchable: true,
             contested_index: None,
-            countable: false,
+            countable: IndexCountability::NotCountable,
         }];
 
         let old_index_structure =
@@ -351,7 +356,7 @@ mod tests {
             unique: false,
             null_searchable: true,
             contested_index: None,
-            countable: false,
+            countable: IndexCountability::NotCountable,
         }];
 
         let new_indices = vec![
@@ -364,7 +369,7 @@ mod tests {
                 unique: false,
                 null_searchable: true,
                 contested_index: None,
-                countable: false,
+                countable: IndexCountability::NotCountable,
             },
             Index {
                 name: "test2".to_string(),
@@ -375,7 +380,7 @@ mod tests {
                 unique: false,
                 null_searchable: true,
                 contested_index: None,
-                countable: false,
+                countable: IndexCountability::NotCountable,
             },
         ];
 
@@ -412,7 +417,7 @@ mod tests {
                 unique: false,
                 null_searchable: true,
                 contested_index: None,
-                countable: false,
+                countable: IndexCountability::NotCountable,
             },
             Index {
                 name: "test2".to_string(),
@@ -423,7 +428,7 @@ mod tests {
                 unique: false,
                 null_searchable: true,
                 contested_index: None,
-                countable: false,
+                countable: IndexCountability::NotCountable,
             },
         ];
 
@@ -436,7 +441,7 @@ mod tests {
             unique: false,
             null_searchable: true,
             contested_index: None,
-            countable: false,
+            countable: IndexCountability::NotCountable,
         }];
 
         let old_index_structure =
@@ -471,7 +476,7 @@ mod tests {
             unique: false,
             null_searchable: true,
             contested_index: None,
-            countable: false,
+            countable: IndexCountability::NotCountable,
         }];
 
         let new_indices = vec![Index {
@@ -489,7 +494,7 @@ mod tests {
             unique: false,
             null_searchable: true,
             contested_index: None,
-            countable: false,
+            countable: IndexCountability::NotCountable,
         }];
 
         let old_index_structure =
@@ -530,7 +535,7 @@ mod tests {
             unique: false,
             null_searchable: true,
             contested_index: None,
-            countable: false,
+            countable: IndexCountability::NotCountable,
         }];
 
         let new_indices = vec![Index {
@@ -542,7 +547,7 @@ mod tests {
             unique: false,
             null_searchable: true,
             contested_index: None,
-            countable: false,
+            countable: IndexCountability::NotCountable,
         }];
 
         let old_index_structure =
@@ -577,7 +582,7 @@ mod tests {
             unique: false,
             null_searchable: true,
             contested_index: None,
-            countable: false,
+            countable: IndexCountability::NotCountable,
         }];
 
         let new_indices = vec![Index {
@@ -589,7 +594,7 @@ mod tests {
             unique: false,
             null_searchable: true,
             contested_index: None,
-            countable: true,
+            countable: IndexCountability::Countable,
         }];
 
         let old_index_structure =
@@ -624,7 +629,7 @@ mod tests {
             unique: false,
             null_searchable: true,
             contested_index: None,
-            countable: true,
+            countable: IndexCountability::Countable,
         }];
 
         let new_indices = vec![Index {
@@ -636,7 +641,7 @@ mod tests {
             unique: false,
             null_searchable: true,
             contested_index: None,
-            countable: false,
+            countable: IndexCountability::NotCountable,
         }];
 
         let old_index_structure =
@@ -671,7 +676,7 @@ mod tests {
             unique: false,
             null_searchable: true,
             contested_index: None,
-            countable: true,
+            countable: IndexCountability::Countable,
         }];
 
         let old_index_structure =
@@ -706,7 +711,7 @@ mod tests {
             unique: false,
             null_searchable: true,
             contested_index: None,
-            countable: false,
+            countable: IndexCountability::NotCountable,
         }];
 
         let new_indices = vec![Index {
@@ -724,7 +729,7 @@ mod tests {
             unique: false,
             null_searchable: true,
             contested_index: None,
-            countable: true,
+            countable: IndexCountability::Countable,
         }];
 
         let old_index_structure =

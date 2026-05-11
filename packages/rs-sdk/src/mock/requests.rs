@@ -566,3 +566,38 @@ impl MockResponse for NullifiersTrunkState {
         unimplemented!("NullifiersTrunkState does not support mock deserialization - the Tree type is not serializable")
     }
 }
+
+impl MockResponse for drive_proof_verifier::DocumentCount {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        let bincode_config = standard();
+        bincode::encode_to_vec(self.0, bincode_config).expect("encode DocumentCount")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let bincode_config = standard();
+        let (count, _): (u64, _) =
+            bincode::decode_from_slice(buf, bincode_config).expect("decode DocumentCount");
+        drive_proof_verifier::DocumentCount(count)
+    }
+}
+
+impl MockResponse for drive_proof_verifier::DocumentSplitCounts {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        let bincode_config = standard();
+        let pairs: Vec<(Vec<u8>, u64)> = self.0.iter().map(|(k, v)| (k.clone(), *v)).collect();
+        bincode::encode_to_vec(pairs, bincode_config).expect("encode DocumentSplitCounts")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let bincode_config = standard();
+        let (pairs, _): (Vec<(Vec<u8>, u64)>, _) =
+            bincode::decode_from_slice(buf, bincode_config).expect("decode DocumentSplitCounts");
+        drive_proof_verifier::DocumentSplitCounts(pairs.into_iter().collect())
+    }
+}
