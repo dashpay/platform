@@ -1,5 +1,5 @@
 use crate::version::drive_versions::drive_address_funds_method_versions::v1::DRIVE_ADDRESS_FUNDS_METHOD_VERSIONS_V1;
-use crate::version::drive_versions::drive_contract_method_versions::v2::DRIVE_CONTRACT_METHOD_VERSIONS_V2;
+use crate::version::drive_versions::drive_contract_method_versions::v3::DRIVE_CONTRACT_METHOD_VERSIONS_V3;
 use crate::version::drive_versions::drive_credit_pool_method_versions::v1::CREDIT_POOL_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_document_method_versions::v2::DRIVE_DOCUMENT_METHOD_VERSIONS_V2;
 use crate::version::drive_versions::drive_group_method_versions::v1::DRIVE_GROUP_METHOD_VERSIONS_V1;
@@ -54,7 +54,7 @@ pub const DRIVE_VERSION_V7: DriveVersion = DriveVersion {
         },
         document: DRIVE_DOCUMENT_METHOD_VERSIONS_V2,
         vote: DRIVE_VOTE_METHOD_VERSIONS_V2,
-        contract: DRIVE_CONTRACT_METHOD_VERSIONS_V2,
+        contract: DRIVE_CONTRACT_METHOD_VERSIONS_V3, // changed: count-tree-aware contract-insertion cost estimation (v12+ countable/range_countable doctypes)
         fees: DriveFeesMethodVersions { calculate_fee: 0 },
         estimated_costs: DriveEstimatedCostsMethodVersions {
             add_estimation_costs_for_levels_up_to_contract: 0,
