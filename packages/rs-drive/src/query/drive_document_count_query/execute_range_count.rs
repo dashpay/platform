@@ -91,8 +91,44 @@ impl DriveDocumentCountQuery<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<SplitCountEntry>, Error> {
         let drive_version = &platform_version.drive;
+        let has_in_on_prefix = self
+            .where_clauses
+            .iter()
+            .any(|wc| wc.operator == WhereOperator::In);
 
-        // Build a single path query via the unified
+        // Flat (no-In) summed mode has a dedicated O(log n) fast
+        // path via grovedb's no-proof `AggregateCountOnRange`
+        // execution (`GroveDb::query_aggregate_count`). It walks the
+        // merk tree's boundary nodes using each node's stored
+        // aggregate count to short-circuit fully-inside/outside
+        // subtrees, returning the count directly without
+        // materializing any child elements. Compound (`In + range`)
+        // summed mode can't use this primitive because
+        // `AggregateCountOnRange` is a single-range merk operation
+        // that doesn't fork over outer `Key` items — for that case
+        // we fall through to the walk-and-sum path below.
+        if !options.distinct && !has_in_on_prefix {
+            let path_query = self.aggregate_count_path_query(platform_version)?;
+            let count = drive
+                .grove
+                .query_aggregate_count(&path_query, transaction, &drive_version.grove_version)
+                .unwrap()
+                .map_err(|e| Error::GroveDB(Box::new(e)))?;
+            return Ok(vec![SplitCountEntry {
+                in_key: None,
+                key: Vec::new(),
+                count,
+            }]);
+        }
+
+        // Walk-and-sum / walk-and-emit path. Used by:
+        // - Compound summed mode (the aggregate primitive can't fork
+        //   over `In`, so we materialize each `(in_key, key)` entry
+        //   and sum in Rust).
+        // - Distinct mode (caller wants per-`(in_key, key)` entries,
+        //   not a single sum).
+        //
+        // Builds a single path query via the unified
         // `distinct_count_path_query` builder. For an Equal-only
         // prefix this collapses to a flat range-only query at the
         // terminator's property-name subtree; for an In-on-prefix
@@ -102,20 +138,17 @@ impl DriveDocumentCountQuery<'_> {
         // range item.
         //
         // Limit and direction handling differs by mode:
-        // - **Summed mode** (`distinct = false`) needs every emitted
-        //   element to compute the aggregate, so the path-query
-        //   limit stays `None` and direction is the canonical
-        //   ascending. The per-query DoS bound is the index size
-        //   itself, bounded by the contract author's index choice.
-        //   A follow-up that wires grovedb's no-proof
-        //   `AggregateCountOnRange` execution here would collapse
-        //   this to O(log n) — tracked separately.
-        // - **Distinct mode** (`distinct = true`) pushes the
-        //   caller's `limit` and `order_by_ascending` directly into
-        //   grovedb so the walk stops at `limit` elements in the
-        //   requested direction. Per-query work is then O(limit ×
-        //   log n) instead of O(index size), and no Rust-side
-        //   sort/reverse/truncate is needed.
+        // - **Compound summed mode** needs every emitted element to
+        //   compute the aggregate, so the path-query limit stays
+        //   `None` and direction is the canonical ascending. The
+        //   per-query DoS bound is the index size itself, bounded
+        //   by the contract author's index choice.
+        // - **Distinct mode** pushes the caller's `limit` and
+        //   `order_by_ascending` directly into grovedb so the walk
+        //   stops at `limit` elements in the requested direction.
+        //   Per-query work is then O(limit × log n) instead of
+        //   O(index size), and no Rust-side sort/reverse/truncate
+        //   is needed.
         let (path_query_limit, left_to_right) = if options.distinct {
             (options.limit.map(|l| l as u16), options.order_by_ascending)
         } else {
@@ -124,10 +157,6 @@ impl DriveDocumentCountQuery<'_> {
         let path_query =
             self.distinct_count_path_query(path_query_limit, left_to_right, platform_version)?;
         let base_path_len = path_query.path.len();
-        let has_in_on_prefix = self
-            .where_clauses
-            .iter()
-            .any(|wc| wc.operator == WhereOperator::In);
 
         let mut drive_operations = vec![];
         let result = drive.grove_get_raw_path_query(
