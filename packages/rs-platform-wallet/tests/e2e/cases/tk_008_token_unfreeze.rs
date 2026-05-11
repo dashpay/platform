@@ -18,6 +18,7 @@ use crate::framework::tokens::{
     setup_with_token_and_two_identities, token_balance_of, token_frozen_balance_of,
     wait_for_token_balance, DEFAULT_TK_FUNDING,
 };
+use crate::framework::wait::wait_for_identity_balance_change;
 
 use dash_sdk::platform::Fetch;
 use dash_sdk::query_types::IdentityBalance;
@@ -153,10 +154,14 @@ async fn tk_008_token_unfreeze() {
         .await
         .expect("token unfreeze");
 
-    let owner_credits_post = IdentityBalance::fetch(ctx.sdk(), owner.id)
-        .await
-        .expect("fetch owner credits post-unfreeze")
-        .expect("owner identity present");
+    // Marvin TK-008 forensics (v30): same stale-read mechanism as
+    // TK-007. `IdentityBalance::fetch` may round-robin onto a DAPI
+    // replica that hasn't yet applied the unfreeze block; poll until
+    // the chain surfaces a distinct balance.
+    let owner_credits_post =
+        wait_for_identity_balance_change(ctx.sdk(), owner.id, owner_credits_pre, STEP_TIMEOUT)
+            .await
+            .expect("owner credit balance never changed after unfreeze");
 
     // Frozen-balance helper: returns the identity's full token
     // balance while frozen, `0` once the `frozen` flag is cleared.

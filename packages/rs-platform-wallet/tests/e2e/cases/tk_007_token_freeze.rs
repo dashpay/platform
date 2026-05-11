@@ -27,6 +27,7 @@ use crate::framework::tokens::{
     setup_with_token_and_two_identities, token_balance_of, token_frozen_balance_of,
     wait_for_token_balance, DEFAULT_TK_FUNDING,
 };
+use crate::framework::wait::wait_for_identity_balance_change;
 
 use dash_sdk::platform::Fetch;
 use dash_sdk::query_types::IdentityBalance;
@@ -157,10 +158,17 @@ async fn tk_007_token_freeze() {
         .await
         .expect("token freeze");
 
-    let owner_credits_post = IdentityBalance::fetch(ctx.sdk(), owner.id)
-        .await
-        .expect("fetch owner credits post-freeze")
-        .expect("owner identity present");
+    // Marvin TK-007 forensics (v30): `IdentityBalance::fetch` may
+    // round-robin onto a DAPI replica that hasn't yet applied the
+    // freeze block and return the pre-freeze value, even though the
+    // SDK's `broadcast_and_wait` confirmed apply on the serving node.
+    // Poll the chain side until it surfaces a balance distinct from
+    // the snapshot — the freeze always charges credits, so any
+    // change clears the gate.
+    let owner_credits_post =
+        wait_for_identity_balance_change(ctx.sdk(), owner.id, owner_credits_pre, STEP_TIMEOUT)
+            .await
+            .expect("owner credit balance never changed after freeze");
 
     let frozen_balance = token_frozen_balance_of(ctx, contract_id, position, peer.id)
         .await

@@ -461,8 +461,29 @@ pub async fn setup_with_token_and_two_identities(
     ctx: &E2eContext,
     funding_per: dpp::fee::Credits,
 ) -> FrameworkResult<TokenTwoIdentitiesSetup> {
+    setup_with_token_and_two_identities_with_step_timeout(
+        ctx,
+        funding_per,
+        super::DEFAULT_SETUP_STEP_TIMEOUT,
+    )
+    .await
+}
+
+/// Per-test override of [`setup_with_token_and_two_identities`]'s
+/// propagation budget. Routes through
+/// [`super::setup_with_n_identities_with_step_timeout`] so each waiter
+/// inside the identity-bootstrap loop honours `step_timeout`. Used by
+/// the round-trip cases that fund 35 B+ credits across two identities
+/// concurrently under `--test-threads=14` — the 60 s default is too
+/// tight when sibling guards compete for the bank lane.
+pub async fn setup_with_token_and_two_identities_with_step_timeout(
+    ctx: &E2eContext,
+    funding_per: dpp::fee::Credits,
+    step_timeout: Duration,
+) -> FrameworkResult<TokenTwoIdentitiesSetup> {
     let _ = ctx;
-    let setup_guard = setup_with_n_identities(2, funding_per).await?;
+    let setup_guard =
+        super::setup_with_n_identities_with_step_timeout(2, funding_per, step_timeout).await?;
     let owner = setup_guard.identities[0].clone_for_token_setup();
     let peer = setup_guard.identities[1].clone_for_token_setup();
 
@@ -687,6 +708,17 @@ pub async fn mint_to(
         .map_err(|err| FrameworkError::Sdk(format!("fetch data contract: {err}")))?
         .ok_or_else(|| FrameworkError::Sdk(format!("contract {contract_id} not found on chain")))?;
 
+    // Snapshot recipient's pre-mint balance and contract-wide supply
+    // so the post-broadcast wait gates can pin exact targets. Required
+    // because sibling TK cases (TK-006/007/008) read supply or freeze
+    // state immediately after `mint_to` returns and would otherwise
+    // race the DAPI replication lag — the SDK's `broadcast_and_wait`
+    // settles on whichever node served the broadcast, but the next
+    // read may round-robin onto a lagging replica (Marvin TK-006/007/008
+    // forensics, v30 run).
+    let pre_balance = token_balance_raw(ctx.sdk(), recipient.id, contract_id, position).await?;
+    let pre_supply = token_supply_raw(ctx.sdk(), contract_id, position).await?;
+
     let builder =
         TokenMintTransitionBuilder::new(Arc::new(data_contract), position, owner_signer.id, amount)
             .issued_to_identity_id(recipient.id);
@@ -700,8 +732,61 @@ pub async fn mint_to(
         .await
         .map_err(|err| FrameworkError::Sdk(format!("token_mint: {err}")))?;
 
+    // Post-broadcast wait gates. Saturating-add keeps targets sane on
+    // pathological mint values that would overflow.
+    let balance_target = pre_balance.saturating_add(amount);
+    let supply_target = pre_supply.saturating_add(amount);
+
+    // Gate #1: recipient's chain-side balance reflects the mint.
+    wait_for_token_balance(
+        ctx,
+        recipient.id,
+        contract_id,
+        position,
+        balance_target,
+        MINT_POST_BROADCAST_WAIT,
+    )
+    .await?;
+
+    // Gate #2: contract-wide supply reflects the mint. The supply
+    // query (`TotalSingleTokenBalance::fetch`) is served by a
+    // different proof path than the per-identity balance and may lag
+    // it across replicas; TK-006 reads supply directly after this
+    // helper returns and was the failing call site without this gate.
+    let deadline = Instant::now() + MINT_POST_BROADCAST_WAIT;
+    loop {
+        match token_supply_raw(ctx.sdk(), contract_id, position).await {
+            Ok(current) if current >= supply_target => break,
+            Ok(current) => tracing::debug!(
+                target: "platform_wallet::e2e::tokens",
+                ?contract_id,
+                position,
+                current,
+                expected = supply_target,
+                "token supply below post-mint target; retrying"
+            ),
+            Err(err) => tracing::debug!(
+                target: "platform_wallet::e2e::tokens",
+                error = %err,
+                "token supply fetch failed during mint_to post-wait; retrying"
+            ),
+        }
+        if Instant::now() >= deadline {
+            return Err(FrameworkError::Cleanup(format!(
+                "mint_to: token supply never reached pre+amount ({supply_target}) within {MINT_POST_BROADCAST_WAIT:?} \
+                 (contract={contract_id} position={position})"
+            )));
+        }
+        tokio::time::sleep(super::wait::DEFAULT_POLL_INTERVAL).await;
+    }
+
     Ok(())
 }
+
+/// Post-broadcast replication-lag budget for [`mint_to`]. The SDK
+/// itself awaits a proof on whichever DAPI replica served the
+/// broadcast — this gate is purely for the cross-replica catch-up.
+const MINT_POST_BROADCAST_WAIT: Duration = Duration::from_secs(30);
 
 // ---------------------------------------------------------------------------
 // 17. wait_for_token_balance — poll-until-target

@@ -38,8 +38,8 @@ use dpp::data_contract::DataContract;
 
 use crate::framework::prelude::*;
 use crate::framework::tokens::{
-    mint_to, setup_with_token_and_two_identities, token_balance_of, token_supply_of,
-    wait_for_token_balance, DEFAULT_TK_FUNDING,
+    mint_to, setup_with_token_and_two_identities_with_step_timeout, token_balance_of,
+    token_supply_of, wait_for_token_balance, DEFAULT_TK_FUNDING,
 };
 
 /// Tokens minted to the owner before the round-trip starts. Picked
@@ -60,6 +60,14 @@ const TRANSFER_AMOUNT: u64 = 250;
 /// so this is a safety net for the trusted-context-provider warmup
 /// rather than an actual sync wait.
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Bootstrap-step budget for the two-identity funding hop. 60 s is
+/// too tight under `--test-threads=14` when both identities fund
+/// 35 150 100 000 duff concurrently — the broadcast lands but
+/// `wait_for_balance`'s chain-confirmed gate doesn't clear inside
+/// the default deadline. 120 s is plenty without softening the
+/// framework-wide default.
+const SETUP_STEP_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 #[ignore = "TK-004: requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access; run with `cargo test -- --ignored`"]
@@ -88,9 +96,13 @@ async fn tk_004_token_transfer_round_trip() {
     // also handles the Wave 1 MASTER-signing surface — if the chain
     // rejects, the failure rolls up here and is caller-visible in
     // the test summary as a fixture build failure.
-    let two = setup_with_token_and_two_identities(ctx, DEFAULT_TK_FUNDING)
-        .await
-        .expect("TK-004: token + two-identities setup failed");
+    let two = setup_with_token_and_two_identities_with_step_timeout(
+        ctx,
+        DEFAULT_TK_FUNDING,
+        SETUP_STEP_TIMEOUT,
+    )
+    .await
+    .expect("TK-004: token + two-identities setup failed");
 
     let TokenTwoIdentitiesSetup {
         setup,

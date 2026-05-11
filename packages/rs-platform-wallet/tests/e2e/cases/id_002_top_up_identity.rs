@@ -42,7 +42,12 @@ const TOP_UP_FUNDING_FLOOR: u64 = 45_000_000;
 /// residual that absorbs the chain-time top-up fee.
 const TOP_UP_AMOUNT: Credits = 25_000_000;
 
-const STEP_TIMEOUT: Duration = Duration::from_secs(60);
+// 60 s is too tight under `--test-threads=14` when ID-002 funds
+// 45 000 000 duff on the top-up address while sibling cases broadcast
+// concurrently — the funding broadcast lands but `wait_for_balance`'s
+// chain-confirmed gate doesn't clear inside the default deadline.
+// 120 s is plenty without softening the framework-wide default.
+const STEP_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[ignore = "requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access; run with `cargo test -- --ignored`"]
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]

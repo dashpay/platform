@@ -901,6 +901,88 @@ pub async fn wait_for_identity_balance(
     }
 }
 
+/// Wait until [`Identity::fetch`] surfaces a balance that differs from
+/// `pre_balance`, returning the new value.
+///
+/// **Why this exists (Marvin TK-007/008 forensics):** a state transition
+/// that charges the owner's identity credits settles on whichever DAPI
+/// replica served the broadcast (`broadcast_and_wait` confirms apply
+/// there), but the immediately-following `IdentityBalance::fetch` may
+/// round-robin onto a sibling replica that hasn't applied the block yet
+/// and return the pre-broadcast value. Symptom: a `pre == post` assertion
+/// on identity credits fires even though the on-chain fee was debited
+/// (visible in teardown sweeps).
+///
+/// Polls every [`POLL_INTERVAL`] until the fetched balance differs from
+/// `pre_balance`, then returns the observed value. Errors during fetch
+/// are treated as transient (logged at `debug`); a missing identity is
+/// re-polled. Returns [`FrameworkError::Cleanup`] on timeout — at that
+/// point the read replicas genuinely never caught up inside the budget.
+///
+/// `pre_balance` is the **last known** balance the caller observed before
+/// the broadcast that should have changed it. Any change qualifies — the
+/// helper does not enforce a direction so it works for both fee debits
+/// (post < pre) and credits (post > pre). Tests that need a stricter
+/// invariant should re-assert it on the returned value.
+pub async fn wait_for_identity_balance_change(
+    sdk: &Sdk,
+    identity_id: Identifier,
+    pre_balance: Credits,
+    timeout: Duration,
+) -> FrameworkResult<Credits> {
+    /// Inter-poll gap. Short enough to clear typical sub-second
+    /// replication lag, long enough to bias toward sampling distinct
+    /// DAPI replicas across iterations.
+    const POLL_INTERVAL: Duration = Duration::from_millis(500);
+
+    let start = Instant::now();
+    let deadline = start + timeout;
+
+    loop {
+        match Identity::fetch(sdk, identity_id).await {
+            Ok(Some(identity)) => {
+                let balance = identity.balance();
+                if balance != pre_balance {
+                    tracing::info!(
+                        target: "platform_wallet::e2e::wait",
+                        ?identity_id,
+                        pre_balance,
+                        observed = balance,
+                        elapsed = ?start.elapsed(),
+                        "identity balance changed from pre-broadcast snapshot"
+                    );
+                    return Ok(balance);
+                }
+                tracing::debug!(
+                    target: "platform_wallet::e2e::wait",
+                    ?identity_id,
+                    pre_balance,
+                    "identity balance still matches pre-broadcast snapshot; replica may be lagging"
+                );
+            }
+            Ok(None) => tracing::debug!(
+                target: "platform_wallet::e2e::wait",
+                ?identity_id,
+                "identity not yet visible on chain"
+            ),
+            Err(err) => tracing::debug!(
+                target: "platform_wallet::e2e::wait",
+                error = %err,
+                "fetch::<Identity> failed during wait_for_identity_balance_change"
+            ),
+        }
+
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(FrameworkError::Cleanup(format!(
+                "wait_for_identity_balance_change timed out after {timeout:?} \
+                 (identity_id={identity_id:?} pre_balance={pre_balance})"
+            )));
+        }
+        tokio::time::sleep(std::cmp::min(remaining, POLL_INTERVAL)).await;
+    }
+}
+
 /// Wait for a freshly-registered identity to become visible across enough
 /// Platform DAPI replicas that the next state transition referencing it
 /// won't round-robin onto a still-lagging node and panic with

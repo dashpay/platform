@@ -14,6 +14,7 @@
 //!   the read-side accessor sees.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use dash_sdk::platform::tokens::builders::burn::TokenBurnTransitionBuilder;
 use dash_sdk::platform::Fetch;
@@ -24,6 +25,7 @@ use crate::framework::prelude::*;
 use crate::framework::tokens::{
     mint_to, setup_with_token_contract, token_balance_of, token_supply_of, DEFAULT_TK_FUNDING,
 };
+use crate::framework::wait::wait_for_identity_balance_change;
 
 /// Pre-burn mint that seeds the owner's balance.
 const MINT_AMOUNT: u64 = 1_000;
@@ -127,10 +129,20 @@ async fn tk_006_token_burn() {
         .await
         .expect("token_burn");
 
-    let owner_credits_post_burn = IdentityBalance::fetch(ctx.sdk(), owner_id)
-        .await
-        .expect("fetch owner credits post-burn")
-        .expect("owner identity present");
+    // Marvin TK-007/008 forensics generalises here: `IdentityBalance::
+    // fetch` may round-robin onto a DAPI replica that hasn't yet
+    // applied the burn block and return the pre-burn value, even
+    // though `broadcast_and_wait` confirmed apply on the serving node.
+    // Poll until the chain surfaces a distinct balance — the burn
+    // always charges credits, so any change clears the gate.
+    let owner_credits_post_burn = wait_for_identity_balance_change(
+        ctx.sdk(),
+        owner_id,
+        owner_credits_pre_burn,
+        Duration::from_secs(60),
+    )
+    .await
+    .expect("owner credit balance never changed after burn");
     let burn_fee = owner_credits_pre_burn.saturating_sub(owner_credits_post_burn);
     assert!(
         burn_fee > 0,
