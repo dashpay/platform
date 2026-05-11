@@ -1,10 +1,18 @@
-//! Bank identity — destination of identity-credit sweeps.
+//! Bank identity — transient mid-run sink, persisted across runs for
+//! legacy compatibility.
 //!
-//! Identity-to-identity credit transfers (the only sweep path the
-//! `CreditTransfer` state transition supports) need an existing
-//! identity to receive funds. Tests share a single bank identity so
-//! swept credits accumulate in one place rather than leaking on
-//! every run.
+//! Identity-side test sweeps now drain directly to the bank's Platform
+//! address (the single Platform-side funding pool — see
+//! [`super::bank_rebalance`] for the design contract), so this identity
+//! no longer accumulates credits during a run. It remains registered
+//! and persisted at `<workdir>/bank_identity.json` because:
+//!
+//! - The core-refill chain ([`super::bank_rebalance::refill_core_from_platform_if_below_threshold`])
+//!   uses it as a transient buffer when chaining
+//!   `top_up_from_addresses` → `withdraw_credits_with_external_signer`.
+//! - Any residual balance from older runs is drained back to the bank
+//!   Platform address at suite start by
+//!   [`super::bank_rebalance::drain_bank_identity_to_addresses`].
 //!
 //! Bootstrap policy:
 //! - If `PLATFORM_WALLET_E2E_BANK_IDENTITY_ID` is set, parse it and

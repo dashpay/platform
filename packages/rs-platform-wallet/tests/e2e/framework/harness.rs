@@ -23,6 +23,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::bank::{BankWallet, CrossCheckResult};
 use super::bank_identity::{self, BankIdentity};
+use super::bank_rebalance;
 use super::cleanup;
 use super::config::{self, BankCoreGateSource, Config};
 use super::identity_sync::IdentitySync;
@@ -174,8 +175,10 @@ pub struct E2eContext {
     /// without breaking the type — current default is `Some`.
     pub spv_runtime: Option<Arc<SpvRuntime>>,
     pub bank: BankWallet,
-    /// Identity-credit sweep destination — registered or loaded once
-    /// per process (see [`super::bank_identity`]).
+    /// Bank identity — transient mid-run sink (drained back to the
+    /// bank Platform address at suite start; used as the buffer for
+    /// the core-refill chain). Registered or loaded once per process
+    /// (see [`super::bank_identity`] and [`super::bank_rebalance`]).
     pub bank_identity: BankIdentity,
     pub registry: PersistentTestWalletRegistry,
     /// Framework-wide shutdown signal for background tasks. Not
@@ -246,7 +249,8 @@ impl E2eContext {
         &self.bank
     }
 
-    /// Bank identity — destination of identity-credit sweeps.
+    /// Bank identity — transient mid-run sink (see
+    /// [`super::bank_rebalance`] for the design contract).
     pub fn bank_identity(&self) -> &BankIdentity {
         &self.bank_identity
     }
@@ -544,6 +548,25 @@ impl E2eContext {
         )
         .await?;
 
+        // Drain any residual bank-identity credits back to the bank's
+        // Platform address (the single Platform-side funding pool —
+        // see [`super::bank_rebalance`]). Runs BEFORE the orphan sweep
+        // and the post-sweep floor check so the floor sees the drained
+        // state. Best-effort: errors are swallowed inside the helper.
+        match bank_rebalance::drain_bank_identity_to_addresses(&bank, &bank_identity).await {
+            Ok(0) => {}
+            Ok(drained) => tracing::info!(
+                target: "platform_wallet::e2e::harness",
+                drained,
+                "bank identity drained back to bank Platform address"
+            ),
+            Err(err) => tracing::warn!(
+                target: "platform_wallet::e2e::harness",
+                error = %err,
+                "bank identity drain failed; continuing"
+            ),
+        }
+
         let registry = PersistentTestWalletRegistry::open(workdir.join("test_wallets.json"))?;
 
         // Capture pre-sweep registry stats so `assert_floor` can name them
@@ -646,6 +669,35 @@ impl E2eContext {
 
         bank.assert_floor(&config, sweep_recovered, pre_sweep_total, pre_sweep_failed)
             .await;
+
+        // Opt-in Platform→Core refill: trips when the bank's confirmed
+        // Core balance is below the configured duff threshold. Best-
+        // effort — failures inside the helper are demoted to WARN so
+        // an unreachable Core withdrawal pool doesn't block context
+        // init for Platform-only suites. The chain is slow by design
+        // (top_up_from_addresses → withdraw_credits_with_external_signer
+        // rides the Core withdrawal pool); the threshold gate keeps it
+        // off the hot path on subsequent runs.
+        match bank_rebalance::refill_core_from_platform_if_below_threshold(
+            &bank,
+            &bank_identity,
+            config.core_refill_threshold_duff,
+            config.core_refill_target_duff,
+        )
+        .await
+        {
+            Ok(0) => {}
+            Ok(refilled_duff) => tracing::info!(
+                target: "platform_wallet::e2e::harness",
+                refilled_duff,
+                "bank Core refill issued from Platform address pool"
+            ),
+            Err(err) => tracing::warn!(
+                target: "platform_wallet::e2e::harness",
+                error = %err,
+                "bank Core refill failed; continuing"
+            ),
+        }
 
         // Successful build — ownership of the runtime now lives on
         // the returned `E2eContext`. Clear `IN_FLIGHT_SPV` so the

@@ -68,6 +68,7 @@
 
 pub mod bank;
 pub mod bank_identity;
+pub mod bank_rebalance;
 pub mod cleanup;
 pub mod config;
 pub mod context_provider;

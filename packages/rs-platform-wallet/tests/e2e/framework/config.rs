@@ -38,10 +38,13 @@ pub mod vars {
     /// devnet have no default and require this var.
     pub const P2P_PORT: &str = "PLATFORM_WALLET_E2E_P2P_PORT";
     /// Optional 32-byte hex identifier of a pre-registered bank
-    /// identity used as the destination of identity-credit sweeps.
-    /// Unset falls back to "register a fresh bank identity from the
-    /// bank's first platform address on first run and persist its id
-    /// to the workdir slot".
+    /// identity used as the transient mid-run sink for the
+    /// Platform→Core refill chain in [`super::bank_rebalance`].
+    /// Identity-side test sweeps drain directly to the bank's Platform
+    /// address; this identity exists for the refill buffer + legacy
+    /// compatibility. Unset falls back to "register a fresh bank
+    /// identity from the bank's first platform address on first run
+    /// and persist its id to the workdir slot".
     pub const BANK_IDENTITY_ID: &str = "PLATFORM_WALLET_E2E_BANK_IDENTITY_ID";
     /// Bank Core (Layer-1) funding gate. Controls how long the harness
     /// waits at init for the bank's confirmed Core balance to become
@@ -75,6 +78,16 @@ pub mod vars {
     /// Non-positive / unparseable values fall back to the default with
     /// a warn.
     pub const IDENTITY_SYNC_INTERVAL_SECS: &str = "PLATFORM_WALLET_E2E_IDENTITY_SYNC_INTERVAL_SECS";
+    /// Duff threshold below which the harness Platform→Core refill
+    /// fallback fires at suite start (see
+    /// [`super::bank_rebalance::refill_core_from_platform_if_below_threshold`]).
+    /// Unset uses
+    /// [`super::bank_rebalance::DEFAULT_CORE_REFILL_THRESHOLD_DUFF`].
+    pub const CORE_REFILL_THRESHOLD_DUFF: &str = "PLATFORM_WALLET_E2E_CORE_REFILL_THRESHOLD_DUFF";
+    /// Duff target the harness Platform→Core refill fallback aims to
+    /// reach when triggered. Unset uses
+    /// [`super::bank_rebalance::DEFAULT_CORE_REFILL_TARGET_DUFF`].
+    pub const CORE_REFILL_TARGET_DUFF: &str = "PLATFORM_WALLET_E2E_CORE_REFILL_TARGET_DUFF";
 }
 
 /// Default cadence for the harness's identity-state auto-sync (see
@@ -164,6 +177,12 @@ pub struct Config {
     /// Cadence for the harness's identity-state auto-sync. See
     /// [`vars::IDENTITY_SYNC_INTERVAL_SECS`].
     pub identity_sync_interval: Duration,
+    /// Trip line (duffs) for the harness Platform→Core refill fallback.
+    /// Resolved from [`vars::CORE_REFILL_THRESHOLD_DUFF`] or the default.
+    pub core_refill_threshold_duff: u64,
+    /// Target (duffs) for the harness Platform→Core refill fallback.
+    /// Resolved from [`vars::CORE_REFILL_TARGET_DUFF`] or the default.
+    pub core_refill_target_duff: u64,
 }
 
 /// Provenance of the resolved bank-Core-gate timeout — surfaced in the
@@ -200,6 +219,11 @@ impl std::fmt::Debug for Config {
             .field("bank_core_gate_source", &self.bank_core_gate_source)
             .field("disable_spv", &self.disable_spv)
             .field("identity_sync_interval", &self.identity_sync_interval)
+            .field(
+                "core_refill_threshold_duff",
+                &self.core_refill_threshold_duff,
+            )
+            .field("core_refill_target_duff", &self.core_refill_target_duff)
             .finish()
     }
 }
@@ -220,6 +244,8 @@ impl Default for Config {
             bank_core_gate_source: BankCoreGateSource::Default,
             disable_spv: false,
             identity_sync_interval: DEFAULT_IDENTITY_SYNC_INTERVAL,
+            core_refill_threshold_duff: super::bank_rebalance::DEFAULT_CORE_REFILL_THRESHOLD_DUFF,
+            core_refill_target_duff: super::bank_rebalance::DEFAULT_CORE_REFILL_TARGET_DUFF,
         }
     }
 }
@@ -360,6 +386,15 @@ impl Config {
                 .as_deref(),
         );
 
+        let core_refill_threshold_duff = parse_u64_duff_var(
+            vars::CORE_REFILL_THRESHOLD_DUFF,
+            super::bank_rebalance::DEFAULT_CORE_REFILL_THRESHOLD_DUFF,
+        );
+        let core_refill_target_duff = parse_u64_duff_var(
+            vars::CORE_REFILL_TARGET_DUFF,
+            super::bank_rebalance::DEFAULT_CORE_REFILL_TARGET_DUFF,
+        );
+
         Ok(Self {
             bank_mnemonic,
             network,
@@ -373,6 +408,8 @@ impl Config {
             bank_core_gate_source,
             disable_spv,
             identity_sync_interval,
+            core_refill_threshold_duff,
+            core_refill_target_duff,
         })
     }
 
@@ -458,6 +495,36 @@ pub(crate) fn parse_bank_core_gate(raw: Option<&str>) -> (Option<Duration>, Bank
                 BankCoreGateSource::EnvInvalidFallback,
             )
         }
+    }
+}
+
+/// Resolve a u64 (duff-denominated) env var with a fallback default.
+/// Unset / empty / unparseable values fall back to `default` with a
+/// `warn` so an operator's fat-fingered override isn't silently
+/// ignored.
+pub(crate) fn parse_u64_duff_var(var: &'static str, default: u64) -> u64 {
+    match std::env::var(var) {
+        Ok(raw) => {
+            let trimmed = raw.trim();
+            if trimmed.is_empty() {
+                return default;
+            }
+            match trimmed.parse::<u64>() {
+                Ok(value) => value,
+                Err(err) => {
+                    tracing::warn!(
+                        target: "platform_wallet::e2e::config",
+                        var = var,
+                        value = %raw,
+                        ?err,
+                        default,
+                        "could not parse duff env var as u64; falling back to default"
+                    );
+                    default
+                }
+            }
+        }
+        Err(_) => default,
     }
 }
 

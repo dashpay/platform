@@ -3,6 +3,12 @@
 //! seed, sync, and drain every fund source back to the bank by
 //! walking the per-source-type sweep helpers. Best-effort: errors
 //! are logged and the registry retains the entry for the next run.
+//!
+//! Sink architecture: Platform-side sweeps (addresses AND identities)
+//! land on the bank's Platform address —
+//! [`super::bank::BankWallet::primary_receive_address`] — the single
+//! Platform-side funding pool. See [`super::bank_rebalance`] for the
+//! design contract.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -274,7 +280,15 @@ async fn sweep_one(
             "orphan platform total is zero; skipping"
         );
     }
-    sweep_identities_with_seed(&wallet, &seed_bytes, network, bank_identity, &mut report).await?;
+    sweep_identities_with_seed(
+        &wallet,
+        &seed_bytes,
+        network,
+        bank,
+        bank_identity,
+        &mut report,
+    )
+    .await?;
     sweep_core_addresses(&wallet, bank, &mut report).await?;
     sweep_unused_core_asset_locks(&wallet).await?;
     sweep_shielded(&wallet).await?;
@@ -345,6 +359,7 @@ pub async fn teardown_one(
         test_wallet.platform_wallet(),
         &test_wallet.seed_bytes(),
         bank.network(),
+        bank,
         bank_identity,
         &mut report,
     )
@@ -562,9 +577,9 @@ fn build_sweep_plan(
     }
 }
 
-/// Drain identity credit balances back to the bank identity by
-/// broadcasting a `CreditTransfer` state transition for each
-/// non-empty identity owned by `wallet`.
+/// Drain identity credit balances back to the bank's Platform address
+/// by broadcasting a `transfer_credits_to_addresses` state transition
+/// for each non-empty identity owned by `wallet`.
 ///
 /// Operates in two phases:
 ///
@@ -578,10 +593,17 @@ fn build_sweep_plan(
 ///    `wallet.wallet_id()` and whose balance is at least
 ///    [`IDENTITY_SWEEP_FLOOR`]. For each, build a
 ///    [`SeedBackedIdentitySigner`] at that DIP-9 slot and issue a
-///    `transfer_credits_with_external_signer(.., to = bank_identity.id, ..)`.
+///    `transfer_credits_to_addresses_with_external_signer(..,
+///    outputs = {bank_addr: amount}, ..)`. The bank's Platform address
+///    is the single Platform-side funding pool — see
+///    [`super::bank_rebalance`] for the design contract.
 ///
 /// The sweep skips the bank identity itself — a wallet that happens to
-/// own the bank identity would otherwise self-transfer (typed error).
+/// own the bank identity would otherwise self-transfer back into the
+/// same pool we just drained. `bank_identity` is retained as a parameter
+/// for that skip + log context; the destination is the bank's
+/// Platform address ([`BankWallet::primary_receive_address`]), not the
+/// bank identity.
 /// Skips identities whose balance is below
 /// [`IDENTITY_SWEEP_FLOOR`] — the network-level transfer fee is
 /// non-negligible, so attempting to drain dust just burns more
@@ -594,6 +616,7 @@ async fn sweep_identities_with_seed(
     wallet: &Arc<PlatformWallet>,
     seed_bytes: &[u8; 64],
     network: Network,
+    bank: &BankWallet,
     bank_identity: &BankIdentity,
     report: &mut SweepReport,
 ) -> FrameworkResult<()> {
@@ -738,19 +761,21 @@ async fn sweep_identities_with_seed(
             continue;
         }
 
+        let outputs: BTreeMap<PlatformAddress, Credits> =
+            std::iter::once((*bank.primary_receive_address(), amount)).collect();
+
         report.had_funds_to_recover = true;
         match wallet
             .identity()
-            .transfer_credits_with_external_signer(
+            .transfer_credits_to_addresses_with_external_signer(
                 &identity_id,
-                &bank_identity.id,
-                amount,
+                outputs,
                 &signer,
                 None,
             )
             .await
         {
-            Ok(()) => {
+            Ok(_new_balance) => {
                 tracing::info!(
                     target: "platform_wallet::e2e::cleanup",
                     wallet_id = %hex::encode(wallet_id),
@@ -758,7 +783,7 @@ async fn sweep_identities_with_seed(
                     identity_index,
                     amount,
                     bank_identity_id = %bank_identity.id,
-                    "identity sweep: drained credits to bank identity"
+                    "identity sweep: drained credits to bank Platform address"
                 );
                 report.broadcasts_succeeded = report.broadcasts_succeeded.saturating_add(1);
             }
@@ -770,7 +795,7 @@ async fn sweep_identities_with_seed(
                     identity_index,
                     amount,
                     error = %err,
-                    "identity sweep: CreditTransfer failed; entry retained"
+                    "identity sweep: transfer_to_addresses failed; entry retained"
                 );
                 report.broadcast_failures.push(format!(
                     "identity[{} idx={}]: {}",
@@ -790,11 +815,12 @@ async fn sweep_identities_with_seed(
 const IDENTITY_DISCOVERY_GAP: u32 = 8;
 
 /// Below this balance the sweep refuses to broadcast a
-/// `CreditTransfer` — protocol-level transfer fees would consume
-/// most of the would-be transferred amount. Sized roughly at 2x the
-/// empirical CreditTransfer fee on testnet. Identities below this
-/// floor effectively burn until a future ID-005 (identity →
-/// addresses) sweep variant lands.
+/// `transfer_credits_to_addresses` transition — protocol-level
+/// transfer fees would consume most of the would-be transferred
+/// amount. Sized roughly at 2x the empirical transfer fee on
+/// testnet. Identities below this floor are abandoned for the
+/// duration of the run; future sweeps may pick them up once natural
+/// chain activity nudges them above the floor.
 const IDENTITY_SWEEP_FLOOR: Credits = 50_000_000;
 
 /// Headroom reserved for the on-chain fee when computing the

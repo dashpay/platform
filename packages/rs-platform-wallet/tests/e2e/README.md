@@ -89,8 +89,10 @@ cp packages/rs-platform-wallet/tests/.env.example \
 | `PLATFORM_WALLET_E2E_MIN_BANK_CREDITS` | no | `500_000_000` | Minimum credit balance required in the bank wallet before initialization completes. If the bank is below this threshold the process panics with the bank's receive address so you know where to top it up. |
 | `PLATFORM_WALLET_E2E_WORKDIR` | no | `${TMPDIR}/dash-platform-wallet-e2e` | Base path for the slot-locked working directory. SPV block cache, the test-wallet registry, and SDK state are stored here. |
 | `PLATFORM_WALLET_E2E_TRUSTED_CONTEXT_URL` | no | network-builtin | Override URL for the trusted HTTP context provider. Leave unset to use the testnet/mainnet endpoint baked into `rs-sdk-trusted-context-provider`; required for devnet runs and any custom trust anchor. |
-| `PLATFORM_WALLET_E2E_BANK_IDENTITY_ID` | no | auto-bootstrap | 32-byte hex id of a pre-registered bank identity used as the destination of identity-credit sweeps. Leave unset to let the harness register a fresh bank identity from the bank's primary platform address on first run and persist its id under the workdir slot at `<workdir>/bank_identity.json`. Set explicitly when sharing one bank identity across CI environments or workdir slots. |
+| `PLATFORM_WALLET_E2E_BANK_IDENTITY_ID` | no | auto-bootstrap | 32-byte hex id of a pre-registered bank identity used as a transient mid-run sink for the Platform→Core refill chain. (Identity-side test sweeps now drain directly to the bank's Platform address.) Leave unset to let the harness register a fresh bank identity from the bank's primary platform address on first run and persist its id under the workdir slot at `<workdir>/bank_identity.json`. Set explicitly when sharing one bank identity across CI environments or workdir slots. |
 | `PLATFORM_WALLET_E2E_BANK_CORE_GATE` | no | `900` (gate ON) | Bank Core (Layer-1) funding gate timeout, in seconds. The harness blocks at init until SPV's compact-filter scan walks far enough to observe the bank's pre-funded UTXOs (any non-zero confirmed Core balance). Default-on so fresh-workdir CR-* / ID-007 runs don't race a cold-cache scan and see `bank_core_balance=0` for an address that's been funded since last week. Set to `0` (or `disabled` / `false` / `off`) to opt out for Platform-only suites that don't need Core duffs; set to a positive integer to override the timeout. Invalid values fall back to the default with a warning. |
+| `PLATFORM_WALLET_E2E_CORE_REFILL_THRESHOLD_DUFF` | no | `100000` | Trip line (duffs) for the Platform→Core refill fallback. If the bank's confirmed Core balance is below this value at suite start, the harness chains `top_up_from_addresses` → `withdraw_credits_with_external_signer` to refill the Core wallet from the Platform address pool. Best-effort; harness init never fails on refill issues. |
+| `PLATFORM_WALLET_E2E_CORE_REFILL_TARGET_DUFF` | no | `1000000` | Target (duffs) the Platform→Core refill fallback aims to reach when triggered. Must be greater than the threshold. |
 | `RUST_LOG` | no | `info,rs_platform_wallet=debug` | Tracing filter passed to `tracing-subscriber`. Increase to `debug` or `trace` for detailed sync output. |
 
 Shell-exported variables take precedence — `dotenvy::from_path` does NOT overwrite
@@ -100,6 +102,12 @@ variables already set in the process environment. The workspace `.gitignore` cov
 ---
 
 ## Bank pre-funding (one-time)
+
+The operator maintains exactly one address balance: the bank's Platform address
+(`tdash1kzz…` on testnet, surfaced as the primary receive address in the
+under-funded panic message). The harness auto-rebalances Platform→Core
+internally as needed — operators can ignore the Core address and the bank
+identity. See `framework/bank_rebalance.rs` for the rebalance helpers.
 
 The bank wallet is loaded from `PLATFORM_WALLET_E2E_BANK_MNEMONIC` on the first run.
 If its credit balance is below `PLATFORM_WALLET_E2E_MIN_BANK_CREDITS`, initialization
