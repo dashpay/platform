@@ -12,18 +12,19 @@
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
-use crate::sqlite::error::SqlitePersisterError;
+use crate::sqlite::error::WalletStorageError;
 
 /// Encode a serde-derived value into a `BLOB` payload.
-pub fn encode<T: Serialize>(value: &T) -> Result<Vec<u8>, SqlitePersisterError> {
-    bincode::serde::encode_to_vec(value, bincode::config::standard())
-        .map_err(SqlitePersisterError::serialization)
+pub fn encode<T: Serialize>(value: &T) -> Result<Vec<u8>, WalletStorageError> {
+    Ok(bincode::serde::encode_to_vec(
+        value,
+        bincode::config::standard(),
+    )?)
 }
 
 /// Decode a `BLOB` payload back into a serde-derived value.
-pub fn decode<T: DeserializeOwned>(blob: &[u8]) -> Result<T, SqlitePersisterError> {
-    let (value, _) = bincode::serde::decode_from_slice(blob, bincode::config::standard())
-        .map_err(SqlitePersisterError::serialization)?;
+pub fn decode<T: DeserializeOwned>(blob: &[u8]) -> Result<T, WalletStorageError> {
+    let (value, _) = bincode::serde::decode_from_slice(blob, bincode::config::standard())?;
     Ok(value)
 }
 
@@ -36,15 +37,14 @@ pub fn encode_outpoint(op: &dashcore::OutPoint) -> [u8; 36] {
 }
 
 /// Decode a 36-byte outpoint.
-pub fn decode_outpoint(bytes: &[u8]) -> Result<dashcore::OutPoint, SqlitePersisterError> {
+pub fn decode_outpoint(bytes: &[u8]) -> Result<dashcore::OutPoint, WalletStorageError> {
     use dashcore::hashes::Hash;
     if bytes.len() != 36 {
-        return Err(SqlitePersisterError::serialization(
+        return Err(WalletStorageError::blob_decode(
             "outpoint must be exactly 36 bytes",
         ));
     }
-    let txid = dashcore::Txid::from_slice(&bytes[..32])
-        .map_err(|e| SqlitePersisterError::serialization(format!("txid decode: {e}")))?;
+    let txid = dashcore::Txid::from_slice(&bytes[..32])?;
     let mut vout_bytes = [0u8; 4];
     vout_bytes.copy_from_slice(&bytes[32..]);
     Ok(dashcore::OutPoint {

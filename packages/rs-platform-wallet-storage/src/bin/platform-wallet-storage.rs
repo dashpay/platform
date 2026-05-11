@@ -11,7 +11,7 @@ use clap::{Args, Parser, Subcommand};
 
 use platform_wallet_storage::{
     AutoBackupOperation, RetentionPolicy, SqlitePersister, SqlitePersisterConfig,
-    SqlitePersisterError,
+    WalletStorageError,
 };
 
 #[derive(Debug, Parser)]
@@ -73,6 +73,11 @@ struct RestoreArgs {
     from: PathBuf,
     #[arg(long)]
     yes: bool,
+    /// Skip the pre-restore auto-backup of the live destination DB.
+    /// Without this, the persister writes `pre-restore-<ts>.db` to
+    /// `--auto-backup-dir` before clobbering the destination.
+    #[arg(long)]
+    no_auto_backup: bool,
 }
 
 #[derive(Debug, Args)]
@@ -197,7 +202,7 @@ fn run(cli: Cli) -> Result<ExitCode, CliError> {
 
     // `restore` is an associated function; no persister needed beforehand.
     if let Cmd::Restore(args) = &cli.cmd {
-        return run_restore(&db, args);
+        return run_restore(&db, args, auto_backup_dir.as_ref());
     }
 
     // For `migrate --no-auto-backup`, we must keep `auto_backup_dir =
@@ -255,16 +260,16 @@ fn run(cli: Cli) -> Result<ExitCode, CliError> {
     }
 }
 
-fn map_open_err_for_cli(err: SqlitePersisterError) -> CliError {
+fn map_open_err_for_cli(err: WalletStorageError) -> CliError {
     match err {
-        SqlitePersisterError::AutoBackupDisabled {
+        WalletStorageError::AutoBackupDisabled {
             operation: AutoBackupOperation::OpenMigration,
         } => CliError {
             message: "auto-backup directory not configured; pass --no-auto-backup to proceed"
                 .to_string(),
             code: ExitCode::from(1),
         },
-        SqlitePersisterError::Io(e) => CliError::runtime(format!("failed to open database: {e}")),
+        WalletStorageError::Io(e) => CliError::runtime(format!("failed to open database: {e}")),
         other => CliError::runtime(other.to_string()),
     }
 }
@@ -294,25 +299,55 @@ fn run_backup(persister: &SqlitePersister, args: BackupArgs) -> Result<ExitCode,
     Ok(ExitCode::SUCCESS)
 }
 
-fn run_restore(db: &Path, args: &RestoreArgs) -> Result<ExitCode, CliError> {
+fn run_restore(
+    db: &Path,
+    args: &RestoreArgs,
+    auto_backup_dir: Option<&Option<PathBuf>>,
+) -> Result<ExitCode, CliError> {
     if !args.yes {
         return Err(CliError {
             message: "refusing to restore without --yes".into(),
             code: ExitCode::from(2),
         });
     }
-    match SqlitePersister::restore_from(db, &args.from) {
+    let result = if args.no_auto_backup {
+        eprintln!("warning: auto-backup skipped (--no-auto-backup)");
+        SqlitePersister::restore_from_skip_backup(db, &args.from)
+    } else {
+        // CLI default mirrors the persister config default
+        // (`<db_dir>/backups/auto/`). The CLI doesn't open a
+        // persister here, so we compute the default inline.
+        let resolved_dir: Option<PathBuf> = match auto_backup_dir {
+            None => Some(default_auto_backup_dir_for_cli(db)),
+            Some(opt) => opt.clone(),
+        };
+        SqlitePersister::restore_from(db, &args.from, resolved_dir.as_deref())
+    };
+    match result {
         Ok(()) => Ok(ExitCode::SUCCESS),
-        Err(SqlitePersisterError::IntegrityCheckFailed { check_output }) => {
-            Err(CliError::validation(format!(
-                "source backup failed integrity check: {check_output}"
-            )))
-        }
-        Err(SqlitePersisterError::SchemaHistoryMissing) => Err(CliError::validation(
+        Err(WalletStorageError::IntegrityCheckFailed { report }) => Err(CliError::validation(
+            format!("source backup failed integrity check: {report}"),
+        )),
+        Err(WalletStorageError::SchemaHistoryMissing) => Err(CliError::validation(
             "source backup failed integrity check: schema history missing".to_string(),
+        )),
+        Err(WalletStorageError::AutoBackupDisabled { .. }) => Err(CliError::runtime(
+            "auto-backup directory not configured; pass --no-auto-backup to proceed",
         )),
         Err(other) => Err(CliError::runtime(other.to_string())),
     }
+}
+
+/// Mirror of `platform_wallet_storage::sqlite::config::default_auto_backup_dir`
+/// for the CLI's `restore` path (which doesn't go through a
+/// persister).
+fn default_auto_backup_dir_for_cli(db_path: &Path) -> PathBuf {
+    let parent = db_path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."));
+    parent.join("backups").join("auto")
 }
 
 fn run_prune(args: &PruneArgs) -> Result<ExitCode, CliError> {
@@ -400,7 +435,7 @@ fn run_delete_wallet(
             }
             Ok(ExitCode::SUCCESS)
         }
-        Err(SqlitePersisterError::AutoBackupDisabled { .. }) => Err(CliError::runtime(
+        Err(WalletStorageError::AutoBackupDisabled { .. }) => Err(CliError::runtime(
             "auto-backup directory not configured; pass --no-auto-backup to proceed",
         )),
         Err(other) => Err(CliError::runtime(other.to_string())),

@@ -8,7 +8,7 @@ use dpp::prelude::Identifier;
 use platform_wallet::wallet::identity::{DashPayProfile, PaymentEntry};
 use platform_wallet::wallet::platform_wallet::WalletId;
 
-use crate::sqlite::error::SqlitePersisterError;
+use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::blob;
 
 /// Apply both dashpay overlays.
@@ -17,7 +17,7 @@ pub fn apply(
     wallet_id: &WalletId,
     profiles: Option<&BTreeMap<Identifier, Option<DashPayProfile>>>,
     payments: Option<&BTreeMap<Identifier, BTreeMap<String, PaymentEntry>>>,
-) -> Result<(), SqlitePersisterError> {
+) -> Result<(), WalletStorageError> {
     if let Some(profiles) = profiles {
         for (identity_id, profile) in profiles {
             match profile {

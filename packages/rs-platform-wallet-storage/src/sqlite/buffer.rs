@@ -12,7 +12,7 @@ use std::sync::Mutex;
 use platform_wallet::changeset::{Merge, PlatformWalletChangeSet};
 use platform_wallet::wallet::platform_wallet::WalletId;
 
-use crate::sqlite::error::SqlitePersisterError;
+use crate::sqlite::error::WalletStorageError;
 
 #[derive(Default)]
 pub struct Buffer {
@@ -29,14 +29,14 @@ impl Buffer {
         &self,
         wallet_id: WalletId,
         cs: PlatformWalletChangeSet,
-    ) -> Result<(), SqlitePersisterError> {
+    ) -> Result<(), WalletStorageError> {
         if cs.is_empty() {
             return Ok(());
         }
         let mut guard = self
             .inner
             .lock()
-            .map_err(|_| SqlitePersisterError::LockPoisoned)?;
+            .map_err(|_| WalletStorageError::LockPoisoned)?;
         guard.entry(wallet_id).or_default().merge(cs);
         Ok(())
     }
@@ -46,21 +46,21 @@ impl Buffer {
     pub fn drain(
         &self,
         wallet_id: &WalletId,
-    ) -> Result<Option<PlatformWalletChangeSet>, SqlitePersisterError> {
+    ) -> Result<Option<PlatformWalletChangeSet>, WalletStorageError> {
         let mut guard = self
             .inner
             .lock()
-            .map_err(|_| SqlitePersisterError::LockPoisoned)?;
+            .map_err(|_| WalletStorageError::LockPoisoned)?;
         Ok(guard.remove(wallet_id).filter(|cs| !cs.is_empty()))
     }
 
     /// Every wallet currently holding buffered data, sorted by id for
     /// deterministic flush ordering.
-    pub fn dirty_wallets(&self) -> Result<Vec<WalletId>, SqlitePersisterError> {
+    pub fn dirty_wallets(&self) -> Result<Vec<WalletId>, WalletStorageError> {
         let guard = self
             .inner
             .lock()
-            .map_err(|_| SqlitePersisterError::LockPoisoned)?;
+            .map_err(|_| WalletStorageError::LockPoisoned)?;
         let mut ids: Vec<WalletId> = guard.keys().copied().collect();
         ids.sort();
         Ok(ids)

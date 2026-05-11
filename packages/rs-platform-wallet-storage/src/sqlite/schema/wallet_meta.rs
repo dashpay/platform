@@ -5,14 +5,14 @@ use rusqlite::{params, Connection, Transaction};
 use platform_wallet::changeset::WalletMetadataEntry;
 use platform_wallet::wallet::platform_wallet::WalletId;
 
-use crate::sqlite::error::SqlitePersisterError;
+use crate::sqlite::error::WalletStorageError;
 
 /// Insert / replace a `wallet_metadata` row.
 pub fn upsert(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
     entry: &WalletMetadataEntry,
-) -> Result<(), SqlitePersisterError> {
+) -> Result<(), WalletStorageError> {
     let network = network_to_str(entry.network);
     tx.execute(
         "INSERT INTO wallet_metadata (wallet_id, network, birth_height) \
@@ -30,7 +30,7 @@ pub fn upsert(
 /// Idempotent — silently a no-op when the row already exists. Defaults
 /// `network = "testnet"`, `birth_height = 0` (the same fall-back the
 /// SPV scan uses when the chain tip is unknown).
-pub fn ensure_exists(conn: &Connection, wallet_id: &WalletId) -> Result<(), SqlitePersisterError> {
+pub fn ensure_exists(conn: &Connection, wallet_id: &WalletId) -> Result<(), WalletStorageError> {
     conn.execute(
         "INSERT OR IGNORE INTO wallet_metadata (wallet_id, network, birth_height) \
          VALUES (?1, ?2, ?3)",
@@ -40,7 +40,7 @@ pub fn ensure_exists(conn: &Connection, wallet_id: &WalletId) -> Result<(), Sqli
 }
 
 /// All known wallet ids (used by `delete_wallet`, `load`, `inspect`).
-pub fn list_ids(conn: &Connection) -> Result<Vec<WalletId>, SqlitePersisterError> {
+pub fn list_ids(conn: &Connection) -> Result<Vec<WalletId>, WalletStorageError> {
     let mut stmt = conn.prepare("SELECT wallet_id FROM wallet_metadata ORDER BY wallet_id")?;
     let rows = stmt.query_map([], |row| {
         let bytes: Vec<u8> = row.get(0)?;
@@ -61,7 +61,7 @@ pub fn list_ids(conn: &Connection) -> Result<Vec<WalletId>, SqlitePersisterError
 pub fn fetch(
     conn: &Connection,
     wallet_id: &WalletId,
-) -> Result<Option<(String, u32)>, SqlitePersisterError> {
+) -> Result<Option<(String, u32)>, WalletStorageError> {
     let mut stmt =
         conn.prepare("SELECT network, birth_height FROM wallet_metadata WHERE wallet_id = ?1")?;
     let mut rows = stmt.query(params![wallet_id.as_slice()])?;
@@ -75,7 +75,7 @@ pub fn fetch(
 }
 
 /// Delete a wallet_metadata row (cascade triggers fire).
-pub fn delete(tx: &Transaction<'_>, wallet_id: &WalletId) -> Result<usize, SqlitePersisterError> {
+pub fn delete(tx: &Transaction<'_>, wallet_id: &WalletId) -> Result<usize, WalletStorageError> {
     let n = tx.execute(
         "DELETE FROM wallet_metadata WHERE wallet_id = ?1",
         params![wallet_id.as_slice()],

@@ -5,14 +5,14 @@ use rusqlite::{params, Connection, Transaction};
 use platform_wallet::changeset::{IdentityChangeSet, IdentityEntry};
 use platform_wallet::wallet::platform_wallet::WalletId;
 
-use crate::sqlite::error::SqlitePersisterError;
+use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::blob;
 
 pub fn apply(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
     cs: &IdentityChangeSet,
-) -> Result<(), SqlitePersisterError> {
+) -> Result<(), WalletStorageError> {
     for (id, entry) in &cs.identities {
         let payload = blob::encode(entry)?;
         tx.execute(
@@ -24,7 +24,7 @@ pub fn apply(
                 tombstoned = 0",
             params![
                 wallet_id.as_slice(),
-                entry.identity_index.map(|i| i as i64),
+                entry.identity_index.map(i64::from),
                 id.as_slice(),
                 payload,
             ],
@@ -48,7 +48,7 @@ pub fn fetch(
     conn: &Connection,
     wallet_id: &WalletId,
     identity_id: &[u8; 32],
-) -> Result<Option<IdentityEntry>, SqlitePersisterError> {
+) -> Result<Option<IdentityEntry>, WalletStorageError> {
     use rusqlite::OptionalExtension;
     let row: Option<Vec<u8>> = conn
         .query_row(
@@ -73,7 +73,7 @@ pub fn ensure_exists(
     conn: &Connection,
     wallet_id: &WalletId,
     identity_id: &[u8; 32],
-) -> Result<(), SqlitePersisterError> {
+) -> Result<(), WalletStorageError> {
     use dpp::prelude::Identifier;
     use platform_wallet::wallet::identity::IdentityStatus;
 

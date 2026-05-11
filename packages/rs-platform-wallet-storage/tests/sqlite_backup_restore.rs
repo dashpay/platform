@@ -10,7 +10,7 @@ use common::{ensure_wallet_meta, fresh_persister, wid};
 use platform_wallet::changeset::{
     CoreChangeSet, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
-use platform_wallet_storage::{RetentionPolicy, SqlitePersister, SqlitePersisterError};
+use platform_wallet_storage::{RetentionPolicy, SqlitePersister, WalletStorageError};
 
 fn seed_one_row(persister: &SqlitePersister, w: &[u8; 32]) {
     ensure_wallet_meta(persister, w);
@@ -56,10 +56,7 @@ fn tc032_backup_file_form() {
     // Refuses overwrite.
     let err = persister.backup_to(&target);
     assert!(
-        matches!(
-            err,
-            Err(SqlitePersisterError::BackupDestinationExists { .. })
-        ),
+        matches!(err, Err(WalletStorageError::BackupDestinationExists { .. })),
         "expected BackupDestinationExists, got {err:?}"
     );
 }
@@ -82,7 +79,9 @@ fn tc035_restore_roundtrip() {
     persister.store(w, cs).unwrap();
     drop(persister);
     // Restore.
-    SqlitePersister::restore_from(&path, &backup_path).expect("restore_from");
+    // Tests pass through `restore_from_skip_backup` — simpler than
+    // threading an auto_backup_dir through fixtures.
+    SqlitePersister::restore_from_skip_backup(&path, &backup_path).expect("restore_from");
     // Reopen and check the synced height reverted to 5.
     let cfg = platform_wallet_storage::SqlitePersisterConfig::new(&path);
     let p2 = SqlitePersister::open(cfg).unwrap();
@@ -105,11 +104,8 @@ fn tc036_restore_missing_schema_history() {
     rusqlite::Connection::open(&fake_src).unwrap();
     let dest = tmp.path().join("dest.db");
     fs::write(&dest, b"placeholder").unwrap();
-    let err = SqlitePersister::restore_from(&dest, &fake_src);
-    assert!(matches!(
-        err,
-        Err(SqlitePersisterError::SchemaHistoryMissing)
-    ));
+    let err = SqlitePersister::restore_from_skip_backup(&dest, &fake_src);
+    assert!(matches!(err, Err(WalletStorageError::SchemaHistoryMissing)));
 }
 
 /// TC-037: corrupt source rejected.
@@ -120,14 +116,16 @@ fn tc037_restore_corrupt_source() {
     fs::write(&corrupt, b"not a sqlite file ABCDEF").unwrap();
     let dest = tmp.path().join("dest.db");
     fs::write(&dest, b"placeholder").unwrap();
-    let err = SqlitePersister::restore_from(&dest, &corrupt);
+    let err = SqlitePersister::restore_from_skip_backup(&dest, &corrupt);
     assert!(
         matches!(
             err,
-            Err(SqlitePersisterError::IntegrityCheckFailed { .. })
-                | Err(SqlitePersisterError::Sqlite(_))
+            Err(WalletStorageError::IntegrityCheckFailed { .. })
+                | Err(WalletStorageError::IntegrityCheckRunFailed { .. })
+                | Err(WalletStorageError::SourceOpenFailed { .. })
+                | Err(WalletStorageError::Sqlite(_))
         ),
-        "expected IntegrityCheckFailed or Sqlite, got {err:?}"
+        "expected IntegrityCheckFailed / IntegrityCheckRunFailed / SourceOpenFailed / Sqlite, got {err:?}"
     );
 }
 

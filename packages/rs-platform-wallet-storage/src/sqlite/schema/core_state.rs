@@ -9,7 +9,7 @@ use key_wallet::Utxo;
 use platform_wallet::changeset::CoreChangeSet;
 use platform_wallet::wallet::platform_wallet::WalletId;
 
-use crate::sqlite::error::SqlitePersisterError;
+use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::blob;
 
 /// Apply a `CoreChangeSet` inside a transaction.
@@ -17,7 +17,7 @@ pub fn apply(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
     cs: &CoreChangeSet,
-) -> Result<(), SqlitePersisterError> {
+) -> Result<(), WalletStorageError> {
     for record in &cs.records {
         upsert_tx_record(tx, wallet_id, record)?;
     }
@@ -76,11 +76,11 @@ fn upsert_tx_record(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
     record: &TransactionRecord,
-) -> Result<(), SqlitePersisterError> {
+) -> Result<(), WalletStorageError> {
     let block_info = record.block_info();
-    let height = block_info.map(|b| b.height() as i64);
+    let height = block_info.map(|b| i64::from(b.height()));
     let block_hash = block_info.map(|b| AsRef::<[u8]>::as_ref(&b.block_hash()).to_vec());
-    let block_time = block_info.map(|b| b.timestamp() as i64);
+    let block_time = block_info.map(|b| i64::from(b.timestamp()));
     let finalized = block_info.is_some();
     let payload = blob::encode(record)?;
     tx.execute(
@@ -111,7 +111,7 @@ fn upsert_utxo(
     wallet_id: &WalletId,
     utxo: &Utxo,
     spent: bool,
-) -> Result<(), SqlitePersisterError> {
+) -> Result<(), WalletStorageError> {
     let op = blob::encode_outpoint(&utxo.outpoint);
     tx.execute(
         "INSERT INTO core_utxos \
@@ -126,9 +126,9 @@ fn upsert_utxo(
         params![
             wallet_id.as_slice(),
             &op[..],
-            utxo.value() as i64,
+            crate::sqlite::util::safe_cast::u64_to_i64("core_utxos.value", utxo.value())?,
             utxo.txout.script_pubkey.as_bytes(),
-            utxo.height as i64,
+            i64::from(utxo.height),
             0i64, // Utxo does not carry account_index; populated by derived-address lookup later.
             spent,
         ],
@@ -141,7 +141,7 @@ fn upsert_sync_state(
     wallet_id: &WalletId,
     last_processed: Option<u32>,
     synced: Option<u32>,
-) -> Result<(), SqlitePersisterError> {
+) -> Result<(), WalletStorageError> {
     // Monotonic-max semantics — keep the larger of (current, new).
     let current = tx
         .query_row(
@@ -169,11 +169,7 @@ fn upsert_sync_state(
          ON CONFLICT(wallet_id) DO UPDATE SET \
             last_processed_height = excluded.last_processed_height, \
             synced_height = excluded.synced_height",
-        params![
-            wallet_id.as_slice(),
-            lp.map(|x| x as i64),
-            sy.map(|x| x as i64),
-        ],
+        params![wallet_id.as_slice(), lp.map(i64::from), sy.map(i64::from),],
     )?;
     Ok(())
 }
@@ -184,7 +180,7 @@ pub fn get_tx_record(
     conn: &Connection,
     wallet_id: &WalletId,
     txid: &dashcore::Txid,
-) -> Result<Option<TransactionRecord>, SqlitePersisterError> {
+) -> Result<Option<TransactionRecord>, WalletStorageError> {
     let row: Option<Vec<u8>> = conn
         .query_row(
             "SELECT record_blob FROM core_transactions WHERE wallet_id = ?1 AND txid = ?2",
@@ -214,7 +210,7 @@ pub struct UnspentRow {
 pub fn list_unspent_utxos(
     conn: &Connection,
     wallet_id: &WalletId,
-) -> Result<BTreeMap<u32, Vec<UnspentRow>>, SqlitePersisterError> {
+) -> Result<BTreeMap<u32, Vec<UnspentRow>>, WalletStorageError> {
     let mut stmt = conn.prepare(
         "SELECT outpoint, value, script, height, account_index \
          FROM core_utxos WHERE wallet_id = ?1 AND spent = 0",
@@ -231,17 +227,31 @@ pub fn list_unspent_utxos(
     for r in rows {
         let (op_bytes, value, script_bytes, height, account_index) = r?;
         let outpoint = blob::decode_outpoint(&op_bytes)?;
+        let value = crate::sqlite::util::safe_cast::i64_to_u64("core_utxos.value", value)?;
+        let height = match height {
+            None => None,
+            Some(h) => Some(
+                u32::try_from(h).map_err(|_| WalletStorageError::IntegerOverflow {
+                    field: "core_utxos.height",
+                    value: h as u64,
+                    target: crate::sqlite::util::safe_cast::SafeCastTarget::U64,
+                })?,
+            ),
+        };
+        let account_index =
+            u32::try_from(account_index).map_err(|_| WalletStorageError::IntegerOverflow {
+                field: "core_utxos.account_index",
+                value: account_index as u64,
+                target: crate::sqlite::util::safe_cast::SafeCastTarget::U64,
+            })?;
         let row = UnspentRow {
             outpoint,
-            value: value as u64,
+            value,
             script: script_bytes,
-            height: height.map(|h| h as u32),
-            account_index: account_index as u32,
+            height,
+            account_index,
         };
-        by_account
-            .entry(account_index as u32)
-            .or_default()
-            .push(row);
+        by_account.entry(account_index).or_default().push(row);
     }
     Ok(by_account)
 }

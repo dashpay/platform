@@ -6,7 +6,7 @@ mod common;
 
 use common::{ensure_wallet_meta, fresh_persister, wid};
 use platform_wallet_storage::{
-    AutoBackupOperation, SqlitePersister, SqlitePersisterConfig, SqlitePersisterError,
+    AutoBackupOperation, SqlitePersister, SqlitePersisterConfig, WalletStorageError,
 };
 
 /// TC-050: brand-new DB does NOT produce a pre-migration backup.
@@ -60,7 +60,7 @@ fn tc052_delete_wallet_auto_backup_disabled() {
     assert!(
         matches!(
             err,
-            Err(SqlitePersisterError::AutoBackupDisabled {
+            Err(WalletStorageError::AutoBackupDisabled {
                 operation: AutoBackupOperation::DeleteWallet
             })
         ),
@@ -101,10 +101,7 @@ fn tc054_unwritable_auto_backup_dir() {
     #[cfg(unix)]
     {
         assert!(
-            matches!(
-                err,
-                Err(SqlitePersisterError::AutoBackupDirUnwritable { .. })
-            ),
+            matches!(err, Err(WalletStorageError::AutoBackupDirUnwritable { .. })),
             "expected AutoBackupDirUnwritable, got {err:?}"
         );
         // Wallet still intact.

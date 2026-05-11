@@ -13,14 +13,14 @@ use platform_wallet::changeset::{AssetLockChangeSet, AssetLockEntry};
 use platform_wallet::wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
 use platform_wallet::wallet::platform_wallet::WalletId;
 
-use crate::sqlite::error::SqlitePersisterError;
+use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::blob;
 
 pub fn apply(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
     cs: &AssetLockChangeSet,
-) -> Result<(), SqlitePersisterError> {
+) -> Result<(), WalletStorageError> {
     for (op, entry) in &cs.asset_locks {
         let op_bytes = blob::encode_outpoint(op);
         let lifecycle_blob = blob::encode(entry)?;
@@ -38,9 +38,12 @@ pub fn apply(
                 wallet_id.as_slice(),
                 &op_bytes[..],
                 status_str(&entry.status),
-                entry.account_index as i64,
-                entry.identity_index as i64,
-                entry.amount_duffs as i64,
+                i64::from(entry.account_index),
+                i64::from(entry.identity_index),
+                crate::sqlite::util::safe_cast::u64_to_i64(
+                    "asset_locks.amount_duffs",
+                    entry.amount_duffs,
+                )?,
                 lifecycle_blob,
             ],
         )?;
@@ -70,7 +73,7 @@ fn status_str(s: &AssetLockStatus) -> &'static str {
 pub fn list_active(
     conn: &Connection,
     wallet_id: &WalletId,
-) -> Result<BTreeMap<u32, BTreeMap<OutPoint, TrackedAssetLock>>, SqlitePersisterError> {
+) -> Result<BTreeMap<u32, BTreeMap<OutPoint, TrackedAssetLock>>, WalletStorageError> {
     let mut stmt = conn.prepare(
         "SELECT outpoint, account_index, lifecycle_blob \
          FROM asset_locks WHERE wallet_id = ?1",
@@ -96,7 +99,13 @@ pub fn list_active(
             status: entry.status,
             proof: entry.proof,
         };
-        out.entry(account_index as u32)
+        let account_index =
+            u32::try_from(account_index).map_err(|_| WalletStorageError::IntegerOverflow {
+                field: "asset_locks.account_index",
+                value: account_index as u64,
+                target: crate::sqlite::util::safe_cast::SafeCastTarget::U64,
+            })?;
+        out.entry(account_index)
             .or_default()
             .insert(outpoint, tracked);
     }

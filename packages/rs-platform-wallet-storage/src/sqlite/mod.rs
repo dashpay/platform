@@ -13,7 +13,9 @@ pub mod error;
 pub mod migrations;
 pub mod persister;
 pub mod schema;
+pub mod util;
 
 pub use config::{FlushMode, JournalMode, SqlitePersisterConfig, Synchronous};
-pub use error::{AutoBackupOperation, SqlitePersisterError};
+#[allow(deprecated)]
+pub use error::{AutoBackupOperation, SqlitePersisterError, WalletStorageError};
 pub use persister::{DeleteWalletReport, PruneReport, RetentionPolicy, SqlitePersister};

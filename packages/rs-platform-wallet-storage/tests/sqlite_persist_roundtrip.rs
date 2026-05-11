@@ -21,7 +21,7 @@ use platform_wallet::changeset::{
     CoreChangeSet, PlatformWalletChangeSet, PlatformWalletPersistence, WalletMetadataEntry,
 };
 use platform_wallet_storage::{
-    SqlitePersister, SqlitePersisterConfig, SqlitePersisterError, Synchronous,
+    SqlitePersister, SqlitePersisterConfig, Synchronous, WalletStorageError,
 };
 
 /// TC-005: sync heights round-trip with monotonic-max merge.
@@ -90,7 +90,7 @@ fn tc079_synchronous_off_rejected() {
     let mut cfg = SqlitePersisterConfig::new(&path);
     cfg.synchronous = Synchronous::Off;
     let err = SqlitePersister::open(cfg);
-    let matched = matches!(err.as_ref(), Err(SqlitePersisterError::ConfigInvalid(_)));
+    let matched = matches!(err.as_ref(), Err(WalletStorageError::ConfigInvalid { .. }));
     assert!(
         matched,
         "expected ConfigInvalid, got error = {:?}",
@@ -123,7 +123,7 @@ fn tc080_config_defaults() {
 #[test]
 fn tc081_lock_poisoned_mapping() {
     use platform_wallet::changeset::PersistenceError;
-    let err = SqlitePersisterError::LockPoisoned;
+    let err = WalletStorageError::LockPoisoned;
     let mapped: PersistenceError = err.into();
     assert!(matches!(mapped, PersistenceError::LockPoisoned));
 }

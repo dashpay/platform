@@ -5,14 +5,14 @@ use rusqlite::{params, Transaction};
 use platform_wallet::changeset::ContactChangeSet;
 use platform_wallet::wallet::platform_wallet::WalletId;
 
-use crate::sqlite::error::SqlitePersisterError;
+use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::blob;
 
 pub fn apply(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
     cs: &ContactChangeSet,
-) -> Result<(), SqlitePersisterError> {
+) -> Result<(), WalletStorageError> {
     for (key, entry) in &cs.sent_requests {
         let payload = blob::encode(entry)?;
         tx.execute(

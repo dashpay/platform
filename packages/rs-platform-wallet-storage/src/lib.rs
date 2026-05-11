@@ -30,9 +30,10 @@ pub mod sqlite;
 // names. Adding to or trimming from this list does NOT count as a
 // breaking change of the submodule API.
 #[cfg(feature = "sqlite")]
+#[allow(deprecated)]
 pub use sqlite::{
     AutoBackupOperation, DeleteWalletReport, FlushMode, JournalMode, PruneReport, RetentionPolicy,
-    SqlitePersister, SqlitePersisterConfig, SqlitePersisterError, Synchronous,
+    SqlitePersister, SqlitePersisterConfig, SqlitePersisterError, Synchronous, WalletStorageError,
 };
 
 // Compile-time assertions — `Send + Sync`, `PlatformWalletPersistence`
@@ -44,7 +45,7 @@ const fn _send_sync_check<T: Send + Sync>() {}
 #[cfg(feature = "sqlite")]
 const _: () = {
     _send_sync_check::<SqlitePersister>();
-    _send_sync_check::<SqlitePersisterError>();
+    _send_sync_check::<WalletStorageError>();
 };
 
 #[cfg(feature = "sqlite")]

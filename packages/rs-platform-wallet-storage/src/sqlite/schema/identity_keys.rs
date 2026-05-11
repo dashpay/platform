@@ -20,7 +20,7 @@ use platform_wallet::changeset::{
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
 
-use crate::sqlite::error::SqlitePersisterError;
+use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::blob;
 
 /// On-disk wire shape for `IdentityKeyEntry`. The `public_key` field
@@ -38,9 +38,8 @@ struct IdentityKeyWire {
 }
 
 impl IdentityKeyWire {
-    fn from_entry(entry: &IdentityKeyEntry) -> Result<Self, SqlitePersisterError> {
-        let pk = bincode::encode_to_vec(&entry.public_key, bincode::config::standard())
-            .map_err(SqlitePersisterError::serialization)?;
+    fn from_entry(entry: &IdentityKeyEntry) -> Result<Self, WalletStorageError> {
+        let pk = bincode::encode_to_vec(&entry.public_key, bincode::config::standard())?;
         Ok(Self {
             identity_id: entry.identity_id,
             key_id: entry.key_id,
@@ -51,10 +50,9 @@ impl IdentityKeyWire {
         })
     }
 
-    fn into_entry(self) -> Result<IdentityKeyEntry, SqlitePersisterError> {
+    fn into_entry(self) -> Result<IdentityKeyEntry, WalletStorageError> {
         let (public_key, _): (IdentityPublicKey, usize) =
-            bincode::decode_from_slice(&self.public_key_bincode, bincode::config::standard())
-                .map_err(SqlitePersisterError::serialization)?;
+            bincode::decode_from_slice(&self.public_key_bincode, bincode::config::standard())?;
         Ok(IdentityKeyEntry {
             identity_id: self.identity_id,
             key_id: self.key_id,
@@ -70,7 +68,7 @@ pub fn apply(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
     cs: &IdentityKeysChangeSet,
-) -> Result<(), SqlitePersisterError> {
+) -> Result<(), WalletStorageError> {
     for ((identity_id, key_id), entry) in &cs.upserts {
         let wire = IdentityKeyWire::from_entry(entry)?;
         let entry_blob = blob::encode(&wire)?;
@@ -85,7 +83,7 @@ pub fn apply(
             params![
                 wallet_id.as_slice(),
                 identity_id.as_slice(),
-                *key_id as i64,
+                i64::from(*key_id),
                 entry_blob,
                 &entry.public_key_hash[..],
             ],
@@ -95,14 +93,18 @@ pub fn apply(
         tx.execute(
             "DELETE FROM identity_keys \
              WHERE wallet_id = ?1 AND identity_id = ?2 AND key_id = ?3",
-            params![wallet_id.as_slice(), identity_id.as_slice(), *key_id as i64],
+            params![
+                wallet_id.as_slice(),
+                identity_id.as_slice(),
+                i64::from(*key_id),
+            ],
         )?;
     }
     Ok(())
 }
 
 /// Decode an `identity_keys.public_key_blob` cell back to the entry.
-pub fn decode_entry(payload: &[u8]) -> Result<IdentityKeyEntry, SqlitePersisterError> {
+pub fn decode_entry(payload: &[u8]) -> Result<IdentityKeyEntry, WalletStorageError> {
     let wire: IdentityKeyWire = blob::decode(payload)?;
     wire.into_entry()
 }

@@ -75,7 +75,7 @@ pub struct SqlitePersisterConfig {
     /// Where automatic backups (pre-migration, pre-wallet-deletion) are
     /// written. Set to `None` to disable automatic backups — library
     /// API destructive operations then return
-    /// [`SqlitePersisterError::AutoBackupDisabled`](crate::SqlitePersisterError::AutoBackupDisabled).
+    /// [`WalletStorageError::AutoBackupDisabled`](crate::WalletStorageError::AutoBackupDisabled).
     pub auto_backup_dir: Option<PathBuf>,
 }
 

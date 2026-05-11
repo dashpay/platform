@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 
 use platform_wallet::changeset::{
     ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
@@ -14,8 +14,15 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 use crate::sqlite::backup::{self, BackupKind};
 use crate::sqlite::buffer::Buffer;
 use crate::sqlite::config::{FlushMode, SqlitePersisterConfig, Synchronous};
-use crate::sqlite::error::{AutoBackupOperation, SqlitePersisterError};
+use crate::sqlite::error::{AutoBackupOperation, WalletStorageError};
 use crate::sqlite::schema::{self, PER_WALLET_TABLES};
+use crate::sqlite::util::safe_cast;
+
+/// Sub-areas of `ClientStartState` that `load()` does not yet
+/// reconstruct (blocked on upstream `Wallet::from_persisted`).
+/// Surfaced via the [`WalletStorageError::LoadIncomplete`] variant
+/// and a `tracing::warn!` whenever `load` returns.
+pub(crate) const LOAD_UNIMPLEMENTED: &[&str] = &["ClientStartState::wallets"];
 
 /// Outcome of a `prune_backups` call.
 #[derive(Debug, Clone)]
@@ -70,9 +77,11 @@ impl RetentionPolicy {
 /// SQLite-backed `PlatformWalletPersistence`.
 pub struct SqlitePersister {
     config: SqlitePersisterConfig,
-    /// Single write connection. Wrapped in a `Mutex` because rusqlite's
-    /// `Connection` is `!Sync`. Reads also go through this connection
-    /// today (`r2d2_sqlite` deferred per the plan).
+    // INTENTIONAL(CODE-001): single connection serializes reads through
+    // the write lock. Acceptable for current workload (per-wallet
+    // operations, small read footprint); revisit if read contention
+    // becomes measurable. Splitting into a read-only `r2d2` pool over
+    // the same WAL-mode file is the planned follow-up.
     conn: Arc<Mutex<Connection>>,
     buffer: Buffer,
 }
@@ -80,13 +89,13 @@ pub struct SqlitePersister {
 impl SqlitePersister {
     /// Open or create the SQLite DB at `config.path`. Applies pragmas,
     /// runs migrations, optionally takes a pre-migration auto-backup.
-    pub fn open(config: SqlitePersisterConfig) -> Result<Self, SqlitePersisterError> {
+    pub fn open(config: SqlitePersisterConfig) -> Result<Self, WalletStorageError> {
         validate_config(&config)?;
         if let Some(parent) = config.path.parent() {
             if !parent.as_os_str().is_empty() && !parent.exists() {
                 // Parent dir must exist — refuse silently creating it
                 // to keep "bad path" errors typed (NFR-6).
-                return Err(SqlitePersisterError::Io(std::io::Error::new(
+                return Err(WalletStorageError::Io(std::io::Error::new(
                     std::io::ErrorKind::NotFound,
                     format!("database parent directory not found: {}", parent.display()),
                 )));
@@ -101,14 +110,17 @@ impl SqlitePersister {
 
         // Determine whether `schema_history` exists *before* we run
         // migrations — that's the signal for "is this DB pre-existing
-        // or brand-new?" (FR-15 vs FR-16).
-        let had_schema_history: bool = conn
+        // or brand-new?" (FR-15 vs FR-16). `.optional()?` distinguishes
+        // a genuine "no row" answer from a real SQL error, which we
+        // propagate.
+        let had_schema_history = conn
             .query_row(
                 "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'refinery_schema_history'",
                 [],
-                |_| Ok(true),
+                |_| Ok(()),
             )
-            .unwrap_or(false);
+            .optional()?
+            .is_some();
         let pending = crate::sqlite::migrations::embedded_migrations();
         let pending_count = if had_schema_history {
             count_pending(&mut conn, &pending)?
@@ -117,26 +129,18 @@ impl SqlitePersister {
         };
 
         if pending_count > 0 && had_schema_history {
-            // Pre-migration auto-backup. If `auto_backup_dir` is `None`
-            // we refuse outright (FR-18).
-            let Some(dir) = config.auto_backup_dir.as_ref() else {
-                return Err(SqlitePersisterError::AutoBackupDisabled {
-                    operation: AutoBackupOperation::OpenMigration,
-                });
-            };
-            ensure_dir(dir)?;
-            let from = current_schema_version(&mut conn).unwrap_or(0);
+            let from = current_schema_version(&conn)?.unwrap_or(0);
             let to = pending.iter().map(|(v, _)| *v).max().unwrap_or(from);
-            let dest = dir.join(backup::auto_backup_filename(BackupKind::PreMigration {
-                from,
-                to,
-            }));
-            backup::run_to(&conn, &dest)?;
+            run_auto_backup(
+                &conn,
+                config.auto_backup_dir.as_deref(),
+                BackupKind::PreMigration { from, to },
+                AutoBackupOperation::OpenMigration,
+            )?;
         }
 
         // Apply migrations.
-        let _report =
-            crate::sqlite::migrations::run(&mut conn).map_err(SqlitePersisterError::Migration)?;
+        let _report = crate::sqlite::migrations::run(&mut conn)?;
 
         Ok(Self {
             config,
@@ -147,12 +151,12 @@ impl SqlitePersister {
 
     /// Take a manual online backup. `dest` may be a directory (auto-
     /// named `wallet-<ts>.db`) or a full file path (must not pre-exist).
-    pub fn backup_to(&self, dest: &Path) -> Result<PathBuf, SqlitePersisterError> {
+    pub fn backup_to(&self, dest: &Path) -> Result<PathBuf, WalletStorageError> {
         let resolved = if dest.is_dir() {
             dest.join(backup::manual_backup_filename())
         } else {
             if dest.exists() {
-                return Err(SqlitePersisterError::BackupDestinationExists {
+                return Err(WalletStorageError::BackupDestinationExists {
                     path: dest.to_path_buf(),
                 });
             }
@@ -165,10 +169,60 @@ impl SqlitePersister {
 
     /// Restore a backup over `dest_db_path`. Destination must not be
     /// open in this process. Associated function — no `&self`.
+    ///
+    /// Takes a pre-restore auto-backup of the live destination
+    /// database (when `auto_backup_dir` is `Some`) before persisting
+    /// the staged source. Refuses with
+    /// [`WalletStorageError::AutoBackupDisabled`] when the directory
+    /// is `None`; pass `auto_backup_dir = None` only via the CLI's
+    /// `--no-auto-backup` flag (or directly through
+    /// [`restore_from_skip_backup`](Self::restore_from_skip_backup)).
     pub fn restore_from(
         dest_db_path: &Path,
         src_backup: &Path,
-    ) -> Result<(), SqlitePersisterError> {
+        auto_backup_dir: Option<&Path>,
+    ) -> Result<(), WalletStorageError> {
+        Self::restore_from_inner(dest_db_path, src_backup, auto_backup_dir, false)
+    }
+
+    /// Restore a backup over `dest_db_path` WITHOUT taking a
+    /// pre-restore auto-backup.
+    ///
+    /// Library consumers should prefer [`restore_from`](Self::restore_from)
+    /// — it's safe by default. This entry point exists so the CLI's
+    /// `--no-auto-backup` flag can deliver on its name regardless of
+    /// `auto_backup_dir`.
+    pub fn restore_from_skip_backup(
+        dest_db_path: &Path,
+        src_backup: &Path,
+    ) -> Result<(), WalletStorageError> {
+        Self::restore_from_inner(dest_db_path, src_backup, None, true)
+    }
+
+    fn restore_from_inner(
+        dest_db_path: &Path,
+        src_backup: &Path,
+        auto_backup_dir: Option<&Path>,
+        skip_backup: bool,
+    ) -> Result<(), WalletStorageError> {
+        if !skip_backup && dest_db_path.exists() {
+            let dir = auto_backup_dir.ok_or(WalletStorageError::AutoBackupDisabled {
+                operation: AutoBackupOperation::Restore,
+            })?;
+            // Open the destination read-only just long enough to
+            // page-stream a snapshot to disk under auto_backup_dir.
+            let dest_conn = Connection::open_with_flags(
+                dest_db_path,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
+            )?;
+            run_auto_backup(
+                &dest_conn,
+                Some(dir),
+                BackupKind::PreRestore,
+                AutoBackupOperation::Restore,
+            )?;
+            drop(dest_conn);
+        }
         backup::restore_from(dest_db_path, src_backup)
     }
 
@@ -178,7 +232,7 @@ impl SqlitePersister {
         &self,
         dir: &Path,
         policy: RetentionPolicy,
-    ) -> Result<PruneReport, SqlitePersisterError> {
+    ) -> Result<PruneReport, WalletStorageError> {
         backup::prune(dir, policy)
     }
 
@@ -193,7 +247,7 @@ impl SqlitePersister {
     pub fn delete_wallet(
         &self,
         wallet_id: WalletId,
-    ) -> Result<DeleteWalletReport, SqlitePersisterError> {
+    ) -> Result<DeleteWalletReport, WalletStorageError> {
         self.delete_wallet_inner(wallet_id, false)
     }
 
@@ -208,7 +262,7 @@ impl SqlitePersister {
     pub fn delete_wallet_skip_backup(
         &self,
         wallet_id: WalletId,
-    ) -> Result<DeleteWalletReport, SqlitePersisterError> {
+    ) -> Result<DeleteWalletReport, WalletStorageError> {
         self.delete_wallet_inner(wallet_id, true)
     }
 
@@ -216,39 +270,51 @@ impl SqlitePersister {
         &self,
         wallet_id: WalletId,
         skip_backup: bool,
-    ) -> Result<DeleteWalletReport, SqlitePersisterError> {
+    ) -> Result<DeleteWalletReport, WalletStorageError> {
         // Existence check FIRST — refusing on an unknown wallet must
-        // not waste a backup file.
+        // not waste a backup file. `.optional()?` propagates real SQL
+        // errors (busy / corrupt) instead of swallowing them.
         {
             let conn = self.conn()?;
-            let exists: bool = conn
+            let exists = conn
                 .query_row(
                     "SELECT 1 FROM wallet_metadata WHERE wallet_id = ?1",
                     rusqlite::params![wallet_id.as_slice()],
-                    |_| Ok(true),
+                    |_| Ok(()),
                 )
-                .unwrap_or(false);
+                .optional()?
+                .is_some();
             if !exists {
-                return Err(SqlitePersisterError::WalletNotFound { wallet_id });
+                return Err(WalletStorageError::WalletNotFound { wallet_id });
             }
         }
         let backup_path = if skip_backup {
             None
         } else {
-            self.run_auto_backup(AutoBackupOperation::DeleteWallet, &wallet_id)?
+            let conn = self.conn()?;
+            run_auto_backup(
+                &conn,
+                self.config.auto_backup_dir.as_deref(),
+                BackupKind::PreDelete { wallet_id },
+                AutoBackupOperation::DeleteWallet,
+            )?
         };
         let mut conn = self.conn()?;
         let tx = conn.transaction()?;
         let mut rows_removed_per_table = BTreeMap::new();
         for &table in PER_WALLET_TABLES {
+            // SQL injection note: `table` comes from a `&'static
+            // &'static str` constant compiled into the binary. There
+            // is no user input on this path.
             let n: i64 = tx
                 .query_row(
                     &format!("SELECT COUNT(*) FROM {table} WHERE wallet_id = ?1"),
                     rusqlite::params![wallet_id.as_slice()],
                     |row| row.get(0),
                 )
+                .optional()?
                 .unwrap_or(0);
-            rows_removed_per_table.insert(table, n as usize);
+            rows_removed_per_table.insert(table, usize::try_from(n).unwrap_or(usize::MAX));
         }
         crate::sqlite::schema::wallet_meta::delete(&tx, &wallet_id)?;
         tx.commit()?;
@@ -281,10 +347,12 @@ impl SqlitePersister {
     pub fn inspect_counts(
         &self,
         wallet_id: Option<&WalletId>,
-    ) -> Result<Vec<(&'static str, usize)>, SqlitePersisterError> {
+    ) -> Result<Vec<(&'static str, usize)>, WalletStorageError> {
         let conn = self.conn()?;
         let mut out = Vec::with_capacity(PER_WALLET_TABLES.len());
         for &table in PER_WALLET_TABLES {
+            // `table` is a compile-time constant — no SQL injection
+            // surface despite the `format!`.
             let n: i64 = match wallet_id {
                 Some(id) => conn
                     .query_row(
@@ -292,25 +360,34 @@ impl SqlitePersister {
                         rusqlite::params![id.as_slice()],
                         |row| row.get(0),
                     )
+                    .optional()?
                     .unwrap_or(0),
                 None => conn
                     .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
                         row.get(0)
                     })
+                    .optional()?
                     .unwrap_or(0),
             };
-            out.push((table, n as usize));
+            out.push((table, usize::try_from(n).unwrap_or(usize::MAX)));
         }
         Ok(out)
     }
 
     /// Lock the write connection.
-    pub(crate) fn conn(&self) -> Result<MutexGuard<'_, Connection>, SqlitePersisterError> {
+    pub(crate) fn conn(&self) -> Result<MutexGuard<'_, Connection>, WalletStorageError> {
         self.conn
             .lock()
-            .map_err(|_| SqlitePersisterError::LockPoisoned)
+            .map_err(|_| WalletStorageError::LockPoisoned)
     }
 
+    // INTENTIONAL(PROJ-005): downstream cannot meaningfully enable
+    // test-helpers because the methods are
+    // `#[cfg(any(test, feature = "test-helpers"))]`; the feature
+    // exists only so this crate's own integration tests can pull
+    // themselves in via dev-deps with the feature on. Naming
+    // convention warning (Cargo convention is `__test-helpers`) is
+    // acknowledged and not adopted — see Cargo.toml.
     /// Test-only: borrow the write connection.
     ///
     /// Tests use this to seed `wallet_metadata` rows directly, run
@@ -332,32 +409,6 @@ impl SqlitePersister {
         &self.config
     }
 
-    /// Take a single auto-backup. Returns the path written, or `None`
-    /// when the operation is the CLI fast-path that disables backup.
-    fn run_auto_backup(
-        &self,
-        op: AutoBackupOperation,
-        wallet_id: &WalletId,
-    ) -> Result<Option<PathBuf>, SqlitePersisterError> {
-        let Some(dir) = self.config.auto_backup_dir.as_ref() else {
-            return Err(SqlitePersisterError::AutoBackupDisabled { operation: op });
-        };
-        ensure_dir(dir)?;
-        let conn = self.conn()?;
-        let dest = dir.join(match op {
-            AutoBackupOperation::OpenMigration => unreachable!(
-                "OpenMigration auto-backups are taken during `open`, not via run_auto_backup"
-            ),
-            AutoBackupOperation::DeleteWallet => {
-                backup::auto_backup_filename(BackupKind::PreDelete {
-                    wallet_id: *wallet_id,
-                })
-            }
-        });
-        backup::run_to(&conn, &dest)?;
-        Ok(Some(dest))
-    }
-
     fn flush_inner(&self, wallet_id: &WalletId) -> Result<(), PersistenceError> {
         let cs = self
             .buffer
@@ -367,7 +418,8 @@ impl SqlitePersister {
         let mut conn = self.conn().map_err(PersistenceError::from)?;
         let tx = conn
             .transaction()
-            .map_err(|e| PersistenceError::Backend(format!("failed to begin transaction: {e}")))?;
+            .map_err(WalletStorageError::from)
+            .map_err(PersistenceError::from)?;
         if let Some(meta) = cs.wallet_metadata.as_ref() {
             schema::wallet_meta::upsert(&tx, wallet_id, meta).map_err(PersistenceError::from)?;
         }
@@ -412,7 +464,8 @@ impl SqlitePersister {
             .map_err(PersistenceError::from)?;
         }
         tx.commit()
-            .map_err(|e| PersistenceError::Backend(format!("commit failed: {e}")))?;
+            .map_err(WalletStorageError::from)
+            .map_err(PersistenceError::from)?;
         Ok(())
     }
 }
@@ -436,27 +489,41 @@ impl PlatformWalletPersistence for SqlitePersister {
         self.flush_inner(&wallet_id)
     }
 
+    /// Load every wallet's start-state from disk.
+    ///
+    /// **Partial reconstruction caveat.** Today the implementation
+    /// populates `ClientStartState::platform_addresses` and leaves
+    /// `ClientStartState::wallets` empty — the latter requires an
+    /// upstream `Wallet::from_persisted` constructor that doesn't
+    /// exist yet. The data IS persisted in the SQLite schema and is
+    /// recoverable via direct queries; only the rehydrated
+    /// `(Wallet, ManagedWalletInfo)` pair is unavailable.
+    ///
+    /// Callers needing the partial-completion signal as a typed
+    /// value should call `inspect_counts` after a successful `load`
+    /// — non-zero counts in non-empty start-state buckets indicate
+    /// the sub-area is persisted but not yet reconstructed. The
+    /// `LOAD_UNIMPLEMENTED` constant names the affected
+    /// `ClientStartState` field paths.
+    ///
+    /// A `tracing::warn!` is emitted on every `load` call until the
+    /// reconstruction lands.
     fn load(&self) -> Result<ClientStartState, PersistenceError> {
         let conn = self.conn().map_err(PersistenceError::from)?;
         let mut state = ClientStartState::default();
         for wallet_id in schema::wallet_meta::list_ids(&conn).map_err(PersistenceError::from)? {
             let addrs = schema::platform_addrs::load_state(&conn, &wallet_id)
                 .map_err(PersistenceError::from)?;
-            // Only include wallets with at least some platform-address
-            // activity or sync state; otherwise the empty struct is
-            // load-bearing noise.
             let count = schema::platform_addrs::count_per_wallet(&conn, &wallet_id)
                 .map_err(PersistenceError::from)?;
             if count > 0 || addrs.sync_height > 0 || addrs.sync_timestamp > 0 {
                 state.platform_addresses.insert(wallet_id, addrs);
             }
-            // `wallets` reconstruction (full Wallet + ManagedWalletInfo)
-            // requires xpub-driven rehydration that is out of scope for
-            // this crate. The data is persisted in the schema; upstream
-            // gains a constructor in a follow-up PR.
-            // TODO(platform-wallet-storage): wire wallets[*] once
-            // `Wallet::from_persisted` lands.
         }
+        tracing::warn!(
+            unimplemented = ?LOAD_UNIMPLEMENTED,
+            "load() returned a partial ClientStartState — see SqlitePersister::load rustdoc"
+        );
         Ok(state)
     }
 
@@ -475,11 +542,11 @@ impl PlatformWalletPersistence for SqlitePersister {
 
 // ----- Helpers -----
 
-fn validate_config(config: &SqlitePersisterConfig) -> Result<(), SqlitePersisterError> {
+fn validate_config(config: &SqlitePersisterConfig) -> Result<(), WalletStorageError> {
     if config.synchronous == Synchronous::Off {
-        return Err(SqlitePersisterError::ConfigInvalid(
-            "synchronous=Off is rejected (data-loss footgun)",
-        ));
+        return Err(WalletStorageError::ConfigInvalid {
+            reason: "synchronous=Off is rejected (data-loss footgun)",
+        });
     }
     Ok(())
 }
@@ -487,32 +554,51 @@ fn validate_config(config: &SqlitePersisterConfig) -> Result<(), SqlitePersister
 fn apply_pragmas(
     conn: &mut Connection,
     config: &SqlitePersisterConfig,
-) -> Result<(), SqlitePersisterError> {
+) -> Result<(), WalletStorageError> {
     conn.pragma_update(None, "foreign_keys", "ON")?;
     conn.pragma_update(None, "journal_mode", config.journal_mode.pragma_value())?;
     conn.pragma_update(None, "synchronous", config.synchronous.pragma_value())?;
-    let ms = config.busy_timeout.as_millis().min(i64::MAX as u128) as i64;
+    let ms = safe_cast::u64_to_i64(
+        "busy_timeout_ms",
+        u64::try_from(config.busy_timeout.as_millis()).unwrap_or(i64::MAX as u64),
+    )?;
     conn.pragma_update(None, "busy_timeout", ms)?;
     Ok(())
 }
 
-fn ensure_dir(dir: &Path) -> Result<(), SqlitePersisterError> {
+/// Take a single auto-backup. Shared code path for open-time
+/// (pre-migration), pre-restore, and pre-delete invocations. Returns
+/// the absolute path written, or [`WalletStorageError::AutoBackupDisabled`]
+/// when `auto_backup_dir` is `None`.
+pub(crate) fn run_auto_backup(
+    src_conn: &Connection,
+    auto_backup_dir: Option<&Path>,
+    kind: BackupKind,
+    operation: AutoBackupOperation,
+) -> Result<Option<PathBuf>, WalletStorageError> {
+    let Some(dir) = auto_backup_dir else {
+        return Err(WalletStorageError::AutoBackupDisabled { operation });
+    };
+    ensure_dir(dir)?;
+    let dest = dir.join(backup::auto_backup_filename(kind));
+    backup::run_to(src_conn, &dest)?;
+    Ok(Some(dest))
+}
+
+fn ensure_dir(dir: &Path) -> Result<(), WalletStorageError> {
     if !dir.exists() {
         std::fs::create_dir_all(dir).map_err(|source| {
-            SqlitePersisterError::AutoBackupDirUnwritable {
+            WalletStorageError::AutoBackupDirUnwritable {
                 dir: dir.to_path_buf(),
                 source,
             }
         })?;
     }
-    // Probe writability with a sentinel that we immediately remove.
-    let probe = dir.join(".platform-wallet-storage-write-probe");
-    match std::fs::write(&probe, b"") {
-        Ok(()) => {
-            let _ = std::fs::remove_file(&probe);
-            Ok(())
-        }
-        Err(source) => Err(SqlitePersisterError::AutoBackupDirUnwritable {
+    // Probe writability via `tempfile::NamedTempFile` — unguessable
+    // name, no race against concurrent persister opens (CODE-008).
+    match tempfile::NamedTempFile::new_in(dir) {
+        Ok(_probe) => Ok(()),
+        Err(source) => Err(WalletStorageError::AutoBackupDirUnwritable {
             dir: dir.to_path_buf(),
             source,
         }),
@@ -522,18 +608,23 @@ fn ensure_dir(dir: &Path) -> Result<(), SqlitePersisterError> {
 fn count_pending(
     conn: &mut Connection,
     embedded: &[(i32, String)],
-) -> Result<usize, SqlitePersisterError> {
+) -> Result<usize, WalletStorageError> {
+    let table_exists = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'refinery_schema_history'",
+            [],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    if !table_exists {
+        return Ok(embedded.len());
+    }
     let applied: std::collections::HashSet<i64> = {
-        let mut stmt = conn
-            .prepare("SELECT version FROM refinery_schema_history")
-            .ok();
-        match stmt.as_mut() {
-            None => return Ok(embedded.len()),
-            Some(stmt) => {
-                let rows = stmt.query_map([], |row| row.get::<_, i64>(0))?;
-                rows.collect::<Result<_, _>>()?
-            }
-        }
+        let mut stmt = conn.prepare("SELECT version FROM refinery_schema_history")?;
+        let rows: Result<std::collections::HashSet<i64>, _> =
+            stmt.query_map([], |row| row.get::<_, i64>(0))?.collect();
+        rows?
     };
     Ok(embedded
         .iter()
@@ -541,13 +632,14 @@ fn count_pending(
         .count())
 }
 
-fn current_schema_version(conn: &mut Connection) -> Option<i32> {
-    conn.query_row(
-        "SELECT MAX(version) FROM refinery_schema_history",
-        [],
-        |row| row.get::<_, Option<i64>>(0),
-    )
-    .ok()
-    .flatten()
-    .map(|v| v as i32)
+fn current_schema_version(conn: &Connection) -> Result<Option<i32>, WalletStorageError> {
+    let row = conn
+        .query_row(
+            "SELECT MAX(version) FROM refinery_schema_history",
+            [],
+            |row| row.get::<_, Option<i64>>(0),
+        )
+        .optional()?
+        .flatten();
+    Ok(row.map(|v| v as i32))
 }

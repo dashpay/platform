@@ -5,14 +5,14 @@ use rusqlite::{params, Transaction};
 use platform_wallet::changeset::{AccountAddressPoolEntry, AccountRegistrationEntry};
 use platform_wallet::wallet::platform_wallet::WalletId;
 
-use crate::sqlite::error::SqlitePersisterError;
+use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::blob;
 
 pub fn apply_registrations(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
     entries: &[AccountRegistrationEntry],
-) -> Result<(), SqlitePersisterError> {
+) -> Result<(), WalletStorageError> {
     for entry in entries {
         let account_type = format!("{:?}", entry.account_type);
         let account_index = account_index(&entry.account_type);
@@ -30,7 +30,7 @@ pub fn apply_registrations(
             params![
                 wallet_id.as_slice(),
                 account_type,
-                account_index as i64,
+                i64::from(account_index),
                 payload,
             ],
         )?;
@@ -42,7 +42,7 @@ pub fn apply_pools(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
     entries: &[AccountAddressPoolEntry],
-) -> Result<(), SqlitePersisterError> {
+) -> Result<(), WalletStorageError> {
     for entry in entries {
         let account_type = format!("{:?}", entry.account_type);
         let account_index = account_index(&entry.account_type);
@@ -57,7 +57,7 @@ pub fn apply_pools(
             params![
                 wallet_id.as_slice(),
                 account_type,
-                account_index as i64,
+                i64::from(account_index),
                 pool_type,
                 payload,
             ],
