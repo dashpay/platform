@@ -149,6 +149,21 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
             throw PlatformWalletError.invalidParameter("outputs is empty")
         }
 
+        // Reject duplicate recipient addresses. Rust's parse_outputs
+        // (platform_address_types.rs:189-204) inserts into a
+        // `BTreeMap<PlatformAddress, Credits>` keyed by address, so a
+        // duplicate would silently overwrite earlier entries — Swift
+        // would still sum every output toward the change calculation,
+        // leaving the transition misbalanced. We key on `hash` only:
+        // P2PKH/P2SH share the same 20-byte hash space, so the same
+        // hash with different `addressType` is still ambiguous.
+        let outputHashes = Set(outputs.map { $0.hash })
+        guard outputHashes.count == outputs.count else {
+            throw PlatformWalletError.invalidParameter(
+                "Duplicate recipient addresses in outputs"
+            )
+        }
+
         // Sum recipient amounts. Reject overflow rather than silently
         // wrapping (would let a caller smuggle bogus amounts past the
         // protocol's sum check).

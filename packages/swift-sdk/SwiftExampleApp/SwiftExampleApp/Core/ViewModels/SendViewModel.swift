@@ -259,12 +259,53 @@ class SendViewModel: ObservableObject {
                         hash: $0.addressHash
                     )
                 }
-                _ = try await addressWallet.transfer(
+                let updated = try await addressWallet.transfer(
                     accountIndex: senderAccountIndex,
                     outputs: [output],
                     changeAddress: change,
                     signer: signer
                 )
+
+                // Apply the post-broadcast balances/nonces returned by
+                // Rust to SwiftData so the UI doesn't display stale
+                // values until the next BLAST sync. The Rust-side
+                // `transfer` updates its in-memory state but does not
+                // call the persister, so without this the
+                // PersistentPlatformAddress rows that drive the Send
+                // screen's @Query stay frozen at their pre-send
+                // values — change-address selection could re-pick the
+                // same fresh address on the next send, and a cold
+                // restart would rehydrate the wallet from the stale
+                // rows.
+                //
+                // Mirrors PlatformWalletPersistenceHandler.persistAddressBalances
+                // (PlatformWalletPersistenceHandler.swift:88-114): fetch
+                // each row by `addressHash`, set the volatile fields,
+                // stamp `lastUpdated`. Every entry Rust returned was
+                // touched by the transition, so `isUsed = true`
+                // unconditionally. Rows that aren't found are
+                // silently skipped — the same defensive shape the
+                // BLAST handler uses.
+                for entry in updated {
+                    let entryHash = entry.hash
+                    let descriptor = FetchDescriptor<PersistentPlatformAddress>(
+                        predicate: #Predicate { $0.addressHash == entryHash }
+                    )
+                    guard let row = try? modelContext.fetch(descriptor).first else {
+                        continue
+                    }
+                    row.balance = entry.balance
+                    row.nonce = entry.nonce
+                    row.isUsed = true
+                    row.lastUpdated = Date()
+                }
+                do {
+                    try modelContext.save()
+                } catch {
+                    self.error = "Couldn't persist post-transfer balances: \(error.localizedDescription)"
+                    return
+                }
+
                 successMessage = "Platform transfer sent"
 
             case .platformToShielded,
