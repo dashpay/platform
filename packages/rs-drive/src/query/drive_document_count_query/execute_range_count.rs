@@ -41,12 +41,12 @@ pub struct RangeCountOptions {
     /// Maximum number of entries to return. Only meaningful when
     /// `distinct = true`. `None` means no limit.
     ///
-    /// To paginate, callers should narrow the range itself
-    /// (`color > <last-key-from-previous-page>`) — a server-side
-    /// cursor field used to exist but added no expressivity over
-    /// client-side range adjustment and was ambiguous for compound
-    /// (`In + range + distinct`) shapes, so it was removed before
-    /// v12 shipped.
+    /// To paginate, callers narrow the range itself (`color >
+    /// <last-key-from-previous-page>`). There's no cursor field
+    /// because a single-`bytes` cursor would be ambiguous for
+    /// compound (`In + range + distinct`) queries whose natural sort
+    /// is `(in_key, key)`, and range narrowing has the same
+    /// expressivity for the simple cases.
     pub limit: Option<u32>,
     /// Sort order for distinct entries. `true` (default) is ascending by
     /// serialized key bytes. Ignored when `distinct = false`.
@@ -105,8 +105,8 @@ impl DriveDocumentCountQuery<'_> {
         // caller's `limit` would have truncated grovedb mid-walk.
         // For summed mode we must see all elements to compute the
         // total. For distinct mode we apply `limit` post-query
-        // below — the per-query DoS bound is the index size, which
-        // is the same bound the prior merge-based code lived under.
+        // below — the per-query DoS bound is the index size itself,
+        // which is bounded by the contract author's index choice.
         // Always build the path query in ascending order on the
         // no-proof path; the Rust-side sort+reverse below applies
         // the user's `order_by_ascending` to the final result set.

@@ -632,35 +632,26 @@ mod tests {
         ));
     }
 
-    /// Regression pin for the `prove = true` + `In` route. Two bugs
-    /// shaped this test:
+    /// End-to-end pin for `prove = true` + `In`. Two distinct
+    /// guarantees fail if regressed:
     ///
-    /// 1. Before `3ef2ca3fe1`, `detect_mode` dispatched
-    ///    `(has_range=false, has_in=true, _)` unconditionally to
-    ///    `DocumentCountMode::PerInValue`, which emits
-    ///    `DocumentCountResponse::Counts(...)` and never a proof — so
-    ///    any caller setting `prove = true` on a count query with an
-    ///    `In` where-clause silently lost the proof and the SDK
-    ///    verifier bailed with `NoProofInResult` (PR #3623 review
-    ///    comment r3214794852). `detect_mode` now routes the prove
-    ///    combination to `PointLookupProof`.
+    /// 1. `detect_mode` must route `(has_range=false, has_in=true,
+    ///    prove=true, _)` to `PointLookupProof`. The materialize-and-
+    ///    count path emits a real grovedb proof; the PerInValue path
+    ///    emits a `Counts(...)` variant with no proof and the SDK
+    ///    verifier would bail with `NoProofInResult`.
+    /// 2. The dispatcher must thread the request's `order_by` into
+    ///    `from_decomposed_values`. The materialize walker rejects
+    ///    any range/In where clause without a matching orderBy
+    ///    because proof determinism requires the SDK to reconstruct
+    ///    the same path query; missing orderBy returns
+    ///    `MissingOrderByForRange` before any proof is produced.
     ///
-    /// 2. `PointLookupProof` reaches `DriveDocumentQuery::
-    ///    from_decomposed_values`, which requires an `order_by`
-    ///    clause for any range/In where field (proof determinism —
-    ///    the SDK has to reconstruct the same path query). The
-    ///    initial fix in `3ef2ca3fe1` hard-coded `None` for
-    ///    `order_by`, so `In + prove` exploded with
-    ///    `MissingOrderByForRange` end-to-end. The follow-up
-    ///    introduced the `order_by` request field this test exercises
-    ///    via `[["age", "asc"]]`; with it, the executor walks the In
-    ///    fork in a deterministic order and emits real proof bytes.
-    ///
-    /// Asserts the response variant is `Proof(non-empty bytes)` — if
-    /// a future refactor sends the dispatch back through `PerInValue`
-    /// the variant becomes `Counts`; if it forgets to thread
-    /// `order_by`, the executor errors before producing a response.
-    /// Either regression fails this test.
+    /// Asserts the response variant is `Proof(non-empty bytes)` —
+    /// either regression breaks this:
+    /// - dispatch-back-through-PerInValue → variant becomes `Counts`
+    /// - dispatcher forgets orderBy → executor errors before
+    ///   producing a response
     #[test]
     fn test_documents_count_with_in_and_prove_returns_proof() {
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
@@ -952,15 +943,16 @@ mod tests {
         }
     }
 
-    /// `return_distinct_counts_in_range = true` + `prove = true` is
-    /// supported via the `RangeDistinctProof` dispatch path: a
-    /// regular grovedb range proof against the property-name
-    /// `ProvableCountTree` whose `KVValueHashFeatureType[WithChildHash]`
-    /// ops carry per-distinct-value counts (bound to the merk root
-    /// via `node_hash_with_count`). Earlier commits in this PR
-    /// rejected this combination because only the aggregate-count
-    /// proof primitive existed; the distinct-count proof was added
-    /// in 93a1b0ca7c. This test pins the acceptance shape.
+    /// End-to-end pin for the `RangeDistinctProof` dispatch path —
+    /// `return_distinct_counts_in_range = true` + `prove = true` +
+    /// a range clause. Backed by a regular grovedb range proof
+    /// against the property-name `ProvableCountTree` whose
+    /// `KVValueHashFeatureType[WithChildHash]` ops carry per-
+    /// distinct-value counts bound to the merk root via
+    /// `node_hash_with_count`. Asserts the wire-shape contract:
+    /// a `Proof` response variant with non-empty grovedb proof
+    /// bytes (not the empty-envelope degenerate shape that a
+    /// no-match query would emit).
     #[test]
     fn test_documents_count_range_with_prove_and_distinct_returns_proof() {
         use dpp::data_contract::DataContractFactory;

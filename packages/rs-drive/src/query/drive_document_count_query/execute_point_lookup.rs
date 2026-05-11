@@ -192,9 +192,10 @@ impl DriveDocumentCountQuery<'_> {
                 })?;
 
                 // `In` is set-membership: serialize each value to the canonical
-                // index key and dedupe before forking. Without this, a query
+                // index key and dedupe before forking. Without dedupe, a query
                 // like `age in [30, 30]` would visit and sum the same subtree
-                // twice (Codex review finding #3).
+                // twice — distinct values that share a canonical encoding
+                // collapse to one fork.
                 let mut seen_keys: BTreeSet<Vec<u8>> = BTreeSet::new();
                 let mut total: u64 = 0;
                 for v in values {

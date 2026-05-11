@@ -1933,11 +1933,13 @@ mod range_countable_index_e2e_tests {
 
     /// Range count with an `In` clause on the prefix forks the walk
     /// into one path per prefix value. Each emitted entry carries
-    /// the `in_key` (the brand) AND `key` (the color) — server-side
-    /// cross-fork merging was dropped (originally bg of Codex
-    /// finding 1: limit applied pre-merge can undercount cross-fork
-    /// sums). Callers reduce by `key` client-side if they want the
-    /// flat histogram view.
+    /// the `in_key` (the brand) alongside `key` (the color) — the
+    /// server does NOT merge across forks, because limit applied
+    /// pre-merge could undercount cross-fork sums (the entries the
+    /// limit drops on one fork might be the ones whose key collides
+    /// with another fork's surviving entries). Callers reduce by
+    /// `key` client-side via `DocumentSplitCounts::into_flat_map` if
+    /// they want the flat histogram view.
     #[test]
     fn range_count_with_in_on_prefix_returns_per_brand_color_entries() {
         use crate::query::{
@@ -2134,10 +2136,8 @@ mod range_countable_index_e2e_tests {
     /// becomes a `QueryItem::Range(..)` no different in structure from
     /// `betweenExcludeRight`, so all four executor modes (no-proof
     /// aggregate, no-proof distinct, prove aggregate, prove distinct)
-    /// should serve it via the same code paths that already cover
-    /// `>` / `<` / `between*`. This test pins acceptance across all
-    /// four — earlier commits rejected `StartsWith` with a clear
-    /// error, this is the rewrite that drops that rejection.
+    /// serve it via the same code paths that already cover `>` / `<`
+    /// / `between*`. This test pins acceptance across all four.
     #[test]
     fn range_count_executor_accepts_starts_with_in_all_four_modes() {
         use crate::query::{
@@ -2661,12 +2661,12 @@ mod range_countable_index_e2e_tests {
     /// Compound `[brand, color]` range_countable index, prove path:
     /// the `Equal`-on-brand prefix becomes path bytes (not a query
     /// shape), and only the terminator `color > X` becomes the merk
-    /// `AggregateCountOnRange` walk. This exercises grovedb#658's
-    /// multi-layer envelope where the verifier must walk through one
-    /// non-leaf layer (the `brand=acme` value tree's existence proof)
-    /// before reaching the leaf merk's count proof. The single-
-    /// property tests above all run at the top property-name layer
-    /// directly so they don't reach this code path.
+    /// `AggregateCountOnRange` walk. This exercises grovedb's multi-
+    /// layer aggregate-count proof envelope: the verifier walks
+    /// through one non-leaf layer (the `brand=acme` value tree's
+    /// existence proof) before reaching the leaf merk's count proof.
+    /// The single-property tests above all run at the top property-
+    /// name layer directly so they don't reach this code path.
     #[test]
     fn aggregate_count_proof_verifies_on_compound_index_with_equal_prefix() {
         use crate::query::{DriveDocumentCountQuery, WhereClause, WhereOperator};
@@ -2810,12 +2810,11 @@ mod range_countable_index_e2e_tests {
         );
     }
 
-    /// Real-world scenario test for grovedb#656's
-    /// `AggregateCountOnRange` primitive at non-trivial scale: a
-    /// parking-lot contract with one document per car, each tagged
-    /// with its lot letter (`a`..`z`). Lot `a` has 1 car, `b` has 2,
-    /// ..., `z` has 26 — total `1+2+...+26 = 351` cars across 26
-    /// distinct lot values.
+    /// Scale test for the `AggregateCountOnRange` proof primitive at
+    /// non-trivial fan-out: a parking-lot contract with one document
+    /// per car, each tagged with its lot letter (`a`..`z`). Lot `a`
+    /// has 1 car, `b` has 2, ..., `z` has 26 — total `1+2+...+26 =
+    /// 351` cars across 26 distinct lot values.
     ///
     /// Question: how many cars are in parking lots > b?
     /// Answer: cars in lots `c..=z` = `3+4+...+26` = 348.
@@ -2835,8 +2834,9 @@ mod range_countable_index_e2e_tests {
     ///    those internal counts correctly, not just count keys.
     /// 3. **The proof stays O(log n)** even though the answer is 348
     ///    — the verifier never sees the underlying 348 documents,
-    ///    only the merk-level count proof. That's the whole point of
-    ///    grovedb#656 over the materialize-and-count fallback.
+    ///    only the merk-level count proof. That's the whole reason
+    ///    the aggregate primitive exists vs. the materialize-and-
+    ///    count fallback.
     #[test]
     fn aggregate_count_proof_counts_cars_in_parking_lots_greater_than_b() {
         use crate::query::{WhereClause, WhereOperator};
@@ -3098,16 +3098,15 @@ mod range_countable_index_e2e_tests {
     /// one entry per distinct in-range value:
     /// `c=3, d=4, e=5, ..., z=26`.
     ///
-    /// This is the no-proof companion to grovedb#656's primitive:
-    /// the prove path was specifically restricted to a single
-    /// aggregate (the merk-level proof returns one u64), so getting
-    /// per-distinct-value counts requires the executor to walk the
-    /// children of the property-name tree directly. That walk is
-    /// cheaper than the materialize-and-count fallback (no documents
-    /// are loaded) but isn't cryptographically committed by a single
-    /// proof shape — `return_distinct_counts_in_range = true` is
-    /// rejected on the prove path for that reason (see
-    /// `book/src/drive/document-count-trees.md`).
+    /// No-proof companion to the aggregate-count proof path: the
+    /// `AggregateCountOnRange` merk primitive returns a single u64,
+    /// so getting per-distinct-value counts requires the executor to
+    /// walk the children of the property-name tree directly. That
+    /// walk is cheaper than the materialize-and-count fallback (no
+    /// documents are loaded), but isn't cryptographically committed
+    /// by a single proof shape on the prove + non-distinct path —
+    /// see `book/src/drive/document-count-trees.md` for the
+    /// prove-vs-no-proof matrix.
     ///
     /// The fixture is identical to
     /// `aggregate_count_proof_counts_cars_in_parking_lots_greater_than_b`
@@ -4040,13 +4039,13 @@ mod range_countable_index_e2e_tests {
     /// `set_subquery_path` carries any post-In Equal pairs +
     /// terminator name, `set_subquery` is the range item. The
     /// resulting proof emits per-(brand, color) elements which the
-    /// verifier reads as-is — there is NO server-side cross-fork
-    /// merging, so the `limit` pushed into the prover's path query
-    /// can't undercount cross-fork sums (this was the original
-    /// motivation for the no-merge design, Codex finding 1).
-    /// Callers reduce by `key` client-side via
-    /// [`DocumentSplitCounts::into_flat_map`] for the historical
-    /// flat-histogram view.
+    /// verifier reads as-is. The server intentionally does NOT merge
+    /// across forks here, because `limit` pushed into the prover's
+    /// path query is applied per-fork: merging post-limit would let
+    /// one fork's surviving entries collide with another fork's
+    /// dropped entries on the same `key` and silently undercount.
+    /// Callers that want the flat-histogram view reduce by `key`
+    /// client-side via [`DocumentSplitCounts::into_flat_map`].
     ///
     /// Mirrors the no-proof
     /// `range_count_with_in_on_prefix_returns_per_brand_color_entries`

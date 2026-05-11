@@ -429,9 +429,10 @@ fn test_count_query_total_count_with_in_operator_no_matches() {
     assert_eq!(results[0].count, 0, "expected count of 0 for unmatched In");
 }
 
-/// Codex review finding #3: an `In` clause with duplicate values used to
-/// double-count by recursing once per array element. The fix dedupes
-/// branches by serialized key before summing.
+/// Pins set-membership semantics on the `In` operator: duplicate values
+/// in the In array must collapse to a single subtree visit. The walker
+/// dedupes by serialized index key before forking, so `age IN [30, 30]`
+/// counts the age=30 subtree once, not twice.
 #[test]
 fn test_count_query_in_operator_dedupes_duplicate_values() {
     let (drive, data_contract) = setup_drive_and_contract();
@@ -1260,9 +1261,9 @@ mod detect_mode_tests {
     /// `FromProof<DocumentCountQuery>` for `DocumentSplitCounts`
     /// then groups verified documents by the In field's serialized
     /// value to produce per-key count entries. No proof aggregate
-    /// primitive supports per-In-value entries directly, but
-    /// materialize-and-count is correct (and was the pre-refactor
-    /// behavior).
+    /// primitive supports per-In-value entries directly, so the
+    /// materialize path is the only correct route until grovedb
+    /// gains a per-key count proof.
     #[test]
     fn in_with_prove_routes_to_point_lookup_proof() {
         let clauses = vec![in_clause("a")];

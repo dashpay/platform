@@ -42,11 +42,9 @@ use rs_dapi_client::transport::{
 /// Wraps a [`DocumentQuery`] (so we can reuse its [`DriveDocumentQuery`]
 /// conversion machinery) and is consumed by [`DocumentCount::fetch`].
 ///
-/// Optional fields below correspond to the unified count endpoint's
-/// pagination / distinct-mode knobs added in PR #3623. Defaults match
-/// the gRPC defaults: total-count summed result, ascending order,
-/// no limit, no cursor, proof-verifying transport. Setters override
-/// individual fields without disturbing the rest.
+/// Field defaults match the gRPC defaults: total-count summed result,
+/// ascending order, no limit, proof-verifying transport. Setters
+/// override individual fields without disturbing the rest.
 #[derive(Debug, Clone, dash_platform_macros::Mockable)]
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub struct DocumentCountQuery {
@@ -65,11 +63,12 @@ pub struct DocumentCountQuery {
     /// to its `max_query_limit` config; passing a larger value here
     /// just gets clamped, not rejected.
     ///
-    /// For pagination, callers narrow the underlying range itself
-    /// (`color > <last-key-from-previous-page>`) — a server-side
-    /// cursor field existed earlier but added no expressivity over
-    /// client-side range adjustment, so it was removed before v12
-    /// shipped.
+    /// No cursor field: pagination is expressed by narrowing the
+    /// underlying range itself (`color > <last-key-from-previous-
+    /// page>`), which is equivalent in expressivity and avoids the
+    /// ambiguity a single-`bytes` cursor would have for compound
+    /// (`In + range + distinct`) queries whose natural sort is
+    /// `(in_key, key)`.
     pub limit: Option<u32>,
     // Order direction lives on the wrapped `document_query` —
     // `DocumentQuery::order_by_clauses` is serialized into the

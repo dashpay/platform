@@ -543,15 +543,14 @@ impl WasmSdk {
     ///   the query carries a range clause, returns per-distinct-
     ///   value entries instead of a single sum.
     ///
-    /// This is the unified successor to the previous
-    /// `getDocumentsCount` / `getDocumentsSplitCount` pair —
-    /// `DocumentSplitCounts::fetch` (which this wraps) handles every
-    /// count mode internally, so the JS surface only needs one entry
-    /// point per `[plain | withProofInfo]` variant. For compound
-    /// `In + range + distinct` queries the per-`(in_key, key)`
-    /// entries are summed by `key` into the flat map; callers needing
-    /// the unmerged compound shape should use a richer binding (not
-    /// yet exposed here).
+    /// One entry point per `[plain | withProofInfo]` variant covers
+    /// every count mode (total / per-`In`-value / per-distinct-value-
+    /// in-range / summed-over-range) because `DocumentSplitCounts::
+    /// fetch` (which this wraps) dispatches on the request shape
+    /// internally. For compound `In + range + distinct` queries the
+    /// per-`(in_key, key)` entries are summed by `key` into the flat
+    /// map; callers needing the unmerged compound shape should use a
+    /// richer binding (not yet exposed here).
     #[wasm_bindgen(
         js_name = "getDocumentsCount",
         unchecked_return_type = "Map<string, bigint>"

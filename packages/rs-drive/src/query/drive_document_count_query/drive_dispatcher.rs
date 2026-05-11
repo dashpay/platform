@@ -3,14 +3,14 @@
 //! Two layers live here:
 //!
 //! 1. **Per-mode `impl Drive` executors** — `execute_document_count_*`
-//!    methods that pick an index for their specific mode and run the
-//!    matching `DriveDocumentCountQuery::*` executor. These collapse
-//!    what used to be ~30-line per-mode match arms in the drive-abci
-//!    handler into single calls.
+//!    methods that pick a covering index for their specific mode and
+//!    run the matching `DriveDocumentCountQuery::*` executor. Each
+//!    one collapses index-picking + executor invocation into a single
+//!    call so the dispatcher's match arms stay one line per mode.
 //!
 //! 2. **Top-level `execute_document_count_request`** that owns the
 //!    whole pipeline: mode detection → per-mode executor → response
-//!    wrapping. The drive-abci handler now just builds a
+//!    wrapping. The drive-abci handler just builds a
 //!    [`DocumentCountRequest`] and calls this; everything past CBOR
 //!    decode + contract lookup lives in drive.
 //!
@@ -47,9 +47,10 @@ impl Drive {
     //!   4. Returns either `Vec<SplitCountEntry>` (no-proof modes)
     //!      or `Vec<u8>` proof bytes (proof modes).
     //!
-    //! These methods are step 2 of the document_count_query handler
-    //! refactor: they collapse what used to be ~30-line per-mode
-    //! match arms in the drive-abci handler into single calls.
+    //! Each per-mode executor is its own narrow contract — splitting
+    //! along mode boundaries keeps the dispatcher arms one line each
+    //! and lets each executor's index-picking + clause-handling logic
+    //! stay close to the executor it feeds.
 
     /// Total count for the given where clauses against the best
     /// covering countable index. Single summed entry with empty key.

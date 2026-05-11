@@ -210,7 +210,7 @@ Distinct mode accepts pagination knobs:
 | `order_by` | CBOR-encoded list of `[field, "asc"\|"desc"]` clauses, same shape as `GetDocumentsRequestV0.order_by`. First clause's direction controls split-mode entry ordering; ascending (default) walks the range in BTreeMap natural order, descending reverses. Required for `(In + prove)` walk determinism (proof reconstruction needs an explicit order). |
 | `limit` | Truncate after `min(requested, max_query_limit)` entries; applied last (after order). **Unset (`None`) is normalized to `default_query_limit` before the cap is applied** — the server never walks an unbounded distinct-mode result set, even if the client omits the field. Clients that want a tight working-set should still set this explicitly. |
 
-For pagination, clients narrow the underlying range itself rather than passing a cursor — page 2 is just `color > <last-key-from-page-1>` with the same `limit`. A `start_after_split_key` cursor field existed in earlier drafts of the v12 endpoint but was removed before shipping: it added no expressivity over client-side range adjustment, and the single-`bytes` shape was ambiguous for compound (`In + range + distinct`) queries whose natural sort is `(in_key, key)`.
+For pagination, clients narrow the underlying range itself rather than passing a cursor — page 2 is just `color > <last-key-from-page-1>` with the same `limit`. There's no cursor field on the request because a single-`bytes` cursor would be ambiguous for compound (`In + range + distinct`) queries whose natural sort is `(in_key, key)`, and range narrowing has the same expressivity for the simple cases.
 
 These knobs are ignored on summed mode (they have no defined meaning for a single aggregate).
 
