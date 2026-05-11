@@ -80,6 +80,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         let result = info
             .core_wallet
             .build_asset_lock(wallet, account_index, vec![funding], DEFAULT_FEE_PER_KB)
+            .await
             .map_err(|e| {
                 PlatformWalletError::AssetLockTransaction(format!(
                     "Asset lock builder failed: {}",
