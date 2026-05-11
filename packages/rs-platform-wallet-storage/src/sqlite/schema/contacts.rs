@@ -6,18 +6,15 @@ use platform_wallet::changeset::ContactChangeSet;
 use platform_wallet::wallet::platform_wallet::WalletId;
 
 use crate::sqlite::error::SqlitePersisterError;
-use crate::sqlite::schema::blob::BlobWriter;
+use crate::sqlite::schema::blob;
 
 pub fn apply(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
     cs: &ContactChangeSet,
 ) -> Result<(), SqlitePersisterError> {
-    for key in cs.sent_requests.keys() {
-        // `ContactRequestEntry` carries an opaque `ContactRequest`
-        // upstream type with no serde — store the key columns and an
-        // empty marker blob; the contact-request payload itself is
-        // recomputable from network sources.
+    for (key, entry) in &cs.sent_requests {
+        let payload = blob::encode(entry)?;
         tx.execute(
             "INSERT INTO contacts_sent (wallet_id, owner_id, recipient_id, entry_blob) \
              VALUES (?1, ?2, ?3, ?4) \
@@ -26,7 +23,7 @@ pub fn apply(
                 wallet_id.as_slice(),
                 key.owner_id.as_slice(),
                 key.recipient_id.as_slice(),
-                BlobWriter::new().finish(),
+                payload,
             ],
         )?;
     }
@@ -40,7 +37,8 @@ pub fn apply(
             ],
         )?;
     }
-    for key in cs.incoming_requests.keys() {
+    for (key, entry) in &cs.incoming_requests {
+        let payload = blob::encode(entry)?;
         tx.execute(
             "INSERT INTO contacts_recv (wallet_id, owner_id, sender_id, entry_blob) \
              VALUES (?1, ?2, ?3, ?4) \
@@ -49,7 +47,7 @@ pub fn apply(
                 wallet_id.as_slice(),
                 key.owner_id.as_slice(),
                 key.sender_id.as_slice(),
-                BlobWriter::new().finish(),
+                payload,
             ],
         )?;
     }
@@ -63,7 +61,8 @@ pub fn apply(
             ],
         )?;
     }
-    for key in cs.established.keys() {
+    for (key, established) in &cs.established {
+        let payload = blob::encode(established)?;
         tx.execute(
             "INSERT INTO contacts_established (wallet_id, owner_id, contact_id, entry_blob) \
              VALUES (?1, ?2, ?3, ?4) \
@@ -72,7 +71,7 @@ pub fn apply(
                 wallet_id.as_slice(),
                 key.owner_id.as_slice(),
                 key.recipient_id.as_slice(),
-                BlobWriter::new().finish(),
+                payload,
             ],
         )?;
     }

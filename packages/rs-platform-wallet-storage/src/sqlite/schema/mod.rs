@@ -4,13 +4,13 @@
 //! owns three). Writers take a `&rusqlite::Transaction` and an already
 //! resolved sub-changeset; readers take `&rusqlite::Connection`.
 //!
-//! Encoding policy: complex sub-types from `platform-wallet` are
-//! captured field-by-field into typed SQLite columns where possible
-//! (heights, hashes, outpoints, flags). For the remainder we store a
-//! `_blob` column with a compact, self-describing byte layout
-//! ([`blob::encode`] / [`blob::decode`]) — bincode is unavailable
-//! because most upstream types do not derive `serde`. The layout is
-//! versioned so future migrations can rewrite blobs in place.
+//! Encoding policy: scalars that fan out to per-row indexes go into
+//! typed SQLite columns (heights, hashes, outpoints, flags). The
+//! `_blob` columns carry the full sub-changeset entry encoded with
+//! `bincode::serde::encode_to_vec` against the serde-derived types in
+//! `platform-wallet` — see [`blob::encode`] / [`blob::decode`] for
+//! the wrapper (a 1-byte `schema-rev` tag prepended to the bincode
+//! body so future migrations can change encoders).
 
 pub mod accounts;
 pub mod asset_locks;

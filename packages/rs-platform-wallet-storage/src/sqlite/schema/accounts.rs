@@ -6,7 +6,7 @@ use platform_wallet::changeset::{AccountAddressPoolEntry, AccountRegistrationEnt
 use platform_wallet::wallet::platform_wallet::WalletId;
 
 use crate::sqlite::error::SqlitePersisterError;
-use crate::sqlite::schema::blob::BlobWriter;
+use crate::sqlite::schema::blob;
 
 pub fn apply_registrations(
     tx: &Transaction<'_>,
@@ -16,9 +16,11 @@ pub fn apply_registrations(
     for entry in entries {
         let account_type = format!("{:?}", entry.account_type);
         let account_index = account_index(&entry.account_type);
-        // Use BIP-32 / DIP-14 binary encoding for the xpub — 78 or 107 bytes,
-        // round-trippable via `ExtendedPubKey::decode`.
-        let xpub_bytes = entry.account_xpub.encode();
+        // `account_xpub_bytes` carries the bincode-serde encoded
+        // `AccountRegistrationEntry` (xpub + account_type). The
+        // separate `account_type` / `account_index` columns mirror
+        // the entry for direct SQL lookups.
+        let payload = blob::encode(entry)?;
         tx.execute(
             "INSERT INTO account_registrations \
                 (wallet_id, account_type, account_index, account_xpub_bytes) \
@@ -29,7 +31,7 @@ pub fn apply_registrations(
                 wallet_id.as_slice(),
                 account_type,
                 account_index as i64,
-                xpub_bytes,
+                payload,
             ],
         )?;
     }
@@ -45,11 +47,7 @@ pub fn apply_pools(
         let account_type = format!("{:?}", entry.account_type);
         let account_index = account_index(&entry.account_type);
         let pool_type = format!("{:?}", entry.pool_type);
-        // `AddressInfo` is `Debug + Clone` only upstream — capture the
-        // raw count so consumers can detect a non-empty pool. Full
-        // round-trips are deferred until upstream gains serde.
-        let mut w = BlobWriter::new();
-        w.u64(entry.addresses.len() as u64);
+        let payload = blob::encode(entry)?;
         tx.execute(
             "INSERT INTO account_address_pools \
                 (wallet_id, account_type, account_index, pool_type, snapshot_blob) \
@@ -61,7 +59,7 @@ pub fn apply_pools(
                 account_type,
                 account_index as i64,
                 pool_type,
-                w.finish(),
+                payload,
             ],
         )?;
     }

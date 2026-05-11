@@ -10,6 +10,23 @@ notes.
 
 ### Changed
 
+- **Blob encoder swapped to bincode-serde.** Every `_blob` column
+  (`core_transactions.record_blob`, `core_instant_locks.islock_blob`,
+  `identities.entry_blob`, `identity_keys.public_key_blob`,
+  `contacts_*.entry_blob`, `asset_locks.lifecycle_blob`,
+  `dashpay_*.{profile,overlay}_blob`,
+  `account_registrations.account_xpub_bytes`,
+  `account_address_pools.snapshot_blob`) is now a single
+  `bincode::serde::encode_to_vec` payload prefixed with a 1-byte
+  schema-revision tag. The hand-rolled `BlobWriter` / `BlobReader`
+  walker from the initial implementation is gone; the schema-writer
+  modules each shed ~30-100 LOC of field-by-field plumbing.
+  `IdentityKeyEntry` keeps a tiny wire-shape adapter
+  (`IdentityKeyWire`) inside the storage crate because dpp's
+  `IdentityPublicKey` uses `serde(tag = "$formatVersion")`, which
+  bincode-serde rejects — the adapter re-encodes that one field via
+  bincode 2's native `Encode/Decode` derives while everything around
+  it still rides bincode-serde.
 - **Crate renamed**: `platform-wallet-sqlite` → `platform-wallet-storage`.
   Module layout regrouped under `platform_wallet_storage::sqlite`; root
   re-exports (`SqlitePersister`, `SqlitePersisterConfig`, `FlushMode`,
