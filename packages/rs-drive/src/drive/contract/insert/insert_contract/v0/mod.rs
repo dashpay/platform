@@ -3639,7 +3639,10 @@ mod range_countable_index_e2e_tests {
                 "expected message about exceeding max_query_limit, got: {}",
                 msg
             ),
-            Ok(DocumentCountResponse::Counts(_)) => panic!("expected rejection, got Counts"),
+            Ok(DocumentCountResponse::Aggregate(_)) => {
+                panic!("expected rejection, got Aggregate")
+            }
+            Ok(DocumentCountResponse::Entries(_)) => panic!("expected rejection, got Entries"),
             Ok(DocumentCountResponse::Proof(_)) => panic!("expected rejection, got Proof"),
             Err(e) => panic!("expected InvalidLimit, got different error: {:?}", e),
         }

@@ -616,21 +616,33 @@ message GetDocumentsResponse {
 
 // Unified count query.
 //
-// Mode is determined by the where clauses encoded in `where`:
+// Mode is determined by the where clauses encoded in `where` plus
+// the explicit `return_distinct_counts_in_range` flag. The wire
+// shape of the no-proof response makes the mode explicit via
+// `CountResults.variant`:
 //   * No `In` clause and `return_distinct_counts_in_range` = false:
-//     total count of matching documents → response has a single
-//     `CountEntry` with empty `key`.
-//   * Exactly one `In` clause: per-value entries — one `CountEntry`
-//     for each value in the `In` array, each constrained by the
-//     other (`==`) clauses. At most one `In` per request; multiple
-//     `In` clauses are an InvalidArgument error.
-//   * A range clause (`>`, `<`, `between*`, `startsWith`) and
-//     `return_distinct_counts_in_range` = true: one `CountEntry`
-//     per distinct value within the range. Requires the index to
-//     have `range_countable: true` (see Indexes book chapter).
+//     total count → `CountResults.aggregate_count` (single u64).
+//   * Exactly one `In` clause (no range): per-`In`-value counts →
+//     `CountResults.entries`, one `CountEntry` for each value in
+//     the `In` array constrained by the other `==` clauses. At
+//     most one `In` per request; multiple `In` clauses are an
+//     InvalidArgument error.
+//   * A range clause (`>`, `<`, `between*`) and
+//     `return_distinct_counts_in_range` = true: per-distinct-value
+//     range histogram → `CountResults.entries`, one `CountEntry`
+//     per distinct value within the range. Requires
+//     `range_countable: true` on the index (see Indexes book
+//     chapter). Supports `In` on prefix properties (cartesian-fork
+//     via grovedb subqueries; counts are summed across the In
+//     forks per terminator value).
 //   * A range clause with `return_distinct_counts_in_range` = false:
-//     a single `CountEntry` (empty `key`) summing the range.
-//     Also requires `range_countable: true` on the index.
+//     total over range → `CountResults.aggregate_count`. Also
+//     requires `range_countable: true`.
+//
+// When `prove = true`, the response is a grovedb proof instead of
+// a `CountResults` value; the client verifies and recovers the
+// same per-mode shape (single u64 for aggregate, per-key map for
+// distinct).
 message GetDocumentsCountRequest {
   message GetDocumentsCountRequestV0 {
     bytes data_contract_id = 1;
@@ -658,8 +670,10 @@ message GetDocumentsCountRequest {
 
 message GetDocumentsCountResponse {
   message GetDocumentsCountResponseV0 {
-    // A single entry: the splitting key value (empty for total
-    // count) and how many documents match.
+    // A single per-key entry: the splitting key value and how many
+    // documents match. Used by the `entries` variant of
+    // `CountResults` for per-`In`-value and per-distinct-value-in-
+    // range modes.
     message CountEntry {
       bytes key = 1;
       // `jstype = JS_STRING` so JS/Web clients receive a string and don't
@@ -669,8 +683,28 @@ message GetDocumentsCountResponse {
       uint64 count = 2 [jstype = JS_STRING];
     }
 
-    message CountResults {
+    message CountEntries {
       repeated CountEntry entries = 1;
+    }
+
+    // Non-proof count result. Shape is mode-dependent and made
+    // explicit on the wire via the inner `variant` oneof:
+    //   * `aggregate_count`: total-count and range-without-distinct
+    //     modes — a single u64 with no per-key breakdown. Replaces
+    //     the previous "single CountEntry with empty key" encoding
+    //     so callers don't have to special-case the empty-key
+    //     entry to recover the total.
+    //   * `entries`: per-`In`-value and per-distinct-value-in-range
+    //     modes — one CountEntry per distinct value, in serialized-
+    //     key order subject to `order_by_ascending` / `limit` /
+    //     `start_after_split_key`.
+    message CountResults {
+      oneof variant {
+        // `jstype = JS_STRING` for the same reason as
+        // `CountEntry.count` — JS Number rounds at 2^53−1.
+        uint64 aggregate_count = 1 [jstype = JS_STRING];
+        CountEntries entries = 2;
+      }
     }
 
     oneof result {

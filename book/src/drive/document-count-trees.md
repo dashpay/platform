@@ -118,7 +118,7 @@ Tests pinning these guards live in `packages/rs-dpp/src/data_contract/document_t
 
 ## Counting Documents at Query Time
 
-A single unified gRPC endpoint exposes the feature: `GetDocumentsCount`. The response shape varies by request mode (total / per-`In`-value / per-distinct-value-in-range / total-over-range), see [Range Modes](#range-modes) below. The endpoint has two underlying paths (prove vs. no-prove); every mode — including `return_distinct_counts_in_range = true` — is valid on both paths. The prove path uses two different proof shapes depending on whether you want a single aggregate or per-distinct-value entries (see [Prove (Client-Side Verify-Then-Aggregate or Aggregate-Count Proof)](#prove-client-side-verify-then-aggregate-or-aggregate-count-proof) below).
+A single unified gRPC endpoint exposes the feature: `GetDocumentsCount`. The response shape varies by request mode (total / per-`In`-value / per-distinct-value-in-range / total-over-range), see [Range Modes](#range-modes) below. The wire-level shape makes that split explicit: on the no-proof path the response's `CountResults` carries an inner `oneof variant { uint64 aggregate_count; CountEntries entries; }` — total-count and range-without-distinct modes return `aggregate_count` (a single `u64`), per-`In`-value and per-distinct-value-in-range modes return `entries` (a list of `CountEntry { key, count }`). Callers no longer have to special-case an empty-key entry to recover the total. The endpoint has two underlying paths (prove vs. no-prove); every mode — including `return_distinct_counts_in_range = true` — is valid on both paths. The prove path uses two different proof shapes depending on whether you want a single aggregate or per-distinct-value entries (see [Prove (Client-Side Verify-Then-Aggregate or Aggregate-Count Proof)](#prove-client-side-verify-then-aggregate-or-aggregate-count-proof) below).
 
 ### No-Prove (Server-Side O(1) or O(log n))
 
@@ -131,14 +131,14 @@ When `prove=false`, drive-abci calls into `DriveDocumentCountQuery` (in [`packag
 3. If every index property was covered: read the `CountTree` element at the resulting path and return its built-in `u64` count. O(1) per branch.
 4. If only a prefix was covered: sum the counts of all `CountTree` children at the deepest covered level.
 
-If the request carries an `In` clause, the response emits one `CountEntry` per `In` value (the per-value split mode). Otherwise the response is a single `CountEntry` with empty `key`.
+If the request carries an `In` clause, the response is the `entries` variant — one `CountEntry` per `In` value (the per-value split mode). Otherwise the response is the `aggregate_count` variant — a single `u64`.
 
 **Range** ([`execute_range_count_no_proof`](https://docs.rs/drive/latest/drive/query/struct.DriveDocumentCountQuery.html#method.execute_range_count_no_proof)):
 
 1. Pick a `range_countable: true` index where the Equal/In clauses cover the prefix and the range operator hits the index's last property.
 2. Build the path `[contract_doc, doctype, prefix..., range_prop_name]` — pointing at the property-name `ProvableCountTree`.
 3. Issue a grovedb path query with the converted range `QueryItem` (`>`, `>=`, `<`, `<=`, `Range`, `RangeInclusive`, `RangeAfter`, `RangeAfterTo`, `RangeAfterToInclusive`) and walk the children whose keys lie inside the range.
-4. Each child's `count_value_or_default()` is the doc count at that property value. Either sum all per-value counts (summed mode) or emit them as per-value `CountEntry`s (distinct mode), then apply order / cursor / limit.
+4. Each child's `count_value_or_default()` is the doc count at that property value. Either sum all per-value counts and return as the `aggregate_count` variant (summed mode), or emit them as per-value `CountEntry`s under the `entries` variant (distinct mode), then apply order / cursor / limit.
 
 ### Prove (Client-Side Verify-Then-Aggregate or Aggregate-Count Proof)
 
@@ -188,8 +188,8 @@ Through the unified `GetDocumentsCount` request handler, range queries take an `
 
 A range query in the unified endpoint produces one of two response shapes, controlled by `return_distinct_counts_in_range`:
 
-- **`return_distinct_counts_in_range = false`** (default) — single `CountEntry` with empty `key`, count = sum of the per-value `CountTree` counts within the range. Use for "how many widgets have color in `[red, tomato]`?".
-- **`return_distinct_counts_in_range = true`** — one `CountEntry` per distinct property value within the range, key = serialized property value, count = `CountTree` count for that value. Use for "show me a histogram of widgets by color in `[red, tomato]`".
+- **`return_distinct_counts_in_range = false`** (default) — `CountResults.aggregate_count` carrying the sum of the per-value `CountTree` counts within the range. Use for "how many widgets have color in `[red, tomato]`?".
+- **`return_distinct_counts_in_range = true`** — `CountResults.entries` with one `CountEntry` per distinct property value within the range (`key` = serialized property value, `count` = `CountTree` count for that value). Use for "show me a histogram of widgets by color in `[red, tomato]`".
 
 Distinct mode also accepts pagination knobs:
 

@@ -1738,23 +1738,29 @@ pub struct DocumentCountRequest<'a> {
     pub drive_config: &'a crate::config::DriveConfig,
 }
 
-/// Output shape of [`Drive::execute_document_count_request`]. Either
-/// a raw set of `(key, count)` entries (Counts modes) or proof bytes
-/// the client must verify (Proof modes). The gRPC handler maps these
-/// to the protobuf `oneof result` variants.
+/// Output shape of [`Drive::execute_document_count_request`]. Three
+/// variants mirror the proto's `CountResults.variant` oneof (for
+/// no-proof responses) plus the outer `Proof` arm:
+///
+/// - `Aggregate(u64)` — total-count modes (`Total` and
+///   `RangeNoProof` with `return_distinct_counts_in_range = false`).
+///   The abci handler maps this to `CountResults.aggregate_count`.
+/// - `Entries(Vec<SplitCountEntry>)` — per-key modes (`PerInValue`
+///   and `RangeNoProof` with `return_distinct_counts_in_range =
+///   true`). The abci handler maps this to `CountResults.entries`.
+/// - `Proof(Vec<u8>)` — grovedb proof bytes the client verifies via
+///   either `verify_aggregate_count_query` (for `RangeProof`),
+///   `verify_distinct_count_proof` (for `RangeDistinctProof`), or
+///   the `DriveDocumentQuery` proof verifier (for
+///   `PointLookupProof`).
 #[cfg(feature = "server")]
 #[derive(Debug, Clone)]
 pub enum DocumentCountResponse {
-    /// Per-entry counts. The shape inside depends on the request mode:
-    /// - `Total` → exactly one entry, empty `key`, count = total
-    /// - `PerInValue` → one entry per deduped `In` value
-    /// - `RangeNoProof` → one entry summed (empty key) or one per
-    ///   distinct value in the range, depending on
-    ///   `return_distinct_counts_in_range`
-    Counts(Vec<SplitCountEntry>),
-    /// Grovedb proof bytes the client verifies via either
-    /// `verify_aggregate_count_query` (for `RangeProof`) or the
-    /// `DriveDocumentQuery` proof verifier (for `PointLookupProof`).
+    /// Single aggregate count — total across the matching set.
+    Aggregate(u64),
+    /// Per-key entries.
+    Entries(Vec<SplitCountEntry>),
+    /// Grovedb proof bytes.
     Proof(Vec<u8>),
 }
 
@@ -1841,6 +1847,11 @@ impl Drive {
 
         match mode {
             DocumentCountMode::Total => {
+                // Total mode → single aggregate. The executor returns
+                // at most one entry (with empty key); collapse to
+                // `Aggregate(count)` here so the response is a u64
+                // with no per-key wrapping. Empty result (indexed
+                // path doesn't exist yet) → `Aggregate(0)`.
                 let entries = self.execute_document_count_total_no_proof(
                     contract_id,
                     request.document_type,
@@ -1849,33 +1860,15 @@ impl Drive {
                     transaction,
                     platform_version,
                 )?;
-                // Total mode produces exactly one entry; if the indexed
-                // path doesn't exist yet the executor returns an empty
-                // vec, which we fold to a (empty-key, 0) entry so the
-                // wire shape stays uniform across "no docs" and
-                // "matched some".
-                let entries = if entries.is_empty() {
-                    vec![SplitCountEntry {
-                        key: Vec::new(),
-                        count: 0,
-                    }]
-                } else {
-                    entries
-                        .into_iter()
-                        .map(|e| SplitCountEntry {
-                            key: Vec::new(),
-                            count: e.count,
-                        })
-                        .collect()
-                };
-                Ok(DocumentCountResponse::Counts(entries))
+                let total = entries.first().map(|e| e.count).unwrap_or(0);
+                Ok(DocumentCountResponse::Aggregate(total))
             }
             DocumentCountMode::PerInValue => {
-                // Same defense-in-depth clamp as RangeNoProof — the
-                // proto contract has `limit`/`order_by_ascending`/
-                // `start_after_split_key` apply to per-In-value
-                // entries too, so the executor honors them and we
-                // make sure `limit` is always `Some(_)` ≤ system cap.
+                // Per-`In`-value → entries. The proto contract on
+                // `GetDocumentsCountRequestV0.{order_by_ascending,
+                // limit, start_after_split_key}` applies; clamp
+                // `limit` defensively (the abci handler passes raw,
+                // see `DocumentCountRequest::limit` doc).
                 let effective_limit = request
                     .limit
                     .unwrap_or(request.drive_config.default_query_limit as u32)
@@ -1886,7 +1879,7 @@ impl Drive {
                     start_after_split_key: request.start_after_split_key,
                     order_by_ascending: request.order_by_ascending.unwrap_or(true),
                 };
-                Ok(DocumentCountResponse::Counts(
+                Ok(DocumentCountResponse::Entries(
                     self.execute_document_count_per_in_value_no_proof(
                         contract_id,
                         request.document_type,
@@ -1899,14 +1892,10 @@ impl Drive {
                 ))
             }
             DocumentCountMode::RangeNoProof => {
-                // Defense-in-depth limit clamp: even if the caller
-                // forgot to pre-clamp (per the contract on
-                // `DocumentCountRequest::limit`), make sure we never
-                // forward an unbounded distinct-mode walk to the
-                // executor. None → default_query_limit; Some(_) is
-                // clamped down to max_query_limit. After this point
-                // `RangeCountOptions::limit` is always `Some(_)` ≤
-                // system cap, regardless of caller hygiene.
+                // Range no-proof → either aggregate (sum) or entries
+                // (per-distinct-value), based on
+                // `return_distinct_counts_in_range`. Clamp limit
+                // defense-in-depth.
                 let effective_limit = request
                     .limit
                     .unwrap_or(request.drive_config.default_query_limit as u32)
@@ -1915,20 +1904,26 @@ impl Drive {
                     distinct: request.return_distinct_counts_in_range,
                     limit: Some(effective_limit),
                     start_after_split_key: request.start_after_split_key,
-                    // `None` → ascending (BTreeMap natural order).
                     order_by_ascending: request.order_by_ascending.unwrap_or(true),
                 };
-                Ok(DocumentCountResponse::Counts(
-                    self.execute_document_count_range_no_proof(
-                        contract_id,
-                        request.document_type,
-                        document_type_name,
-                        where_clauses,
-                        options,
-                        transaction,
-                        platform_version,
-                    )?,
-                ))
+                let entries = self.execute_document_count_range_no_proof(
+                    contract_id,
+                    request.document_type,
+                    document_type_name,
+                    where_clauses,
+                    options,
+                    transaction,
+                    platform_version,
+                )?;
+                if request.return_distinct_counts_in_range {
+                    Ok(DocumentCountResponse::Entries(entries))
+                } else {
+                    // !distinct: executor returns a single empty-key
+                    // entry containing the sum (or empty vec if the
+                    // path doesn't exist). Collapse to `Aggregate`.
+                    let total = entries.first().map(|e| e.count).unwrap_or(0);
+                    Ok(DocumentCountResponse::Aggregate(total))
+                }
             }
             DocumentCountMode::RangeProof => Ok(DocumentCountResponse::Proof(
                 self.execute_document_count_range_proof(

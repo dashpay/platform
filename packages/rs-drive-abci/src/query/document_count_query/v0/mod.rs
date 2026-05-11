@@ -18,11 +18,35 @@ use drive::error::query::QuerySyntaxError;
 use drive::query::{DocumentCountRequest, DocumentCountResponse, SplitCountEntry};
 use drive::util::grove_operations::GroveDBToUse;
 
+/// Wrap a single aggregate `u64` plus current-state metadata into the
+/// protobuf `GetDocumentsCountResponseV0`. Produces the `CountResults
+/// .variant.AggregateCount(_)` wire shape used by total-count and
+/// range-without-distinct modes — the dispatcher routes drive's
+/// `DocumentCountResponse::Aggregate(_)` through here so the wire
+/// answer is a single u64, not an entries map with one empty-key
+/// entry.
+fn count_response_aggregate<C>(
+    count: u64,
+    platform: &Platform<C>,
+    platform_state: &PlatformState,
+) -> GetDocumentsCountResponseV0 {
+    GetDocumentsCountResponseV0 {
+        result: Some(get_documents_count_response_v0::Result::Counts(
+            get_documents_count_response_v0::CountResults {
+                variant: Some(
+                    get_documents_count_response_v0::count_results::Variant::AggregateCount(count),
+                ),
+            },
+        )),
+        metadata: Some(platform.response_metadata_v0(platform_state, CheckpointUsed::Current)),
+    }
+}
+
 /// Wrap a vector of [`SplitCountEntry`]s plus current-state metadata
-/// into the protobuf `GetDocumentsCountResponseV0`. Pulled out as a
-/// free function so the per-mode match arms in
-/// [`Platform::query_documents_count_v0`] can each be a single
-/// expression instead of inlining the same shape three times.
+/// into the protobuf `GetDocumentsCountResponseV0`. Produces the
+/// `CountResults.variant.Entries(_)` wire shape used by per-`In`-value
+/// and per-distinct-value-in-range modes. Note that an aggregate
+/// total never reaches here — see [`count_response_aggregate`].
 fn count_response_with_entries<C>(
     entries: Vec<SplitCountEntry>,
     platform: &Platform<C>,
@@ -37,7 +61,13 @@ fn count_response_with_entries<C>(
         .collect();
     GetDocumentsCountResponseV0 {
         result: Some(get_documents_count_response_v0::Result::Counts(
-            get_documents_count_response_v0::CountResults { entries },
+            get_documents_count_response_v0::CountResults {
+                variant: Some(
+                    get_documents_count_response_v0::count_results::Variant::Entries(
+                        get_documents_count_response_v0::CountEntries { entries },
+                    ),
+                ),
+            },
         )),
         metadata: Some(platform.response_metadata_v0(platform_state, CheckpointUsed::Current)),
     }
@@ -136,7 +166,10 @@ impl<C> Platform<C> {
             };
 
         let response = match drive_response {
-            DocumentCountResponse::Counts(entries) => {
+            DocumentCountResponse::Aggregate(count) => {
+                count_response_aggregate(count, self, platform_state)
+            }
+            DocumentCountResponse::Entries(entries) => {
                 count_response_with_entries(entries, self, platform_state)
             }
             DocumentCountResponse::Proof(proof_bytes) => {
@@ -219,13 +252,19 @@ mod tests {
 
         match result.data {
             Some(GetDocumentsCountResponseV0 {
-                result: Some(get_documents_count_response_v0::Result::Counts(counts)),
+                result: Some(get_documents_count_response_v0::Result::Counts(
+                    get_documents_count_response_v0::CountResults {
+                        variant:
+                            Some(get_documents_count_response_v0::count_results::Variant::AggregateCount(
+                                total,
+                            )),
+                    },
+                )),
                 metadata: Some(_),
             }) => {
-                let total: u64 = counts.entries.iter().map(|e| e.count).sum();
                 assert_eq!(total, 5, "expected count of 5 documents");
             }
-            other => panic!("expected count result, got {:?}", other),
+            other => panic!("expected aggregate count result, got {:?}", other),
         }
     }
 
@@ -268,13 +307,19 @@ mod tests {
 
         match result.data {
             Some(GetDocumentsCountResponseV0 {
-                result: Some(get_documents_count_response_v0::Result::Counts(counts)),
+                result: Some(get_documents_count_response_v0::Result::Counts(
+                    get_documents_count_response_v0::CountResults {
+                        variant:
+                            Some(get_documents_count_response_v0::count_results::Variant::AggregateCount(
+                                total,
+                            )),
+                    },
+                )),
                 metadata: Some(_),
             }) => {
-                let total: u64 = counts.entries.iter().map(|e| e.count).sum();
                 assert_eq!(total, 0, "expected count of 0 documents");
             }
-            other => panic!("expected count result, got {:?}", other),
+            other => panic!("expected aggregate count result, got {:?}", other),
         }
     }
 
@@ -433,13 +478,21 @@ mod tests {
 
         match result.data {
             Some(GetDocumentsCountResponseV0 {
-                result: Some(get_documents_count_response_v0::Result::Counts(counts)),
+                result:
+                    Some(get_documents_count_response_v0::Result::Counts(
+                        get_documents_count_response_v0::CountResults {
+                            variant:
+                                Some(get_documents_count_response_v0::count_results::Variant::Entries(
+                                    entries,
+                                )),
+                        },
+                    )),
                 metadata: Some(_),
             }) => {
-                let total: u64 = counts.entries.iter().map(|e| e.count).sum();
+                let total: u64 = entries.entries.iter().map(|e| e.count).sum();
                 assert_eq!(total, 5, "expected count of 5 (3 age=30 + 2 age=40)");
             }
-            other => panic!("expected count result, got {:?}", other),
+            other => panic!("expected per-In-value entries result, got {:?}", other),
         }
     }
 
@@ -650,40 +703,55 @@ mod tests {
             }
         };
 
-        // Sum mode: green(3) + red(2) = 5.
+        // Sum mode: green(3) + red(2) = 5. Range-without-distinct
+        // collapses to `AggregateCount` on the wire (no empty-key
+        // entry wrapping).
         let result = platform
             .query_documents_count_v0(make_request(false, None, None), &state, version)
             .expect("query should succeed");
         assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
         match result.data {
             Some(GetDocumentsCountResponseV0 {
-                result: Some(get_documents_count_response_v0::Result::Counts(counts)),
+                result: Some(get_documents_count_response_v0::Result::Counts(
+                    get_documents_count_response_v0::CountResults {
+                        variant:
+                            Some(get_documents_count_response_v0::count_results::Variant::AggregateCount(
+                                total,
+                            )),
+                    },
+                )),
                 ..
             }) => {
-                assert_eq!(counts.entries.len(), 1, "summed mode → one entry");
-                assert!(counts.entries[0].key.is_empty());
-                assert_eq!(counts.entries[0].count, 5);
+                assert_eq!(total, 5, "summed range mode → aggregate of 5");
             }
-            other => panic!("expected counts result, got {:?}", other),
+            other => panic!("expected aggregate result, got {:?}", other),
         }
 
-        // Distinct mode ascending: [(green, 3), (red, 2)].
+        // Distinct mode ascending: [(green, 3), (red, 2)] in entries.
         let result = platform
             .query_documents_count_v0(make_request(true, None, Some(true)), &state, version)
             .expect("query should succeed");
         assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
         match result.data {
             Some(GetDocumentsCountResponseV0 {
-                result: Some(get_documents_count_response_v0::Result::Counts(counts)),
+                result:
+                    Some(get_documents_count_response_v0::Result::Counts(
+                        get_documents_count_response_v0::CountResults {
+                            variant:
+                                Some(get_documents_count_response_v0::count_results::Variant::Entries(
+                                    entries,
+                                )),
+                        },
+                    )),
                 ..
             }) => {
-                assert_eq!(counts.entries.len(), 2);
-                assert_eq!(counts.entries[0].key, b"green".to_vec());
-                assert_eq!(counts.entries[0].count, 3);
-                assert_eq!(counts.entries[1].key, b"red".to_vec());
-                assert_eq!(counts.entries[1].count, 2);
+                assert_eq!(entries.entries.len(), 2);
+                assert_eq!(entries.entries[0].key, b"green".to_vec());
+                assert_eq!(entries.entries[0].count, 3);
+                assert_eq!(entries.entries[1].key, b"red".to_vec());
+                assert_eq!(entries.entries[1].count, 2);
             }
-            other => panic!("expected counts result, got {:?}", other),
+            other => panic!("expected entries result, got {:?}", other),
         }
 
         // Distinct mode with limit=1: only the first entry (ascending → green).
@@ -693,30 +761,46 @@ mod tests {
         assert!(result.errors.is_empty());
         match result.data {
             Some(GetDocumentsCountResponseV0 {
-                result: Some(get_documents_count_response_v0::Result::Counts(counts)),
+                result:
+                    Some(get_documents_count_response_v0::Result::Counts(
+                        get_documents_count_response_v0::CountResults {
+                            variant:
+                                Some(get_documents_count_response_v0::count_results::Variant::Entries(
+                                    entries,
+                                )),
+                        },
+                    )),
                 ..
             }) => {
-                assert_eq!(counts.entries.len(), 1);
-                assert_eq!(counts.entries[0].key, b"green".to_vec());
+                assert_eq!(entries.entries.len(), 1);
+                assert_eq!(entries.entries[0].key, b"green".to_vec());
             }
-            other => panic!("expected counts result, got {:?}", other),
+            other => panic!("expected entries result, got {:?}", other),
         }
 
-        // Distinct descending: [(red, 2), (green, 3)].
+        // Distinct descending: [(red, 2), (green, 3)] in entries.
         let result = platform
             .query_documents_count_v0(make_request(true, None, Some(false)), &state, version)
             .expect("query should succeed");
         assert!(result.errors.is_empty());
         match result.data {
             Some(GetDocumentsCountResponseV0 {
-                result: Some(get_documents_count_response_v0::Result::Counts(counts)),
+                result:
+                    Some(get_documents_count_response_v0::Result::Counts(
+                        get_documents_count_response_v0::CountResults {
+                            variant:
+                                Some(get_documents_count_response_v0::count_results::Variant::Entries(
+                                    entries,
+                                )),
+                        },
+                    )),
                 ..
             }) => {
-                assert_eq!(counts.entries.len(), 2);
-                assert_eq!(counts.entries[0].key, b"red".to_vec());
-                assert_eq!(counts.entries[1].key, b"green".to_vec());
+                assert_eq!(entries.entries.len(), 2);
+                assert_eq!(entries.entries[0].key, b"red".to_vec());
+                assert_eq!(entries.entries[1].key, b"green".to_vec());
             }
-            other => panic!("expected counts result, got {:?}", other),
+            other => panic!("expected entries result, got {:?}", other),
         }
     }
 
