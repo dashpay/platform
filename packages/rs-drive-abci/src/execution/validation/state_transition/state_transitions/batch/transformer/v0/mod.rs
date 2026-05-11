@@ -4,6 +4,22 @@
 // legacy `Some(empty_vec)`-on-no-data behavior for chain reproducibility;
 // v1 (PROTOCOL_VERSION_12+) returns `data: None` in that case so an
 // all-failed batch flows down the unpaid path. See issue #2867.
+//
+// Note on the `_v0` suffix retained on the transformer functions in this
+// file (`try_into_action_v0`, `transform_document_transition_v0`, etc.):
+// these are version-1 in their behavior but keep the `_v0` suffix on
+// purpose. Bumping the suffix would force duplicating the entire ~1100
+// line transformer body into a `v1/mod.rs` archive (the v0 file would
+// have to stay verbatim to keep v11 chain replay reproducible) — the
+// kind of copy-paste this PR was specifically refactored to avoid.
+// Instead, protocol-version-dependent behavior is gated at a finer
+// granularity by the version fields it consumes:
+//   * `dpp.validation.validation_result.flatten`
+//   * `dpp.validation.validation_result.merge_many`
+//   * `drive_abci...batch_state_transition.failed_per_transition_action`
+// A future protocol bump that needs different aggregator or
+// failure-action semantics should add another value to one of those
+// fields rather than rename this file.
 
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
