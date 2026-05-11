@@ -25,6 +25,7 @@ use super::bank::{BankWallet, CrossCheckResult};
 use super::bank_identity::{self, BankIdentity};
 use super::cleanup;
 use super::config::{self, BankCoreGateSource, Config};
+use super::identity_sync::IdentitySync;
 use super::registry::{EntryStatus, PersistentTestWalletRegistry};
 use super::sdk;
 use super::spv;
@@ -192,6 +193,18 @@ pub struct E2eContext {
     /// state — the same balance that `assert_floor` evaluates. On fetch
     /// error `independent_credits = 0` with a `warn` logged.
     pub bank_balance_cross_check: Option<CrossCheckResult>,
+    /// Periodic identity-state auto-sync. Calls
+    /// [`refresh_identity`](platform_wallet::wallet::identity::IdentityWallet::refresh_identity)
+    /// on every cached `(wallet, identity)` pair so
+    /// `Identity::balance`, `Identity::revision`, and
+    /// `Identity::public_keys` track chain reality during a test run.
+    /// Cadence is taken from [`Config::identity_sync_interval`].
+    ///
+    /// Held in `StdMutex<Option<_>>` so a future graceful-shutdown path
+    /// can `take()` + `stop().await`. Today the task is reaped at
+    /// process exit (the [`E2eContext`] lives in a `&'static` `OnceCell`
+    /// for the suite lifetime), which is enough for `cargo test`.
+    pub identity_sync: StdMutex<Option<IdentitySync>>,
     /// Live count of outstanding [`super::SetupGuard`] instances.
     /// Incremented in [`super::setup`] and decremented in
     /// [`super::SetupGuard`]'s `Drop`. The guard whose decrement
@@ -257,6 +270,22 @@ impl E2eContext {
 
     pub fn wait_hub(&self) -> &Arc<WaitEventHub> {
         &self.wait_hub
+    }
+
+    /// Cancel the framework cancel token and wait for the identity-
+    /// state auto-sync to settle. Intended for tests / orchestrators
+    /// that want a deterministic shutdown signal (no-op when the loop
+    /// has already been stopped, or was never started).
+    pub async fn shutdown_identity_sync(&self) {
+        self.cancel_token.cancel();
+        let task = self
+            .identity_sync
+            .lock()
+            .expect("identity_sync mutex poisoned")
+            .take();
+        if let Some(task) = task {
+            task.stop().await;
+        }
     }
 
     /// `true` when the bank's Platform balance met the token-suite floor
@@ -625,6 +654,25 @@ impl E2eContext {
         // surviving tests still depend on.
         *IN_FLIGHT_SPV.lock().expect("IN_FLIGHT_SPV poisoned") = None;
 
+        // Spawn the identity-state auto-sync. Test-harness only — the
+        // production wallet has no equivalent loop; until that lands
+        // (feature request filed with the wallet team), this keeps
+        // `Identity::balance`, `Identity::revision`, and
+        // `Identity::public_keys` aligned with chain reality across
+        // every test in the suite. Uses the framework cancel token so
+        // a future graceful-shutdown path can fire it across all
+        // background helpers in one shot.
+        let identity_sync = IdentitySync::start(
+            Arc::clone(&manager),
+            cancel_token.clone(),
+            config.identity_sync_interval,
+        );
+        tracing::info!(
+            target: "platform_wallet::e2e::identity_sync",
+            interval_secs = config.identity_sync_interval.as_secs(),
+            "identity-state auto-sync started (refreshes balance/revision/public_keys per tick)"
+        );
+
         Ok(E2eContext {
             config,
             workdir,
@@ -639,6 +687,7 @@ impl E2eContext {
             cancel_token,
             wait_hub,
             bank_balance_cross_check,
+            identity_sync: StdMutex::new(Some(identity_sync)),
             active_guards: AtomicUsize::new(0),
         })
     }

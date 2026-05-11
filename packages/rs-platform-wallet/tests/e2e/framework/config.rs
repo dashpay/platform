@@ -64,7 +64,24 @@ pub mod vars {
     /// walking Core blocks) WILL fail when SPV is disabled.
     /// See `TEST_SPEC.md` CR-001 for the SPEC-level reference.
     pub const DISABLE_SPV: &str = "PLATFORM_WALLET_E2E_DISABLE_SPV";
+    /// Period (seconds) between ticks of the harness's identity-state
+    /// auto-sync. The loop calls
+    /// [`refresh_identity`](platform_wallet::wallet::identity::IdentityWallet::refresh_identity)
+    /// on every cached identity so `Identity::balance`,
+    /// `Identity::revision`, and `Identity::public_keys` track chain
+    /// reality during a test run. Unset uses
+    /// [`DEFAULT_IDENTITY_SYNC_INTERVAL`] (3 s — more aggressive than
+    /// production's 15 s BLAST loop because e2e tests churn faster).
+    /// Non-positive / unparseable values fall back to the default with
+    /// a warn.
+    pub const IDENTITY_SYNC_INTERVAL_SECS: &str = "PLATFORM_WALLET_E2E_IDENTITY_SYNC_INTERVAL_SECS";
 }
+
+/// Default cadence for the harness's identity-state auto-sync (see
+/// [`vars::IDENTITY_SYNC_INTERVAL_SECS`]). 3 s is more aggressive than
+/// production's 15 s BLAST loop because e2e tests churn identity state
+/// (transfers, registrations, key rotations) much faster than UI users.
+pub const DEFAULT_IDENTITY_SYNC_INTERVAL: Duration = Duration::from_secs(3);
 
 /// Default deadline for the bank Core funding gate when the env var is
 /// unset. Sized to fit a cold-cache compact-filter scan from genesis on
@@ -144,6 +161,9 @@ pub struct Config {
     /// rely on Core observation will fail; Platform-only flows still
     /// run. Set via [`vars::DISABLE_SPV`].
     pub disable_spv: bool,
+    /// Cadence for the harness's identity-state auto-sync. See
+    /// [`vars::IDENTITY_SYNC_INTERVAL_SECS`].
+    pub identity_sync_interval: Duration,
 }
 
 /// Provenance of the resolved bank-Core-gate timeout — surfaced in the
@@ -179,6 +199,7 @@ impl std::fmt::Debug for Config {
             .field("bank_core_gate_timeout", &self.bank_core_gate_timeout)
             .field("bank_core_gate_source", &self.bank_core_gate_source)
             .field("disable_spv", &self.disable_spv)
+            .field("identity_sync_interval", &self.identity_sync_interval)
             .finish()
     }
 }
@@ -198,6 +219,7 @@ impl Default for Config {
             bank_core_gate_timeout: Some(DEFAULT_BANK_CORE_GATE_TIMEOUT),
             bank_core_gate_source: BankCoreGateSource::Default,
             disable_spv: false,
+            identity_sync_interval: DEFAULT_IDENTITY_SYNC_INTERVAL,
         }
     }
 }
@@ -332,6 +354,12 @@ impl Config {
 
         let disable_spv = parse_truthy(std::env::var(vars::DISABLE_SPV).ok().as_deref());
 
+        let identity_sync_interval = parse_identity_sync_interval(
+            std::env::var(vars::IDENTITY_SYNC_INTERVAL_SECS)
+                .ok()
+                .as_deref(),
+        );
+
         Ok(Self {
             bank_mnemonic,
             network,
@@ -344,6 +372,7 @@ impl Config {
             bank_core_gate_timeout,
             bank_core_gate_source,
             disable_spv,
+            identity_sync_interval,
         })
     }
 
@@ -444,6 +473,47 @@ pub(crate) fn parse_truthy(raw: Option<&str>) -> bool {
         || trimmed.eq_ignore_ascii_case("true")
         || trimmed.eq_ignore_ascii_case("yes")
         || trimmed.eq_ignore_ascii_case("on")
+}
+
+/// Resolve the identity-sync interval from a raw env-var value.
+///
+/// - unset / empty / whitespace → [`DEFAULT_IDENTITY_SYNC_INTERVAL`]
+/// - positive integer → `Duration::from_secs(n)`
+/// - `0` / negative / unparseable → default, with a `warn` so operators
+///   know their override was ignored. Zero would tight-loop the sync;
+///   forcing a positive minimum keeps a fat-finger from melting CI.
+pub(crate) fn parse_identity_sync_interval(raw: Option<&str>) -> Duration {
+    let Some(raw) = raw else {
+        return DEFAULT_IDENTITY_SYNC_INTERVAL;
+    };
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return DEFAULT_IDENTITY_SYNC_INTERVAL;
+    }
+    match trimmed.parse::<u64>() {
+        Ok(0) => {
+            tracing::warn!(
+                target: "platform_wallet::e2e::config",
+                var = vars::IDENTITY_SYNC_INTERVAL_SECS,
+                value = %raw,
+                default_secs = DEFAULT_IDENTITY_SYNC_INTERVAL.as_secs(),
+                "identity-sync interval of 0 would tight-loop the sync; using default"
+            );
+            DEFAULT_IDENTITY_SYNC_INTERVAL
+        }
+        Ok(secs) => Duration::from_secs(secs),
+        Err(err) => {
+            tracing::warn!(
+                target: "platform_wallet::e2e::config",
+                var = vars::IDENTITY_SYNC_INTERVAL_SECS,
+                value = %raw,
+                ?err,
+                default_secs = DEFAULT_IDENTITY_SYNC_INTERVAL.as_secs(),
+                "could not parse identity-sync interval; falling back to default"
+            );
+            DEFAULT_IDENTITY_SYNC_INTERVAL
+        }
+    }
 }
 
 /// Returns `true` when [`vars::DISABLE_SPV`] is set to a truthy value
@@ -619,6 +689,45 @@ mod tests {
     /// matrix is exercised in a single test so the two halves don't
     /// race over the same key under parallel cargo-test execution.
     const TRUTHY_PROBE_VAR: &str = "PLATFORM_WALLET_E2E_TEST_TRUTHY_PROBE";
+
+    #[test]
+    fn identity_sync_unset_defaults_to_3s() {
+        assert_eq!(
+            parse_identity_sync_interval(None),
+            DEFAULT_IDENTITY_SYNC_INTERVAL
+        );
+    }
+
+    #[test]
+    fn identity_sync_positive_integer_overrides() {
+        assert_eq!(
+            parse_identity_sync_interval(Some("10")),
+            Duration::from_secs(10)
+        );
+        assert_eq!(
+            parse_identity_sync_interval(Some("  60  ")),
+            Duration::from_secs(60)
+        );
+    }
+
+    #[test]
+    fn identity_sync_zero_falls_back_to_default() {
+        assert_eq!(
+            parse_identity_sync_interval(Some("0")),
+            DEFAULT_IDENTITY_SYNC_INTERVAL
+        );
+    }
+
+    #[test]
+    fn identity_sync_invalid_falls_back_to_default() {
+        for raw in ["", "  ", "abc", "-1", "1.5"] {
+            assert_eq!(
+                parse_identity_sync_interval(Some(raw)),
+                DEFAULT_IDENTITY_SYNC_INTERVAL,
+                "{raw}"
+            );
+        }
+    }
 
     #[test]
     fn is_truthy_env_matrix() {

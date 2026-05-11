@@ -74,6 +74,7 @@ pub mod context_provider;
 pub mod gap_limit;
 pub mod harness;
 pub mod identities;
+pub mod identity_sync;
 pub mod registry;
 pub mod sdk;
 pub mod signer;
