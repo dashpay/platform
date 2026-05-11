@@ -481,6 +481,183 @@ fn test_count_query_in_operator_dedupes_duplicate_values() {
     );
 }
 
+/// `In` on the **before-last** index property with a trailing `Equal`
+/// on the last property exercises the relaxed prove count builder
+/// shape. The regular document query path's `Index::matches` allows
+/// `In` on the last OR before-last property of the chosen index, and
+/// the prove count builder follows the same rule (see
+/// `point_lookup_count_path_query` in `path_query.rs`).
+///
+/// Index used: `byFirstNameLastName` (`[firstName, lastName]`).
+/// Where: `firstName IN ["Alice", "Bob"] AND lastName == "Smith"`.
+/// - Alice + Smith: 2 docs
+/// - Bob + Smith: 1 doc
+/// - Bob + Jones: 1 doc (ignored — lastName != Smith)
+/// - Carol + Smith: 1 doc (ignored — firstName not in In array)
+///
+/// Pins:
+/// - Strict picker accepts the 2-prop index when both properties are
+///   covered (one by In, one by Equal).
+/// - No-proof executor sums per-In-value via the existing per-level
+///   fork in `expand_paths_and_count`: 2 + 1 = 3.
+/// - Prove executor builds a compound path query whose `base_path`
+///   stops at `[..., "firstName"]`, with `outer_query` keys = the
+///   sorted serialized In values and `set_subquery_path` carrying
+///   `["lastName", serialize("Smith")]`; the subquery's `Key([0])`
+///   then picks off the CountTree under each matched In branch.
+/// - Proof verifies (round-trips through `GroveDb::verify_query` in
+///   the verifier), and the verified per-branch entries' counts sum
+///   to the no-proof count.
+#[test]
+fn test_count_query_in_on_before_last_with_trailing_equal_succeeds_on_both_paths() {
+    let (drive, data_contract) = setup_drive_and_contract();
+    let platform_version = PlatformVersion::latest();
+
+    // Different middle names so the unique `byFirstNameMiddleLastName`
+    // index is satisfied — the count goes through the non-unique
+    // 2-prop `byFirstNameLastName` index, which doesn't care about
+    // middleName.
+    insert_person_doc(&drive, &data_contract, [1u8; 32], "Alice", "M", "Smith", 30);
+    insert_person_doc(&drive, &data_contract, [2u8; 32], "Alice", "N", "Smith", 31);
+    insert_person_doc(&drive, &data_contract, [3u8; 32], "Bob", "M", "Smith", 40);
+    insert_person_doc(&drive, &data_contract, [4u8; 32], "Bob", "N", "Jones", 41);
+    insert_person_doc(&drive, &data_contract, [5u8; 32], "Carol", "M", "Smith", 50);
+
+    let document_type = data_contract
+        .document_type_for_name("person")
+        .expect("expected document type");
+
+    let in_first = WhereClause {
+        field: "firstName".to_string(),
+        operator: WhereOperator::In,
+        value: Value::Array(vec![
+            Value::Text("Alice".to_string()),
+            Value::Text("Bob".to_string()),
+        ]),
+    };
+    let eq_last = WhereClause {
+        field: "lastName".to_string(),
+        operator: WhereOperator::Equal,
+        value: Value::Text("Smith".to_string()),
+    };
+    let where_clauses = vec![in_first, eq_last];
+
+    let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+        document_type.indexes(),
+        &where_clauses,
+    )
+    .expect("expected picker to accept byFirstNameLastName for In + Equal coverage");
+    // Sanity-check the picker really chose the 2-prop index, not the
+    // 3-prop unique one — confirms set-equality coverage and pins the
+    // covering-index expectation against future picker tweaks.
+    assert_eq!(index.properties.len(), 2);
+
+    let query = DriveDocumentCountQuery {
+        document_type,
+        contract_id: data_contract.id().to_buffer(),
+        document_type_name: "person".to_string(),
+        index,
+        where_clauses,
+    };
+
+    // No-proof: 2 Alice+Smith + 1 Bob+Smith = 3.
+    let results = query
+        .execute_no_proof(&drive, None, platform_version)
+        .expect("expected no-proof count to succeed");
+    assert_eq!(results.len(), 1);
+    assert_eq!(
+        results[0].count, 3,
+        "expected 3 docs covered by firstName IN [Alice, Bob] AND lastName = Smith"
+    );
+
+    // Prove: builder emits the compound shape; verifier round-trips
+    // and returns per-In-value entries.
+    let proof = query
+        .execute_point_lookup_count_with_proof(&drive, None, platform_version)
+        .expect("expected prove count to succeed on In-on-before-last shape");
+    assert!(
+        !proof.is_empty(),
+        "expected non-empty proof bytes for In-on-before-last prove count"
+    );
+
+    let (_root_hash, entries) = query
+        .verify_point_lookup_count_proof(&proof, platform_version)
+        .expect("expected proof verification to succeed");
+    // Verifier emits one entry per In branch with a non-zero count.
+    // Alice → 2, Bob → 1.
+    let summed: u64 = entries.iter().map(|e| e.count).sum();
+    assert_eq!(
+        summed, 3,
+        "verified per-branch entries should sum to the no-proof total"
+    );
+}
+
+/// `In` on a property that is neither the last nor the before-last
+/// of the covering index is rejected by the prove count builder, in
+/// lockstep with `Index::matches` on the regular document query
+/// path. Uses the 3-property `byFirstNameMiddleLastName` index with
+/// In on `firstName` (position 0 of 3) — position 0 is neither
+/// last (= 2) nor before-last (= 1), so the builder returns
+/// `InvalidWhereClauseComponents` with a clear directive.
+#[test]
+fn test_prove_count_rejects_in_on_neither_last_nor_before_last() {
+    let (_drive, data_contract) = setup_drive_and_contract();
+    let platform_version = PlatformVersion::latest();
+
+    let document_type = data_contract
+        .document_type_for_name("person")
+        .expect("expected document type");
+
+    let in_first = WhereClause {
+        field: "firstName".to_string(),
+        operator: WhereOperator::In,
+        value: Value::Array(vec![
+            Value::Text("Alice".to_string()),
+            Value::Text("Bob".to_string()),
+        ]),
+    };
+    let eq_middle = WhereClause {
+        field: "middleName".to_string(),
+        operator: WhereOperator::Equal,
+        value: Value::Text("M".to_string()),
+    };
+    let eq_last = WhereClause {
+        field: "lastName".to_string(),
+        operator: WhereOperator::Equal,
+        value: Value::Text("Smith".to_string()),
+    };
+    let where_clauses = vec![in_first, eq_middle, eq_last];
+
+    let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+        document_type.indexes(),
+        &where_clauses,
+    )
+    .expect("expected picker to accept the 3-prop covering index");
+    assert_eq!(index.properties.len(), 3);
+
+    let query = DriveDocumentCountQuery {
+        document_type,
+        contract_id: data_contract.id().to_buffer(),
+        document_type_name: "person".to_string(),
+        index,
+        where_clauses,
+    };
+
+    // Builder rejects: In is at position 0 of 3, neither last nor
+    // before-last. The strict picker happily accepts (it only checks
+    // set-equality, not position), so the rejection has to happen
+    // at the builder.
+    let err = query
+        .point_lookup_count_path_query(platform_version)
+        .expect_err("expected builder to reject In at position 0 of 3");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("last or before-last"),
+        "expected position-rejection error mentioning last-or-before-last, got: {}",
+        msg
+    );
+}
+
 /// `execute_document_count_per_in_value_no_proof` runs one GroveDB walk
 /// per `In` value, so its iteration cost is proportional to the array's
 /// length rather than the configured `max_query_limit`. That makes the

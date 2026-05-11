@@ -491,14 +491,21 @@ impl DriveDocumentCountQuery<'_> {
     ///
     /// The builder requires the where clauses to **fully cover** the
     /// index — every property in `self.index.properties` must have a
-    /// matching `Equal` or (for the last property only) `In` clause.
-    /// This matches the no-proof `Total` / `PerInValue` modes'
-    /// fully-covered case; partial-coverage shapes (where some
-    /// trailing index properties have no matching clause) require a
-    /// recursive subquery enumeration that this builder does not yet
-    /// implement.
+    /// matching `Equal` or `In` clause. Partial-coverage shapes
+    /// (where some index properties have no matching clause) require
+    /// a recursive subquery enumeration that this builder does not
+    /// implement (and that the strict picker already rejects upstream).
     ///
-    /// Two output shapes:
+    /// `In` position matches the regular document query path's
+    /// `Index::matches` rule (`packages/rs-dpp/src/data_contract/
+    /// document_type/index/mod.rs:503`): `In` may sit on the **last**
+    /// or **before-last** index property. At most one Equal may come
+    /// after the In on the chosen index. Earlier positions would
+    /// require multi-segment `subquery_path` expansion that the
+    /// regular query path itself doesn't support, so the count path
+    /// deliberately stays in lockstep with it.
+    ///
+    /// Three output shapes:
     /// - **Equal-only, fully covered**: flat path query at
     ///   `[..., last_field, last_value]` with a single `Key([0])`
     ///   item. Returns one element (the CountTree).
@@ -510,12 +517,21 @@ impl DriveDocumentCountQuery<'_> {
     ///   [`Self::distinct_count_path_query`]); subquery descends one
     ///   layer via `Key([0])` to grab the CountTree under each
     ///   matched In value.
+    /// - **Equal prefix + `In` on before-last + trailing Equal**:
+    ///   same compound shape, but `set_subquery_path` carries the
+    ///   trailing Equal's `(prop_name, serialized_value)` pair so the
+    ///   descent under each matched In value lands at
+    ///   `[..., in_field, in_value, trailing_field, trailing_value]`
+    ///   before the `Key([0])` subquery picks off the CountTree.
+    ///   Same `set_subquery_path` + `set_subquery` mechanism as
+    ///   [`Self::distinct_count_path_query`] uses for compound
+    ///   In-on-prefix range counts.
     ///
     /// ## Errors
     ///
     /// Rejects shapes the builder doesn't support:
-    /// - Partial coverage (trailing uncovered properties)
-    /// - `In` on a non-last property
+    /// - Partial coverage (uncovered index property)
+    /// - `In` on neither last nor before-last property
     /// - More than one `In` clause
     /// - Any non-`Equal` / non-`In` operator (defense-in-depth; mode
     ///   detection already filters these out)
@@ -540,10 +556,14 @@ impl DriveDocumentCountQuery<'_> {
             self.document_type_name.as_bytes().to_vec(),
         ];
 
-        // `in_outer_keys` is populated when we encounter the (single,
-        // last-property) `In` clause; everything before it must be
-        // `Equal` and contributes to `base_path`.
+        // `in_outer_keys` is populated when we encounter the (single)
+        // `In` clause. Everything before it must be `Equal` and
+        // contributes to `base_path`. Any trailing `Equal` after the
+        // In (legal only in the "In on before-last" shape) goes into
+        // `subquery_path_extension`, which feeds `set_subquery_path`
+        // on the outer Query.
         let mut in_outer_keys: Option<Vec<Vec<u8>>> = None;
+        let mut subquery_path_extension: Vec<Vec<u8>> = vec![];
 
         for (i, prop) in self.index.properties.iter().enumerate() {
             let clause = self
@@ -567,21 +587,49 @@ impl DriveDocumentCountQuery<'_> {
                         &clause.value,
                         platform_version,
                     )?;
-                    base_path.push(prop.name.as_bytes().to_vec());
-                    base_path.push(serialized);
+                    if in_outer_keys.is_some() {
+                        // Trailing Equal after the (already-seen) In:
+                        // descend through it as part of the subquery
+                        // path. The In-on-before-last shape produces
+                        // exactly one such pair; earlier-position In
+                        // is rejected below, so we never accumulate
+                        // more than one trailing pair here.
+                        subquery_path_extension.push(prop.name.as_bytes().to_vec());
+                        subquery_path_extension.push(serialized);
+                    } else {
+                        base_path.push(prop.name.as_bytes().to_vec());
+                        base_path.push(serialized);
+                    }
                 }
                 WhereOperator::In => {
-                    if i != last_prop_idx {
+                    if in_outer_keys.is_some() {
+                        return Err(Error::Query(
+                            QuerySyntaxError::InvalidWhereClauseComponents(
+                                "prove count: at most one `in` clause is supported on \
+                                 the covering countable index",
+                            ),
+                        ));
+                    }
+                    // Match the regular document query path's
+                    // `Index::matches` rule: `In` lives on the last
+                    // or before-last index property. `saturating_sub`
+                    // collapses to 0 for a single-property index, in
+                    // which case both bounds equal `i == 0` and the
+                    // check correctly admits In on the sole property.
+                    if i != last_prop_idx && i != last_prop_idx.saturating_sub(1) {
                         return Err(Error::Query(
                             QuerySyntaxError::InvalidWhereClauseComponents(
                                 "prove count with `in` requires the `in` clause to be \
-                                 on the last property of the covering countable index",
+                                 on the last or before-last property of the covering \
+                                 countable index (same constraint the regular document \
+                                 query path enforces via `Index::matches`)",
                             ),
                         ));
                     }
                     // Stops `base_path` at the In-bearing property's
                     // property-name subtree; outer Query lives at
-                    // that level.
+                    // that level. Any trailing Equal property then
+                    // routes through `subquery_path_extension`.
                     base_path.push(prop.name.as_bytes().to_vec());
                     let in_values = clause.in_values().into_data_with_error()??;
                     let mut keys: Vec<Vec<u8>> = in_values
@@ -604,8 +652,8 @@ impl DriveDocumentCountQuery<'_> {
                 _ => {
                     return Err(Error::Query(
                         QuerySyntaxError::InvalidWhereClauseComponents(
-                            "point_lookup_count_path_query: prefix properties must use \
-                             `==` (or `in` on the last property)",
+                            "point_lookup_count_path_query: index properties must use \
+                             `==` (or `in` on the last/before-last property)",
                         ),
                     ));
                 }
@@ -630,17 +678,30 @@ impl DriveDocumentCountQuery<'_> {
                 ))
             }
             Some(keys) => {
-                // Equal prefix + In on last. `base_path` ends at the
-                // In-bearing property's property-name subtree; outer
-                // Query enumerates serialized In values; subquery
-                // grabs the `[0]` CountTree under each matched In
-                // value's value tree.
+                // Compound shape. `base_path` ends at the In-bearing
+                // property's property-name subtree; the outer Query
+                // enumerates serialized In values; the subquery
+                // descends to the CountTree element under each
+                // matched In value.
+                //
+                // - **In on LAST property**: `subquery_path_extension`
+                //   is empty; the subquery's `Key([0])` runs directly
+                //   under each In value's value tree.
+                // - **In on BEFORE-LAST property**: the trailing Equal
+                //   contributed one `(prop_name, serialized_value)`
+                //   pair to `subquery_path_extension`, which
+                //   `set_subquery_path` consumes so the subquery
+                //   descends through that Equal before grabbing the
+                //   `Key([0])` CountTree.
                 let mut outer_query = Query::new();
                 for key in keys {
                     outer_query.insert_key(key);
                 }
                 let mut subquery = Query::new();
                 subquery.insert_key(vec![COUNT_TREE_KEY]);
+                if !subquery_path_extension.is_empty() {
+                    outer_query.set_subquery_path(subquery_path_extension);
+                }
                 outer_query.set_subquery(subquery);
 
                 Ok(PathQuery::new(

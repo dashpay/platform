@@ -28,12 +28,17 @@ impl DriveDocumentCountQuery<'_> {
     /// - **Equal-only, fully covered**: a single entry with
     ///   `in_key: None`, `key: vec![]`, and `count` equal to the
     ///   covered branch's CountTree `count_value`.
-    /// - **Equal prefix + `In` on last property**: one entry per In
-    ///   value, with `in_key: None`, `key: <serialized_in_value>`, and
-    ///   `count` equal to that In value's CountTree `count_value`.
-    ///   Matches the no-proof `PerInValue` shape (`in_key` is reserved
-    ///   for the range-distinct compound case where In sits on a
-    ///   prefix of a range index).
+    /// - **Equal prefix + `In` on last or before-last property**: one
+    ///   entry per In value, with `in_key: None`,
+    ///   `key: <serialized_in_value>`, and `count` equal to that In
+    ///   branch's CountTree `count_value`. For the In-on-before-last
+    ///   shape the trailing Equal is part of the descent (so each
+    ///   branch's count is "docs with `in_field == in_value AND
+    ///   trailing_field == trailing_value`"); the entry's `key`
+    ///   still records the In value because the trailing Equal is
+    ///   fixed across all entries. Matches the no-proof `PerInValue`
+    ///   shape (`in_key` is reserved for the range-distinct compound
+    ///   case where In sits on a prefix of a range index).
     ///
     /// Branches with no documents at the covered path don't appear in
     /// the result (CountTree element is absent → no entry emitted).
