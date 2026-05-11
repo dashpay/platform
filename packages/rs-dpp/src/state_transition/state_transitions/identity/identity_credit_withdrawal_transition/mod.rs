@@ -390,4 +390,74 @@ pub(crate) mod json_convertible_tests {
             IdentityCreditWithdrawalTransition::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
     }
+
+    // --- V1 with output_script: None (restored coverage from Phase D step 9) ---
+    //
+    // V1 has `output_script: Option<CoreScript>` where None means "send to the
+    // address set by core" (vs V0's mandatory script). These tests round-trip
+    // the None case through both JSON and Value paths, replacing the
+    // `make_withdrawal_v1_no_script` fixture deleted in step 9.
+    pub(crate) fn fixture_v1_no_script() -> IdentityCreditWithdrawalTransition {
+        IdentityCreditWithdrawalTransition::V1(IdentityCreditWithdrawalTransitionV1 {
+            identity_id: Identifier::new([0x44; 32]),
+            amount: 1_234_567,
+            core_fee_per_byte: 7,
+            pooling: Pooling::Standard,
+            output_script: None,
+            nonce: 13,
+            user_fee_increase: 3,
+            signature_public_key_id: 5,
+            signature: BinaryData::new(vec![0xa3; 65]),
+        })
+    }
+
+    #[test]
+    fn json_round_trip_v1_with_none_output_script() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture_v1_no_script();
+        let json = original.to_json().expect("to_json");
+        assert_eq!(
+            json,
+            json!({
+                "$formatVersion": "1",
+                "identityId": Identifier::new([0x44; 32]),
+                "amount": 1_234_567u64,
+                "coreFeePerByte": 7u32,
+                "pooling": "standard",
+                "outputScript": null,
+                "nonce": 13u64,
+                "userFeeIncrease": 3u16,
+                "signaturePublicKeyId": 5u32,
+                "signature": "o6Ojo6Ojo6Ojo6Ojo6Ojo6Ojo6Ojo6Ojo6Ojo6Ojo6Ojo6Ojo6Ojo6Ojo6Ojo6Ojo6Ojo6Ojo6Ojo6Ojo6Ojo6M=",
+            })
+        );
+        let recovered = IdentityCreditWithdrawalTransition::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_v1_with_none_output_script() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture_v1_no_script();
+        let value = original.to_object().expect("to_object");
+        // Pooling::Standard = 2 (discriminant; Never=0, IfAvailable=1, Standard=2)
+        assert_eq!(
+            value,
+            platform_value!({
+                "$formatVersion": "1",
+                "identityId": Identifier::new([0x44; 32]),
+                "amount": 1_234_567u64,
+                "coreFeePerByte": 7u32,
+                "pooling": 2u8,
+                "outputScript": platform_value::Value::Null,
+                "nonce": 13u64,
+                "userFeeIncrease": 3u16,
+                "signaturePublicKeyId": 5u32,
+                "signature": BinaryData::new(vec![0xa3; 65]),
+            })
+        );
+        let recovered =
+            IdentityCreditWithdrawalTransition::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
 }

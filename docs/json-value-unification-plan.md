@@ -842,6 +842,12 @@ The five Critical findings in §3.0 are real but most surface naturally during P
 - ⬜ Document any per-type test divergences in this plan
 
 ### Phase D — Deprecate non-canonical mechanisms
+
+**Remaining coverage gaps** (small, branch-scoped follow-ups):
+- ✅ V1 withdrawal `output_script: None` round-trip — restored coverage lost in step 9 (May 2026, this branch). Added `fixture_v1_no_script` + JSON/Value round-trip tests in `identity_credit_withdrawal_transition/mod.rs::json_convertible_tests`.
+- ⬜ Unknown `$formatVersion` error coverage — one test per outer enum asserting `from_json({"$formatVersion": "99"})` returns an error. Targets the canonical serde tag-dispatch error path.
+- ⬜ `json_preserves_format_version_tag` symmetry on `DataContractUpdateTransition` (exists for the create twin).
+
 Status by step (see §3.11 below for full step list):
 - ✅ **Steps 1–9** complete — pure-delegation deletions, `to_cleaned_object` skip, `disabled_at` skip-serializing, Identity-family canonical, AssetLockProof, ExtendedDocument refactor (C1), Document family A10/A11, state-transition trait deletion.
 - ✅ **Step 9 follow-up** complete — BatchTransition family `#[json_safe_fields]` rolled out (May 2026): attribute applied to `BatchTransitionV0` / `BatchTransitionV1` + 8 sub-transition V0 inners (`DocumentDeleteTransitionV0`, `TokenFreeze` / `Unfreeze` / `DestroyFrozenFunds` / `Claim` / `EmergencyAction` / `ConfigUpdate` / `SetPriceForDirectPurchase`). Manual `JsonSafeFields` impls added in `safe_fields.rs` for the wrapper enums (`DocumentTransition`, `TokenTransition`, `BatchedTransition`) plus 4 sub-types (`TokenEmergencyAction`, `TokenDistributionType`, `TokenPricingSchedule`, `TokenConfigurationChangeItem` — last 2 use the documented escape-hatch pattern alongside `TokenEvent`).
