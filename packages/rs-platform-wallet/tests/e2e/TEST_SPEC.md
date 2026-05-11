@@ -138,7 +138,6 @@ Status legend: **green** = test file present, body has real assertions, runnable
 | PA-007 | Sync watermark idempotency | P1 | green | M |
 | PA-008 | Concurrent funding from bank: serialised | P1 | green | S |
 | PA-002b | Zero-change exact-equality (`Σ outputs + fee == input balance`) | P1 | green | S |
-| PA-010 | Bank starvation: typed `BankUnderfunded` error | P1 | blocked | S |
 | PA-001b | Transfer with `output_change_address: None` vs `Some(addr)` | P2 | blocked | S |
 | PA-001c | Zero-credit single-output transfer | P2 | green | S |
 | PA-004b | Sweep dust threshold boundary triplet | P2 | green | M |
@@ -422,25 +421,6 @@ Counts by priority: **P0: 10**, **P1: 25** (incl. 2 post-Task #15 + 1 env-gated 
 - **Harness extensions required**: a `TestWallet::estimate_transfer_fee(&outputs)` helper, or fall back to PA-003's empirical fee constants.
 - **Estimated complexity**: S
 - **Rationale**: Pins the `Σ inputs == Σ outputs + fee` invariant the wallet just shipped regressions on. Without an exact-equality boundary case, that bug-class re-emerges silently the next time the change-output predicate is touched.
-
-#### PA-010 — Bank starvation: typed `BankUnderfunded` error
-- **Priority**: P1
-- **Status**: BLOCKED — needs harness refactor: per-test bank instance (e.g. `Bank::with_test_balance(target)`) OR injectable balance override on the singleton, plus a typed `BankError::Underfunded { available, requested }` variant on `framework/bank.rs`. The current `OnceCell`-backed singleton panics at load time and `fund_address` returns a generic `PlatformWalletError::AddressOperation` on under-fund, neither of which matches PA-010's contract.
-- **Wallet feature exercised**: `framework/bank.rs::fund_address` precondition checks.
-- **DET parallel**: none — operator-actionable harness contract.
-- **Preconditions**: bank deliberately underfunded for the test (e.g. configure a fresh test bank with `5_000_000` total credits).
-- **Scenario**:
-  1. Configure the harness so `bank.total_credits()` is below the test's requested fund amount.
-  2. Call `bank.fund_address(addr_1, 30_000_000)`.
-- **Assertions**:
-  - `bank.fund_address` returns a typed `BankError::Underfunded { available, requested }` (or the equivalent named variant — pin whatever the code calls it). No panic, no generic `anyhow!` shape.
-  - Error message names the bank wallet id, the available balance, and the requested amount, so an operator can act without code-diving.
-  - The bank's funding mutex is released cleanly (a follow-up successful call after re-funding the bank works).
-  - Test wallet registry contains no half-created entry from the failed fund.
-- **Negative variants**: none.
-- **Harness extensions required**: a typed error variant on `framework/bank.rs` (most likely already present; confirm name); a way to construct an underfunded bank for the test (a `Bank::with_balance_for_test(...)` constructor or a fresh bank wallet pre-drained).
-- **Estimated complexity**: S
-- **Rationale**: Bank starvation is the single most common "weird CI failure" mode for this suite, and the failure mode shouldn't be a panic from inside `fund_address`. PA-010 makes the operator-actionable error part of the contract.
 
 #### PA-001b — Transfer with implicit change: `Σ inputs == Σ outputs` canonical contract
 - **Priority**: P2
@@ -2244,13 +2224,12 @@ order. Each wave unlocks the cases listed.
 - `TestWallet::transfer_capturing_st_bytes` (PA-006, PA-006b).
 - `TestWallet::estimate_transfer_fee` (PA-002b).
 - `Bank::total_credits` accessor exposed (already exists, just lift to public re-export if not).
-- `Bank::with_balance_for_test` constructor (PA-010).
 - `TestRegistry::get_status(wallet_id)` (PA-004).
 - `FUNDING_MUTEX` instrumentation hook (PA-008c).
 - "Did we broadcast?" hook on the harness SDK (PA-004c, PA-013).
 - Cancellation-point hook between broadcast and proof-fetch (Harness-G4).
 - Test DAPI proxy / `httpmock` adapter (PA-013).
-- **Unlocks**: PA-002 (negative), PA-002b, PA-004 (full assertions), PA-004b, PA-004c, PA-006, PA-006b, PA-008c, PA-009, PA-010, PA-011, PA-012, PA-013, Harness-G1a, Harness-G1b, Harness-G4.
+- **Unlocks**: PA-002 (negative), PA-002b, PA-004 (full assertions), PA-004b, PA-004c, PA-006, PA-006b, PA-008c, PA-009, PA-011, PA-012, PA-013, Harness-G1a, Harness-G1b, Harness-G4.
 - **Cost**: ~200-400 LoC across multiple commits; the test-DAPI-proxy and cancellation-hook items are non-trivial and can land late.
 
 <!-- merge note: kept theirs' updated build-order paragraph (Wave G/D supersession, SDK-wrapper helper note). Appended HEAD's "Wave E is complete" as a follow-on sentence reflecting Task #15 closure (CR-003 has flipped PASS). Preserved HEAD-only "Framework notes (post-V20)" subsection — distinct content the test-branch doesn't carry. -->
@@ -2317,7 +2296,7 @@ Tracked production bugs and harness gaps that affect test outcomes. Tests are
 `#[ignore]`d in these cases — but **`#[ignore]` does NOT mean "never runs"**:
 
 - `cargo test` (default): ignored tests are **skipped**.
-- `cargo test -- --ignored`: runs **only** ignored tests. PA-004b, PA-009, and PA-010 execute under this flag and fail by design. Any failure mode other than the one documented per-entry below is a regression.
+- `cargo test -- --ignored`: runs **only** ignored tests. PA-004b and PA-009 execute under this flag and fail by design. Any failure mode other than the one documented per-entry below is a regression.
 
 Do not modify production code in this section — these are documentation entries only.
 
@@ -2328,14 +2307,6 @@ and `pa_009_cleanup_gate_tracks_platform_version_min_input_amount` are `#[ignore
 with reason `"FAILING — production bug in PlatformAddressWallet::transfer pollutes local ledger with non-owned addresses. See TEST_SPEC.md (V27-007) and TODO comment below."` — they run under `cargo test -- --ignored` and fail by design until the production fix lands.
 
 **Expected failure mode** (PA-004b and PA-009): the `assert_eq!(addr_1_residual, TARGET_RESIDUAL, ...)` assertion panics because `total_credits()` returns the bank's full balance (~40.8 tDASH) instead of the wallet's actual residual (`TARGET_RESIDUAL = 1_000`). Any failure at a different assertion or with a different value is a regression.
-
-**PA-010 — harness gap** (`pa_010_bank_starvation_typed_error`): this test is also `#[ignore]`'d (`"BLOCKED — needs harness refactor: per-test bank instance (Bank::with_test_balance) OR injectable balance override on the singleton, plus a typed BankError::Underfunded variant. See spec status."`) and fails under `cargo test -- --ignored` by design — it always panics with:
-
-```
-PA-010 is BLOCKED on a harness refactor. The bank is a process-shared singleton (E2eContext.bank, OnceCell-backed); building a `with_test_balance(5_000_000)` underfunded instance for ONE test conflicts with that lifecycle. The current under-funded fail mode is also a generic AddressOperation error, not a typed BankError::Underfunded. See TEST_SPEC.md → PA-010 → **Status**.
-```
-
-This is a harness gap (not a production bug); fix path is tracked in the harness roadmap (Wave 4 / `Bank::with_test_balance` constructor). Any panic message other than the one above, or a failure that propagates past the `panic!` call, is a regression.
 
 **Bug**: `PlatformAddressWallet::transfer` at
 `packages/rs-platform-wallet/src/wallet/platform_addresses/transfer.rs:160` calls

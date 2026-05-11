@@ -35,7 +35,6 @@ pub mod pa_008_concurrent_funding;
 pub mod pa_008b_cross_wallet_funding;
 pub mod pa_008c_funding_mutex_observable;
 pub mod pa_009_min_input_amount;
-pub mod pa_010_bank_starvation;
 pub mod pa_3040_bug_pin;
 pub mod print_bank_address;
 // Token tests (Wave 2 — per TEST_SPEC.md ### Tokens (TK))
