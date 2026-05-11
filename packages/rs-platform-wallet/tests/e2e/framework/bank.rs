@@ -38,23 +38,17 @@ use super::wallet_factory::{bank_fee_strategy, DEFAULT_ACCOUNT_INDEX_PUB, DEFAUL
 use super::{make_platform_signer, FrameworkError, FrameworkResult};
 
 /// In-process funding mutex — serialises concurrent
-/// `bank.fund_address` calls so nonces don't race.
+/// `bank.fund_address` calls so nonces don't race **during
+/// broadcast**.
 ///
-/// **Scope (QA-V20-001):** held for **broadcast AND chain
-/// observation**. The SDK's `transfer_address_funds` already does
-/// `broadcast_and_wait` and only returns Ok once *some* DAPI node has
-/// the proof, but the very next `fund_address` caller's
-/// `fetch_inputs_with_nonce` round-robins across DAPI replicas — and
-/// a sibling node still lagging the funded block returns the pre-tx
-/// nonce. The next caller then builds `provided_nonce = N` against an
-/// already-incremented chain expected-nonce of `N+1` and the
-/// validator rejects with `AddressInvalidNonceError`. To close the
-/// race, `fund_address` polls
-/// [`super::wait::wait_for_address_nonces_chain_confirmed`] over the
-/// just-spent input addresses **before** dropping the guard, so the
-/// next caller's nonce fetch is far less likely to land on a
-/// still-lagging node. Same shape as the QA-802 / Marvin
-/// chain-confirmed-balance gate, on the nonce axis.
+/// **Scope:** held only across STE build + sign + DAPI-accept
+/// broadcast (`PlatformAddressWallet::transfer`), then dropped. The
+/// post-broadcast chain-confirmation wait
+/// (`wait_for_address_nonces_chain_confirmed`) runs **unlocked** so
+/// 14-way concurrent `fund_address` callers don't queue up serially
+/// on what's a parallelisable wait. Out-of-order STE arrival across
+/// DAPI replicas is now handled by the in-`fund_address` bounded
+/// retry on nonce-class chain rejects (see [`is_nonce_class_error`]).
 static FUNDING_MUTEX: AsyncMutex<()> = AsyncMutex::const_new(());
 
 /// Hard ceiling on the post-broadcast chain-confirmation wait inside
@@ -397,116 +391,147 @@ impl BankWallet {
         target: &PlatformAddress,
         credits: Credits,
     ) -> FrameworkResult<PlatformAddressChangeSet> {
-        let _guard = FUNDING_MUTEX.lock().await;
-        // Sample entry AFTER `lock().await` resolves: we are now
-        // inside the critical section. PA-008c asserts the
-        // `[entry_ns, exit_ns]` intervals are pairwise non-overlapping,
-        // which only holds if the entry timestamp is captured under
-        // the lock — sampling before `lock().await` would record
-        // queue-arrival time and the windows would overlap by
-        // construction.
-        let anchor = history_anchor();
-        let seq = FUNDING_MUTEX_SEQ
-            .fetch_add(1, Ordering::SeqCst)
-            .saturating_add(1);
-        let entry_ns = anchor.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
+        /// Max retries on nonce-class chain rejects from the broadcast leg.
+        /// Total attempt count is `MAX_RETRIES + 1`.
+        const MAX_RETRIES: u32 = 3;
+        /// Exponential backoff between retries. Lengths must equal `MAX_RETRIES`.
+        const BACKOFF: [Duration; MAX_RETRIES as usize] = [
+            Duration::from_millis(500),
+            Duration::from_secs(2),
+            Duration::from_secs(5),
+        ];
 
-        let outputs: BTreeMap<PlatformAddress, Credits> =
-            std::iter::once((*target, credits)).collect();
-        let broadcast_started = Instant::now();
-        let result = self
-            .wallet
-            .platform()
-            .transfer(
-                DEFAULT_ACCOUNT_INDEX_PUB,
-                InputSelection::Auto,
-                outputs,
-                bank_fee_strategy(),
-                Some(PlatformVersion::latest()),
-                &self.signer,
+        for attempt in 0..=MAX_RETRIES {
+            // === Critical section: build STE + sign + broadcast ===
+            // Lock held only across the DAPI-accept boundary. The
+            // post-broadcast chain-confirmation wait runs unlocked.
+            // PA-008c history is sampled inside this block so every
+            // recorded `[entry_ns, exit_ns]` interval is a strict
+            // subset of the time the guard was held.
+            let broadcast_outcome: Result<PlatformAddressChangeSet, PlatformWalletError> = {
+                let _guard = FUNDING_MUTEX.lock().await;
+                let anchor = history_anchor();
+                let seq = FUNDING_MUTEX_SEQ
+                    .fetch_add(1, Ordering::SeqCst)
+                    .saturating_add(1);
+                let entry_ns = anchor.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
+
+                let outputs: BTreeMap<PlatformAddress, Credits> =
+                    std::iter::once((*target, credits)).collect();
+                let broadcast_started = Instant::now();
+                let result = self
+                    .wallet
+                    .platform()
+                    .transfer(
+                        DEFAULT_ACCOUNT_INDEX_PUB,
+                        InputSelection::Auto,
+                        outputs,
+                        bank_fee_strategy(),
+                        Some(PlatformVersion::latest()),
+                        &self.signer,
+                    )
+                    .await;
+
+                let exit_ns = anchor.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
+                record_funding_mutex_entry(FundingMutexHistoryEntry {
+                    seq,
+                    entry_ns,
+                    exit_ns,
+                });
+
+                match result.as_ref() {
+                    Ok(_) => tracing::info!(
+                        target: "platform_wallet::e2e::bank",
+                        seq,
+                        attempt,
+                        elapsed_ms = broadcast_started.elapsed().as_millis() as u64,
+                        "bank.fund_address: transfer broadcast accepted (lock released)"
+                    ),
+                    Err(err) => tracing::warn!(
+                        target: "platform_wallet::e2e::bank",
+                        seq,
+                        attempt,
+                        elapsed_ms = broadcast_started.elapsed().as_millis() as u64,
+                        error = %err,
+                        "bank.fund_address: transfer broadcast failed"
+                    ),
+                }
+                result
+            }; // FUNDING_MUTEX dropped here
+
+            // === Broadcast classification + retry ===
+            let cs = match broadcast_outcome {
+                Ok(cs) => cs,
+                Err(err) if is_nonce_class_error(&err) && attempt < MAX_RETRIES => {
+                    let backoff = BACKOFF[attempt as usize];
+                    tracing::warn!(
+                        target: "platform_wallet::e2e::bank",
+                        error = %err,
+                        attempt,
+                        backoff_ms = backoff.as_millis() as u64,
+                        "bank.fund_address: nonce-class chain reject, retrying after backoff"
+                    );
+                    tokio::time::sleep(backoff).await;
+                    continue;
+                }
+                Err(err) => return Err(wallet_err(err)),
+            };
+
+            // === Unlocked chain-confirmation wait ===
+            // `wait_for_address_nonces_chain_confirmed` polls all DAPI
+            // replicas until they agree on the post-tx nonce. Running
+            // it unlocked lets sibling `fund_address` callers progress
+            // their own broadcasts in parallel — testnet block
+            // production is the long pole, not the lock.
+            let expected_nonces: Vec<(PlatformAddress, AddressNonce)> = cs
+                .addresses
+                .iter()
+                .map(|entry| {
+                    (
+                        PlatformAddress::P2pkh(entry.address.to_bytes()),
+                        entry.funds.nonce,
+                    )
+                })
+                .collect();
+            let confirm_started = Instant::now();
+            match super::wait::wait_for_address_nonces_chain_confirmed(
+                self.wallet.sdk(),
+                &expected_nonces,
+                FUNDING_TX_CONFIRMATION_TIMEOUT,
             )
             .await
-            .map_err(wallet_err);
-
-        // Hold FUNDING_MUTEX until the chain-confirmed nonce is
-        // observable on enough DAPI replicas that the next caller's
-        // `fetch_inputs_with_nonce` won't round-robin onto a lagging
-        // node and collide on the same address nonce
-        // (QA-V20-001 / `AddressInvalidNonceError`). On Ok we collect
-        // the post-tx nonces from the changeset (these come from the
-        // proof returned by `broadcast_and_wait`, so they reflect the
-        // committed state) and gate on the standard
-        // chain-confirmed-streak helper. A timeout panics rather than
-        // returning a typed error: 120 s without chain catch-up is a
-        // platform-level failure, and silently retrying would mask it.
-        let result = match result {
-            Ok(cs) => {
-                let expected_nonces: Vec<(PlatformAddress, AddressNonce)> = cs
-                    .addresses
-                    .iter()
-                    .map(|entry| {
-                        (
-                            PlatformAddress::P2pkh(entry.address.to_bytes()),
-                            entry.funds.nonce,
-                        )
-                    })
-                    .collect();
-                tracing::info!(
-                    target: "platform_wallet::e2e::bank",
-                    addresses = expected_nonces.len(),
-                    seq,
-                    elapsed_ms = broadcast_started.elapsed().as_millis() as u64,
-                    "bank.fund_address: transfer broadcast accepted, waiting for chain confirmation"
-                );
-                let confirm_started = Instant::now();
-                match super::wait::wait_for_address_nonces_chain_confirmed(
-                    self.wallet.sdk(),
-                    &expected_nonces,
-                    FUNDING_TX_CONFIRMATION_TIMEOUT,
-                )
-                .await
-                {
-                    Ok(()) => {
-                        tracing::info!(
-                            target: "platform_wallet::e2e::bank",
-                            addresses = expected_nonces.len(),
-                            seq,
-                            elapsed_ms = confirm_started.elapsed().as_millis() as u64,
-                            "bank.fund_address: chain confirmation observed"
-                        );
-                        Ok(cs)
-                    }
-                    Err(err) => {
-                        tracing::error!(
-                            target: "platform_wallet::e2e::bank",
-                            error = %err,
-                            seq,
-                            elapsed_ms = confirm_started.elapsed().as_millis() as u64,
-                            timeout_secs = FUNDING_TX_CONFIRMATION_TIMEOUT.as_secs(),
-                            "bank.fund_address: chain confirmation timeout"
-                        );
-                        panic!(
-                            "bank.fund_address: chain-confirmed nonce did not catch up within \
-                             {timeout:?} (seq={seq}); platform-level failure, see error log: {err}",
-                            timeout = FUNDING_TX_CONFIRMATION_TIMEOUT,
-                        );
-                    }
+            {
+                Ok(()) => {
+                    tracing::info!(
+                        target: "platform_wallet::e2e::bank",
+                        addresses = expected_nonces.len(),
+                        attempt,
+                        elapsed_ms = confirm_started.elapsed().as_millis() as u64,
+                        "bank.fund_address: chain confirmation observed"
+                    );
+                    return Ok(cs);
+                }
+                Err(err) => {
+                    // 120 s without chain catch-up is a platform-level
+                    // failure: silently retrying would mask it.
+                    // Preserve the panic from the pre-split contract.
+                    tracing::error!(
+                        target: "platform_wallet::e2e::bank",
+                        error = %err,
+                        attempt,
+                        elapsed_ms = confirm_started.elapsed().as_millis() as u64,
+                        timeout_secs = FUNDING_TX_CONFIRMATION_TIMEOUT.as_secs(),
+                        "bank.fund_address: chain confirmation timeout"
+                    );
+                    panic!(
+                        "bank.fund_address: chain-confirmed nonce did not catch up within \
+                         {timeout:?} (attempt={attempt}); platform-level failure, see error log: {err}",
+                        timeout = FUNDING_TX_CONFIRMATION_TIMEOUT,
+                    );
                 }
             }
-            Err(err) => Err(err),
-        };
-
-        // Sample exit BEFORE `_guard` drops so the recorded interval
-        // is a strict subset of the time the lock was actually held.
-        // Errors are still recorded — PA-008c cares about
-        // serialisation, not success.
-        let exit_ns = anchor.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
-        record_funding_mutex_entry(FundingMutexHistoryEntry {
-            seq,
-            entry_ns,
-            exit_ns,
-        });
-        result
+        }
+        unreachable!("retry loop must return or panic before falling through")
     }
 
     /// Resync balances and refresh the cached `bank_floor_satisfied` flag.
@@ -703,6 +728,46 @@ fn wallet_err(err: PlatformWalletError) -> FrameworkError {
     FrameworkError::Wallet(err.to_string())
 }
 
+/// Classify `err` as a nonce-class chain reject — broadcast errors
+/// caused by out-of-order STE arrival across DAPI replicas under
+/// concurrent funding load.
+///
+/// **Typed match preferred** (mirrors [`platform_wallet::error::is_instant_lock_proof_invalid`]):
+/// drills into [`PlatformWalletError::Sdk`] and matches the consensus
+/// error variants that indicate an address- or identity-nonce
+/// conflict. String matching is reserved for the rare case where the
+/// error has already been flattened (none of those reach this layer
+/// today — `transfer()` propagates `dash_sdk::Error` via `Sdk`).
+///
+/// Variants matched (DPP `StateError`):
+/// - `AddressInvalidNonceError` — the address-funds path (what
+///   `bank.fund_address` actually hits when DAPI replica lag causes
+///   provided/expected nonce mismatch).
+/// - `InvalidIdentityNonceError` — defence-in-depth: covers the
+///   identity-nonce sibling that follows the same out-of-order
+///   semantics if the call path ever broadens beyond address funds.
+fn is_nonce_class_error(err: &PlatformWalletError) -> bool {
+    use dpp::consensus::state::state_error::StateError;
+    use dpp::consensus::ConsensusError;
+
+    let PlatformWalletError::Sdk(sdk_err) = err else {
+        return false;
+    };
+
+    let consensus_error = match sdk_err {
+        dash_sdk::Error::StateTransitionBroadcastError(b) => b.cause.as_ref(),
+        dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(ce)) => Some(ce.as_ref()),
+        _ => None,
+    };
+
+    matches!(
+        consensus_error,
+        Some(ConsensusError::StateError(
+            StateError::AddressInvalidNonceError(_) | StateError::InvalidIdentityNonceError(_),
+        )),
+    )
+}
+
 /// Generous standard-tx fee reserve (~0.0001 DASH at 1 sat/B for a
 /// typical 1-input-2-output tx). The wallet's coin selector picks the
 /// actual fee from its config; this floor only gates the "is there
@@ -768,4 +833,80 @@ async fn derive_platform_address_at_index(
         })?;
     let pkh = ripemd160_sha256(&pubkey.serialize());
     Ok(PlatformAddress::P2pkh(pkh))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::consensus::state::address_funds::AddressInvalidNonceError;
+    use dpp::consensus::state::identity::invalid_identity_contract_nonce_error::InvalidIdentityNonceError;
+    use dpp::consensus::state::state_error::StateError;
+    use dpp::consensus::ConsensusError;
+    use dpp::identifier::Identifier;
+    use dpp::identity::identity_nonce::MergeIdentityNonceResult;
+
+    /// Build a `PlatformWalletError::Sdk` wrapping the given consensus
+    /// error via the `Protocol(ConsensusError)` shape — the path that
+    /// `transfer()` actually surfaces broadcast-time consensus rejects on.
+    fn sdk_err_from_consensus(ce: ConsensusError) -> PlatformWalletError {
+        let protocol_err = dpp::ProtocolError::ConsensusError(Box::new(ce));
+        PlatformWalletError::Sdk(dash_sdk::Error::Protocol(protocol_err))
+    }
+
+    #[test]
+    fn is_nonce_class_error_matches_address_invalid_nonce() {
+        let inner = AddressInvalidNonceError::new(PlatformAddress::P2pkh([0u8; 20]), 42, 41);
+        let err = sdk_err_from_consensus(StateError::AddressInvalidNonceError(inner).into());
+        assert!(
+            is_nonce_class_error(&err),
+            "AddressInvalidNonceError must be classified as nonce-class"
+        );
+    }
+
+    #[test]
+    fn is_nonce_class_error_matches_invalid_identity_nonce() {
+        let inner = InvalidIdentityNonceError::new(
+            Identifier::new([0u8; 32]),
+            None,
+            7,
+            MergeIdentityNonceResult::NonceAlreadyPresentInPast(3),
+        );
+        let err = sdk_err_from_consensus(StateError::InvalidIdentityNonceError(inner).into());
+        assert!(
+            is_nonce_class_error(&err),
+            "InvalidIdentityNonceError must be classified as nonce-class"
+        );
+    }
+
+    #[test]
+    fn is_nonce_class_error_rejects_no_selectable_inputs() {
+        // NoSelectableInputs is the closest "insufficient funds"-shape
+        // error in this codebase and must NOT be classified as
+        // nonce-class — retrying it would just churn against the
+        // same empty input pool.
+        let err = PlatformWalletError::NoSelectableInputs {
+            funded_outputs: vec![],
+            sub_min_count: 0,
+            sub_min_aggregate: 0,
+            min_input_amount: 0,
+        };
+        assert!(
+            !is_nonce_class_error(&err),
+            "NoSelectableInputs must NOT be classified as nonce-class"
+        );
+    }
+
+    #[test]
+    fn is_nonce_class_error_rejects_unrelated_errors() {
+        let err = PlatformWalletError::WalletNotFound("xyz".to_string());
+        assert!(
+            !is_nonce_class_error(&err),
+            "WalletNotFound must NOT be classified as nonce-class"
+        );
+        let err2 = PlatformWalletError::AddressOperation("nope".to_string());
+        assert!(
+            !is_nonce_class_error(&err2),
+            "AddressOperation must NOT be classified as nonce-class"
+        );
+    }
 }
