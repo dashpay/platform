@@ -201,3 +201,119 @@ fn aggregate_documents_by_property(
 //   - SDK: packages/rs-sdk/tests/fetch/document_split_count.rs
 //   - drive-abci: src/query/document_split_count_query/v0/mod.rs tests
 // (drive-proof-verifier's feature surface doesn't expose dpp test helpers)
+//
+// Below are unit tests that don't require a real `DriveDocumentQuery`
+// or a populated Drive — they cover the helpers and the
+// generic-`FromProof`-rejection footgun guard.
+
+#[cfg(test)]
+mod tests {
+    //! Local-only tests for the parts of `DocumentSplitCounts` that
+    //! don't need a real grovedb proof or a populated Drive:
+    //!
+    //! - `into_flat_map` — pure data reduction over the new
+    //!   `Vec<VerifiedSplitCount>` shape (covers the no-merge →
+    //!   merged-histogram backwards-compat path).
+    //! - `from_verified` — identity constructor wrapping the raw
+    //!   verified-entries vec.
+    //! - The generic `FromProof<Q>` impl that intentionally errors
+    //!   to prevent the silently-empty footgun documented above.
+    //!
+    //! The actual `maybe_from_proof_with_split_property` flow is
+    //! covered by the SDK integration tests at
+    //! `packages/rs-sdk/tests/fetch/document_split_count.rs` —
+    //! exercising it here would need a populated Drive + a real
+    //! proof, which is outside this crate's feature surface.
+    use super::*;
+
+    /// Helper to make a `VerifiedSplitCount` with the given fields
+    /// without each call site needing to type the struct out.
+    fn entry(in_key: Option<&[u8]>, key: &[u8], count: u64) -> VerifiedSplitCount {
+        VerifiedSplitCount {
+            in_key: in_key.map(|s| s.to_vec()),
+            key: key.to_vec(),
+            count,
+        }
+    }
+
+    #[test]
+    fn from_verified_round_trips_the_input_vec() {
+        let entries = vec![
+            entry(None, b"red", 5),
+            entry(None, b"green", 3),
+            entry(None, b"blue", 8),
+        ];
+        let counts = DocumentSplitCounts::from_verified(entries.clone());
+        assert_eq!(counts.0, entries);
+    }
+
+    #[test]
+    fn from_verified_empty_round_trip() {
+        let counts = DocumentSplitCounts::from_verified(Vec::new());
+        assert!(counts.0.is_empty());
+    }
+
+    #[test]
+    fn into_flat_map_passes_through_flat_entries() {
+        // No In dimension — every entry has `in_key = None`. The flat
+        // map should be one-to-one with the input.
+        let counts = DocumentSplitCounts::from_verified(vec![
+            entry(None, b"red", 5),
+            entry(None, b"green", 3),
+            entry(None, b"blue", 8),
+        ]);
+        let flat = counts.into_flat_map();
+        assert_eq!(flat.len(), 3);
+        assert_eq!(flat.get(b"red".as_slice()), Some(&5));
+        assert_eq!(flat.get(b"green".as_slice()), Some(&3));
+        assert_eq!(flat.get(b"blue".as_slice()), Some(&8));
+    }
+
+    #[test]
+    fn into_flat_map_sums_across_in_key_forks_for_compound_entries() {
+        // Compound query result: `brand in [acme, contoso]` × `color in [red, green]`.
+        // `into_flat_map` should sum `red` across both brand forks
+        // (3 + 2 = 5) — that's the whole point of providing the
+        // historical merged-histogram view.
+        let counts = DocumentSplitCounts::from_verified(vec![
+            entry(Some(b"acme"), b"red", 3),
+            entry(Some(b"acme"), b"green", 2),
+            entry(Some(b"contoso"), b"red", 2),
+            entry(Some(b"contoso"), b"green", 4),
+        ]);
+        let flat = counts.into_flat_map();
+        assert_eq!(flat.len(), 2, "merges by `key` across in_key forks");
+        assert_eq!(flat.get(b"red".as_slice()), Some(&5));
+        assert_eq!(flat.get(b"green".as_slice()), Some(&6));
+    }
+
+    #[test]
+    fn into_flat_map_handles_mixed_in_key_and_none_entries() {
+        // Edge case: a result set that mixes flat entries (in_key=None)
+        // and compound entries (in_key=Some). Both should fold into
+        // the same `key` buckets when sharing a terminator value.
+        let counts = DocumentSplitCounts::from_verified(vec![
+            entry(None, b"red", 1),
+            entry(Some(b"acme"), b"red", 2),
+            entry(Some(b"contoso"), b"red", 3),
+            entry(Some(b"acme"), b"green", 4),
+        ]);
+        let flat = counts.into_flat_map();
+        assert_eq!(flat.get(b"red".as_slice()), Some(&6));
+        assert_eq!(flat.get(b"green".as_slice()), Some(&4));
+    }
+
+    #[test]
+    fn into_flat_map_empty_input_produces_empty_map() {
+        let counts = DocumentSplitCounts::from_verified(Vec::new());
+        assert!(counts.into_flat_map().is_empty());
+    }
+
+    // The generic `FromProof` rejection (returning the explicit
+    // "needs a split property" error rather than silently returning
+    // `Some(empty)`) is covered by the SDK integration tests, which
+    // can construct a valid `DriveDocumentQuery` via dpp's
+    // `fixtures-and-mocks` feature. drive-proof-verifier itself
+    // doesn't depend on `dpp/fixtures-and-mocks` so we can't build
+    // one here.
+}

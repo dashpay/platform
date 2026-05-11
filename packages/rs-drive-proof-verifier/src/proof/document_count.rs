@@ -215,3 +215,216 @@ pub fn verify_distinct_count_proof(
     }
     Ok(out)
 }
+
+#[cfg(test)]
+mod tests {
+    //! Local-only tests for parts of this module that don't need a
+    //! real grovedb proof or a populated Drive. The full happy-path
+    //! verification of `verify_aggregate_count_proof` /
+    //! `verify_distinct_count_proof` is covered end-to-end in the
+    //! drive crate's range_countable_index_e2e_tests (where the
+    //! prover and verifier roundtrip on a real Drive), and in the
+    //! rs-sdk integration tests. Here we cover:
+    //!
+    //! - `VerifiedSplitCount` struct invariants (constructor /
+    //!   equality / clone).
+    //! - The error-mapping branch of `verify_aggregate_count_proof`
+    //!   and `verify_distinct_count_proof` for garbage proof bytes
+    //!   (the `map_err` chain into `Error::GroveDBError`).
+    use super::*;
+    use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
+    use dash_context_provider::ContextProviderError;
+    use dpp::data_contract::TokenConfiguration;
+    use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
+    use drive::query::PathQuery;
+    use std::sync::Arc;
+
+    /// Provider that panics if called — the GroveDBError path
+    /// short-circuits before reaching tenderdash verification, so
+    /// the provider must never be touched by these tests.
+    struct UnreachableProvider;
+
+    impl ContextProvider for UnreachableProvider {
+        fn get_data_contract(
+            &self,
+            _id: &Identifier,
+            _pv: &PlatformVersion,
+        ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+            panic!("should not be called")
+        }
+        fn get_token_configuration(
+            &self,
+            _id: &Identifier,
+        ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+            panic!("should not be called")
+        }
+        fn get_quorum_public_key(
+            &self,
+            _qt: u32,
+            _qh: [u8; 32],
+            _h: u32,
+        ) -> Result<[u8; 48], ContextProviderError> {
+            panic!("should not be called")
+        }
+        fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+            panic!("should not be called")
+        }
+    }
+
+    /// Builds an arbitrary PathQuery — the verify happy path needs a
+    /// real proof generated against this exact path query, but for
+    /// the error-mapping path the contents don't matter: we want
+    /// grovedb-side verification to fail and the error to be
+    /// wrapped in `Error::GroveDBError`.
+    fn arbitrary_path_query() -> PathQuery {
+        use drive::grovedb::{Query, SizedQuery};
+        let query = Query::new();
+        PathQuery::new(vec![vec![0u8]], SizedQuery::new(query, None, None))
+    }
+
+    fn arbitrary_metadata() -> ResponseMetadata {
+        ResponseMetadata {
+            height: 1,
+            time_ms: 0,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn verified_split_count_struct_constructs_and_clones() {
+        // Round-trip the struct fields through Clone + PartialEq to
+        // pin the public-API shape and guard against accidental
+        // field-order changes that would break call sites pattern-
+        // matching on it.
+        let a = VerifiedSplitCount {
+            in_key: Some(b"acme".to_vec()),
+            key: b"red".to_vec(),
+            count: 42,
+        };
+        let b = a.clone();
+        assert_eq!(a, b);
+        assert_eq!(a.in_key.as_deref(), Some(b"acme".as_slice()));
+        assert_eq!(a.key, b"red".to_vec());
+        assert_eq!(a.count, 42);
+
+        // Flat-query variant: in_key absent.
+        let flat = VerifiedSplitCount {
+            in_key: None,
+            key: b"green".to_vec(),
+            count: 7,
+        };
+        assert!(flat.in_key.is_none());
+        assert_eq!(flat.key, b"green".to_vec());
+        assert_eq!(flat.count, 7);
+
+        // Inequality across each dimension.
+        let different_in_key = VerifiedSplitCount {
+            in_key: Some(b"contoso".to_vec()),
+            ..a.clone()
+        };
+        assert_ne!(a, different_in_key);
+        let different_key = VerifiedSplitCount {
+            key: b"blue".to_vec(),
+            ..a.clone()
+        };
+        assert_ne!(a, different_key);
+        let different_count = VerifiedSplitCount { count: 99, ..a };
+        assert_ne!(b, different_count);
+    }
+
+    #[test]
+    fn verify_aggregate_count_proof_garbage_bytes_returns_grovedb_error() {
+        // Garbage bytes can't decode as a valid AggregateCountOnRange
+        // proof envelope. The error-mapping branch wraps the grovedb
+        // error in `Error::GroveDBError` and surfaces the original
+        // request metadata (height/time_ms) plus the path query so
+        // callers can correlate it with their request.
+        let proof = Proof {
+            grovedb_proof: vec![0xffu8; 16],
+            ..Default::default()
+        };
+        let mtd = arbitrary_metadata();
+        let path_query = arbitrary_path_query();
+        let err = verify_aggregate_count_proof(
+            &proof,
+            &mtd,
+            &path_query,
+            PlatformVersion::latest(),
+            &UnreachableProvider,
+        )
+        .unwrap_err();
+        match err {
+            Error::GroveDBError {
+                proof_bytes,
+                path_query: pq,
+                height,
+                time_ms,
+                ..
+            } => {
+                assert_eq!(proof_bytes, vec![0xffu8; 16]);
+                assert!(pq.is_some(), "path_query must be threaded into error");
+                assert_eq!(height, mtd.height);
+                assert_eq!(time_ms, mtd.time_ms);
+            }
+            other => panic!("expected GroveDBError, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn verify_distinct_count_proof_garbage_bytes_returns_grovedb_error() {
+        // Same error-mapping path as the aggregate helper above —
+        // pin it independently so a future refactor that decouples
+        // the two helpers can't silently regress one.
+        let proof = Proof {
+            grovedb_proof: vec![0xffu8; 16],
+            ..Default::default()
+        };
+        let mtd = arbitrary_metadata();
+        let path_query = arbitrary_path_query();
+        let err = verify_distinct_count_proof(
+            &proof,
+            &mtd,
+            &path_query,
+            PlatformVersion::latest(),
+            &UnreachableProvider,
+        )
+        .unwrap_err();
+        match err {
+            Error::GroveDBError {
+                proof_bytes,
+                path_query: pq,
+                height,
+                time_ms,
+                ..
+            } => {
+                assert_eq!(proof_bytes, vec![0xffu8; 16]);
+                assert!(pq.is_some());
+                assert_eq!(height, mtd.height);
+                assert_eq!(time_ms, mtd.time_ms);
+            }
+            other => panic!("expected GroveDBError, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn verify_aggregate_count_proof_empty_bytes_returns_grovedb_error() {
+        // Empty bytes are a distinct decoding failure mode from
+        // garbage bytes — exercise the same error mapping with a
+        // different grovedb-side rejection cause.
+        let proof = Proof {
+            grovedb_proof: Vec::new(),
+            ..Default::default()
+        };
+        let mtd = arbitrary_metadata();
+        let path_query = arbitrary_path_query();
+        let err = verify_aggregate_count_proof(
+            &proof,
+            &mtd,
+            &path_query,
+            PlatformVersion::latest(),
+            &UnreachableProvider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::GroveDBError { .. }));
+    }
+}
