@@ -1069,62 +1069,6 @@ mod range_countable_index_e2e_tests {
             .data_contract_owned()
     }
 
-    /// Two `range_countable` indexes sharing the `color` prefix:
-    /// `byColor [color]` and `byColorSize [color, size]`. The shared
-    /// prefix exercises the `NonCounted<*>` wrapping rule (book:
-    /// indexes.md §"Compound interaction with range_countable") on a
-    /// configuration where the wrapped tree itself is a
-    /// `ProvableCountTree` rather than a plain `NormalTree` —
-    /// stressing the walker's `parent_value_tree_is_range_countable`
-    /// flag against a wrapper-target type that the existing single-
-    /// doc layout test doesn't reach.
-    #[allow(dead_code)]
-    fn build_widget_with_two_range_countable_indexes() -> DataContract {
-        let factory =
-            DataContractFactory::new(PROTOCOL_VERSION_V12).expect("expected to create factory");
-
-        let indices = vec![
-            platform_value!({
-                "name": "byColor",
-                "properties": [{"color": "asc"}],
-                "countable": "countable",
-                "rangeCountable": true,
-            }),
-            platform_value!({
-                "name": "byColorSize",
-                "properties": [{"color": "asc"}, {"size": "asc"}],
-                "countable": "countable",
-                "rangeCountable": true,
-            }),
-        ];
-
-        let document_schema = platform_value!({
-            "type": "object",
-            "properties": {
-                "color": {
-                    "type": "string",
-                    "position": 0,
-                    "maxLength": 32,
-                },
-                "size": {
-                    "type": "string",
-                    "position": 1,
-                    "maxLength": 32,
-                },
-            },
-            "indices": Value::Array(indices),
-            "additionalProperties": false,
-        });
-
-        let schemas = platform_value!({ "widget": document_schema });
-        let owner_id = generate_random_identifier_struct();
-
-        factory
-            .create_with_value_config(owner_id, 0, schemas, None, None)
-            .expect("expected to create data contract")
-            .data_contract_owned()
-    }
-
     fn property_name_tree_path(
         contract: &DataContract,
         document_type_name: &str,
