@@ -1,9 +1,9 @@
 # JSON / Value Conversion Unification Plan
 
-**Status**: passes 1 + 2 + tag-shape convention sweep + Phase D (steps 1–9) **complete** as of commit `8e94f38e68` (May 2026).
+**Status**: passes 1 + 2 + tag-shape sweep + Phase D (all 11 steps) + all 5 Critical findings **complete** as of commit `141a05c398` (May 2026).
 **Scope**: `packages/rs-dpp/` (canonical surface) + `packages/wasm-dpp2/` (downstream consumers).
 
-## Progress (2026-05-09)
+## Progress (2026-05-11)
 
 | Pass | Goal | Status |
 |---|---|---|
@@ -13,9 +13,19 @@
 | 2.6 | Apply `tag = "$formatVersion"` / `tag = "type"` convention to top-level versioned and discriminated enums | ✅ done locally; gated on 2 open dashcore PRs |
 | 2.7 | Tag-shape convention sweep — flatten every `tag = "type", content = "data"` adjacent enum to internal tagging; apply `$`-prefix discriminator rule | ✅ done — 7/7 enums migrated, zero adjacent-tagged enums remain |
 | 2.8 | Broader `#[json_safe_fields]` rollout — apply to V0 transition leaves and base structs | ✅ done — 11 V0 structs + base transitions + DocumentBaseTransition wrapper. Step 9 added 5 more (address transitions). Step 9 follow-up rolled out the BatchTransition family: V0/V1 + 8 sub-transition V0 inners + 7 manual JsonSafeFields impls (3 wrapper enums + 4 sub-types). |
-| 3 | Deprecate non-canonical mechanisms (§3.11 of this doc) | ✅ done for non-DataContract types — Phase D steps 1–11 complete (DataContract family stays KEEP-AS-EXCEPTION with renamed `_versioned` methods + Critical-4 pin tests) |
+| 3 | Deprecate non-canonical mechanisms (§3.11 of this doc) | ✅ done — Phase D steps 1–11 complete. DataContract family final shape: canonical (no validation) + `from_*_validated(value, &pv)` (opt-in validation). `_versioned` family deleted. |
 | 4 | wasm-dpp2 migration `_serde!` → `_inner!` | ⬜ not started — re-survey needed (step 9 audit found no actual blockers there) |
 | 5 | Delete `wasm-dpp` legacy crate | ⬜ blocked on team decision |
+
+### All 5 Critical findings resolved
+
+| # | Finding | Status |
+|---|---|---|
+| Critical-1 | `is_human_readable` divergence (HR vs non-HR) | ✅ documented on canonical traits (`serialization_traits.rs`) with the divergence table + ContentDeserializer caveat |
+| Critical-2 | Silent array→bytes coercion in `From<JsonValue> for Value` | ✅ heuristic removed; faithful conversion; pin tests added |
+| Critical-3 | ExtendedDocument non-round-trippable | ✅ fixed via `#[serde(tag = "$extendedFormatVersion")]` derive |
+| Critical-4 | DataContract serde impurity (platform-version coupling + hardcoded `full_validation`) | ✅ platform-version coupling pinned in tests; validation flipped to opt-in; KEEP-AS-EXCEPTION docs |
+| Critical-5 | `to_canonical_object` sorts keys (signature-load-bearing) | ✅ falsified — signing uses bincode, methods had zero production callers; deleted |
 
 ### Final test count (May 2026)
 
