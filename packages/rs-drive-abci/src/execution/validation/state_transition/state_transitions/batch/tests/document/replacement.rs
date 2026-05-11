@@ -1112,11 +1112,21 @@ mod replacement_tests {
         assert_eq!(query_receiver_results.documents().len(), 0);
     }
 
-    #[tokio::test]
-    async fn test_document_replace_that_does_not_yet_exist() {
-        let platform_version = PlatformVersion::latest();
+    /// Helper for the paired Replace-on-missing-document test.
+    ///
+    /// Both versions land as PaidConsensusError because the Replace
+    /// missing-target-document path emits a `BumpIdentityDataContractNonce`
+    /// action on every protocol version (it was the one legacy v0 bump
+    /// site, preserved to keep PROTOCOL_VERSION_11 chain replay bit-for-bit
+    /// reproducible). Only the fee differs.
+    async fn run_document_replace_that_does_not_yet_exist_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        expected_processing_fee: dpp::fee::Credits,
+    ) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let mut platform = TestPlatformBuilder::new()
-            .with_latest_protocol_version()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_genesis_state();
 
@@ -1195,13 +1205,42 @@ mod replacement_tests {
             .unwrap()
             .expect("expected to commit transaction");
 
-        assert_eq!(processing_result.invalid_paid_count(), 1);
+        assert_eq!(
+            processing_result.invalid_paid_count(),
+            1,
+            "PROTOCOL_VERSION_{}: must land as PaidConsensusError",
+            protocol_version,
+        );
 
         assert_eq!(processing_result.invalid_unpaid_count(), 0);
 
         assert_eq!(processing_result.valid_count(), 0);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 516040);
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            expected_processing_fee,
+            "PROTOCOL_VERSION_{}: processing fee must match the version-specific baseline",
+            protocol_version,
+        );
+    }
+
+    /// PROTOCOL_VERSION_12+ — same fee as v11 because the bump emission for
+    /// this specific path is unconditional (pre-existing legacy behavior).
+    #[tokio::test]
+    async fn test_document_replace_that_does_not_yet_exist() {
+        run_document_replace_that_does_not_yet_exist_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            516040,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_11 — pins the legacy fee + bump-emission behavior.
+    /// This is the one Replace failure path that already emitted a bump on
+    /// v11; the bump-emission helper must not strip it on v0.
+    #[tokio::test]
+    async fn test_document_replace_that_does_not_yet_exist_protocol_version_11() {
+        run_document_replace_that_does_not_yet_exist_at_protocol_version(11, 516040).await;
     }
 
     #[tokio::test]

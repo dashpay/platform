@@ -701,12 +701,22 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     Self::find_replaced_document_v0(transition, replaced_documents);
 
                 if !validation_result.is_valid_with_data() {
-                    return Self::failed_per_transition_action(
-                        document_replace_transition.base(),
-                        owner_id,
+                    // Replace's missing-target-document path is the one
+                    // failure site that already emitted a bump action on
+                    // PROTOCOL_VERSION_11 (pre-PR), so it must continue to
+                    // do so regardless of `failed_per_transition_action`.
+                    // Routing it through the helper would drop the bump on
+                    // v0 and diverge v11 chain replay.
+                    let bump_action =
+                        BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition(
+                            document_replace_transition.base(),
+                            owner_id,
+                            0,
+                        );
+                    return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                        BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action),
                         validation_result.errors,
-                        platform_version,
-                    );
+                    ));
                 }
 
                 let original_document = validation_result.into_data()?;
