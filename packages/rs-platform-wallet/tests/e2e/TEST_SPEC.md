@@ -181,9 +181,9 @@ Status legend: **green** = test file present, body has real assertions, runnable
 | TK-012 | Update token config (single ChangeItem mutation) | P2 | blocked | M |
 | TK-013 | Token claim from pre-programmed distribution | P2 | blocked | L |
 | TK-014 | Group-action gateway: queue a mint, list pending, co-sign | P2 | blocked | L |
-| CR-001 | SPV mn-list sync readiness | P1 | not implemented | M |
+| CR-001 | SPV mn-list sync readiness | P1 | green | M |
 | CR-002 | Core wallet receive address derivation | P1 | not implemented | M |
-| CR-003 | Asset-lock-funded identity registration (full path) | P2 | not implemented | L |
+| CR-003 | Asset-lock-funded identity registration (full path) | P2 | green | L |
 | CR-004 | Legacy BIP32 account: balance + UTXO state updates after spend | P1 | failing-by-design | M |
 | CT-001 | Document put: deploy a fixture data contract | P1 | not implemented | M |
 | CT-002 | Document put / replace lifecycle | P2 | not implemented | M |
@@ -820,7 +820,7 @@ Counts by priority: **P0: 10**, **P1: 26** (incl. 2 post-Task #15 + 1 env-gated 
 
 #### ID-004 — Identity update: add and disable a key
 - **Priority**: P1
-- **Status**: STUB — deferred to a follow-up PR. The harness's `SeedBackedIdentitySigner` only pre-derives keys for `key_index ∈ 0..DEFAULT_GAP_LIMIT`; signing the next transition with a freshly-issued key needs a `derive_identity_key`-driven cache-injection helper that does not exist yet (mirrors the `ID-flow-009` Blocked entry).
+- **Status**: Not implemented — deferred to a follow-up PR. The harness's `SeedBackedIdentitySigner` only pre-derives keys for `key_index ∈ 0..DEFAULT_GAP_LIMIT`; signing the next transition with a freshly-issued key needs a `derive_identity_key`-driven cache-injection helper that does not exist yet (mirrors the `ID-flow-009` Blocked entry).
 - **Wallet feature exercised**: `wallet/identity/network/update.rs:89` (`update_identity_with_external_signer`).
 - **DET parallel**: `dash-evo-tool/tests/backend-e2e/identity_tasks.rs:188` (`step_add_key`) and `tc_020_identity_mutation_lifecycle`.
 - **Preconditions**: ID-001 helper.
@@ -865,7 +865,7 @@ Counts by priority: **P0: 10**, **P1: 26** (incl. 2 post-Task #15 + 1 env-gated 
 
 #### ID-006 — Refresh and load identity by index
 - **Priority**: P1
-- **Status**: STUB — deferred to a follow-up PR. The "rebuild a fresh `TestWallet` from the same seed and run discovery" path needs a `TestWallet::from_seed_bytes` helper that does not exist today; `load_identity_by_index` itself is exercised by the orphan-recovery branch of `cleanup::sweep_identities_with_seed` but not by a dedicated assertion-bearing test.
+- **Status**: Not implemented — deferred to a follow-up PR. The "rebuild a fresh `TestWallet` from the same seed and run discovery" path needs a `TestWallet::from_seed_bytes` helper that does not exist today; `load_identity_by_index` itself is exercised by the orphan-recovery branch of `cleanup::sweep_identities_with_seed` but not by a dedicated assertion-bearing test.
 - **Wallet feature exercised**: `wallet/identity/network/loading.rs:28` (`load_identity_by_index`); `loading.rs:162` (`refresh_identity`); `discovery.rs:79` (`discover`).
 - **DET parallel**: `dash-evo-tool/tests/backend-e2e/identity_tasks.rs:350` (`tc_025_refresh_identity`); `identity_tasks.rs:420` (`tc_027_load_identity`); `identity_tasks.rs:585` (`tc_031_incremental_address_discovery`).
 - **Preconditions**: ID-001 helper.
@@ -1384,7 +1384,7 @@ implies SPV-off is the default is incorrect.
 
 #### CR-001 — SPV mn-list sync readiness
 - **Priority**: P1
-- **Status**: PASS-pending-validation — Task #15 complete; SPV enabled in the harness (`SpvContextProvider` wired; `harness.rs:200-218` block active). Test body to be written; contract is specified below.
+- **Status**: Pass — `tests/e2e/cases/cr_001_spv_mn_list_sync_readiness.rs`
 - **Wallet feature exercised**: `manager::accessors::spv()` returning a started `SpvRuntime`; mn-list sync internals.
 - **DET parallel**: `dash-evo-tool/tests/backend-e2e/spv_wallet.rs:14` (`test_spv_sync_and_create_wallet`).
 - **Preconditions**: SPV enabled in `harness::E2eContext::build` (block at `harness.rs:200-218` is active).
@@ -1399,7 +1399,7 @@ implies SPV-off is the default is incorrect.
 
 #### CR-002 — Core wallet receive address derivation
 - **Priority**: P1
-- **Status**: PASS-pending-validation — Task #15 complete; SPV-backed harness ready. Test body to be written.
+- **Status**: Not implemented — TBD test file.
 - **Wallet feature exercised**: `wallet/core/wallet.rs:59` (`next_receive_address_for_account`).
 - **DET parallel**: `dash-evo-tool/tests/backend-e2e/core_tasks.rs:14` (`test_tc001_refresh_wallet_info_core_only`).
 - **Preconditions**: CR-001 ready.
@@ -2125,22 +2125,6 @@ becomes a test failure rather than a silent drift.
 - **Estimated complexity**: S
 - **Rationale**: Two facts in the source disagree (docstring vs merge behaviour). One of them is wrong. A test pins which.
 
----
-
-### Found-bug pins (Found-NNN)
-
-Bug-pin cases discovered during a QA-mindset audit of `packages/rs-platform-wallet/`.
-Each entry names the contract violation, the proof shape that would catch it,
-and what the fix should look like. The author of the production fix is a
-separate concern; these entries pin the expected behaviour so the regression
-becomes a test failure rather than a silent drift.
-
-> Found-001..Found-018 live on a sibling branch (`feat/rs-platform-wallet-e2e-cases` →
-> commit `5015e658e8`) and will rejoin this branch at the consolidation step. The
-> entry below is filed against the present branch (`feat/rs-platform-wallet-e2e-cases-pa`)
-> because the audit target — the harness's `SeedBackedIdentitySigner` — was added on this
-> stack and was not yet present when Found-001..018 were drafted.
-
 #### Found-019 — `SeedBackedIdentitySigner` re-hashes `ECDSA_HASH160` keys, double-hashing the lookup so any `ECDSA_HASH160`-typed `IdentityPublicKey` silently misses
 - **Priority**: P2 (bug pin — failure is the proof)
 - **Severity**: HIGH (signer-side correctness bug; identity-key sign / can_sign_with paths fail for one of two key types the impl claims to support)
@@ -2199,7 +2183,7 @@ order. Each wave unlocks the cases listed.
 - Add `derive_identity_key(seed_bytes, network, identity_index, key_index, purpose, security_level) -> IdentityPublicKey` test helper.
 - Add `TestWallet::register_identity_from_addresses(funding: Credits) -> Identity` helper that builds the placeholder, calls `register_from_addresses`, and waits for on-chain visibility.
 - Add `wait_for_identity_balance(identity_id, expected, timeout)` in `framework/wait.rs`.
-- **Unlocks**: ID-001, ID-001c, ID-002, ID-003, ID-004, ID-005, ID-005b, ID-006, ID-006b, DPNS-001, DPNS-001b, DPNS-001c, DPNS-002 (partial), CT-001, DP-001, DP-001b, DP-001c, DP-002, DP-003, TK-001, TK-001b, TK-002, CN-001.
+- **Unlocks**: ID-001, ID-001c, ID-002, ID-002b, ID-003, ID-004, ID-005, ID-005b, ID-006, ID-006b, DPNS-001, DPNS-001b, DPNS-001c, DPNS-002 (partial), CT-001, DP-001, DP-001b, DP-001c, DP-002, DP-003, TK-001, TK-001b, TK-002, CN-001.
 
 ### Wave B — Multi-identity per setup
 - Extend `setup()` to accept `setup_with_n_identities(n: u32) -> SetupGuard { test_wallet, identities: Vec<RegisteredIdentity> }`.
@@ -2219,7 +2203,7 @@ order. Each wave unlocks the cases listed.
 - SPV block in `harness.rs:200-218` is active; `SpvContextProvider` is wired (replaces `TrustedHttpContextProvider`).
 - `SpvHealth::status()` accessor is available in the manager.
 - Core-funded test wallet helper (faucet integration) is ready.
-- **Unlocked**: CR-001, CR-002, CR-003 (all PASS-pending-validation or PASS).
+- **Unlocked**: CR-001 (Pass), CR-003 (Pass), CR-002 (not implemented — test body TBD).
 - **Note**: `PLATFORM_WALLET_E2E_DISABLE_SPV=1` is an operator escape hatch for ChainLock-cycle outages (rust-dashcore #470). It is NOT the default. SPV-on has been the operating mode since v17.
 
 ### Wave G — Token harness extensions
