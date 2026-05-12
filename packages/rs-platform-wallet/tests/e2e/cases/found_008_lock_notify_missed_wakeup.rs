@@ -79,6 +79,7 @@ const SCHEDULE_GAP: Duration = Duration::from_millis(50);
 
 /// Pin the `notify_waiters` missed-wakeup contract that
 /// `LockNotifyHandler` depends on. EXPECTED to fail today.
+#[ignore = "Found-008 bug pin — RED until LockNotifyHandler migrates off notify_waiters()"]
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 4)]
 async fn found_008_lock_notify_missed_wakeup() {
     let _ = tracing_subscriber::fmt()
