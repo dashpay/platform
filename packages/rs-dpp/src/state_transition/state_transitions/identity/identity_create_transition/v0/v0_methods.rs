@@ -54,6 +54,12 @@ impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransitionV0 {
         // Validate public key structure (purpose/security level compatibility)
         // before broadcasting, so invalid combinations are caught client-side
         // rather than being rejected by the network.
+        //
+        // LOCKSTEP: this call is hard-coded to the v0 public-keys-structure
+        // check. If a future v1 basic-structure is introduced for this
+        // transition, both the drive-abci server dispatcher AND this SDK
+        // constructor must be updated together (e.g. by routing through a
+        // versioned `validate_basic_structure` wrapper as IdentityUpdate does).
         let validation_result =
             IdentityPublicKeyInCreation::validate_identity_public_keys_structure(
                 &public_keys,

@@ -2000,18 +2000,20 @@ impl Strategy {
                                             rng.gen_range(0..available_existing_addresses.len());
                                         let existing_address =
                                             available_existing_addresses.swap_remove(idx);
-                                        // Update the balance for this existing address
+                                        // Update the balance for this existing address.
+                                        // Use the effective (committed + same-block staged)
+                                        // balance so subsequent recipients within the same
+                                        // block accumulate on top of prior deltas instead
+                                        // of overwriting them. Mirrors the explicit-output
+                                        // branch above.
                                         if let Some((nonce, balance)) =
                                             current_addresses_with_balance
-                                                .addresses_with_balance
-                                                .get(&existing_address)
+                                                .get_effective(&existing_address)
                                         {
+                                            let new_entry = (*nonce, balance + amount_per_output);
                                             current_addresses_with_balance
                                                 .addresses_in_block_with_new_balance
-                                                .insert(
-                                                    existing_address,
-                                                    (*nonce, balance + amount_per_output),
-                                                );
+                                                .insert(existing_address, new_entry);
                                         }
                                         existing_address
                                     } else {
@@ -2426,12 +2428,20 @@ impl Strategy {
                                     break;
                                 }
                                 match step {
-                                    AddressFundsFeeStrategyStep::ReduceOutput(_index) => {
-                                        // For ReduceOutput, the output amount must cover the fee
-                                        // Since we're distributing total_input evenly, check if
-                                        // the output amount is enough
-                                        let output_amount =
-                                            total_input / output_count.max(1) as Credits;
+                                    AddressFundsFeeStrategyStep::ReduceOutput(index) => {
+                                        // For ReduceOutput, the output amount at the targeted
+                                        // index must cover the fee. Outputs are distributed
+                                        // evenly with the remainder going to output 0, so the
+                                        // gross amount at index 0 differs from the rest when
+                                        // total_input is not evenly divisible.
+                                        let output_count_credits = output_count.max(1) as Credits;
+                                        let amount_per_output = total_input / output_count_credits;
+                                        let remainder = total_input % output_count_credits;
+                                        let output_amount = if *index == 0 {
+                                            amount_per_output + remainder
+                                        } else {
+                                            amount_per_output
+                                        };
                                         if output_amount >= remaining_fee_to_check {
                                             remaining_fee_to_check = 0;
                                             fee_can_be_covered = true;

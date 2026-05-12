@@ -57,6 +57,12 @@ impl IdentityCreditTransferToAddressesTransitionMethodsV0
 
         // Validate structure before .into() conversion and signing, since this transition
         // uses sign_external on the StateTransition rather than setting witnesses on the V0 struct.
+        //
+        // LOCKSTEP: this call resolves to the v0 structure check. If a future
+        // v1 basic-structure is introduced for this transition, both the
+        // drive-abci server dispatcher AND this SDK constructor must be
+        // updated together (e.g. by routing through a versioned
+        // `validate_basic_structure` wrapper as IdentityUpdate does).
         let validation_result = transition_v0.validate_structure(platform_version);
         if let Some(error) = first_consensus_error_as_protocol_error(validation_result) {
             return Err(error);

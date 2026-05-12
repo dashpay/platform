@@ -76,6 +76,14 @@ impl IdentityCreateFromAddressesTransitionMethodsV0 for IdentityCreateFromAddres
         // Validate public key structure (purpose/security level compatibility)
         // before broadcasting, so invalid combinations are caught client-side
         // rather than being rejected by the network.
+        //
+        // LOCKSTEP: both this call and the
+        // `validate_structure_without_input_witnesses` call below are hard-coded
+        // to the v0 basic-structure checks. If a future v1 basic-structure is
+        // introduced for this transition, both the drive-abci server dispatcher
+        // AND this SDK constructor must be updated together (e.g. by routing
+        // through a versioned `validate_basic_structure` wrapper as
+        // IdentityUpdate does).
         let validation_result =
             IdentityPublicKeyInCreation::validate_identity_public_keys_structure(
                 &public_keys,
@@ -90,7 +98,7 @@ impl IdentityCreateFromAddressesTransitionMethodsV0 for IdentityCreateFromAddres
 
         // Pre-signing structure check: validate everything except the witness
         // count, so structural errors fail fast before performing any async
-        // signer work.
+        // signer work. See the LOCKSTEP note above.
         let pre_validation_result = identity_create_from_addresses_transition
             .validate_structure_without_input_witnesses(platform_version);
         if let Some(error) = first_consensus_error_as_protocol_error(pre_validation_result) {

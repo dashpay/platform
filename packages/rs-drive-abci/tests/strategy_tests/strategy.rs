@@ -2644,8 +2644,16 @@ impl NetworkStrategy {
                 break;
             }
             match step {
-                AddressFundsFeeStrategyStep::ReduceOutput(_index) => {
-                    let output_amount = amount_per_output;
+                AddressFundsFeeStrategyStep::ReduceOutput(index) => {
+                    // Output 0 receives the remainder so the transition balances;
+                    // other outputs get exactly amount_per_output. Use the actual
+                    // gross amount for the targeted index when checking whether
+                    // the fee can be absorbed.
+                    let output_amount = if *index == 0 {
+                        amount_per_output + remainder
+                    } else {
+                        amount_per_output
+                    };
                     if output_amount >= remaining_fee_to_check {
                         remaining_fee_to_check = 0;
                         fee_can_be_covered = true;

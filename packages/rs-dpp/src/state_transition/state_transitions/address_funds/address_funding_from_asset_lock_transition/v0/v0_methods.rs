@@ -48,9 +48,26 @@ impl AddressFundingFromAssetLockTransitionMethodsV0 for AddressFundingFromAssetL
         // Pre-signing structure check: validate everything except the witness
         // count, so structural errors fail fast before performing any async
         // signer work.
+        //
+        // LOCKSTEP: this call is hard-coded to the v0 basic-structure check.
+        // If a future v1 basic-structure is introduced for this transition,
+        // both the drive-abci server dispatcher AND this SDK constructor must
+        // be updated together (e.g. by routing through a versioned
+        // `validate_basic_structure` wrapper as IdentityUpdate does).
         let pre_validation_result =
             address_funding_transition.validate_structure_without_input_witnesses(platform_version);
         if let Some(error) = first_consensus_error_as_protocol_error(pre_validation_result) {
+            return Err(error);
+        }
+
+        // Validate the asset lock proof structure client-side before signing
+        // so malformed proofs are caught locally rather than being rejected by
+        // the network during basic-structure validation. Mirrors the symmetric
+        // check in IdentityCreateTransitionV0::try_from_identity_with_signer.
+        let asset_lock_validation_result = address_funding_transition
+            .asset_lock_proof
+            .validate_structure(platform_version)?;
+        if let Some(error) = first_consensus_error_as_protocol_error(asset_lock_validation_result) {
             return Err(error);
         }
 

@@ -62,6 +62,12 @@ impl AddressCreditWithdrawalTransitionMethodsV0 for AddressCreditWithdrawalTrans
         // Pre-signing structure check: validate everything except the witness
         // count, so structural errors fail fast before performing any async
         // signer work.
+        //
+        // LOCKSTEP: this call is hard-coded to the v0 basic-structure check.
+        // If a future v1 basic-structure is introduced for this transition,
+        // both the drive-abci server dispatcher AND this SDK constructor must
+        // be updated together (e.g. by routing through a versioned
+        // `validate_basic_structure` wrapper as IdentityUpdate does).
         let pre_validation_result = address_credit_withdrawal_transition
             .validate_structure_without_input_witnesses(platform_version);
         if let Some(error) = first_consensus_error_as_protocol_error(pre_validation_result) {
