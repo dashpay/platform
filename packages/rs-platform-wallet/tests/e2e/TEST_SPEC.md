@@ -8,6 +8,11 @@ presumably enumerate the joy of doing it.
 
 ## Changelog
 
+- **v3.1-dev (commit `16636f01c0`)** — V27-007 fixed; Found-024 regression pin added:
+  - V27-007 (`PlatformAddressWallet::transfer` ledger pollution — foreign output balances written to source wallet) fixed with ownership guard `account.contains_platform_address(&p2pkh)` at `transfer.rs:160`. Defensive identical guard added to `withdrawal.rs`. Canonical pattern already present at `fund_from_asset_lock.rs:77`.
+  - PA-004b and PA-009: `#[ignore]` removed; both are now passing green.
+  - Found-024 added to Found-bug-pins matrix (P1, passing-as-regression) as the regression pin for V27-007.
+
 - **v3.1-dev (PR #3609 merged)** — TEST_SPEC reflects post-V20 state:
   - TK-013, PA-001b, PA-005b: previously failing or blocked → PASS after fix
   - TK-002, CR-003: stabilised
@@ -230,9 +235,10 @@ Status legend: **green** = test file present, body has real assertions, runnable
 | Found-021 | `TransactionRecord::update_context` silently drops `InstantLock` state when tx transitions `InstantSend` → `InBlock` | P2 | not implemented | M |
 | Found-022 | `AssetLockBuilder::build` marks change-pool index used before `build_asset_lock` can fail, contradicting doc-comment guarantee | P2 | not implemented | S |
 | Found-023 | `ManagedAccountCollection` lacks a `find_transaction_record(&Txid)` helper — every consumer rolls its own incomplete loop | P2 | not implemented | S |
+| Found-024 | `PlatformAddressWallet::transfer` writes foreign output-address balances to local ledger (no ownership check) | P1 | passing-as-regression | S |
 
-<!-- merge note: theirs' counts already reflect the expanded TK section + ID-007 (93 total; 74 baseline). cr004-spec adds the CR-004 row (P1, env-gated FAILING-by-design), so P1 and total each +1: P1: 25, baseline: 75, total: 94. Kept theirs' "post-Task #15" annotations and noted CR-004 as the env-gated entry under P1. ID-002b (P1, not implemented) added: P1: 26, baseline: 76, total: 95. AL-001 (P1, not implemented) added: P1: 27, baseline: 77, total: 96. upstream-audit adds Found-021, Found-022, Found-023 (P2, not implemented): P2 +3, Found-bug pins 18→21, total 96→99. -->
-Counts by priority: **P0: 10**, **P1: 27** (incl. 2 post-Task #15 + 1 failing (CR-004) + ID-002b + AL-001), **P2: 61** (incl. 2 post-Task #15, 1 failing, 21 Found-bug pins), **DEFERRED: 1** (99 total index entries; 77 baseline + 21 Found-bug pins + 1 deferred placeholder).
+<!-- merge note: theirs' counts already reflect the expanded TK section + ID-007 (93 total; 74 baseline). cr004-spec adds the CR-004 row (P1, env-gated FAILING-by-design), so P1 and total each +1: P1: 25, baseline: 75, total: 94. Kept theirs' "post-Task #15" annotations and noted CR-004 as the env-gated entry under P1. ID-002b (P1, not implemented) added: P1: 26, baseline: 76, total: 95. AL-001 (P1, not implemented) added: P1: 27, baseline: 77, total: 96. upstream-audit adds Found-021, Found-022, Found-023 (P2, not implemented): P2 +3, Found-bug pins 18→21, total 96→99. Found-024 (P1, passing-as-regression): P1 +1, Found-bug pins 21→22, total 99→100. -->
+Counts by priority: **P0: 10**, **P1: 28** (incl. 2 post-Task #15 + 1 failing (CR-004) + ID-002b + AL-001 + Found-024), **P2: 61** (incl. 2 post-Task #15, 1 failing, 21 Found-bug pins), **DEFERRED: 1** (100 total index entries; 77 baseline + 22 Found-bug pins + 1 deferred placeholder).
 
 ### Platform Addresses (PA)
 
@@ -465,7 +471,7 @@ Counts by priority: **P0: 10**, **P1: 27** (incl. 2 post-Task #15 + 1 failing (C
 
 #### PA-004b — Sweep dust threshold boundary triplet
 - **Priority**: P2
-- **Status**: IMPLEMENTED — passing (BELOW-gate sub-case only). The AT/JUST-ABOVE sub-cases collapse onto "broadcast attempted, broadcast failed" against the testnet fee market (chain-time fee ~`15_000_000` ≫ active gate of `100_000`); pinning them would leave a permanently-stuck testnet orphan with no recovery path. PA-004 already covers the well-above-fee path with `100_000_000`. The ACTIVE sweep gate is `min_input_amount` (`100_000`), not the `SWEEP_DUST_THRESHOLD = 5_000_000` referenced in the original scenario text — corrected at the implementation site.
+- **Status**: IMPLEMENTED — passing (BELOW-gate sub-case only). The AT/JUST-ABOVE sub-cases collapse onto "broadcast attempted, broadcast failed" against the testnet fee market (chain-time fee ~`15_000_000` ≫ active gate of `100_000`); pinning them would leave a permanently-stuck testnet orphan with no recovery path. PA-004 already covers the well-above-fee path with `100_000_000`. The ACTIVE sweep gate is `min_input_amount` (`100_000`), not the `SWEEP_DUST_THRESHOLD = 5_000_000` referenced in the original scenario text — corrected at the implementation site. Note: this test was previously blocked by V27-007 (`PlatformAddressWallet::transfer` ledger pollution), which caused `total_credits()` to return the bank's full balance on the BELOW-gate wallet. V27-007 fixed at `16636f01c0`; pinned as Found-024.
 - **Wallet feature exercised**: `framework/cleanup.rs` sweep gate at `min_input_amount` (active value: `100_000` credits via `PlatformVersion::latest().dpp.state_transitions.address_funds.min_input_amount`).
 - **DET parallel**: none.
 - **Preconditions**: bank-funded test wallet × 3 (one per boundary).
@@ -590,7 +596,7 @@ Counts by priority: **P0: 10**, **P1: 27** (incl. 2 post-Task #15 + 1 failing (C
 
 #### PA-009 — `min_input_amount` boundary triplet for cleanup
 - **Priority**: P2
-- **Status**: IMPLEMENTED — passing (BELOW-gate sub-case + version-source assertion). The unique contribution vs PA-004b is the version-source pin: the cleanup gate value equals `PlatformVersion::latest().dpp.state_transitions.address_funds.min_input_amount`, and the gate is positive. AT/JUST-ABOVE sub-cases are degenerate against the testnet fee market — see PA-004b status.
+- **Status**: IMPLEMENTED — passing (BELOW-gate sub-case + version-source assertion). The unique contribution vs PA-004b is the version-source pin: the cleanup gate value equals `PlatformVersion::latest().dpp.state_transitions.address_funds.min_input_amount`, and the gate is positive. AT/JUST-ABOVE sub-cases are degenerate against the testnet fee market — see PA-004b status. Note: previously blocked by V27-007 (same root cause as PA-004b); fixed at `16636f01c0` (Found-024).
 - **Wallet feature exercised**: `framework/cleanup.rs::min_input_amount`, sourced from `platform_version.dpp.state_transitions.address_funds.min_input_amount`. Test reads it via the new `framework/cleanup.rs::cleanup_dust_gate` accessor.
 - **DET parallel**: none.
 - **Preconditions**: bank-funded harness; test wallet × 3, each with a precisely tuned balance.
@@ -2371,6 +2377,36 @@ becomes a test failure rather than a silent drift.
 - **Estimated complexity**: S (a short upstream addition; the downstream test is also S once the upstream helper exists).
 - **Rationale**: Every consumer of the asset-lock proof flow needs this lookup. Without a collection-wide helper, the default "just use BIP-44" shortcut is both the obvious pattern and the wrong one for CoinJoin / BIP-32-funded wallets. A missing ergonomic helper is a footgun that becomes a bug in every downstream consumer that doesn't know to iterate all account types. Filed from Marvin's upstream audit (audit Finding #5, LOW).
 
+#### Found-024 — `PlatformAddressWallet::transfer` writes foreign output-address balances to local ledger (no ownership check)
+- **Priority**: P1 (real shipped bug; blocked PA-004b and PA-009c in CI; surfaces in production wallets sending credits to any foreign Platform address)
+- **Severity**: HIGH (local ledger corruption; `total_credits()` returns an arbitrarily inflated value; downstream sweep and dust-gate paths act on bad data)
+- **Owner**: `rs-platform-wallet` (downstream wrapper bug — not upstream `key-wallet` or SDK)
+- **Status**: passing-as-regression. Fix landed at `16636f01c0` (V27-007). Tests PA-004b and PA-009 unblocked; `#[ignore]` removed at the same commit.
+- **Wallet feature exercised**: `src/wallet/platform_addresses/transfer.rs:160` — the post-broadcast ledger-update loop inside `PlatformAddressWallet::transfer`. Canonical sibling guard (the pattern this fix mirrors): `src/wallet/platform_addresses/fund_from_asset_lock.rs:77`.
+- **Suspected bug** (now confirmed, fixed at `16636f01c0`):
+  - The Dash Platform SDK returns post-transition state for every address touched by an `IdentityCreditTransferToAddresses` transition — both inputs (source) and outputs (recipients), regardless of which wallet owns them.
+  - `transfer.rs` iterated `address_infos` and called `account.set_address_credit_balance` for every entry, with no ownership check.
+  - When a source wallet transferred credits to a foreign address (e.g. the bank wallet's primary receive address), the response included that foreign address's post-credit balance.
+  - Without the ownership guard, the source wallet staged that foreign balance into its own local `address_balances` ledger.
+  - `wallet.total_credits()` then returned the sum of the source wallet's own balances plus the foreign address's balance — inflated by up to the foreign wallet's full credit holdings.
+  - Marvin's investigation chain: QA-V40-004 → QA-V42-004 → QA-V43-001 → QA-V44-004 → QA-V45-010 (the version this commit closes). See also V27-007 in §7 (Known Issues).
+- **Preconditions**: source wallet has at least one platform address with a credit balance; at least one recipient address in the transfer is NOT in any of the source wallet's platform-address pools.
+- **Scenario (regression-test shape)**:
+  1. Construct a `PlatformAddressWallet` with a single owned address holding `1_000` credits.
+  2. Mock the SDK (or use the post-broadcast path's pre-guard predicate directly) to return a transfer response that includes a foreign address — e.g. the bank's primary receive address — with `9_680_000_000_000` post-credit balance.
+  3. Call `transfer(...)` to send `500` credits to that foreign address.
+  4. After the call returns, query `wallet.total_credits()` and `wallet.address_credit_balance(&bank_addr)`.
+- **Assertions**:
+  - `wallet.total_credits()` ≈ `500` (source balance of `1_000` minus the `500` sent minus fee). NOT `9_680_000_000_500` or any value incorporating the foreign address's balance.
+  - `wallet.address_credit_balance(&bank_addr) == None` — the bank's address was never in this wallet's pool and must not appear in its local ledger.
+  - **Today's behaviour (PASS)**: assertions hold because `account.contains_platform_address(&p2pkh)` gates the `set_address_credit_balance` call.
+  - **Pre-fix behaviour (FAIL — what this regression pin tests against)**: `total_credits()` returned the sum including the foreign balance; assertions would fail. PA-004b / PA-009 saw the bank's full ~40.8 tDASH where the dust-residual wallet should have shown `1_000` credits.
+- **Expected**: PASS today. FAIL if V27-007 regresses (i.e. the ownership guard is removed or the ledger-update loop is refactored without re-applying the guard).
+- **Actual (post-fix)**: PASS.
+- **Harness extensions required**: an SDK mock that returns a multi-address transfer response including at least one foreign address, or a direct unit test that calls the post-broadcast path's ledger-update predicate without a live SDK. The latter is the recommended shape — pure unit test, ~80 LOC, no network dependency. Defensive guard also added to `withdrawal.rs:141` for consistency; the analogous guard was already present at `fund_from_asset_lock.rs:77`.
+- **Estimated complexity**: S (~80 LOC unit test).
+- **Rationale**: The bug shipped in production via the FFI / Swift SDK. Transfer-to-a-foreign-Platform-address is the most common cross-wallet flow (bank to user, user to counterparty). Without this regression pin, any future refactor of the ledger-update loop is one careless line away from re-introducing the same corruption — silently, because `total_credits()` has no self-consistency check against on-chain state.
+
 ---
 
 ## 4. Harness extension roadmap
@@ -2516,11 +2552,9 @@ Do not modify production code in this section — these are documentation entrie
 
 ### V27-007 — `PlatformAddressWallet::transfer` ledger pollution (production bug)
 
-**Status**: tracked, fix deferred. Tests `pa_004b_sweep_below_dust_gate_no_broadcast`
-and `pa_009_cleanup_gate_tracks_platform_version_min_input_amount` are `#[ignore]`'d
-with reason `"FAILING — production bug in PlatformAddressWallet::transfer pollutes local ledger with non-owned addresses. See TEST_SPEC.md (V27-007) and TODO comment below."` — they run under `cargo test -- --ignored` and fail by design until the production fix lands.
+**Status**: FIXED at `16636f01c0`. Pinned as regression in Found-024 (§3 Found-bug pins). Tests `pa_004b_sweep_below_dust_gate_no_broadcast` and `pa_009_cleanup_gate_tracks_platform_version_min_input_amount` had their `#[ignore]` removed at the same commit and are now passing. The investigation chain closed at QA-V45-010.
 
-**Expected failure mode** (PA-004b and PA-009): the `assert_eq!(addr_1_residual, TARGET_RESIDUAL, ...)` assertion panics because `total_credits()` returns the bank's full balance (~40.8 tDASH) instead of the wallet's actual residual (`TARGET_RESIDUAL = 1_000`). Any failure at a different assertion or with a different value is a regression.
+**Historical failure mode** (PA-004b and PA-009, pre-fix): the `assert_eq!(addr_1_residual, TARGET_RESIDUAL, ...)` assertion panicked because `total_credits()` returned the bank's full balance (~40.8 tDASH) instead of the wallet's actual residual (`TARGET_RESIDUAL = 1_000`). Any recurrence of that failure pattern is a regression of V27-007 and will be caught by the Found-024 regression pin.
 
 **Bug**: `PlatformAddressWallet::transfer` at
 `packages/rs-platform-wallet/src/wallet/platform_addresses/transfer.rs:160` calls
