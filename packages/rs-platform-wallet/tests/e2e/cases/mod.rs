@@ -19,6 +19,7 @@ pub mod found_008_lock_notify_missed_wakeup;
 pub mod found_012_account_type_tunnel_vision;
 pub mod found_013_recover_asset_lock_silent_failure;
 pub mod found_024_transfer_foreign_pollution;
+pub mod found_025_address_sync_silent_discard;
 pub mod id_001_register_identity_from_addresses;
 pub mod id_002_top_up_identity;
 pub mod id_002b_asset_lock_top_up;
