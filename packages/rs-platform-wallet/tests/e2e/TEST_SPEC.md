@@ -236,9 +236,10 @@ Status legend: **green** = test file present, body has real assertions, runnable
 | Found-022 | `AssetLockBuilder::build` marks change-pool index used before `build_asset_lock` can fail, contradicting doc-comment guarantee | P2 | not implemented | S |
 | Found-023 | `ManagedAccountCollection` lacks a `find_transaction_record(&Txid)` helper — every consumer rolls its own incomplete loop | P2 | not implemented | S |
 | Found-024 | `PlatformAddressWallet::transfer` writes foreign output-address balances to local ledger (no ownership check) | P1 | passing-as-regression | S |
+| Found-025 | `rs-sdk` address sync silently discards balance update when address is not yet in `pending_addresses` snapshot (TK-suite flake root cause) | P1 | not implemented | M |
 
-<!-- merge note: theirs' counts already reflect the expanded TK section + ID-007 (93 total; 74 baseline). cr004-spec adds the CR-004 row (P1, env-gated FAILING-by-design), so P1 and total each +1: P1: 25, baseline: 75, total: 94. Kept theirs' "post-Task #15" annotations and noted CR-004 as the env-gated entry under P1. ID-002b (P1, not implemented) added: P1: 26, baseline: 76, total: 95. AL-001 (P1, not implemented) added: P1: 27, baseline: 77, total: 96. upstream-audit adds Found-021, Found-022, Found-023 (P2, not implemented): P2 +3, Found-bug pins 18→21, total 96→99. Found-024 (P1, passing-as-regression): P1 +1, Found-bug pins 21→22, total 99→100. -->
-Counts by priority: **P0: 10**, **P1: 28** (incl. 2 post-Task #15 + 1 failing (CR-004) + ID-002b + AL-001 + Found-024), **P2: 61** (incl. 2 post-Task #15, 1 failing, 21 Found-bug pins), **DEFERRED: 1** (100 total index entries; 77 baseline + 22 Found-bug pins + 1 deferred placeholder).
+<!-- merge note: theirs' counts already reflect the expanded TK section + ID-007 (93 total; 74 baseline). cr004-spec adds the CR-004 row (P1, env-gated FAILING-by-design), so P1 and total each +1: P1: 25, baseline: 75, total: 94. Kept theirs' "post-Task #15" annotations and noted CR-004 as the env-gated entry under P1. ID-002b (P1, not implemented) added: P1: 26, baseline: 76, total: 95. AL-001 (P1, not implemented) added: P1: 27, baseline: 77, total: 96. upstream-audit adds Found-021, Found-022, Found-023 (P2, not implemented): P2 +3, Found-bug pins 18→21, total 96→99. Found-024 (P1, passing-as-regression): P1 +1, Found-bug pins 21→22, total 99→100. Found-025 (P1, not implemented): P1 +1, Found-bug pins 22→23, total 100→101. -->
+Counts by priority: **P0: 10**, **P1: 29** (incl. 2 post-Task #15 + 1 failing (CR-004) + ID-002b + AL-001 + Found-024 + Found-025), **P2: 61** (incl. 2 post-Task #15, 1 failing, 21 Found-bug pins), **DEFERRED: 1** (101 total index entries; 77 baseline + 23 Found-bug pins + 1 deferred placeholder).
 
 ### Platform Addresses (PA)
 
@@ -2407,6 +2408,41 @@ becomes a test failure rather than a silent drift.
 - **Estimated complexity**: S (~80 LOC unit test).
 - **Rationale**: The bug shipped in production via the FFI / Swift SDK. Transfer-to-a-foreign-Platform-address is the most common cross-wallet flow (bank to user, user to counterparty). Without this regression pin, any future refactor of the ledger-update loop is one careless line away from re-introducing the same corruption — silently, because `total_credits()` has no self-consistency check against on-chain state.
 
+#### Found-025 — `rs-sdk` address sync silently discards balance update when address is not yet in `pending_addresses` snapshot (TK-suite flake root cause)
+- **Priority**: P1 (deterministic under parallelism; affects every test that funds a fresh address)
+- **Severity**: HIGH (silent data loss on the critical path of every parallel TK test; reproduced on first run of `cargo test -p platform-wallet --test e2e -- --ignored cases::tk_`)
+- **Owner**: upstream `rs-sdk` (not `rs-platform-wallet`). Fix location: `packages/rs-sdk/src/platform/address_sync/mod.rs:619`.
+- **Status**: Not implemented — TBD test file `tests/e2e/cases/found_025_address_sync_silent_discard.rs`. Will be RED-by-design until upstream fix lands.
+- **Wallet feature exercised**: `rs-sdk::platform::address_sync::AddressSyncProvider::incremental_catch_up` (specifically the `address_lookup.get(&addr_bytes)` filter at line 619); transitively `next_unused_receive_address` → `pending_addresses()` registration ordering in the SDK's address-monitoring provider.
+- **Suspected bug**: The SDK builds `address_lookup` (a `HashMap<addr_bytes, address_tag>`) **once at sync entry** by snapshotting `provider.pending_addresses()`. If the recipient address was allocated by `next_unused_receive_address()` AFTER the snapshot but BEFORE the next sync cycle, the SDK's filter discards a perfectly-valid balance update returned by the DAPI proof. The address bytes ARE in the response payload — Marvin verified this in the live trace at log line 27750 of the Phase 3 trace log. The discard is silent: no `warn!`, no `error!`, no signal to the caller that data was dropped.
+- **Preconditions**: an address freshly allocated via `next_unused_receive_address` (or sibling), followed by a funding broadcast that lands on chain BEFORE the address is registered in `pending_addresses`.
+- **Scenario** (regression-pin shape):
+  1. Allocate a fresh address `addr` from a wallet's HD pool via `next_unused_receive_address`.
+  2. DO NOT call any sync-registration helper that would put `addr` into `pending_addresses` (the bug is that callers must remember to do this themselves; the SDK should do it for them).
+  3. Fund `addr` via a real broadcast OR a synthetic balance entry that the SDK's compacted-response path would handle.
+  4. Call `sync_balances`.
+  5. Assert `addresses_with_balances()` shows `addr` with the funded balance.
+- **Assertions**:
+  - `addresses_with_balances().get(&addr) == Some(funded_amount)`.
+  - **Today's behaviour (FAIL)**: `addresses_with_balances().get(&addr) == None` because the SDK's `incremental_catch_up` discarded the balance update.
+  - **After fix (PASS)**: the SDK either (i) re-registers `addr` into `pending_addresses` atomically inside `next_unused_receive_address`, or (ii) `incremental_catch_up` falls back to a full re-snapshot when it sees an address it doesn't recognise, or (iii) emits a typed signal so callers can re-issue the registration before the next sync.
+- **Expected**: PASS after upstream fix.
+- **Actual** (today): FAIL — pin is correctly RED-by-design.
+- **Harness extensions required**: none if the test drives the SDK directly via a synthetic compacted response (preferred); OR a Core-funded test wallet if the test exercises the path through `bank.fund_address` (gated under `PLATFORM_WALLET_E2E_BANK_CORE_GATE`).
+- **Estimated complexity**: M (~150-200 LOC; needs SDK introspection or e2e setup).
+- **Rationale**: This is the load-bearing finding of the TK-flake investigation. Without the pin, future SDK refactors can re-introduce the same race silently. The chain-confirmation gate (`wait_for_address_nonces_chain_confirmed`) is a misleading proxy — it confirms the SENDER side, not the recipient's balance visibility. Found-025 pins the actual contract: address-sync must surface balance updates for any address the SDK's HD-pool has emitted.
+- **Cross-reference**: Found-024 (above) surfaced in the same bank-funding diagnostic investigation (Marvin Phase 3, SHA `5cca0fbd1a`). Found-024 is the `rs-platform-wallet` ledger-corruption side; Found-025 is the `rs-sdk` address-sync silent-discard side. See also V28-303 in §7 (Known Issues) — the `wait_for_balance` timeouts attributed there to DAPI contention are a symptom of this race under parallelism.
+
+##### Secondary findings from Marvin Phase 3 (filed under Found-025, not as standalone entries)
+
+**QA-P3-002 (MEDIUM) — `wait_for_address_nonces_chain_confirmed` is a false proxy for recipient balance visibility**
+
+Location: `tests/e2e/framework/bank.rs:526-561` and `framework/wait.rs:573-650`. This is a test-harness defect, not a production bug. The helper confirms that the SENDER's nonce advanced on-chain (the funding transaction was included in a block). It does NOT confirm that the RECIPIENT's balance is visible in the SDK's address-sync layer — which is precisely the gap Found-025 exploits. Under parallelism, the nonce confirmation completes while the SDK's snapshot for that sync cycle is already stale, giving tests false confidence that funding is complete. Severity MEDIUM (affects test reliability, not production). Fix: after the nonce confirmation, also poll `addresses_with_balances()` on the recipient until the expected balance appears, with a bounded timeout. This is a framework fix, not a spec pin.
+
+**QA-P3-003 (LOW) — one-off `path segment not found in proof layer` grovedb error logged at DEBUG instead of WARN**
+
+Location: `rs-sdk` (production side). A GroveDB path-not-found condition during proof verification is logged at DEBUG level with no proof-height or DAPI endpoint context. Should be WARN with structured fields (`proof_height`, `endpoint`, `path`). Severity LOW (observability gap, not data corruption). Not filed as a standalone Found-* entry — too low severity to warrant a regression pin; noted here so a future observability pass can pick it up.
+
 ---
 
 ## 4. Harness extension roadmap
@@ -2629,6 +2665,8 @@ wait_for_balance timed out after 60s — addr_src balance never reached FUNDING_
 ```
 
 This is a contention symptom: eight concurrent tests competing for DAPI bandwidth and bank-wallet nonce slots delay the funding broadcast confirmation beyond the per-step `STEP_TIMEOUT = Duration::from_secs(60)`.
+
+**Note on TK-suite flakes**: Marvin's Phase 3 reproduction (SHA `5cca0fbd1a`) identified that the `wait_for_balance` timeout pattern in TK tests has a deeper root cause than pure DAPI contention. Found-025 (§3) documents the load-bearing mechanism: the `rs-sdk` `incremental_catch_up` filter at `packages/rs-sdk/src/platform/address_sync/mod.rs:619` silently discards balance updates for freshly-allocated addresses that were not in the `pending_addresses` snapshot at sync entry. The timeout is the observable symptom; the SDK's silent discard is the cause. QA-V28-403 (raise `STEP_TIMEOUT`) is still a valid mitigation for pure contention cases, but TK-suite flakes should be assumed to have the Found-025 race until the upstream fix lands.
 
 **Claiming "V28-303 fixes PA-003" or "PA-003 first time passing" is wrong.** V28-303 narrows the failure surface (one deterministic failure mode removed) but does not green-light PA-003 in standard CI.
 
