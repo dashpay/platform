@@ -150,8 +150,8 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 })
                 .await
                 .map_err(|e| {
-                    // Map coin-selection failures to `NoSpendableInputs`. String-match pinned by
-                    // `builder_error_text_contract_for_no_inputs`.
+                    // Map coin-selection failures to `NoSpendableInputs`. The string-match is
+                    // brittle against upstream rephrasing and is currently unpinned by tests.
                     // TODO(typed-wrapper): drop once upstream exposes `SelectionError` typed via BuilderError.
                     let msg = e.to_string();
                     if msg.contains("Insufficient funds") || msg.contains("No UTXOs available") {
@@ -265,12 +265,17 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
 
 #[cfg(test)]
 mod tests {
-    //! `broadcast_transaction` pass-through contract.
+    //! Broadcast and `send_to_addresses` contracts.
     //!
-    //! Pins that the wrapper does not transform `Err` or modify the success
-    //! result — the `Txid` returned by the broadcaster is forwarded unchanged.
-    //! The higher-level `send_to_addresses` rollback contract (#3466) is not
-    //! covered here; pinning it would require live wallet fixtures.
+    //! Pins:
+    //! - `broadcast_transaction` forwards the broadcaster's `Ok`/`Err` unchanged.
+    //! - Concurrent `send_to_addresses` on the same wallet handle resolves via
+    //!   the reservation set: the loser short-circuits with `NoSpendableInputs`
+    //!   before reaching the broadcaster.
+    //! - A broadcast failure releases the reservation so a retry sees the same
+    //!   UTXO as spendable again.
+    //! - An empty spendable snapshot (e.g. all UTXOs reserved) maps to
+    //!   `NoSpendableInputs` via the early-exit guard.
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
@@ -673,10 +678,12 @@ mod tests {
         }
     }
 
-    /// Pins the upstream error text the production string-match in
-    /// `send_to_addresses` depends on. If `key-wallet` ever rephrases
-    /// its coin-selection errors, this test breaks loudly so the matcher
-    /// can be updated (or replaced with typed `SelectionError` matching).
+    /// Pins the early-exit guard: when the spendable snapshot is empty
+    /// (e.g. all UTXOs reserved by in-flight broadcasts), `send_to_addresses`
+    /// surfaces `NoSpendableInputs` without invoking the builder.
+    ///
+    /// Note: the upstream coin-selection string-match in `send_to_addresses`
+    /// is not exercised here — that path is currently unpinned.
     #[tokio::test]
     async fn builder_error_text_contract_for_no_inputs() {
         use key_wallet::account::account_type::StandardAccountType;
@@ -685,20 +692,10 @@ mod tests {
         let broadcaster: Arc<dyn TransactionBroadcaster> = Arc::new(FailingBroadcaster);
         let core = make_core_wallet_for_manager(wm, wallet_id, broadcaster);
 
-        // Drain the UTXO by marking it spent via a successful reservation then
-        // never releasing, simulating a zero-spendable wallet. We verify the
-        // production error-message contract by checking `send_to_addresses`
-        // surfaces `NoSpendableInputs` when the builder returns no-inputs.
-        //
-        // The simplest way: call `send_to_addresses` on a wallet whose only
-        // UTXO has been removed. We rebuild with zero UTXOs by using the
-        // `build_funded_wallet_manager(0)` path — but that fails UTXO height.
-        // Instead, verify directly that `NoSpendableInputs` is mapped when
-        // the spendable set is empty before building (the early-exit guard).
         let outputs = vec![(recipient.clone(), 100_000)];
 
-        // Reserve the wallet's only outpoint externally to make the spendable
-        // set empty for the next caller. Use the reservation API directly.
+        // Reserve the wallet's only outpoint so the spendable snapshot is
+        // empty for the next caller, exercising the early-exit guard.
         let outpoint = OutPoint::new(Txid::from_byte_array([7u8; 32]), 0);
         let _guard = core.reservations.reserve(vec![outpoint]);
 
