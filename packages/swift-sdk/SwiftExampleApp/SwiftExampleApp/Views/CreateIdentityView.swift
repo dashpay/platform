@@ -36,6 +36,22 @@ struct CreateIdentityView: View {
     /// docstring; kept here so the conversion logic stays local.
     private static let creditsPerDash: UInt64 = 100_000_000_000
 
+    /// Duffs per DASH (1e8) — Core-side scale, used by the Core-funded
+    /// identity path.
+    private static let duffsPerDash: UInt64 = 100_000_000
+
+    /// Protocol minimum asset-lock funding for an identity create.
+    /// Mirrors `required_asset_lock_duff_balance_for_processing_start_for_identity_create`
+    /// in `rs-platform-version` (200,000 duffs / 0.002 DASH, stable
+    /// across v1/v2/v3). Submitting below this gets rejected by
+    /// Platform's validation.
+    private static let minIdentityFundingDuffs: UInt64 = 200_000
+
+    /// Default funding amount pre-filled into the field for the Core
+    /// path. Equal to the protocol minimum; users dial up if they want
+    /// more headroom on the resulting identity's initial credit balance.
+    private static let defaultCoreFundingDuffs: UInt64 = 200_000
+
     /// All locally-persisted wallets. Drives the Source Wallet
     /// picker along with the synthetic "no wallet" sentinel.
     @Query(sort: \PersistentWallet.createdAt) private var wallets: [PersistentWallet]
@@ -218,9 +234,8 @@ struct CreateIdentityView: View {
         }
     }
 
-    /// Amount (in DASH) to fund the new identity with. Only shown
-    /// once the user has picked a funding source the current flow
-    /// can actually spend from (Platform Payment account).
+    /// Amount (in DASH) to fund the new identity with. Shown for
+    /// Platform Payment and Core / CoinJoin funding sources.
     @ViewBuilder
     private var amountSection: some View {
         if let account = selectedPlatformAccount {
@@ -241,6 +256,29 @@ struct CreateIdentityView: View {
                     divisor: Double(Self.creditsPerDash)
                 )
                 Text("Available: \(available). The new identity will start with this amount funded from the selected addresses.")
+            }
+        } else if let account = selectedCoreAccount {
+            Section {
+                HStack {
+                    TextField("Amount", text: $amountDash)
+                        .keyboardType(.decimalPad)
+                        .textFieldStyle(.roundedBorder)
+                        .disabled(isCreating)
+                    Text("DASH")
+                        .foregroundColor(.secondary)
+                }
+            } header: {
+                Text("Amount")
+            } footer: {
+                let available = Self.formatDash(
+                    raw: coreAccountBalanceDuffs(account),
+                    divisor: Double(Self.duffsPerDash)
+                )
+                let minimum = Self.formatDash(
+                    raw: Self.minIdentityFundingDuffs,
+                    divisor: Double(Self.duffsPerDash)
+                )
+                Text("Available: \(available). Minimum: \(minimum). Rust builds an asset-lock transaction from your Core UTXOs and the locked funds become the new identity's initial credit balance.")
             }
         }
     }
@@ -378,8 +416,13 @@ struct CreateIdentityView: View {
                 guard let credits = parsedAmountCredits else { return false }
                 return credits > 0 && credits <= accountBalance(account)
             }
-            // Non-Platform-payment wallet-backed paths are still
-            // stubbed — don't light the button until they're wired.
+            if let account = selectedCoreAccount {
+                guard let duffs = parsedAmountDuffs else { return false }
+                let available = coreAccountBalanceDuffs(account)
+                return duffs >= Self.minIdentityFundingDuffs && duffs <= available
+            }
+            // Remaining wallet-backed paths (unused asset lock,
+            // future variants) are stubbed — submit stays disabled.
             return false
         default:
             return false
@@ -388,15 +431,15 @@ struct CreateIdentityView: View {
 
     // MARK: - Submit
 
-    /// Runs the Platform-payment-funded identity registration path.
-    /// Other funding branches are intentionally stubbed — the button
-    /// stays disabled for them via `canSubmit`.
+    /// Dispatches identity registration to the correct funding path.
+    /// Platform-Payment funding uses `registerIdentityFromAddresses`;
+    /// Core / CoinJoin funding uses `registerIdentityWithFunding`
+    /// (asset-lock proof built Rust-side from wallet UTXOs). Other
+    /// funding branches (unused asset-lock, walletless) stay disabled
+    /// via `canSubmit` until later iterations.
     private func submit() {
         guard
-            let account = selectedPlatformAccount,
             let identityIndex = identityIndex,
-            let targetCredits = parsedAmountCredits,
-            targetCredits > 0,
             case .wallet(let walletId) = walletSelection
         else {
             submitError = .init(message: "Selection is incomplete.")
@@ -451,6 +494,48 @@ struct CreateIdentityView: View {
             return
         }
 
+        let network: Network = platformState.currentNetwork
+
+        // Dispatch by funding source.
+        if let account = selectedPlatformAccount {
+            submitPlatformPayment(
+                account: account,
+                walletId: walletId,
+                identityIndex: identityIndex,
+                identityPubkeys: identityPubkeys,
+                signer: signer,
+                managedWallet: managedWallet,
+                network: network
+            )
+        } else if selectedCoreAccount != nil {
+            submitCoreFunded(
+                walletId: walletId,
+                identityIndex: identityIndex,
+                identityPubkeys: identityPubkeys,
+                signer: signer,
+                managedWallet: managedWallet,
+                network: network
+            )
+        } else {
+            submitError = .init(message: "Selected funding source is not yet supported.")
+        }
+    }
+
+    /// Platform-Payment funded registration. Spends credits from
+    /// `PersistentPlatformAddress` rows on the selected account.
+    private func submitPlatformPayment(
+        account: PersistentAccount,
+        walletId: Data,
+        identityIndex: UInt32,
+        identityPubkeys: [ManagedPlatformWallet.IdentityPubkey],
+        signer: KeychainSigner,
+        managedWallet: ManagedPlatformWallet,
+        network: Network
+    ) {
+        guard let targetCredits = parsedAmountCredits, targetCredits > 0 else {
+            submitError = .init(message: "Enter a positive amount.")
+            return
+        }
         // Greedy-select addresses to cover `targetCredits`. The
         // last address's credits field is capped to the remaining
         // amount so the total spent matches exactly.
@@ -465,8 +550,6 @@ struct CreateIdentityView: View {
 
         isCreating = true
 
-        let network: Network = platformState.currentNetwork
-
         Task {
             do {
                 let created = try await managedWallet.registerIdentityFromAddresses(
@@ -480,7 +563,7 @@ struct CreateIdentityView: View {
 
                 try await MainActor.run {
                     try persistCreatedIdentity(
-                        created,
+                        identityId: created.identityId,
                         network: network
                     )
                     markIdentitySlotUsed(
@@ -489,6 +572,59 @@ struct CreateIdentityView: View {
                     )
                     try modelContext.save()
                     self.createdIdentityId = created.identityId
+                    self.isCreating = false
+                }
+            } catch {
+                await MainActor.run {
+                    self.submitError = .init(
+                        message: error.localizedDescription
+                    )
+                    self.isCreating = false
+                }
+            }
+        }
+    }
+
+    /// Core / CoinJoin funded registration. Rust builds an asset-lock
+    /// transaction from BIP44 account #0's UTXOs (mempool `account_index = 0`
+    /// in `create_funded_asset_lock_proof`), broadcasts it, waits for
+    /// the instant-send lock, and submits the IdentityCreate state
+    /// transition. Iter 1: single in-flight spinner, no stage UI.
+    private func submitCoreFunded(
+        walletId: Data,
+        identityIndex: UInt32,
+        identityPubkeys: [ManagedPlatformWallet.IdentityPubkey],
+        signer: KeychainSigner,
+        managedWallet: ManagedPlatformWallet,
+        network: Network
+    ) {
+        guard let amountDuffs = parsedAmountDuffs, amountDuffs > 0 else {
+            submitError = .init(message: "Enter a positive amount.")
+            return
+        }
+
+        isCreating = true
+
+        Task {
+            do {
+                let (identityId, _) = try await managedWallet.registerIdentityWithFunding(
+                    amountDuffs: amountDuffs,
+                    identityIndex: identityIndex,
+                    identityPubkeys: identityPubkeys,
+                    signer: signer
+                )
+
+                try await MainActor.run {
+                    try persistCreatedIdentity(
+                        identityId: identityId,
+                        network: network
+                    )
+                    markIdentitySlotUsed(
+                        walletId: walletId,
+                        identityIndex: identityIndex
+                    )
+                    try modelContext.save()
+                    self.createdIdentityId = identityId
                     self.isCreating = false
                 }
             } catch {
@@ -570,20 +706,19 @@ struct CreateIdentityView: View {
     /// variants that flow through the callback as namespaced
     /// `"derived:<path>"` identifiers — no Keychain write needed.
     private func persistCreatedIdentity(
-        _ created: ManagedPlatformWallet.CreatedIdentity,
+        identityId: Data,
         network: Network
     ) throws {
-        let identityId = created.identityId
         let descriptor = FetchDescriptor<PersistentIdentity>(
             predicate: #Predicate { $0.identityId == identityId }
         )
         guard let row = try modelContext.fetch(descriptor).first else {
             // Row hasn't landed yet — shouldn't happen in
-            // production (Rust emits the changeset before
-            // `registerIdentityFromAddresses` returns), but if the
-            // persister callback isn't wired the UI-side fields
-            // stay unset until a subsequent refresh. Log + fall
-            // through so the registration doesn't fail.
+            // production (Rust emits the changeset before the
+            // registration FFI returns), but if the persister
+            // callback isn't wired the UI-side fields stay unset
+            // until a subsequent refresh. Log + fall through so the
+            // registration doesn't fail.
             print("⚠️ persistCreatedIdentity: no PersistentIdentity row for \(identityId.toHexString()) — persister callback likely not wired")
             return
         }
@@ -626,28 +761,76 @@ struct CreateIdentityView: View {
         return account
     }
 
+    /// The currently-selected Core / CoinJoin account, if any. Used
+    /// for the Core-funded identity-creation path (Standard BIP44/BIP32
+    /// or CoinJoin). The Rust function `create_funded_asset_lock_proof`
+    /// reads UTXOs from BIP44 account #0 by convention; for a fresh
+    /// wallet this matches what the user has.
+    private var selectedCoreAccount: PersistentAccount? {
+        guard
+            case .account(let persistentId) = fundingSelection,
+            let account = allAccounts.first(where: {
+                $0.persistentModelID == persistentId
+            }),
+            account.accountType == 0 || account.accountType == 1
+        else {
+            return nil
+        }
+        return account
+    }
+
     /// Raw credit balance across all addresses in a PlatformPayment
     /// account.
     private func accountBalance(_ account: PersistentAccount) -> UInt64 {
         account.platformAddresses.reduce(0) { $0 + $1.balance }
     }
 
-    /// Default amount string (DASH) for the amount field — the full
-    /// balance of the selected Platform Payment account.
+    /// Spendable balance (duffs) for a Core / CoinJoin account.
+    /// Reads live FFI-backed balance from the platform-wallet manager
+    /// (the SwiftData per-account `balanceConfirmed` scalar isn't
+    /// maintained by the persister — `AccountDetailView.balanceCard`
+    /// uses the same live source). Returns 0 if no match.
+    private func coreAccountBalanceDuffs(_ account: PersistentAccount) -> UInt64 {
+        let balances = walletManager.accountBalances(for: account.wallet.walletId)
+        guard let match = balances.first(where: { b in
+            UInt32(b.typeTag) == account.accountType
+                && b.standardTag == account.standardTag
+                && b.index == account.accountIndex
+        }) else {
+            return 0
+        }
+        return match.confirmed + match.unconfirmed
+    }
+
+    /// Default amount string (DASH) for the amount field.
+    /// Platform Payment → full account balance (one-tap happy path).
+    /// Core / CoinJoin → 0.001 DASH (the asset-lock minimum-with-
+    /// headroom default); user dials up if they want a larger
+    /// initial credit balance.
     private func defaultAmountString(for funding: FundingSelection?) -> String {
         guard
             case .account(let persistentId) = funding,
             let account = allAccounts.first(where: {
                 $0.persistentModelID == persistentId
-            }),
-            account.accountType == 14
+            })
         else {
             return ""
         }
-        let balance = accountBalance(account)
-        if balance == 0 { return "" }
-        let dash = Double(balance) / Double(Self.creditsPerDash)
-        return String(format: "%g", dash)
+        switch account.accountType {
+        case 14:
+            let balance = accountBalance(account)
+            if balance == 0 { return "" }
+            let dash = Double(balance) / Double(Self.creditsPerDash)
+            return String(format: "%g", dash)
+        case 0, 1:
+            let available = coreAccountBalanceDuffs(account)
+            let defaultDuffs = min(available, Self.defaultCoreFundingDuffs)
+            if defaultDuffs == 0 { return "" }
+            let dash = Double(defaultDuffs) / Double(Self.duffsPerDash)
+            return String(format: "%g", dash)
+        default:
+            return ""
+        }
     }
 
     /// Parse the amount text back into credits. Returns `nil` on
@@ -661,6 +844,18 @@ struct CreateIdentityView: View {
         let credits = (dash * Double(Self.creditsPerDash)).rounded()
         guard credits >= 1, credits <= Double(UInt64.max) else { return nil }
         return UInt64(credits)
+    }
+
+    /// Parse the amount text into Core duffs (1e8 per DASH). Used for
+    /// the Core-funded identity path.
+    private var parsedAmountDuffs: UInt64? {
+        let trimmed = amountDash.trimmingCharacters(in: .whitespaces)
+        guard let dash = Double(trimmed), dash.isFinite, dash > 0 else {
+            return nil
+        }
+        let duffs = (dash * Double(Self.duffsPerDash)).rounded()
+        guard duffs >= 1, duffs <= Double(UInt64.max) else { return nil }
+        return UInt64(duffs)
     }
 
     // MARK: - Helpers
@@ -687,11 +882,19 @@ struct CreateIdentityView: View {
     /// child rows. Ordering matches `AccountListView`: BIP44 →
     /// PlatformPayment → BIP32 → CoinJoin.
     private func accountOptions(for walletId: Data) -> [FundingAccountOption] {
-        allAccounts
+        // Live balances from the Rust side. The persister doesn't
+        // maintain `PersistentAccount.balanceConfirmed`, so we read
+        // from the platform-wallet manager (same source as
+        // `AccountDetailView.balanceCard`).
+        let liveBalances = walletManager.accountBalances(for: walletId)
+        return allAccounts
             .filter { account in
                 guard account.wallet.walletId == walletId else { return false }
                 guard CreateIdentityView.isFundingAccount(account) else { return false }
-                return CreateIdentityView.accountBalanceSummary(account).hasBalance
+                return CreateIdentityView.hasBalance(
+                    account: account,
+                    liveBalances: liveBalances
+                )
             }
             .sorted { lhs, rhs in
                 let lhsKey = CreateIdentityView.sortKey(for: lhs)
@@ -699,13 +902,58 @@ struct CreateIdentityView: View {
                 return lhsKey < rhsKey
             }
             .map { account in
-                let (_, balanceText) = Self.accountBalanceSummary(account)
+                let balanceText = Self.balanceText(
+                    for: account,
+                    liveBalances: liveBalances
+                )
                 return FundingAccountOption(
                     persistentId: account.persistentModelID,
                     label: Self.fundingLabel(for: account),
                     balanceText: balanceText
                 )
             }
+    }
+
+    /// Whether an account has any spendable balance for the picker
+    /// filter. Same data sources as `balanceText` (live FFI for Core /
+    /// CoinJoin, SwiftData for PlatformPayment).
+    private static func hasBalance(
+        account: PersistentAccount,
+        liveBalances: [PlatformWalletManager.AccountBalance]
+    ) -> Bool {
+        switch account.accountType {
+        case 14:
+            return account.platformAddresses.contains { $0.balance > 0 }
+        default:
+            let match = liveBalances.first { b in
+                UInt32(b.typeTag) == account.accountType
+                    && b.standardTag == account.standardTag
+                    && b.index == account.accountIndex
+            }
+            return (match?.confirmed ?? 0) + (match?.unconfirmed ?? 0) > 0
+        }
+    }
+
+    /// Picker-row balance text for an account. Core / CoinJoin reads
+    /// from `liveBalances` (FFI snapshot); PlatformPayment sums
+    /// `platformAddresses[].balance` from SwiftData.
+    private static func balanceText(
+        for account: PersistentAccount,
+        liveBalances: [PlatformWalletManager.AccountBalance]
+    ) -> String {
+        switch account.accountType {
+        case 14:
+            let credits = account.platformAddresses.reduce(0) { $0 + $1.balance }
+            return credits > 0 ? formatDash(raw: credits, divisor: 100_000_000_000.0) : "empty"
+        default:
+            let match = liveBalances.first { b in
+                UInt32(b.typeTag) == account.accountType
+                    && b.standardTag == account.standardTag
+                    && b.index == account.accountIndex
+            }
+            let duffs = (match?.confirmed ?? 0) + (match?.unconfirmed ?? 0)
+            return duffs > 0 ? formatDash(raw: duffs, divisor: 100_000_000.0) : "empty"
+        }
     }
 
     /// Unused identity-registration key indices on the wallet's
@@ -758,31 +1006,7 @@ struct CreateIdentityView: View {
         }
     }
 
-    /// Formatted balance for the picker row and the disabled flag.
-    /// Core / CoinJoin use the SPV-maintained
-    /// `balanceConfirmed + balanceUnconfirmed` duffs (1e8/DASH);
-    /// PlatformPayment sums the BLAST-synced credit balances across
-    /// its addresses (1e11/DASH).
-    private static func accountBalanceSummary(
-        _ account: PersistentAccount
-    ) -> (hasBalance: Bool, balanceText: String) {
-        switch account.accountType {
-        case 14:
-            let credits = account.platformAddresses.reduce(0) { $0 + $1.balance }
-            return (
-                credits > 0,
-                credits > 0 ? formatDash(raw: credits, divisor: 100_000_000_000.0) : "empty"
-            )
-        default:
-            let duffs = account.balanceConfirmed + account.balanceUnconfirmed
-            return (
-                duffs > 0,
-                duffs > 0 ? formatDash(raw: duffs, divisor: 100_000_000.0) : "empty"
-            )
-        }
-    }
-
-    /// `"0.01 DASH"` — stripped of trailing zeros, uses up to 8 decimals.
+/// `"0.01 DASH"` — stripped of trailing zeros, uses up to 8 decimals.
     private static func formatDash(raw: UInt64, divisor: Double) -> String {
         let dash = Double(raw) / divisor
         let fmt = NumberFormatter()
