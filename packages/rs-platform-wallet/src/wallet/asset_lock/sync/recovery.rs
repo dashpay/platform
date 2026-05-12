@@ -8,7 +8,8 @@ use crate::broadcaster::TransactionBroadcaster;
 use std::time::Duration;
 
 use dashcore::Address as DashAddress;
-use dashcore::{OutPoint, PrivateKey};
+use dashcore::OutPoint;
+use key_wallet::bip32::DerivationPath;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
@@ -198,15 +199,18 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     ///   (upgrading a stale IS-lock to a ChainLock proof if necessary).
     ///
     /// After obtaining the proof, advances the tracked lock status and
-    /// re-derives the one-time private key from the wallet.
+    /// re-derives the one-time credit-output derivation path from the
+    /// wallet's funding-account address pool.
     ///
-    /// Returns `(proof, private_key)` ready for use in identity registration
-    /// or top-up.
+    /// Returns `(proof, derivation_path)` ready for use in identity
+    /// registration or top-up via the `_with_signer` SDK methods. The
+    /// caller passes `derivation_path` to the same signer used for the
+    /// build phase when the credit output is later consumed on Platform.
     pub async fn resume_asset_lock(
         &self,
         out_point: &OutPoint,
         timeout: Duration,
-    ) -> Result<(dpp::prelude::AssetLockProof, PrivateKey), PlatformWalletError> {
+    ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath), PlatformWalletError> {
         // 1. Look up the tracked lock — snapshot the fields we need.
         let (tx, status, existing_proof, account_index) = {
             let wm = self.wallet_manager.read().await;
@@ -269,8 +273,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             .await?;
         self.queue_asset_lock_changeset(cs);
 
-        // 4. Re-derive the one-time private key.
-        let private_key = {
+        // 4. Re-derive the one-time credit-output derivation path.
+        let path = {
             let wm = self.wallet_manager.read().await;
             let info = wm
                 .get_wallet_info(&self.wallet_id)
@@ -281,22 +285,31 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     out_point
                 ))
             })?;
-            self.rederive_private_key(lock).await?
+            self.rederive_credit_output_path(lock).await?
         };
 
-        Ok((proof, private_key))
+        Ok((proof, path))
     }
 
-    /// Re-derive the one-time private key for a tracked asset lock.
+    /// Re-derive the one-time credit-output **derivation path** for a
+    /// tracked asset lock.
     ///
     /// The credit output address was generated from a funding account
-    /// (identity registration, top-up, etc.). This method finds that address
-    /// in the funding account's address pool, retrieves its derivation path,
-    /// and derives the private key from the wallet's root key.
-    async fn rederive_private_key(
+    /// (identity registration, top-up, etc.). This method finds that
+    /// address in the funding account's address pool and retrieves
+    /// its derivation path — the path is what the caller hands to a
+    /// `key_wallet::signer::Signer` when later consuming the credit
+    /// output on Platform.
+    ///
+    /// Previously this method derived the actual private key from the
+    /// wallet's root xpriv; that path is no longer reachable for
+    /// `ExternalSignable` wallets (the root key isn't in-process) and
+    /// the signer-based architecture doesn't need it — the signer
+    /// owns derivation end-to-end.
+    async fn rederive_credit_output_path(
         &self,
         lock: &TrackedAssetLock,
-    ) -> Result<PrivateKey, PlatformWalletError> {
+    ) -> Result<DerivationPath, PlatformWalletError> {
         use dashcore::blockdata::transaction::special_transaction::TransactionPayload;
         use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
@@ -374,17 +387,6 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 ))
             })?;
 
-        // 4. Derive the private key from the wallet's root key.
-        let wallet = wm
-            .get_wallet(&self.wallet_id)
-            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
-        let secret_key = wallet.derive_private_key(&derivation_path).map_err(|e| {
-            PlatformWalletError::AssetLockTransaction(format!(
-                "Failed to derive private key for asset lock: {}",
-                e
-            ))
-        })?;
-
-        Ok(PrivateKey::new(secret_key, self.sdk.network))
+        Ok(derivation_path)
     }
 }

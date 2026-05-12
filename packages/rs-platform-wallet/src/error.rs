@@ -161,3 +161,20 @@ pub fn is_instant_lock_proof_invalid(error: &dash_sdk::Error) -> bool {
         ))
     )
 }
+
+/// Check whether a platform-wallet error represents a *Core-side*
+/// InstantSend lock timeout (the asset-lock manager waited the full
+/// timeout for an IS-lock proof and never observed one).
+///
+/// Companion to [`is_instant_lock_proof_invalid`] (which detects
+/// **Platform-side** rejection of an IS proof after one was obtained).
+/// Both surfaces trigger the same fallback path in the registration /
+/// top-up flow: upgrade the asset-lock to a ChainLock proof and retry.
+///
+/// The IS-timeout shape comes from
+/// [`AssetLockManager::wait_for_proof`](crate::wallet::asset_lock::manager::AssetLockManager),
+/// which emits `PlatformWalletError::FinalityTimeout(Txid)` when the
+/// 300-second IS deadline elapses.
+pub fn is_instant_lock_timeout(error: &PlatformWalletError) -> bool {
+    matches!(error, PlatformWalletError::FinalityTimeout(_))
+}
