@@ -96,8 +96,10 @@ CF_EXTERN_C_BEGIN
 @class GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountEntry;
 @class GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountResults;
 @class GetDocumentsRequest_GetDocumentsRequestV0;
+@class GetDocumentsRequest_GetDocumentsRequestV1;
 @class GetDocumentsResponse_GetDocumentsResponseV0;
 @class GetDocumentsResponse_GetDocumentsResponseV0_Documents;
+@class GetDocumentsResponse_GetDocumentsResponseV1;
 @class GetEpochsInfoRequest_GetEpochsInfoRequestV0;
 @class GetEpochsInfoResponse_GetEpochsInfoResponseV0;
 @class GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo;
@@ -341,6 +343,37 @@ GPBEnumDescriptor *SecurityLevelMap_KeyKindRequestType_EnumDescriptor(void);
  * the time this source was generated.
  **/
 BOOL SecurityLevelMap_KeyKindRequestType_IsValidValue(int32_t value);
+
+#pragma mark - Enum GetDocumentsRequest_GetDocumentsRequestV1_Select
+
+/**
+ * Projection over the matched row set. Determines whether the
+ * response carries documents or count results.
+ **/
+typedef GPB_ENUM(GetDocumentsRequest_GetDocumentsRequestV1_Select) {
+  /**
+   * Value used if any message's field encounters a value that is not defined
+   * by this enum. The message will also have C functions to get/set the rawValue
+   * of the field.
+   **/
+  GetDocumentsRequest_GetDocumentsRequestV1_Select_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
+  /** Return matched documents. `group_by` must be empty. */
+  GetDocumentsRequest_GetDocumentsRequestV1_Select_Documents = 0,
+
+  /**
+   * Return a count — single aggregate when `group_by` is empty,
+   * per-group entries when `group_by` names a field.
+   **/
+  GetDocumentsRequest_GetDocumentsRequestV1_Select_Count = 1,
+};
+
+GPBEnumDescriptor *GetDocumentsRequest_GetDocumentsRequestV1_Select_EnumDescriptor(void);
+
+/**
+ * Checks to see if the given value is defined by the enum or was not known at
+ * the time this source was generated.
+ **/
+BOOL GetDocumentsRequest_GetDocumentsRequestV1_Select_IsValidValue(int32_t value);
 
 #pragma mark - Enum GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_ResultType
 
@@ -2257,11 +2290,13 @@ GPB_FINAL @interface GetDataContractHistoryResponse_GetDataContractHistoryRespon
 
 typedef GPB_ENUM(GetDocumentsRequest_FieldNumber) {
   GetDocumentsRequest_FieldNumber_V0 = 1,
+  GetDocumentsRequest_FieldNumber_V1 = 2,
 };
 
 typedef GPB_ENUM(GetDocumentsRequest_Version_OneOfCase) {
   GetDocumentsRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
   GetDocumentsRequest_Version_OneOfCase_V0 = 1,
+  GetDocumentsRequest_Version_OneOfCase_V1 = 2,
 };
 
 GPB_FINAL @interface GetDocumentsRequest : GPBMessage
@@ -2269,6 +2304,8 @@ GPB_FINAL @interface GetDocumentsRequest : GPBMessage
 @property(nonatomic, readonly) GetDocumentsRequest_Version_OneOfCase versionOneOfCase;
 
 @property(nonatomic, readwrite, strong, null_resettable) GetDocumentsRequest_GetDocumentsRequestV0 *v0;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsRequest_GetDocumentsRequestV1 *v1;
 
 @end
 
@@ -2332,15 +2369,197 @@ GPB_FINAL @interface GetDocumentsRequest_GetDocumentsRequestV0 : GPBMessage
  **/
 void GetDocumentsRequest_GetDocumentsRequestV0_ClearStartOneOfCase(GetDocumentsRequest_GetDocumentsRequestV0 *message);
 
+#pragma mark - GetDocumentsRequest_GetDocumentsRequestV1
+
+typedef GPB_ENUM(GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber) {
+  GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_DataContractId = 1,
+  GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_DocumentType = 2,
+  GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_Where = 3,
+  GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_OrderBy = 4,
+  GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_Limit = 5,
+  GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_StartAfter = 6,
+  GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_StartAt = 7,
+  GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_Prove = 8,
+  GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_Select = 9,
+  GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_GroupByArray = 10,
+  GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_Having = 11,
+};
+
+typedef GPB_ENUM(GetDocumentsRequest_GetDocumentsRequestV1_Start_OneOfCase) {
+  GetDocumentsRequest_GetDocumentsRequestV1_Start_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDocumentsRequest_GetDocumentsRequestV1_Start_OneOfCase_StartAfter = 6,
+  GetDocumentsRequest_GetDocumentsRequestV1_Start_OneOfCase_StartAt = 7,
+};
+
+/**
+ * SQL-shaped successor to v0 that unifies `getDocuments` and
+ * `getDocumentsCount` under a single request type with a typed
+ * `select` projection and optional `group_by` / `having` clauses.
+ *
+ * Mode is determined by `select` × `group_by` × `having`:
+ *
+ * * `select = DOCUMENTS, group_by = []`: return matched documents
+ *   (identical semantics to v0).
+ * * `select = COUNT, group_by = []`: return a single aggregate
+ *   count. With an `In` clause the server fans out per-In via
+ *   `query_aggregate_count` and sums (O(|In| × log n), see
+ *   `RangeNoProof`'s compound-summed path); with a range clause
+ *   it uses `AggregateCountOnRange`.
+ * * `select = COUNT, group_by = [<field>]`: return per-group
+ *   `CountEntry` rows. Only supported when the grouping field
+ *   matches an `In`-constrained or range-constrained where clause;
+ *   other shapes return `Unsupported` (see Phase 1 notes below).
+ *
+ * `having` is wire-reserved for Phase 2. Any non-empty `having`
+ * value returns `Unsupported("HAVING clause is not yet
+ * implemented")` regardless of `select` / `group_by`.
+ *
+ * **Phase 1 supported shapes** (everything else rejects with a
+ * typed `QuerySyntaxError::Unsupported` so callers can detect
+ * un-wired capabilities without parsing prose):
+ *
+ *   select=DOCUMENTS, group_by=[]:
+ *     any where shape v0 supports.
+ *
+ *   select=COUNT, group_by=[]:
+ *     - empty where → `documentsCountable: true` doctype.
+ *     - `==` only → `countable: true` index covering the fields.
+ *     - one `In` → `countable: true` index covering the fields
+ *       (per-In aggregate fan-out).
+ *     - one range → `rangeCountable: true` index.
+ *     - one `In` + one range → `rangeCountable: true` compound
+ *       index (per-In aggregate fan-out on no-proof; rejected on
+ *       prove because the aggregate proof primitive can't fork).
+ *
+ *   select=COUNT, group_by=[g]:
+ *     - g is the In clause's field → `countable: true` index,
+ *       grouped by g (PerInValue on no-proof, CountTree element
+ *       proof per In branch on prove).
+ *     - g is the range clause's field → `rangeCountable: true`
+ *       index, grouped by g (RangeDistinct on no-proof, distinct
+ *       range proof on prove).
+ *
+ *   select=COUNT, group_by=[a, b]:
+ *     - a is the In field AND b is the range field, in that order
+ *       → existing compound distinct shape; entries carry both
+ *       `in_key` (= a's value) and `key` (= b's value).
+ *
+ * **Phase 1 rejected shapes** (return `Unsupported`):
+ *   - any non-empty `having` (always).
+ *   - `select=DOCUMENTS` with non-empty `group_by`.
+ *   - `select=COUNT` with `group_by` on a field that is not
+ *     constrained by an `In` or range where clause.
+ *   - `select=COUNT` with `group_by.len() > 2`.
+ *   - `select=COUNT` with 2-field `group_by` that does not match
+ *     the `(in_field, range_field)` shape above.
+ *
+ * **Zero-count entries on `In`-grouped queries**: when
+ * `select=COUNT, group_by=[in_field]` and an `In` value has no
+ * matching documents, v1 emits a `CountEntry { key: in_value,
+ * count: 0 }` for it — a deliberate divergence from SQL, which
+ * would skip empty groups. Callers can distinguish "no docs at
+ * this value" from "value filtered out" without re-querying.
+ * For range-grouped queries the existing walker only emits keys
+ * that exist in the index, which IS SQL-conformant; no change.
+ **/
+GPB_FINAL @interface GetDocumentsRequest_GetDocumentsRequestV1 : GPBMessage
+
+/** The data contract owning the documents */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *dataContractId;
+
+/** Document type within the contract */
+@property(nonatomic, readwrite, copy, null_resettable) NSString *documentType;
+
+/** CBOR-encoded where clauses (same shape as v0) */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *where;
+
+/** CBOR-encoded order_by clauses (same shape as v0) */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *orderBy;
+
+/**
+ * Maximum number of rows to return.
+ *   - `select=DOCUMENTS`: matched-document cap (same as v0).
+ *   - `select=COUNT, group_by=[]`: ignored (aggregate is one row).
+ *   - `select=COUNT, group_by=[…]`: entries cap. On prove paths
+ *     this is validate-don't-clamp — `limit > max_query_limit`
+ *     returns `InvalidLimit` rather than silent clamping (see
+ *     `RangeDistinctProof`'s contract; unset falls back to the
+ *     SDK-shared `DEFAULT_QUERY_LIMIT` compile-time constant so
+ *     proof bytes are deterministic across operators).
+ **/
+@property(nonatomic, readwrite) uint32_t limit;
+
+@property(nonatomic, readwrite) BOOL hasLimit;
+/**
+ * Pagination cursor. Valid for `select=DOCUMENTS` and for
+ * `select=COUNT` with non-empty `group_by` (paginate entries by
+ * the grouping field's serialized key). Rejected on
+ * `select=COUNT, group_by=[]` — no concept of "start" for a
+ * single aggregate.
+ **/
+@property(nonatomic, readonly) GetDocumentsRequest_GetDocumentsRequestV1_Start_OneOfCase startOneOfCase;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *startAfter;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *startAt;
+
+/** Request a grovedb proof instead of raw rows */
+@property(nonatomic, readwrite) BOOL prove;
+
+/**
+ * SQL `SELECT` projection. Default `DOCUMENTS` keeps v0 semantics
+ * for callers that just want documents back.
+ **/
+@property(nonatomic, readwrite) GetDocumentsRequest_GetDocumentsRequestV1_Select select;
+
+/**
+ * SQL `GROUP BY` field names, in left-to-right order. Empty =
+ * no explicit grouping (aggregate for `select=COUNT`). See
+ * message-level docstring for the Phase 1 supported shapes.
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSString*> *groupByArray;
+/** The number of items in @c groupByArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger groupByArray_Count;
+
+/**
+ * SQL `HAVING` clauses, CBOR-encoded the same way as `where`.
+ * **Phase 1: always rejected when non-empty** with
+ * `Unsupported("HAVING clause is not yet implemented")`.
+ * Reserved on the wire so future capability can land without
+ * another version bump.
+ **/
+@property(nonatomic, readwrite, copy, null_resettable) NSData *having;
+
+@end
+
+/**
+ * Fetches the raw value of a @c GetDocumentsRequest_GetDocumentsRequestV1's @c select property, even
+ * if the value was not defined by the enum at the time the code was generated.
+ **/
+int32_t GetDocumentsRequest_GetDocumentsRequestV1_Select_RawValue(GetDocumentsRequest_GetDocumentsRequestV1 *message);
+/**
+ * Sets the raw value of an @c GetDocumentsRequest_GetDocumentsRequestV1's @c select property, allowing
+ * it to be set to a value that was not defined by the enum at the time the code
+ * was generated.
+ **/
+void SetGetDocumentsRequest_GetDocumentsRequestV1_Select_RawValue(GetDocumentsRequest_GetDocumentsRequestV1 *message, int32_t value);
+
+/**
+ * Clears whatever value was set for the oneof 'start'.
+ **/
+void GetDocumentsRequest_GetDocumentsRequestV1_ClearStartOneOfCase(GetDocumentsRequest_GetDocumentsRequestV1 *message);
+
 #pragma mark - GetDocumentsResponse
 
 typedef GPB_ENUM(GetDocumentsResponse_FieldNumber) {
   GetDocumentsResponse_FieldNumber_V0 = 1,
+  GetDocumentsResponse_FieldNumber_V1 = 2,
 };
 
 typedef GPB_ENUM(GetDocumentsResponse_Version_OneOfCase) {
   GetDocumentsResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
   GetDocumentsResponse_Version_OneOfCase_V0 = 1,
+  GetDocumentsResponse_Version_OneOfCase_V1 = 2,
 };
 
 GPB_FINAL @interface GetDocumentsResponse : GPBMessage
@@ -2348,6 +2567,8 @@ GPB_FINAL @interface GetDocumentsResponse : GPBMessage
 @property(nonatomic, readonly) GetDocumentsResponse_Version_OneOfCase versionOneOfCase;
 
 @property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV0 *v0;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV1 *v1;
 
 @end
 
@@ -2409,6 +2630,55 @@ GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV0_Documents : GPB
 @property(nonatomic, readonly) NSUInteger documentsArray_Count;
 
 @end
+
+#pragma mark - GetDocumentsResponse_GetDocumentsResponseV1
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_FieldNumber) {
+  GetDocumentsResponse_GetDocumentsResponseV1_FieldNumber_Documents = 1,
+  GetDocumentsResponse_GetDocumentsResponseV1_FieldNumber_Counts = 2,
+  GetDocumentsResponse_GetDocumentsResponseV1_FieldNumber_Proof = 3,
+  GetDocumentsResponse_GetDocumentsResponseV1_FieldNumber_Metadata = 4,
+};
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_Result_OneOfCase) {
+  GetDocumentsResponse_GetDocumentsResponseV1_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDocumentsResponse_GetDocumentsResponseV1_Result_OneOfCase_Documents = 1,
+  GetDocumentsResponse_GetDocumentsResponseV1_Result_OneOfCase_Counts = 2,
+  GetDocumentsResponse_GetDocumentsResponseV1_Result_OneOfCase_Proof = 3,
+};
+
+/**
+ * v1 response — shape depends on `request.select` × `group_by`:
+ *   - `select=DOCUMENTS` (no prove)         → `documents`.
+ *   - `select=COUNT, group_by=[]` (no prove) → `counts.aggregate_count`.
+ *   - `select=COUNT, group_by=[…]` (no prove) → `counts.entries`.
+ *   - any select (prove)                     → `proof`.
+ *
+ * `CountResults` is the same type used by `GetDocumentsCountResponse`
+ * (referenced via its fully-qualified name to avoid duplicating
+ * the message). v0 of the count endpoint stays alive for the
+ * deprecation cycle.
+ **/
+GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1 : GPBMessage
+
+@property(nonatomic, readonly) GetDocumentsResponse_GetDocumentsResponseV1_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV0_Documents *documents;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountResults *counts;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetDocumentsResponse_GetDocumentsResponseV1_ClearResultOneOfCase(GetDocumentsResponse_GetDocumentsResponseV1 *message);
 
 #pragma mark - GetDocumentsCountRequest
 

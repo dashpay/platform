@@ -2250,6 +2250,11 @@ export class GetDocumentsRequest extends jspb.Message {
   getV0(): GetDocumentsRequest.GetDocumentsRequestV0 | undefined;
   setV0(value?: GetDocumentsRequest.GetDocumentsRequestV0): void;
 
+  hasV1(): boolean;
+  clearV1(): void;
+  getV1(): GetDocumentsRequest.GetDocumentsRequestV1 | undefined;
+  setV1(value?: GetDocumentsRequest.GetDocumentsRequestV1): void;
+
   getVersionCase(): GetDocumentsRequest.VersionCase;
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): GetDocumentsRequest.AsObject;
@@ -2264,6 +2269,7 @@ export class GetDocumentsRequest extends jspb.Message {
 export namespace GetDocumentsRequest {
   export type AsObject = {
     v0?: GetDocumentsRequest.GetDocumentsRequestV0.AsObject,
+    v1?: GetDocumentsRequest.GetDocumentsRequestV1.AsObject,
   }
 
   export class GetDocumentsRequestV0 extends jspb.Message {
@@ -2335,9 +2341,104 @@ export namespace GetDocumentsRequest {
     }
   }
 
+  export class GetDocumentsRequestV1 extends jspb.Message {
+    getDataContractId(): Uint8Array | string;
+    getDataContractId_asU8(): Uint8Array;
+    getDataContractId_asB64(): string;
+    setDataContractId(value: Uint8Array | string): void;
+
+    getDocumentType(): string;
+    setDocumentType(value: string): void;
+
+    getWhere(): Uint8Array | string;
+    getWhere_asU8(): Uint8Array;
+    getWhere_asB64(): string;
+    setWhere(value: Uint8Array | string): void;
+
+    getOrderBy(): Uint8Array | string;
+    getOrderBy_asU8(): Uint8Array;
+    getOrderBy_asB64(): string;
+    setOrderBy(value: Uint8Array | string): void;
+
+    hasLimit(): boolean;
+    clearLimit(): void;
+    getLimit(): number;
+    setLimit(value: number): void;
+
+    hasStartAfter(): boolean;
+    clearStartAfter(): void;
+    getStartAfter(): Uint8Array | string;
+    getStartAfter_asU8(): Uint8Array;
+    getStartAfter_asB64(): string;
+    setStartAfter(value: Uint8Array | string): void;
+
+    hasStartAt(): boolean;
+    clearStartAt(): void;
+    getStartAt(): Uint8Array | string;
+    getStartAt_asU8(): Uint8Array;
+    getStartAt_asB64(): string;
+    setStartAt(value: Uint8Array | string): void;
+
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
+    getSelect(): GetDocumentsRequest.GetDocumentsRequestV1.SelectMap[keyof GetDocumentsRequest.GetDocumentsRequestV1.SelectMap];
+    setSelect(value: GetDocumentsRequest.GetDocumentsRequestV1.SelectMap[keyof GetDocumentsRequest.GetDocumentsRequestV1.SelectMap]): void;
+
+    clearGroupByList(): void;
+    getGroupByList(): Array<string>;
+    setGroupByList(value: Array<string>): void;
+    addGroupBy(value: string, index?: number): string;
+
+    getHaving(): Uint8Array | string;
+    getHaving_asU8(): Uint8Array;
+    getHaving_asB64(): string;
+    setHaving(value: Uint8Array | string): void;
+
+    getStartCase(): GetDocumentsRequestV1.StartCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetDocumentsRequestV1.AsObject;
+    static toObject(includeInstance: boolean, msg: GetDocumentsRequestV1): GetDocumentsRequestV1.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetDocumentsRequestV1, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetDocumentsRequestV1;
+    static deserializeBinaryFromReader(message: GetDocumentsRequestV1, reader: jspb.BinaryReader): GetDocumentsRequestV1;
+  }
+
+  export namespace GetDocumentsRequestV1 {
+    export type AsObject = {
+      dataContractId: Uint8Array | string,
+      documentType: string,
+      where: Uint8Array | string,
+      orderBy: Uint8Array | string,
+      limit: number,
+      startAfter: Uint8Array | string,
+      startAt: Uint8Array | string,
+      prove: boolean,
+      select: GetDocumentsRequest.GetDocumentsRequestV1.SelectMap[keyof GetDocumentsRequest.GetDocumentsRequestV1.SelectMap],
+      groupByList: Array<string>,
+      having: Uint8Array | string,
+    }
+
+    export interface SelectMap {
+      DOCUMENTS: 0;
+      COUNT: 1;
+    }
+
+    export const Select: SelectMap;
+
+    export enum StartCase {
+      START_NOT_SET = 0,
+      START_AFTER = 6,
+      START_AT = 7,
+    }
+  }
+
   export enum VersionCase {
     VERSION_NOT_SET = 0,
     V0 = 1,
+    V1 = 2,
   }
 }
 
@@ -2346,6 +2447,11 @@ export class GetDocumentsResponse extends jspb.Message {
   clearV0(): void;
   getV0(): GetDocumentsResponse.GetDocumentsResponseV0 | undefined;
   setV0(value?: GetDocumentsResponse.GetDocumentsResponseV0): void;
+
+  hasV1(): boolean;
+  clearV1(): void;
+  getV1(): GetDocumentsResponse.GetDocumentsResponseV1 | undefined;
+  setV1(value?: GetDocumentsResponse.GetDocumentsResponseV1): void;
 
   getVersionCase(): GetDocumentsResponse.VersionCase;
   serializeBinary(): Uint8Array;
@@ -2361,6 +2467,7 @@ export class GetDocumentsResponse extends jspb.Message {
 export namespace GetDocumentsResponse {
   export type AsObject = {
     v0?: GetDocumentsResponse.GetDocumentsResponseV0.AsObject,
+    v1?: GetDocumentsResponse.GetDocumentsResponseV1.AsObject,
   }
 
   export class GetDocumentsResponseV0 extends jspb.Message {
@@ -2428,9 +2535,58 @@ export namespace GetDocumentsResponse {
     }
   }
 
+  export class GetDocumentsResponseV1 extends jspb.Message {
+    hasDocuments(): boolean;
+    clearDocuments(): void;
+    getDocuments(): GetDocumentsResponse.GetDocumentsResponseV0.Documents | undefined;
+    setDocuments(value?: GetDocumentsResponse.GetDocumentsResponseV0.Documents): void;
+
+    hasCounts(): boolean;
+    clearCounts(): void;
+    getCounts(): GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults | undefined;
+    setCounts(value?: GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults): void;
+
+    hasProof(): boolean;
+    clearProof(): void;
+    getProof(): Proof | undefined;
+    setProof(value?: Proof): void;
+
+    hasMetadata(): boolean;
+    clearMetadata(): void;
+    getMetadata(): ResponseMetadata | undefined;
+    setMetadata(value?: ResponseMetadata): void;
+
+    getResultCase(): GetDocumentsResponseV1.ResultCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetDocumentsResponseV1.AsObject;
+    static toObject(includeInstance: boolean, msg: GetDocumentsResponseV1): GetDocumentsResponseV1.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetDocumentsResponseV1, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetDocumentsResponseV1;
+    static deserializeBinaryFromReader(message: GetDocumentsResponseV1, reader: jspb.BinaryReader): GetDocumentsResponseV1;
+  }
+
+  export namespace GetDocumentsResponseV1 {
+    export type AsObject = {
+      documents?: GetDocumentsResponse.GetDocumentsResponseV0.Documents.AsObject,
+      counts?: GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults.AsObject,
+      proof?: Proof.AsObject,
+      metadata?: ResponseMetadata.AsObject,
+    }
+
+    export enum ResultCase {
+      RESULT_NOT_SET = 0,
+      DOCUMENTS = 1,
+      COUNTS = 2,
+      PROOF = 3,
+    }
+  }
+
   export enum VersionCase {
     VERSION_NOT_SET = 0,
     V0 = 1,
+    V1 = 2,
   }
 }
 

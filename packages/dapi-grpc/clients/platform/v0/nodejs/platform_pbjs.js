@@ -19380,6 +19380,7 @@ $root.org = (function() {
                          * @memberof org.dash.platform.dapi.v0
                          * @interface IGetDocumentsRequest
                          * @property {org.dash.platform.dapi.v0.GetDocumentsRequest.IGetDocumentsRequestV0|null} [v0] GetDocumentsRequest v0
+                         * @property {org.dash.platform.dapi.v0.GetDocumentsRequest.IGetDocumentsRequestV1|null} [v1] GetDocumentsRequest v1
                          */
 
                         /**
@@ -19405,17 +19406,25 @@ $root.org = (function() {
                          */
                         GetDocumentsRequest.prototype.v0 = null;
 
+                        /**
+                         * GetDocumentsRequest v1.
+                         * @member {org.dash.platform.dapi.v0.GetDocumentsRequest.IGetDocumentsRequestV1|null|undefined} v1
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest
+                         * @instance
+                         */
+                        GetDocumentsRequest.prototype.v1 = null;
+
                         // OneOf field names bound to virtual getters and setters
                         var $oneOfFields;
 
                         /**
                          * GetDocumentsRequest version.
-                         * @member {"v0"|undefined} version
+                         * @member {"v0"|"v1"|undefined} version
                          * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest
                          * @instance
                          */
                         Object.defineProperty(GetDocumentsRequest.prototype, "version", {
-                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            get: $util.oneOfGetter($oneOfFields = ["v0", "v1"]),
                             set: $util.oneOfSetter($oneOfFields)
                         });
 
@@ -19445,6 +19454,8 @@ $root.org = (function() {
                                 writer = $Writer.create();
                             if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
                                 $root.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            if (message.v1 != null && Object.hasOwnProperty.call(message, "v1"))
+                                $root.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.encode(message.v1, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
                             return writer;
                         };
 
@@ -19481,6 +19492,9 @@ $root.org = (function() {
                                 switch (tag >>> 3) {
                                 case 1:
                                     message.v0 = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                case 2:
+                                    message.v1 = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.decode(reader, reader.uint32());
                                     break;
                                 default:
                                     reader.skipType(tag & 7);
@@ -19526,6 +19540,16 @@ $root.org = (function() {
                                         return "v0." + error;
                                 }
                             }
+                            if (message.v1 != null && message.hasOwnProperty("v1")) {
+                                if (properties.version === 1)
+                                    return "version: multiple values";
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.verify(message.v1);
+                                    if (error)
+                                        return "v1." + error;
+                                }
+                            }
                             return null;
                         };
 
@@ -19545,6 +19569,11 @@ $root.org = (function() {
                                 if (typeof object.v0 !== "object")
                                     throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsRequest.v0: object expected");
                                 message.v0 = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV0.fromObject(object.v0);
+                            }
+                            if (object.v1 != null) {
+                                if (typeof object.v1 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsRequest.v1: object expected");
+                                message.v1 = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.fromObject(object.v1);
                             }
                             return message;
                         };
@@ -19566,6 +19595,11 @@ $root.org = (function() {
                                 object.v0 = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV0.toObject(message.v0, options);
                                 if (options.oneofs)
                                     object.version = "v0";
+                            }
+                            if (message.v1 != null && message.hasOwnProperty("v1")) {
+                                object.v1 = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.toObject(message.v1, options);
+                                if (options.oneofs)
+                                    object.version = "v1";
                             }
                             return object;
                         };
@@ -19981,6 +20015,525 @@ $root.org = (function() {
                             return GetDocumentsRequestV0;
                         })();
 
+                        GetDocumentsRequest.GetDocumentsRequestV1 = (function() {
+
+                            /**
+                             * Properties of a GetDocumentsRequestV1.
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest
+                             * @interface IGetDocumentsRequestV1
+                             * @property {Uint8Array|null} [dataContractId] GetDocumentsRequestV1 dataContractId
+                             * @property {string|null} [documentType] GetDocumentsRequestV1 documentType
+                             * @property {Uint8Array|null} [where] GetDocumentsRequestV1 where
+                             * @property {Uint8Array|null} [orderBy] GetDocumentsRequestV1 orderBy
+                             * @property {number|null} [limit] GetDocumentsRequestV1 limit
+                             * @property {Uint8Array|null} [startAfter] GetDocumentsRequestV1 startAfter
+                             * @property {Uint8Array|null} [startAt] GetDocumentsRequestV1 startAt
+                             * @property {boolean|null} [prove] GetDocumentsRequestV1 prove
+                             * @property {org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select|null} [select] GetDocumentsRequestV1 select
+                             * @property {Array.<string>|null} [groupBy] GetDocumentsRequestV1 groupBy
+                             * @property {Uint8Array|null} [having] GetDocumentsRequestV1 having
+                             */
+
+                            /**
+                             * Constructs a new GetDocumentsRequestV1.
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest
+                             * @classdesc Represents a GetDocumentsRequestV1.
+                             * @implements IGetDocumentsRequestV1
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.IGetDocumentsRequestV1=} [properties] Properties to set
+                             */
+                            function GetDocumentsRequestV1(properties) {
+                                this.groupBy = [];
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetDocumentsRequestV1 dataContractId.
+                             * @member {Uint8Array} dataContractId
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1
+                             * @instance
+                             */
+                            GetDocumentsRequestV1.prototype.dataContractId = $util.newBuffer([]);
+
+                            /**
+                             * GetDocumentsRequestV1 documentType.
+                             * @member {string} documentType
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1
+                             * @instance
+                             */
+                            GetDocumentsRequestV1.prototype.documentType = "";
+
+                            /**
+                             * GetDocumentsRequestV1 where.
+                             * @member {Uint8Array} where
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1
+                             * @instance
+                             */
+                            GetDocumentsRequestV1.prototype.where = $util.newBuffer([]);
+
+                            /**
+                             * GetDocumentsRequestV1 orderBy.
+                             * @member {Uint8Array} orderBy
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1
+                             * @instance
+                             */
+                            GetDocumentsRequestV1.prototype.orderBy = $util.newBuffer([]);
+
+                            /**
+                             * GetDocumentsRequestV1 limit.
+                             * @member {number} limit
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1
+                             * @instance
+                             */
+                            GetDocumentsRequestV1.prototype.limit = 0;
+
+                            /**
+                             * GetDocumentsRequestV1 startAfter.
+                             * @member {Uint8Array} startAfter
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1
+                             * @instance
+                             */
+                            GetDocumentsRequestV1.prototype.startAfter = $util.newBuffer([]);
+
+                            /**
+                             * GetDocumentsRequestV1 startAt.
+                             * @member {Uint8Array} startAt
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1
+                             * @instance
+                             */
+                            GetDocumentsRequestV1.prototype.startAt = $util.newBuffer([]);
+
+                            /**
+                             * GetDocumentsRequestV1 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1
+                             * @instance
+                             */
+                            GetDocumentsRequestV1.prototype.prove = false;
+
+                            /**
+                             * GetDocumentsRequestV1 select.
+                             * @member {org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select} select
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1
+                             * @instance
+                             */
+                            GetDocumentsRequestV1.prototype.select = 0;
+
+                            /**
+                             * GetDocumentsRequestV1 groupBy.
+                             * @member {Array.<string>} groupBy
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1
+                             * @instance
+                             */
+                            GetDocumentsRequestV1.prototype.groupBy = $util.emptyArray;
+
+                            /**
+                             * GetDocumentsRequestV1 having.
+                             * @member {Uint8Array} having
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1
+                             * @instance
+                             */
+                            GetDocumentsRequestV1.prototype.having = $util.newBuffer([]);
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetDocumentsRequestV1 start.
+                             * @member {"startAfter"|"startAt"|undefined} start
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1
+                             * @instance
+                             */
+                            Object.defineProperty(GetDocumentsRequestV1.prototype, "start", {
+                                get: $util.oneOfGetter($oneOfFields = ["startAfter", "startAt"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetDocumentsRequestV1 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.IGetDocumentsRequestV1=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1} GetDocumentsRequestV1 instance
+                             */
+                            GetDocumentsRequestV1.create = function create(properties) {
+                                return new GetDocumentsRequestV1(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetDocumentsRequestV1 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.IGetDocumentsRequestV1} message GetDocumentsRequestV1 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetDocumentsRequestV1.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.dataContractId != null && Object.hasOwnProperty.call(message, "dataContractId"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.dataContractId);
+                                if (message.documentType != null && Object.hasOwnProperty.call(message, "documentType"))
+                                    writer.uint32(/* id 2, wireType 2 =*/18).string(message.documentType);
+                                if (message.where != null && Object.hasOwnProperty.call(message, "where"))
+                                    writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.where);
+                                if (message.orderBy != null && Object.hasOwnProperty.call(message, "orderBy"))
+                                    writer.uint32(/* id 4, wireType 2 =*/34).bytes(message.orderBy);
+                                if (message.limit != null && Object.hasOwnProperty.call(message, "limit"))
+                                    writer.uint32(/* id 5, wireType 0 =*/40).uint32(message.limit);
+                                if (message.startAfter != null && Object.hasOwnProperty.call(message, "startAfter"))
+                                    writer.uint32(/* id 6, wireType 2 =*/50).bytes(message.startAfter);
+                                if (message.startAt != null && Object.hasOwnProperty.call(message, "startAt"))
+                                    writer.uint32(/* id 7, wireType 2 =*/58).bytes(message.startAt);
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 8, wireType 0 =*/64).bool(message.prove);
+                                if (message.select != null && Object.hasOwnProperty.call(message, "select"))
+                                    writer.uint32(/* id 9, wireType 0 =*/72).int32(message.select);
+                                if (message.groupBy != null && message.groupBy.length)
+                                    for (var i = 0; i < message.groupBy.length; ++i)
+                                        writer.uint32(/* id 10, wireType 2 =*/82).string(message.groupBy[i]);
+                                if (message.having != null && Object.hasOwnProperty.call(message, "having"))
+                                    writer.uint32(/* id 11, wireType 2 =*/90).bytes(message.having);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetDocumentsRequestV1 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.IGetDocumentsRequestV1} message GetDocumentsRequestV1 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetDocumentsRequestV1.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetDocumentsRequestV1 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1} GetDocumentsRequestV1
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetDocumentsRequestV1.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.dataContractId = reader.bytes();
+                                        break;
+                                    case 2:
+                                        message.documentType = reader.string();
+                                        break;
+                                    case 3:
+                                        message.where = reader.bytes();
+                                        break;
+                                    case 4:
+                                        message.orderBy = reader.bytes();
+                                        break;
+                                    case 5:
+                                        message.limit = reader.uint32();
+                                        break;
+                                    case 6:
+                                        message.startAfter = reader.bytes();
+                                        break;
+                                    case 7:
+                                        message.startAt = reader.bytes();
+                                        break;
+                                    case 8:
+                                        message.prove = reader.bool();
+                                        break;
+                                    case 9:
+                                        message.select = reader.int32();
+                                        break;
+                                    case 10:
+                                        if (!(message.groupBy && message.groupBy.length))
+                                            message.groupBy = [];
+                                        message.groupBy.push(reader.string());
+                                        break;
+                                    case 11:
+                                        message.having = reader.bytes();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetDocumentsRequestV1 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1} GetDocumentsRequestV1
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetDocumentsRequestV1.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetDocumentsRequestV1 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetDocumentsRequestV1.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.dataContractId != null && message.hasOwnProperty("dataContractId"))
+                                    if (!(message.dataContractId && typeof message.dataContractId.length === "number" || $util.isString(message.dataContractId)))
+                                        return "dataContractId: buffer expected";
+                                if (message.documentType != null && message.hasOwnProperty("documentType"))
+                                    if (!$util.isString(message.documentType))
+                                        return "documentType: string expected";
+                                if (message.where != null && message.hasOwnProperty("where"))
+                                    if (!(message.where && typeof message.where.length === "number" || $util.isString(message.where)))
+                                        return "where: buffer expected";
+                                if (message.orderBy != null && message.hasOwnProperty("orderBy"))
+                                    if (!(message.orderBy && typeof message.orderBy.length === "number" || $util.isString(message.orderBy)))
+                                        return "orderBy: buffer expected";
+                                if (message.limit != null && message.hasOwnProperty("limit"))
+                                    if (!$util.isInteger(message.limit))
+                                        return "limit: integer expected";
+                                if (message.startAfter != null && message.hasOwnProperty("startAfter")) {
+                                    properties.start = 1;
+                                    if (!(message.startAfter && typeof message.startAfter.length === "number" || $util.isString(message.startAfter)))
+                                        return "startAfter: buffer expected";
+                                }
+                                if (message.startAt != null && message.hasOwnProperty("startAt")) {
+                                    if (properties.start === 1)
+                                        return "start: multiple values";
+                                    properties.start = 1;
+                                    if (!(message.startAt && typeof message.startAt.length === "number" || $util.isString(message.startAt)))
+                                        return "startAt: buffer expected";
+                                }
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                if (message.select != null && message.hasOwnProperty("select"))
+                                    switch (message.select) {
+                                    default:
+                                        return "select: enum value expected";
+                                    case 0:
+                                    case 1:
+                                        break;
+                                    }
+                                if (message.groupBy != null && message.hasOwnProperty("groupBy")) {
+                                    if (!Array.isArray(message.groupBy))
+                                        return "groupBy: array expected";
+                                    for (var i = 0; i < message.groupBy.length; ++i)
+                                        if (!$util.isString(message.groupBy[i]))
+                                            return "groupBy: string[] expected";
+                                }
+                                if (message.having != null && message.hasOwnProperty("having"))
+                                    if (!(message.having && typeof message.having.length === "number" || $util.isString(message.having)))
+                                        return "having: buffer expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetDocumentsRequestV1 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1} GetDocumentsRequestV1
+                             */
+                            GetDocumentsRequestV1.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1();
+                                if (object.dataContractId != null)
+                                    if (typeof object.dataContractId === "string")
+                                        $util.base64.decode(object.dataContractId, message.dataContractId = $util.newBuffer($util.base64.length(object.dataContractId)), 0);
+                                    else if (object.dataContractId.length >= 0)
+                                        message.dataContractId = object.dataContractId;
+                                if (object.documentType != null)
+                                    message.documentType = String(object.documentType);
+                                if (object.where != null)
+                                    if (typeof object.where === "string")
+                                        $util.base64.decode(object.where, message.where = $util.newBuffer($util.base64.length(object.where)), 0);
+                                    else if (object.where.length >= 0)
+                                        message.where = object.where;
+                                if (object.orderBy != null)
+                                    if (typeof object.orderBy === "string")
+                                        $util.base64.decode(object.orderBy, message.orderBy = $util.newBuffer($util.base64.length(object.orderBy)), 0);
+                                    else if (object.orderBy.length >= 0)
+                                        message.orderBy = object.orderBy;
+                                if (object.limit != null)
+                                    message.limit = object.limit >>> 0;
+                                if (object.startAfter != null)
+                                    if (typeof object.startAfter === "string")
+                                        $util.base64.decode(object.startAfter, message.startAfter = $util.newBuffer($util.base64.length(object.startAfter)), 0);
+                                    else if (object.startAfter.length >= 0)
+                                        message.startAfter = object.startAfter;
+                                if (object.startAt != null)
+                                    if (typeof object.startAt === "string")
+                                        $util.base64.decode(object.startAt, message.startAt = $util.newBuffer($util.base64.length(object.startAt)), 0);
+                                    else if (object.startAt.length >= 0)
+                                        message.startAt = object.startAt;
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                switch (object.select) {
+                                case "DOCUMENTS":
+                                case 0:
+                                    message.select = 0;
+                                    break;
+                                case "COUNT":
+                                case 1:
+                                    message.select = 1;
+                                    break;
+                                }
+                                if (object.groupBy) {
+                                    if (!Array.isArray(object.groupBy))
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.groupBy: array expected");
+                                    message.groupBy = [];
+                                    for (var i = 0; i < object.groupBy.length; ++i)
+                                        message.groupBy[i] = String(object.groupBy[i]);
+                                }
+                                if (object.having != null)
+                                    if (typeof object.having === "string")
+                                        $util.base64.decode(object.having, message.having = $util.newBuffer($util.base64.length(object.having)), 0);
+                                    else if (object.having.length >= 0)
+                                        message.having = object.having;
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetDocumentsRequestV1 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1} message GetDocumentsRequestV1
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetDocumentsRequestV1.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.arrays || options.defaults)
+                                    object.groupBy = [];
+                                if (options.defaults) {
+                                    if (options.bytes === String)
+                                        object.dataContractId = "";
+                                    else {
+                                        object.dataContractId = [];
+                                        if (options.bytes !== Array)
+                                            object.dataContractId = $util.newBuffer(object.dataContractId);
+                                    }
+                                    object.documentType = "";
+                                    if (options.bytes === String)
+                                        object.where = "";
+                                    else {
+                                        object.where = [];
+                                        if (options.bytes !== Array)
+                                            object.where = $util.newBuffer(object.where);
+                                    }
+                                    if (options.bytes === String)
+                                        object.orderBy = "";
+                                    else {
+                                        object.orderBy = [];
+                                        if (options.bytes !== Array)
+                                            object.orderBy = $util.newBuffer(object.orderBy);
+                                    }
+                                    object.limit = 0;
+                                    object.prove = false;
+                                    object.select = options.enums === String ? "DOCUMENTS" : 0;
+                                    if (options.bytes === String)
+                                        object.having = "";
+                                    else {
+                                        object.having = [];
+                                        if (options.bytes !== Array)
+                                            object.having = $util.newBuffer(object.having);
+                                    }
+                                }
+                                if (message.dataContractId != null && message.hasOwnProperty("dataContractId"))
+                                    object.dataContractId = options.bytes === String ? $util.base64.encode(message.dataContractId, 0, message.dataContractId.length) : options.bytes === Array ? Array.prototype.slice.call(message.dataContractId) : message.dataContractId;
+                                if (message.documentType != null && message.hasOwnProperty("documentType"))
+                                    object.documentType = message.documentType;
+                                if (message.where != null && message.hasOwnProperty("where"))
+                                    object.where = options.bytes === String ? $util.base64.encode(message.where, 0, message.where.length) : options.bytes === Array ? Array.prototype.slice.call(message.where) : message.where;
+                                if (message.orderBy != null && message.hasOwnProperty("orderBy"))
+                                    object.orderBy = options.bytes === String ? $util.base64.encode(message.orderBy, 0, message.orderBy.length) : options.bytes === Array ? Array.prototype.slice.call(message.orderBy) : message.orderBy;
+                                if (message.limit != null && message.hasOwnProperty("limit"))
+                                    object.limit = message.limit;
+                                if (message.startAfter != null && message.hasOwnProperty("startAfter")) {
+                                    object.startAfter = options.bytes === String ? $util.base64.encode(message.startAfter, 0, message.startAfter.length) : options.bytes === Array ? Array.prototype.slice.call(message.startAfter) : message.startAfter;
+                                    if (options.oneofs)
+                                        object.start = "startAfter";
+                                }
+                                if (message.startAt != null && message.hasOwnProperty("startAt")) {
+                                    object.startAt = options.bytes === String ? $util.base64.encode(message.startAt, 0, message.startAt.length) : options.bytes === Array ? Array.prototype.slice.call(message.startAt) : message.startAt;
+                                    if (options.oneofs)
+                                        object.start = "startAt";
+                                }
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                if (message.select != null && message.hasOwnProperty("select"))
+                                    object.select = options.enums === String ? $root.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select[message.select] : message.select;
+                                if (message.groupBy && message.groupBy.length) {
+                                    object.groupBy = [];
+                                    for (var j = 0; j < message.groupBy.length; ++j)
+                                        object.groupBy[j] = message.groupBy[j];
+                                }
+                                if (message.having != null && message.hasOwnProperty("having"))
+                                    object.having = options.bytes === String ? $util.base64.encode(message.having, 0, message.having.length) : options.bytes === Array ? Array.prototype.slice.call(message.having) : message.having;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetDocumentsRequestV1 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetDocumentsRequestV1.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            /**
+                             * Select enum.
+                             * @name org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select
+                             * @enum {number}
+                             * @property {number} DOCUMENTS=0 DOCUMENTS value
+                             * @property {number} COUNT=1 COUNT value
+                             */
+                            GetDocumentsRequestV1.Select = (function() {
+                                var valuesById = {}, values = Object.create(valuesById);
+                                values[valuesById[0] = "DOCUMENTS"] = 0;
+                                values[valuesById[1] = "COUNT"] = 1;
+                                return values;
+                            })();
+
+                            return GetDocumentsRequestV1;
+                        })();
+
                         return GetDocumentsRequest;
                     })();
 
@@ -19991,6 +20544,7 @@ $root.org = (function() {
                          * @memberof org.dash.platform.dapi.v0
                          * @interface IGetDocumentsResponse
                          * @property {org.dash.platform.dapi.v0.GetDocumentsResponse.IGetDocumentsResponseV0|null} [v0] GetDocumentsResponse v0
+                         * @property {org.dash.platform.dapi.v0.GetDocumentsResponse.IGetDocumentsResponseV1|null} [v1] GetDocumentsResponse v1
                          */
 
                         /**
@@ -20016,17 +20570,25 @@ $root.org = (function() {
                          */
                         GetDocumentsResponse.prototype.v0 = null;
 
+                        /**
+                         * GetDocumentsResponse v1.
+                         * @member {org.dash.platform.dapi.v0.GetDocumentsResponse.IGetDocumentsResponseV1|null|undefined} v1
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse
+                         * @instance
+                         */
+                        GetDocumentsResponse.prototype.v1 = null;
+
                         // OneOf field names bound to virtual getters and setters
                         var $oneOfFields;
 
                         /**
                          * GetDocumentsResponse version.
-                         * @member {"v0"|undefined} version
+                         * @member {"v0"|"v1"|undefined} version
                          * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse
                          * @instance
                          */
                         Object.defineProperty(GetDocumentsResponse.prototype, "version", {
-                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            get: $util.oneOfGetter($oneOfFields = ["v0", "v1"]),
                             set: $util.oneOfSetter($oneOfFields)
                         });
 
@@ -20056,6 +20618,8 @@ $root.org = (function() {
                                 writer = $Writer.create();
                             if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
                                 $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            if (message.v1 != null && Object.hasOwnProperty.call(message, "v1"))
+                                $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.encode(message.v1, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
                             return writer;
                         };
 
@@ -20092,6 +20656,9 @@ $root.org = (function() {
                                 switch (tag >>> 3) {
                                 case 1:
                                     message.v0 = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                case 2:
+                                    message.v1 = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.decode(reader, reader.uint32());
                                     break;
                                 default:
                                     reader.skipType(tag & 7);
@@ -20137,6 +20704,16 @@ $root.org = (function() {
                                         return "v0." + error;
                                 }
                             }
+                            if (message.v1 != null && message.hasOwnProperty("v1")) {
+                                if (properties.version === 1)
+                                    return "version: multiple values";
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.verify(message.v1);
+                                    if (error)
+                                        return "v1." + error;
+                                }
+                            }
                             return null;
                         };
 
@@ -20156,6 +20733,11 @@ $root.org = (function() {
                                 if (typeof object.v0 !== "object")
                                     throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.v0: object expected");
                                 message.v0 = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV0.fromObject(object.v0);
+                            }
+                            if (object.v1 != null) {
+                                if (typeof object.v1 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.v1: object expected");
+                                message.v1 = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.fromObject(object.v1);
                             }
                             return message;
                         };
@@ -20177,6 +20759,11 @@ $root.org = (function() {
                                 object.v0 = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV0.toObject(message.v0, options);
                                 if (options.oneofs)
                                     object.version = "v0";
+                            }
+                            if (message.v1 != null && message.hasOwnProperty("v1")) {
+                                object.v1 = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.toObject(message.v1, options);
+                                if (options.oneofs)
+                                    object.version = "v1";
                             }
                             return object;
                         };
@@ -20669,6 +21256,313 @@ $root.org = (function() {
                             })();
 
                             return GetDocumentsResponseV0;
+                        })();
+
+                        GetDocumentsResponse.GetDocumentsResponseV1 = (function() {
+
+                            /**
+                             * Properties of a GetDocumentsResponseV1.
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse
+                             * @interface IGetDocumentsResponseV1
+                             * @property {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV0.IDocuments|null} [documents] GetDocumentsResponseV1 documents
+                             * @property {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.ICountResults|null} [counts] GetDocumentsResponseV1 counts
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetDocumentsResponseV1 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetDocumentsResponseV1 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetDocumentsResponseV1.
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse
+                             * @classdesc Represents a GetDocumentsResponseV1.
+                             * @implements IGetDocumentsResponseV1
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.IGetDocumentsResponseV1=} [properties] Properties to set
+                             */
+                            function GetDocumentsResponseV1(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetDocumentsResponseV1 documents.
+                             * @member {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV0.IDocuments|null|undefined} documents
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
+                             * @instance
+                             */
+                            GetDocumentsResponseV1.prototype.documents = null;
+
+                            /**
+                             * GetDocumentsResponseV1 counts.
+                             * @member {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.ICountResults|null|undefined} counts
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
+                             * @instance
+                             */
+                            GetDocumentsResponseV1.prototype.counts = null;
+
+                            /**
+                             * GetDocumentsResponseV1 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
+                             * @instance
+                             */
+                            GetDocumentsResponseV1.prototype.proof = null;
+
+                            /**
+                             * GetDocumentsResponseV1 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
+                             * @instance
+                             */
+                            GetDocumentsResponseV1.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetDocumentsResponseV1 result.
+                             * @member {"documents"|"counts"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
+                             * @instance
+                             */
+                            Object.defineProperty(GetDocumentsResponseV1.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["documents", "counts", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetDocumentsResponseV1 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.IGetDocumentsResponseV1=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1} GetDocumentsResponseV1 instance
+                             */
+                            GetDocumentsResponseV1.create = function create(properties) {
+                                return new GetDocumentsResponseV1(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetDocumentsResponseV1 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.IGetDocumentsResponseV1} message GetDocumentsResponseV1 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetDocumentsResponseV1.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.documents != null && Object.hasOwnProperty.call(message, "documents"))
+                                    $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV0.Documents.encode(message.documents, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.counts != null && Object.hasOwnProperty.call(message, "counts"))
+                                    $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults.encode(message.counts, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetDocumentsResponseV1 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.IGetDocumentsResponseV1} message GetDocumentsResponseV1 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetDocumentsResponseV1.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetDocumentsResponseV1 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1} GetDocumentsResponseV1
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetDocumentsResponseV1.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.documents = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV0.Documents.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.counts = $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 4:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetDocumentsResponseV1 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1} GetDocumentsResponseV1
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetDocumentsResponseV1.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetDocumentsResponseV1 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetDocumentsResponseV1.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.documents != null && message.hasOwnProperty("documents")) {
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV0.Documents.verify(message.documents);
+                                        if (error)
+                                            return "documents." + error;
+                                    }
+                                }
+                                if (message.counts != null && message.hasOwnProperty("counts")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults.verify(message.counts);
+                                        if (error)
+                                            return "counts." + error;
+                                    }
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetDocumentsResponseV1 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1} GetDocumentsResponseV1
+                             */
+                            GetDocumentsResponseV1.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1();
+                                if (object.documents != null) {
+                                    if (typeof object.documents !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.documents: object expected");
+                                    message.documents = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV0.Documents.fromObject(object.documents);
+                                }
+                                if (object.counts != null) {
+                                    if (typeof object.counts !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.counts: object expected");
+                                    message.counts = $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults.fromObject(object.counts);
+                                }
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetDocumentsResponseV1 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1} message GetDocumentsResponseV1
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetDocumentsResponseV1.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.documents != null && message.hasOwnProperty("documents")) {
+                                    object.documents = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV0.Documents.toObject(message.documents, options);
+                                    if (options.oneofs)
+                                        object.result = "documents";
+                                }
+                                if (message.counts != null && message.hasOwnProperty("counts")) {
+                                    object.counts = $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults.toObject(message.counts, options);
+                                    if (options.oneofs)
+                                        object.result = "counts";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetDocumentsResponseV1 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetDocumentsResponseV1.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetDocumentsResponseV1;
                         })();
 
                         return GetDocumentsResponse;
