@@ -12,6 +12,7 @@ pub mod cr_004_legacy_bip32_utxo_update_after_spend;
 pub mod dpns_001_register_name;
 pub mod id_001_register_identity_from_addresses;
 pub mod id_002_top_up_identity;
+pub mod id_002b_asset_lock_top_up;
 pub mod id_003_identity_to_identity_transfer;
 pub mod id_005_identity_to_addresses_transfer;
 pub mod id_007_identity_auth_addresses_not_monitored;
