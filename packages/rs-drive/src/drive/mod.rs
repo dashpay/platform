@@ -181,8 +181,8 @@ pub struct Drive {
 //       Tokens 16                    Pools 48                                                    WithdrawalTransactions 80                                                Votes  112
 //       /      \                           /                     \                                         /                           \                            /                          \
 //     NUPKH->I 8 UPKH->I 24   PreFundedSpecializedBalances 40  AddressBalances 56              SpentAssetLockTransactions 72    GroupActions 88             Misc 104                        Versions 120
-//                                     /
-//                           Saved Block Transactions 36
+//                                     /                          /
+//                           Saved Block Transactions 36       ShieldedBalances 52
 
 /// Keys for the root tree.
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -204,6 +204,12 @@ pub enum RootTree {
     PreFundedSpecializedBalances = 40,
     /// Saved Block Transactions contains address based transactions that we save for sync purposes
     SavedBlockTransactions = 36,
+    /// Shielded credit pools (SumTree of shielded pool subtrees; only the main
+    /// pool exists today, but the layout reserves siblings for future pools).
+    /// Kept separate from `AddressBalances` so that per-pool internal trees
+    /// (notes, nullifiers, anchors, …) cannot contaminate the address-credit
+    /// aggregate via sum propagation.
+    ShieldedBalances = 52,
     /// Address Balances
     AddressBalances = 56,
     /// Spent Asset Lock Transactions
@@ -237,6 +243,7 @@ impl fmt::Display for RootTree {
             RootTree::Pools => "Pools",
             RootTree::PreFundedSpecializedBalances => "PreFundedSpecializedBalances",
             RootTree::SavedBlockTransactions => "SavedBlockTransactions",
+            RootTree::ShieldedBalances => "ShieldedBalances",
             RootTree::AddressBalances => "SingleUseKeyBalances",
             // RootTree::MasternodeLists => "MasternodeLists"
             RootTree::SpentAssetLockTransactions => "SpentAssetLockTransactions",
@@ -284,6 +291,7 @@ impl TryFrom<u8> for RootTree {
             // 56 => Ok(RootTree::MasternodeLists), //todo (reserved)
             40 => Ok(RootTree::PreFundedSpecializedBalances),
             36 => Ok(RootTree::SavedBlockTransactions),
+            52 => Ok(RootTree::ShieldedBalances),
             72 => Ok(RootTree::SpentAssetLockTransactions),
             104 => Ok(RootTree::Misc),
             80 => Ok(RootTree::WithdrawalTransactions),
@@ -309,6 +317,7 @@ impl From<RootTree> for &'static [u8; 1] {
             RootTree::Pools => &[48],
             RootTree::PreFundedSpecializedBalances => &[40],
             RootTree::SavedBlockTransactions => &[36],
+            RootTree::ShieldedBalances => &[52],
             RootTree::AddressBalances => &[56],
             RootTree::Misc => &[104],
             RootTree::WithdrawalTransactions => &[80],

@@ -214,14 +214,6 @@ impl_transport_request_grpc!(
 );
 
 impl_transport_request_grpc!(
-    platform_proto::GetDocumentsSplitCountRequest,
-    platform_proto::GetDocumentsSplitCountResponse,
-    PlatformGrpcClient,
-    RequestSettings::default(),
-    get_documents_split_count
-);
-
-impl_transport_request_grpc!(
     platform_proto::GetDataContractRequest,
     platform_proto::GetDataContractResponse,
     PlatformGrpcClient,

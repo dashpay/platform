@@ -1,4 +1,4 @@
-use crate::drive::shielded::paths::SHIELDED_CREDIT_POOL_KEY;
+use crate::drive::shielded::paths::MAIN_SHIELDED_CREDIT_POOL_KEY;
 use crate::drive::RootTree;
 
 // Byte positions chosen to balance the parent shielded-pool Merk tree —
@@ -28,56 +28,56 @@ pub const SHIELDED_NULLIFIERS_EXPIRATION_TIME_KEY: &[u8; 1] = &[240];
 /// The subtree key for nullifiers expiration time storage as u8.
 pub const SHIELDED_NULLIFIERS_EXPIRATION_TIME_KEY_U8: u8 = 240;
 
-/// Path to per-block nullifiers: [AddressBalances, "s", [160]]
+/// Path to per-block nullifiers: [ShieldedBalances, "M", [160]]
 pub fn shielded_recent_nullifiers_path() -> [&'static [u8]; 3] {
     [
-        Into::<&[u8; 1]>::into(RootTree::AddressBalances),
-        SHIELDED_CREDIT_POOL_KEY,
+        Into::<&[u8; 1]>::into(RootTree::ShieldedBalances),
+        MAIN_SHIELDED_CREDIT_POOL_KEY,
         SHIELDED_RECENT_NULLIFIERS_KEY,
     ]
 }
 
-/// Path to per-block nullifiers as vec: [AddressBalances, "s", [160]]
+/// Path to per-block nullifiers as vec: [ShieldedBalances, "M", [160]]
 pub fn shielded_recent_nullifiers_path_vec() -> Vec<Vec<u8>> {
     vec![
-        vec![RootTree::AddressBalances as u8],
-        SHIELDED_CREDIT_POOL_KEY.to_vec(),
+        vec![RootTree::ShieldedBalances as u8],
+        MAIN_SHIELDED_CREDIT_POOL_KEY.to_vec(),
         vec![SHIELDED_RECENT_NULLIFIERS_KEY_U8],
     ]
 }
 
-/// Path to compacted nullifiers: [AddressBalances, "s", [224]]
+/// Path to compacted nullifiers: [ShieldedBalances, "M", [224]]
 pub fn shielded_compacted_nullifiers_path() -> [&'static [u8]; 3] {
     [
-        Into::<&[u8; 1]>::into(RootTree::AddressBalances),
-        SHIELDED_CREDIT_POOL_KEY,
+        Into::<&[u8; 1]>::into(RootTree::ShieldedBalances),
+        MAIN_SHIELDED_CREDIT_POOL_KEY,
         SHIELDED_COMPACTED_NULLIFIERS_KEY,
     ]
 }
 
-/// Path to compacted nullifiers as vec: [AddressBalances, "s", [224]]
+/// Path to compacted nullifiers as vec: [ShieldedBalances, "M", [224]]
 pub fn shielded_compacted_nullifiers_path_vec() -> Vec<Vec<u8>> {
     vec![
-        vec![RootTree::AddressBalances as u8],
-        SHIELDED_CREDIT_POOL_KEY.to_vec(),
+        vec![RootTree::ShieldedBalances as u8],
+        MAIN_SHIELDED_CREDIT_POOL_KEY.to_vec(),
         vec![SHIELDED_COMPACTED_NULLIFIERS_KEY_U8],
     ]
 }
 
-/// Path to nullifiers expiration time: [AddressBalances, "s", [240]]
+/// Path to nullifiers expiration time: [ShieldedBalances, "M", [240]]
 pub fn shielded_nullifiers_expiration_time_path() -> [&'static [u8]; 3] {
     [
-        Into::<&[u8; 1]>::into(RootTree::AddressBalances),
-        SHIELDED_CREDIT_POOL_KEY,
+        Into::<&[u8; 1]>::into(RootTree::ShieldedBalances),
+        MAIN_SHIELDED_CREDIT_POOL_KEY,
         SHIELDED_NULLIFIERS_EXPIRATION_TIME_KEY,
     ]
 }
 
-/// Path to nullifiers expiration time as vec: [AddressBalances, "s", [240]]
+/// Path to nullifiers expiration time as vec: [ShieldedBalances, "M", [240]]
 pub fn shielded_nullifiers_expiration_time_path_vec() -> Vec<Vec<u8>> {
     vec![
-        vec![RootTree::AddressBalances as u8],
-        SHIELDED_CREDIT_POOL_KEY.to_vec(),
+        vec![RootTree::ShieldedBalances as u8],
+        MAIN_SHIELDED_CREDIT_POOL_KEY.to_vec(),
         vec![SHIELDED_NULLIFIERS_EXPIRATION_TIME_KEY_U8],
     ]
 }

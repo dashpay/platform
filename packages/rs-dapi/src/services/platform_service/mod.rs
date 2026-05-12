@@ -350,12 +350,6 @@ impl Platform for PlatformServiceImpl {
         dapi_grpc::platform::v0::GetDocumentsCountResponse
     );
 
-    drive_method!(
-        get_documents_split_count,
-        dapi_grpc::platform::v0::GetDocumentsSplitCountRequest,
-        dapi_grpc::platform::v0::GetDocumentsSplitCountResponse
-    );
-
     // System methods
     drive_method!(
         get_consensus_params,

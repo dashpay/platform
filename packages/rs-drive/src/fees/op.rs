@@ -443,6 +443,69 @@ impl LowLevelDriveOperation {
         LowLevelDriveOperation::insert_for_known_path_key_element(path, key, tree)
     }
 
+    /// Sets `GroveOperation` for inserting an empty `NormalTree` wrapped in
+    /// `Element::NonCounted` at the given path and key. The wrapper makes
+    /// the inserted subtree contribute 0 to a parent count tree's aggregate
+    /// (per grovedb #654). Used by the index-walker for sibling continuations
+    /// inside a `range_countable` value tree, so e.g. a compound `byColorShape`
+    /// continuation under a `byColor` value tree (which is a `CountTree`)
+    /// doesn't pollute the byColor count.
+    pub fn for_known_path_key_empty_non_counted_normal_tree(
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        storage_flags: Option<&StorageFlags>,
+    ) -> Self {
+        Self::for_known_path_key_empty_non_counted_tree(
+            path,
+            key,
+            TreeType::NormalTree,
+            storage_flags,
+        )
+        .expect("NormalTree NonCounted wrapping never fails")
+    }
+
+    /// Sets `GroveOperation` for inserting an empty tree of the given
+    /// `tree_type` wrapped in `Element::NonCounted`. The wrapper makes the
+    /// inserted subtree contribute 0 to a parent count tree's aggregate
+    /// count (per grovedb #654), regardless of the inner tree variant.
+    ///
+    /// Used by the index walker for sibling continuations inside a
+    /// `range_countable` value tree (a `CountTree`). Most continuations are
+    /// plain `NormalTree`, but in nested-`range_countable` cases (e.g. an
+    /// index `[color]` is range-countable AND a deeper compound index
+    /// `[color, size]` is also range-countable), the continuation
+    /// property-name tree at `"size"` is itself a `ProvableCountTree` and
+    /// must still contribute 0 to the parent `<c1>` `CountTree`.
+    ///
+    /// Returns an error for tree variants whose `NonCounted` wrapping
+    /// hasn't been validated end-to-end yet (currently anything outside
+    /// `NormalTree` / `CountTree` / `ProvableCountTree`).
+    pub fn for_known_path_key_empty_non_counted_tree(
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        tree_type: TreeType,
+        storage_flags: Option<&StorageFlags>,
+    ) -> Result<Self, Error> {
+        let element_flags = storage_flags.map(|s| s.to_element_flags());
+        let inner = match tree_type {
+            TreeType::NormalTree => Element::empty_tree_with_flags(element_flags),
+            TreeType::CountTree => Element::empty_count_tree_with_flags(element_flags),
+            TreeType::ProvableCountTree => {
+                Element::empty_provable_count_tree_with_flags(element_flags)
+            }
+            _ => {
+                return Err(Error::Drive(DriveError::NotSupported(
+                    "NonCounted-wrapping is only supported for NormalTree, CountTree, and ProvableCountTree",
+                )));
+            }
+        };
+        let tree = Element::new_non_counted(inner)
+            .expect("new_non_counted only fails when wrapping another NonCounted");
+        Ok(LowLevelDriveOperation::insert_for_known_path_key_element(
+            path, key, tree,
+        ))
+    }
+
     /// Sets `GroveOperation` for inserting an empty provable count tree at the given path and key
     pub fn for_known_path_key_empty_provable_count_tree(
         path: Vec<Vec<u8>>,

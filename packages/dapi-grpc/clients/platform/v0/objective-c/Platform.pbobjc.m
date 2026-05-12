@@ -120,17 +120,14 @@ GPBObjCClassDeclaration(GetDocumentsCountRequest);
 GPBObjCClassDeclaration(GetDocumentsCountRequest_GetDocumentsCountRequestV0);
 GPBObjCClassDeclaration(GetDocumentsCountResponse);
 GPBObjCClassDeclaration(GetDocumentsCountResponse_GetDocumentsCountResponseV0);
+GPBObjCClassDeclaration(GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountEntries);
+GPBObjCClassDeclaration(GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountEntry);
+GPBObjCClassDeclaration(GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountResults);
 GPBObjCClassDeclaration(GetDocumentsRequest);
 GPBObjCClassDeclaration(GetDocumentsRequest_GetDocumentsRequestV0);
 GPBObjCClassDeclaration(GetDocumentsResponse);
 GPBObjCClassDeclaration(GetDocumentsResponse_GetDocumentsResponseV0);
 GPBObjCClassDeclaration(GetDocumentsResponse_GetDocumentsResponseV0_Documents);
-GPBObjCClassDeclaration(GetDocumentsSplitCountRequest);
-GPBObjCClassDeclaration(GetDocumentsSplitCountRequest_GetDocumentsSplitCountRequestV0);
-GPBObjCClassDeclaration(GetDocumentsSplitCountResponse);
-GPBObjCClassDeclaration(GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0);
-GPBObjCClassDeclaration(GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCountEntry);
-GPBObjCClassDeclaration(GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCounts);
 GPBObjCClassDeclaration(GetEpochsInfoRequest);
 GPBObjCClassDeclaration(GetEpochsInfoRequest_GetEpochsInfoRequestV0);
 GPBObjCClassDeclaration(GetEpochsInfoResponse);
@@ -5513,13 +5510,18 @@ void GetDocumentsCountRequest_ClearVersionOneOfCase(GetDocumentsCountRequest *me
 @dynamic dataContractId;
 @dynamic documentType;
 @dynamic where;
+@dynamic returnDistinctCountsInRange;
+@dynamic orderBy;
+@dynamic hasLimit, limit;
 @dynamic prove;
 
 typedef struct GetDocumentsCountRequest_GetDocumentsCountRequestV0__storage_ {
   uint32_t _has_storage_[1];
+  uint32_t limit;
   NSData *dataContractId;
   NSString *documentType;
   NSData *where;
+  NSData *orderBy;
 } GetDocumentsCountRequest_GetDocumentsCountRequestV0__storage_;
 
 // This method is threadsafe because it is initially called
@@ -5556,11 +5558,38 @@ typedef struct GetDocumentsCountRequest_GetDocumentsCountRequestV0__storage_ {
         .dataType = GPBDataTypeBytes,
       },
       {
+        .name = "returnDistinctCountsInRange",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentsCountRequest_GetDocumentsCountRequestV0_FieldNumber_ReturnDistinctCountsInRange,
+        .hasIndex = 3,
+        .offset = 4,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+      {
+        .name = "orderBy",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentsCountRequest_GetDocumentsCountRequestV0_FieldNumber_OrderBy,
+        .hasIndex = 5,
+        .offset = (uint32_t)offsetof(GetDocumentsCountRequest_GetDocumentsCountRequestV0__storage_, orderBy),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "limit",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentsCountRequest_GetDocumentsCountRequestV0_FieldNumber_Limit,
+        .hasIndex = 6,
+        .offset = (uint32_t)offsetof(GetDocumentsCountRequest_GetDocumentsCountRequestV0__storage_, limit),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
         .name = "prove",
         .dataTypeSpecific.clazz = Nil,
         .number = GetDocumentsCountRequest_GetDocumentsCountRequestV0_FieldNumber_Prove,
-        .hasIndex = 3,
-        .offset = 4,  // Stored in _has_storage_ to save space.
+        .hasIndex = 7,
+        .offset = 8,  // Stored in _has_storage_ to save space.
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBool,
       },
@@ -5646,15 +5675,15 @@ void GetDocumentsCountResponse_ClearVersionOneOfCase(GetDocumentsCountResponse *
 @implementation GetDocumentsCountResponse_GetDocumentsCountResponseV0
 
 @dynamic resultOneOfCase;
-@dynamic count;
+@dynamic counts;
 @dynamic proof;
 @dynamic hasMetadata, metadata;
 
 typedef struct GetDocumentsCountResponse_GetDocumentsCountResponseV0__storage_ {
   uint32_t _has_storage_[2];
+  GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountResults *counts;
   Proof *proof;
   ResponseMetadata *metadata;
-  uint64_t count;
 } GetDocumentsCountResponse_GetDocumentsCountResponseV0__storage_;
 
 // This method is threadsafe because it is initially called
@@ -5664,13 +5693,13 @@ typedef struct GetDocumentsCountResponse_GetDocumentsCountResponseV0__storage_ {
   if (!descriptor) {
     static GPBMessageFieldDescription fields[] = {
       {
-        .name = "count",
-        .dataTypeSpecific.clazz = Nil,
-        .number = GetDocumentsCountResponse_GetDocumentsCountResponseV0_FieldNumber_Count,
+        .name = "counts",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountResults),
+        .number = GetDocumentsCountResponse_GetDocumentsCountResponseV0_FieldNumber_Counts,
         .hasIndex = -1,
-        .offset = (uint32_t)offsetof(GetDocumentsCountResponse_GetDocumentsCountResponseV0__storage_, count),
+        .offset = (uint32_t)offsetof(GetDocumentsCountResponse_GetDocumentsCountResponseV0__storage_, counts),
         .flags = GPBFieldOptional,
-        .dataType = GPBDataTypeUInt64,
+        .dataType = GPBDataTypeMessage,
       },
       {
         .name = "proof",
@@ -5721,301 +5750,20 @@ void GetDocumentsCountResponse_GetDocumentsCountResponseV0_ClearResultOneOfCase(
   GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
   GPBClearOneof(message, oneof);
 }
-#pragma mark - GetDocumentsSplitCountRequest
+#pragma mark - GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountEntry
 
-@implementation GetDocumentsSplitCountRequest
+@implementation GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountEntry
 
-@dynamic versionOneOfCase;
-@dynamic v0;
-
-typedef struct GetDocumentsSplitCountRequest__storage_ {
-  uint32_t _has_storage_[2];
-  GetDocumentsSplitCountRequest_GetDocumentsSplitCountRequestV0 *v0;
-} GetDocumentsSplitCountRequest__storage_;
-
-// This method is threadsafe because it is initially called
-// in +initialize for each subclass.
-+ (GPBDescriptor *)descriptor {
-  static GPBDescriptor *descriptor = nil;
-  if (!descriptor) {
-    static GPBMessageFieldDescription fields[] = {
-      {
-        .name = "v0",
-        .dataTypeSpecific.clazz = GPBObjCClass(GetDocumentsSplitCountRequest_GetDocumentsSplitCountRequestV0),
-        .number = GetDocumentsSplitCountRequest_FieldNumber_V0,
-        .hasIndex = -1,
-        .offset = (uint32_t)offsetof(GetDocumentsSplitCountRequest__storage_, v0),
-        .flags = GPBFieldOptional,
-        .dataType = GPBDataTypeMessage,
-      },
-    };
-    GPBDescriptor *localDescriptor =
-        [GPBDescriptor allocDescriptorForClass:[GetDocumentsSplitCountRequest class]
-                                     rootClass:[PlatformRoot class]
-                                          file:PlatformRoot_FileDescriptor()
-                                        fields:fields
-                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
-                                   storageSize:sizeof(GetDocumentsSplitCountRequest__storage_)
-                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
-    static const char *oneofs[] = {
-      "version",
-    };
-    [localDescriptor setupOneofs:oneofs
-                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
-                   firstHasIndex:-1];
-    #if defined(DEBUG) && DEBUG
-      NSAssert(descriptor == nil, @"Startup recursed!");
-    #endif  // DEBUG
-    descriptor = localDescriptor;
-  }
-  return descriptor;
-}
-
-@end
-
-void GetDocumentsSplitCountRequest_ClearVersionOneOfCase(GetDocumentsSplitCountRequest *message) {
-  GPBDescriptor *descriptor = [GetDocumentsSplitCountRequest descriptor];
-  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
-  GPBClearOneof(message, oneof);
-}
-#pragma mark - GetDocumentsSplitCountRequest_GetDocumentsSplitCountRequestV0
-
-@implementation GetDocumentsSplitCountRequest_GetDocumentsSplitCountRequestV0
-
-@dynamic dataContractId;
-@dynamic documentType;
-@dynamic where;
-@dynamic splitCountByIndexProperty;
-@dynamic prove;
-
-typedef struct GetDocumentsSplitCountRequest_GetDocumentsSplitCountRequestV0__storage_ {
-  uint32_t _has_storage_[1];
-  NSData *dataContractId;
-  NSString *documentType;
-  NSData *where;
-  NSString *splitCountByIndexProperty;
-} GetDocumentsSplitCountRequest_GetDocumentsSplitCountRequestV0__storage_;
-
-// This method is threadsafe because it is initially called
-// in +initialize for each subclass.
-+ (GPBDescriptor *)descriptor {
-  static GPBDescriptor *descriptor = nil;
-  if (!descriptor) {
-    static GPBMessageFieldDescription fields[] = {
-      {
-        .name = "dataContractId",
-        .dataTypeSpecific.clazz = Nil,
-        .number = GetDocumentsSplitCountRequest_GetDocumentsSplitCountRequestV0_FieldNumber_DataContractId,
-        .hasIndex = 0,
-        .offset = (uint32_t)offsetof(GetDocumentsSplitCountRequest_GetDocumentsSplitCountRequestV0__storage_, dataContractId),
-        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
-        .dataType = GPBDataTypeBytes,
-      },
-      {
-        .name = "documentType",
-        .dataTypeSpecific.clazz = Nil,
-        .number = GetDocumentsSplitCountRequest_GetDocumentsSplitCountRequestV0_FieldNumber_DocumentType,
-        .hasIndex = 1,
-        .offset = (uint32_t)offsetof(GetDocumentsSplitCountRequest_GetDocumentsSplitCountRequestV0__storage_, documentType),
-        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
-        .dataType = GPBDataTypeString,
-      },
-      {
-        .name = "where",
-        .dataTypeSpecific.clazz = Nil,
-        .number = GetDocumentsSplitCountRequest_GetDocumentsSplitCountRequestV0_FieldNumber_Where,
-        .hasIndex = 2,
-        .offset = (uint32_t)offsetof(GetDocumentsSplitCountRequest_GetDocumentsSplitCountRequestV0__storage_, where),
-        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
-        .dataType = GPBDataTypeBytes,
-      },
-      {
-        .name = "splitCountByIndexProperty",
-        .dataTypeSpecific.clazz = Nil,
-        .number = GetDocumentsSplitCountRequest_GetDocumentsSplitCountRequestV0_FieldNumber_SplitCountByIndexProperty,
-        .hasIndex = 3,
-        .offset = (uint32_t)offsetof(GetDocumentsSplitCountRequest_GetDocumentsSplitCountRequestV0__storage_, splitCountByIndexProperty),
-        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
-        .dataType = GPBDataTypeString,
-      },
-      {
-        .name = "prove",
-        .dataTypeSpecific.clazz = Nil,
-        .number = GetDocumentsSplitCountRequest_GetDocumentsSplitCountRequestV0_FieldNumber_Prove,
-        .hasIndex = 4,
-        .offset = 5,  // Stored in _has_storage_ to save space.
-        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
-        .dataType = GPBDataTypeBool,
-      },
-    };
-    GPBDescriptor *localDescriptor =
-        [GPBDescriptor allocDescriptorForClass:[GetDocumentsSplitCountRequest_GetDocumentsSplitCountRequestV0 class]
-                                     rootClass:[PlatformRoot class]
-                                          file:PlatformRoot_FileDescriptor()
-                                        fields:fields
-                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
-                                   storageSize:sizeof(GetDocumentsSplitCountRequest_GetDocumentsSplitCountRequestV0__storage_)
-                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
-    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetDocumentsSplitCountRequest)];
-    #if defined(DEBUG) && DEBUG
-      NSAssert(descriptor == nil, @"Startup recursed!");
-    #endif  // DEBUG
-    descriptor = localDescriptor;
-  }
-  return descriptor;
-}
-
-@end
-
-#pragma mark - GetDocumentsSplitCountResponse
-
-@implementation GetDocumentsSplitCountResponse
-
-@dynamic versionOneOfCase;
-@dynamic v0;
-
-typedef struct GetDocumentsSplitCountResponse__storage_ {
-  uint32_t _has_storage_[2];
-  GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0 *v0;
-} GetDocumentsSplitCountResponse__storage_;
-
-// This method is threadsafe because it is initially called
-// in +initialize for each subclass.
-+ (GPBDescriptor *)descriptor {
-  static GPBDescriptor *descriptor = nil;
-  if (!descriptor) {
-    static GPBMessageFieldDescription fields[] = {
-      {
-        .name = "v0",
-        .dataTypeSpecific.clazz = GPBObjCClass(GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0),
-        .number = GetDocumentsSplitCountResponse_FieldNumber_V0,
-        .hasIndex = -1,
-        .offset = (uint32_t)offsetof(GetDocumentsSplitCountResponse__storage_, v0),
-        .flags = GPBFieldOptional,
-        .dataType = GPBDataTypeMessage,
-      },
-    };
-    GPBDescriptor *localDescriptor =
-        [GPBDescriptor allocDescriptorForClass:[GetDocumentsSplitCountResponse class]
-                                     rootClass:[PlatformRoot class]
-                                          file:PlatformRoot_FileDescriptor()
-                                        fields:fields
-                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
-                                   storageSize:sizeof(GetDocumentsSplitCountResponse__storage_)
-                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
-    static const char *oneofs[] = {
-      "version",
-    };
-    [localDescriptor setupOneofs:oneofs
-                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
-                   firstHasIndex:-1];
-    #if defined(DEBUG) && DEBUG
-      NSAssert(descriptor == nil, @"Startup recursed!");
-    #endif  // DEBUG
-    descriptor = localDescriptor;
-  }
-  return descriptor;
-}
-
-@end
-
-void GetDocumentsSplitCountResponse_ClearVersionOneOfCase(GetDocumentsSplitCountResponse *message) {
-  GPBDescriptor *descriptor = [GetDocumentsSplitCountResponse descriptor];
-  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
-  GPBClearOneof(message, oneof);
-}
-#pragma mark - GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0
-
-@implementation GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0
-
-@dynamic resultOneOfCase;
-@dynamic splitCounts;
-@dynamic proof;
-@dynamic hasMetadata, metadata;
-
-typedef struct GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0__storage_ {
-  uint32_t _has_storage_[2];
-  GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCounts *splitCounts;
-  Proof *proof;
-  ResponseMetadata *metadata;
-} GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0__storage_;
-
-// This method is threadsafe because it is initially called
-// in +initialize for each subclass.
-+ (GPBDescriptor *)descriptor {
-  static GPBDescriptor *descriptor = nil;
-  if (!descriptor) {
-    static GPBMessageFieldDescription fields[] = {
-      {
-        .name = "splitCounts",
-        .dataTypeSpecific.clazz = GPBObjCClass(GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCounts),
-        .number = GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_FieldNumber_SplitCounts,
-        .hasIndex = -1,
-        .offset = (uint32_t)offsetof(GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0__storage_, splitCounts),
-        .flags = GPBFieldOptional,
-        .dataType = GPBDataTypeMessage,
-      },
-      {
-        .name = "proof",
-        .dataTypeSpecific.clazz = GPBObjCClass(Proof),
-        .number = GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_FieldNumber_Proof,
-        .hasIndex = -1,
-        .offset = (uint32_t)offsetof(GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0__storage_, proof),
-        .flags = GPBFieldOptional,
-        .dataType = GPBDataTypeMessage,
-      },
-      {
-        .name = "metadata",
-        .dataTypeSpecific.clazz = GPBObjCClass(ResponseMetadata),
-        .number = GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_FieldNumber_Metadata,
-        .hasIndex = 0,
-        .offset = (uint32_t)offsetof(GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0__storage_, metadata),
-        .flags = GPBFieldOptional,
-        .dataType = GPBDataTypeMessage,
-      },
-    };
-    GPBDescriptor *localDescriptor =
-        [GPBDescriptor allocDescriptorForClass:[GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0 class]
-                                     rootClass:[PlatformRoot class]
-                                          file:PlatformRoot_FileDescriptor()
-                                        fields:fields
-                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
-                                   storageSize:sizeof(GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0__storage_)
-                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
-    static const char *oneofs[] = {
-      "result",
-    };
-    [localDescriptor setupOneofs:oneofs
-                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
-                   firstHasIndex:-1];
-    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetDocumentsSplitCountResponse)];
-    #if defined(DEBUG) && DEBUG
-      NSAssert(descriptor == nil, @"Startup recursed!");
-    #endif  // DEBUG
-    descriptor = localDescriptor;
-  }
-  return descriptor;
-}
-
-@end
-
-void GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_ClearResultOneOfCase(GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0 *message) {
-  GPBDescriptor *descriptor = [GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0 descriptor];
-  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
-  GPBClearOneof(message, oneof);
-}
-#pragma mark - GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCountEntry
-
-@implementation GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCountEntry
-
+@dynamic hasInKey, inKey;
 @dynamic key;
 @dynamic count;
 
-typedef struct GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCountEntry__storage_ {
+typedef struct GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountEntry__storage_ {
   uint32_t _has_storage_[1];
+  NSData *inKey;
   NSData *key;
   uint64_t count;
-} GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCountEntry__storage_;
+} GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountEntry__storage_;
 
 // This method is threadsafe because it is initially called
 // in +initialize for each subclass.
@@ -6024,33 +5772,42 @@ typedef struct GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_S
   if (!descriptor) {
     static GPBMessageFieldDescription fields[] = {
       {
+        .name = "inKey",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountEntry_FieldNumber_InKey,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountEntry__storage_, inKey),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBytes,
+      },
+      {
         .name = "key",
         .dataTypeSpecific.clazz = Nil,
-        .number = GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCountEntry_FieldNumber_Key,
-        .hasIndex = 0,
-        .offset = (uint32_t)offsetof(GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCountEntry__storage_, key),
+        .number = GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountEntry_FieldNumber_Key,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountEntry__storage_, key),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBytes,
       },
       {
         .name = "count",
         .dataTypeSpecific.clazz = Nil,
-        .number = GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCountEntry_FieldNumber_Count,
-        .hasIndex = 1,
-        .offset = (uint32_t)offsetof(GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCountEntry__storage_, count),
+        .number = GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountEntry_FieldNumber_Count,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountEntry__storage_, count),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt64,
       },
     };
     GPBDescriptor *localDescriptor =
-        [GPBDescriptor allocDescriptorForClass:[GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCountEntry class]
+        [GPBDescriptor allocDescriptorForClass:[GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountEntry class]
                                      rootClass:[PlatformRoot class]
                                           file:PlatformRoot_FileDescriptor()
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
-                                   storageSize:sizeof(GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCountEntry__storage_)
+                                   storageSize:sizeof(GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountEntry__storage_)
                                          flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
-    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetDocumentsCountResponse_GetDocumentsCountResponseV0)];
     #if defined(DEBUG) && DEBUG
       NSAssert(descriptor == nil, @"Startup recursed!");
     #endif  // DEBUG
@@ -6061,16 +5818,16 @@ typedef struct GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_S
 
 @end
 
-#pragma mark - GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCounts
+#pragma mark - GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountEntries
 
-@implementation GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCounts
+@implementation GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountEntries
 
 @dynamic entriesArray, entriesArray_Count;
 
-typedef struct GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCounts__storage_ {
+typedef struct GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountEntries__storage_ {
   uint32_t _has_storage_[1];
   NSMutableArray *entriesArray;
-} GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCounts__storage_;
+} GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountEntries__storage_;
 
 // This method is threadsafe because it is initially called
 // in +initialize for each subclass.
@@ -6080,23 +5837,23 @@ typedef struct GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_S
     static GPBMessageFieldDescription fields[] = {
       {
         .name = "entriesArray",
-        .dataTypeSpecific.clazz = GPBObjCClass(GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCountEntry),
-        .number = GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCounts_FieldNumber_EntriesArray,
+        .dataTypeSpecific.clazz = GPBObjCClass(GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountEntry),
+        .number = GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountEntries_FieldNumber_EntriesArray,
         .hasIndex = GPBNoHasBit,
-        .offset = (uint32_t)offsetof(GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCounts__storage_, entriesArray),
+        .offset = (uint32_t)offsetof(GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountEntries__storage_, entriesArray),
         .flags = GPBFieldRepeated,
         .dataType = GPBDataTypeMessage,
       },
     };
     GPBDescriptor *localDescriptor =
-        [GPBDescriptor allocDescriptorForClass:[GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCounts class]
+        [GPBDescriptor allocDescriptorForClass:[GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountEntries class]
                                      rootClass:[PlatformRoot class]
                                           file:PlatformRoot_FileDescriptor()
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
-                                   storageSize:sizeof(GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCounts__storage_)
+                                   storageSize:sizeof(GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountEntries__storage_)
                                          flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
-    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetDocumentsCountResponse_GetDocumentsCountResponseV0)];
     #if defined(DEBUG) && DEBUG
       NSAssert(descriptor == nil, @"Startup recursed!");
     #endif  // DEBUG
@@ -6107,6 +5864,75 @@ typedef struct GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_S
 
 @end
 
+#pragma mark - GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountResults
+
+@implementation GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountResults
+
+@dynamic variantOneOfCase;
+@dynamic aggregateCount;
+@dynamic entries;
+
+typedef struct GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountResults__storage_ {
+  uint32_t _has_storage_[2];
+  GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountEntries *entries;
+  uint64_t aggregateCount;
+} GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountResults__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "aggregateCount",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountResults_FieldNumber_AggregateCount,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountResults__storage_, aggregateCount),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "entries",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountEntries),
+        .number = GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountResults_FieldNumber_Entries,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountResults__storage_, entries),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountResults class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountResults__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "variant",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetDocumentsCountResponse_GetDocumentsCountResponseV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountResults_ClearVariantOneOfCase(GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountResults *message) {
+  GPBDescriptor *descriptor = [GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountResults descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
 #pragma mark - GetIdentityByPublicKeyHashRequest
 
 @implementation GetIdentityByPublicKeyHashRequest

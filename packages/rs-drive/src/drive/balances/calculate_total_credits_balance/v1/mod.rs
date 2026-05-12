@@ -75,6 +75,11 @@ impl Drive {
             total_identity_balances,
             total_specialized_balances,
             total_in_addresses,
+            // v1 predates the ShieldedBalances root tree (introduced at
+            // protocol v12 / drive v7 alongside the v2 calculator). On
+            // pre-v12 chains the tree does not exist, so v1 does not read
+            // it and leaves the field zeroed.
+            total_in_shielded_balances: 0,
         })
     }
 }
