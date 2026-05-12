@@ -14,6 +14,7 @@ pub mod cr_004_legacy_bip32_utxo_update_after_spend;
 pub mod dpns_001_register_name;
 // Found-bug pins (see TEST_SPEC.md ### Found bugs)
 pub mod found_004_fund_from_asset_lock_silent_fallback;
+pub mod found_006_topup_index_ignored;
 pub mod id_001_register_identity_from_addresses;
 pub mod id_002_top_up_identity;
 pub mod id_002b_asset_lock_top_up;
