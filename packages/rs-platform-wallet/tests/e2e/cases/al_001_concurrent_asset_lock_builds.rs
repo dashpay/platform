@@ -37,6 +37,13 @@
 //!   Found-012. With BIP-44 account 0 funding this is not expected
 //!   today; flag it if a future harness extension changes the
 //!   account routing.
+//!
+//! QA-011: AL-001 requires N+1 pre-split UTXOs on the test wallet's
+//! BIP-44 account 0 before the concurrent fan-out in step 3. Without
+//! the split, all N tasks compete for a single UTXO and N-1 fail with
+//! `Coin selection error: No UTXOs available for selection`. Step 1b
+//! self-sends the entire Core balance to N+1 fresh receive addresses
+//! so coin selection always has a dedicated candidate per task.
 
 use std::collections::HashSet;
 use std::time::Duration;
@@ -45,12 +52,14 @@ use dpp::balances::credits::CREDITS_PER_DUFF;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
 use dpp::prelude::Identifier;
+use key_wallet::account::account_type::StandardAccountType;
 use key_wallet::AccountType;
 use platform_wallet::wallet::asset_lock::tracked::AssetLockStatus;
 use platform_wallet::wallet::identity::types::funding::TopUpFundingMethod;
 use platform_wallet::PlatformWalletError;
 
 use crate::framework::prelude::*;
+use crate::framework::wait::wait_for_core_balance;
 use crate::framework::wait::wait_for_identity_balance;
 use dash_sdk::platform::Fetch;
 
@@ -87,6 +96,7 @@ const TOP_UP_VISIBILITY_TIMEOUT: Duration = Duration::from_secs(240);
 #[ignore = "AL-001 — needs testnet + bank Core (Layer-1) pre-funding \
             sized for N parallel asset-locks (~5 DASH testnet). Same \
             PLATFORM_WALLET_E2E_BANK_CORE_GATE gate as CR-003 / ID-002b. \
+            Step 1b pre-splits the balance into N+1 UTXOs (QA-011). \
             May flake under concurrent load if Found-008 fires \
             (LockNotifyHandler missed-wakeup) — see the file-level \
             doc-comment and Found-008's spec entry."]
@@ -111,6 +121,45 @@ async fn al_001_concurrent_asset_lock_builds() {
         "PRE-pin violated: confirmed Core balance {pre_setup_core} < \
          CONCURRENT_LOCK_FUNDING_TOTAL {CONCURRENT_LOCK_FUNDING_TOTAL}"
     );
+
+    // Step 1b: pre-split the bank UTXO into N+1 separate UTXOs so
+    // each concurrent top-up task in step 3 has a dedicated coin to
+    // select. Without the split, all N tasks compete for a single
+    // bank UTXO and N-1 of them fail with "No UTXOs available for
+    // selection" (QA-011). We build a self-send with N+1 outputs to
+    // freshly-derived BIP-44 account-0 receive addresses, each
+    // carrying ~CONCURRENT_LOCK_FUNDING_TOTAL / (N+1) duffs.
+    let split_amount = CONCURRENT_LOCK_FUNDING_TOTAL / (N as u64 + 1);
+    let mut split_outputs: Vec<(dashcore::Address, u64)> = Vec::with_capacity(N + 1);
+    for _ in 0..=N {
+        let addr = s
+            .test_wallet
+            .platform_wallet()
+            .core()
+            .next_receive_address_for_account(0)
+            .await
+            .expect("derive BIP-44 receive address for UTXO split");
+        split_outputs.push((addr, split_amount));
+    }
+    let split_tx = s
+        .test_wallet
+        .platform_wallet()
+        .core()
+        .send_to_addresses(StandardAccountType::BIP44Account, 0, split_outputs)
+        .await
+        .expect("UTXO pre-split self-send failed");
+    tracing::info!(
+        target: "platform_wallet::e2e::cases::al_001",
+        txid = %split_tx.txid(),
+        n_outputs = N + 1,
+        split_amount,
+        "AL-001: pre-split into N+1 UTXOs for concurrent coin selection"
+    );
+    // Wait for the split to be SPV-visible before spawning concurrent tasks.
+    let expected_post_split = split_amount.saturating_mul(N as u64 + 1);
+    wait_for_core_balance(&s.test_wallet, expected_post_split, STEP_TIMEOUT)
+        .await
+        .expect("UTXO pre-split not observed by SPV within timeout");
 
     // Step 2: register N identities via the address-funded path. The
     // concurrent top-ups in step 3 target DIFFERENT identities so we
