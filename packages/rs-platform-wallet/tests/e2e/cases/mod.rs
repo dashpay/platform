@@ -6,12 +6,14 @@
 //! TEST_SPEC.md priorities (P1, P2, ID-, DP-, DPNS-, TK-, …) follow
 //! in subsequent PRs.
 
+// Asset-lock manager cases (Wave AL — see TEST_SPEC.md ### Asset Lock (AL))
+pub mod al_001_concurrent_asset_lock_builds;
 pub mod cr_001_spv_mn_list_sync_readiness;
 pub mod cr_003_asset_lock_funded_registration;
 pub mod cr_004_legacy_bip32_utxo_update_after_spend;
-// Asset-lock manager cases (Wave AL — see TEST_SPEC.md ### Asset Lock (AL))
-pub mod al_001_concurrent_asset_lock_builds;
 pub mod dpns_001_register_name;
+// Found-bug pins (see TEST_SPEC.md ### Found bugs)
+pub mod found_004_fund_from_asset_lock_silent_fallback;
 pub mod id_001_register_identity_from_addresses;
 pub mod id_002_top_up_identity;
 pub mod id_002b_asset_lock_top_up;
