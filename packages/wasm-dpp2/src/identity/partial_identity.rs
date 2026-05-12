@@ -387,8 +387,10 @@ pub fn value_to_loaded_public_keys_from_object(
         // enum is internally tagged). The legacy version-aware form
         // produced identical output for V0 (the only structure version
         // currently defined).
-        let pub_key = <IdentityPublicKey as dpp::serialization::ValueConvertible>::from_object(platform_value)
-            .map_err(WasmDppError::from)?;
+        let pub_key = <IdentityPublicKey as dpp::serialization::ValueConvertible>::from_object(
+            platform_value,
+        )
+        .map_err(WasmDppError::from)?;
         map.insert(key_id, pub_key);
     }
 

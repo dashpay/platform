@@ -54,9 +54,9 @@ impl DataContractCreateTransitionWasm {
         // `$formatVersion` serde tag; legacy JS clients send the value
         // un-tagged, so insert the tag for the only supported V0 variant.
         if let dpp::platform_value::Value::Map(ref mut entries) = raw {
-            let has_tag = entries.iter().any(|(k, _)| {
-                matches!(k, dpp::platform_value::Value::Text(s) if s == "$formatVersion")
-            });
+            let has_tag = entries.iter().any(
+                |(k, _)| matches!(k, dpp::platform_value::Value::Text(s) if s == "$formatVersion"),
+            );
             if !has_tag {
                 entries.push((
                     dpp::platform_value::Value::Text("$formatVersion".to_string()),

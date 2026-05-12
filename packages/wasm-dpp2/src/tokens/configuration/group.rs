@@ -155,7 +155,6 @@ impl GroupWasm {
             .set_member_power(member.try_into()?, member_required_power);
         Ok(())
     }
-
 }
 
 crate::impl_wasm_conversions_inner!(GroupWasm, Group, Group, GroupObjectJs, GroupJSONJs);

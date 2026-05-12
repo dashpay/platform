@@ -103,8 +103,7 @@ impl<'de> Deserialize<'de> for ResourceVoteChoice {
                 let variant = variant.ok_or_else(|| de::Error::missing_field("type"))?;
                 match variant.as_str() {
                     "towardsIdentity" => {
-                        let id = identity
-                            .ok_or_else(|| de::Error::missing_field("identity"))?;
+                        let id = identity.ok_or_else(|| de::Error::missing_field("identity"))?;
                         Ok(ResourceVoteChoice::TowardsIdentity(id))
                     }
                     "abstain" => Ok(ResourceVoteChoice::Abstain),

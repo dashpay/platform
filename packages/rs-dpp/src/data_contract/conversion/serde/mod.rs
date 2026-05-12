@@ -104,8 +104,7 @@ mod data_contract_serde_pins_critical_4 {
         let original = created.data_contract().clone();
 
         let json = serde_json::to_value(&original).expect("serialize to json");
-        let recovered: DataContract =
-            serde_json::from_value(json).expect("deserialize from json");
+        let recovered: DataContract = serde_json::from_value(json).expect("deserialize from json");
 
         assert_eq!(original.id(), recovered.id());
         assert_eq!(original.owner_id(), recovered.owner_id());
@@ -127,8 +126,7 @@ mod data_contract_serde_pins_critical_4 {
         let format: DataContractInSerializationFormat = original
             .try_into_platform_versioned(LATEST_PLATFORM_VERSION)
             .expect("DataContract -> SerializationFormat at latest");
-        let format_json =
-            serde_json::to_value(&format).expect("SerializationFormat -> json");
+        let format_json = serde_json::to_value(&format).expect("SerializationFormat -> json");
 
         assert_eq!(
             direct_json, format_json,
@@ -199,8 +197,7 @@ mod data_contract_serde_pins_critical_4 {
         );
 
         // PIN: explicit opt-in validation rejects the same payload.
-        let validated_result =
-            DataContract::from_json_validated(json, LATEST_PLATFORM_VERSION);
+        let validated_result = DataContract::from_json_validated(json, LATEST_PLATFORM_VERSION);
         assert!(
             validated_result.is_err(),
             "DataContract::from_json_validated should reject contracts with \

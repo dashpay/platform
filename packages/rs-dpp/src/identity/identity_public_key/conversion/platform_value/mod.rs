@@ -37,9 +37,10 @@ mod tests {
         let value = key.to_object().expect("to_object");
         let map = value.to_map().expect("map");
         assert!(
-            map.iter()
-                .any(|(k, v): &(Value, Value)| k.as_text() == Some("$formatVersion")
-                    && v.as_text() == Some("0")),
+            map.iter().any(
+                |(k, v): &(Value, Value)| k.as_text() == Some("$formatVersion")
+                    && v.as_text() == Some("0")
+            ),
             "outer enum must surface the $formatVersion tag"
         );
     }

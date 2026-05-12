@@ -56,7 +56,9 @@ impl<'de> Deserialize<'de> for ContestedDocumentVotePollWinnerInfo {
             type Value = ContestedDocumentVotePollWinnerInfo;
 
             fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-                f.write_str("ContestedDocumentVotePollWinnerInfo as a map with `type` discriminator")
+                f.write_str(
+                    "ContestedDocumentVotePollWinnerInfo as a map with `type` discriminator",
+                )
             }
 
             fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
@@ -87,8 +89,7 @@ impl<'de> Deserialize<'de> for ContestedDocumentVotePollWinnerInfo {
                 match variant.as_str() {
                     "noWinner" => Ok(ContestedDocumentVotePollWinnerInfo::NoWinner),
                     "wonByIdentity" => {
-                        let id = identity
-                            .ok_or_else(|| de::Error::missing_field("identity"))?;
+                        let id = identity.ok_or_else(|| de::Error::missing_field("identity"))?;
                         Ok(ContestedDocumentVotePollWinnerInfo::WonByIdentity(id))
                     }
                     "locked" => Ok(ContestedDocumentVotePollWinnerInfo::Locked),

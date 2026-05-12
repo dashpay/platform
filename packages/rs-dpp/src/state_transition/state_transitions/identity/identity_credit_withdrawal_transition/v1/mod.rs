@@ -173,5 +173,4 @@ mod test {
         let t = make_withdrawal_v1();
         assert_eq!(t.owner_id(), t.identity_id);
     }
-
 }

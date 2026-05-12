@@ -20,12 +20,8 @@ impl DataContractJsonConversionMethodsV0 for DataContract {
             .contract_versions
             .contract_structure_version
         {
-            0 => Ok(
-                DataContractV0::from_json_validated(json_value, platform_version)?.into(),
-            ),
-            1 => Ok(
-                DataContractV1::from_json_validated(json_value, platform_version)?.into(),
-            ),
+            0 => Ok(DataContractV0::from_json_validated(json_value, platform_version)?.into()),
+            1 => Ok(DataContractV1::from_json_validated(json_value, platform_version)?.into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContract::from_json_validated".to_string(),
                 known_versions: vec![0, 1],

@@ -83,9 +83,9 @@ impl<'de> Deserialize<'de> for DocumentReplaceTransitionV0 {
         // JSON HR — accept both numeric and string forms here so the manual
         // Deserialize doesn't reject large revisions.
         let revision: Revision = match revision_value {
-            Value::Text(s) => s.parse().map_err(|e| {
-                D::Error::custom(format!("invalid u64 string in $revision: {e}"))
-            })?,
+            Value::Text(s) => s
+                .parse()
+                .map_err(|e| D::Error::custom(format!("invalid u64 string in $revision: {e}")))?,
             other => platform_value::from_value(other).map_err(D::Error::custom)?,
         };
 

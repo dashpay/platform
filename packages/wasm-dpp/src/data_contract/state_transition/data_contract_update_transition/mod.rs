@@ -3,13 +3,13 @@
 // pub use validation::*;
 
 use dpp::consensus::ConsensusError;
+use dpp::serialization::ValueConvertible;
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use dpp::state_transition::StateTransitionHasUserFeeIncrease;
-use dpp::serialization::ValueConvertible;
 use dpp::state_transition::StateTransition;
 use dpp::state_transition::StateTransitionFieldTypes;
+use dpp::state_transition::StateTransitionHasUserFeeIncrease;
 use dpp::state_transition::{
     StateTransitionIdentitySigned, StateTransitionOwned, StateTransitionSingleSigned,
 };
@@ -55,9 +55,9 @@ impl DataContractUpdateTransitionWasm {
         // `$formatVersion` serde tag; legacy JS clients send the value
         // un-tagged, so insert the tag for the only supported V0 variant.
         if let dpp::platform_value::Value::Map(ref mut entries) = raw {
-            let has_tag = entries.iter().any(|(k, _)| {
-                matches!(k, dpp::platform_value::Value::Text(s) if s == "$formatVersion")
-            });
+            let has_tag = entries.iter().any(
+                |(k, _)| matches!(k, dpp::platform_value::Value::Text(s) if s == "$formatVersion"),
+            );
             if !has_tag {
                 entries.push((
                     dpp::platform_value::Value::Text("$formatVersion".to_string()),

@@ -64,7 +64,6 @@ use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::document::serialization_traits::{
     DocumentCborMethodsV0, DocumentPlatformConversionMethodsV0,
 };
-use dpp::serialization::ValueConvertible;
 use dpp::document::{DocumentV0Getters, DocumentV0Setters};
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::identity::TimestampMillis;
@@ -72,6 +71,7 @@ use dpp::platform_value;
 use dpp::platform_value::string_encoding::Encoding;
 #[cfg(feature = "server")]
 use dpp::prelude::DataContract;
+use dpp::serialization::ValueConvertible;
 use dpp::tests::json_document::json_document_to_contract;
 #[cfg(feature = "server")]
 use dpp::util::cbor_serializer;
@@ -585,8 +585,7 @@ fn test_serialization_and_deserialization() {
     for domain in domains {
         let value = platform_value::to_value(domain).expect("expected value");
 
-        let mut document =
-            document_from_legacy_value(value);
+        let mut document = document_from_legacy_value(value);
         document.set_revision(Some(1));
         let serialized = <Document as DocumentPlatformConversionMethodsV0>::serialize(
             &document,
@@ -634,8 +633,7 @@ fn test_serialization_and_deserialization_with_null_values_should_fail_if_requir
     };
 
     let value = platform_value::to_value(domain).expect("expected value");
-    let mut document =
-        document_from_legacy_value(value);
+    let mut document = document_from_legacy_value(value);
     document.set_revision(Some(1));
 
     <Document as DocumentPlatformConversionMethodsV0>::serialize(
@@ -686,8 +684,7 @@ fn test_serialization_and_deserialization_with_null_values() {
     value
         .remove_optional_value("normalizedLabel")
         .expect("expected to remove null");
-    let mut document =
-        document_from_legacy_value(value);
+    let mut document = document_from_legacy_value(value);
     document.set_revision(Some(1));
     let serialized = DocumentPlatformConversionMethodsV0::serialize(
         &document,
@@ -841,8 +838,7 @@ pub fn add_domains_to_contract(
         .expect("expected to get document type");
     for domain in domains {
         let value = platform_value::to_value(domain).expect("expected value");
-        let document =
-            document_from_legacy_value(value);
+        let document = document_from_legacy_value(value);
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
@@ -884,8 +880,7 @@ pub fn add_withdrawals_to_contract(
         .expect("expected to get document type");
     for domain in withdrawals {
         let value = platform_value::to_value(domain).expect("expected value");
-        let document =
-            document_from_legacy_value(value);
+        let document = document_from_legacy_value(value);
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 

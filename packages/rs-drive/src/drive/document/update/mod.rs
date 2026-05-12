@@ -59,13 +59,13 @@ mod tests {
     use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
     use dpp::document::document_methods::DocumentMethodsV0;
     use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-    use dpp::serialization::ValueConvertible;
     use dpp::document::specialized_document_factory::SpecializedDocumentFactory;
     use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use dpp::fee::default_costs::{CachedEpochIndexFeeVersions, EpochCosts};
     use dpp::fee::fee_result::FeeResult;
     use dpp::platform_value;
+    use dpp::serialization::ValueConvertible;
     use dpp::tests::json_document::json_document_to_document;
     use dpp::version::fee::FeeVersion;
     use once_cell::sync::Lazy;
@@ -623,8 +623,8 @@ mod tests {
         });
 
         // first we need to deserialize the contract
-        let contract = platform_value::from_value::<DataContract>(contract)
-            .expect("expected data contract");
+        let contract =
+            platform_value::from_value::<DataContract>(contract).expect("expected data contract");
 
         drive
             .apply_contract(

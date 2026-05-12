@@ -794,9 +794,8 @@ fn test_countable_allowing_offset_variant_end_to_end() {
     // policy). The earlier `from_json(_, false, _)` legacy method was deleted
     // when the `_versioned` family collapsed into canonical + `_validated`.
     let _ = platform_version;
-    let data_contract: dpp::data_contract::DataContract =
-        serde_json::from_value(contract_json)
-            .expect("expected to load contract with string-form countable");
+    let data_contract: dpp::data_contract::DataContract = serde_json::from_value(contract_json)
+        .expect("expected to load contract with string-form countable");
 
     let document_type = data_contract
         .document_type_for_name("person")

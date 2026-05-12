@@ -182,7 +182,9 @@ impl serde::Serialize for TokenEvent {
         struct SafeOptEncNote<'a>(&'a Option<(u32, u32, Vec<u8>)>);
         impl<'a> serde::Serialize for SafeOptEncNote<'a> {
             fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-                crate::serialization::json::safe_integer::json_safe_option_encrypted_note::serialize(self.0, s)
+                crate::serialization::json::safe_integer::json_safe_option_encrypted_note::serialize(
+                    self.0, s,
+                )
             }
         }
 
@@ -356,8 +358,7 @@ impl<'de> serde::Deserialize<'de> for TokenEvent {
                     )),
                     "burn" => Ok(TokenEvent::Burn(
                         amount.ok_or_else(|| A::Error::missing_field("amount"))?,
-                        burn_from
-                            .ok_or_else(|| A::Error::missing_field("burnFromIdentifier"))?,
+                        burn_from.ok_or_else(|| A::Error::missing_field("burnFromIdentifier"))?,
                         public_note,
                     )),
                     "freeze" => Ok(TokenEvent::Freeze(
@@ -395,9 +396,10 @@ impl<'de> serde::Deserialize<'de> for TokenEvent {
                             .ok_or_else(|| A::Error::missing_field("configurationChange"))?,
                         public_note,
                     )),
-                    "changePriceForDirectPurchase" => Ok(
-                        TokenEvent::ChangePriceForDirectPurchase(pricing_schedule, public_note),
-                    ),
+                    "changePriceForDirectPurchase" => Ok(TokenEvent::ChangePriceForDirectPurchase(
+                        pricing_schedule,
+                        public_note,
+                    )),
                     "directPurchase" => Ok(TokenEvent::DirectPurchase(
                         amount.ok_or_else(|| A::Error::missing_field("amount"))?,
                         credits.ok_or_else(|| A::Error::missing_field("credits"))?,

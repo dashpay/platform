@@ -341,19 +341,16 @@ fn stringify_map_keys_for_object(value: &platform_value::Value) -> platform_valu
                 .map(|(k, v)| (stringify_key(k), stringify_map_keys_for_object(v)))
                 .collect(),
         ),
-        Value::Array(items) => Value::Array(
-            items
-                .iter()
-                .map(stringify_map_keys_for_object)
-                .collect(),
-        ),
+        Value::Array(items) => {
+            Value::Array(items.iter().map(stringify_map_keys_for_object).collect())
+        }
         other => other.clone(),
     }
 }
 
 fn stringify_key(key: &platform_value::Value) -> platform_value::Value {
-    use dpp::platform_value::string_encoding::{encode, Encoding};
     use dpp::platform_value::Value;
+    use dpp::platform_value::string_encoding::{Encoding, encode};
     match key {
         Value::Text(_) => key.clone(),
         Value::U8(n) => Value::Text(n.to_string()),

@@ -104,7 +104,6 @@ impl TokenConfigurationLocalizationWasm {
     pub fn set_singular_form(&mut self, singular_form: String) {
         self.0.set_singular_form(singular_form);
     }
-
 }
 
 crate::impl_wasm_conversions_inner!(

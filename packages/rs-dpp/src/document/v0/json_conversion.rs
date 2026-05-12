@@ -92,7 +92,6 @@ impl DocumentJsonMethodsV0<'_> for DocumentV0 {
 
         Ok(value)
     }
-
 }
 
 #[cfg(test)]
@@ -371,5 +370,4 @@ mod tests {
         assert_eq!(obj.get("b").and_then(|v| v.as_str()), Some("two"));
         assert_eq!(obj.get("c").and_then(|v| v.as_bool()), Some(true));
     }
-
 }

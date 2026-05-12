@@ -503,10 +503,7 @@ impl DocumentWasm {
         // and every other rs-dpp type's canonical wire shape. Symmetric
         // with `fromObject` which now uses canonical
         // `Document::from_object` (requires the tag).
-        map.insert(
-            "$formatVersion".to_string(),
-            Value::Text("0".to_string()),
-        );
+        map.insert("$formatVersion".to_string(), Value::Text("0".to_string()));
         // wasm-side metadata not in core Document
         let data_contract_id: Identifier = self.data_contract_id.into();
         map.insert(
