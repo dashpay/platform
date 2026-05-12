@@ -37,18 +37,15 @@ public class PlatformWallet {
     /// Create a new Platform Wallet from a BIP39 mnemonic phrase
     public static func fromMnemonic(
         _ mnemonic: String,
-        passphrase: String? = nil,
         network: Network = .testnet
     ) throws -> PlatformWallet {
         var handle: Handle = NULL_HANDLE
 
         let mnemonicCStr = (mnemonic as NSString).utf8String
-        let passphraseCStr = passphrase != nil ? (passphrase! as NSString).utf8String : nil
 
         try platform_wallet_info_create_from_mnemonic(
             network.ffiValue,
             mnemonicCStr,
-            passphraseCStr,
             &handle
         ).check()
 

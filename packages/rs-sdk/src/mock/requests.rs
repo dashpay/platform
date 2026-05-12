@@ -566,3 +566,55 @@ impl MockResponse for NullifiersTrunkState {
         unimplemented!("NullifiersTrunkState does not support mock deserialization - the Tree type is not serializable")
     }
 }
+
+impl MockResponse for drive_proof_verifier::DocumentCount {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        let bincode_config = standard();
+        bincode::encode_to_vec(self.0, bincode_config).expect("encode DocumentCount")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let bincode_config = standard();
+        let (count, _): (u64, _) =
+            bincode::decode_from_slice(buf, bincode_config).expect("decode DocumentCount");
+        drive_proof_verifier::DocumentCount(count)
+    }
+}
+
+impl MockResponse for drive_proof_verifier::DocumentSplitCounts {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        let bincode_config = standard();
+        // Serialize as `(Option<Vec<u8>>, Vec<u8>, u64)` triples so
+        // the In dimension survives the mock roundtrip. Required for
+        // compound (`In + range + distinct`) test fixtures to keep
+        // their `in_key` values across the mock encode/decode hop.
+        let triples: Vec<(Option<Vec<u8>>, Vec<u8>, u64)> = self
+            .0
+            .iter()
+            .map(|e| (e.in_key.clone(), e.key.clone(), e.count))
+            .collect();
+        bincode::encode_to_vec(triples, bincode_config).expect("encode DocumentSplitCounts")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        // Alias the wire triple so clippy doesn't flag the bincode
+        // generic as too complex. Same shape mock_serialize emits.
+        type DecodedTriples = Vec<(Option<Vec<u8>>, Vec<u8>, u64)>;
+        let bincode_config = standard();
+        let (triples, _): (DecodedTriples, _) =
+            bincode::decode_from_slice(buf, bincode_config).expect("decode DocumentSplitCounts");
+        let entries: Vec<drive_proof_verifier::SplitCountEntry> = triples
+            .into_iter()
+            .map(
+                |(in_key, key, count)| drive_proof_verifier::SplitCountEntry { in_key, key, count },
+            )
+            .collect();
+        drive_proof_verifier::DocumentSplitCounts::from_verified(entries)
+    }
+}
