@@ -20,14 +20,11 @@
 //! The wire shape and proof-verification logic are unchanged from
 //! the prior `DocumentCountQuery` impls — this file is the
 //! "delete the wrapper, keep the verifier dispatch" half of the
-//! PR 2 SDK migration. The dispatch reads the implicit-grouping
-//! signal from `request.group_by` (v1's explicit `GROUP BY`)
-//! instead of the legacy `return_distinct_counts_in_range` bool
-//! that the wrapper carried; the two are semantically equivalent
-//! on the SDK ↔ server seam (see `compute_group_by`'s docs in the
-//! removed `document_count_query.rs` for the implicit→explicit
-//! translation table, mirrored in FFI/wasm shims that still expose
-//! the legacy flag for ABI back-compat).
+//! PR 2 SDK migration. Dispatch reads `request.group_by` directly:
+//! `[]` → aggregate verifier path, `[field]` / `[field_a, field_b]`
+//! → distinct verifier path. There is no implicit grouping
+//! anywhere — FFI and wasm-sdk surfaces expose `group_by` directly
+//! too, mirroring the v1 wire shape one-to-one.
 //!
 //! [`Document`]: dpp::document::Document
 
@@ -164,15 +161,15 @@ impl FromProof<DocumentQuery> for DocumentCount {
                 .or(Err(drive_proof_verifier::Error::EmptyResponseMetadata))?;
 
             // Distinct (non-empty `group_by`) vs aggregate (empty
-            // `group_by`) is the v1 successor of the v0 wrapper's
-            // `return_distinct_counts_in_range` bool. The server's
-            // dispatcher routes `(range, prove=true, group_by=[g])`
-            // to `RangeDistinctProof` (emits per-key `KVCount` ops)
-            // and `(range, prove=true, group_by=[])` to `RangeProof`
-            // (emits a single `AggregateCountOnRange` aggregate);
-            // the two proof shapes are NOT interchangeable — decoding
-            // a distinct proof with the aggregate verifier fails
-            // merk-root recomputation because the path queries differ
+            // `group_by`) selects which proof shape the server
+            // emits. `(range, prove=true, group_by=[g])` routes to
+            // `RangeDistinctProof` (emits per-key `KVCount` ops);
+            // `(range, prove=true, group_by=[])` routes to
+            // `RangeProof` (emits a single `AggregateCountOnRange`
+            // aggregate). The two proof shapes are NOT
+            // interchangeable — decoding a distinct proof with the
+            // aggregate verifier fails merk-root recomputation
+            // because the path queries differ
             // structurally.
             if !request.group_by.is_empty() {
                 // Rebuild the same path query the prover signed. The
@@ -358,8 +355,7 @@ impl FromProof<DocumentQuery> for DocumentSplitCounts {
         // `verify_distinct_count_proof` runs the standard hash
         // chain check and reads the counts back as a verified
         // `Vec<SplitCountEntry>`. Only reachable when the SDK
-        // builder set `.with_group_by(...)` — the v1 successor of
-        // the v0 wrapper's `return_distinct_counts_in_range = true`.
+        // builder set `.with_group_by(...)`.
         if has_range && !request.group_by.is_empty() {
             let response: Self::Response = response.into();
 

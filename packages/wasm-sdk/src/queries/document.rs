@@ -97,18 +97,26 @@ export interface DocumentsQuery {
   startAt?: IdentifierLike
 
   /**
-   * Count-query knob: when `true` AND the query carries a range
-   * clause, the server returns per-distinct-value entries within
-   * the range instead of a single sum. Ignored by the regular
-   * document-fetch path.
+   * Count-query knob: SQL-shaped `GROUP BY` field list. Mirrors
+   * the v1 wire's `group_by: repeated string` directly. Ignored
+   * by the regular document-fetch path.
+   *
+   * - `[]` or omitted → aggregate count (a single row).
+   * - `["<in_field>"]` where `<in_field>` matches an `In`
+   *   constraint → per-`In`-value entries (PerInValue).
+   * - `["<range_field>"]` where `<range_field>` matches a range
+   *   constraint → per-distinct-value entries within the range
+   *   (RangeDistinct).
+   * - `["<in_field>", "<range_field>"]` for compound `In + range`
+   *   queries → compound distinct entries.
    *
    * Entry direction comes from the first `orderBy` clause's
    * direction (which also drives walk order on the materialize +
    * prove path); set `orderBy: [["<range_field>", "asc"|"desc"]]`
-   * alongside `returnDistinctCountsInRange: true` to control sort.
-   * @default false
+   * alongside `groupBy: ["<range_field>"]` to control sort.
+   * @default []
    */
-  returnDistinctCountsInRange?: boolean;
+  groupBy?: string[];
 }
 "#;
 
@@ -133,12 +141,13 @@ struct DocumentsQueryInput {
     start_after: Option<IdentifierWasm>,
     #[serde(rename = "startAt", default)]
     start_at: Option<IdentifierWasm>,
-    /// Count-query knob: when `true` AND the query carries a range
-    /// clause, the server returns per-distinct-value entries within
-    /// the range instead of a single sum. Ignored by the regular
-    /// document-fetch path. Default `false`.
-    #[serde(default)]
-    return_distinct_counts_in_range: Option<bool>,
+    /// Count-query knob: SQL-shaped `GROUP BY` field list,
+    /// mirroring the v1 wire `group_by: repeated string` field
+    /// one-to-one. Ignored by the regular document-fetch path.
+    /// See the TypeScript declaration for the supported shapes.
+    /// Default empty (aggregate count).
+    #[serde(rename = "groupBy", default)]
+    group_by: Option<Vec<String>>,
     // Order direction for count results flows through the existing
     // `orderBy` field — the first clause's direction controls
     // split-mode entry ordering and `(In + prove)` walk order. No
@@ -149,9 +158,9 @@ async fn build_documents_query(
     sdk: &WasmSdk,
     input: DocumentsQueryInput,
 ) -> Result<DocumentQuery, WasmSdkError> {
-    // `return_distinct_counts_in_range` on the shared input struct is
-    // a count-query-only knob; the regular document-fetch path
-    // destructured here just drops it.
+    // `group_by` on the shared input struct is a count-query-only
+    // knob; the regular document-fetch path destructured here just
+    // drops it.
     let DocumentsQueryInput {
         data_contract_id,
         document_type_name,
@@ -160,7 +169,7 @@ async fn build_documents_query(
         limit,
         start_after,
         start_at,
-        return_distinct_counts_in_range: _,
+        group_by: _,
     } = input;
 
     let contract_id: Identifier = data_contract_id.into();
@@ -215,27 +224,22 @@ async fn parse_documents_query(
     build_documents_query(sdk, input).await
 }
 
-/// Parse a JS query object into a [`DocumentQuery`] configured for
-/// the count surface (`select = Count`, with `group_by` derived
-/// from the where-clause shape + the legacy
-/// `return_distinct_counts_in_range` flag).
+/// Parse a JS query object into a [`DocumentQuery`] configured
+/// for the count surface (`select = Count`, with `group_by`
+/// taken directly from the input — no implicit translation).
 ///
-/// The JS-facing API keeps the legacy `return_distinct_counts_in_range`
-/// bool so existing browser callers don't have to learn about v1's
-/// explicit `group_by`; the v1 translation happens here. Routing:
-///
-/// - `In`, no range → `group_by = [in_field]` (PerInValue).
-/// - Range, no In, `return_distinct_counts_in_range = true`
-///   → `group_by = [range_field]` (RangeDistinct).
-/// - `In` + range, `return_distinct_counts_in_range = true`
-///   → `group_by = [in_field, range_field]` (compound distinct).
-/// - Other shapes → empty `group_by` (aggregate).
+/// The JS `groupBy` field mirrors the v1 wire's `group_by:
+/// repeated string` one-to-one. Callers ask for exactly the
+/// per-group shape they want; Phase 1 server rules reject
+/// unsupported shapes with
+/// `QuerySyntaxError::Unsupported`.
 ///
 /// `orderBy` clauses are consumed by `build_documents_query` and
-/// stored on `DocumentQuery.order_by_clauses`, which the SDK request
-/// builder serializes into the wire `order_by` field — the first
-/// clause's direction controls split-mode entry ordering and is
-/// load-bearing for `(In + prove)` walk determinism.
+/// stored on `DocumentQuery.order_by_clauses`, which the SDK
+/// request builder serializes into the wire `order_by` field —
+/// the first clause's direction controls split-mode entry
+/// ordering and is load-bearing for `(In + prove)` walk
+/// determinism.
 async fn parse_documents_count_query(
     sdk: &WasmSdk,
     query: DocumentsQueryJs,
@@ -243,45 +247,13 @@ async fn parse_documents_count_query(
     let input: DocumentsQueryInput =
         deserialize_required_query(query, "Query object is required", "documents count query")?;
 
-    let return_distinct_counts_in_range = input.return_distinct_counts_in_range.unwrap_or(false);
+    let group_by = input.group_by.clone().unwrap_or_default();
     // DocumentQuery `limit: u32` uses `0` as the "unset" sentinel
     // (translated to `None` on the V1 wire's `optional uint32`).
     // `None` from the JS input maps to that sentinel.
     let limit = input.limit.unwrap_or(0);
 
     let base_query = build_documents_query(sdk, input).await?;
-
-    // Mirror the (deleted) v0-count endpoint's implicit grouping
-    // translation so legacy JS callers keep working unchanged.
-    let in_field = base_query
-        .where_clauses
-        .iter()
-        .find(|wc| wc.operator == WhereOperator::In)
-        .map(|wc| wc.field.clone());
-    let range_field = base_query
-        .where_clauses
-        .iter()
-        .find(|wc| {
-            matches!(
-                wc.operator,
-                WhereOperator::GreaterThan
-                    | WhereOperator::GreaterThanOrEquals
-                    | WhereOperator::LessThan
-                    | WhereOperator::LessThanOrEquals
-                    | WhereOperator::Between
-                    | WhereOperator::BetweenExcludeBounds
-                    | WhereOperator::BetweenExcludeLeft
-                    | WhereOperator::BetweenExcludeRight
-                    | WhereOperator::StartsWith
-            )
-        })
-        .map(|wc| wc.field.clone());
-    let group_by: Vec<String> = match (in_field, range_field, return_distinct_counts_in_range) {
-        (Some(f), None, _) => vec![f],
-        (None, Some(f), true) => vec![f],
-        (Some(in_f), Some(range_f), true) => vec![in_f, range_f],
-        _ => Vec::new(),
-    };
 
     Ok(base_query
         .with_select(Select::Count)
@@ -564,10 +536,10 @@ impl WasmSdk {
     ///
     /// Returns a `Map<string, bigint>` keyed by the platform-value-
     /// encoded property value (hex-encoded). For simple total counts
-    /// (no `in` clause and `return_distinct_counts_in_range = false`)
-    /// the map has a single entry with empty-string key —
-    /// `result.get("")` is the total. For per-`In`-value or per-
-    /// distinct-value-in-range modes, each key maps to its count.
+    /// (empty / omitted `groupBy`) the map has a single entry with
+    /// empty-string key — `result.get("")` is the total. For
+    /// per-group modes (non-empty `groupBy`), each key maps to its
+    /// count.
     ///
     /// Query-object knobs (all camelCase on the JS side):
     /// - `where: [[field, op, value], ...]`
@@ -580,22 +552,25 @@ impl WasmSdk {
     ///   range) doesn't read `orderBy` — its builder sorts In keys
     ///   lex-ascending unconditionally for prove/no-proof parity.
     /// - `limit?: number` — caps the number of entries returned in
-    ///   per-key modes. On no-proof paths the server clamps to its
-    ///   `max_query_limit`. On the prove-distinct path the server
-    ///   rejects oversized requests with `InvalidLimit` rather than
-    ///   silently clamping (silent clamping would break proof
-    ///   verification); unset falls back to a compile-time constant
-    ///   the SDK verifier reads, so proof bytes are deterministic
-    ///   across operators regardless of their runtime config.
-    /// - `returnDistinctCountsInRange?: boolean` — when `true` AND
-    ///   the query carries a range clause, returns per-distinct-
-    ///   value entries instead of a single sum.
+    ///   per-group modes. On no-proof paths the server clamps to
+    ///   its `max_query_limit`. On the prove-distinct path the
+    ///   server rejects oversized requests with `InvalidLimit`
+    ///   rather than silently clamping (silent clamping would break
+    ///   proof verification); unset falls back to a compile-time
+    ///   constant the SDK verifier reads, so proof bytes are
+    ///   deterministic across operators regardless of their runtime
+    ///   config.
+    /// - `groupBy?: string[]` — SQL-shaped GROUP BY, mirroring the
+    ///   v1 wire `group_by` field one-to-one. See the
+    ///   `DocumentsQuery` TypeScript declaration for the supported
+    ///   shapes (aggregate / per-`In`-value / per-distinct-range /
+    ///   compound). Phase 1 server rules reject unsupported shapes
+    ///   with `QuerySyntaxError::Unsupported`.
     ///
     /// One entry point per `[plain | withProofInfo]` variant covers
-    /// every count mode (total / per-`In`-value / per-distinct-value-
-    /// in-range / summed-over-range) because `DocumentSplitCounts::
-    /// fetch` (which this wraps) dispatches on the request shape
-    /// internally. For compound `In + range + distinct` queries the
+    /// every count mode because `DocumentSplitCounts::fetch` (which
+    /// this wraps) dispatches on the request shape internally. For
+    /// compound `In + range` queries with a 2-field `groupBy` the
     /// per-`(in_key, key)` entries are summed by `key` into the flat
     /// map; callers needing the unmerged compound shape should use a
     /// richer binding (not yet exposed here).

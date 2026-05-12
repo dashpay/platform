@@ -1,18 +1,18 @@
 //! Unified document-count FFI for iOS / native callers.
 //!
-//! Wraps the rs-sdk `DocumentSplitCounts::fetch` flow (which handles
-//! every count mode — total, per-`In`-value, per-distinct-value-in-
-//! range, summed-over-range) so callers can obtain document counts
-//! without having to construct `GetDocumentsCountRequest` payloads
-//! themselves.
+//! Wraps the rs-sdk `DocumentSplitCounts::fetch` flow (which
+//! handles every count mode — total, per-group entries, summed
+//! aggregate) so callers can obtain document counts without
+//! constructing `GetDocumentsRequest` v1 payloads directly.
 //!
-//! The previous version exposed two functions (`dash_sdk_document_count`
-//! returning a single u64, `dash_sdk_document_split_count` returning a
-//! per-key map). Now that the count endpoint carries
-//! `return_distinct_counts_in_range`, `order_by`, and `limit`, the
-//! split path subsumes the simple-total case (total count becomes a
-//! one-entry map with empty key), so we expose one entry point with
-//! all the knobs.
+//! Surface mirrors the v1 wire shape one-to-one: callers pass
+//! `where_json`, optional `order_by_json`, optional
+//! `group_by_json` (`[]` → aggregate, `["<field>"]` → per-group
+//! entries, `["<in_field>", "<range_field>"]` → compound
+//! distinct), and `limit`. The split path subsumes the simple-
+//! total case (`group_by_json = null` returns a one-entry map
+//! with an empty key), so one entry point covers every count
+//! mode the server supports.
 
 use std::collections::BTreeMap;
 use std::ffi::{CStr, CString};
@@ -26,7 +26,6 @@ use dash_sdk::platform::documents::document_query::DocumentQuery;
 use dash_sdk::platform::Fetch;
 use drive_proof_verifier::DocumentSplitCounts;
 use serde::{Deserialize, Serialize};
-use serde_json;
 
 use crate::sdk::SDKWrapper;
 use crate::types::{DataContractHandle, SDKHandle};
@@ -52,9 +51,8 @@ struct OrderClauseJson {
 struct DocumentCountResult {
     /// Per-key counts. Keys are hex-encoded so iOS callers can match
     /// them against the corresponding platform-value-encoded property
-    /// bytes. For total-count requests (no `in` clause and
-    /// `return_distinct_counts_in_range = false`) this is a one-entry
-    /// map with an empty key.
+    /// bytes. For total-count requests (empty / null `group_by_json`)
+    /// this is a one-entry map with an empty key.
     counts: BTreeMap<String, u64>,
 }
 
@@ -145,59 +143,33 @@ fn json_to_platform_value(json: serde_json::Value) -> Result<Value, FFIError> {
     }
 }
 
-/// Mirror the v0-count endpoint's implicit grouping translation
-/// for the v1 unified surface: given the FFI's legacy
-/// `return_distinct_counts_in_range` flag and a set of where
-/// clauses, produce the `group_by` field list the v1 wire wants.
+/// Parse the optional `group_by_json` C string parameter into a
+/// `Vec<String>`. `null` and empty string are accepted as
+/// equivalent to "no grouping" (aggregate count). Valid input
+/// is a JSON array of field-name strings, e.g.:
 ///
-/// The C ABI keeps the legacy bool so existing iOS callers don't
-/// need to know about `group_by`; this helper performs the same
-/// implicit-to-explicit translation the (deleted)
-/// `compute_group_by` in `document_count_query.rs` did,
-/// re-implemented here so the FFI shim has no dependency on a
-/// type that no longer exists. Routing produced:
+/// - `null` or `""` → `[]` (aggregate)
+/// - `"[\"color\"]"` → `["color"]` (per-distinct-`color` entries)
+/// - `"[\"category\",\"color\"]"` → `["category", "color"]`
+///   (compound distinct entries, only valid for
+///   `(In_field, range_field)` shapes per the v1 Phase 1 rules)
 ///
-/// - `In`, no range → `group_by = [in_field]` (PerInValue).
-/// - Range, no In, `return_distinct_counts_in_range = true`
-///   → `group_by = [range_field]` (RangeDistinct).
-/// - `In` + range, `return_distinct_counts_in_range = true`
-///   → `group_by = [in_field, range_field]` (compound distinct).
-/// - All other shapes → empty `group_by` (aggregate). Includes:
-///   no In/no range (Total), `In` + range without distinct
-///   (compound aggregate via per-In fan-out), range without
-///   distinct (single AggregateCountOnRange).
-fn derive_group_by(
-    where_clauses: &[WhereClause],
-    return_distinct_counts_in_range: bool,
-) -> Vec<String> {
-    let in_field = where_clauses
-        .iter()
-        .find(|wc| wc.operator == WhereOperator::In)
-        .map(|wc| wc.field.clone());
-    let range_field = where_clauses
-        .iter()
-        .find(|wc| {
-            matches!(
-                wc.operator,
-                WhereOperator::GreaterThan
-                    | WhereOperator::GreaterThanOrEquals
-                    | WhereOperator::LessThan
-                    | WhereOperator::LessThanOrEquals
-                    | WhereOperator::Between
-                    | WhereOperator::BetweenExcludeBounds
-                    | WhereOperator::BetweenExcludeLeft
-                    | WhereOperator::BetweenExcludeRight
-                    | WhereOperator::StartsWith
-            )
-        })
-        .map(|wc| wc.field.clone());
-
-    match (in_field, range_field, return_distinct_counts_in_range) {
-        (Some(f), None, _) => vec![f],
-        (None, Some(f), true) => vec![f],
-        (Some(in_f), Some(range_f), true) => vec![in_f, range_f],
-        _ => Vec::new(),
+/// Mirrors the wire-level `group_by: repeated string` field on
+/// `GetDocumentsRequestV1` directly — no implicit translation,
+/// no transform, no SDK-internal helper between FFI and wire.
+#[allow(clippy::result_large_err)]
+unsafe fn parse_group_by_json(group_by_json: *const c_char) -> Result<Vec<String>, FFIError> {
+    if group_by_json.is_null() {
+        return Ok(Vec::new());
     }
+    let s = CStr::from_ptr(group_by_json)
+        .to_str()
+        .map_err(FFIError::from)?;
+    if s.is_empty() {
+        return Ok(Vec::new());
+    }
+    serde_json::from_str(s)
+        .map_err(|e| FFIError::InternalError(format!("Invalid group_by JSON: {}", e)))
 }
 
 #[allow(clippy::result_large_err)]
@@ -256,54 +228,66 @@ unsafe fn build_base_query(
 
 /// Count documents matching a query.
 ///
-/// Returns a JSON string of shape `{"counts": {"<hex-key>": <number>, ...}}`.
-/// Hex keys correspond to the platform-value-encoded property values
-/// from the underlying CountTree / ProvableCountTree path; iOS callers
-/// should hex-decode them and decode against the contract's index-
-/// property type if they need a typed key.
+/// Returns a JSON string of shape
+/// `{"counts": {"<hex-key>": <number>, ...}}`. Hex keys
+/// correspond to the platform-value-encoded property values from
+/// the underlying CountTree / ProvableCountTree path; iOS callers
+/// should hex-decode them and decode against the contract's
+/// index-property type if they need a typed key.
 ///
-/// For simple total counts (no `in` clause in `where_json` and
-/// `return_distinct_counts_in_range = false`) the result is a one-entry
-/// map with an empty key — `counts[""]` is the total.
+/// For simple total counts (empty/null `group_by_json`) the
+/// result is a one-entry map with an empty key — `counts[""]`
+/// is the total.
 ///
 /// Per-key result shapes:
-/// - **`in` clause**: one entry per (deduped) value in the In array.
-/// - **range clause + `return_distinct_counts_in_range = true`**: one
-///   entry per distinct property value within the range. For compound
-///   queries (`in` on a prefix property + range on the terminator), the
-///   per-`in_key`/per-`key` entries are summed by `key` into a flat
-///   map. Callers needing the unmerged compound shape should use a
-///   richer binding (not yet exposed via this entry point).
+/// - **`group_by_json = ["<in_field>"]`** (where `<in_field>`
+///   is constrained by an `in` clause): one entry per (deduped)
+///   value in the In array.
+/// - **`group_by_json = ["<range_field>"]`** (where
+///   `<range_field>` is constrained by a range clause): one
+///   entry per distinct property value within the range.
+/// - **`group_by_json = ["<in_field>", "<range_field>"]`** for
+///   compound queries (`in` on a prefix property + range on the
+///   terminator): per-`(in_key, key)` entries are summed by `key`
+///   into a flat map. Callers needing the unmerged compound
+///   shape should use a richer binding (not yet exposed via this
+///   entry point).
 ///
 /// # Tunables
-/// - `return_distinct_counts_in_range`: when `true` AND the query has
-///   a range clause, returns per-distinct-value entries instead of a
-///   single sum. No-op when there's no range clause.
+/// - `group_by_json`: optional JSON array of field names mirroring
+///   the v1 wire's `group_by` field directly. Null/empty →
+///   aggregate count. See per-key shape rules above. Only Phase 1
+///   shapes are supported server-side (see proto docs); other
+///   non-empty group_by values return
+///   `QuerySyntaxError::Unsupported`.
 /// - `order_by_json`: optional JSON `[{"field": "<name>", "direction":
-///   "asc"|"desc"}]`. The first clause's direction controls split-mode
-///   entry ordering server-side; on the `RangeDistinctProof` prove
-///   path it is part of the path-query bytes the SDK reconstructs to
-///   verify the proof (prover and verifier must agree — empty
-///   `order_by` defaults to ascending on both sides). On the
-///   `PointLookupProof` path (`(In, prove, no-range)`) order_by is
-///   not consulted: the path-query builder sorts In keys lex-
-///   ascending unconditionally for prove/no-proof parity. Null or
-///   empty → no orderBy (ascending default for split-mode entry
+///   "asc"|"desc"}]`. The first clause's direction controls
+///   split-mode entry ordering server-side; on the
+///   `RangeDistinctProof` prove path it is part of the path-query
+///   bytes the SDK reconstructs to verify the proof (prover and
+///   verifier must agree — empty `order_by` defaults to ascending
+///   on both sides). On the `PointLookupProof` path
+///   (`(In, prove, no-range)`) order_by is not consulted: the
+///   path-query builder sorts In keys lex-ascending
+///   unconditionally for prove/no-proof parity. Null or empty →
+///   no orderBy (ascending default for split-mode entry
 ///   direction).
 /// - `limit`: `-1` = use server default
 ///   (`default_query_limit` on no-proof paths,
-///   `crate::config::DEFAULT_QUERY_LIMIT` on the prove-distinct path —
-///   the compile-time constant the SDK verifier reads, so proof bytes
-///   stay deterministic across operators). `≥ 0` = explicit cap
-///   (clamped to `max_query_limit` on no-proof paths, rejected with
-///   `InvalidLimit` if too large on the prove-distinct path — silent
-///   clamping would invisibly break verification).
+///   `crate::config::DEFAULT_QUERY_LIMIT` on the prove-distinct
+///   path — the compile-time constant the SDK verifier reads,
+///   so proof bytes stay deterministic across operators). `≥ 0`
+///   = explicit cap (clamped to `max_query_limit` on no-proof
+///   paths, rejected with `InvalidLimit` if too large on the
+///   prove-distinct path — silent clamping would invisibly break
+///   verification).
 ///
 /// # Safety
 /// - `sdk_handle` and `data_contract_handle` must be valid, non-null pointers.
 /// - `document_type` must be a NUL-terminated C string valid for the duration of the call.
 /// - `where_json` may be null; if non-null it must be a NUL-terminated JSON string of `[{field, operator, value}]`.
 /// - `order_by_json` may be null; if non-null it must be a NUL-terminated JSON string of `[{field, direction}]`.
+/// - `group_by_json` may be null; if non-null it must be a NUL-terminated JSON string of `["<field>", ...]`.
 /// - On success, returns a heap-allocated C string pointer; caller must free it using SDK routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_document_count(
@@ -312,7 +296,7 @@ pub unsafe extern "C" fn dash_sdk_document_count(
     document_type: *const c_char,
     where_json: *const c_char,
     order_by_json: *const c_char,
-    return_distinct_counts_in_range: bool,
+    group_by_json: *const c_char,
     limit: i64,
 ) -> DashSDKResult {
     if sdk_handle.is_null() || data_contract_handle.is_null() || document_type.is_null() {
@@ -344,12 +328,11 @@ pub unsafe extern "C" fn dash_sdk_document_count(
             limit as u32
         };
 
-        // Translate the legacy `return_distinct_counts_in_range`
-        // flag to v1's explicit `group_by` field list, then build
-        // the unified `DocumentQuery` via its v1 builders. The
-        // C ABI keeps the bool so callers don't have to learn the
-        // group_by surface — the FFI shim owns the translation.
-        let group_by = derive_group_by(&base_query.where_clauses, return_distinct_counts_in_range);
+        // `group_by_json` mirrors the v1 wire's `repeated string`
+        // field one-to-one. No FFI-side translation: callers ask
+        // for exactly the per-group shape they want. Phase 1
+        // server rules (see proto) reject unsupported shapes.
+        let group_by = parse_group_by_json(group_by_json)?;
         let count_query = base_query
             .with_select(Select::Count)
             .with_group_by_fields(group_by)

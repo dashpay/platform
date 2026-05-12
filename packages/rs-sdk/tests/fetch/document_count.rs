@@ -179,10 +179,6 @@ async fn test_mock_fetch_document_split_counts_with_in_clause() {
 /// `with_group_by(range_field)` exercises the SDK seam that
 /// routes `(range, prove=true, group_by=[range_field])`
 /// requests to the server's `RangeDistinctProof` dispatch.
-///
-/// Pre-v1 this was the `return_distinct_counts_in_range = true`
-/// flag; v1 expresses it as explicit `group_by`. The wire
-/// effect is the same.
 #[tokio::test]
 async fn test_mock_fetch_document_split_counts_with_distinct_range() {
     let mut sdk = Sdk::new_mock();
