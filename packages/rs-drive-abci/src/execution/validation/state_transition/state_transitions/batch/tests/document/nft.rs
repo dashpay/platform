@@ -2859,10 +2859,19 @@ mod nft_tests {
             .unwrap()
             .expect("expected to commit transaction");
 
-        // With the bump-emission fix from this PR active on every protocol
-        // version, the single-transition Purchase failure produces a
-        // BumpIdentityDataContractNonce action (non-empty), so both v11 and
-        // v12 land as PaidConsensusError; only the fee differs.
+        // UpdatePrice on a not-owned doc: the per-tx ownership check fails.
+        // Both protocol versions land as PaidConsensusError, but for
+        // different reasons:
+        // - v11: `failed_per_transition_action` is 0, helper returns
+        //   errors-only; legacy `flatten_v0`/`merge_many_v0` lift to
+        //   `Some(empty_vec)`, recorded as Paid with the bump-only fee
+        //   (no actual nonce advance — the v11 footgun preserved for
+        //   chain reproducibility).
+        // - v12: helper emits `BumpIdentityDataContractNonce`; aggregator
+        //   wraps as `Some([bump])`; recorded as Paid; nonce advances.
+        // See the helper doc on
+        // `run_document_set_price_on_not_owned_document_at_protocol_version`
+        // for the full split.
         assert_eq!(
             processing_result.invalid_paid_count(),
             1,
