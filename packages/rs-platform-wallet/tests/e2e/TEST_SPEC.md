@@ -104,7 +104,7 @@ changes.
 | Area | Wallet API exists | Harness ready | Gaps to fill | Out of scope (and why) |
 |------|-------------------|---------------|--------------|------------------------|
 | Platform Addresses | yes (`platform_addresses/{transfer,sync,withdrawal,fund_from_asset_lock}`) | yes for transfer/sync; partial for withdrawal | needs `wait_for_balance_eq` (exact-equality variant), needs explicit-input transfer helper, needs withdrawal Core-balance verification stub | `withdraw` end-to-end (Layer-1 observation, deferred — see §5 item 2); `fund_from_asset_lock` (Core UTXO needed, bank holds credits not coins) |
-| Identity | yes (`identity/network/{register_from_addresses,top_up_from_addresses,registration,update,transfer,transfer_to_addresses,withdrawal}`) | no | `Signer<IdentityPublicKey>` impl, identity-key derivation helper, `TestWallet::register_identity_from_addresses`, `wait_for_identity_balance` | asset-lock-funded register/top-up (DET territory; bank holds credits); identity withdrawal (Layer-1 observation) |
+| Identity | yes (`identity/network/{register_from_addresses,top_up_from_addresses,registration,update,transfer,transfer_to_addresses,withdrawal}`) | no | `Signer<IdentityPublicKey>` impl, identity-key derivation helper, `TestWallet::register_identity_from_addresses`, `wait_for_identity_balance` | asset-lock-funded identity **registration** (DET territory; bank holds credits — see CR-003); asset-lock-funded top-up now has spec coverage (ID-002b); identity withdrawal (Layer-1 observation) |
 | Tokens | yes (`tokens/wallet.rs` and `identity/network/tokens/*`) | no | `Signer<IdentityPublicKey>`, identity setup, contract-token discovery helper, `TestTokenContract` fixture pointer | fresh contract deployment (no testnet contract registry); group-action workflows that need multi-identity coordination outside one harness |
 | Core / SPV | yes (`core/{wallet,balance,broadcast,balance_handler}`) | yes — SPV enabled (Task #15 complete, Wave E landed) | `wait_for_core_balance` implemented; faucet helper ready | broadcast tests (deferred P2); tx-is-ours flag tests (DET parity, P2) |
 | Asset Lock | yes (`asset_lock/{build,manager,sync,tracked,lock_notify_handler}`) | no | needs Core-UTXO funded test wallet (SPV runtime is now available), `wait_for_asset_lock` | full path deferred (bank wallet has no Core UTXOs; faucet integration needed) |
@@ -153,6 +153,7 @@ Status legend: **green** = test file present, body has real assertions, runnable
 | PA-014 | Multi-output at protocol-max output count | P2 | not implemented | M |
 | ID-001 | Register identity funded from platform addresses | P0 | green | L |
 | ID-002 | Top-up identity from platform addresses | P0 | green | M |
+| ID-002b | Asset-lock-funded top-up of existing identity | P1 | not implemented | L |
 | ID-003 | Identity-to-identity credit transfer | P0 | green | M |
 | ID-004 | Identity update: add and disable a key | P1 | not implemented | L |
 | ID-005 | Transfer credits from identity to platform addresses | P1 | green | M |
@@ -226,8 +227,8 @@ Status legend: **green** = test file present, body has real assertions, runnable
 | Found-017 | `register_wallet` registers wallet in memory even when persister `store` returns `Err` — vanishes on next launch | P2 | not implemented | S |
 | Found-018 | `PlatformAddressChangeSet::merge` documents fee semantics as "fee paid by the transfer that produced this changeset" but actually accumulates fees across merged changesets | P2 | not implemented | S |
 
-<!-- merge note: theirs' counts already reflect the expanded TK section + ID-007 (93 total; 74 baseline). cr004-spec adds the CR-004 row (P1, env-gated FAILING-by-design), so P1 and total each +1: P1: 25, baseline: 75, total: 94. Kept theirs' "post-Task #15" annotations and noted CR-004 as the env-gated entry under P1. -->
-Counts by priority: **P0: 10**, **P1: 25** (incl. 2 post-Task #15 + 1 env-gated FAILING-by-design (CR-004)), **P2: 58** (incl. 2 post-Task #15, 1 gated, 18 Found-bug pins), **DEFERRED: 1** (94 total index entries; 75 baseline + 18 Found-bug pins + 1 deferred placeholder).
+<!-- merge note: theirs' counts already reflect the expanded TK section + ID-007 (93 total; 74 baseline). cr004-spec adds the CR-004 row (P1, env-gated FAILING-by-design), so P1 and total each +1: P1: 25, baseline: 75, total: 94. Kept theirs' "post-Task #15" annotations and noted CR-004 as the env-gated entry under P1. ID-002b (P1, not implemented) added: P1: 26, baseline: 76, total: 95. -->
+Counts by priority: **P0: 10**, **P1: 26** (incl. 2 post-Task #15 + 1 env-gated FAILING-by-design (CR-004) + ID-002b), **P2: 58** (incl. 2 post-Task #15, 1 gated, 18 Found-bug pins), **DEFERRED: 1** (95 total index entries; 76 baseline + 18 Found-bug pins + 1 deferred placeholder).
 
 ### Platform Addresses (PA)
 
@@ -747,6 +748,36 @@ Counts by priority: **P0: 10**, **P1: 25** (incl. 2 post-Task #15 + 1 env-gated 
 - **Harness extensions required**: same as ID-001 — Wave A.
 - **Estimated complexity**: M
 - **Rationale**: Validates the partner of ID-001. Together they cover the entire address-funded identity lifecycle entry surface.
+
+#### ID-002b — Asset-lock-funded top-up of existing identity
+- **Priority**: P1
+- **Status**: Not implemented. New test file `tests/e2e/cases/id_002b_asset_lock_top_up.rs` (TBC).
+- **Wallet feature exercised**: `wallet/identity/network/top_up.rs:60` (`top_up_identity_with_funding` with `TopUpFundingMethod::FundWithWallet { amount_duffs }`). Internally drives `wallet/asset_lock/build.rs` → `create_funded_asset_lock_proof` — the same build path CR-003 exercises for identity registration.
+- **DET parallel**: `dash-evo-tool/tests/backend-e2e/identity_tasks.rs:27` (`step_top_up` — uses `TopUpIdentityFundingMethod::FundWithWallet` to top-up an existing identity via wallet UTXOs). This is a live DET coverage path; ID-002b brings parity to the rs-platform-wallet suite.
+- **Preconditions**: CR-001 (SPV ready) + a Core-funded test wallet with at least `TEST_WALLET_CORE_FUNDING + CORE_TX_FEE_RESERVE` duffs on BIP-44 account 0 (same funding floor as CR-003) + a registered identity. The registration can use the address-funded path (ID-001 helper); the top-up source does not need to match the registration source.
+- **Scenario**:
+  1. `setup_with_core_funded_test_wallet(TEST_WALLET_CORE_FUNDING)` — land `TEST_WALLET_CORE_FUNDING` duffs on BIP-44 account 0 (mirror CR-003 setup).
+  2. Register an identity via `register_from_addresses` (Platform-side, simpler — reuse ID-001 helper). Capture `identity_id` and `pre_balance`.
+  3. Define `TOP_UP_ASSET_LOCK_AMOUNT = 100_000_000` (100 M duffs ≈ 0.001 DASH) plus fee headroom as the top-up amount.
+  4. Call `IdentityWallet::top_up_identity_with_funding(identity_id, TopUpFundingMethod::FundWithWallet { amount_duffs: TOP_UP_ASSET_LOCK_AMOUNT }, _topup_index = 1, None)`.
+  5. Wait for IS-lock / ChainLock on the asset-lock tx (same primitive CR-003 uses for registration).
+  6. Fetch the identity's chain balance via `Identity::fetch(sdk, identity_id)`.
+- **Assertions**:
+  - `post_balance == pre_balance + (TOP_UP_ASSET_LOCK_AMOUNT × CREDITS_PER_DUFF) - top_up_fee`, where `CREDITS_PER_DUFF = 1000`.
+  - `top_up_fee > 0`.
+  - The asset-lock tx appears in the wallet's `tracked_asset_locks` registry with state Used/Consumed.
+  - The test wallet's confirmed Core balance decreased by `(TOP_UP_ASSET_LOCK_AMOUNT + asset_lock_fee + core_send_fee)` duffs relative to its post-setup balance.
+- **Negative variants (defer to follow-up)**:
+  - Top-up of a non-existent `identity_id` → typed error.
+  - `amount_duffs = 0` → typed validation error.
+  - Insufficient Core balance on the test wallet → typed `PlatformWalletError::Wallet` error.
+- **Notes / risks**:
+  - Requires the same `PLATFORM_WALLET_E2E_BANK_CORE_GATE` env var that CR-003 uses (default-on, 900 s deadline). An under-funded Core address surfaces as `FrameworkError::Bank` with the bank's Core address embedded — identical operator-actionable error contract to CR-003.
+  - Core-sweep teardown should return Core residuals to the bank (mirror CR-003 teardown); teardown failure is best-effort: log and skip rather than fail the test.
+  - Found-006 (matrix line, §3) notes that `top_up_identity_with_funding` ignores the caller-supplied `_topup_index` — the parameter is currently a no-op (`_topup_index` in the production signature). Pass `1` for ID-002b to distinguish from the registration asset lock; cover the `topup_index` routing discrepancy separately under Found-006's test entry.
+- **Harness extensions required**: same as CR-003 — `setup_with_core_funded_test_wallet`, `wait_for_asset_lock`; plus Wave A identity setup helpers already needed by ID-001.
+- **Estimated complexity**: L (Core-funded wallet setup + asset-lock orchestration — same shape as CR-003; the top-up call itself is simpler than registration but the harness scaffolding is equivalent)
+- **Rationale**: `top_up_identity_with_funding` with `FundWithWallet` is a complete production primitive with zero positive test coverage in this suite. ID-002 covers the address-funded top-up path; this case covers the Core/asset-lock-funded path — the two together give full positive coverage of the identity top-up surface.
 
 #### ID-003 — Identity-to-identity credit transfer
 - **Priority**: P0
@@ -2263,7 +2294,7 @@ prevents future scope creep arguments.
 <!-- merge note: item 2 — kept HEAD (SPV is enabled now via Task #15; withdrawal stays out-of-scope on its own merits, not on the SPV gate). Item 3 — kept theirs (Wave D is superseded by Wave G; the suite deploys per-CI rather than relying on operator pre-funding), which reflects the current architectural decision. -->
 2. **Credit withdrawals** (`wallet/identity/network/withdrawal.rs`, `wallet/platform_addresses/withdrawal.rs`) — withdrawal verification requires Layer-1 observation of the withdrawal tx. SPV is now enabled (Task #15 complete) but withdrawal coverage is deferred pending a dedicated test design — the flow is more complex than a simple SPV read and DET currently owns the canonical coverage.
 3. **Operator-pre-funded testnet token contracts** — the original Wave D plan (env-config + operator-provided contract id) is superseded. The suite deploys a fresh token contract per CI run via Wave G; no operator-side registry is required and no testnet contract id is consumed from config.
-4. **Asset-lock-funded identity registration** — the bank holds Platform credits, not Core UTXOs. The address-funded variant (ID-001) covers this need from the wallet's perspective; full asset-lock coverage stays with DET (`dash-evo-tool/tests/backend-e2e/identity_create.rs`).
+4. **Asset-lock-funded identity registration** — the bank holds Platform credits, not Core UTXOs. The address-funded variant (ID-001) covers registration from the wallet's perspective; full registration asset-lock coverage stays with DET (`dash-evo-tool/tests/backend-e2e/identity_create.rs`). Asset-lock-funded **top-up** of an existing identity is now in scope: see ID-002b.
 5. **DAPI Core path** (`tx_is_ours`, mn-list diffs, peer behaviour) — DET territory; this suite tests the wallet against DAPI, not DAPI itself.
 6. **Cross-process bank concurrency** — README §"Multi-process safety" documents the operator-side requirement; not a test concern.
 7. **Mainnet runs** — config supports `network=mainnet` but the suite's bank-funded model is testnet-by-policy. Mainnet runs require an explicit operator review; out-of-scope for automation.
