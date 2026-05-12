@@ -45,25 +45,18 @@ use crate::platform::Fetch;
 #[derive(Debug, Clone, PartialEq, dash_platform_macros::Mockable)]
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub struct DocumentQuery {
-    /// Data contract
-    pub data_contract: Arc<DataContract>,
-    /// Document type for the data contract
-    pub document_type_name: String,
-    /// `where` clauses for the query
-    pub where_clauses: Vec<WhereClause>,
-    /// `order_by` clauses for the query
-    pub order_by_clauses: Vec<OrderClause>,
-    /// queryset limit. `0` is the sentinel for "unset / default" and
-    /// is translated to `None` on the V1 wire (`optional uint32`).
-    pub limit: u32,
-    /// first object to start with
-    pub start: Option<Start>,
     /// SQL-shaped `SELECT` projection. `Documents` returns matched
     /// rows; `Count` returns either a single aggregate (empty
     /// `group_by`) or per-group entries (non-empty `group_by`).
     /// Default `Documents` keeps v0-style document fetch semantics
     /// for callers that don't opt into the count surface.
     pub select: V1Select,
+    /// Data contract
+    pub data_contract: Arc<DataContract>,
+    /// Document type for the data contract
+    pub document_type_name: String,
+    /// `where` clauses for the query
+    pub where_clauses: Vec<WhereClause>,
     /// SQL `GROUP BY` field names, in left-to-right order. Empty =
     /// no explicit grouping (aggregate count for `select=Count`).
     /// Only meaningful when `select=Count`; non-empty with
@@ -75,6 +68,13 @@ pub struct DocumentQuery {
     /// is not yet implemented")`); reserved on the wire for future
     /// capability without another version bump.
     pub having: Vec<u8>,
+    /// `order_by` clauses for the query
+    pub order_by_clauses: Vec<OrderClause>,
+    /// queryset limit. `0` is the sentinel for "unset / default" and
+    /// is translated to `None` on the V1 wire (`optional uint32`).
+    pub limit: u32,
+    /// first object to start with
+    pub start: Option<Start>,
 }
 
 impl DocumentQuery {
@@ -90,15 +90,15 @@ impl DocumentQuery {
             .map_err(ProtocolError::DataContractError)?;
 
         Ok(Self {
+            select: V1Select::Documents,
             data_contract: Arc::clone(&contract),
             document_type_name: document_type_name.to_string(),
             where_clauses: vec![],
+            group_by: Vec::new(),
+            having: Vec::new(),
             order_by_clauses: vec![],
             limit: 0,
             start: None,
-            select: V1Select::Documents,
-            group_by: Vec::new(),
-            having: Vec::new(),
         })
     }
 
@@ -393,18 +393,18 @@ impl<'a> From<&'a DriveDocumentQuery<'a>> for DocumentQuery {
         };
 
         Self {
-            data_contract: Arc::new(data_contract),
-            document_type_name: document_type_name.to_string(),
-            where_clauses,
-            order_by_clauses,
-            limit,
-            start,
             // `DriveDocumentQuery` has no SELECT/GROUP BY/HAVING
             // concept — it's a documents-only query. Default to the
             // v1 documents shape.
             select: V1Select::Documents,
+            data_contract: Arc::new(data_contract),
+            document_type_name: document_type_name.to_string(),
+            where_clauses,
             group_by: Vec::new(),
             having: Vec::new(),
+            order_by_clauses,
+            limit,
+            start,
         }
     }
 }
@@ -427,18 +427,18 @@ impl<'a> From<DriveDocumentQuery<'a>> for DocumentQuery {
         };
 
         Self {
-            data_contract: Arc::new(data_contract),
-            document_type_name: document_type_name.to_string(),
-            where_clauses,
-            order_by_clauses,
-            limit,
-            start,
             // `DriveDocumentQuery` has no SELECT/GROUP BY/HAVING
             // concept — it's a documents-only query. Default to the
             // v1 documents shape.
             select: V1Select::Documents,
+            data_contract: Arc::new(data_contract),
+            document_type_name: document_type_name.to_string(),
+            where_clauses,
             group_by: Vec::new(),
             having: Vec::new(),
+            order_by_clauses,
+            limit,
+            start,
         }
     }
 }
