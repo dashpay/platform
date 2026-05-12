@@ -9,7 +9,7 @@ use dapi_grpc::platform::v0::{
     self as platform_proto,
     get_documents_request::{
         get_documents_request_v0::Start,
-        get_documents_request_v1::{Select as V1Select, Start as V1Start},
+        get_documents_request_v1::{Select, Start as V1Start},
         GetDocumentsRequestV1,
     },
     GetDocumentsRequest, Proof, ResponseMetadata,
@@ -50,7 +50,7 @@ pub struct DocumentQuery {
     /// `group_by`) or per-group entries (non-empty `group_by`).
     /// Default `Documents` keeps v0-style document fetch semantics
     /// for callers that don't opt into the count surface.
-    pub select: V1Select,
+    pub select: Select,
     /// Data contract
     pub data_contract: Arc<DataContract>,
     /// Document type for the data contract
@@ -90,7 +90,7 @@ impl DocumentQuery {
             .map_err(ProtocolError::DataContractError)?;
 
         Ok(Self {
-            select: V1Select::Documents,
+            select: Select::Documents,
             data_contract: Arc::clone(&contract),
             document_type_name: document_type_name.to_string(),
             where_clauses: vec![],
@@ -157,14 +157,14 @@ impl DocumentQuery {
 
     /// Set the SQL-shaped `SELECT` projection.
     ///
-    /// - [`V1Select::Documents`] (the default) returns matched
+    /// - [`Select::Documents`] (the default) returns matched
     ///   rows via `Document::fetch_many` and friends.
-    /// - [`V1Select::Count`] switches to the count surface:
+    /// - [`Select::Count`] switches to the count surface:
     ///   pair it with [`DocumentCount::fetch`] for a single
     ///   aggregate (empty `group_by`) or
     ///   [`DocumentSplitCounts::fetch`] for per-group entries
     ///   (non-empty `group_by`).
-    pub fn with_select(mut self, select: V1Select) -> Self {
+    pub fn with_select(mut self, select: Select) -> Self {
         self.select = select;
         self
     }
@@ -173,7 +173,7 @@ impl DocumentQuery {
     ///
     /// Convenience wrapper around [`Self::with_group_by_fields`].
     /// Replaces any previously set `group_by`. Pair with
-    /// [`Self::with_select`]`(V1Select::Count)` for the per-group
+    /// [`Self::with_select`]`(Select::Count)` for the per-group
     /// entries shape.
     pub fn with_group_by<S: Into<String>>(mut self, field: S) -> Self {
         self.group_by = vec![field.into()];
@@ -396,7 +396,7 @@ impl<'a> From<&'a DriveDocumentQuery<'a>> for DocumentQuery {
             // `DriveDocumentQuery` has no SELECT/GROUP BY/HAVING
             // concept — it's a documents-only query. Default to the
             // v1 documents shape.
-            select: V1Select::Documents,
+            select: Select::Documents,
             data_contract: Arc::new(data_contract),
             document_type_name: document_type_name.to_string(),
             where_clauses,
@@ -430,7 +430,7 @@ impl<'a> From<DriveDocumentQuery<'a>> for DocumentQuery {
             // `DriveDocumentQuery` has no SELECT/GROUP BY/HAVING
             // concept — it's a documents-only query. Default to the
             // v1 documents shape.
-            select: V1Select::Documents,
+            select: Select::Documents,
             data_contract: Arc::new(data_contract),
             document_type_name: document_type_name.to_string(),
             where_clauses,

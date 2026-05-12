@@ -30,7 +30,7 @@
 
 use crate::platform::documents::document_query::DocumentQuery;
 use crate::platform::Fetch;
-use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::Select as V1Select;
+use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::Select;
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dash_context_provider::ContextProvider;
@@ -55,7 +55,7 @@ use drive_proof_verifier::{
 /// this surfaces the misuse at the SDK boundary with a clear
 /// pointer to the fix.
 fn assert_select_is_count(request: &DocumentQuery) -> Result<(), drive_proof_verifier::Error> {
-    if request.select != V1Select::Count {
+    if request.select != Select::Count {
         return Err(drive_proof_verifier::Error::RequestError {
             error: format!(
                 "DocumentCount / DocumentSplitCounts require `select = Count`, got {:?}. \
