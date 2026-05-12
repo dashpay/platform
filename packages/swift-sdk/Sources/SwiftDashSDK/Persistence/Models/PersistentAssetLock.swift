@@ -1,0 +1,150 @@
+import Foundation
+import SwiftData
+
+/// SwiftData model for persisting a single tracked asset-lock credit
+/// output (DIP-0027). Mirrors
+/// [`AssetLockEntry`](platform_wallet::changeset::AssetLockEntry) on
+/// the Rust side, one row per `(walletId, outpoint)`. Upserted by the
+/// `on_persist_asset_locks_fn` callback whenever the asset-lock
+/// manager flushes a status transition (Built → Broadcast →
+/// InstantSendLocked → ChainLocked) and deleted when the lock is
+/// consumed by a successful identity-registration / top-up flow.
+///
+/// Two consumers:
+/// 1. `RegistrationProgressView` reads `statusRaw` to drive the
+///    stage progress bar (`@Query` filtered by `walletId +
+///    identityIndexRaw`).
+/// 2. The wallet load path rebuilds `unused_asset_locks` on the
+///    Rust side from these rows so an in-flight registration that
+///    was interrupted by an app kill can resume from the latest
+///    status without rebroadcasting the asset-lock transaction.
+@Model
+public final class PersistentAssetLock {
+    /// Index `walletId` so per-wallet asset-lock scans (the progress
+    /// bar's `@Query`, the storage explorer's wallet-scoped drill-
+    /// down, the load-time rehydration path) hit an index instead of
+    /// scanning the whole table.
+    #Index<PersistentAssetLock>([\.walletId])
+
+    /// 36-byte outpoint encoded as `<txid hex (display order)>:<vout>`.
+    /// Matches the formatting used by `PersistentTxo.outpointHex` /
+    /// `PersistentPendingInput`'s outpoint surface so the same lock
+    /// is identifiable across all three. Unique across the SwiftData
+    /// store — a collision would imply two wallets producing the
+    /// same outpoint, which is unreachable in practice.
+    @Attribute(.unique) public var outPointHex: String
+
+    /// 32-byte wallet id owning this asset lock.
+    public var walletId: Data
+
+    /// Consensus-encoded asset-lock transaction (Core special
+    /// transaction type 8, `AssetLockPayload`). Carried so the load
+    /// path can re-instantiate the `TrackedAssetLock` without
+    /// rebroadcasting.
+    public var transactionBytes: Data
+
+    /// Discriminant of [`AssetLockFundingType`]:
+    /// 0 = IdentityRegistration, 1 = IdentityTopUp, 2 = IdentityTopUpNotBound,
+    /// 3 = IdentityInvitation, 4 = AssetLockAddressTopUp,
+    /// 5 = AssetLockShieldedAddressTopUp. Stored as `Int` so SwiftData
+    /// predicates can compare directly without a cast.
+    public var fundingTypeRaw: Int
+
+    /// Identity index slot consumed by this asset lock — the source of
+    /// truth for matching against an in-flight registration's
+    /// `RegistrationProgressView`. Stored as `Int32` so `#Predicate`
+    /// can compare against a Swift-side `UInt32` lossily-cast value
+    /// without overflow surprises (identity indices stay well under
+    /// `Int32.max`).
+    public var identityIndexRaw: Int32
+
+    /// Locked amount in duffs (1 DASH = 1e8 duffs). Stored as `Int64`
+    /// for the same predicate-friendliness reason as
+    /// `identityIndexRaw`.
+    public var amountDuffs: Int64
+
+    /// Discriminant of [`AssetLockStatus`]:
+    /// 0 = Built, 1 = Broadcast, 2 = InstantSendLocked, 3 = ChainLocked.
+    /// Stored as `Int` so `#Predicate` can match raw values directly
+    /// (the progress bar compares against 0/1/2/3).
+    public var statusRaw: Int
+
+    /// Bincode-encoded `AssetLockProof` (`dpp::bincode::config::standard()`).
+    /// Absent (`nil`) until the lock reaches `InstantSendLocked` /
+    /// `ChainLocked`. The load path passes these bytes back over FFI
+    /// where Rust decodes them into the live proof.
+    public var proofBytes: Data?
+
+    /// Record timestamps.
+    public var createdAt: Date
+    public var updatedAt: Date
+
+    public init(
+        outPointHex: String,
+        walletId: Data,
+        transactionBytes: Data,
+        fundingTypeRaw: Int,
+        identityIndexRaw: Int32,
+        amountDuffs: Int64,
+        statusRaw: Int,
+        proofBytes: Data? = nil
+    ) {
+        self.outPointHex = outPointHex
+        self.walletId = walletId
+        self.transactionBytes = transactionBytes
+        self.fundingTypeRaw = fundingTypeRaw
+        self.identityIndexRaw = identityIndexRaw
+        self.amountDuffs = amountDuffs
+        self.statusRaw = statusRaw
+        self.proofBytes = proofBytes
+        self.createdAt = Date()
+        self.updatedAt = Date()
+    }
+}
+
+// MARK: - Queries
+
+extension PersistentAssetLock {
+    /// Per-wallet predicate. Indexed scan via the `walletId` index.
+    public static func predicate(walletId: Data) -> Predicate<PersistentAssetLock> {
+        #Predicate<PersistentAssetLock> { entry in
+            entry.walletId == walletId
+        }
+    }
+
+    /// Per-slot predicate keyed by `(walletId, identityIndex)` — used
+    /// by `RegistrationProgressView` to find the in-flight lock for
+    /// a particular registration slot.
+    public static func predicate(
+        walletId: Data,
+        identityIndex: UInt32
+    ) -> Predicate<PersistentAssetLock> {
+        let identityIndexRaw = Int32(bitPattern: identityIndex)
+        return #Predicate<PersistentAssetLock> { entry in
+            entry.walletId == walletId && entry.identityIndexRaw == identityIndexRaw
+        }
+    }
+}
+
+// MARK: - Outpoint encoding helpers
+
+extension PersistentAssetLock {
+    /// Encode a 36-byte raw outpoint (`txid_le || vout_le`) — matching
+    /// the layout used by the Rust-side `AssetLockEntryFFI.out_point`
+    /// — as the canonical display-order hex string
+    /// `<txid display hex>:<vout>`.
+    ///
+    /// The Rust side serializes the txid in raw byte order (little-
+    /// endian on the wire); display order is the reverse, same as
+    /// `PersistentTxo.outpointHex`.
+    public static func encodeOutPoint(rawBytes: Data) -> String {
+        precondition(rawBytes.count == 36, "outpoint must be 36 bytes")
+        let txid = rawBytes.prefix(32)
+        let voutBytes = rawBytes.suffix(4)
+        let vout = voutBytes.withUnsafeBytes { raw in
+            raw.load(as: UInt32.self).littleEndian
+        }
+        let txidHex = txid.reversed().map { String(format: "%02x", $0) }.joined()
+        return "\(txidHex):\(vout)"
+    }
+}

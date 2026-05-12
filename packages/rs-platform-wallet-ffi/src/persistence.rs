@@ -28,6 +28,7 @@ use std::ffi::CString;
 use std::os::raw::c_void;
 use std::slice;
 
+use crate::asset_lock_persistence::{build_asset_lock_entries, outpoint_to_bytes, AssetLockEntryFFI};
 use crate::contact_persistence::{
     free_contact_requests_ffi, ContactRequestFFI, ContactRequestRemovalFFI,
 };
@@ -354,6 +355,27 @@ pub struct PersistenceCallbacks {
     /// side).
     pub on_get_core_tx_record_free_fn: Option<
         unsafe extern "C" fn(context: *mut c_void, tx_bytes: *const u8, tx_bytes_len: usize),
+    >,
+    /// Called with an `AssetLockChangeSet` slice — upserts on the
+    /// tracked-asset-lock store and outpoint tombstones. Swift maps
+    /// upserts onto `PersistentAssetLock` rows keyed by the 36-byte
+    /// outpoint (`txid || vout_le`) and deletes rows for every
+    /// removal. The `transaction_bytes` / `proof_bytes` slices inside
+    /// each [`AssetLockEntryFFI`] are Rust-owned and valid only for
+    /// the callback window — Swift must copy them before returning.
+    ///
+    /// Returns 0 on success. A non-zero return flips the round's
+    /// `success` flag to `false` so [`Self::on_changeset_end_fn`]
+    /// receives the rollback signal.
+    pub on_persist_asset_locks_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            upserts_ptr: *const AssetLockEntryFFI,
+            upserts_count: usize,
+            removed_ptr: *const [u8; 36],
+            removed_count: usize,
+        ) -> i32,
     >,
 }
 
@@ -724,6 +746,52 @@ impl PlatformWalletPersistence for FFIPersister {
                     if result != 0 {
                         eprintln!(
                             "Token balance persistence callback returned error code {}",
+                            result
+                        );
+                        round_success = false;
+                    }
+                }
+            }
+        }
+
+        // Send asset-lock changeset — tracked-lock upserts (one row
+        // per credit output, addressed by outpoint) and outpoint
+        // tombstones (consumed-by-registration removals). Maps onto
+        // Swift's `PersistentAssetLock` rows.
+        if let Some(ref al_cs) = changeset.asset_locks {
+            if let Some(cb) = self.callbacks.on_persist_asset_locks_fn {
+                let upsert_refs: Vec<&platform_wallet::changeset::AssetLockEntry> =
+                    al_cs.asset_locks.values().collect();
+                let (upserts, _storage) = build_asset_lock_entries(&upsert_refs);
+                let removed: Vec<[u8; 36]> =
+                    al_cs.removed.iter().map(outpoint_to_bytes).collect();
+                if !upserts.is_empty() || !removed.is_empty() {
+                    let result = unsafe {
+                        cb(
+                            self.callbacks.context,
+                            wallet_id.as_ptr(),
+                            if upserts.is_empty() {
+                                std::ptr::null()
+                            } else {
+                                upserts.as_ptr()
+                            },
+                            upserts.len(),
+                            if removed.is_empty() {
+                                std::ptr::null()
+                            } else {
+                                removed.as_ptr()
+                            },
+                            removed.len(),
+                        )
+                    };
+                    // Pin both byte-buffer storage (`_storage`) and
+                    // the FFI Vec until after the callback so the
+                    // pointers stay valid through the C call.
+                    drop(upserts);
+                    drop(_storage);
+                    if result != 0 {
+                        eprintln!(
+                            "Asset lock persistence callback returned error code {}",
                             result
                         );
                         round_success = false;
@@ -1987,11 +2055,20 @@ fn build_wallet_start_state(
         wallet_identities,
     };
 
+    // Rehydrate tracked asset-locks (built / broadcast / IS-locked
+    // / chain-locked credit outputs awaiting registration). These
+    // rows are persisted by `on_persist_asset_locks_fn` whenever the
+    // asset-lock manager flushes a status change, and the Swift load
+    // path hands them back here so an in-flight registration that
+    // was interrupted by an app kill can resume from the latest
+    // status without rebroadcasting.
+    let unused_asset_locks = build_unused_asset_locks(entry)?;
+
     let wallet_state = ClientWalletStartState {
         wallet,
         wallet_info,
         identity_manager,
-        unused_asset_locks: BTreeMap::new(),
+        unused_asset_locks,
     };
 
     let platform_address_state = if per_account.is_empty()
@@ -2034,6 +2111,157 @@ fn build_wallet_start_state(
 /// an empty map and gets refreshed on the next sync round — same
 /// degraded-but-usable behaviour as before this change for that
 /// narrow case.
+/// Rebuild the `unused_asset_locks` map carried on
+/// [`ClientWalletStartState`] from the `tracked_asset_locks` slice the
+/// Swift load callback hands back. Mirrors the encoding used by
+/// [`crate::asset_lock_persistence::build_asset_lock_entries`]:
+///
+/// - `out_point` is 32-byte raw txid + 4-byte little-endian vout.
+/// - `transaction_bytes` is consensus-encoded.
+/// - `proof_bytes` is bincode-encoded (`dpp::bincode::config::standard()`).
+///   `null` / 0 length means "no proof yet" (statuses Built / Broadcast).
+///
+/// A malformed entry returns `Err(PersistenceError)` so the caller
+/// surfaces the load failure rather than dropping a partially-rebuilt
+/// state silently. Empty / null `tracked_asset_locks` yields an empty
+/// map (same as the legacy hardcoded path).
+fn build_unused_asset_locks(
+    entry: &WalletRestoreEntryFFI,
+) -> Result<
+    BTreeMap<u32, BTreeMap<dashcore::OutPoint, platform_wallet::TrackedAssetLock>>,
+    PersistenceError,
+> {
+    use dashcore::hashes::Hash;
+
+    let specs: &[AssetLockEntryFFI] = if entry.tracked_asset_locks.is_null()
+        || entry.tracked_asset_locks_count == 0
+    {
+        &[]
+    } else {
+        // SAFETY: Swift guarantees the pointer + count form a valid
+        // slice for the callback window; this function runs inside
+        // that window (called from `build_wallet_start_state` invoked
+        // by `FFIPersister::load`).
+        unsafe { slice::from_raw_parts(entry.tracked_asset_locks, entry.tracked_asset_locks_count) }
+    };
+
+    let mut map: BTreeMap<u32, BTreeMap<dashcore::OutPoint, platform_wallet::TrackedAssetLock>> =
+        BTreeMap::new();
+    for spec in specs {
+        // Decode the outpoint: 32-byte raw txid + 4-byte LE vout.
+        let txid = dashcore::Txid::from_slice(&spec.out_point[..32]).map_err(|e| {
+            PersistenceError::from(format!(
+                "tracked asset lock: invalid txid in outpoint: {}",
+                e
+            ))
+        })?;
+        let vout_bytes: [u8; 4] = spec.out_point[32..]
+            .try_into()
+            .expect("4-byte slice from 36-byte array");
+        let vout = u32::from_le_bytes(vout_bytes);
+        let out_point = dashcore::OutPoint { txid, vout };
+
+        // Decode the consensus-encoded transaction.
+        if spec.transaction_bytes.is_null() || spec.transaction_bytes_len == 0 {
+            return Err(PersistenceError::from(
+                "tracked asset lock: empty transaction bytes".to_string(),
+            ));
+        }
+        // SAFETY: Swift guarantees the buffer is valid for the
+        // callback window. We immediately decode + clone out of it,
+        // so the lifetime concern is satisfied.
+        let tx_bytes =
+            unsafe { slice::from_raw_parts(spec.transaction_bytes, spec.transaction_bytes_len) };
+        let transaction: dashcore::Transaction = dashcore::consensus::deserialize(tx_bytes)
+            .map_err(|e| {
+                PersistenceError::from(format!(
+                    "tracked asset lock: failed to decode transaction: {}",
+                    e
+                ))
+            })?;
+
+        // Decode the optional bincode-encoded proof.
+        let proof: Option<dpp::prelude::AssetLockProof> = if spec.proof_bytes.is_null()
+            || spec.proof_bytes_len == 0
+        {
+            None
+        } else {
+            // SAFETY: Same lifetime contract as `transaction_bytes`.
+            let proof_bytes =
+                unsafe { slice::from_raw_parts(spec.proof_bytes, spec.proof_bytes_len) };
+            let (proof, _) = dpp::bincode::decode_from_slice::<
+                dpp::prelude::AssetLockProof,
+                _,
+            >(proof_bytes, config::standard())
+            .map_err(|e| {
+                PersistenceError::from(format!(
+                    "tracked asset lock: failed to decode proof: {}",
+                    e
+                ))
+            })?;
+            Some(proof)
+        };
+
+        let funding_type = funding_type_from_u8(spec.funding_type)?;
+        let status = status_from_u8(spec.status)?;
+
+        let tracked = platform_wallet::TrackedAssetLock {
+            out_point,
+            transaction,
+            account_index: spec.account_index,
+            funding_type,
+            identity_index: spec.identity_index,
+            amount: spec.amount_duffs,
+            status,
+            proof,
+        };
+        map.entry(spec.account_index)
+            .or_default()
+            .insert(out_point, tracked);
+    }
+
+    Ok(map)
+}
+
+fn funding_type_from_u8(
+    b: u8,
+) -> Result<
+    key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType,
+    PersistenceError,
+> {
+    use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+    Ok(match b {
+        0 => AssetLockFundingType::IdentityRegistration,
+        1 => AssetLockFundingType::IdentityTopUp,
+        2 => AssetLockFundingType::IdentityTopUpNotBound,
+        3 => AssetLockFundingType::IdentityInvitation,
+        4 => AssetLockFundingType::AssetLockAddressTopUp,
+        5 => AssetLockFundingType::AssetLockShieldedAddressTopUp,
+        other => {
+            return Err(PersistenceError::from(format!(
+                "tracked asset lock: unknown funding_type discriminant {}",
+                other
+            )))
+        }
+    })
+}
+
+fn status_from_u8(b: u8) -> Result<platform_wallet::AssetLockStatus, PersistenceError> {
+    use platform_wallet::AssetLockStatus;
+    Ok(match b {
+        0 => AssetLockStatus::Built,
+        1 => AssetLockStatus::Broadcast,
+        2 => AssetLockStatus::InstantSendLocked,
+        3 => AssetLockStatus::ChainLocked,
+        other => {
+            return Err(PersistenceError::from(format!(
+                "tracked asset lock: unknown status discriminant {}",
+                other
+            )))
+        }
+    })
+}
+
 fn build_wallet_identity_bucket(
     entry: &WalletRestoreEntryFFI,
 ) -> Result<BTreeMap<u32, ManagedIdentity>, PersistenceError> {

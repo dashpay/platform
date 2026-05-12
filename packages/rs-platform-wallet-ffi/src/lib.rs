@@ -10,6 +10,7 @@
 #![allow(clippy::large_enum_variant)]
 
 pub mod asset_lock;
+pub mod asset_lock_persistence;
 pub mod contact;
 pub mod contact_persistence;
 pub mod contact_request;

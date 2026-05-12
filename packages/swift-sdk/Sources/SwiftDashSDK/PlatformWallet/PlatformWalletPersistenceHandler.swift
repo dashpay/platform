@@ -113,6 +113,115 @@ public class PlatformWalletPersistenceHandler {
         }
     }
 
+    // MARK: - Asset locks
+
+    /// Apply an `AssetLockChangeSet` projection to SwiftData.
+    ///
+    /// The Rust-side asset-lock manager emits a changeset on every
+    /// status transition (`Built → Broadcast → InstantSendLocked →
+    /// ChainLocked`) and on consumption (the registration flow drops
+    /// the row once the IdentityCreate state transition lands). Each
+    /// `upsert` maps onto a `PersistentAssetLock` row keyed by
+    /// `outPointHex` (the 36-byte outpoint encoded as
+    /// `<txid_display_hex>:<vout>`); each `removed` entry deletes the
+    /// matching row. `RegistrationProgressView` watches these rows
+    /// via `@Query` to drive the stage progress bar.
+    ///
+    /// No `save()` here — bracketed by `beginChangeset` /
+    /// `endChangeset` from the Rust `store()` round.
+    func persistAssetLocks(
+        walletId: Data,
+        upserts: [AssetLockEntrySnapshot],
+        removed: [Data]
+    ) {
+        onQueue {
+            for entry in upserts {
+                let outPointHex = entry.outPointHex
+                let descriptor = FetchDescriptor<PersistentAssetLock>(
+                    predicate: #Predicate { $0.outPointHex == outPointHex }
+                )
+                if let existing = try? backgroundContext.fetch(descriptor).first {
+                    existing.walletId = walletId
+                    existing.transactionBytes = entry.transactionBytes
+                    existing.fundingTypeRaw = entry.fundingTypeRaw
+                    existing.identityIndexRaw = entry.identityIndexRaw
+                    existing.amountDuffs = entry.amountDuffs
+                    existing.statusRaw = entry.statusRaw
+                    existing.proofBytes = entry.proofBytes
+                    existing.updatedAt = Date()
+                } else {
+                    let record = PersistentAssetLock(
+                        outPointHex: outPointHex,
+                        walletId: walletId,
+                        transactionBytes: entry.transactionBytes,
+                        fundingTypeRaw: entry.fundingTypeRaw,
+                        identityIndexRaw: entry.identityIndexRaw,
+                        amountDuffs: entry.amountDuffs,
+                        statusRaw: entry.statusRaw,
+                        proofBytes: entry.proofBytes
+                    )
+                    backgroundContext.insert(record)
+                }
+            }
+
+            for outPointHex in removed {
+                let hex = PersistentAssetLock.encodeOutPoint(rawBytes: outPointHex)
+                let descriptor = FetchDescriptor<PersistentAssetLock>(
+                    predicate: #Predicate { $0.outPointHex == hex }
+                )
+                if let existing = try? backgroundContext.fetch(descriptor).first {
+                    backgroundContext.delete(existing)
+                }
+            }
+        }
+    }
+
+    /// Load all persisted tracked asset locks for a wallet — used by
+    /// the wallet load path to rebuild `unused_asset_locks` on the
+    /// Rust side so an in-flight registration that was interrupted by
+    /// an app kill can resume from the latest status without
+    /// rebroadcasting the asset-lock transaction.
+    public func loadCachedAssetLocks(walletId: Data) -> [AssetLockEntrySnapshot] {
+        onQueue { loadCachedAssetLocksOnQueue(walletId: walletId) }
+    }
+
+    /// On-queue implementation reused by the load-wallet-list path
+    /// without re-entering `onQueue`.
+    func loadCachedAssetLocksOnQueue(walletId: Data) -> [AssetLockEntrySnapshot] {
+        let descriptor = FetchDescriptor<PersistentAssetLock>(
+            predicate: PersistentAssetLock.predicate(walletId: walletId)
+        )
+        guard let records = try? backgroundContext.fetch(descriptor) else {
+            return []
+        }
+        return records.map { record in
+            AssetLockEntrySnapshot(
+                outPointHex: record.outPointHex,
+                transactionBytes: record.transactionBytes,
+                fundingTypeRaw: record.fundingTypeRaw,
+                identityIndexRaw: record.identityIndexRaw,
+                amountDuffs: record.amountDuffs,
+                statusRaw: record.statusRaw,
+                proofBytes: record.proofBytes
+            )
+        }
+    }
+
+    /// Owned snapshot of an `AssetLockEntryFFI` row. Same lifetime
+    /// rationale as `IdentityEntrySnapshot` — the callback copies
+    /// every byte buffer into owned `Data` before invoking the
+    /// handler, so the handler runs against pure-Swift values
+    /// regardless of when the Rust-side allocation gets reclaimed.
+    public struct AssetLockEntrySnapshot {
+        public let outPointHex: String
+        public let transactionBytes: Data
+        public let fundingTypeRaw: Int
+        public let identityIndexRaw: Int32
+        public let amountDuffs: Int64
+        public let statusRaw: Int
+        public let proofBytes: Data?
+    }
+
     /// Load all cached platform-address balances for a wallet. Tuple
     /// shape matches the Rust-side `AddressBalanceEntryFFI` layout so
     /// the load-wallet-list path can re-seed the provider on startup
@@ -799,6 +908,7 @@ public class PlatformWalletPersistenceHandler {
         cb.on_persist_identity_keys_fn = persistIdentityKeysCallback
         cb.on_persist_token_balances_fn = persistTokenBalancesCallback
         cb.on_persist_contacts_fn = persistContactsCallback
+        cb.on_persist_asset_locks_fn = persistAssetLocksCallback
         cb.on_get_core_tx_record_fn = getCoreTxRecordCallback
         cb.on_get_core_tx_record_free_fn = getCoreTxRecordFreeCallback
         return cb
@@ -2439,6 +2549,20 @@ public class PlatformWalletPersistenceHandler {
             }
             entry.utxos = utxoBuf.map { UnsafePointer($0) }
             entry.utxos_count = UInt(utxoCount)
+
+            // Tracked asset-lock rows. The Rust side rehydrates these
+            // into `unused_asset_locks` so an in-flight registration
+            // that was killed mid-flight can resume from the latest
+            // status without rebroadcasting. Empty / null when the
+            // wallet has no persisted locks.
+            let assetLockRows = loadCachedAssetLocksOnQueue(walletId: w.walletId)
+            let (assetLockBuf, assetLockCount) = buildAssetLockRestoreBuffer(
+                rows: assetLockRows,
+                allocation: allocation
+            )
+            entry.tracked_asset_locks = assetLockBuf.map { UnsafePointer($0) }
+            entry.tracked_asset_locks_count = UInt(assetLockCount)
+
             // Primary-identity selection + gap-limit scan watermark
             // were dropped from the FFI shape — both moved off the
             // Rust manager (UI owns selection now, scan resume is
@@ -2589,6 +2713,128 @@ public class PlatformWalletPersistenceHandler {
         }
         allocation.utxoArrays.append((buf, written))
         return (buf, written, false)
+    }
+
+    /// Build a contiguous `[AssetLockEntryFFI]` buffer for one wallet's
+    /// tracked asset locks. Walks `PersistentAssetLock` rows scoped to
+    /// `walletId`, copies the consensus-encoded transaction + optional
+    /// bincode-encoded proof into Swift-owned heap buffers, and emits
+    /// one row per lock. Returns `(nil, 0)` for empty input — Rust
+    /// treats `null` + `count == 0` as "no tracked locks to restore".
+    ///
+    /// Per-row transaction/proof buffers and the outer array are
+    /// tracked on `allocation` so `loadWalletListFree` releases them.
+    /// Rows whose `outPointHex` doesn't parse back to 36 bytes are
+    /// skipped — the model writes them in a known shape, so a
+    /// mismatch indicates corruption that would crash Rust's decoder
+    /// anyway.
+    private func buildAssetLockRestoreBuffer(
+        rows: [AssetLockEntrySnapshot],
+        allocation: LoadAllocation
+    ) -> (UnsafeMutablePointer<AssetLockEntryFFI>?, Int) {
+        if rows.isEmpty {
+            return (nil, 0)
+        }
+        let buf = UnsafeMutablePointer<AssetLockEntryFFI>.allocate(capacity: rows.count)
+        var written = 0
+        for record in rows {
+            // Parse `<txid_hex>:<vout>` back into the 36-byte raw form
+            // the Rust side expects. Any parse failure drops the row
+            // — we can't manufacture a valid outpoint and a malformed
+            // row indicates an old / corrupt snapshot.
+            guard let outPoint = decodeOutPointHex(record.outPointHex) else {
+                NSLog(
+                    "[persistor-load:swift] dropping asset-lock row with malformed outPointHex: %@",
+                    record.outPointHex
+                )
+                continue
+            }
+
+            // Allocate + copy the transaction bytes (Rust-owned for
+            // the callback window via the allocation).
+            let txBytes = record.transactionBytes
+            let txPtr: UnsafePointer<UInt8>?
+            let txLen = txBytes.count
+            if txLen > 0 {
+                let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: txLen)
+                txBytes.copyBytes(to: buffer, count: txLen)
+                allocation.scalarBuffers.append((buffer, txLen))
+                txPtr = UnsafePointer(buffer)
+            } else {
+                // A row with no transaction bytes is broken — Rust's
+                // load path will reject it; drop here.
+                NSLog(
+                    "[persistor-load:swift] dropping asset-lock row with empty transactionBytes: %@",
+                    record.outPointHex
+                )
+                continue
+            }
+
+            // Optional proof bytes.
+            let proofPtr: UnsafePointer<UInt8>?
+            let proofLen: Int
+            if let bytes = record.proofBytes, !bytes.isEmpty {
+                let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bytes.count)
+                bytes.copyBytes(to: buffer, count: bytes.count)
+                allocation.scalarBuffers.append((buffer, bytes.count))
+                proofPtr = UnsafePointer(buffer)
+                proofLen = bytes.count
+            } else {
+                proofPtr = nil
+                proofLen = 0
+            }
+
+            var entry = AssetLockEntryFFI()
+            copyBytes(outPoint, into: &entry.out_point)
+            entry.transaction_bytes = txPtr
+            entry.transaction_bytes_len = UInt(txLen)
+            // `accountIndex` isn't stored on the SwiftData model
+            // (Rust derives it from the funding path), so default to
+            // 0. The Rust load path doesn't read this field for
+            // anything load-bearing — it's a breadcrumb for the
+            // FFI persist path going forward.
+            entry.account_index = 0
+            entry.funding_type = UInt8(clamping: record.fundingTypeRaw)
+            entry.identity_index = UInt32(bitPattern: record.identityIndexRaw)
+            entry.amount_duffs = UInt64(bitPattern: record.amountDuffs)
+            entry.status = UInt8(clamping: record.statusRaw)
+            entry.proof_bytes = proofPtr
+            entry.proof_bytes_len = UInt(proofLen)
+            buf[written] = entry
+            written += 1
+        }
+        if written == 0 {
+            buf.deallocate()
+            return (nil, 0)
+        }
+        allocation.assetLockArrays.append((buf, written))
+        return (buf, written)
+    }
+
+    /// Parse `<txid_hex (display order)>:<vout>` back into the 36-byte
+    /// raw outpoint Rust expects (32-byte raw txid + 4-byte
+    /// little-endian vout). Mirror of
+    /// `PersistentAssetLock.encodeOutPoint`. Returns `nil` for any
+    /// parse failure.
+    private func decodeOutPointHex(_ hex: String) -> Data? {
+        let parts = hex.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+        guard parts.count == 2 else { return nil }
+        let txidHex = String(parts[0])
+        guard let vout = UInt32(parts[1]) else { return nil }
+        guard txidHex.count == 64 else { return nil }
+        var txid = Data(capacity: 32)
+        var idx = txidHex.startIndex
+        for _ in 0..<32 {
+            let end = txidHex.index(idx, offsetBy: 2)
+            guard let byte = UInt8(txidHex[idx..<end], radix: 16) else { return nil }
+            txid.append(byte)
+            idx = end
+        }
+        // Reverse from display-order back to raw byte order.
+        let raw = Data(txid.reversed())
+        var out = Data(raw)
+        out.append(contentsOf: withUnsafeBytes(of: vout.littleEndian) { Data($0) })
+        return out
     }
 
     private func buildIdentityRestoreBuffer(
@@ -2939,6 +3185,10 @@ private final class LoadAllocation {
     /// Per-wallet `UtxoRestoreEntryFFI` arrays. The script bytes each
     /// row references live in `scalarBuffers`.
     var utxoArrays: [(UnsafeMutablePointer<UtxoRestoreEntryFFI>, Int)] = []
+    /// Per-wallet `AssetLockEntryFFI` arrays. The transaction-bytes
+    /// and proof-bytes buffers each row references live in
+    /// `scalarBuffers`.
+    var assetLockArrays: [(UnsafeMutablePointer<AssetLockEntryFFI>, Int)] = []
 
     func release() {
         if let entries = entries {
@@ -2979,6 +3229,10 @@ private final class LoadAllocation {
             ptr.deallocate()
         }
         for (ptr, count) in utxoArrays {
+            ptr.deinitialize(count: count)
+            ptr.deallocate()
+        }
+        for (ptr, count) in assetLockArrays {
             ptr.deinitialize(count: count)
             ptr.deallocate()
         }
@@ -3508,6 +3762,76 @@ private func persistTokenBalancesCallback(
     }
 
     handler.persistTokenBalances(walletId: walletId, upserts: upserts, removals: removals)
+    return 0
+}
+
+/// C shim for `on_persist_asset_locks_fn`. Copies every
+/// `AssetLockEntryFFI` row + every removed-outpoint tuple into
+/// Swift-owned `Data` snapshots before invoking the handler so the
+/// Rust-side `_storage` Vec can release the byte buffers as soon as
+/// this trampoline returns.
+private func persistAssetLocksCallback(
+    context: UnsafeMutableRawPointer?,
+    walletIdPtr: UnsafePointer<UInt8>?,
+    upsertsPtr: UnsafePointer<AssetLockEntryFFI>?,
+    upsertsCount: UInt,
+    removedPtr: UnsafePointer<FFIByteTuple36>?,
+    removedCount: UInt
+) -> Int32 {
+    guard let context = context,
+          let walletIdPtr = walletIdPtr else {
+        return 0
+    }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+    let walletId = Data(bytes: walletIdPtr, count: 32)
+
+    var upserts: [PlatformWalletPersistenceHandler.AssetLockEntrySnapshot] = []
+    if upsertsCount > 0, let upsertsPtr = upsertsPtr {
+        upserts.reserveCapacity(Int(upsertsCount))
+        for i in 0..<Int(upsertsCount) {
+            let e = upsertsPtr[i]
+            // Outpoint tuple → 36-byte raw → display-order hex string.
+            let outPointRaw = Swift.withUnsafeBytes(of: e.out_point) { Data($0) }
+            let outPointHex = PersistentAssetLock.encodeOutPoint(rawBytes: outPointRaw)
+            // Consensus-encoded transaction bytes.
+            let txBytes: Data
+            if let ptr = e.transaction_bytes, e.transaction_bytes_len > 0 {
+                txBytes = Data(bytes: ptr, count: Int(e.transaction_bytes_len))
+            } else {
+                txBytes = Data()
+            }
+            // Optional bincode-encoded proof.
+            let proofBytes: Data?
+            if let ptr = e.proof_bytes, e.proof_bytes_len > 0 {
+                proofBytes = Data(bytes: ptr, count: Int(e.proof_bytes_len))
+            } else {
+                proofBytes = nil
+            }
+            upserts.append(.init(
+                outPointHex: outPointHex,
+                transactionBytes: txBytes,
+                fundingTypeRaw: Int(e.funding_type),
+                identityIndexRaw: Int32(bitPattern: e.identity_index),
+                amountDuffs: Int64(bitPattern: e.amount_duffs),
+                statusRaw: Int(e.status),
+                proofBytes: proofBytes
+            ))
+        }
+    }
+
+    var removed: [Data] = []
+    if removedCount > 0, let removedPtr = removedPtr {
+        removed.reserveCapacity(Int(removedCount))
+        for i in 0..<Int(removedCount) {
+            var tuple = removedPtr[i]
+            let bytes = Swift.withUnsafeBytes(of: &tuple) { Data($0) }
+            removed.append(bytes)
+        }
+    }
+
+    handler.persistAssetLocks(walletId: walletId, upserts: upserts, removed: removed)
     return 0
 }
 

@@ -1774,3 +1774,55 @@ struct WalletManagerMetadataStorageDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 }
+
+struct AssetLockStorageDetailView: View {
+    let record: PersistentAssetLock
+
+    var body: some View {
+        Form {
+            Section("Asset Lock") {
+                FieldRow(label: "Outpoint", value: record.outPointHex)
+                FieldRow(label: "Status", value: statusLabel(record.statusRaw))
+                FieldRow(label: "Funding Type", value: fundingTypeLabel(record.fundingTypeRaw))
+                FieldRow(label: "Identity Index", value: "\(record.identityIndexRaw)")
+                FieldRow(label: "Amount (duffs)", value: "\(record.amountDuffs)")
+                FieldRow(label: "Wallet ID", value: hexString(record.walletId))
+            }
+            Section("Bytes") {
+                FieldRow(label: "Transaction Bytes", value: "\(record.transactionBytes.count) bytes")
+                FieldRow(
+                    label: "Proof Bytes",
+                    value: record.proofBytes.map { "\($0.count) bytes" } ?? "—"
+                )
+            }
+            Section("Timestamps") {
+                FieldRow(label: "Created", value: dateString(record.createdAt))
+                FieldRow(label: "Updated", value: dateString(record.updatedAt))
+            }
+        }
+        .navigationTitle("Asset Lock")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func statusLabel(_ raw: Int) -> String {
+        switch raw {
+        case 0: return "Built"
+        case 1: return "Broadcast"
+        case 2: return "InstantSendLocked"
+        case 3: return "ChainLocked"
+        default: return "Unknown(\(raw))"
+        }
+    }
+
+    private func fundingTypeLabel(_ raw: Int) -> String {
+        switch raw {
+        case 0: return "IdentityRegistration"
+        case 1: return "IdentityTopUp"
+        case 2: return "IdentityTopUpNotBound"
+        case 3: return "IdentityInvitation"
+        case 4: return "AssetLockAddressTopUp"
+        case 5: return "AssetLockShieldedAddressTopUp"
+        default: return "Unknown(\(raw))"
+        }
+    }
+}

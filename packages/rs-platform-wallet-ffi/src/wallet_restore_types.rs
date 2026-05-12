@@ -26,6 +26,7 @@
 
 use std::os::raw::{c_char, c_void};
 
+use crate::asset_lock_persistence::AssetLockEntryFFI;
 use crate::platform_address_types::AddressBalanceEntryFFI;
 use crate::types::FFINetwork;
 
@@ -349,6 +350,16 @@ pub struct WalletRestoreEntryFFI {
     /// row's `script_pubkey` buffer.
     pub utxos: *const UtxoRestoreEntryFFI,
     pub utxos_count: usize,
+    /// Tracked asset-lock entries persisted by the
+    /// `on_persist_asset_locks_fn` callback that need to be
+    /// rehydrated into `ClientWalletStartState.unused_asset_locks`
+    /// so wallet load resumes mid-flight registrations.
+    ///
+    /// Each entry's `transaction_bytes` / `proof_bytes` buffers are
+    /// Swift-owned and freed by `LoadWalletListFreeFn`. `null` / `0`
+    /// when the wallet has no persisted tracked locks.
+    pub tracked_asset_locks: *const AssetLockEntryFFI,
+    pub tracked_asset_locks_count: usize,
 }
 
 // SAFETY: Pointers are Swift-owned and lifetime-scoped to the callback.

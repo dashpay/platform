@@ -1605,6 +1605,77 @@ struct PendingInputStorageListView: View {
     }
 }
 
+// MARK: - PersistentAssetLock
+
+/// Storage explorer surface for tracked asset locks. SwiftData-backed
+/// — every row is upserted by the Rust-side `on_persist_asset_locks_fn`
+/// callback as the lock advances through Built / Broadcast /
+/// InstantSendLocked / ChainLocked, and deleted when the registration
+/// consumes it. The same rows also drive `RegistrationProgressView`
+/// (iter 3 part 2).
+struct AssetLockStorageListView: View {
+    let network: Network
+    @Query(sort: [SortDescriptor(\PersistentAssetLock.updatedAt, order: .reverse)])
+    private var records: [PersistentAssetLock]
+
+    @Query private var allWallets: [PersistentWallet]
+
+    private var walletIdsOnNetwork: Set<Data> {
+        Set(allWallets.lazy
+            .filter { $0.networkRaw == network.rawValue }
+            .map(\.walletId))
+    }
+
+    private var scopedRecords: [PersistentAssetLock] {
+        let ids = walletIdsOnNetwork
+        return records.filter { ids.contains($0.walletId) }
+    }
+
+    var body: some View {
+        let visible = scopedRecords
+        List(visible) { record in
+            NavigationLink(destination: AssetLockStorageDetailView(record: record)) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(record.outPointHex)
+                        .font(.system(.caption, design: .monospaced))
+                        .lineLimit(1).truncationMode(.middle)
+                    HStack(spacing: 8) {
+                        Text(statusLabel(record.statusRaw))
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Text("identity #\(record.identityIndexRaw)")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Text(record.updatedAt, style: .relative)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+        }
+        .navigationTitle("Asset Locks (\(visible.count))")
+        .overlay {
+            if visible.isEmpty {
+                ContentUnavailableView(
+                    "No Asset Locks",
+                    systemImage: "lock.shield"
+                )
+            }
+        }
+    }
+
+    private func statusLabel(_ raw: Int) -> String {
+        switch raw {
+        case 0: return "Built"
+        case 1: return "Broadcast"
+        case 2: return "InstantSendLocked"
+        case 3: return "ChainLocked"
+        default: return "Unknown(\(raw))"
+        }
+    }
+}
+
 // MARK: - PersistentWalletManagerMetadata
 
 struct WalletManagerMetadataStorageListView: View {
