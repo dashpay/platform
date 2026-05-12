@@ -232,3 +232,58 @@ async fn test_mock_fetch_document_split_counts_with_distinct_range() {
     assert_eq!(retrieved.0[0].key, b"red");
     assert_eq!(retrieved.0[1].key, b"green");
 }
+
+/// `DocumentCount::fetch` with `with_distinct_counts_in_range(true)`
+/// on a range query exercises the SDK seam that routes through the
+/// `RangeDistinctProof` verifier and sums the verified per-key
+/// entries to produce a single aggregate count.
+///
+/// Before this fix, `FromProof<DocumentCountQuery> for DocumentCount`
+/// routed every range query through `verify_aggregate_count_proof`,
+/// ignoring `return_distinct_counts_in_range`. The server emits a
+/// regular range proof (`KVCount` ops) when `distinct = true`, not
+/// an `AggregateCountOnRange` proof, so the aggregate verifier
+/// rebuilds a different `PathQuery` and verification fails outright.
+///
+/// Pin: `DocumentCount::fetch` with `with_distinct_counts_in_range(true)`
+/// returns the correct aggregate (sum of per-key counts) via the
+/// mock transport. Any future regression to a single-verifier path
+/// would either misroute distinct queries back to the aggregate
+/// verifier (verification failure) or stop summing the per-key
+/// counts (wrong result).
+#[tokio::test]
+async fn test_mock_fetch_document_count_with_distinct_range_sums_entries() {
+    let mut sdk = Sdk::new_mock();
+
+    let document_type = mock_document_type();
+    let data_contract = mock_data_contract(Some(&document_type));
+    let query = DocumentCountQuery::new(Arc::new(data_contract), document_type.name())
+        .expect("build DocumentCountQuery")
+        .with_where(WhereClause {
+            field: "a".to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: Value::Text("blue".to_string()),
+        })
+        .with_distinct_counts_in_range(true);
+
+    // The mock transport short-circuits proof verification — we
+    // assert on the `DocumentCount` aggregate the SDK returns
+    // when the FromProof impl correctly dispatches to the distinct
+    // verifier path. With a sum of 12+8 = 20, a regression that
+    // routes back through the aggregate verifier would either
+    // return a different value or fail to decode at all.
+    let expected = DocumentCount(20);
+
+    sdk.mock()
+        .expect_fetch(query.clone(), Some(expected.clone()))
+        .await
+        .expect("expectation should be added");
+
+    let retrieved = DocumentCount::fetch(&sdk, query)
+        .await
+        .expect("fetch should succeed")
+        .expect("count should be present");
+
+    assert_eq!(retrieved, expected);
+    assert_eq!(retrieved.0, 20);
+}

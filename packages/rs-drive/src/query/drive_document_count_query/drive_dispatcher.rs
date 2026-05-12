@@ -576,9 +576,42 @@ pub enum DocumentCountResponse {
 ///
 /// `Value::Null` (empty `where` field) → no clauses. Any other shape
 /// must be an outer array of inner arrays-of-components.
+///
+/// After component parsing, the resulting clause list is run through
+/// [`WhereClause::group_clauses`] — the same validator the regular
+/// document-query path uses — to reject malformed shapes the count
+/// path otherwise silently reduces:
+///
+/// - Duplicate `Equal` clauses on the same field
+///   (`DuplicateNonGroupableClauseSameField`).
+/// - Multiple `In` clauses (`MultipleInClauses`).
+/// - Multiple non-groupable range clauses (`MultipleRangeClauses`).
+/// - Equality + `In` on the same field, range + equality/In on the
+///   same field (`DuplicateNonGroupableClauseSameField` /
+///   `InvalidWhereClauseComponents`).
+///
+/// Without this validation, downstream
+/// [`DriveDocumentCountQuery::find_countable_index_for_where_clauses`]
+/// collapses repeated fields into a `BTreeSet` and
+/// [`DriveDocumentCountQuery::point_lookup_count_path_query`]
+/// resolves each index property with a single `.find(...)` — both
+/// of which silently pick the first clause on a duplicated field
+/// and return a count for an arbitrarily reduced query rather than
+/// rejecting the malformed request. `group_clauses` is the single
+/// source of truth for what shapes the query stack as a whole
+/// accepts; running it here aligns the count endpoint with the
+/// regular document-query path's rejection contract.
+///
+/// Only the validation side-effect is consumed — the dispatcher
+/// continues to operate on the parsed `Vec<WhereClause>` directly,
+/// since the count-specific mode detection and index pickers
+/// expect a flat list, not the equal-clauses/in-clause/range-clause
+/// triple that `group_clauses` returns. (The regular query path's
+/// `InternalClauses::extract_from_clauses` uses the triple; the
+/// count path doesn't.)
 fn where_clauses_from_value(value: &dpp::platform_value::Value) -> Result<Vec<WhereClause>, Error> {
-    match value {
-        dpp::platform_value::Value::Null => Ok(Vec::new()),
+    let clauses: Vec<WhereClause> = match value {
+        dpp::platform_value::Value::Null => Vec::new(),
         dpp::platform_value::Value::Array(clauses) => clauses
             .iter()
             .map(|wc| match wc {
@@ -589,11 +622,20 @@ fn where_clauses_from_value(value: &dpp::platform_value::Value) -> Result<Vec<Wh
                     "where clause must be an array",
                 ))),
             })
-            .collect(),
-        _ => Err(Error::Query(QuerySyntaxError::InvalidFormatWhereClause(
-            "where clause must be an array",
-        ))),
-    }
+            .collect::<Result<Vec<_>, _>>()?,
+        _ => {
+            return Err(Error::Query(QuerySyntaxError::InvalidFormatWhereClause(
+                "where clause must be an array",
+            )));
+        }
+    };
+
+    // Run the parsed clauses through the system-wide validator.
+    // The returned triple is discarded; we only care about the
+    // validation errors — see this function's docstring for the
+    // catalog of rejections this enables on the count endpoint.
+    let _ = WhereClause::group_clauses(&clauses)?;
+    Ok(clauses)
 }
 
 /// Parse the decoded `order_by` value into structured [`OrderClause`]s.

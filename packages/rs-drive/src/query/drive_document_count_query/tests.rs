@@ -910,6 +910,78 @@ fn test_compound_range_in_summed_no_proof_uses_per_in_aggregate_fanout() {
     );
 }
 
+/// `where_clauses_from_value` must run the parsed `Vec<WhereClause>`
+/// through `WhereClause::group_clauses` to reject malformed shapes
+/// the regular document-query path rejects.
+///
+/// Without `group_clauses` validation, the count endpoint silently
+/// accepts duplicate/conflicting clauses and returns a count for an
+/// arbitrarily reduced query:
+/// - Two conflicting `Equal` clauses on the same field collapse to
+///   a single clause via `find_countable_index_for_where_clauses`'s
+///   `BTreeSet` over field names and `point_lookup_count_path_query`'s
+///   `.find(...)` for each index property — the executor picks the
+///   first clause and the second is silently dropped.
+/// - Multiple `In` clauses or multiple range clauses similarly slip
+///   through.
+///
+/// This test pins the rejection at the dispatcher seam (via the
+/// `execute_document_count_request` entry point that all callers
+/// reach through the abci handler), so a future change that bypasses
+/// the validator gets caught.
+#[test]
+fn test_count_request_with_duplicate_equality_clauses_is_rejected() {
+    use crate::config::DriveConfig;
+    use crate::query::drive_document_count_query::drive_dispatcher::DocumentCountRequest;
+
+    let (drive, data_contract) = setup_drive_and_contract();
+    let platform_version = PlatformVersion::latest();
+
+    let document_type = data_contract
+        .document_type_for_name("person")
+        .expect("expected document type");
+
+    // Two conflicting `Equal` clauses on `firstName` — the request
+    // is structurally malformed: there's no single document that
+    // satisfies both `firstName = "Alice"` AND `firstName = "Bob"`,
+    // so the answer should be 0, but a regression would return
+    // count("firstName = Alice") or count("firstName = Bob")
+    // depending on iteration order.
+    let raw_where_value = Value::Array(vec![
+        Value::Array(vec![
+            Value::Text("firstName".to_string()),
+            Value::Text("==".to_string()),
+            Value::Text("Alice".to_string()),
+        ]),
+        Value::Array(vec![
+            Value::Text("firstName".to_string()),
+            Value::Text("==".to_string()),
+            Value::Text("Bob".to_string()),
+        ]),
+    ]);
+    let drive_config = DriveConfig::default();
+    let request = DocumentCountRequest {
+        contract: &data_contract,
+        document_type,
+        raw_where_value,
+        raw_order_by_value: Value::Null,
+        return_distinct_counts_in_range: false,
+        limit: None,
+        prove: false,
+        drive_config: &drive_config,
+    };
+
+    let err = drive
+        .execute_document_count_request(request, None, platform_version)
+        .expect_err("expected duplicate-equality request to be rejected");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("duplicate") || msg.contains("DuplicateNonGroupableClauseSameField"),
+        "expected duplicate-equality rejection from group_clauses, got: {}",
+        msg
+    );
+}
+
 /// Pins the consensus-sensitive limit-fallback invariant on the
 /// `RangeDistinctProof` dispatch path: when the request's `limit`
 /// is `None`, the dispatcher MUST fall back to the compile-time

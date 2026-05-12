@@ -324,7 +324,67 @@ impl FromProof<DocumentCountQuery> for DocumentCount {
                 .metadata()
                 .or(Err(drive_proof_verifier::Error::EmptyResponseMetadata))?;
 
-            // The verifier helper rebuilds the prover's path query
+            // Dispatch on `return_distinct_counts_in_range`. The
+            // server's `detect_mode` routes
+            // `(range, prove=true, distinct=true)` to
+            // `RangeDistinctProof` (emits per-key `KVCount` ops) and
+            // `(range, prove=true, distinct=false)` to `RangeProof`
+            // (emits a single `AggregateCountOnRange` aggregate);
+            // the two proof shapes are NOT interchangeable.
+            // Decoding a distinct proof with the aggregate verifier
+            // would fail merk-root recomputation because the path
+            // queries differ structurally.
+            if request.return_distinct_counts_in_range {
+                // Mirror the SDK's prove-distinct dispatcher (see the
+                // `FromProof<DocumentCountQuery> for DocumentSplitCounts`
+                // impl below) to rebuild the same path query the
+                // prover signed. The limit anchors to the compile-time
+                // `DEFAULT_QUERY_LIMIT` constant (matching the
+                // server's `drive_dispatcher.rs` `RangeDistinctProof`
+                // arm) so proof bytes are deterministic across
+                // operators. Direction comes from the first
+                // `order_by` clause, defaulting to ascending.
+                let limit_u16 = match request.limit {
+                    Some(l) => {
+                        u16::try_from(l).map_err(|_| drive_proof_verifier::Error::RequestError {
+                            error: format!(
+                                "limit {} exceeds u16::MAX; the prove-distinct path query \
+                                 cannot represent it",
+                                l
+                            ),
+                        })?
+                    }
+                    None => drive::config::DEFAULT_QUERY_LIMIT,
+                };
+                let left_to_right = request
+                    .document_query
+                    .order_by_clauses
+                    .first()
+                    .map(|c| c.ascending)
+                    .unwrap_or(true);
+
+                let entries = verify_distinct_count_proof(
+                    &count_query,
+                    proof,
+                    mtd,
+                    limit_u16,
+                    left_to_right,
+                    platform_version,
+                    provider,
+                )?;
+                // `DocumentCount` collapses to a single aggregate
+                // u64. Sum the verified per-key counts. The proof's
+                // `KVCount` ops are merk-root-bound via
+                // `node_hash_with_count`, so the sum is
+                // cryptographically committed — same forge-resistance
+                // as `AggregateCountOnRange`, just expressed as a
+                // post-verification reduction in Rust.
+                let total: u64 = entries.iter().map(|e| e.count).sum();
+                return Ok((Some(DocumentCount(total)), mtd.clone(), proof.clone()));
+            }
+
+            // Range + prove + !distinct: aggregate proof path. The
+            // verifier helper rebuilds the prover's path query
             // internally via `count_query.aggregate_count_path_query`
             // — same builder both sides share, so the path query
             // bytes match byte-for-byte and the merk root
