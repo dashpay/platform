@@ -13,7 +13,11 @@ pub const DRIVE_ABCI_QUERY_VERSIONS_V1: DriveAbciQueryVersions = DriveAbciQueryV
     proofs_query: 0,
     document_query: FeatureVersionBounds {
         min_version: 0,
-        max_version: 0,
+        // Accept v0 (legacy `getDocuments`) and v1 (unified
+        // SQL-shaped surface with select / group_by / having).
+        // Default to v0 for backward compatibility — v1 callers
+        // explicitly opt in via the request's `version` oneof.
+        max_version: 1,
         default_current_version: 0,
     },
     document_count_query: FeatureVersionBounds {

@@ -75,7 +75,12 @@ fn count_response_with_entries<C>(
 }
 
 impl<C> Platform<C> {
-    pub(super) fn query_documents_count_v0(
+    /// `pub(crate)` (was `pub(super)`) so the v1 `getDocuments`
+    /// handler in `document_query::v1` can delegate `select=COUNT`
+    /// requests here, keeping the v1 surface "pure rewiring"
+    /// without duplicating the count dispatcher logic. See
+    /// `query_documents_v1` for the v1 → v0-count translation.
+    pub(crate) fn query_documents_count_v0(
         &self,
         GetDocumentsCountRequestV0 {
             data_contract_id,
