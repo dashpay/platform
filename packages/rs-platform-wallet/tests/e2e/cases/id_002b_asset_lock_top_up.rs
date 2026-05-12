@@ -41,8 +41,10 @@ use dash_sdk::platform::Fetch;
 use dpp::balances::credits::CREDITS_PER_DUFF;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
+use key_wallet::AccountType;
 use platform_wallet::wallet::asset_lock::tracked::AssetLockStatus;
 use platform_wallet::wallet::identity::types::funding::TopUpFundingMethod;
+use platform_wallet::PlatformWalletError;
 
 use crate::framework::prelude::*;
 use crate::framework::wait::wait_for_identity_balance;
@@ -154,7 +156,19 @@ async fn id_002b_asset_lock_funded_top_up() {
          pre top-up (got {pre_balance})"
     );
 
-    // Step 3: drive the asset-lock-funded top-up. Internally:
+    // Step 3: drive the asset-lock-funded top-up.
+    //
+    // Precondition (QA-006): `top_up_identity_with_funding` with
+    // `FundWithWallet` calls `create_funded_asset_lock_proof` which
+    // looks up the `IdentityTopUp { registration_index: IDENTITY_INDEX }`
+    // HD account in the wallet's managed account collection. That account
+    // is absent when the wallet is created with
+    // `WalletAccountCreationOptions::Default`. Provision it now.
+    add_identity_topup_account(s.test_wallet.platform_wallet(), IDENTITY_INDEX)
+        .await
+        .expect("add IdentityTopUp HD account for IDENTITY_INDEX");
+
+    // Internally:
     //   1. AssetLockManager::create_funded_asset_lock_proof — builds
     //      the asset-lock tx on Core, broadcasts via SPV, waits for
     //      IS-lock (or falls back to ChainLock).
@@ -281,4 +295,40 @@ async fn id_002b_asset_lock_funded_top_up() {
     );
 
     s.teardown().await.expect("teardown");
+}
+
+// ---------------------------------------------------------------------------
+// Inline helpers
+// ---------------------------------------------------------------------------
+
+/// Provision an `IdentityTopUp { registration_index }` HD account in
+/// the wallet's key-wallet and managed-account collection.
+///
+/// `top_up_identity_with_funding` with `FundWithWallet` calls
+/// `create_funded_asset_lock_proof(AssetLockFundingType::IdentityTopUp,
+/// identity_index)` which looks up the account keyed by `identity_index`
+/// in `wallet_info.accounts.identity_topup`. That map starts empty
+/// when the wallet is created with `WalletAccountCreationOptions::Default`
+/// — provisioning it here is the required precondition. (QA-006)
+async fn add_identity_topup_account(
+    wallet: &std::sync::Arc<platform_wallet::PlatformWallet>,
+    registration_index: u32,
+) -> Result<(), PlatformWalletError> {
+    let wallet_id = wallet.wallet_id();
+    let mut wm = wallet.wallet_manager().write().await;
+    let (kw, info) = wm
+        .get_wallet_mut_and_info_mut(&wallet_id)
+        .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(wallet_id)))?;
+    kw.add_account(AccountType::IdentityTopUp { registration_index }, None)
+        .map_err(|e| PlatformWalletError::InvalidIdentityData(e.to_string()))?;
+    let account = kw
+        .accounts
+        .identity_topup
+        .get(&registration_index)
+        .expect("just inserted");
+    let managed = key_wallet::managed_account::ManagedCoreKeysAccount::from_account(account);
+    info.core_wallet
+        .accounts
+        .insert_keys_bearing_account(managed)
+        .map_err(|e| PlatformWalletError::InvalidIdentityData(e.to_string()))
 }

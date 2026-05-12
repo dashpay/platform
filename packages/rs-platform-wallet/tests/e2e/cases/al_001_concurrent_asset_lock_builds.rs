@@ -45,8 +45,10 @@ use dpp::balances::credits::CREDITS_PER_DUFF;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
 use dpp::prelude::Identifier;
+use key_wallet::AccountType;
 use platform_wallet::wallet::asset_lock::tracked::AssetLockStatus;
 use platform_wallet::wallet::identity::types::funding::TopUpFundingMethod;
+use platform_wallet::PlatformWalletError;
 
 use crate::framework::prelude::*;
 use crate::framework::wait::wait_for_identity_balance;
@@ -155,6 +157,18 @@ async fn al_001_concurrent_asset_lock_builds() {
     // independent asset-lock build via `top_up_identity_with_funding`'s
     // `FundWithWallet` path. The wallet handle is `Arc`-shared via
     // `platform_wallet()` so each task gets its own clone.
+    //
+    // Precondition (QA-006): provision one `IdentityTopUp` HD account
+    // per identity slot (0..N). `top_up_identity_with_funding` with
+    // `FundWithWallet` looks up the account by `identity_index` in the
+    // managed account collection, which starts empty under
+    // `WalletAccountCreationOptions::Default`.
+    for i in 0..N {
+        add_identity_topup_account(s.test_wallet.platform_wallet(), i as u32)
+            .await
+            .unwrap_or_else(|e| panic!("add IdentityTopUp HD account for slot {i}: {e}"));
+    }
+
     let mut handles = Vec::with_capacity(N);
     for (i, identity_id) in identity_ids.iter().enumerate() {
         let wallet = s.test_wallet.platform_wallet().clone();
@@ -291,4 +305,39 @@ async fn al_001_concurrent_asset_lock_builds() {
     );
 
     s.teardown().await.expect("teardown");
+}
+
+// ---------------------------------------------------------------------------
+// Inline helpers
+// ---------------------------------------------------------------------------
+
+/// Provision an `IdentityTopUp { registration_index }` HD account in
+/// the wallet's key-wallet and managed-account collection.
+///
+/// `top_up_identity_with_funding` with `FundWithWallet` looks up the
+/// account by `identity_index` in `wallet_info.accounts.identity_topup`,
+/// which starts empty under `WalletAccountCreationOptions::Default`.
+/// Provision the slot here before spawning the concurrent top-up tasks.
+/// (QA-006)
+async fn add_identity_topup_account(
+    wallet: &std::sync::Arc<platform_wallet::PlatformWallet>,
+    registration_index: u32,
+) -> Result<(), PlatformWalletError> {
+    let wallet_id = wallet.wallet_id();
+    let mut wm = wallet.wallet_manager().write().await;
+    let (kw, info) = wm
+        .get_wallet_mut_and_info_mut(&wallet_id)
+        .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(wallet_id)))?;
+    kw.add_account(AccountType::IdentityTopUp { registration_index }, None)
+        .map_err(|e| PlatformWalletError::InvalidIdentityData(e.to_string()))?;
+    let account = kw
+        .accounts
+        .identity_topup
+        .get(&registration_index)
+        .expect("just inserted");
+    let managed = key_wallet::managed_account::ManagedCoreKeysAccount::from_account(account);
+    info.core_wallet
+        .accounts
+        .insert_keys_bearing_account(managed)
+        .map_err(|e| PlatformWalletError::InvalidIdentityData(e.to_string()))
 }

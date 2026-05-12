@@ -42,8 +42,10 @@
 use std::time::Duration;
 
 use dpp::identity::Identity;
+use key_wallet::AccountType;
 use platform_wallet::wallet::asset_lock::tracked::AssetLockStatus;
 use platform_wallet::wallet::identity::types::funding::TopUpFundingMethod;
+use platform_wallet::PlatformWalletError;
 
 use crate::framework::prelude::*;
 use dash_sdk::platform::Fetch;
@@ -116,6 +118,25 @@ async fn found_006_topup_index_ignored() {
         .await
         .expect("fetch pre")
         .expect("identity visible");
+
+    // Precondition (QA-006): provision the `IdentityTopUp` HD account for
+    // `IDENTITY_INDEX = 0`. Both top-ups below target the same identity
+    // (that is the bug under test), so `top_up_identity_with_funding`
+    // routes both through `identity_index = 0`. The `_topup_index`
+    // parameter is currently ignored (Found-006), meaning both calls
+    // derive from slot 0 — only one slot needs provisioning.
+    //
+    // Expected outcome post-fix of QA-006 precondition:
+    //   - first top-up (topup_index=0): PASSES — slot 0 provisioned.
+    //   - second top-up (topup_index=1): FAILS or collides — the bug
+    //     (Found-006) is that `topup_index` is still ignored and both
+    //     calls derive from the same slot 0 address. This test is a
+    //     RED-by-design pin for that bug. Fixing QA-006's precondition
+    //     unblocks reaching the routing logic; the Found-006 assertion
+    //     at the end will still fail until the upstream routing is fixed.
+    add_identity_topup_account(s.test_wallet.platform_wallet(), IDENTITY_INDEX)
+        .await
+        .expect("add IdentityTopUp HD account for IDENTITY_INDEX");
 
     // First top-up — topup_index = 0.
     s.test_wallet
@@ -257,4 +278,40 @@ async fn found_006_topup_index_ignored() {
     );
 
     s.teardown().await.expect("teardown");
+}
+
+// ---------------------------------------------------------------------------
+// Inline helpers
+// ---------------------------------------------------------------------------
+
+/// Provision an `IdentityTopUp { registration_index }` HD account in
+/// the wallet's key-wallet and managed-account collection.
+///
+/// `top_up_identity_with_funding` with `FundWithWallet` looks up the
+/// account by `identity_index` in `wallet_info.accounts.identity_topup`,
+/// which starts empty under `WalletAccountCreationOptions::Default`.
+/// Without this, both top-up calls fail on the precondition before they
+/// can even reach the `topup_index` routing path that Found-006 pins.
+/// (QA-006)
+async fn add_identity_topup_account(
+    wallet: &std::sync::Arc<platform_wallet::PlatformWallet>,
+    registration_index: u32,
+) -> Result<(), PlatformWalletError> {
+    let wallet_id = wallet.wallet_id();
+    let mut wm = wallet.wallet_manager().write().await;
+    let (kw, info) = wm
+        .get_wallet_mut_and_info_mut(&wallet_id)
+        .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(wallet_id)))?;
+    kw.add_account(AccountType::IdentityTopUp { registration_index }, None)
+        .map_err(|e| PlatformWalletError::InvalidIdentityData(e.to_string()))?;
+    let account = kw
+        .accounts
+        .identity_topup
+        .get(&registration_index)
+        .expect("just inserted");
+    let managed = key_wallet::managed_account::ManagedCoreKeysAccount::from_account(account);
+    info.core_wallet
+        .accounts
+        .insert_keys_bearing_account(managed)
+        .map_err(|e| PlatformWalletError::InvalidIdentityData(e.to_string()))
 }
