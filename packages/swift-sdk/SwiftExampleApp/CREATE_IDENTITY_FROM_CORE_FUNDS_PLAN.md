@@ -986,28 +986,13 @@ funding plumbing exists, only the UI is missing.
 
 ---
 
-### 🚨 SPV event-routing follow-up (P0 BLOCKER for end-to-end testnet)
+### SPV event-routing follow-up — RESOLVED (2026-05-13)
 
-**Symptom (observed twice on testnet)**: asset-lock tx broadcasts and gets mined+chain-locked on testnet (verified via explorer with 12+ confirmations), but the asset-lock manager's `wait_for_proof` poll loop never sees the tx-record `context` advance from `Broadcast` to `InstantSend(_)` or `InChainLockedBlock(_)`. **Both the IS-lock 300s wait AND iter 4's new auto CL-fallback 180s wait time out**. The Swift Transactions screen shows the tx as "Confirmed" but the tracked-asset-lock status (queried via `trackedAssetLocks(for:)`) stays at `Broadcast`.
+End-to-end Core-funded identity registration validated on testnet. Three causes, all landed:
 
-**Root cause hypothesis**: SPV processes wallet txs into a basic "confirmed" state but doesn't propagate IS-lock / chain-lock signatures to `bip44_account.transactions()` map's `TransactionContext` field. The poll loop at `packages/rs-platform-wallet/src/wallet/asset_lock/sync/proof.rs:367-399` reads exactly that field and never sees the upgrade.
-
-**Likely failure points** (need investigation):
-1. SPV not subscribed to IS-lock / chain-lock P2P topics
-2. SPV receives them but skips the wallet-tx-record update (regression from rust-dashcore bumps `e29dc7a26c` or `8156ecc08d`?)
-3. Wallet integration layer drops the events on the floor
-
-**Why this didn't surface before iter 2**: the soft-wallet asset-lock path failed *earlier* with "Cannot sign with watch-only wallet". Iter 2's signer plumbing succeeded enough to reach the `wait_for_proof` step where this issue actually lives. So the SPV event-routing bug has been latent for a while.
-
-**Triage path**:
-1. Inspect `dash-spv` crate's IS-lock / chain-lock event handlers — confirm they call the wallet integration to update tx contexts
-2. Compare against pre-rust-dashcore-bump behavior via git history
-3. Add tracing logs in the SPV event-handler path; or expose a Swift-side diagnostic that surfaces the SPV subscription state
-4. If event-handler is wired but masternode side is silent (testnet IS-lock latency), the CL fallback should still complete — but it didn't, so this is NOT just IS-lock silence
-
-**Unblocks**: end-to-end testnet validation, all subsequent iters (iter 3-7 don't directly depend on this, but the whole feature is broken without working IS/CL events).
-
-**Out of scope for the iter 4 PR** — this is a separate investigation into the SPV layer. Track as a P0 follow-up.
+- **Root cause**: in trusted-SDK mode the app set `masternodeSyncEnabled=false`, which disabled `dash-spv`'s `ChainLockManager` + `InstantSendManager`. The SPV client connected to masternode peers and received `CLSig`/`ISLock` P2P messages, but with no manager subscribed, `MessageDispatcher` dropped them — `LockNotifyHandler` never saw a single IS/CL event, `wait_for_proof` slept the full 300 s. Fix: hardcode `enable_masternodes = true` in `platform_wallet_manager_spv_start`; drop the FFI knob. Commit `885a1be3`.
+- **Wallet record promotion**: upstream `WalletInterface` had no `process_chain_lock` until [rust-dashcore#756](https://github.com/dashpay/rust-dashcore/pull/756) merged, so records were stuck at `TransactionContext::InBlock(_)` after a chainlock. Bumped pin from `53130869` → `5297d61a` and added match arms for the new `WalletEvent::TransactionsChainlocked` variant in `core_bridge` + `balance_handler`. Commit `4184a425`.
+- **Platform funding floor**: the v0 `200_000` duff minimum doesn't cover v1's per-key creation cost. With `defaultKeyCount = 3` the real floor is `221_500` duffs (`identity_create_base_cost + asset_lock_base * CREDITS_PER_DUFF + identity_key_in_creation_cost * 3`). Bumped `minIdentityFundingDuffs` to `221_500` and `defaultCoreFundingDuffs` to `250_000`. Commit `3d16a31a`.
 
 ## Open questions
 
