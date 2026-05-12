@@ -143,8 +143,18 @@ pub enum DocumentCountMode {
     /// matched) rather than the O(log n) of [`Self::RangeProof`], but
     /// still much smaller than materialize-and-count.
     RangeDistinctProof,
-    /// No range clause + `prove = true` — falls back to the
-    /// materialize-and-count proof path. Capped at `u16::MAX` matching
-    /// docs because each verified document is materialized client-side.
+    /// No range clause + `prove = true` — produces a per-branch
+    /// `Element::CountTree` proof. Either an unfiltered total
+    /// (`documents_countable: true` fast path, proving the
+    /// doctype's primary-key CountTree directly) or a covered
+    /// Equal/`In` lookup against a `countable: true` index (proving
+    /// one CountTree element per matched branch via
+    /// [`DriveDocumentCountQuery::point_lookup_count_path_query`]).
+    /// Proof size is O(k × log n) where k is the number of covered
+    /// branches (1 for the empty-where fast path and Equal-only
+    /// fully-covered case; ≤ |In values| for In-on-prefix). No
+    /// document materialization, no `u16::MAX` matching-docs cap —
+    /// the merk-level `count_value` IS the result, the SDK
+    /// extracts it via `verify_point_lookup_count_proof`.
     PointLookupProof,
 }

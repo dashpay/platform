@@ -58,6 +58,19 @@ struct DocumentCountResult {
     counts: BTreeMap<String, u64>,
 }
 
+/// Map the wire/JSON operator token to a `WhereOperator`.
+///
+/// Accepts the full range-operator surface drive's
+/// `range_clause_to_query_item` supports (`between`,
+/// `betweenExcludeBounds`, `betweenExcludeLeft`,
+/// `betweenExcludeRight` — value must be a 2-element array
+/// `[lower, upper]`), so iOS/Swift callers can issue every range
+/// shape the count endpoint's prove and no-proof paths verify
+/// against. Operator names match the wasm bindings'
+/// `parse_where_operator` for cross-language parity. Camel-case is
+/// the canonical wire form, with kebab-case (`between-exclude-*`)
+/// and lower-snake-case (`between_exclude_*`) aliases accepted as
+/// a convenience for callers that already normalize to those styles.
 #[allow(clippy::result_large_err)]
 fn parse_where_operator(op: &str) -> Result<WhereOperator, FFIError> {
     match op {
@@ -68,6 +81,19 @@ fn parse_where_operator(op: &str) -> Result<WhereOperator, FFIError> {
         "<=" | "lte" => Ok(WhereOperator::LessThanOrEquals),
         "in" => Ok(WhereOperator::In),
         "startsWith" => Ok(WhereOperator::StartsWith),
+        // Range bounds: value is `[lower, upper]`. Drive's
+        // `range_clause_to_query_item` validates the 2-element
+        // array + ordered bounds.
+        "between" => Ok(WhereOperator::Between),
+        "betweenExcludeBounds" | "between-exclude-bounds" | "between_exclude_bounds" => {
+            Ok(WhereOperator::BetweenExcludeBounds)
+        }
+        "betweenExcludeLeft" | "between-exclude-left" | "between_exclude_left" => {
+            Ok(WhereOperator::BetweenExcludeLeft)
+        }
+        "betweenExcludeRight" | "between-exclude-right" | "between_exclude_right" => {
+            Ok(WhereOperator::BetweenExcludeRight)
+        }
         _ => Err(FFIError::InternalError(format!(
             "Unknown where operator: {}",
             op

@@ -60,7 +60,16 @@ impl DriveDocumentCountQuery<'_> {
                 platform_version,
             )?)
         };
-        let serialize_pair = |op_name: &'static str| -> Result<(Vec<u8>, Vec<u8>), Error> {
+        // Shared helper for all four `between*` operators. The
+        // operator the caller used (`between`, `betweenExcludeBounds`,
+        // etc.) is not woven into error messages because
+        // `InvalidWhereClauseComponents` takes `&'static str` — a
+        // String-typed error variant would let us do that, but the
+        // existing static-string contract is fine to live with: the
+        // arm name (`WhereOperator::Between` etc.) is visible in
+        // backtraces if a malformed payload reaches this far, and
+        // mode detection has already filtered out non-range operators.
+        let serialize_pair = || -> Result<(Vec<u8>, Vec<u8>), Error> {
             let arr = clause.value.as_array().ok_or_else(|| {
                 Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
                     "range bounds value must be a 2-element array",
@@ -76,7 +85,6 @@ impl DriveDocumentCountQuery<'_> {
             let a = serialize(&arr[0])?;
             let b = serialize(&arr[1])?;
             if a > b {
-                let _ = op_name;
                 return Err(Error::Query(
                     QuerySyntaxError::InvalidWhereClauseComponents(
                         "range lower bound must be <= upper bound",
@@ -104,19 +112,19 @@ impl DriveDocumentCountQuery<'_> {
                 QueryItem::RangeToInclusive(..=v)
             }
             WhereOperator::Between => {
-                let (a, b) = serialize_pair("between")?;
+                let (a, b) = serialize_pair()?;
                 QueryItem::RangeInclusive(a..=b)
             }
             WhereOperator::BetweenExcludeBounds => {
-                let (a, b) = serialize_pair("betweenExcludeBounds")?;
+                let (a, b) = serialize_pair()?;
                 QueryItem::RangeAfterTo(a..b)
             }
             WhereOperator::BetweenExcludeLeft => {
-                let (a, b) = serialize_pair("betweenExcludeLeft")?;
+                let (a, b) = serialize_pair()?;
                 QueryItem::RangeAfterToInclusive(a..=b)
             }
             WhereOperator::BetweenExcludeRight => {
-                let (a, b) = serialize_pair("betweenExcludeRight")?;
+                let (a, b) = serialize_pair()?;
                 QueryItem::Range(a..b)
             }
             WhereOperator::StartsWith => {

@@ -724,26 +724,24 @@ mod tests {
         );
     }
 
-    /// End-to-end pin for `prove = true` + `In`. Two distinct
-    /// guarantees fail if regressed:
+    /// End-to-end pin for `prove = true` + `In`.
     ///
-    /// 1. `detect_mode` must route `(has_range=false, has_in=true,
-    ///    prove=true, _)` to `PointLookupProof`. The materialize-and-
-    ///    count path emits a real grovedb proof; the PerInValue path
-    ///    emits a `Counts(...)` variant with no proof and the SDK
-    ///    verifier would bail with `NoProofInResult`.
-    /// 2. The dispatcher must thread the request's `order_by` into
-    ///    `from_decomposed_values`. The materialize walker rejects
-    ///    any range/In where clause without a matching orderBy
-    ///    because proof determinism requires the SDK to reconstruct
-    ///    the same path query; missing orderBy returns
-    ///    `MissingOrderByForRange` before any proof is produced.
+    /// `detect_mode` must route `(has_range=false, has_in=true,
+    /// prove=true, _)` to `PointLookupProof`, which builds a
+    /// per-branch CountTree-element proof via the shared
+    /// [`DriveDocumentCountQuery::point_lookup_count_path_query`]
+    /// builder (no document materialization, no `u16::MAX` cap on
+    /// matching docs — the proof shape is O(|In values| × log n)).
+    /// A regression that dispatches In+prove back through
+    /// `PerInValue` would emit a `Counts(...)` no-proof variant
+    /// instead, and the SDK verifier would bail with
+    /// `NoProofInResult`.
     ///
-    /// Asserts the response variant is `Proof(non-empty bytes)` —
-    /// either regression breaks this:
-    /// - dispatch-back-through-PerInValue → variant becomes `Counts`
-    /// - dispatcher forgets orderBy → executor errors before
-    ///   producing a response
+    /// Asserts the response variant is `Proof(non-empty bytes)`.
+    /// `order_by` is unused on this path — the builder sorts In
+    /// keys lex-ascending unconditionally for prove/no-proof
+    /// parity (see `point_lookup_count_path_query`), so proof
+    /// determinism is independent of the request's order_by.
     #[test]
     fn test_documents_count_with_in_and_prove_returns_proof() {
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);

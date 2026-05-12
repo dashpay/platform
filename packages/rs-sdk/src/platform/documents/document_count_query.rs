@@ -54,16 +54,29 @@ pub struct DocumentCountQuery {
     /// data-contract / document-type / where-clauses inputs as the
     /// regular document query.
     pub document_query: DocumentQuery,
-    /// `return_distinct_counts_in_range` request flag. Only meaningful
-    /// when the where clauses contain a range operator AND the
-    /// request goes through a no-proof transport — the proof
-    /// endpoint rejects this combination because the merk-level
-    /// `AggregateCountOnRange` proof returns a single aggregate.
-    /// Default: `false`.
+    /// `return_distinct_counts_in_range` request flag. Meaningful
+    /// when the where clauses contain a range operator: routes the
+    /// request to the per-distinct-value execution path on both
+    /// no-proof (`RangeNoProof`) AND prove (`RangeDistinctProof`)
+    /// transports. The prove path returns a regular range proof
+    /// against the property-name `ProvableCountTree` whose `KVCount`
+    /// ops carry per-distinct-value counts; the SDK's
+    /// `FromProof<DocumentCountQuery>` for `DocumentSplitCounts`
+    /// extracts them via `verify_distinct_count_proof`. Default:
+    /// `false`.
     pub return_distinct_counts_in_range: bool,
-    /// `limit` cap for distinct-mode entries. The server clamps this
-    /// to its `max_query_limit` config; passing a larger value here
-    /// just gets clamped, not rejected.
+    /// `limit` cap for distinct-mode entries.
+    /// - **No-proof paths**: server clamps to its `max_query_limit`
+    ///   config; passing a larger value just gets clamped, not
+    ///   rejected.
+    /// - **Prove path** (`RangeDistinctProof`): validate-don't-clamp.
+    ///   `limit > max_query_limit` is rejected by the server with
+    ///   `Error::Query(QuerySyntaxError::InvalidLimit(...))` because
+    ///   silent clamping would invisibly break proof verification.
+    ///   Unset falls back to `drive::config::DEFAULT_QUERY_LIMIT`
+    ///   (the same compile-time constant the SDK verifier reads),
+    ///   so proof bytes are deterministic across operators
+    ///   regardless of their runtime `default_query_limit` tuning.
     ///
     /// No cursor field: pagination is expressed by narrowing the
     /// underlying range itself (`color > <last-key-from-previous-
@@ -100,23 +113,33 @@ impl DocumentCountQuery {
     }
 
     /// Add an order_by clause to the underlying query. The first
-    /// clause's direction also controls split-mode entry ordering
-    /// server-side; clauses are required when the where contains an
-    /// `In` or range operator on the prove path (proof determinism).
+    /// clause's direction controls split-mode entry ordering
+    /// server-side and is part of the path query bytes on the
+    /// `RangeDistinctProof` prove path (so prover and verifier must
+    /// agree; empty `order_by` defaults to ascending on both sides).
+    /// Unused on the `PointLookupProof` path — the builder sorts In
+    /// keys lex-ascending unconditionally for prove/no-proof parity.
     pub fn with_order_by(mut self, clause: OrderClause) -> Self {
         self.document_query = self.document_query.with_order_by(clause);
         self
     }
 
-    /// Set `return_distinct_counts_in_range`. Only meaningful with a
-    /// range where-clause AND a no-proof transport (see field doc).
+    /// Set `return_distinct_counts_in_range`. Meaningful with a
+    /// range where-clause on both no-proof and prove transports
+    /// (see field doc).
     pub fn with_distinct_counts_in_range(mut self, distinct: bool) -> Self {
         self.return_distinct_counts_in_range = distinct;
         self
     }
 
-    /// Cap distinct-mode entry count. Server clamps to its
-    /// `max_query_limit` config — larger values are silently reduced.
+    /// Cap distinct-mode entry count.
+    /// - No-proof paths: server clamps to its `max_query_limit`.
+    /// - Prove path: server rejects `limit > max_query_limit` with
+    ///   `InvalidLimit` rather than clamping silently (clamping
+    ///   would invisibly break verification). Unset falls back to
+    ///   `drive::config::DEFAULT_QUERY_LIMIT`, the same compile-time
+    ///   constant the SDK verifier uses — see the field doc for
+    ///   the deterministic-across-operators rationale.
     pub fn with_limit(mut self, limit: Option<u32>) -> Self {
         self.limit = limit;
         self
@@ -159,10 +182,27 @@ impl TryFrom<DocumentCountQuery> for GetDocumentsCountRequest {
                     return_distinct_counts_in_range: query.return_distinct_counts_in_range,
                     order_by: order_by_bytes,
                     limit: query.limit,
-                    // SDK Fetch path always requests a proof; users
-                    // wanting no-proof distinct-mode would need a
-                    // separate transport entry point that doesn't
-                    // try to verify the response as a proof.
+                    // **Count Fetch always proves.** The SDK `Fetch`
+                    // path is wired through `FromProof<DocumentCountQuery>`,
+                    // which only knows how to decode the `Proof(...)`
+                    // response variant — the no-proof `Counts(...)` /
+                    // `Entries(...)` variants need a different decoder
+                    // entry point that doesn't exist yet on the SDK
+                    // side. Setting this to anything other than
+                    // `true` would either silently fail at decode
+                    // time or strip the verification guarantee the
+                    // rest of the SDK assumes.
+                    //
+                    // `SdkBuilder::with_proofs(false)` is consequently
+                    // a **no-op** for `DocumentCountQuery` — the
+                    // blanket `Query<T> for T` impl logs a warning at
+                    // `Fetch::fetch` time when proofs are disabled,
+                    // but the request still ships with `prove: true`.
+                    // Reaching the no-proof endpoint requires a
+                    // separate transport entry point (tracked as a
+                    // follow-up; the unified `GetDocumentsCount`
+                    // server-side supports no-proof modes, only the
+                    // SDK decoder is missing).
                     prove: true,
                 },
             )),

@@ -165,16 +165,23 @@ impl DriveDocumentCountQuery<'_> {
                 (true, _, false, _) => DocumentCountMode::RangeNoProof,
                 (false, true, false, _) => DocumentCountMode::PerInValue,
                 // `In` + `prove = true` (no range): route to the
-                // materialize-and-count proof path. The SDK's
-                // `FromProof<DocumentCountQuery>` for
-                // `DocumentSplitCounts` then groups verified
-                // documents by the `In` field's serialized value to
-                // produce per-key count entries. There's no
-                // aggregate-proof primitive that emits one
-                // `(key, count)` per In value yet, but the
-                // materialize path is correct, just bounded at
-                // u16::MAX.
+                // CountTree-element proof path. The shared
+                // `point_lookup_count_path_query` builder emits one
+                // `Element::CountTree` per matched In branch (via
+                // outer `Key`s + `[0]` subquery); the SDK's
+                // `verify_point_lookup_count_proof` extracts
+                // `count_value_or_default()` from each verified
+                // element and the `FromProof<DocumentCountQuery>`
+                // for `DocumentSplitCounts` returns them as
+                // per-In-value entries. Proof size is O(|In values|
+                // × log n) — no document materialization, no
+                // `u16::MAX` cap on matching docs.
                 (false, true, true, _) => DocumentCountMode::PointLookupProof,
+                // No range, no In, `prove = true`: same CountTree-
+                // element proof shape — either the documents_countable
+                // primary-key CountTree fast path (empty where) or
+                // a single per-branch CountTree element for an
+                // Equal-only fully-covered query.
                 (false, false, true, _) => DocumentCountMode::PointLookupProof,
                 (false, false, false, _) => DocumentCountMode::Total,
                 // (true, true, true, false) — range + In on the

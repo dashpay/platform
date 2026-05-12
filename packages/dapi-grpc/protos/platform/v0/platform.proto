@@ -655,17 +655,29 @@ message GetDocumentsCountRequest {
     // present, return per-distinct-value entries within the range.
     bool return_distinct_counts_in_range = 4;
     // CBOR-encoded order_by clauses. Same encoding as
-    // `GetDocumentsRequestV0.order_by`. Required when `where` carries
-    // an `In` or range operator on the prove path: the materialize-
-    // and-count walker needs a deterministic walk order so the SDK
-    // can reconstruct the same path query and verify the proof. The
-    // first orderBy clause's direction also controls entry ordering
-    // in split-mode responses (per-`In`-value or per-range-distinct-
-    // value); ignored for total-count responses.
+    // `GetDocumentsRequestV0.order_by`. The first clause's direction
+    // controls entry ordering in split-mode responses (per-`In`-value
+    // or per-range-distinct-value). On the `RangeDistinctProof` prove
+    // path the direction is part of the proof's path query, so the
+    // SDK must reconstruct the same value — empty `order_by` defaults
+    // to ascending on both sides for determinism. Ignored for
+    // total-count responses and for the `PointLookupProof` path
+    // (which sorts In keys lex-ascending unconditionally for prove/
+    // no-proof parity).
     bytes order_by = 5;
-    // Maximum number of entries to return on the no-prove path.
-    // Server clamps to its `max_query_limit` config. Unset →
-    // server default. Has no effect on total-count responses.
+    // Maximum number of entries to return.
+    // - **No-proof paths**: server clamps to its `max_query_limit`
+    //   config; unset → server default.
+    // - **Prove paths** (`RangeDistinctProof`): validate-don't-clamp.
+    //   `limit > max_query_limit` returns `InvalidLimit` rather than
+    //   silently clamping, because silent clamping would invisibly
+    //   break verification (proof determinism requires the SDK to
+    //   reconstruct the same path query). Unset falls back to
+    //   `crate::config::DEFAULT_QUERY_LIMIT` (a compile-time constant
+    //   the SDK also reads) — explicitly NOT the operator-tunable
+    //   `default_query_limit`, so proof bytes are deterministic
+    //   across operators regardless of their runtime config.
+    // Has no effect on total-count responses.
     optional uint32 limit = 6;
     bool prove = 7;
   }
