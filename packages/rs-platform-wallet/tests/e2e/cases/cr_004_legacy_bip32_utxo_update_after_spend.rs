@@ -155,16 +155,20 @@ async fn cr_004_legacy_bip32_utxo_update_after_spend() {
     // `CoreWallet::send_to_addresses(StandardAccountType::BIP32Account, 0, ...)`.
     // `send_to_addresses` selects from the BIP-32 account's spendable
     // set internally and sends change back to the same account; sending
-    // TOTAL_FUNDING - 2_000 to a fresh sink address leaves only ~1_000 duffs
-    // of potential change after a typical 1_000-5_000 duff fee, which is
-    // well below the P2PKH dust threshold (~2_730 duffs). The builder folds
-    // sub-dust change into the fee, producing a zero-change transaction and
-    // leaving the BIP-32 account with no spendable UTXOs.
+    // TOTAL_FUNDING - 3_000 to a fresh sink address leaves ~500–2_500 duffs
+    // of potential change after a typical testnet fee of ~226–500 duffs,
+    // which is below the P2PKH dust threshold (~2_730 duffs). The builder
+    // folds sub-dust change into the fee, producing a zero-change transaction
+    // and leaving the BIP-32 account with no spendable UTXOs.
     //
     // QA-008: the original send amount (TOTAL_FUNDING - 50_000) left ~45_000
     // duffs of change — far above dust — so the builder correctly emitted a
-    // change UTXO and `spendable_utxos` returned 1, not 0. The test's comment
-    // claimed change would be below dust, which was wrong math.
+    // change UTXO and `spendable_utxos` returned 1, not 0.
+    // QA-009: TOTAL_FUNDING - 2_000 still left change above the dust
+    // threshold on low-fee testnet runs (~500 duff fee → ~1_500 duff
+    // residual that the builder emitted as change). Raising the headroom
+    // to 3_000 ensures the post-fee residual stays sub-dust (~2_730)
+    // across the observed testnet fee range of 226–500 duffs.
     //
     // We send to the bank's primary Core receive address so the swept duffs
     // are recoverable on teardown failure.
@@ -174,8 +178,8 @@ async fn cr_004_legacy_bip32_utxo_update_after_spend() {
         .primary_core_receive_address()
         .await
         .expect("bank.primary_core_receive_address");
-    // Subtract only 2_000 duffs so potential change is sub-dust after fees.
-    let send_all = TOTAL_FUNDING.saturating_sub(2_000);
+    // Subtract 3_000 duffs so the post-fee residual is sub-dust.
+    let send_all = TOTAL_FUNDING.saturating_sub(3_000);
     let tx = s
         .test_wallet
         .platform_wallet()
@@ -202,12 +206,12 @@ async fn cr_004_legacy_bip32_utxo_update_after_spend() {
     //   route the just-broadcast tx through the BIP-32 account
     //   collection AND mark every consumed UTXO as spent.
     // - `spendable_utxos(current_height)` on the legacy account must
-    //   return an empty set. We sent `TOTAL_FUNDING - 2_000` duffs:
-    //   a typical 2-in/2-out P2PKH fee is 1_000–5_000 duffs, leaving
-    //   at most ~1_000 duffs of potential change — below the P2PKH
-    //   dust threshold (~2_730 duffs). The builder folds sub-dust
-    //   change into the fee, so no change UTXO is emitted and the
-    //   account's spendable set is strictly empty post-broadcast.
+    //   return an empty set. We sent `TOTAL_FUNDING - 3_000` duffs:
+    //   observed testnet fees for a 2-in/1-out P2PKH tx are 226–500
+    //   duffs, leaving ~2_500–2_774 duffs of potential change — below
+    //   the P2PKH dust threshold (~2_730 duffs). The builder folds
+    //   sub-dust change into the fee, so no change UTXO is emitted and
+    //   the account's spendable set is strictly empty post-broadcast.
     let (bip44_count_post, bip32_count_post) = utxo_counts(&s.test_wallet, 0).await;
     assert_eq!(
         bip44_count_post, 0,
