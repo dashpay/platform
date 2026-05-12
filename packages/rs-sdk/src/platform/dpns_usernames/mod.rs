@@ -398,6 +398,9 @@ impl Sdk {
             order_by_clauses: vec![],
             limit: 1,
             start: None,
+            select: dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::Select::Documents,
+            group_by: vec![],
+            having: vec![],
         };
 
         let documents = Document::fetch_many(self, query).await?;
@@ -464,6 +467,9 @@ impl Sdk {
             order_by_clauses: vec![],
             limit: 1,
             start: None,
+            select: dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::Select::Documents,
+            group_by: vec![],
+            having: vec![],
         };
 
         let documents = Document::fetch_many(self, query).await?;

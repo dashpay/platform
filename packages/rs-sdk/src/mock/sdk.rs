@@ -134,13 +134,14 @@ impl MockDashPlatformSdk {
 
             match request_type {
                 "DocumentQuery" => load_expectation::<DocumentQuery>(&mut dapi, filename)?,
-                "DocumentCountQuery" => load_expectation::<
-                    crate::platform::documents::document_count_query::DocumentCountQuery,
-                >(&mut dapi, filename)?,
-                // `GetDocumentsCountRequest` removed in v1; existing
-                // mock dumps for it are no longer loadable. Re-record
-                // affected tests against `GetDocumentsRequest` v1
-                // (with `select = COUNT`).
+                // `DocumentCountQuery` arm removed in PR 2 of the v1
+                // migration: count fetch now uses the same
+                // `DocumentQuery` value with `select = Count`, so
+                // existing dumps live under the "DocumentQuery"
+                // prefix. `GetDocumentsCountRequest` dumps from
+                // before the v1 wire migration are no longer
+                // loadable — re-record affected tests against
+                // `GetDocumentsRequest` v1.
                 "GetEpochsInfoRequest" => {
                     load_expectation::<proto::GetEpochsInfoRequest>(&mut dapi, filename)?
                 }

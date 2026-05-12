@@ -18,10 +18,10 @@ use std::collections::BTreeMap;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
+use dash_sdk::dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::Select;
 use dash_sdk::dpp::platform_value::Value;
 use dash_sdk::dpp::prelude::DataContract;
 use dash_sdk::drive::query::{OrderClause, WhereClause, WhereOperator};
-use dash_sdk::platform::documents::document_count_query::DocumentCountQuery;
 use dash_sdk::platform::documents::document_query::DocumentQuery;
 use dash_sdk::platform::Fetch;
 use drive_proof_verifier::DocumentSplitCounts;
@@ -142,6 +142,61 @@ fn json_to_platform_value(json: serde_json::Value) -> Result<Value, FFIError> {
             }
             Ok(Value::Map(pairs))
         }
+    }
+}
+
+/// Mirror the v0-count endpoint's implicit grouping translation
+/// for the v1 unified surface: given the FFI's legacy
+/// `return_distinct_counts_in_range` flag and a set of where
+/// clauses, produce the `group_by` field list the v1 wire wants.
+///
+/// The C ABI keeps the legacy bool so existing iOS callers don't
+/// need to know about `group_by`; this helper performs the same
+/// implicit-to-explicit translation the (deleted)
+/// `compute_group_by` in `document_count_query.rs` did,
+/// re-implemented here so the FFI shim has no dependency on a
+/// type that no longer exists. Routing produced:
+///
+/// - `In`, no range → `group_by = [in_field]` (PerInValue).
+/// - Range, no In, `return_distinct_counts_in_range = true`
+///   → `group_by = [range_field]` (RangeDistinct).
+/// - `In` + range, `return_distinct_counts_in_range = true`
+///   → `group_by = [in_field, range_field]` (compound distinct).
+/// - All other shapes → empty `group_by` (aggregate). Includes:
+///   no In/no range (Total), `In` + range without distinct
+///   (compound aggregate via per-In fan-out), range without
+///   distinct (single AggregateCountOnRange).
+fn derive_group_by(
+    where_clauses: &[WhereClause],
+    return_distinct_counts_in_range: bool,
+) -> Vec<String> {
+    let in_field = where_clauses
+        .iter()
+        .find(|wc| wc.operator == WhereOperator::In)
+        .map(|wc| wc.field.clone());
+    let range_field = where_clauses
+        .iter()
+        .find(|wc| {
+            matches!(
+                wc.operator,
+                WhereOperator::GreaterThan
+                    | WhereOperator::GreaterThanOrEquals
+                    | WhereOperator::LessThan
+                    | WhereOperator::LessThanOrEquals
+                    | WhereOperator::Between
+                    | WhereOperator::BetweenExcludeBounds
+                    | WhereOperator::BetweenExcludeLeft
+                    | WhereOperator::BetweenExcludeRight
+                    | WhereOperator::StartsWith
+            )
+        })
+        .map(|wc| wc.field.clone());
+
+    match (in_field, range_field, return_distinct_counts_in_range) {
+        (Some(f), None, _) => vec![f],
+        (None, Some(f), true) => vec![f],
+        (Some(in_f), Some(range_f), true) => vec![in_f, range_f],
+        _ => Vec::new(),
     }
 }
 
@@ -274,25 +329,31 @@ pub unsafe extern "C" fn dash_sdk_document_count(
         let base_query = build_base_query(data_contract, document_type, where_json, order_by_json)?;
 
         // Sentinel decoding for the C ABI. `-1` means "unset; use
-        // server-side default". The Rust-side request field is
-        // `Option<u32>` so `None` here is the same as the request
-        // omitting the field on the wire.
-        let limit_opt = if limit < 0 {
-            None
+        // server-side default". The DocumentQuery `limit` field is
+        // a `u32` with `0` as its "unset" sentinel (translated to
+        // `None` on the V1 wire's `optional uint32`), so the FFI
+        // `-1` maps to `0`.
+        let limit_u32: u32 = if limit < 0 {
+            0
         } else if limit > u32::MAX as i64 {
             return Err(FFIError::InternalError(format!(
                 "limit {} exceeds u32::MAX",
                 limit
             )));
         } else {
-            Some(limit as u32)
+            limit as u32
         };
 
-        let count_query = DocumentCountQuery {
-            document_query: base_query,
-            return_distinct_counts_in_range,
-            limit: limit_opt,
-        };
+        // Translate the legacy `return_distinct_counts_in_range`
+        // flag to v1's explicit `group_by` field list, then build
+        // the unified `DocumentQuery` via its v1 builders. The
+        // C ABI keeps the bool so callers don't have to learn the
+        // group_by surface — the FFI shim owns the translation.
+        let group_by = derive_group_by(&base_query.where_clauses, return_distinct_counts_in_range);
+        let count_query = base_query
+            .with_select(Select::Count)
+            .with_group_by_fields(group_by)
+            .with_limit(limit_u32);
 
         // `DocumentSplitCounts::fetch` handles every count mode —
         // for total-count requests the result is a one-entry map

@@ -51,6 +51,9 @@ impl Sdk {
             order_by_clauses: vec![],
             limit: limit.unwrap_or(100),
             start: None,
+            select: dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::Select::Documents,
+            group_by: vec![],
+            having: vec![],
         };
 
         // Fetch the documents
@@ -90,6 +93,9 @@ impl Sdk {
             order_by_clauses: vec![],
             limit: limit.unwrap_or(100),
             start: None,
+            select: dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::Select::Documents,
+            group_by: vec![],
+            having: vec![],
         };
 
         // Fetch the documents

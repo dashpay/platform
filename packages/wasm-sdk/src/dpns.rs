@@ -279,6 +279,9 @@ impl WasmSdk {
             order_by_clauses: vec![],
             limit: resolve_dpns_usernames_limit(limit),
             start: None,
+            select: dash_sdk::dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::Select::Documents,
+            group_by: vec![],
+            having: vec![],
         };
 
         let (documents_result, metadata, proof) =

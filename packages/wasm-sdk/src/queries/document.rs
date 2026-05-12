@@ -2,11 +2,11 @@ use crate::queries::utils::deserialize_required_query;
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use crate::WasmSdkError;
+use dash_sdk::dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::Select;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::document::Document;
 use dash_sdk::dpp::platform_value::Value;
 use dash_sdk::dpp::prelude::Identifier;
-use dash_sdk::platform::documents::document_count_query::DocumentCountQuery;
 use dash_sdk::platform::documents::document_query::DocumentQuery;
 use dash_sdk::platform::Fetch;
 use dash_sdk::platform::FetchMany;
@@ -215,41 +215,78 @@ async fn parse_documents_query(
     build_documents_query(sdk, input).await
 }
 
-/// Parse a JS query object into a [`DocumentCountQuery`] — the count-
-/// query analogue of [`parse_documents_query`]. The inner
-/// [`DocumentQuery`] is built from the same `DocumentsQueryInput`
-/// (data-contract / document-type / where-clauses / orderBy), and the
-/// count-specific knobs (`return_distinct_counts_in_range`, `limit`)
-/// are forwarded to the outer `DocumentCountQuery`. The inner
-/// `DocumentQuery.limit` is unused on the count path — count queries
-/// route through `FromProof<DocumentCountQuery>` straight to the
-/// count-tree / aggregate / distinct verifiers, never through
-/// `DriveDocumentQuery`'s document-materialization path — so the
-/// outer-field forwarding is the only thing that controls split-mode
-/// entry pagination.
+/// Parse a JS query object into a [`DocumentQuery`] configured for
+/// the count surface (`select = Count`, with `group_by` derived
+/// from the where-clause shape + the legacy
+/// `return_distinct_counts_in_range` flag).
 ///
-/// `orderBy` clauses ARE consumed by `build_documents_query` and
-/// stored on `document_query.order_by_clauses`, which the SDK request
+/// The JS-facing API keeps the legacy `return_distinct_counts_in_range`
+/// bool so existing browser callers don't have to learn about v1's
+/// explicit `group_by`; the v1 translation happens here. Routing:
+///
+/// - `In`, no range → `group_by = [in_field]` (PerInValue).
+/// - Range, no In, `return_distinct_counts_in_range = true`
+///   → `group_by = [range_field]` (RangeDistinct).
+/// - `In` + range, `return_distinct_counts_in_range = true`
+///   → `group_by = [in_field, range_field]` (compound distinct).
+/// - Other shapes → empty `group_by` (aggregate).
+///
+/// `orderBy` clauses are consumed by `build_documents_query` and
+/// stored on `DocumentQuery.order_by_clauses`, which the SDK request
 /// builder serializes into the wire `order_by` field — the first
 /// clause's direction controls split-mode entry ordering and is
 /// load-bearing for `(In + prove)` walk determinism.
 async fn parse_documents_count_query(
     sdk: &WasmSdk,
     query: DocumentsQueryJs,
-) -> Result<DocumentCountQuery, WasmSdkError> {
+) -> Result<DocumentQuery, WasmSdkError> {
     let input: DocumentsQueryInput =
         deserialize_required_query(query, "Query object is required", "documents count query")?;
 
     let return_distinct_counts_in_range = input.return_distinct_counts_in_range.unwrap_or(false);
-    let limit = input.limit;
+    // DocumentQuery `limit: u32` uses `0` as the "unset" sentinel
+    // (translated to `None` on the V1 wire's `optional uint32`).
+    // `None` from the JS input maps to that sentinel.
+    let limit = input.limit.unwrap_or(0);
 
     let base_query = build_documents_query(sdk, input).await?;
 
-    Ok(DocumentCountQuery {
-        document_query: base_query,
-        return_distinct_counts_in_range,
-        limit,
-    })
+    // Mirror the (deleted) v0-count endpoint's implicit grouping
+    // translation so legacy JS callers keep working unchanged.
+    let in_field = base_query
+        .where_clauses
+        .iter()
+        .find(|wc| wc.operator == WhereOperator::In)
+        .map(|wc| wc.field.clone());
+    let range_field = base_query
+        .where_clauses
+        .iter()
+        .find(|wc| {
+            matches!(
+                wc.operator,
+                WhereOperator::GreaterThan
+                    | WhereOperator::GreaterThanOrEquals
+                    | WhereOperator::LessThan
+                    | WhereOperator::LessThanOrEquals
+                    | WhereOperator::Between
+                    | WhereOperator::BetweenExcludeBounds
+                    | WhereOperator::BetweenExcludeLeft
+                    | WhereOperator::BetweenExcludeRight
+                    | WhereOperator::StartsWith
+            )
+        })
+        .map(|wc| wc.field.clone());
+    let group_by: Vec<String> = match (in_field, range_field, return_distinct_counts_in_range) {
+        (Some(f), None, _) => vec![f],
+        (None, Some(f), true) => vec![f],
+        (Some(in_f), Some(range_f), true) => vec![in_f, range_f],
+        _ => Vec::new(),
+    };
+
+    Ok(base_query
+        .with_select(Select::Count)
+        .with_group_by_fields(group_by)
+        .with_limit(limit))
 }
 
 /// Parse JSON where clause into WhereClause

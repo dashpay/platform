@@ -165,6 +165,9 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             order_by_clauses: vec![],
             limit: 1,
             start: None,
+            select: dash_sdk::dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::Select::Documents,
+            group_by: vec![],
+            having: vec![],
         };
 
         let docs = Document::fetch_many(&self.sdk, query)
@@ -435,6 +438,9 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 order_by_clauses: vec![],
                 limit: 1,
                 start: None,
+                select: dash_sdk::dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::Select::Documents,
+                group_by: vec![],
+                having: vec![],
             };
 
             let docs = Document::fetch_many(&self.sdk, query)

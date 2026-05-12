@@ -4,10 +4,14 @@ use std::sync::Arc;
 
 use crate::{error::Error, sdk::Sdk};
 use ciborium::Value as CborValue;
-use dapi_grpc::platform::v0::get_documents_request::Version::V0;
+use dapi_grpc::platform::v0::get_documents_request::Version::V1;
 use dapi_grpc::platform::v0::{
     self as platform_proto,
-    get_documents_request::{get_documents_request_v0::Start, GetDocumentsRequestV0},
+    get_documents_request::{
+        get_documents_request_v0::Start,
+        get_documents_request_v1::{Select as V1Select, Start as V1Start},
+        GetDocumentsRequestV1,
+    },
     GetDocumentsRequest, Proof, ResponseMetadata,
 };
 use dash_context_provider::ContextProvider;
@@ -49,10 +53,28 @@ pub struct DocumentQuery {
     pub where_clauses: Vec<WhereClause>,
     /// `order_by` clauses for the query
     pub order_by_clauses: Vec<OrderClause>,
-    /// queryset limit
+    /// queryset limit. `0` is the sentinel for "unset / default" and
+    /// is translated to `None` on the V1 wire (`optional uint32`).
     pub limit: u32,
     /// first object to start with
     pub start: Option<Start>,
+    /// SQL-shaped `SELECT` projection. `Documents` returns matched
+    /// rows; `Count` returns either a single aggregate (empty
+    /// `group_by`) or per-group entries (non-empty `group_by`).
+    /// Default `Documents` keeps v0-style document fetch semantics
+    /// for callers that don't opt into the count surface.
+    pub select: V1Select,
+    /// SQL `GROUP BY` field names, in left-to-right order. Empty =
+    /// no explicit grouping (aggregate count for `select=Count`).
+    /// Only meaningful when `select=Count`; non-empty with
+    /// `select=Documents` is rejected by the server as unsupported.
+    pub group_by: Vec<String>,
+    /// SQL `HAVING` clauses, CBOR-encoded the same way as
+    /// `where_clauses`. **Phase 1: always rejected** when non-empty
+    /// by the server (`QuerySyntaxError::Unsupported("HAVING clause
+    /// is not yet implemented")`); reserved on the wire for future
+    /// capability without another version bump.
+    pub having: Vec<u8>,
 }
 
 impl DocumentQuery {
@@ -74,6 +96,9 @@ impl DocumentQuery {
             order_by_clauses: vec![],
             limit: 0,
             start: None,
+            select: V1Select::Documents,
+            group_by: Vec::new(),
+            having: Vec::new(),
         })
     }
 
@@ -127,6 +152,78 @@ impl DocumentQuery {
     pub fn with_order_by(mut self, clause: OrderClause) -> Self {
         self.order_by_clauses.push(clause);
 
+        self
+    }
+
+    /// Set the SQL-shaped `SELECT` projection.
+    ///
+    /// - [`V1Select::Documents`] (the default) returns matched
+    ///   rows via `Document::fetch_many` and friends.
+    /// - [`V1Select::Count`] switches to the count surface:
+    ///   pair it with [`DocumentCount::fetch`] for a single
+    ///   aggregate (empty `group_by`) or
+    ///   [`DocumentSplitCounts::fetch`] for per-group entries
+    ///   (non-empty `group_by`).
+    pub fn with_select(mut self, select: V1Select) -> Self {
+        self.select = select;
+        self
+    }
+
+    /// Set the `GROUP BY` field to a single field name.
+    ///
+    /// Convenience wrapper around [`Self::with_group_by_fields`].
+    /// Replaces any previously set `group_by`. Pair with
+    /// [`Self::with_select`]`(V1Select::Count)` for the per-group
+    /// entries shape.
+    pub fn with_group_by<S: Into<String>>(mut self, field: S) -> Self {
+        self.group_by = vec![field.into()];
+        self
+    }
+
+    /// Set the full `GROUP BY` field list (replaces any previously
+    /// set `group_by`).
+    ///
+    /// For Phase 1 the only supported multi-field shape is
+    /// `(in_field, range_field)` matching a compound `In + range`
+    /// where clause against a `rangeCountable: true` index. Other
+    /// non-empty shapes route to `QuerySyntaxError::Unsupported`
+    /// on the server.
+    pub fn with_group_by_fields<I, S>(mut self, fields: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.group_by = fields.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Set the `HAVING` clause CBOR bytes (replaces any prior
+    /// value).
+    ///
+    /// **Phase 1: always rejected by the server when non-empty**
+    /// with `QuerySyntaxError::Unsupported("HAVING clause is not
+    /// yet implemented")`. Wire field is reserved so future
+    /// capability can ship without another version bump; the
+    /// builder exists so SDK callers can already encode the
+    /// intent.
+    pub fn with_having(mut self, having: Vec<u8>) -> Self {
+        self.having = having;
+        self
+    }
+
+    /// Set the query limit. `0` means "unset" — translated to
+    /// `None` on the V1 wire (the proto field is `optional uint32`).
+    ///
+    /// On `select=Count` with non-empty `group_by` against the
+    /// prove path, the server validates rather than clamps:
+    /// `limit > max_query_limit` is rejected with
+    /// `InvalidLimit` rather than silently truncated, since
+    /// clamping would invisibly break proof verification.
+    /// Leaving the limit unset (`0`) falls back to
+    /// `drive::config::DEFAULT_QUERY_LIMIT` on the proof verifier
+    /// side, keeping proof bytes deterministic across operators.
+    pub fn with_limit(mut self, limit: u32) -> Self {
+        self.limit = limit;
         self
     }
 }
@@ -231,23 +328,48 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
 impl TryFrom<DocumentQuery> for platform_proto::GetDocumentsRequest {
     type Error = Error;
     fn try_from(dapi_request: DocumentQuery) -> Result<Self, Self::Error> {
-        // TODO implement where and order_by clause
-
         let where_clauses = serialize_vec_to_cbor(dapi_request.where_clauses.clone())
             .expect("where clauses serialization should never fail");
         let order_by = serialize_vec_to_cbor(dapi_request.order_by_clauses.clone())?;
-        // Order clause
+        // `limit: u32` with `0` sentinel → `optional uint32` on the
+        // V1 wire. `None` lets the server apply its own default;
+        // explicit `0` would be a strange "return zero rows" request.
+        let limit = if dapi_request.limit == 0 {
+            None
+        } else {
+            Some(dapi_request.limit)
+        };
+        // V0 and V1 ship separate `Start` enums even though the
+        // shape is identical. Translate at the wire boundary so the
+        // `DocumentQuery.start` field stays stable for callers
+        // already using the V0 type.
+        let start_v1 = dapi_request.start.clone().map(|s| match s {
+            Start::StartAfter(b) => V1Start::StartAfter(b),
+            Start::StartAt(b) => V1Start::StartAt(b),
+        });
 
         //todo: transform this into PlatformVersionedTryFrom
         Ok(GetDocumentsRequest {
-            version: Some(V0(GetDocumentsRequestV0 {
+            version: Some(V1(GetDocumentsRequestV1 {
                 data_contract_id: dapi_request.data_contract.id().to_vec(),
                 document_type: dapi_request.document_type_name.clone(),
                 r#where: where_clauses,
                 order_by,
-                limit: dapi_request.limit,
+                limit,
+                // Document fetch always proves via this conversion.
+                // Count fetch uses the same wire shape; both paths
+                // go through the `FromProof` decoders which expect
+                // the `Proof(...)` response variant. `SdkBuilder::
+                // with_proofs(false)` is consequently a no-op for
+                // both — see the blanket `Query<T> for T` impl in
+                // `packages/rs-sdk/src/platform/query.rs` for the
+                // `tracing::warn!` emitted at fetch time when proofs
+                // are disabled.
                 prove: true,
-                start: dapi_request.start.clone(),
+                start: start_v1,
+                select: dapi_request.select as i32,
+                group_by: dapi_request.group_by.clone(),
+                having: dapi_request.having.clone(),
             })),
         })
     }
@@ -277,6 +399,12 @@ impl<'a> From<&'a DriveDocumentQuery<'a>> for DocumentQuery {
             order_by_clauses,
             limit,
             start,
+            // `DriveDocumentQuery` has no SELECT/GROUP BY/HAVING
+            // concept — it's a documents-only query. Default to the
+            // v1 documents shape.
+            select: V1Select::Documents,
+            group_by: Vec::new(),
+            having: Vec::new(),
         }
     }
 }
@@ -305,6 +433,12 @@ impl<'a> From<DriveDocumentQuery<'a>> for DocumentQuery {
             order_by_clauses,
             limit,
             start,
+            // `DriveDocumentQuery` has no SELECT/GROUP BY/HAVING
+            // concept — it's a documents-only query. Default to the
+            // v1 documents shape.
+            select: V1Select::Documents,
+            group_by: Vec::new(),
+            having: Vec::new(),
         }
     }
 }

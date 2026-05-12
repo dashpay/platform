@@ -57,6 +57,9 @@ impl Sdk {
             order_by_clauses: vec![], // Remove ordering by $createdAt as it might not be indexed
             limit,
             start: None,
+            select: dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::Select::Documents,
+            group_by: vec![],
+            having: vec![],
         };
 
         let records_identity_documents = Document::fetch_many(self, records_identity_query).await?;
@@ -143,6 +146,9 @@ impl Sdk {
             }],
             limit: limit.unwrap_or(10),
             start: None,
+            select: dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::Select::Documents,
+            group_by: vec![],
+            having: vec![],
         };
 
         let documents = Document::fetch_many(self, query).await?;
