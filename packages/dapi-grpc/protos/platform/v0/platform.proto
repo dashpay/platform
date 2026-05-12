@@ -36,8 +36,11 @@ service Platform {
   rpc getDataContracts(GetDataContractsRequest)
       returns (GetDataContractsResponse);
   rpc getDocuments(GetDocumentsRequest) returns (GetDocumentsResponse);
-  rpc getDocumentsCount(GetDocumentsCountRequest)
-      returns (GetDocumentsCountResponse);
+  // `getDocumentsCount` removed in v1: callers express counts via
+  // `getDocuments` with `version.v1.select = COUNT` (optionally
+  // with `group_by`). See `GetDocumentsRequestV1` for the unified
+  // SQL-shaped surface. The v0-count endpoint shipped briefly in
+  // #3623 and never had stable callers; v1 supersedes it entirely.
   rpc getIdentityByPublicKeyHash(GetIdentityByPublicKeyHashRequest)
       returns (GetIdentityByPublicKeyHashResponse);
   rpc getIdentityByNonUniquePublicKeyHash(
@@ -739,130 +742,48 @@ message GetDocumentsResponse {
     ResponseMetadata metadata = 3; // Metadata about the blockchain state
   }
 
-  // v1 response — shape depends on `request.select` × `group_by`:
-  //   - `select=DOCUMENTS` (no prove)         → `documents`.
-  //   - `select=COUNT, group_by=[]` (no prove) → `counts.aggregate_count`.
-  //   - `select=COUNT, group_by=[…]` (no prove) → `counts.entries`.
-  //   - any select (prove)                     → `proof`.
+  // v1 response. Two-variant outer `oneof` mirrors every other
+  // `Get*Response`: a non-proof result at position 1, the proof at
+  // position 2. The non-proof result is itself a `oneof` because
+  // a single v1 request can produce either matched documents (for
+  // `select=DOCUMENTS`) or count results (for `select=COUNT`) —
+  // wrapping them in an inner `ResultData` keeps the outer shape
+  // canonical without flattening to a three-variant oneof.
   //
-  // `CountResults` is the same type used by `GetDocumentsCountResponse`
-  // (referenced via its fully-qualified name to avoid duplicating
-  // the message). v0 of the count endpoint stays alive for the
-  // deprecation cycle.
+  // Wire shape by `request.select` × `group_by` × `prove`:
+  //   - `select=DOCUMENTS` (no prove)         → `result.data.documents`.
+  //   - `select=COUNT, group_by=[]` (no prove) → `result.data.counts.aggregate_count`.
+  //   - `select=COUNT, group_by=[…]` (no prove) → `result.data.counts.entries`.
+  //   - any select (prove)                     → `result.proof`.
+  //
+  // `CountResults` / `CountEntry` / `CountEntries` are nested in
+  // `GetDocumentsResponseV1` rather than re-exported from a
+  // top-level message — the v0 `getDocumentsCount` endpoint that
+  // previously owned them has been removed in this version (it
+  // shipped briefly in #3623 and never had stable callers); v1 is
+  // the single home for the count wire types.
   message GetDocumentsResponseV1 {
-    oneof result {
-      GetDocumentsResponseV0.Documents documents = 1;
-      GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults counts = 2;
-      Proof proof = 3;
+    // Documents result variant — matches the v0 `Documents`
+    // message field-for-field (kept distinct so v1 doesn't reach
+    // into v0's namespace once v0 is eventually retired).
+    message Documents {
+      repeated bytes documents = 1;
     }
-    ResponseMetadata metadata = 4;
-  }
 
-  oneof version {
-    GetDocumentsResponseV0 v0 = 1;
-    GetDocumentsResponseV1 v1 = 2;
-  }
-}
-
-
-// Unified count query.
-//
-// Mode is determined by the where clauses encoded in `where` plus
-// the explicit `return_distinct_counts_in_range` flag. The wire
-// shape of the no-proof response makes the mode explicit via
-// `CountResults.variant`:
-//   * No `In` clause and `return_distinct_counts_in_range` = false:
-//     total count → `CountResults.aggregate_count` (single u64).
-//   * Exactly one `In` clause (no range): per-`In`-value counts →
-//     `CountResults.entries`, one `CountEntry` for each value in
-//     the `In` array constrained by the other `==` clauses. At
-//     most one `In` per request; multiple `In` clauses are an
-//     InvalidArgument error.
-//   * A range clause (`>`, `<`, `between*`, `startsWith`) and
-//     `return_distinct_counts_in_range` = true: per-distinct-value
-//     range histogram → `CountResults.entries`, one `CountEntry`
-//     per distinct value within the range. Requires
-//     `range_countable: true` on the index (see Indexes book
-//     chapter). Also supports an `In` clause on a prefix property
-//     of the index — in that case each entry carries BOTH the In
-//     value (`CountEntry.in_key`) and the terminator value
-//     (`CountEntry.key`). Cross-fork sums are NOT computed
-//     server-side; callers reduce client-side if they want a flat
-//     histogram (see book chapter "Range Modes").
-//   * A range clause with `return_distinct_counts_in_range` = false:
-//     total over range → `CountResults.aggregate_count`. Also
-//     requires `range_countable: true`.
-//
-// When `prove = true`, the response is a grovedb proof instead of
-// a `CountResults` value; the client verifies and recovers the
-// same per-mode shape (single u64 for aggregate, per-key map for
-// distinct).
-message GetDocumentsCountRequest {
-  message GetDocumentsCountRequestV0 {
-    bytes data_contract_id = 1;
-    string document_type = 2;
-    bytes where = 3; // CBOR-encoded where clauses
-    // Default false (single sum). When true and a range clause is
-    // present, return per-distinct-value entries within the range.
-    bool return_distinct_counts_in_range = 4;
-    // CBOR-encoded order_by clauses. Same encoding as
-    // `GetDocumentsRequestV0.order_by`. The first clause's direction
-    // controls entry ordering in split-mode responses (per-`In`-value
-    // or per-range-distinct-value). On the `RangeDistinctProof` prove
-    // path the direction is part of the proof's path query, so the
-    // SDK must reconstruct the same value — empty `order_by` defaults
-    // to ascending on both sides for determinism. Ignored for
-    // total-count responses and for the `PointLookupProof` path
-    // (which sorts In keys lex-ascending unconditionally for prove/
-    // no-proof parity).
-    bytes order_by = 5;
-    // Maximum number of entries to return.
-    // - **No-proof paths**: server clamps to its `max_query_limit`
-    //   config; unset → server default.
-    // - **Prove paths** (`RangeDistinctProof`): validate-don't-clamp.
-    //   `limit > max_query_limit` returns `InvalidLimit` rather than
-    //   silently clamping, because silent clamping would invisibly
-    //   break verification (proof determinism requires the SDK to
-    //   reconstruct the same path query). Unset falls back to
-    //   `crate::config::DEFAULT_QUERY_LIMIT` (a compile-time constant
-    //   the SDK also reads) — explicitly NOT the operator-tunable
-    //   `default_query_limit`, so proof bytes are deterministic
-    //   across operators regardless of their runtime config.
-    // Has no effect on total-count responses.
-    optional uint32 limit = 6;
-    bool prove = 7;
-  }
-  oneof version { GetDocumentsCountRequestV0 v0 = 1; }
-}
-
-message GetDocumentsCountResponse {
-  message GetDocumentsCountResponseV0 {
-    // A single per-key entry: the splitting key value and how many
-    // documents match. Used by the `entries` variant of
-    // `CountResults` for per-`In`-value and per-distinct-value-in-
-    // range modes.
-    //
-    // For compound queries (an `In` clause on a prefix property of a
-    // `range_countable` index plus a range clause on the terminator),
-    // each entry carries BOTH the In-fork's prefix value
-    // (`in_key`) and the terminator value (`key`). Cross-fork
-    // aggregation is intentionally NOT done server-side — callers
-    // get the unmerged per-(in_key, key) view and can sum
-    // client-side if they want a flat histogram. See the book
-    // chapter ("Range Modes") for rationale.
+    // A single per-key entry. Carries `in_key` for compound
+    // queries (`In` on a prefix property of a `range_countable`
+    // index plus a range clause on the terminator) where each
+    // entry is keyed by both the In-fork's prefix value (`in_key`)
+    // and the terminator value (`key`). Cross-fork aggregation is
+    // intentionally NOT done server-side — callers get the
+    // unmerged per-`(in_key, key)` view and can reduce client-side
+    // if they want a flat histogram.
     message CountEntry {
-      // Serialized prefix key for compound queries — the In's value
-      // for this fork. Absent for flat queries with no `In` on
-      // prefix (in which case entries are keyed purely by `key`).
       optional bytes in_key = 1;
-      // Serialized terminator key (the range-property value for
-      // distinct-range modes, or the `In` value for per-In-value
-      // mode without a range clause).
       bytes key = 2;
-      // `jstype = JS_STRING` so JS/Web clients receive a string and don't
-      // round counts > 2^53-1 to the nearest representable Number. Matches
-      // the convention used elsewhere in this proto for `uint64` fields
-      // that can exceed Number.MAX_SAFE_INTEGER.
+      // `jstype = JS_STRING` so JS/Web clients receive a string
+      // and don't round counts > 2^53−1 to the nearest
+      // representable Number.
       uint64 count = 3 [jstype = JS_STRING];
     }
 
@@ -872,30 +793,49 @@ message GetDocumentsCountResponse {
 
     // Non-proof count result. Shape is mode-dependent and made
     // explicit on the wire via the inner `variant` oneof:
-    //   * `aggregate_count`: total-count and range-without-distinct
-    //     modes — a single u64 with no per-key breakdown. Callers
-    //     read the total directly without scanning an entries list.
-    //   * `entries`: per-`In`-value and per-distinct-value-in-range
-    //     modes — one CountEntry per distinct value, in serialized-
-    //     key order subject to the first `order_by` clause's
-    //     direction and `limit`.
+    //   * `aggregate_count`: `select=COUNT, group_by=[]` —
+    //     single u64 with no per-key breakdown.
+    //   * `entries`: `select=COUNT, group_by=[…]` — one
+    //     CountEntry per distinct group, in serialized-key order
+    //     (subject to the first `order_by` clause's direction and
+    //     `limit`).
     message CountResults {
       oneof variant {
-        // `jstype = JS_STRING` for the same reason as
-        // `CountEntry.count` — JS Number rounds at 2^53−1.
         uint64 aggregate_count = 1 [jstype = JS_STRING];
         CountEntries entries = 2;
       }
     }
 
+    // Non-proof result wrapper. The outer `oneof result` switches
+    // between this and `proof`; this inner oneof switches between
+    // the two non-proof shapes the v1 surface can return.
+    message ResultData {
+      oneof variant {
+        Documents documents = 1;
+        CountResults counts = 2;
+      }
+    }
+
     oneof result {
-      CountResults counts = 1;
+      ResultData data = 1;
       Proof proof = 2;
     }
     ResponseMetadata metadata = 3;
   }
-  oneof version { GetDocumentsCountResponseV0 v0 = 1; }
+
+  oneof version {
+    GetDocumentsResponseV0 v0 = 1;
+    GetDocumentsResponseV1 v1 = 2;
+  }
 }
+
+
+// `GetDocumentsCountRequest` / `GetDocumentsCountResponse` removed
+// in v1: count queries express through `GetDocumentsRequestV1` with
+// `select = COUNT`. The count wire types (`CountEntry`,
+// `CountEntries`, `CountResults`) now live nested in
+// `GetDocumentsResponseV1`. See the v1 message-level docstring
+// above for the full SQL-shaped surface.
 
 message GetIdentityByPublicKeyHashRequest {
   message GetIdentityByPublicKeyHashRequestV0 {

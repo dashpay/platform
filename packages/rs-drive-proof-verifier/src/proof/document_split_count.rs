@@ -1,5 +1,5 @@
 use crate::{ContextProvider, Error, FromProof};
-use dapi_grpc::platform::v0::{GetDocumentsCountResponse, Proof, ResponseMetadata};
+use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dpp::dashcore::Network;
 use dpp::version::PlatformVersion;
 use drive::query::{DriveDocumentQuery, SplitCountEntry};
@@ -60,7 +60,7 @@ where
     Q::Error: std::fmt::Display,
 {
     type Request = Q;
-    type Response = GetDocumentsCountResponse;
+    type Response = GetDocumentsResponse;
 
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         _request: I,

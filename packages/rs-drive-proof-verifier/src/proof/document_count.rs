@@ -1,7 +1,7 @@
 use crate::error::MapGroveDbError;
 use crate::verify::verify_tenderdash_proof;
 use crate::{ContextProvider, Error, FromProof};
-use dapi_grpc::platform::v0::{GetDocumentsCountResponse, Proof, ResponseMetadata};
+use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::dashcore::Network;
 use dpp::version::PlatformVersion;
@@ -17,7 +17,7 @@ where
     Q::Error: std::fmt::Display,
 {
     type Request = Q;
-    type Response = GetDocumentsCountResponse;
+    type Response = GetDocumentsResponse;
 
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,

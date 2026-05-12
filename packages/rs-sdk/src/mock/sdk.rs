@@ -137,9 +137,10 @@ impl MockDashPlatformSdk {
                 "DocumentCountQuery" => load_expectation::<
                     crate::platform::documents::document_count_query::DocumentCountQuery,
                 >(&mut dapi, filename)?,
-                "GetDocumentsCountRequest" => {
-                    load_expectation::<proto::GetDocumentsCountRequest>(&mut dapi, filename)?
-                }
+                // `GetDocumentsCountRequest` removed in v1; existing
+                // mock dumps for it are no longer loadable. Re-record
+                // affected tests against `GetDocumentsRequest` v1
+                // (with `select = COUNT`).
                 "GetEpochsInfoRequest" => {
                     load_expectation::<proto::GetEpochsInfoRequest>(&mut dapi, filename)?
                 }

@@ -1,9 +1,18 @@
-//! High-level SDK query for [`GetDocumentsCountRequest`].
+//! High-level SDK query for the unified `getDocuments` v1 endpoint
+//! when used in `SELECT COUNT` mode.
 //!
-//! [`DocumentCountQuery`] mirrors [`super::document_query::DocumentQuery`] for
-//! the new count endpoint introduced by PR #3435: it wraps the data contract,
-//! document type, and where clauses, converts to the gRPC request for
-//! transport, and converts to a [`DriveDocumentQuery`] for proof verification.
+//! [`DocumentCountQuery`] is a thin shim built around the v1
+//! `GetDocumentsRequest` wire shape (introduced in this PR, see
+//! `platform.proto`'s `GetDocumentsRequestV1`). It still presents
+//! the same SDK API surface that the (now-removed)
+//! `GetDocumentsCountRequest` endpoint exposed — callers build a
+//! `DocumentCountQuery`, choose between `DocumentCount::fetch`
+//! (single aggregate) and `DocumentSplitCounts::fetch` (per-group
+//! entries), and the SDK translates the query into v1 wire bytes
+//! with the right `select` / `group_by` for the desired response
+//! shape. The original `GetDocumentsCountRequest` /
+//! `GetDocumentsCountResponse` proto messages are gone; this file
+//! is what's left of the count surface on the SDK side.
 
 use std::sync::Arc;
 
@@ -11,12 +20,11 @@ use crate::error::Error;
 use crate::platform::documents::document_query::DocumentQuery;
 use crate::platform::Fetch;
 use ciborium::Value as CborValue;
-use dapi_grpc::platform::v0::get_documents_count_request::{
-    GetDocumentsCountRequestV0, Version as GetDocumentsCountRequestVersion,
+use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::Select as V1Select;
+use dapi_grpc::platform::v0::get_documents_request::{
+    GetDocumentsRequestV1, Version as GetDocumentsRequestVersion,
 };
-use dapi_grpc::platform::v0::{
-    GetDocumentsCountRequest, GetDocumentsCountResponse, Proof, ResponseMetadata,
-};
+use dapi_grpc::platform::v0::{GetDocumentsRequest, GetDocumentsResponse, Proof, ResponseMetadata};
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dash_context_provider::ContextProvider;
 use dpp::dashcore::Network;
@@ -166,72 +174,118 @@ impl<'a> From<DriveDocumentQuery<'a>> for DocumentCountQuery {
     }
 }
 
-impl TryFrom<DocumentCountQuery> for GetDocumentsCountRequest {
+/// Compute the v1 `group_by` field from a `DocumentCountQuery`'s
+/// where-clause shape. Mirrors the implicit grouping that the
+/// (removed) v0 count endpoint did based on where-clause inspection,
+/// re-expressed as explicit `group_by` on the wire so the v1 server
+/// dispatcher routes to the right execution path:
+///
+/// - `In` clause, no range → `group_by = [in_field]` (PerInValue).
+/// - Range clause, no In, `return_distinct_counts_in_range = true`
+///   → `group_by = [range_field]` (RangeDistinct).
+/// - `In` + range, `return_distinct_counts_in_range = true` →
+///   `group_by = [in_field, range_field]` (compound distinct).
+/// - All other shapes → empty `group_by` (aggregate). This includes:
+///   - No `In`, no range (Total).
+///   - `In` + range with `return_distinct_counts_in_range = false`
+///     (compound aggregate via per-In fan-out).
+///   - Range with `return_distinct_counts_in_range = false`
+///     (single AggregateCountOnRange).
+///
+/// At the SDK level, both `DocumentCount::fetch` and
+/// `DocumentSplitCounts::fetch` reuse this same wire shape — they
+/// only differ in the response decoder. That keeps the migration
+/// from the (now-removed) v0 count endpoint a mechanical
+/// rename-and-forward; the `DocumentCountQuery` SDK type holds the
+/// same fields it did before.
+fn compute_group_by(query: &DocumentCountQuery) -> Vec<String> {
+    let in_field = query
+        .document_query
+        .where_clauses
+        .iter()
+        .find(|wc| wc.operator == WhereOperator::In)
+        .map(|wc| wc.field.clone());
+    let range_field = query
+        .document_query
+        .where_clauses
+        .iter()
+        .find(|wc| {
+            matches!(
+                wc.operator,
+                WhereOperator::GreaterThan
+                    | WhereOperator::GreaterThanOrEquals
+                    | WhereOperator::LessThan
+                    | WhereOperator::LessThanOrEquals
+                    | WhereOperator::Between
+                    | WhereOperator::BetweenExcludeBounds
+                    | WhereOperator::BetweenExcludeLeft
+                    | WhereOperator::BetweenExcludeRight
+                    | WhereOperator::StartsWith
+            )
+        })
+        .map(|wc| wc.field.clone());
+
+    match (in_field, range_field, query.return_distinct_counts_in_range) {
+        // In, no range → group by the In field (PerInValue mode).
+        (Some(f), None, _) => vec![f],
+        // Range, no In, distinct requested → group by the range field.
+        (None, Some(f), true) => vec![f],
+        // In + range, distinct requested → compound (In, range).
+        (Some(in_f), Some(range_f), true) => vec![in_f, range_f],
+        // Everything else (no clauses, Eq-only, range without
+        // distinct, In + range without distinct) → aggregate.
+        _ => Vec::new(),
+    }
+}
+
+impl TryFrom<DocumentCountQuery> for GetDocumentsRequest {
     type Error = Error;
 
     fn try_from(query: DocumentCountQuery) -> Result<Self, Self::Error> {
         let where_bytes = serialize_where_clauses_to_cbor(&query.document_query.where_clauses)?;
         let order_by_bytes =
             serialize_order_by_clauses_to_cbor(&query.document_query.order_by_clauses)?;
-        Ok(GetDocumentsCountRequest {
-            version: Some(GetDocumentsCountRequestVersion::V0(
-                GetDocumentsCountRequestV0 {
-                    data_contract_id: query.document_query.data_contract.id().to_vec(),
-                    document_type: query.document_query.document_type_name.clone(),
-                    r#where: where_bytes,
-                    return_distinct_counts_in_range: query.return_distinct_counts_in_range,
-                    order_by: order_by_bytes,
-                    limit: query.limit,
-                    // **Count Fetch always proves.** The SDK `Fetch`
-                    // path is wired through `FromProof<DocumentCountQuery>`,
-                    // which only knows how to decode the `Proof(...)`
-                    // response variant — the no-proof `Counts(...)` /
-                    // `Entries(...)` variants need a different decoder
-                    // entry point that doesn't exist yet on the SDK
-                    // side. Setting this to anything other than
-                    // `true` would either silently fail at decode
-                    // time or strip the verification guarantee the
-                    // rest of the SDK assumes.
-                    //
-                    // `SdkBuilder::with_proofs(false)` is consequently
-                    // a **no-op** for `DocumentCountQuery` — the
-                    // blanket `Query<T> for T` impl in
-                    // `packages/rs-sdk/src/platform/query.rs:119-124`
-                    // emits a `tracing::warn!` at `Fetch::fetch`
-                    // time when proofs are disabled, but the request
-                    // still ships with `prove: true` and the
-                    // response is decoded through
-                    // `FromProof<DocumentCountQuery>`. The server's
-                    // unified `GetDocumentsCount` endpoint supports
-                    // no-proof modes (`Total` / `PerInValue` /
-                    // `RangeNoProof`) but the SDK has no typed
-                    // decoder for them yet — shadowing the blanket
-                    // impl to intercept the flag is blocked by
-                    // Rust's coherence rules (`Query<T> for T`
-                    // covers all `T: TransportRequest`, and
-                    // `DocumentCountQuery` IS its own
-                    // `TransportRequest`). Wiring a no-proof
-                    // decoder is tracked as
-                    // dashpay/platform#3630.
-                    prove: true,
-                },
-            )),
+        let group_by = compute_group_by(&query);
+        Ok(GetDocumentsRequest {
+            version: Some(GetDocumentsRequestVersion::V1(GetDocumentsRequestV1 {
+                data_contract_id: query.document_query.data_contract.id().to_vec(),
+                document_type: query.document_query.document_type_name.clone(),
+                r#where: where_bytes,
+                order_by: order_by_bytes,
+                limit: query.limit,
+                start: None,
+                // **Count Fetch always proves.** The SDK `Fetch` path
+                // is wired through `FromProof<DocumentCountQuery>`,
+                // which only knows how to decode the `Proof(...)`
+                // response variant. Reaching the no-proof modes
+                // requires a typed no-proof decoder (tracked as
+                // dashpay/platform#3630). `SdkBuilder::with_proofs(false)`
+                // is consequently a no-op for `DocumentCountQuery`;
+                // the blanket `Query<T> for T` impl in
+                // `packages/rs-sdk/src/platform/query.rs:119-124`
+                // emits a `tracing::warn!` at `Fetch::fetch` time
+                // when proofs are disabled.
+                prove: true,
+                select: V1Select::Count as i32,
+                group_by,
+                having: Vec::new(),
+            })),
         })
     }
 }
 
 impl TransportRequest for DocumentCountQuery {
-    type Client = <GetDocumentsCountRequest as TransportRequest>::Client;
-    type Response = <GetDocumentsCountRequest as TransportRequest>::Response;
+    type Client = <GetDocumentsRequest as TransportRequest>::Client;
+    type Response = <GetDocumentsRequest as TransportRequest>::Response;
     const SETTINGS_OVERRIDES: rs_dapi_client::RequestSettings =
-        <GetDocumentsCountRequest as TransportRequest>::SETTINGS_OVERRIDES;
+        <GetDocumentsRequest as TransportRequest>::SETTINGS_OVERRIDES;
 
     fn request_name(&self) -> &'static str {
-        "GetDocumentsCountRequest"
+        "GetDocumentsRequest"
     }
 
     fn method_name(&self) -> &'static str {
-        "get_documents_count"
+        "get_documents"
     }
 
     fn execute_transport<'c>(
@@ -244,11 +298,11 @@ impl TransportRequest for DocumentCountQuery {
         // Surface that as a recoverable transport error rather than
         // panicking — callers expect `Fetch` failures to be matchable
         // on `Error::DapiClientError`, not aborts.
-        let request: GetDocumentsCountRequest = match self.try_into() {
+        let request: GetDocumentsRequest = match self.try_into() {
             Ok(r) => r,
             Err(e) => {
                 let status = dapi_grpc::tonic::Status::internal(format!(
-                    "DocumentCountQuery -> GetDocumentsCountRequest conversion failed: {}",
+                    "DocumentCountQuery -> GetDocumentsRequest conversion failed: {}",
                     e
                 ));
                 return Box::pin(async move { Err(TransportError::Grpc(status)) });
@@ -260,7 +314,7 @@ impl TransportRequest for DocumentCountQuery {
 
 impl FromProof<DocumentCountQuery> for DocumentCount {
     type Request = DocumentCountQuery;
-    type Response = GetDocumentsCountResponse;
+    type Response = GetDocumentsResponse;
 
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
@@ -486,7 +540,7 @@ impl Fetch for DocumentCount {
 /// a single entry with empty key (i.e., the total count).
 impl FromProof<DocumentCountQuery> for DocumentSplitCounts {
     type Request = DocumentCountQuery;
-    type Response = GetDocumentsCountResponse;
+    type Response = GetDocumentsResponse;
 
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
