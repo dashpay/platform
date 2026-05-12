@@ -6,6 +6,7 @@ use dpp::data_contract::DataContract;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
+use dpp::prelude::IdentityNonce;
 use dpp::prelude::UserFeeIncrease;
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
@@ -115,7 +116,16 @@ impl DocumentReplaceTransitionBuilder {
         self
     }
 
-    /// Signs the document replace transition
+    /// Signs the document replace transition.
+    ///
+    /// Allocates a fresh identity-contract nonce from `sdk` and delegates to
+    /// [`Self::sign_with_nonce`]. If signing fails *after* the nonce has been
+    /// allocated (e.g. the document type lookup or BatchTransition build
+    /// fails), the bumped identity-contract nonce is conditionally rolled
+    /// back via
+    /// [`Sdk::rollback_identity_contract_nonce`](crate::Sdk::rollback_identity_contract_nonce)
+    /// so the local cache does not advance past a nonce the network never
+    /// observed.
     ///
     /// # Arguments
     ///
@@ -134,15 +144,51 @@ impl DocumentReplaceTransitionBuilder {
         signer: &impl Signer<IdentityPublicKey>,
         platform_version: &PlatformVersion,
     ) -> Result<StateTransition, Error> {
+        let owner_id = self.document.owner_id();
+        let contract_id = self.data_contract.id();
         let identity_contract_nonce = sdk
-            .get_identity_contract_nonce(
-                self.document.owner_id(),
-                self.data_contract.id(),
-                true,
-                self.settings,
-            )
+            .get_identity_contract_nonce(owner_id, contract_id, true, self.settings)
             .await?;
 
+        match self
+            .sign_with_nonce(
+                identity_contract_nonce,
+                identity_public_key,
+                signer,
+                platform_version,
+            )
+            .await
+        {
+            Ok(transition) => Ok(transition),
+            Err(err) => {
+                sdk.rollback_identity_contract_nonce(
+                    owner_id,
+                    contract_id,
+                    identity_contract_nonce,
+                )
+                .await;
+                Err(err)
+            }
+        }
+    }
+
+    /// Signs the document replace transition using a pre-allocated
+    /// identity-contract nonce.
+    ///
+    /// This variant lets the caller separate nonce allocation from signing so
+    /// pre-broadcast failures can be rolled back by calling
+    /// [`Sdk::rollback_identity_contract_nonce`](crate::Sdk::rollback_identity_contract_nonce)
+    /// with the same `identity_contract_nonce`. The caller is responsible for
+    /// having obtained the nonce via
+    /// [`Sdk::get_identity_contract_nonce`](crate::Sdk::get_identity_contract_nonce)
+    /// with `bump_first = true` for the same `(owner_id, contract_id)` pair.
+    pub async fn sign_with_nonce(
+        &self,
+        identity_contract_nonce: IdentityNonce,
+        identity_public_key: &IdentityPublicKey,
+        signer: &impl Signer<IdentityPublicKey>,
+        platform_version: &PlatformVersion,
+    ) -> Result<StateTransition, Error> {
         let document_type = self
             .data_contract
             .document_type_for_name(&self.document_type_name)

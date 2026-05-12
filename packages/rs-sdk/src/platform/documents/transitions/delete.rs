@@ -103,12 +103,10 @@ impl DocumentDeleteTransitionBuilder {
 
     /// Adds a user fee increase to the document delete transition.
     ///
-    /// Explicit setters always win regardless of call order. If
-    /// [`Self::with_settings`] has already stored a [`PutSettings`] on this
-    /// builder, its `user_fee_increase` is updated in place so
-    /// `self.settings` remains the single source of truth for the
-    /// effective value used at sign/broadcast time. Other [`PutSettings`]
-    /// fields are preserved.
+    /// The dedicated [`Self::user_fee_increase`] field is the single source
+    /// of truth for the effective value applied at sign time. Explicit
+    /// setters always win regardless of call order — see
+    /// [`Self::with_settings`] for the order-independence contract.
     ///
     /// # Arguments
     ///
@@ -119,29 +117,24 @@ impl DocumentDeleteTransitionBuilder {
     /// * `Self` - The updated builder
     pub fn with_user_fee_increase(mut self, user_fee_increase: UserFeeIncrease) -> Self {
         self.user_fee_increase = Some(user_fee_increase);
-        if let Some(settings) = self.settings.as_mut() {
-            settings.user_fee_increase = Some(user_fee_increase);
-        }
         self
     }
 
     /// Adds settings to the document delete transition.
     ///
-    /// Explicit setters always win regardless of call order: if
-    /// [`Self::with_user_fee_increase`] or
-    /// [`Self::with_state_transition_creation_options`] has already been
-    /// called on this builder, the corresponding field in `settings` is
-    /// only used as a fallback when the dedicated builder field is still
-    /// `None`. This makes the builder order-independent for these two
-    /// fields and avoids silently clobbering a deliberate caller choice.
+    /// `user_fee_increase` and `state_transition_creation_options` are owned
+    /// by their dedicated builder fields, which are the single source of
+    /// truth for the effective values applied at sign time. This method
+    /// extracts those two fields out of the supplied [`PutSettings`] into
+    /// the dedicated fields **only if** the dedicated field is still
+    /// `None`, and then stores the remainder of `settings` (with those two
+    /// fields cleared) on the builder.
     ///
-    /// After this call, the stored [`PutSettings`] reflects the
-    /// **effective** values for `user_fee_increase` and
-    /// `state_transition_creation_options` — i.e. whichever value will
-    /// actually be applied at sign time — so `self.settings` and the
-    /// dedicated builder fields do not disagree. Other [`PutSettings`]
-    /// fields (timeouts, retry behavior, etc.) are preserved from the
-    /// supplied `settings`.
+    /// Net effect: explicit setters always win over `with_settings` for
+    /// `user_fee_increase` and `state_transition_creation_options`, regardless
+    /// of call order. All other [`PutSettings`] fields (timeouts, retry
+    /// behavior, nonce stale time, etc.) flow through unchanged to be used
+    /// for nonce allocation and broadcast.
     ///
     /// # Arguments
     ///
@@ -150,40 +143,28 @@ impl DocumentDeleteTransitionBuilder {
     /// # Returns
     ///
     /// * `Self` - The updated builder
-    pub fn with_settings(mut self, settings: PutSettings) -> Self {
+    pub fn with_settings(mut self, mut settings: PutSettings) -> Self {
         if self.user_fee_increase.is_none() {
-            if let Some(user_fee_increase) = settings.user_fee_increase {
-                self.user_fee_increase = Some(user_fee_increase);
-            }
+            self.user_fee_increase = settings.user_fee_increase;
         }
         if self.state_transition_creation_options.is_none() {
-            if let Some(state_transition_creation_options) =
-                settings.state_transition_creation_options
-            {
-                self.state_transition_creation_options = Some(state_transition_creation_options);
-            }
+            self.state_transition_creation_options = settings.state_transition_creation_options;
         }
-        // Merge effective values back into the stored settings so there is
-        // exactly one source of truth for `user_fee_increase` and
-        // `state_transition_creation_options`. Other PutSettings fields
-        // (timeouts, retry behavior, etc.) are preserved from the supplied
-        // `settings`.
-        let mut effective_settings = settings;
-        effective_settings.user_fee_increase = self.user_fee_increase;
-        effective_settings.state_transition_creation_options =
-            self.state_transition_creation_options;
-        self.settings = Some(effective_settings);
+        // Strip the fee/creation-options fields from the stored settings so
+        // the dedicated builder fields are the sole source of truth at
+        // sign time. The remainder of `settings` flows through unchanged.
+        settings.user_fee_increase = None;
+        settings.state_transition_creation_options = None;
+        self.settings = Some(settings);
         self
     }
 
     /// Adds creation_options to the document delete transition.
     ///
-    /// Explicit setters always win regardless of call order. If
-    /// [`Self::with_settings`] has already stored a [`PutSettings`] on this
-    /// builder, its `state_transition_creation_options` is updated in
-    /// place so `self.settings` remains the single source of truth for
-    /// the effective value used at sign/broadcast time. Other
-    /// [`PutSettings`] fields are preserved.
+    /// The dedicated [`Self::state_transition_creation_options`] field is the
+    /// single source of truth for the effective value applied at sign time.
+    /// Explicit setters always win regardless of call order — see
+    /// [`Self::with_settings`] for the order-independence contract.
     ///
     /// # Arguments
     ///
@@ -197,9 +178,6 @@ impl DocumentDeleteTransitionBuilder {
         creation_options: StateTransitionCreationOptions,
     ) -> Self {
         self.state_transition_creation_options = Some(creation_options);
-        if let Some(settings) = self.settings.as_mut() {
-            settings.state_transition_creation_options = Some(creation_options);
-        }
         self
     }
 
@@ -381,7 +359,7 @@ mod tests {
     use dpp::version::PlatformVersion;
 
     #[test]
-    fn with_settings_propagates_signed_transition_fields() {
+    fn with_settings_extracts_fee_and_options_into_dedicated_fields() {
         let settings = PutSettings {
             user_fee_increase: Some(42),
             state_transition_creation_options: Some(StateTransitionCreationOptions::default()),
@@ -402,15 +380,17 @@ mod tests {
         )
         .with_settings(settings);
 
-        assert_eq!(
-            builder.settings.map(|settings| settings.user_fee_increase),
-            Some(settings.user_fee_increase)
-        );
+        // The dedicated fields are the single source of truth.
         assert_eq!(builder.user_fee_increase, settings.user_fee_increase);
         assert_eq!(
             builder.state_transition_creation_options,
             settings.state_transition_creation_options
         );
+        // The stored settings have the two fee/options fields cleared so
+        // the dedicated fields are the sole source of truth at sign time.
+        let stored = builder.settings.expect("settings must be stored");
+        assert_eq!(stored.user_fee_increase, None);
+        assert_eq!(stored.state_transition_creation_options, None);
     }
 
     #[test]
@@ -511,36 +491,26 @@ mod tests {
             ..Default::default()
         });
 
+        // The dedicated fields remain the source of truth.
         assert_eq!(builder.user_fee_increase, Some(42));
         assert_eq!(
             builder.state_transition_creation_options,
             Some(explicit_creation_options)
         );
-        // After `with_settings`, the stored settings must reflect the
-        // *effective* values (explicit fields win), so the two sources of
-        // truth agree.
-        assert_eq!(
-            builder
-                .settings
-                .as_ref()
-                .and_then(|settings| settings.user_fee_increase),
-            Some(42)
-        );
-        assert_eq!(
-            builder
-                .settings
-                .as_ref()
-                .and_then(|settings| settings.state_transition_creation_options),
-            Some(explicit_creation_options)
-        );
+        // Stored settings always has the two fee/options fields cleared —
+        // they live on the dedicated builder fields, not on the stored
+        // settings.
+        let stored = builder.settings.expect("settings must be stored");
+        assert_eq!(stored.user_fee_increase, None);
+        assert_eq!(stored.state_transition_creation_options, None);
     }
 
-    /// When explicit setters have been used, the stored settings must
-    /// reflect those explicit values rather than whatever was passed via
-    /// `with_settings`. This guarantees a single source of truth for
-    /// `user_fee_increase` and `state_transition_creation_options`.
+    /// When explicit setters have been used before `with_settings`, the
+    /// dedicated fields are the single source of truth — the settings
+    /// values for those two fields are dropped on the floor and the stored
+    /// settings have them cleared.
     #[test]
-    fn with_settings_stores_effective_explicit_values() {
+    fn explicit_setters_before_settings_keep_dedicated_fields_authoritative() {
         let explicit_options = StateTransitionCreationOptions {
             batch_feature_version: Some(2),
             ..Default::default()
@@ -579,21 +549,20 @@ mod tests {
             builder.state_transition_creation_options,
             Some(explicit_options)
         );
-        // The stored settings reflect the same effective values.
+        // Stored settings has those two fields cleared — the dedicated
+        // builder fields are the sole source of truth.
         let stored = builder.settings.expect("settings must be stored");
-        assert_eq!(stored.user_fee_increase, Some(42));
-        assert_eq!(
-            stored.state_transition_creation_options,
-            Some(explicit_options)
-        );
+        assert_eq!(stored.user_fee_increase, None);
+        assert_eq!(stored.state_transition_creation_options, None);
     }
 
     /// Settings-first-then-explicit ordering: a later
     /// [`DocumentDeleteTransitionBuilder::with_user_fee_increase`] call
-    /// must update both the dedicated field and the stored
-    /// [`PutSettings::user_fee_increase`] so the two never disagree.
+    /// updates the dedicated field. The stored settings has the field
+    /// cleared (it has only ever stored "other" PutSettings fields after
+    /// the settings-extract step), so there is one source of truth.
     #[test]
-    fn explicit_user_fee_increase_after_settings_updates_stored_settings() {
+    fn explicit_user_fee_increase_after_settings_updates_dedicated_field() {
         let settings = PutSettings {
             user_fee_increase: Some(7),
             ..Default::default()
@@ -618,20 +587,17 @@ mod tests {
 
         assert_eq!(builder.user_fee_increase, Some(42));
         let stored = builder.settings.as_ref().expect("settings must be stored");
-        assert_eq!(
-            stored.user_fee_increase,
-            Some(42),
-            "stored settings must reflect the later explicit user_fee_increase",
-        );
+        // Stored settings has the user_fee_increase field cleared — it
+        // never carries the fee/options fields after with_settings.
+        assert_eq!(stored.user_fee_increase, None);
     }
 
     /// Settings-first-then-explicit ordering: a later
     /// [`DocumentDeleteTransitionBuilder::with_state_transition_creation_options`]
-    /// call must update both the dedicated field and the stored
-    /// [`PutSettings::state_transition_creation_options`] so the two
-    /// never disagree.
+    /// call updates the dedicated field. The stored settings has the
+    /// field cleared.
     #[test]
-    fn explicit_creation_options_after_settings_updates_stored_settings() {
+    fn explicit_creation_options_after_settings_updates_dedicated_field() {
         let settings_options = StateTransitionCreationOptions {
             batch_feature_version: Some(7),
             ..Default::default()
@@ -671,19 +637,15 @@ mod tests {
             Some(explicit_options),
         );
         let stored = builder.settings.as_ref().expect("settings must be stored");
-        assert_eq!(
-            stored.state_transition_creation_options,
-            Some(explicit_options),
-            "stored settings must reflect the later explicit creation_options",
-        );
+        assert_eq!(stored.state_transition_creation_options, None);
     }
 
-    /// Settings-first-then-explicit must preserve unrelated
-    /// [`PutSettings`] fields supplied by the earlier `with_settings`
-    /// call (e.g. timeouts, retry behavior). Only the field touched by
-    /// the explicit setter should change.
+    /// `with_settings` strips `user_fee_increase` and
+    /// `state_transition_creation_options` out of the stored settings and
+    /// preserves every other [`PutSettings`] field exactly as supplied
+    /// (timeouts, retry behavior, nonce stale time, etc.).
     #[test]
-    fn explicit_setters_after_settings_preserve_other_put_settings_fields() {
+    fn with_settings_preserves_other_put_settings_fields() {
         let original_settings = PutSettings {
             user_fee_increase: Some(7),
             state_transition_creation_options: Some(StateTransitionCreationOptions {
@@ -717,14 +679,17 @@ mod tests {
         .with_user_fee_increase(42)
         .with_state_transition_creation_options(explicit_options);
 
-        let stored = builder.settings.expect("settings must be stored");
-        // The two fields the explicit setters target must reflect the
-        // explicit values.
-        assert_eq!(stored.user_fee_increase, Some(42));
+        // The dedicated fields reflect the explicit values.
+        assert_eq!(builder.user_fee_increase, Some(42));
         assert_eq!(
-            stored.state_transition_creation_options,
+            builder.state_transition_creation_options,
             Some(explicit_options)
         );
+        let stored = builder.settings.expect("settings must be stored");
+        // Stored settings always has fee/options cleared — sign-time
+        // reads from the dedicated fields.
+        assert_eq!(stored.user_fee_increase, None);
+        assert_eq!(stored.state_transition_creation_options, None);
         // Every other PutSettings field must be preserved exactly as it
         // was provided to `with_settings`.
         assert_eq!(

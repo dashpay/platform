@@ -504,8 +504,14 @@ impl<S: Signer<IdentityPublicKey>> PutDocument<S> for Document {
         // `prepareDocumentCreate` / `prepareDocumentReplace` paths. The
         // dispatch is driven by the document revision: unset or
         // `INITIAL_REVISION` selects create; revisions strictly greater than
-        // `INITIAL_REVISION` select replace; `Some(0)` is rejected by the
-        // strict replace helper before any nonce allocation.
+        // `INITIAL_REVISION` select replace.
+        //
+        // Reject `Some(0)` up front with the dispatch-aware
+        // `ensure_revision_nonzero` message rather than letting it fall into
+        // the replace branch — the replace-helper message says "use the
+        // create path", which would be misleading for `put_to_platform`
+        // callers (they aren't picking a branch themselves).
+        ensure_revision_nonzero(self.revision())?;
         let transition = if self.revision().is_none() || self.revision() == Some(INITIAL_REVISION) {
             // Create path. Preserve legacy behavior: when the caller did not
             // supply entropy, generate it and rewrite `document.id` so the
@@ -832,6 +838,79 @@ mod tests {
             &document,
             &document_type,
             entropy,
+            &identity_key,
+            None,
+            &signer,
+            None,
+        )
+        .await
+        .expect_err("signer failure must surface so the helper can roll back the allocated nonce");
+
+        assert!(
+            err.to_string().contains("deliberate signing failure"),
+            "expected the signer's failure to surface, got: {err}"
+        );
+
+        // Cache was bumped from platform=10 to 11 during the failed attempt
+        // and then rolled back to 10. Re-allocating with bump_first=true
+        // must yield 11 again — proving the rolled-back nonce is reusable.
+        let next = sdk
+            .get_identity_contract_nonce(owner_id, contract_id, true, None)
+            .await
+            .expect("nonce allocation must succeed after rollback");
+        assert_eq!(
+            next, 11,
+            "rolled-back nonce should be reused by the next allocation"
+        );
+    }
+
+    /// Pre-broadcast signing failure inside the strict replace helper must
+    /// roll the identity-contract nonce back so the cache does not advance
+    /// past a nonce the network never observed. Mirrors the create-side
+    /// rollback test above; asserting via "next allocation reuses the
+    /// rolled-back value" matches the rollback pattern in
+    /// `internal_cache::mod`.
+    #[tokio::test]
+    async fn build_signed_document_replace_rolls_back_nonce_on_signing_failure() {
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::identity::identity_public_key::{KeyType, Purpose, SecurityLevel};
+        use dpp::platform_value::BinaryData;
+        use drive_proof_verifier::types::IdentityContractNonceFetcher;
+
+        let document_type = test_document_type();
+        let contract_id = document_type.data_contract_id();
+        // Replace requires revision > INITIAL_REVISION; the document id is
+        // not entropy-derived for the replace path, so any id works.
+        let owner_id = Identifier::from([7; 32]);
+        let document = test_document(Some(INITIAL_REVISION + 1), Identifier::from([3; 32]));
+        assert_eq!(document.owner_id(), owner_id);
+
+        let identity_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 0,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(vec![0u8; 33]),
+            disabled_at: None,
+        });
+
+        let mut sdk = crate::Sdk::new_mock();
+        sdk.mock()
+            .expect_fetch::<IdentityContractNonceFetcher, _>(
+                (owner_id, contract_id),
+                Some(IdentityContractNonceFetcher(10u64)),
+            )
+            .await
+            .expect("set IdentityContractNonceFetcher mock expectation");
+
+        let signer = AlwaysFailingSigner;
+
+        let err = build_signed_document_replace_transition(
+            &sdk,
+            &document,
+            &document_type,
             &identity_key,
             None,
             &signer,
