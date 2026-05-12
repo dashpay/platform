@@ -11,7 +11,7 @@ presumably enumerate the joy of doing it.
 - **v3.1-dev (PR #3609 merged)** — TEST_SPEC reflects post-V20 state:
   - TK-013, PA-001b, PA-005b: previously failing or blocked → PASS after fix
   - TK-002, CR-003: stabilised
-  - CR-004: FAILING-by-design — runs only via `cargo test -- --ignored` and is expected to fail until dash-evo-tool#845 is fixed
+  - CR-004: failing — test contradicts upstream contract (see §3 CR-004 detail); 3-line test-side fix pending (use `next_receive_addresses(_, 2, true)` instead of two single calls)
   - `bank.fund_address` now waits for chain-confirmed nonce before releasing `FUNDING_MUTEX` (DAPI replica lag — upstream issue #3611)
   - Parallelism: PA-002, PA-008c, Harness-ID-1 (`id_sweep`) made parallel-safe
   - SPV: enabled by default (v17/v18/v19/v21 all validated SPV-on); `PLATFORM_WALLET_E2E_DISABLE_SPV=1` is an escape hatch for ChainLock-cycle outages (rust-dashcore #470), not the operating mode
@@ -123,8 +123,8 @@ Source citations for the "Wallet API exists" column are listed inline per case
 
 ### Quick index
 
-<!-- merge note: kept theirs' Status-column structure (legend + Status column + ID-007 row + expanded TK list TK-001c..TK-014). Re-added the CR-004 row from cr004-spec under the CR section with status reflecting its ENV-GATED FAILING-by-design body. -->
-Status legend: **green** = test file present, body has real assertions, runnable end-to-end on testnet today (subject to operator env vars). **blocked** = test file or spec entry exists but cannot run end-to-end yet — the body panics on a missing helper / prereq, the `#[ignore]` reason names an unmet prereq, or the spec body marks the entry `STUB` / `BLOCKED`. **red** = test exists and is known to fail (no entries today). **failing-by-design** = test exists, gated by an env var, and is expected to fail until the production fix lands; surfaces the contract a fix must satisfy. **not implemented** = spec entry exists but no `<id>_*.rs` file under `tests/e2e/cases/` yet. The Status column reflects the spec body's `Status:` line where present; otherwise it is derived from the test file.
+<!-- merge note: kept theirs' Status-column structure (legend + Status column + ID-007 row + expanded TK list TK-001c..TK-014). Re-added the CR-004 row from cr004-spec; upstream audit reclassified CR-004 from failing-by-design to failing (test-design issue, not production bug). -->
+Status legend: **green** = test file present, body has real assertions, runnable end-to-end on testnet today (subject to operator env vars). **blocked** = test file or spec entry exists but cannot run end-to-end yet — the body panics on a missing helper / prereq, the `#[ignore]` reason names an unmet prereq, or the spec body marks the entry `STUB` / `BLOCKED`. **red** = test exists and is known to fail (no entries today). **failing** = test exists, is `#[ignore]`'d, and fails for a known reason with a known fix pending (e.g. test-design issue or upstream API gap); the full reason is in the detail block. **failing-by-design** = test exists, gated by an env var, and is expected to fail until a production fix lands; surfaces the contract a fix must satisfy. **not implemented** = spec entry exists but no `<id>_*.rs` file under `tests/e2e/cases/` yet. The Status column reflects the spec body's `Status:` line where present; otherwise it is derived from the test file.
 
 | ID | Title | Priority | Status | Complexity |
 |----|-------|----------|--------|------------|
@@ -184,7 +184,7 @@ Status legend: **green** = test file present, body has real assertions, runnable
 | CR-001 | SPV mn-list sync readiness | P1 | green | M |
 | CR-002 | Core wallet receive address derivation | P1 | not implemented | M |
 | CR-003 | Asset-lock-funded identity registration (full path) | P2 | green | L |
-| CR-004 | Legacy BIP32 account: balance + UTXO state updates after spend | P1 | failing-by-design | M |
+| CR-004 | Legacy BIP32 account: balance + UTXO state updates after spend | P1 | failing — test contradicts upstream contract, 3-line test-side fix pending | M |
 | AL-001 | Concurrent asset-lock builds from same wallet | P1 | not implemented | L |
 | CT-001 | Document put: deploy a fixture data contract | P1 | not implemented | M |
 | CT-002 | Document put / replace lifecycle | P2 | not implemented | M |
@@ -227,9 +227,12 @@ Status legend: **green** = test file present, body has real assertions, runnable
 | Found-016 | `remove_wallet` removes from `self.wallets` then `self.wallet_manager` non-atomically, leaving a window where readers see only one of the two | P2 | not implemented | M |
 | Found-017 | `register_wallet` registers wallet in memory even when persister `store` returns `Err` — vanishes on next launch | P2 | not implemented | S |
 | Found-018 | `PlatformAddressChangeSet::merge` documents fee semantics as "fee paid by the transfer that produced this changeset" but actually accumulates fees across merged changesets | P2 | not implemented | S |
+| Found-021 | `TransactionRecord::update_context` silently drops `InstantLock` state when tx transitions `InstantSend` → `InBlock` | P2 | not implemented | M |
+| Found-022 | `AssetLockBuilder::build` marks change-pool index used before `build_asset_lock` can fail, contradicting doc-comment guarantee | P2 | not implemented | S |
+| Found-023 | `ManagedAccountCollection` lacks a `find_transaction_record(&Txid)` helper — every consumer rolls its own incomplete loop | P2 | not implemented | S |
 
-<!-- merge note: theirs' counts already reflect the expanded TK section + ID-007 (93 total; 74 baseline). cr004-spec adds the CR-004 row (P1, env-gated FAILING-by-design), so P1 and total each +1: P1: 25, baseline: 75, total: 94. Kept theirs' "post-Task #15" annotations and noted CR-004 as the env-gated entry under P1. ID-002b (P1, not implemented) added: P1: 26, baseline: 76, total: 95. AL-001 (P1, not implemented) added: P1: 27, baseline: 77, total: 96. -->
-Counts by priority: **P0: 10**, **P1: 27** (incl. 2 post-Task #15 + 1 env-gated FAILING-by-design (CR-004) + ID-002b + AL-001), **P2: 58** (incl. 2 post-Task #15, 1 gated, 18 Found-bug pins), **DEFERRED: 1** (96 total index entries; 77 baseline + 18 Found-bug pins + 1 deferred placeholder).
+<!-- merge note: theirs' counts already reflect the expanded TK section + ID-007 (93 total; 74 baseline). cr004-spec adds the CR-004 row (P1, env-gated FAILING-by-design), so P1 and total each +1: P1: 25, baseline: 75, total: 94. Kept theirs' "post-Task #15" annotations and noted CR-004 as the env-gated entry under P1. ID-002b (P1, not implemented) added: P1: 26, baseline: 76, total: 95. AL-001 (P1, not implemented) added: P1: 27, baseline: 77, total: 96. upstream-audit adds Found-021, Found-022, Found-023 (P2, not implemented): P2 +3, Found-bug pins 18→21, total 96→99. -->
+Counts by priority: **P0: 10**, **P1: 27** (incl. 2 post-Task #15 + 1 failing (CR-004) + ID-002b + AL-001), **P2: 61** (incl. 2 post-Task #15, 1 failing, 21 Found-bug pins), **DEFERRED: 1** (99 total index entries; 77 baseline + 21 Found-bug pins + 1 deferred placeholder).
 
 ### Platform Addresses (PA)
 
@@ -1429,9 +1432,10 @@ implies SPV-off is the default is incorrect.
 #### CR-004 — Legacy BIP32 account: balance + UTXO state updates after spend
 
 - **Priority**: P1 — open bug from upstream consumer
-- **Status**: FAILING-by-design — `#[ignore]`'d so the default `cargo test` cohort stays green; runs only when `cargo test -- --ignored` is used and is expected to fail until the upstream contract is fixed. The production bug (stale UTXO set after spend) is open; this test pins the contract so the fix becomes verifiable. PR #3609 carries both the test and the production fix together.
+- **Status**: FAILING — `#[ignore]`'d so the default `cargo test` cohort stays green; runs only when `cargo test -- --ignored` is used and is expected to fail until the test-side fix lands. The test asserts an API contract that contradicts the upstream `key-wallet` library's own unit tests (see Root cause below). The production bug (stale UTXO set after spend) tracked in dash-evo-tool#845 is a separate concern; this test's immediate failure is test-design, not production code.
+- **Root cause** (from Marvin's cr_004 investigation, 2026-05-12): `key-wallet::AddressPool::next_unused` is **idempotent by design** — it returns the same "current unused frontier" address until something external marks that address used. The upstream unit test `address_pool.rs:test_next_unused` explicitly asserts `addr1 == addr2` on two consecutive calls to `next_unused` on a freshly seeded pool; advancement requires an intervening `mark_used`. CR-004 calls `next_receive_address` twice on a fresh wallet WITHOUT an intervening spend and asserts the two addresses differ — that assertion inverts the documented upstream contract. The fix is a 3-line test-side change: replace the two single-call `next_receive_address_for_bip32_account` calls with one call to `account.next_receive_addresses(Some(&xpub), 2, true)` (the upstream `next_unused_multiple` path, plumbed through `ManagedCoreFundsAccount::next_receive_addresses`), which is the correct API for "give me N distinct frontier addresses". Ref: `key-wallet/src/managed_account/address_pool.rs:521–540` (the `next_unused` implementation) and `:1196–1214` (the `test_next_unused` upstream proof), audited at SHA `d6dd5da`.
 - **Wallet feature exercised**: `wallet/core/wallet.rs:54` (`CoreWallet::balance`); `wallet/core/broadcast.rs:185` (`check_core_transaction` post-broadcast state mutation on `standard_bip32_accounts`).
-- **Bug repro (upstream)**: [dashpay/dash-evo-tool#845](https://github.com/dashpay/dash-evo-tool/issues/845) — sending all funds from a legacy BIP32 account (`StandardAccountType::BIP32Account`) leaves the wallet's local UTXO set stale; a follow-up `send_to_addresses` call fails with `TransactionBuild("Coin selection error: No UTXOs available for selection")` despite the original UTXOs being long since spent on-chain.
+- **Bug repro (upstream)**: [dashpay/dash-evo-tool#845](https://github.com/dashpay/dash-evo-tool/issues/845) — sending all funds from a legacy BIP32 account (`StandardAccountType::BIP32Account`) leaves the wallet's local UTXO set stale; a follow-up `send_to_addresses` call fails with `TransactionBuild("Coin selection error: No UTXOs available for selection")` despite the original UTXOs being long since spent on-chain. (Note: this is the stale-UTXO production bug the test was written to pin; the test's own immediate failure is the address-idempotency issue above, which is distinct and must be fixed first.)
 - **DET parallel**: none yet — DET is the affected consumer; this test pins the contract on the rs-platform-wallet side so a fix becomes verifiable from a single repository.
 - **Preconditions**: CR-001 + a Core-funded BIP32 legacy account (derivation path `m/44'/1'/0'`, `StandardAccountType::BIP32Account` at index `0`, stored under `wallet.accounts.standard_bip32_accounts`).
 - **Scenario**:
@@ -1508,7 +1512,7 @@ This section covers primitive-level correctness of `AssetLockManager` — the in
 - **Notes / risks**:
   - Reuse CR-003's `setup_with_core_funded_test_wallet` helper with a larger funding amount rather than introducing a separate setup variant.
   - Requires `PLATFORM_WALLET_E2E_BANK_CORE_GATE` (same as CR-003, default-on, 900 s deadline).
-  - Found-008 (`LockNotifyHandler` missed-wakeup) is on the critical path — if Found-008 is not fixed, this test may flake under concurrent load when an IS-lock event arrives in the check/wait gap. This test is NOT the regression pin for Found-008; Found-008 has its own spec entry. Document the dependency in the test body with a `// TODO(Found-008)` comment.
+  - Found-008 (`LockNotifyHandler` missed-wakeup) is on the critical path — if Found-008 is not fixed, this test may flake under concurrent load when an IS-lock event arrives in the check/wait gap. This test is NOT the regression pin for Found-008; Found-008 has its own spec entry. Document the dependency in the test body with a `// TODO(Found-008)` comment. Upstream `next_private_key` is correctly non-idempotent (`mark_index_used` called before return at upstream `managed_account_trait.rs:480`), so concurrent builds from same wallet do not collide on one-time-key derivation. This was a live concern that Marvin's upstream audit refuted.
   - Found-012 (account-type tunnel vision in `validate_or_upgrade_proof`) is also on the path. If any of the N asset-lock transactions ends up funded from a non-BIP-44 account, the test will hit Found-012. Document this dependency similarly.
 - **Harness extensions required**: same as CR-003 — `setup_with_core_funded_test_wallet`, `wait_for_asset_lock`; plus Wave A identity setup helpers already needed by ID-001.
 - **Estimated complexity**: L (~300 LOC including multi-identity setup + concurrent orchestration + multi-assertion validation).
@@ -1930,6 +1934,7 @@ becomes a test failure rather than a silent drift.
 #### Found-006 — `top_up_identity_with_funding` ignores caller-supplied `topup_index`
 - **Priority**: P2 (bug pin — failure is the proof)
 - **Wallet feature exercised**: `wallet/identity/network/top_up.rs:60-106`.
+- **Upstream root cause** (confirmed by Marvin's upstream audit at SHA `d6dd5da`): upstream `CreditOutputFunding` in `key-wallet/src/wallet/managed_wallet_info/asset_lock_builder.rs:42-49` exposes only `identity_index` for the `IdentityTopUp` variant. The canonical DIP-9 derivation path, `DerivationPath::identity_top_up_path(network, identity_index, top_up_index)` at `key-wallet/src/bip32.rs:1062-1077`, takes a SECOND index (`top_up_index`) that the `CreditOutputFunding` type system never plumbs. As a result, there is no way for a downstream caller to request a key at a specific `top_up_index` via the current upstream API — the downstream `_topup_index` no-op is a consequence of the upstream API gap, not downstream oversight. Fix requires an upstream API change first (add `top_up_index: u32` to `CreditOutputFunding`, or split `AssetLockFundingType` so the top-up variant carries `{ identity_index, top_up_index }`), followed by downstream wiring in `top_up.rs`. This finding was CONFIRMED as upstream in Marvin's audit (audit Finding #1, HIGH); contrast with Found-013 which was confirmed purely downstream.
 - **Suspected bug**: The method's doc says `topup_index` is "An incrementing index distinguishing successive top-ups for the same identity". The implementation prefixes the parameter with `_` and the function body derives the funding key path from `identity_index` alone (with a `TODO(platform-wallet)` comment confirming the parameter is unused). Two consecutive top-ups for the same identity therefore derive from the same `(IdentityTopUp, identity_index)` path — yielding the same one-time key address, the same outpoint candidate, and a likely-duplicate asset-lock transaction or nonce collision on the same address.
 - **Preconditions**: an identity registered on testnet via the wallet.
 - **Scenario**:
@@ -1988,6 +1993,7 @@ becomes a test failure rather than a silent drift.
 - **Expected** (after fix): use `Notify::notify_one()` (which keeps a permit if no waiter is registered) or call `notified()` BEFORE the state check (so the future is registered before the check happens, per Tokio's documented "intended use").
 - **Actual** (current code): a single missed notification stalls the waiter.
 - **Severity**: HIGH (asset-lock proof flow is on the critical path of identity registration / top-up; a stalled wait surfaces as long timeouts followed by spurious "asset lock expired" errors)
+- **Upstream scope**: Confirmed purely downstream — no upstream `key-wallet` involvement. (`grep -rn 'Notify\|notify_waiters\|notify_one' key-wallet/src/` returned zero hits, audited at SHA `d6dd5da`.)
 - **Harness extensions required**: a test handle on `LockNotifyHandler` (it's already constructed with an `Arc<Notify>`); a way to drive the handler synchronously with a controlled state mutation. The wait-for-proof check uses `wallet_manager`, so the test must mutate the tracked record's `TransactionContext` before re-driving the handler.
 - **Estimated complexity**: M
 - **Rationale**: This is the textbook `Notify` footgun — `notify_waiters` doesn't store a permit, so check-then-await is a missed-wakeup. The asset-lock flow is exactly the place where one missed wakeup turns a 5-second proof wait into a 5-minute hang.
@@ -2080,6 +2086,7 @@ becomes a test failure rather than a silent drift.
 - **Expected** (after fix): change the signature to `Result<(), PlatformWalletError>` (matching the rest of this module's surface), or document explicitly that the function is best-effort and provide a sibling `is_tracked` accessor for confirmation.
 - **Actual** (current code): silent failure on `wallet_id` miss; the test harness can't distinguish a successful recovery from a no-op.
 - **Severity**: LOW (a recovery failure should be loud; silent swallow is poor ergonomics rather than data corruption — but evo-tool / DET-style callers may rely on this contract)
+- **Upstream scope**: Confirmed purely downstream — upstream `AssetLockError` exposes rich variants (`Signer`, `SigningFailed`, `UnsupportedSignerMethod`, `KeyDerivation`, etc.); the swallowing is `rs-platform-wallet`'s own flattening in `recover_asset_lock_blocking`.
 - **Harness extensions required**: an `is_tracked` query on `AssetLockManager` (likely already exists via `list_tracked_locks`).
 - **Estimated complexity**: S
 - **Rationale**: `pub fn ... -> ()` on an operation that has multiple distinct failure modes is a documentation bug; pin the contract one way or the other.
@@ -2230,6 +2237,67 @@ becomes a test failure rather than a silent drift.
 - **Harness extensions required**: none — the test will be straightforward `transfer(...)` + balance assertions once the production parameter exists.
 - **Estimated complexity**: S (when unblocked).
 - **Rationale**: The spec is one of the harness's load-bearing documents — test authors trust it as a description of the production API. A spec entry that describes a non-existent parameter erodes that trust. Filing the drift as Found-020 (and surfacing it via the PA-001b status field) makes the gap visible without forcing an immediate spec rewrite — the resolution can wait for a coordinated PA-001b implementation pass.
+
+#### Found-021 — `TransactionRecord::update_context` silently drops `InstantLock` state when tx transitions `InstantSend` → `InBlock`
+- **Priority**: P2 (bug pin — failure is the proof)
+- **Severity**: HIGH (silent data loss on the critical path; an `InstantLock` is proof material that vanishes on block confirmation)
+- **Owner: upstream `key-wallet` (rust-dashcore)**
+- **Wallet feature exercised**: `wallet/asset_lock/sync/proof.rs` (any path that reads `TransactionContext` to recover an IS-lock as proof material after block confirmation).
+- **Suspected bug** (upstream `key-wallet`, SHA `d6dd5da`): `TransactionRecord::update_context` at `key-wallet/src/managed_account/transaction_record.rs:181-184` is a naive replace — `self.context = context`. When a transaction is first observed as `TransactionContext::InstantSend(InstantLock)` and a later `InBlock(BlockInfo)` event arrives, the IS-lock is overwritten and gone. Any downstream consumer that reads back the `TransactionRecord` after block confirmation to use the IS-lock as proof material (e.g. to construct an `InstantAssetLockProof`) will find the lock field absent. The `update_utxos` path at `:201-202` sets `utxo.is_instantlocked` for the current call but does not preserve the lock across context promotions.
+- **Preconditions**: a tracked asset-lock transaction that receives both an `InstantSend(lock)` context update AND a subsequent `InBlock(info)` update before the caller reads the record.
+- **Scenario**:
+  1. Broadcast an asset-lock transaction and wait for SPV to emit `InstantLockReceived`.
+  2. Let `update_context(InstantSend(lock))` run — verify `record.context` holds the lock.
+  3. Wait for block confirmation — let `update_context(InBlock(info))` run.
+  4. Read `record.context` and attempt to extract the `InstantLock`.
+- **Assertions** (the proof shape):
+  - After step 3, `record.context` EITHER is `InBlock(info)` with the original `InstantLock` preserved alongside (e.g. via `InBlockWithInstantLock { info, lock }`) OR a dedicated `record.instant_lock` field retains the lock independently of `context`.
+  - Counter-assertion if buggy (today's behaviour): `record.context == InBlock(info)` with no lock accessible — `InstantLock` has been silently dropped.
+- **Expected** (after upstream fix): promote `update_context` to a merging operation that retains the IS-lock when transitioning to `InBlock`/`InChainLockedBlock`. One approach: extend `TransactionContext` with an `InBlockWithInstantLock { info, lock }` variant; another: store the most recent `InstantLock` on `TransactionRecord` independently and document the merge rules.
+- **Actual** (current upstream code): `self.context = context` — IS-lock is unconditionally replaced.
+- **Harness extensions required**: direct access to `TransactionRecord` after context promotion; a mock or real SPV event driver that can inject both context updates in order.
+- **Estimated complexity**: M (upstream change required before downstream test can pass; test itself is M once the API is in place).
+- **Rationale**: Asset-lock proof flows commonly observe InstantSend first, then block confirmation. The IS-lock is the proof material until the block becomes chain-locked. Dropping it silently on block arrival means any proof consumer that is not racing to read before block confirmation loses its proof. Filed from Marvin's upstream audit (audit Finding #2, MEDIUM — re-classified HIGH here because the downstream impact is silent data loss on the critical proof path).
+
+#### Found-022 — `AssetLockBuilder::build` marks change-pool index used before `build_asset_lock` can fail, contradicting doc-comment guarantee
+- **Priority**: P2 (bug pin — failure is the proof)
+- **Severity**: MEDIUM (silent address-pool drift when build fails; the doc-comment's "no addresses consumed" guarantee is misleading)
+- **Owner: upstream `key-wallet` (rust-dashcore)**
+- **Wallet feature exercised**: `wallet/asset_lock/build.rs` (any path through `build_asset_lock_transaction` that exercises the upstream builder).
+- **Suspected bug** (upstream `key-wallet`, SHA `d6dd5da`): The doc-comment on `build_asset_lock` at `key-wallet/src/wallet/managed_wallet_info/asset_lock_builder.rs:185-191` claims "The transaction is built first, and keys are only derived after a successful build — so no addresses are consumed if the build fails." This is misleading. The BIP-44 change address is taken via `account.next_change_address(xpub.as_ref(), true)` at `:242` (`true` marks the index used; see `ManagedCoreFundsAccount::next_change_address` calling `internal_addresses.next_unused(..., add_to_state=true)`). If `tx_builder_with_inputs?` at `:286` then errors (e.g. `BranchAndBound` cannot select inputs), the change-address index has already been consumed. The "no addresses consumed" guarantee applies only to credit-output funding keys (derived at `:300-312`), not to the BIP-44 change-address pool.
+- **Preconditions**: a build attempt that succeeds past change-address derivation but fails on `build_asset_lock` (e.g. coin selection fails after the change address is taken).
+- **Scenario**:
+  1. Record the next change-pool index before any build attempt.
+  2. Trigger a build that fails at the coin-selection step (inject a wallet with insufficient UTXOs for coin selection, but enough to pass earlier validation).
+  3. Record the change-pool index after the failed build.
+  4. Attempt a second build with adequate funds and observe which change address is handed out.
+- **Assertions** (the proof shape):
+  - After the failed build, the change-pool index is the SAME as before — no index was consumed. OR the doc-comment is corrected to scope the guarantee to "no credit-output funding keys consumed" and callers are told to handle change-pool drift.
+  - Counter-assertion if buggy (today): the change-pool index advanced even though the build failed — silent drift.
+- **Expected** (after upstream fix): either (a) defer change-address consumption until after `build_asset_lock` succeeds — peek the next index, then `mark_first_pool_index_used` once the build is known good; or (b) correct the doc to accurately scope the guarantee.
+- **Actual** (current upstream code): change-pool index is consumed eagerly at `:242`; the doc claims otherwise.
+- **Harness extensions required**: ability to inspect the change-pool's `highest_used` index after a failed build attempt; mock or forced coin-selection failure that fires after change-address derivation.
+- **Estimated complexity**: S (test itself is straightforward once the upstream API exposes the pool-index accessor; the upstream fix is S-M).
+- **Rationale**: A doc-comment that promises "no addresses consumed on failure" and a code path that silently consumes a change-address index is a broken contract. Callers relying on the doc to reason about pool drift after error handling will be wrong. Filed from Marvin's upstream audit (audit Finding #3, MEDIUM).
+
+#### Found-023 — `ManagedAccountCollection` lacks a `find_transaction_record(&Txid)` helper — every consumer rolls its own incomplete loop
+- **Priority**: P2 (bug pin — failure is the proof)
+- **Severity**: LOW (ergonomic footgun; the symptom is "transaction not found" for CoinJoin / BIP-32-funded asset locks, not data corruption)
+- **Owner: upstream `key-wallet` (rust-dashcore)**
+- **Wallet feature exercised**: `wallet/asset_lock/sync/proof.rs` (`validate_or_upgrade_proof`); `wallet/asset_lock/sync/recovery.rs` (`recover_asset_lock_blocking`); any path that looks up a transaction record by `Txid` across account types.
+- **Suspected bug** (upstream `key-wallet`, SHA `d6dd5da`): `ManagedAccountCollection` at `key-wallet/src/managed_account/managed_account_collection.rs:1057-1143` exposes broad iteration helpers (`all_accounts`, `all_funding_accounts`) but no focused "find a transaction record by `Txid` across all funds-bearing accounts" helper. Every downstream consumer that wants to confirm an asset-lock transaction must either (a) know which account collection the funding came from (typically impossible, since CoinJoin / BIP-32 funding is opaque) or (b) hand-roll `all_funding_accounts()` + `transactions.get(&txid)`. In practice consumers hard-code `standard_bip44_accounts` (as Found-012 in `rs-platform-wallet` documents), and CoinJoin / BIP-32-funded asset locks return "transaction not found". A `fn find_transaction_record(&self, txid: &Txid) -> Option<(AccountType, &TransactionRecord)>` on `ManagedAccountCollection` would close this cliff.
+- **Preconditions**: an asset-lock transaction funded from a non-BIP-44 account (e.g. CoinJoin or BIP-32).
+- **Scenario**:
+  1. Fund an asset-lock via a CoinJoin or BIP-32 account (not the default `standard_bip44_accounts`).
+  2. Call any downstream path that looks up the transaction record by `Txid` (e.g. `validate_or_upgrade_proof`).
+- **Assertions** (the proof shape):
+  - The lookup succeeds regardless of which account type funded the transaction.
+  - Counter-assertion if buggy (today's behaviour): the lookup returns `None` / "transaction not found" for non-BIP-44-funded locks — surfaces as "asset lock not tracked" errors in the platform wallet.
+- **Expected** (after upstream fix): add `find_transaction_record(&self, txid: &Txid) -> Option<(AccountType, &TransactionRecord)>` (and `_mut` variant) on `ManagedAccountCollection`, walking every funds-bearing collection. Document that callers must prefer it over per-collection lookups.
+- **Actual** (current upstream code): no such helper exists; consumers write per-collection loops and miss CoinJoin / BIP-32 accounts (Found-012 in `rs-platform-wallet` is exactly this).
+- **Harness extensions required**: a way to force a CoinJoin or BIP-32-funded asset-lock build (currently the harness always uses the default BIP-44 account); access to `ManagedAccountCollection` to verify lookup results.
+- **Estimated complexity**: S (a short upstream addition; the downstream test is also S once the upstream helper exists).
+- **Rationale**: Every consumer of the asset-lock proof flow needs this lookup. Without a collection-wide helper, the default "just use BIP-44" shortcut is both the obvious pattern and the wrong one for CoinJoin / BIP-32-funded wallets. A missing ergonomic helper is a footgun that becomes a bug in every downstream consumer that doesn't know to iterate all account types. Filed from Marvin's upstream audit (audit Finding #5, LOW).
 
 ---
 
