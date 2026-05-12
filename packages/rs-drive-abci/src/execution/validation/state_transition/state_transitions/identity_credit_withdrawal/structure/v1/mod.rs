@@ -1,20 +1,7 @@
-use dpp::consensus::basic::identity::{
-    InvalidCreditWithdrawalTransitionCoreFeeError,
-    InvalidCreditWithdrawalTransitionOutputScriptError,
-    InvalidIdentityCreditWithdrawalTransitionAmountError,
-    NotImplementedCreditWithdrawalTransitionPoolingError,
-};
-use dpp::consensus::ConsensusError;
-
 use crate::error::Error;
-use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
-use dpp::state_transition::identity_credit_withdrawal_transition::{
-    IdentityCreditWithdrawalTransition, MIN_CORE_FEE_PER_BYTE,
-};
-use dpp::util::is_non_zero_fibonacci_number::is_non_zero_fibonacci_number;
+use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
-use dpp::withdrawal::Pooling;
 
 pub(in crate::execution::validation::state_transition::state_transitions::identity_credit_withdrawal) trait IdentityCreditWithdrawalStateTransitionStructureValidationV1 {
     fn validate_basic_structure_v1(&self, platform_version: &PlatformVersion) -> Result<SimpleConsensusValidationResult, Error>;
@@ -27,57 +14,11 @@ impl IdentityCreditWithdrawalStateTransitionStructureValidationV1
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        let mut result = SimpleConsensusValidationResult::default();
-
-        let amount = self.amount();
-        if amount < platform_version.system_limits.min_withdrawal_amount
-            || amount > platform_version.system_limits.max_withdrawal_amount
-        {
-            result.add_error(ConsensusError::from(
-                InvalidIdentityCreditWithdrawalTransitionAmountError::new(
-                    self.amount(),
-                    platform_version.system_limits.min_withdrawal_amount,
-                    platform_version.system_limits.max_withdrawal_amount,
-                ),
-            ));
-        }
-
-        // NOTE: the shielded-withdrawal path (v12) re-validates these same three Core-facing
-        // fields — `pooling`, `core_fee_per_byte`, `output_script` — in
-        // `dpp .../shielded/shielded_withdrawal_transition/v0/state_transition_validation.rs`,
-        // reusing the same error types and `MIN_CORE_FEE_PER_BYTE`. Keep the two in sync (or, if
-        // touching both, factor a shared helper).
-
-        // currently we do not support pooling, so we must validate that pooling is `Never`
-
-        if self.pooling() != Pooling::Never {
-            result.add_error(NotImplementedCreditWithdrawalTransitionPoolingError::new(
-                self.pooling() as u8,
-            ));
-
-            return Ok(result);
-        }
-
-        // validate core_fee is in fibonacci sequence
-        if !is_non_zero_fibonacci_number(self.core_fee_per_byte() as u64) {
-            result.add_error(InvalidCreditWithdrawalTransitionCoreFeeError::new(
-                self.core_fee_per_byte(),
-                MIN_CORE_FEE_PER_BYTE,
-            ));
-
-            return Ok(result);
-        }
-
-        if let Some(output_script) = self.output_script() {
-            // validate output_script types
-            if !output_script.is_p2pkh() && !output_script.is_p2sh() {
-                result.add_error(InvalidCreditWithdrawalTransitionOutputScriptError::new(
-                    output_script.clone(),
-                ));
-            }
-        }
-
-        Ok(result)
+        // Delegate to the shared DPP-owned v1 basic-structure rule so the
+        // server and the SDK constructor cannot drift apart. The DPP method
+        // owns the amount/pooling/core-fee/output-script logic; this trait
+        // method only adapts its return type for drive-abci's error chain.
+        Ok(self.basic_structure_rules_v1(platform_version))
     }
 }
 
@@ -86,10 +27,13 @@ mod tests {
     use super::*;
 
     use assert_matches::assert_matches;
+    use dpp::consensus::basic::identity::InvalidIdentityCreditWithdrawalTransitionAmountError;
     use dpp::consensus::basic::BasicError;
+    use dpp::consensus::ConsensusError;
     use dpp::dashcore::ScriptBuf;
     use dpp::identity::core_script::CoreScript;
     use dpp::state_transition::identity_credit_withdrawal_transition::v1::IdentityCreditWithdrawalTransitionV1;
+    use dpp::withdrawal::Pooling;
     use platform_version::version::v1::PLATFORM_V1;
     use rand::SeedableRng;
 

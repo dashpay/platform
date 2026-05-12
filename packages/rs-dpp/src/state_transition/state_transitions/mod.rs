@@ -3,6 +3,8 @@ mod common_fields;
 mod contract;
 pub(crate) mod document;
 pub mod identity;
+#[cfg(test)]
+mod lockstep_assertions;
 pub mod signable_bytes_hasher;
 
 pub use address_funds::*;

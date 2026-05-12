@@ -1,4 +1,8 @@
 #[cfg(feature = "state-transition-signing")]
+use crate::state_transition::first_consensus_error_as_protocol_error;
+#[cfg(feature = "state-transition-signing")]
+use crate::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
+#[cfg(feature = "state-transition-signing")]
 use crate::{
     identity::{
         accessors::IdentityGettersV0, core_script::CoreScript, signer::Signer, Identity,
@@ -32,10 +36,10 @@ impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTra
         signing_withdrawal_key_to_use: Option<&IdentityPublicKey>,
         preferred_key_purpose_for_signing_withdrawal: PreferredKeyPurposeForSigningWithdrawal,
         nonce: IdentityNonce,
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
         _version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError> {
-        let mut transition: StateTransition = IdentityCreditWithdrawalTransitionV1 {
+        let transition_v1 = IdentityCreditWithdrawalTransitionV1 {
             identity_id: identity.id(),
             amount,
             core_fee_per_byte,
@@ -45,8 +49,24 @@ impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTra
             user_fee_increase,
             signature_public_key_id: 0,
             signature: Default::default(),
+        };
+
+        // Pre-signing structure check that delegates to the shared DPP-owned
+        // v1 basic-structure validation. The drive-abci server dispatcher
+        // routes through the same `IdentityCreditWithdrawalTransition
+        // ::basic_structure_rules_v1`, so client and server cannot drift.
+        //
+        // LOCKSTEP: hard-coded to the v1 basic-structure check. If a future v2
+        // basic-structure rule is introduced for this transition, the DPP
+        // method, the drive-abci dispatcher, AND this SDK constructor must be
+        // updated together.
+        let validation_target: IdentityCreditWithdrawalTransition = transition_v1.clone().into();
+        let pre_validation_result = validation_target.basic_structure_rules_v1(platform_version);
+        if let Some(error) = first_consensus_error_as_protocol_error(pre_validation_result) {
+            return Err(error);
         }
-        .into();
+
+        let mut transition: StateTransition = transition_v1.into();
 
         let identity_public_key = match signing_withdrawal_key_to_use {
             Some(key) => {

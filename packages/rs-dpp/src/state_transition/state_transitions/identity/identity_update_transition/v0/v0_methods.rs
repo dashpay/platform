@@ -59,10 +59,12 @@ impl IdentityUpdateTransitionV0 {
     /// Dispatches basic-structure validation to the appropriate versioned
     /// implementation based on the active [`PlatformVersion`].
     ///
-    /// This mirrors the dispatch performed by drive-abci's
-    /// `StateTransitionBasicStructureValidationV0` impl for
-    /// `IdentityUpdateTransition`, so that client-side construction and
-    /// server-side validation pick the same versioned check.
+    /// The version source is the DPP-owned field
+    /// `platform_version.dpp.state_transitions.identities.identity_update.basic_structure`
+    /// — drive-abci's basic-structure dispatcher reads the same field, so the
+    /// client and server cannot drift apart. This intentionally avoids having
+    /// DPP depend on drive-abci-side version routing for a check whose
+    /// definition lives in DPP.
     ///
     /// IMPORTANT: when a future v1 basic-structure check is introduced, both
     /// this wrapper and the drive-abci dispatcher must be updated in lockstep,
@@ -74,10 +76,10 @@ impl IdentityUpdateTransitionV0 {
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         match platform_version
-            .drive_abci
-            .validation_and_processing
+            .dpp
             .state_transitions
-            .identity_update_state_transition
+            .identities
+            .identity_update
             .basic_structure
         {
             Some(0) => self.validate_basic_structure_v0(platform_version),
@@ -86,10 +88,13 @@ impl IdentityUpdateTransitionV0 {
                 known_versions: vec![0],
                 received: version,
             }),
-            None => Err(ProtocolError::UnknownVersionMismatch {
+            // `None` represents "basic-structure validation is not active at
+            // this PlatformVersion". Surface this with the dedicated
+            // [`ProtocolError::VersionNotActive`] variant, which mirrors
+            // drive-abci's `ExecutionError::VersionNotActive` semantics.
+            None => Err(ProtocolError::VersionNotActive {
                 method: "IdentityUpdateTransitionV0::validate_basic_structure".to_string(),
                 known_versions: vec![0],
-                received: 0,
             }),
         }
     }
@@ -220,6 +225,29 @@ impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransitionV0 {
             return Err(error);
         }
 
+        // Fail-fast: verify the master public key exists on the identity and
+        // has `SecurityLevel::MASTER` *before* doing any POP signing work for
+        // added unique keys. Catching this here matches the final signing
+        // contract and avoids spending signer cycles on a transition we
+        // already know cannot be signed.
+        let master_public_key = identity
+            .public_keys()
+            .get(master_public_key_id)
+            .ok_or::<ConsensusError>(
+                SignatureError::MissingPublicKeyError(MissingPublicKeyError::new(
+                    *master_public_key_id,
+                ))
+                .into(),
+            )?;
+        if master_public_key.security_level() != SecurityLevel::MASTER {
+            return Err(ProtocolError::InvalidSignaturePublicKeySecurityLevelError(
+                InvalidSignaturePublicKeySecurityLevelError::new(
+                    master_public_key.security_level(),
+                    vec![SecurityLevel::MASTER],
+                ),
+            ));
+        }
+
         let state_transition: StateTransition = identity_update_transition.clone().into();
 
         let key_signable_bytes = state_transition.signable_bytes()?;
@@ -255,33 +283,15 @@ impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransitionV0 {
             }
         }
 
-        let master_public_key = identity
-            .public_keys()
-            .get(master_public_key_id)
-            .ok_or::<ConsensusError>(
-                SignatureError::MissingPublicKeyError(MissingPublicKeyError::new(
-                    *master_public_key_id,
-                ))
-                .into(),
-            )?;
-        if master_public_key.security_level() != SecurityLevel::MASTER {
-            Err(ProtocolError::InvalidSignaturePublicKeySecurityLevelError(
-                InvalidSignaturePublicKeySecurityLevelError::new(
-                    master_public_key.security_level(),
-                    vec![SecurityLevel::MASTER],
-                ),
-            ))
-        } else {
-            let mut state_transition: StateTransition = identity_update_transition.into();
-            state_transition
-                .sign_external(
-                    master_public_key,
-                    signer,
-                    None::<GetDataContractSecurityLevelRequirementFn>,
-                )
-                .await?;
-            Ok(state_transition)
-        }
+        let mut state_transition: StateTransition = identity_update_transition.into();
+        state_transition
+            .sign_external(
+                master_public_key,
+                signer,
+                None::<GetDataContractSecurityLevelRequirementFn>,
+            )
+            .await?;
+        Ok(state_transition)
     }
 }
 

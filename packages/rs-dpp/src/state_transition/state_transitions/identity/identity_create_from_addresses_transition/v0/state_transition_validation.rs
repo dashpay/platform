@@ -16,9 +16,22 @@ use platform_version::version::PlatformVersion;
 use std::collections::HashSet;
 
 impl IdentityCreateFromAddressesTransitionV0 {
-    /// Validates all structural properties of the transition except for the
-    /// `input_witnesses` count. This is intended for client-side pre-signing
-    /// validation, where witnesses are not yet present.
+    /// Narrow basic-structure check: validates all structural properties of
+    /// the transition except for the `input_witnesses` count, and **does NOT**
+    /// validate the public-key structure of `public_keys`.
+    ///
+    /// This is the same surface the server's basic-structure pipeline
+    /// exercises. Public-key structure validation is intentionally skipped
+    /// here so that submitting an invalid set of public keys reaches
+    /// drive-abci's `advanced_structure_v0`, where it attaches a
+    /// `BumpAddressInputNoncesAction` (penalty + processing fee) instead of
+    /// failing for free at basic-structure. See the NOTE at the bottom of this
+    /// function for the full rationale.
+    ///
+    /// SDK constructors that want to give callers pre-broadcast feedback on
+    /// public-key structure problems must call
+    /// `IdentityPublicKeyInCreation::validate_identity_public_keys_structure`
+    /// directly *in addition to* this method.
     pub fn validate_structure_without_input_witnesses(
         &self,
         platform_version: &PlatformVersion,
@@ -266,6 +279,13 @@ impl IdentityCreateFromAddressesTransitionV0 {
 }
 
 impl StateTransitionStructureValidation for IdentityCreateFromAddressesTransitionV0 {
+    /// Narrow basic-structure validation that mirrors what the server runs at
+    /// the basic-structure stage. As documented on
+    /// [`IdentityCreateFromAddressesTransitionV0::validate_structure_without_input_witnesses`],
+    /// this **does NOT** validate `public_keys` structure: that check is run
+    /// later in drive-abci's `advanced_structure_v0` so it can attach a
+    /// `BumpAddressInputNoncesAction` penalty. SDK constructors are expected
+    /// to call public-key validation separately for pre-broadcast UX.
     fn validate_structure(
         &self,
         platform_version: &PlatformVersion,

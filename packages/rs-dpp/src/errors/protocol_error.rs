@@ -89,6 +89,18 @@ pub enum ProtocolError {
         /// requested core height
         received: FeatureVersion,
     },
+
+    /// The method is not active at the current DPP version (the version field
+    /// is `None`). Mirrors drive-abci's `ExecutionError::VersionNotActive` so
+    /// the SDK can express the same condition without relying on an
+    /// `UnknownVersionMismatch` sentinel value.
+    #[error("{method} not active for dpp version")]
+    VersionNotActive {
+        /// method
+        method: String,
+        /// the versions of this method that exist (even if currently inactive)
+        known_versions: Vec<FeatureVersion>,
+    },
     #[error("current platform version not initialized")]
     CurrentProtocolVersionNotInitialized,
     #[error("unknown version error {0}")]

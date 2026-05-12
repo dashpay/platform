@@ -1,4 +1,4 @@
-use versioned_feature_core::FeatureVersion;
+use versioned_feature_core::{FeatureVersion, OptionalFeatureVersion};
 
 pub mod v1;
 pub mod v2;
@@ -20,8 +20,20 @@ pub struct IdentityTransitionVersions {
     pub max_public_keys_in_creation: u16,
     pub asset_locks: IdentityTransitionAssetLockVersions,
     pub credit_withdrawal: IdentityCreditWithdrawalTransitionVersions,
+    pub identity_update: IdentityUpdateTransitionVersions,
     pub calculate_min_required_fee_on_identity_create_transition: FeatureVersion,
     pub calculate_min_required_fee_on_identity_top_up_transition: i32,
+}
+
+/// DPP-owned versioning for the identity-update state transition.
+///
+/// `basic_structure` is the source of truth for which versioned basic-structure
+/// check both DPP (client construction) and drive-abci (server validation)
+/// should run. Keeping it in DPP avoids forcing DPP to depend on the
+/// drive-abci-side version subtree just to know which structural check to use.
+#[derive(Clone, Debug, Default)]
+pub struct IdentityUpdateTransitionVersions {
+    pub basic_structure: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
