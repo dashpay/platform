@@ -3,7 +3,9 @@
 //! dropped.
 //!
 //! Spec: `tests/e2e/TEST_SPEC.md` (### Found bugs → Found-008).
-//! Pinned status: BUG-PIN — unit test, runnable today, RED until fix.
+//! Pinned status: BUG-PIN — unit test, runnable today, GREEN while
+//! the bug is present, RED once the fix lands. This is an inverted
+//! bug-pin: the test asserts the missed-wakeup happens.
 //!
 //! ## Bug shape
 //!
@@ -26,19 +28,28 @@
 //! `AssetLockManager`, so the contract this file pins is exactly
 //! what production code depends on.
 //!
-//! Scenario:
+//! Scenario (pre-spawn notify, strict causal ordering):
 //! 1. Build a fresh `Arc<Notify>` and pass it through
 //!    `LockNotifyHandler::new`.
-//! 2. Spawn a "waiter" task. Before the task reaches
-//!    `notify.notified().await`, fire `notify.notify_waiters()` from
-//!    the test thread (the same call `on_sync_event` makes).
-//! 3. Assert the waiter completes within a short deadline.
+//! 2. Fire `notify.notify_waiters()` BEFORE the waiter task exists.
+//!    Zero waiters are registered, so `notify_waiters()` is a no-op
+//!    — no permit stored.
+//! 3. Spawn the "waiter" task. It calls `notify.notified().await`
+//!    AFTER the notify already fired. With `notify_waiters()` there
+//!    is no permit to pick up, so the waiter sleeps until the test
+//!    thread's deadline.
+//! 4. Assert the waiter does NOT complete within the deadline —
+//!    the timeout firing IS the bug-pin's success condition.
 //!
-//! With `notify_waiters()`, no permit is stored — the waiter sleeps
-//! forever (or until the deadline). With the fix (`notify_one()`,
-//! which DOES store a permit), the waiter wakes immediately.
+//! Why pre-spawn rather than the previous "spawn-then-sleep-50ms"
+//! shape: the sleep gave Tokio time to schedule and poll the spawned
+//! task, registering its `notified()` future before the test thread
+//! fired `notify_waiters()`. The notify was then delivered correctly
+//! and the test passed for the WRONG reason. Firing before
+//! `tokio::spawn(...)` makes it causally impossible for any waiter
+//! to be registered when the notify fires.
 //!
-//! ## FAILS UNTIL
+//! ## FAILS UNTIL (== green-test inversion)
 //!
 //! `LockNotifyHandler::on_sync_event` switches from
 //! `notify_waiters()` to `notify_one()` (or some equivalent
@@ -46,6 +57,10 @@
 //! BEFORE the state check so the future is registered before any
 //! event can fire (per Tokio's documented "intended use" for
 //! `notify_waiters`).
+//!
+//! When the fix lands and this file is rewritten to mirror the new
+//! primitive, the test flips: the assertion changes from "waiter
+//! times out" to "waiter completes within the deadline".
 //!
 //! ## Why not drive `LockNotifyHandler::on_sync_event` directly?
 //!
@@ -65,20 +80,18 @@ use platform_wallet::wallet::asset_lock::LockNotifyHandler;
 use tokio::sync::Notify;
 use tokio::time::timeout;
 
-/// Deadline on the waiter side. Real `wait_for_proof` uses 300 s; the
-/// bug fires regardless of the deadline (a missed notify means we wait
-/// for either the *next* notify or the timeout). 2 s is more than
-/// enough to expose the missed wakeup.
+/// Deadline for the waiter task. Real `wait_for_proof` uses 300 s; the
+/// missed-wakeup bug fires regardless of the deadline — once the notify
+/// is dropped, the next `notified()` future sleeps until the deadline
+/// or the next event. 2 s is more than enough to expose the miss while
+/// keeping the test fast in CI.
 const WAITER_DEADLINE: Duration = Duration::from_secs(2);
 
-/// Wall-clock gap the test thread waits for the spawned waiter to
-/// reach a stable "about to call notified()" point. Plenty of margin
-/// for a multi-thread runtime to schedule the task; under typical
-/// load the spawned task enters its first poll within <1 ms.
-const SCHEDULE_GAP: Duration = Duration::from_millis(50);
-
 /// Pin the `notify_waiters` missed-wakeup contract that
-/// `LockNotifyHandler` depends on. EXPECTED to fail today.
+/// `LockNotifyHandler` depends on. With the bug present this test is
+/// GREEN (waiter times out, missed wakeup confirmed); after the fix
+/// lands the assertion will flip to "waiter completes within the
+/// deadline" and this file gets rewritten alongside the fix.
 #[ignore = "Found-008 bug pin — RED until LockNotifyHandler migrates off notify_waiters()"]
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 4)]
 async fn found_008_lock_notify_missed_wakeup() {
@@ -99,49 +112,46 @@ async fn found_008_lock_notify_missed_wakeup() {
     // directly.
     let _handler = LockNotifyHandler::new(notify.clone());
 
+    // Fire `notify_waiters()` BEFORE any waiter exists. With zero
+    // registered waiters this is a no-op — no permit is stored. Any
+    // subsequent `notified()` future has nothing to pick up. This is
+    // the exact failure mode `on_sync_event` exposes when a lock
+    // event arrives in the check / wait gap of `wait_for_proof`.
+    notify.notify_waiters();
+
     // Spawn the "waiter" — analogue of `wait_for_proof` after its
     // state check came up empty: about to await on `lock_notify`.
+    // Spawning AFTER `notify_waiters()` guarantees the waiter
+    // registers its `notified()` future strictly after the notify
+    // already fired — there is no way for the runtime to schedule
+    // the waiter in time to catch this notification.
     let waiter_notify = notify.clone();
     let waiter = tokio::spawn(async move {
-        // The "check" step in wait_for_proof happens FIRST (state read,
-        // empty), then control flow reaches notified().await. The bug
-        // fires when an event arrives in the gap. We simulate "the
-        // check just finished" by sleeping briefly before .await
-        // notified — but the bug shape is independent of the sleep
-        // length: any notify_waiters fired before the .await is lost.
         waiter_notify.notified().await;
     });
 
-    // Wait long enough for the spawned task to actually start polling,
-    // then fire notify_waiters BEFORE the task reaches notified().await.
-    // The race: with `notify_waiters()`, this notification is lost if
-    // no future is registered yet. With `notify_one()`, a permit is
-    // stored and the future picks it up on registration.
-    tokio::time::sleep(SCHEDULE_GAP).await;
-    notify.notify_waiters();
-
-    // The waiter must complete within the deadline. Today this times
-    // out — the notification was discarded.
+    // The waiter must time out. Timeout firing IS the bug-pin's
+    // success — it confirms `notify_waiters()` discarded the notify
+    // because no future was registered.
     match timeout(WAITER_DEADLINE, waiter).await {
-        Ok(Ok(())) => {
-            // Green — the fix (or a runtime that registered the future
-            // before the notify call) is in effect. Per spec:
-            // "wait_for_proof returns Ok(InstantAssetLockProof(...))
-            // within 1s (i.e. without waiting for the timeout)."
-        }
+        Ok(Ok(())) => panic!(
+            "Found-008 bug-pin contract violated: waiter completed \
+             within {WAITER_DEADLINE:?} despite `notify_waiters()` \
+             firing before the waiter registered. Either the fix \
+             landed and this test should be inverted to assert \
+             completion, OR something now stores a permit across \
+             this call. See TEST_SPEC.md Found-008."
+        ),
         Ok(Err(join_err)) => panic!(
             "Found-008: waiter task panicked: {join_err}. Expected \
-             clean completion within {WAITER_DEADLINE:?}."
+             a clean timeout, not a panic."
         ),
-        Err(_elapsed) => panic!(
-            "Found-008 POST-pin violated: waiter did not observe the \
-             notify within {WAITER_DEADLINE:?}. \
-             `LockNotifyHandler::on_sync_event` calls \
-             `Notify::notify_waiters()`, which wakes only currently- \
-             registered waiters and stores no permit; a notification \
-             arriving in the check / wait gap is dropped. See \
-             TEST_SPEC.md Found-008 for the fix shape \
-             (`notify_one()` or `notified()` before the state check)."
-        ),
+        Err(_elapsed) => {
+            // Green — the missed-wakeup hazard reproduced as
+            // expected. `notify_waiters()` was called with zero
+            // registered waiters, no permit was stored, and the
+            // subsequent `notified().await` slept until the
+            // deadline. This is the bug.
+        }
     }
 }
