@@ -121,10 +121,9 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
 
             if spendable.is_empty() {
                 return Err(PlatformWalletError::NoSpendableInputs {
-                    context: format!(
-                        "{:?} account {} (all UTXOs reserved by in-flight transactions)",
-                        account_type, account_index
-                    ),
+                    account_index,
+                    account_type,
+                    context: "all UTXOs used or reserved by in-flight transactions".to_string(),
                 });
             }
 
@@ -157,10 +156,9 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                     let msg = e.to_string();
                     if msg.contains("Insufficient funds") || msg.contains("No UTXOs available") {
                         PlatformWalletError::NoSpendableInputs {
-                            context: format!(
-                                "{:?} account {} ({})",
-                                account_type, account_index, msg
-                            ),
+                            account_type,
+                            account_index,
+                            context: msg,
                         }
                     } else {
                         PlatformWalletError::TransactionBuild(msg)
@@ -599,7 +597,7 @@ mod tests {
             .await;
 
         match &b_result {
-            Err(PlatformWalletError::NoSpendableInputs { context }) => {
+            Err(PlatformWalletError::NoSpendableInputs { context, .. }) => {
                 assert!(
                     context.contains("reserved")
                         || context.contains("Insufficient")

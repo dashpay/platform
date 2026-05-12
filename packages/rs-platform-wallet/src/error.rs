@@ -1,6 +1,6 @@
 use dashcore::OutPoint;
 use dpp::identifier::Identifier;
-use key_wallet::Network;
+use key_wallet::{account::StandardAccountType, Network};
 
 /// Errors that can occur in platform wallet operations
 #[derive(Debug, thiserror::Error)]
@@ -67,11 +67,12 @@ pub enum PlatformWalletError {
     )]
     ConcurrentSpendConflict { selected: Vec<OutPoint> },
 
-    #[error(
-        "no spendable inputs available for {context} \
-         (other in-flight transactions reserved the wallet's UTXOs; retry once they confirm)"
-    )]
-    NoSpendableInputs { context: String },
+    #[error("no spendable inputs available on {account_type} account {account_index}: {context}")]
+    NoSpendableInputs {
+        account_type: StandardAccountType,
+        account_index: u32,
+        context: String,
+    },
 
     #[error("Asset lock proof waiting failed: {0}")]
     AssetLockProofWait(String),
