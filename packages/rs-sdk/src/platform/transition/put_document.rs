@@ -22,6 +22,19 @@
 //! New prepare/sign-without-broadcast call sites should prefer the strict
 //! builders so the supplied document id and entropy commit to the same
 //! value.
+//!
+//! Additionally, [`PutDocument::put_to_platform`]'s create path now
+//! locally rejects when `document_state_transition_entropy = Some(entropy)`
+//! and the derived id does not match `document.id` — the strict
+//! [`build_signed_document_create_transition`] helper that backs it
+//! enforces this id-matches-entropy check before any nonce allocation.
+//! Passing `None` still preserves the legacy auto-generate-entropy /
+//! rewrite-id behavior for callers that opt into it.
+//!
+//! [`build_signed_document_create_or_replace_transition`] remains public
+//! for source compatibility with downstream native callers that depended
+//! on it before the strict helpers were introduced. New callers should
+//! prefer the strict create/replace helpers above.
 
 use super::broadcast::BroadcastStateTransition;
 use super::validation::ensure_valid_state_transition_structure;
@@ -181,29 +194,33 @@ pub trait PutDocument<S: Signer<IdentityPublicKey>>: Waitable {
     ) -> Result<Document, Error>;
 }
 
-/// Internal dispatch: build, sign, and structurally validate a document
-/// create-or-replace [`StateTransition`] without broadcasting it.
+/// Legacy create-or-replace dispatch: build, sign, and structurally validate
+/// a document [`StateTransition`] without broadcasting it.
 ///
-/// This is intentionally **not** part of the public API. It is the
-/// pre-broadcast core shared by [`build_signed_document_create_transition`],
-/// [`build_signed_document_replace_transition`], and the legacy
-/// [`PutDocument::put_to_platform`] trait method. It allocates a fresh
-/// identity-contract nonce, picks the create-vs-replace branch based on the
-/// document's revision, falls back to RNG-derived entropy + id auto-rewrite on
-/// the create branch when `document_state_transition_entropy` is `None`,
-/// applies `user_fee_increase` / `token_payment_info` /
-/// `state_transition_creation_options` from `settings`, signs the transition,
-/// and runs structure validation.
+/// **Compatibility note (kept `pub`):** this helper was previously public
+/// and is retained as a public, source-compatible entry point for downstream
+/// native callers (e.g. `rs-platform-wallet`) that already depend on it. It
+/// dispatches between create and replace based on the document's revision
+/// and supports the legacy `document_state_transition_entropy = None`
+/// fallback (RNG-derived entropy + id auto-rewrite) on the create branch.
 ///
-/// # Why this is not public
+/// **New callers should prefer the strict helpers**
+/// [`build_signed_document_create_transition`] /
+/// [`build_signed_document_replace_transition`] for fail-fast intent and
+/// document-id-matches-entropy checks — this dispatch helper only rejects
+/// the always-invalid `Some(0)` revision and does not enforce the strict
+/// id-matches-entropy invariant by itself. The strict helpers run their
+/// validation **before** any nonce allocation.
 ///
-/// The auto-fallback create branch (entropy `None` → RNG entropy + rewritten
-/// document id) is convenient for the legacy `PutDocument` trait but is a
-/// footgun for prepare/sign-without-broadcast flows like the wasm-sdk's
-/// `prepareDocumentCreate`, where the caller's already-derived document id
-/// must commit to the entropy they pass in. Public callers must go through
-/// [`build_signed_document_create_transition`] (which enforces the strict
-/// id-matches-entropy check) or [`build_signed_document_replace_transition`].
+/// # Behavior
+///
+/// Allocates a fresh identity-contract nonce, picks the create-vs-replace
+/// branch based on the document's revision, falls back to RNG-derived
+/// entropy + id auto-rewrite on the create branch when
+/// `document_state_transition_entropy` is `None`, applies
+/// `user_fee_increase` / `token_payment_info` /
+/// `state_transition_creation_options` from `settings`, signs the
+/// transition, and runs structure validation.
 ///
 /// # Revision validation
 ///
@@ -221,7 +238,7 @@ pub trait PutDocument<S: Signer<IdentityPublicKey>>: Waitable {
 /// the cache entry if it still equals the nonce allocated by this attempt, so
 /// concurrent allocations are not clobbered.
 #[allow(clippy::too_many_arguments)]
-async fn build_signed_document_create_or_replace_transition<S: Signer<IdentityPublicKey>>(
+pub async fn build_signed_document_create_or_replace_transition<S: Signer<IdentityPublicKey>>(
     sdk: &Sdk,
     document: &Document,
     document_type: &DocumentType,
@@ -428,9 +445,19 @@ impl<S: Signer<IdentityPublicKey>> PutDocument<S> for Document {
     /// auto-generates 32-byte entropy + rewrites `document.id` via
     /// [`Document::generate_document_id_v0`] before signing. This preserves
     /// the original `PutDocument` behavior used by in-tree callers such as
-    /// `rs-platform-wallet` profile creation. New prepare/sign-without-broadcast
-    /// call sites should use the strict create/replace builders so
-    /// the supplied document id and entropy commit to the same value.
+    /// `rs-platform-wallet` profile creation.
+    ///
+    /// When `document_state_transition_entropy = Some(entropy)` on the
+    /// create path the call now locally rejects (before any nonce
+    /// allocation) if the entropy does not derive `document.id` via
+    /// [`Document::generate_document_id_v0`] — the strict create helper
+    /// that backs this routing enforces the id-matches-entropy invariant.
+    /// `None` still auto-generates entropy and rewrites the document id
+    /// for legacy callers that opt into that behavior.
+    ///
+    /// New prepare/sign-without-broadcast call sites should use the strict
+    /// create/replace builders so the supplied document id and entropy
+    /// commit to the same value.
     async fn put_to_platform(
         &self,
         sdk: &Sdk,

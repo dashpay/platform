@@ -64,14 +64,15 @@ use dash_sdk::dpp::fee::Credits;
 use dash_sdk::dpp::identity::IdentityPublicKey;
 use dash_sdk::dpp::platform_value::Identifier;
 use dash_sdk::dpp::tokens::token_payment_info::TokenPaymentInfo;
-use dash_sdk::platform::documents::transitions::DocumentDeleteTransitionBuilder;
+use dash_sdk::platform::documents::transitions::{
+    build_signed_document_delete_transition, DocumentDeleteTransitionBuilder,
+};
 use dash_sdk::platform::transition::purchase_document::PurchaseDocument;
 use dash_sdk::platform::transition::put_document::{
     build_signed_document_create_transition, build_signed_document_replace_transition, PutDocument,
 };
 use dash_sdk::platform::transition::transfer_document::TransferDocument;
 use dash_sdk::platform::transition::update_price_of_document::UpdatePriceOfDocument;
-use dash_sdk::platform::transition::validation::ensure_valid_state_transition_structure;
 use js_sys::Reflect;
 use std::sync::Arc;
 use wasm_bindgen::{prelude::*, JsCast};
@@ -907,46 +908,16 @@ impl WasmSdk {
             builder
         };
 
-        // Pre-allocate the identity-contract nonce so that any pre-broadcast
-        // failure (sign or local structure validation) can be rolled back via
-        // rs-sdk's `rollback_identity_contract_nonce`. The rollback is
-        // conditional: it only adjusts the cache entry if it still equals the
-        // nonce allocated here, so it does not clobber concurrent allocations.
-        let allocated_nonce = self
-            .inner_sdk()
-            .get_identity_contract_nonce(owner_id, contract_id, true, settings)
-            .await?;
-
-        let state_transition = match builder
-            .sign_with_nonce(
-                allocated_nonce,
-                &identity_key,
-                &signer,
-                self.inner_sdk().version(),
-            )
-            .await
-        {
-            Ok(st) => st,
-            Err(err) => {
-                self.inner_sdk()
-                    .rollback_identity_contract_nonce(owner_id, contract_id, allocated_nonce)
-                    .await;
-                return Err(err.into());
-            }
-        };
-
-        // Validate structure before handing the ST back, mirroring rs-sdk's
-        // pre-broadcast check. For document Batch transitions this currently
-        // ends up as a no-op because DPP returns UnsupportedFeatureError until
-        // that structure validation is implemented there.
-        if let Err(err) =
-            ensure_valid_state_transition_structure(&state_transition, self.inner_sdk().version())
-        {
-            self.inner_sdk()
-                .rollback_identity_contract_nonce(owner_id, contract_id, allocated_nonce)
-                .await;
-            return Err(err.into());
-        }
+        // Delegate the nonce-allocate / sign / structure-validate / rollback
+        // sequence to rs-sdk's shared helper so wasm-sdk and FFI share the
+        // single implementation.
+        let state_transition = build_signed_document_delete_transition(
+            self.inner_sdk(),
+            &builder,
+            &identity_key,
+            &signer,
+        )
+        .await?;
 
         Ok(state_transition.into())
     }
@@ -1379,6 +1350,7 @@ mod tests {
     use dash_sdk::dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
     use dash_sdk::dpp::state_transition::StateTransition;
     use dash_sdk::dpp::version::PlatformVersion;
+    use dash_sdk::platform::transition::validation::ensure_valid_state_transition_structure;
 
     #[test]
     fn create_revision_guard_accepts_none_and_initial_revision() {

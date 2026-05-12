@@ -115,7 +115,15 @@ impl DocumentDeleteTransitionBuilder {
         self
     }
 
-    /// Adds settings to the document delete transition
+    /// Adds settings to the document delete transition.
+    ///
+    /// Explicit setters always win regardless of call order: if
+    /// [`Self::with_user_fee_increase`] or
+    /// [`Self::with_state_transition_creation_options`] has already been
+    /// called on this builder, the corresponding field in `settings` is
+    /// only used as a fallback when the dedicated builder field is still
+    /// `None`. This makes the builder order-independent for these two
+    /// fields and avoids silently clobbering a deliberate caller choice.
     ///
     /// # Arguments
     ///
@@ -125,12 +133,17 @@ impl DocumentDeleteTransitionBuilder {
     ///
     /// * `Self` - The updated builder
     pub fn with_settings(mut self, settings: PutSettings) -> Self {
-        if let Some(user_fee_increase) = settings.user_fee_increase {
-            self.user_fee_increase = Some(user_fee_increase);
+        if self.user_fee_increase.is_none() {
+            if let Some(user_fee_increase) = settings.user_fee_increase {
+                self.user_fee_increase = Some(user_fee_increase);
+            }
         }
-        if let Some(state_transition_creation_options) = settings.state_transition_creation_options
-        {
-            self.state_transition_creation_options = Some(state_transition_creation_options);
+        if self.state_transition_creation_options.is_none() {
+            if let Some(state_transition_creation_options) =
+                settings.state_transition_creation_options
+            {
+                self.state_transition_creation_options = Some(state_transition_creation_options);
+            }
         }
         self.settings = Some(settings);
         self
@@ -260,6 +273,68 @@ pub enum DocumentDeleteResult {
     Deleted(Identifier),
 }
 
+/// Build, sign, and structurally validate a document **delete**
+/// [`StateTransition`] without broadcasting it.
+///
+/// This is the shared pre-broadcast core used by [`Sdk::document_delete`]
+/// and the wasm-sdk / FFI prepare-document-delete paths so the
+/// nonce-allocate / sign / validate / rollback sequence is implemented in
+/// exactly one place.
+///
+/// Concretely, this helper:
+///
+/// - allocates a fresh identity-contract nonce via
+///   [`Sdk::get_identity_contract_nonce`] with `bump_first = true`,
+/// - signs the transition by delegating to
+///   [`DocumentDeleteTransitionBuilder::sign_with_nonce`],
+/// - runs structure validation via
+///   [`ensure_valid_state_transition_structure`], and
+/// - on any **pre-broadcast** error (sign/build or local structure
+///   validation) conditionally rolls the bumped identity-contract nonce
+///   back via [`Sdk::rollback_identity_contract_nonce`], so the local
+///   cache does not advance past a nonce the network never observed.
+///
+/// Errors that occur **after** this helper returns successfully (e.g.
+/// serialization failures in callers) are not rolled back here.
+pub async fn build_signed_document_delete_transition<S: Signer<IdentityPublicKey>>(
+    sdk: &Sdk,
+    builder: &DocumentDeleteTransitionBuilder,
+    identity_public_key: &IdentityPublicKey,
+    signer: &S,
+) -> Result<StateTransition, Error> {
+    let owner_id = builder.owner_id;
+    let contract_id = builder.data_contract.id();
+
+    let identity_contract_nonce = sdk
+        .get_identity_contract_nonce(owner_id, contract_id, true, builder.settings)
+        .await?;
+
+    let state_transition = match builder
+        .sign_with_nonce(
+            identity_contract_nonce,
+            identity_public_key,
+            signer,
+            sdk.version(),
+        )
+        .await
+    {
+        Ok(transition) => transition,
+        Err(err) => {
+            sdk.rollback_identity_contract_nonce(owner_id, contract_id, identity_contract_nonce)
+                .await;
+            return Err(err);
+        }
+    };
+
+    if let Err(err) = ensure_valid_state_transition_structure(&state_transition, sdk.version()) {
+        sdk.rollback_identity_contract_nonce(owner_id, contract_id, identity_contract_nonce)
+            .await;
+        return Err(err);
+    }
+
+    Ok(state_transition)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -298,6 +373,80 @@ mod tests {
         assert_eq!(
             builder.state_transition_creation_options,
             settings.state_transition_creation_options
+        );
+    }
+
+    #[test]
+    fn with_settings_does_not_overwrite_explicit_user_fee_increase() {
+        let settings_with_seven = PutSettings {
+            user_fee_increase: Some(7),
+            ..Default::default()
+        };
+        let data_contract = Arc::new(
+            get_data_contract_fixture(
+                None,
+                Default::default(),
+                PlatformVersion::latest().protocol_version,
+            )
+            .data_contract_owned(),
+        );
+
+        let builder = DocumentDeleteTransitionBuilder::new(
+            data_contract,
+            "niceDocument".to_string(),
+            Identifier::default(),
+            Identifier::default(),
+        )
+        .with_user_fee_increase(42)
+        .with_settings(settings_with_seven);
+
+        assert_eq!(
+            builder.user_fee_increase,
+            Some(42),
+            "explicit with_user_fee_increase(42) must win over settings.user_fee_increase = Some(7)"
+        );
+    }
+
+    #[test]
+    fn with_settings_does_not_overwrite_explicit_state_transition_creation_options() {
+        let explicit_options = StateTransitionCreationOptions {
+            batch_feature_version: Some(2),
+            ..Default::default()
+        };
+        let settings_options = StateTransitionCreationOptions {
+            batch_feature_version: Some(7),
+            ..Default::default()
+        };
+        assert_ne!(
+            explicit_options, settings_options,
+            "test precondition: explicit and settings options must differ to prove which one wins"
+        );
+        let settings_with_options = PutSettings {
+            state_transition_creation_options: Some(settings_options),
+            ..Default::default()
+        };
+        let data_contract = Arc::new(
+            get_data_contract_fixture(
+                None,
+                Default::default(),
+                PlatformVersion::latest().protocol_version,
+            )
+            .data_contract_owned(),
+        );
+
+        let builder = DocumentDeleteTransitionBuilder::new(
+            data_contract,
+            "niceDocument".to_string(),
+            Identifier::default(),
+            Identifier::default(),
+        )
+        .with_state_transition_creation_options(explicit_options)
+        .with_settings(settings_with_options);
+
+        assert_eq!(
+            builder.state_transition_creation_options,
+            Some(explicit_options),
+            "explicit with_state_transition_creation_options must win over settings value"
         );
     }
 
@@ -502,47 +651,17 @@ impl Sdk {
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<DocumentDeleteResult, Error> {
-        let platform_version = self.version();
-
         let put_settings = delete_document_transition_builder.settings;
-        let owner_id = delete_document_transition_builder.owner_id;
-        let contract_id = delete_document_transition_builder.data_contract.id();
 
-        // Allocate the identity-contract nonce explicitly so we can roll it
-        // back on pre-broadcast failures without leaving the local cache
-        // advanced past a nonce the network never observed.
-        let identity_contract_nonce = self
-            .get_identity_contract_nonce(owner_id, contract_id, true, put_settings)
-            .await?;
-
-        let state_transition = match delete_document_transition_builder
-            .sign_with_nonce(
-                identity_contract_nonce,
-                signing_key,
-                signer,
-                platform_version,
-            )
-            .await
-        {
-            Ok(transition) => transition,
-            Err(err) => {
-                self.rollback_identity_contract_nonce(
-                    owner_id,
-                    contract_id,
-                    identity_contract_nonce,
-                )
-                .await;
-                return Err(err);
-            }
-        };
-
-        if let Err(err) =
-            ensure_valid_state_transition_structure(&state_transition, platform_version)
-        {
-            self.rollback_identity_contract_nonce(owner_id, contract_id, identity_contract_nonce)
-                .await;
-            return Err(err);
-        }
+        // Build/sign/validate via the shared helper so the nonce
+        // allocate/sign/validate/rollback sequence stays in one place.
+        let state_transition = build_signed_document_delete_transition(
+            self,
+            &delete_document_transition_builder,
+            signing_key,
+            signer,
+        )
+        .await?;
 
         // Broadcast: do NOT roll back on broadcast failure — the network may
         // already have observed the nonce. broadcast_and_wait keeps the

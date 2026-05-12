@@ -503,6 +503,23 @@ impl Sdk {
     /// [`refresh_identity_nonce`](Self::refresh_identity_nonce), which
     /// preserves the cached (bumped) value so the cache cannot regress past
     /// a nonce the network may have accepted.
+    ///
+    /// # Scope: identity-contract nonces only
+    ///
+    /// This method is intentionally scoped to **identity-contract nonces**
+    /// — the nonces allocated by [`get_identity_contract_nonce`] for
+    /// `(identity_id, contract_id)` pairs. Today all batch document
+    /// transitions use identity-contract nonces, so the existing document
+    /// prepare/sign-without-broadcast APIs all roll back through this
+    /// single entry point.
+    ///
+    /// Plain identity nonces (allocated via the identity-nonce path used by
+    /// non-batch identity state transitions) are tracked in a separate
+    /// cache and are **not** rolled back here. If/when prepare APIs are
+    /// added for transitions that consume a plain identity nonce, a
+    /// sibling `rollback_identity_nonce` must be introduced first;
+    /// only then should those new prepare APIs adopt the same
+    /// allocate / sign / validate / rollback pattern this method enables.
     pub async fn rollback_identity_contract_nonce(
         &self,
         identity_id: Identifier,

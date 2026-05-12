@@ -1,11 +1,11 @@
 //! Document deletion operations
 
-use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::prelude::{Identifier, UserFeeIncrease};
-use dash_sdk::platform::documents::transitions::DocumentDeleteTransitionBuilder;
-use dash_sdk::platform::transition::validation::ensure_valid_state_transition_structure;
+use dash_sdk::platform::documents::transitions::{
+    build_signed_document_delete_transition, DocumentDeleteTransitionBuilder,
+};
 use dash_sdk::platform::IdentityPublicKey;
 use drive_proof_verifier::ContextProvider;
 use std::ffi::CStr;
@@ -155,89 +155,39 @@ pub unsafe extern "C" fn dash_sdk_document_delete(
             builder = builder.with_state_transition_creation_options(options);
         }
 
-        // Allocate the identity-contract nonce explicitly so any local
-        // pre-broadcast failure (sign/build or serialization) can be rolled
-        // back without leaving the rs-sdk nonce cache advanced past a nonce
-        // the network never observed. We do not broadcast in this prepared
-        // path, so all post-allocation failures here are local.
-        let contract_id_for_nonce = data_contract.id();
-        let identity_contract_nonce = wrapper
-            .sdk
-            .get_identity_contract_nonce(owner_identifier, contract_id_for_nonce, true, settings)
-            .await
-            .map_err(|e| {
-                FFIError::InternalError(format!(
-                    "Failed to allocate identity-contract nonce: {}",
-                    e
-                ))
-            })?;
+        // Delegate the nonce-allocate / sign / structure-validate / rollback
+        // sequence to rs-sdk's shared helper. Any pre-broadcast failure
+        // inside the helper (sign or local structure validation) rolls the
+        // bumped identity-contract nonce back internally, so the local
+        // nonce cache cannot advance past a nonce the network never
+        // observed.
+        let state_transition = build_signed_document_delete_transition(
+            &wrapper.sdk,
+            &builder,
+            identity_public_key,
+            signer,
+        )
+        .await
+        .map_err(|e| {
+            FFIError::InternalError(format!("Failed to create delete transition: {}", e))
+        })?;
 
-        let state_transition = match builder
-            .sign_with_nonce(
-                identity_contract_nonce,
-                identity_public_key,
-                signer,
-                wrapper.sdk.version(),
-            )
-            .await
-        {
-            Ok(transition) => transition,
-            Err(e) => {
-                wrapper
-                    .sdk
-                    .rollback_identity_contract_nonce(
-                        owner_identifier,
-                        contract_id_for_nonce,
-                        identity_contract_nonce,
-                    )
-                    .await;
-                return Err(FFIError::InternalError(format!(
-                    "Failed to create delete transition: {}",
-                    e
-                )));
-            }
-        };
-
-        // Run local structure validation before serialization. Like the
-        // sign step above, any failure here is *pre-broadcast* and must
-        // roll the identity-contract nonce back so the local cache does
-        // not advance past a nonce the network never observed.
-        if let Err(e) =
-            ensure_valid_state_transition_structure(&state_transition, wrapper.sdk.version())
-        {
-            wrapper
-                .sdk
-                .rollback_identity_contract_nonce(
-                    owner_identifier,
-                    contract_id_for_nonce,
-                    identity_contract_nonce,
-                )
-                .await;
-            return Err(FFIError::InternalError(format!(
-                "Delete transition failed structure validation: {}",
-                e
-            )));
-        }
-
-        // Serialize the state transition with bincode
+        // Serialize the state transition with bincode.
+        //
+        // Note on nonce rollback: at this point the shared helper has
+        // already allocated and embedded the identity-contract nonce in
+        // `state_transition` and consumed its rollback handle. `bincode`
+        // encoding into a `Vec<u8>` writes to an in-memory buffer with no
+        // IO, and `Encode` for `StateTransition`'s nested data types has
+        // no failure mode in practice, so this step is effectively
+        // infallible for any transition the helper just returned. A
+        // failure here would leave the local nonce cache advanced by one
+        // until the caller's next refresh, but cannot leave the network
+        // in an inconsistent state because nothing has been broadcast.
         let config = bincode::config::standard();
-        let serialized = match bincode::encode_to_vec(&state_transition, config) {
-            Ok(bytes) => bytes,
-            Err(e) => {
-                wrapper
-                    .sdk
-                    .rollback_identity_contract_nonce(
-                        owner_identifier,
-                        contract_id_for_nonce,
-                        identity_contract_nonce,
-                    )
-                    .await;
-                return Err(FFIError::InternalError(format!(
-                    "Failed to serialize state transition: {}",
-                    e
-                )));
-            }
-        };
+        let serialized = bincode::encode_to_vec(&state_transition, config).map_err(|e| {
+            FFIError::InternalError(format!("Failed to serialize state transition: {}", e))
+        })?;
         debug!(
             size = serialized.len(),
             "[DOCUMENT DELETE] serialized transition size (bytes)"
