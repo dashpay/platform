@@ -66,7 +66,7 @@ const INTERVAL_BLOCKS: u64 = 5;
 const PERPETUAL_WAIT: Duration = Duration::from_secs(240);
 
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
-#[ignore = "long-runtime perpetual claim (≈4 min wall-clock to observe a 5-block testnet cycle); requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access; run with `cargo test -- --ignored`"]
+#[ignore = "TK-002 long-runtime perpetual claim (≈4 min wall-clock to observe a 5-block testnet cycle); requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access. Intermittent `wait_for_balance` timeouts share the upstream `rs-sdk` address-sync race pinned by Found-025 — see TEST_SPEC.md. Test is correct; flips green when upstream lands the fix. Run with: `cargo test -- --ignored`"]
 async fn tk_002_token_claim_perpetual_distribution() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
