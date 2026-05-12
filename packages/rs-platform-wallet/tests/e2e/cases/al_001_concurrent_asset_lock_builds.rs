@@ -85,6 +85,11 @@ const CONCURRENT_LOCK_FUNDING_TOTAL: u64 = 500_000_000;
 const REGISTRATION_FUNDING: u64 = 100_000_000;
 const REGISTRATION_FUNDING_CREDITS: u64 = REGISTRATION_FUNDING + 150_000_000;
 
+/// Fee headroom reserved for the N+1-output UTXO split self-send. The
+/// split tx is small (~1-5K duffs at typical testnet fee rates); 10K
+/// gives comfortable margin so coin selection always succeeds.
+const SPLIT_TX_FEE_RESERVE: u64 = 10_000;
+
 /// Per-step wait deadline. Concurrent-load tests warrant a longer
 /// deadline than the single-shot cases.
 const STEP_TIMEOUT: Duration = Duration::from_secs(180);
@@ -129,7 +134,10 @@ async fn al_001_concurrent_asset_lock_builds() {
     // selection" (QA-011). We build a self-send with N+1 outputs to
     // freshly-derived BIP-44 account-0 receive addresses, each
     // carrying ~CONCURRENT_LOCK_FUNDING_TOTAL / (N+1) duffs.
-    let split_amount = CONCURRENT_LOCK_FUNDING_TOTAL / (N as u64 + 1);
+    // Reserve fee headroom for the split tx itself (1-5K duffs typical;
+    // 10K gives margin). Each downstream concurrent top-up still gets
+    // ~125M duffs minus a small remainder.
+    let split_amount = (CONCURRENT_LOCK_FUNDING_TOTAL - SPLIT_TX_FEE_RESERVE) / (N as u64 + 1);
     let mut split_outputs: Vec<(dashcore::Address, u64)> = Vec::with_capacity(N + 1);
     for _ in 0..=N {
         let addr = s
