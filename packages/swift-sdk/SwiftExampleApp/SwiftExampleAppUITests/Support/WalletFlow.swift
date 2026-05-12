@@ -517,7 +517,7 @@ func runIdentityDiscovery(
     // missed but the menu stayed open, the next iteration re-tapped the
     // same dead spot. Closing-and-reopening the menu forces a fresh
     // accessibility-tree snapshot with a new hit point.
-    let searchSheetNavBar = app.navigationBars["Search Wallets"]
+    let searchSheetNavBar = app.navigationBars["Re-scan for Identities"]
     var sheetOpened = false
     for _ in 0..<3 where !sheetOpened {
         addMenu.tap()
@@ -538,7 +538,7 @@ func runIdentityDiscovery(
     }
     XCTAssertTrue(
         sheetOpened,
-        "Expected Search Wallets sheet to open after tapping the Add menu item.",
+        "Expected Re-scan for Identities sheet to open after tapping the Add menu item.",
         file: file, line: line
     )
 

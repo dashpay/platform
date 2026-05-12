@@ -55,11 +55,17 @@ class AppState: ObservableObject {
         let requestID = networkSwitchRequestID
         isSwitchingNetwork = true
         Task {
-            await switchNetwork(to: currentNetwork)
+            await switchNetwork(to: currentNetwork, requestID: requestID)
             if requestID == networkSwitchRequestID {
                 isSwitchingNetwork = false
             }
         }
+    }
+
+    /// True if `token` is still the most recent network-switch request.
+    /// Stale tasks bail out before mutating shared state.
+    private func isCurrent(_ token: UInt64) -> Bool {
+        token == networkSwitchRequestID
     }
 
     // Identity-key signing is performed per-flow via a fresh
@@ -132,8 +138,9 @@ class AppState: ObservableObject {
         showError = true
     }
 
-    func switchNetwork(to network: Network) async {
+    func switchNetwork(to network: Network, requestID: UInt64) async {
         guard let modelContext = modelContext else { return }
+        guard isCurrent(requestID) else { return }
 
         // Identities, contracts, documents, and token balances are
         // scoped per-network inside SwiftData. `@Query` consumers
@@ -149,13 +156,16 @@ class AppState: ObservableObject {
 
             // Create new SDK instance for the network
             let newSDK = try SDK(network: network)
+            guard isCurrent(requestID) else { return }
             sdk = newSDK
 
             // Load known contracts into the SDK's trusted provider
             await loadKnownContractsIntoSDK(sdk: newSDK, modelContext: modelContext)
+            guard isCurrent(requestID) else { return }
 
             isLoading = false
         } catch {
+            guard isCurrent(requestID) else { return }
             sdk = nil
             showError(message: "Failed to switch network: \(error.localizedDescription)")
             NSLog("❌ AppState.switchNetwork: \(error)")
