@@ -25,6 +25,14 @@ struct CreateIdentityView: View {
     @EnvironmentObject var walletManager: PlatformWalletManager
     @EnvironmentObject var platformState: AppState
 
+    /// Called when the user taps "View" on the success state.
+    /// Carries the newly created identity id back to the parent
+    /// (typically `IdentitiesContentView`), which is expected to
+    /// (a) dismiss this sheet and (b) push `IdentityDetailView`
+    /// in its own `NavigationStack`. Empty default makes the view
+    /// usable in places that don't need post-create navigation.
+    var onViewIdentity: (Data) -> Void = { _ in }
+
     /// Default number of Platform identity authentication keys to
     /// register in this first-pass flow. First key is MASTER, the
     /// rest are HIGH. Advanced override is intentionally not exposed
@@ -117,28 +125,57 @@ struct CreateIdentityView: View {
     /// the submit section swaps to a success banner and auto-dismiss.
     @State private var createdIdentityId: Data? = nil
 
+    /// Active registration controller for the Core-funded path
+    /// while the registration is in flight. Set in
+    /// `submitCoreFunded`; drives the pushed
+    /// `RegistrationProgressView` destination. Cleared on
+    /// terminal phase by `observeController`.
+    @State private var activeController: IdentityRegistrationController? = nil
+
+    /// Toggle for the pushed registration-progress destination.
+    /// `submit()` sets this to `true` once the coordinator has
+    /// spawned a controller; the dedicated screen then owns the
+    /// rest of the user flow (progress steps + success / error +
+    /// "View Identity" navigation).
+    @State private var showProgressDestination: Bool = false
+
     var body: some View {
         NavigationStack {
             Form {
-                // Once registration succeeds, collapse the form down to
-                // just the success banner — the input sections (funding
-                // source, amount, registration-index stepper with its
-                // now-irrelevant collision warning) are noise at that
-                // point.
-                if createdIdentityId != nil {
-                    successSection
-                } else {
-                    sourceWalletSection
-                    fundingSection
-                    amountSection
-                    identityIndexSection
-                    if canSubmit {
-                        submitSection
-                    }
+                sourceWalletSection
+                fundingSection
+                amountSection
+                identityIndexSection
+                if canSubmit {
+                    submitSection
                 }
             }
             .navigationTitle("Create Identity")
             .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(isPresented: $showProgressDestination) {
+                // Standalone progress screen for the spawned
+                // controller. Owns the 5-step progress UI and the
+                // terminal success / failure sections. The "View"
+                // button on success closes the sheet AND tells
+                // the parent which identity to navigate to via
+                // `onViewIdentity`.
+                if let controller = activeController {
+                    RegistrationProgressView(
+                        controller: controller,
+                        onViewIdentity: { identityId in
+                            // Tell the parent first (it stores
+                            // the id and triggers its own
+                            // navigation), then dismiss the
+                            // sheet. SwiftUI processes the state
+                            // update before the dismissal
+                            // animation completes, so the parent
+                            // is already primed to push.
+                            onViewIdentity(identityId)
+                            dismiss()
+                        }
+                    )
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") { dismiss() }
@@ -349,6 +386,11 @@ struct CreateIdentityView: View {
     }
 
     private var submitSection: some View {
+        // The active progress / success / error UI lives on the
+        // pushed `RegistrationProgressView` destination, NOT
+        // inline. Once `submit()` spawns a controller and flips
+        // `showProgressDestination` to true, the user is navigated
+        // there and this form steps off-screen.
         Section {
             Button {
                 submit()
@@ -370,32 +412,12 @@ struct CreateIdentityView: View {
         }
     }
 
-    /// Success banner + "Done" button shown after the identity is
-    /// registered and persisted. Replaces the submit section so
-    /// the user can't accidentally double-submit.
-    private var successSection: some View {
-        Section {
-            VStack(alignment: .leading, spacing: 8) {
-                Label("Identity created", systemImage: "checkmark.seal.fill")
-                    .foregroundColor(.green)
-                    .font(.headline)
-                if let id = createdIdentityId {
-                    Text(id.toBase58String())
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundColor(.secondary)
-                        .textSelection(.enabled)
-                }
-                Button {
-                    dismiss()
-                } label: {
-                    Text("Done")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .padding(.top, 4)
-            }
-        }
-    }
+    // `successSection` was removed when the dedicated
+    // `RegistrationProgressView` destination took ownership of the
+    // success / failure terminal UI (including the "View Identity"
+    // navigation). The form here is input-only; submission pushes
+    // to the progress destination, which renders the post-
+    // registration state.
 
     // MARK: - Derived state
 
@@ -646,6 +668,14 @@ struct CreateIdentityView: View {
             }
         )
 
+        // Capture the controller for the pushed
+        // `RegistrationProgressView` destination, then trigger the
+        // navigation. The destination owns the progress UI + the
+        // success/failure terminal state from here on; this view
+        // becomes a no-op until the user pops back.
+        self.activeController = controller
+        self.showProgressDestination = true
+
         // Observe phase transitions to mirror onto this view's
         // local success / error state. The controller stays in the
         // coordinator independently of this view's lifetime, so
@@ -691,10 +721,22 @@ struct CreateIdentityView: View {
                         )
                     }
                     self.isCreating = false
+                    // Do NOT clear `activeController` here — the
+                    // pushed `RegistrationProgressView` destination
+                    // is bound to `if let controller = activeController`,
+                    // so nilling it tears the destination down and
+                    // SwiftUI pops back to the form before the user
+                    // sees the success state. The controller lives
+                    // on `walletManager.registrationCoordinator`
+                    // anyway and is purged by the coordinator's
+                    // ~30 s post-completion retention.
                     return
                 case .failed(let message):
                     self.submitError = .init(message: message)
                     self.isCreating = false
+                    // Same rationale as `.completed`: keep the
+                    // controller so the destination can render
+                    // the inline failure state.
                     return
                 default:
                     continue

@@ -18,6 +18,24 @@ struct IdentitiesContentView: View {
     @State private var showingLoadIdentity = false
     @State private var showingCreateIdentity = false
     @State private var showingSearchWallets = false
+    /// Identity id captured from `CreateIdentityView`'s "View"
+    /// button after a successful registration. Setting this drives
+    /// the `.navigationDestination` push to `IdentityDetailView`.
+    /// Wrapped in a small `Identifiable` shim so the destination
+    /// API has a stable per-id identity to diff on — using `Data`
+    /// directly caused a SwiftUI hit-test glitch where Pickers on
+    /// the sheet stopped responding to taps.
+    @State private var navigateToCreatedIdentity: CreatedIdentityNavTarget?
+
+    /// Item shim for `.navigationDestination(item:)`. Carries the
+    /// raw identity id and exposes itself as `Identifiable` via a
+    /// `UUID` so SwiftUI's navigation diffing treats each
+    /// "register-then-view" cycle as a distinct push, even when
+    /// the user retries with the same identity id.
+    struct CreatedIdentityNavTarget: Identifiable, Hashable {
+        let id = UUID()
+        let identityId: Data
+    }
     /// Identity targeted by a pending Remove swipe. Non-nil presents
     /// the confirmation dialog below. Stored as a reference rather than
     /// an id so the dialog can show the display name / truncated id
@@ -148,8 +166,17 @@ struct IdentitiesContentView: View {
                 .environmentObject(platformState)
         }
         .sheet(isPresented: $showingCreateIdentity) {
-            CreateIdentityView()
-                .environmentObject(platformState)
+            CreateIdentityView(onViewIdentity: { identityId in
+                // The sheet has already dismissed itself; capture
+                // the id so the navigationDestination below pushes
+                // `IdentityDetailView` once the sheet animation
+                // tears down.
+                navigateToCreatedIdentity = CreatedIdentityNavTarget(identityId: identityId)
+            })
+            .environmentObject(platformState)
+        }
+        .navigationDestination(item: $navigateToCreatedIdentity) { target in
+            IdentityDetailView(identityId: target.identityId)
         }
         .sheet(isPresented: $showingSearchWallets) {
             SearchWalletsForIdentitiesView()

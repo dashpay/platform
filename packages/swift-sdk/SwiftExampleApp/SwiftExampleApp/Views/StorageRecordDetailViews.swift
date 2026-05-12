@@ -57,6 +57,22 @@ struct IdentityStorageDetailView: View {
 
     var body: some View {
         Form {
+            Section {
+                // Surface the operational identity view from the
+                // storage explorer — the StorageExplorer page is
+                // metadata-only; the live view (balance, top-up,
+                // documents, etc.) lives in IdentityDetailView.
+                NavigationLink {
+                    IdentityDetailView(identityId: record.identityId)
+                } label: {
+                    HStack {
+                        Text("View Identity")
+                        Spacer()
+                        Image(systemName: "arrow.right")
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
             Section("Core") {
                 FieldRow(label: "ID (Base58)", value: record.identityIdBase58)
                 FieldRow(label: "ID (Hex)", value: record.identityIdString)
@@ -1778,6 +1794,32 @@ struct WalletManagerMetadataStorageDetailView: View {
 struct AssetLockStorageDetailView: View {
     let record: PersistentAssetLock
 
+    /// Look up the operational identity at this asset lock's
+    /// `(walletId, identityIndex)` slot. Populated only for
+    /// IdentityRegistration / IdentityTopUp funding types — the
+    /// other funding types (invitation / asset-lock-address top-up)
+    /// don't bind to a specific identity slot on this wallet.
+    @Query private var linkedIdentities: [PersistentIdentity]
+
+    init(record: PersistentAssetLock) {
+        self.record = record
+        let walletId = record.walletId
+        // `PersistentAssetLock.identityIndexRaw` is `Int32` (the
+        // changeset FFI uses i32 to match the upstream tracked
+        // type), but `PersistentIdentity.identityIndex` is `UInt32`
+        // (the DIP-9 slot is unsigned). Bridge with a `UInt32`
+        // cast captured in Swift before predicate construction —
+        // SwiftData's `#Predicate` macro doesn't allow inline
+        // conversions inside the closure body.
+        let identityIndex = UInt32(bitPattern: record.identityIndexRaw)
+        _linkedIdentities = Query(
+            filter: #Predicate<PersistentIdentity> { identity in
+                identity.wallet?.walletId == walletId
+                    && identity.identityIndex == identityIndex
+            }
+        )
+    }
+
     var body: some View {
         Form {
             Section("Asset Lock") {
@@ -1787,6 +1829,25 @@ struct AssetLockStorageDetailView: View {
                 FieldRow(label: "Identity Index", value: "\(record.identityIndexRaw)")
                 FieldRow(label: "Amount (duffs)", value: "\(record.amountDuffs)")
                 FieldRow(label: "Wallet ID", value: hexString(record.walletId))
+            }
+            if isIdentityFunding, let identity = linkedIdentities.first {
+                // Bridge to the operational identity detail view
+                // from inside the storage page. Separate section
+                // so the row is visually clearly a navigation
+                // affordance — a single `NavigationLink` chevron,
+                // not mixed in with the plain `FieldRow` text rows
+                // above.
+                Section("Identity") {
+                    NavigationLink {
+                        IdentityDetailView(identityId: identity.identityId)
+                    } label: {
+                        Text(identity.identityIdBase58)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
             }
             Section("Bytes") {
                 FieldRow(label: "Transaction Bytes", value: "\(record.transactionBytes.count) bytes")
@@ -1824,5 +1885,13 @@ struct AssetLockStorageDetailView: View {
         case 5: return "AssetLockShieldedAddressTopUp"
         default: return "Unknown(\(raw))"
         }
+    }
+
+    /// True when this asset lock funded an identity at a specific
+    /// `(walletId, identityIndex)` slot — i.e. registration or
+    /// top-up. The other funding types don't deterministically
+    /// resolve to a single identity on this wallet.
+    private var isIdentityFunding: Bool {
+        record.fundingTypeRaw == 0 || record.fundingTypeRaw == 1
     }
 }
