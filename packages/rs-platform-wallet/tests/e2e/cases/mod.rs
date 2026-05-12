@@ -16,6 +16,7 @@ pub mod dpns_001_register_name;
 pub mod found_004_fund_from_asset_lock_silent_fallback;
 pub mod found_006_topup_index_ignored;
 pub mod found_008_lock_notify_missed_wakeup;
+pub mod found_012_account_type_tunnel_vision;
 pub mod id_001_register_identity_from_addresses;
 pub mod id_002_top_up_identity;
 pub mod id_002b_asset_lock_top_up;
