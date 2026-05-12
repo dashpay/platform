@@ -11,6 +11,7 @@ import SwiftData
 struct IdentitiesContentView: View {
     @EnvironmentObject var platformState: AppState
     @EnvironmentObject var platformBalanceSyncService: PlatformBalanceSyncService
+    @EnvironmentObject var walletManager: PlatformWalletManager
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \PersistentIdentity.identityIndex)
     private var identities: [PersistentIdentity]
@@ -25,6 +26,7 @@ struct IdentitiesContentView: View {
 
     var body: some View {
         List {
+            pendingRegistrationsSection
             if identities.isEmpty {
                 Section {
                     VStack(spacing: 12) {
@@ -155,6 +157,30 @@ struct IdentitiesContentView: View {
         .refreshable {
             await platformBalanceSyncService.performSync()
         }
+    }
+
+    /// "Pending registrations" row group. Surfaces every controller
+    /// the `RegistrationCoordinator` is tracking — both in-flight
+    /// flows (the user dismissed `CreateIdentityView` but the
+    /// registration is still running) and terminal-but-undismissed
+    /// flows (`.completed` rows linger ~30s, `.failed` rows linger
+    /// indefinitely until the user manually dismisses). Empty when
+    /// the coordinator's map is empty, in which case the section
+    /// collapses to nothing so the rest of the screen isn't pushed
+    /// down by an "empty" header.
+    ///
+    /// Observation: wrap the coordinator in a dedicated
+    /// `PendingRegistrationsList` so its `@ObservedObject` reads
+    /// the coordinator directly. Reading
+    /// `walletManager.registrationCoordinator` inside this view's
+    /// body would not subscribe — `walletManager` is the
+    /// `EnvironmentObject` we observe, not the coordinator hung off
+    /// it — so map mutations wouldn't trigger a redraw.
+    @ViewBuilder
+    private var pendingRegistrationsSection: some View {
+        PendingRegistrationsList(
+            coordinator: walletManager.registrationCoordinator
+        )
     }
 
     /// Short title for the removal confirmation dialog. Uses

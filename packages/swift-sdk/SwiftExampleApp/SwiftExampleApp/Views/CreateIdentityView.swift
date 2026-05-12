@@ -597,7 +597,16 @@ struct CreateIdentityView: View {
     /// transaction from BIP44 account #0's UTXOs (mempool `account_index = 0`
     /// in `create_funded_asset_lock_proof`), broadcasts it, waits for
     /// the instant-send lock, and submits the IdentityCreate state
-    /// transition. Iter 1: single in-flight spinner, no stage UI.
+    /// transition.
+    ///
+    /// Iter 3 swap (the previous iter-1 path was a single in-flight
+    /// spinner inside this view): the FFI call moves to a
+    /// `RegistrationCoordinator`-hosted `IdentityRegistrationController`
+    /// hung off the `PlatformWalletManager`. The view binds the
+    /// "Registering…" indicator to the controller's `phase` so
+    /// dismissing the sheet doesn't abort the registration —
+    /// `RegistrationProgressView` can be opened from the home /
+    /// identities tab to follow the same controller through.
     private func submitCoreFunded(
         walletId: Data,
         identityIndex: UInt32,
@@ -613,35 +622,115 @@ struct CreateIdentityView: View {
 
         isCreating = true
 
-        Task {
-            do {
+        // Reuse an existing controller for this slot if one is in
+        // flight (the coordinator's single-flight gate makes the
+        // re-submit a no-op at the controller layer), otherwise
+        // spawn a fresh one. The persistence side-effects
+        // (`persistCreatedIdentity`, `markIdentitySlotUsed`) live
+        // here in the view so we still have access to
+        // `modelContext` / `platformState`; the controller's body
+        // is responsible only for the FFI call + the success
+        // identifier.
+        let coordinator = walletManager.registrationCoordinator
+        let controller = coordinator.startRegistration(
+            walletId: walletId,
+            identityIndex: identityIndex,
+            body: {
                 let (identityId, _) = try await managedWallet.registerIdentityWithFunding(
                     amountDuffs: amountDuffs,
                     identityIndex: identityIndex,
                     identityPubkeys: identityPubkeys,
                     signer: signer
                 )
+                return identityId
+            }
+        )
 
-                try await MainActor.run {
-                    try persistCreatedIdentity(
-                        identityId: identityId,
-                        network: network
-                    )
-                    markIdentitySlotUsed(
-                        walletId: walletId,
-                        identityIndex: identityIndex
-                    )
-                    try modelContext.save()
-                    self.createdIdentityId = identityId
+        // Observe phase transitions to mirror onto this view's
+        // local success / error state. The controller stays in the
+        // coordinator independently of this view's lifetime, so
+        // the same flow remains reachable from
+        // `RegistrationProgressView` after dismissal.
+        observeController(
+            controller,
+            walletId: walletId,
+            identityIndex: identityIndex,
+            network: network
+        )
+    }
+
+    /// Bridge a controller's phase transitions to this view's
+    /// `createdIdentityId` / `submitError` / `isCreating` state.
+    /// The observer task auto-cancels when this view deallocates
+    /// (Swift task lifecycle on the captured `self`), but the
+    /// controller itself outlives the view.
+    private func observeController(
+        _ controller: IdentityRegistrationController,
+        walletId: Data,
+        identityIndex: UInt32,
+        network: Network
+    ) {
+        Task {
+            for await phase in phaseStream(controller: controller) {
+                switch phase {
+                case .completed(let identityId):
+                    do {
+                        try persistCreatedIdentity(
+                            identityId: identityId,
+                            network: network
+                        )
+                        markIdentitySlotUsed(
+                            walletId: walletId,
+                            identityIndex: identityIndex
+                        )
+                        try modelContext.save()
+                        self.createdIdentityId = identityId
+                    } catch {
+                        self.submitError = .init(
+                            message: error.localizedDescription
+                        )
+                    }
                     self.isCreating = false
-                }
-            } catch {
-                await MainActor.run {
-                    self.submitError = .init(
-                        message: error.localizedDescription
-                    )
+                    return
+                case .failed(let message):
+                    self.submitError = .init(message: message)
                     self.isCreating = false
+                    return
+                default:
+                    continue
                 }
+            }
+        }
+    }
+
+    /// Poll the controller's `phase` until it reaches a terminal
+    /// state (`.completed` / `.failed`) and yield each transition.
+    /// Combine's `$phase.values` would be more idiomatic, but
+    /// `AnyCancellable` isn't `Sendable` and the @Sendable closure
+    /// of `AsyncStream`'s builder rejects it. A small polling loop
+    /// avoids the bridge entirely.
+    private func phaseStream(
+        controller: IdentityRegistrationController
+    ) -> AsyncStream<IdentityRegistrationController.Phase> {
+        AsyncStream { continuation in
+            Task { @MainActor in
+                var lastEmitted: IdentityRegistrationController.Phase? = nil
+                while !Task.isCancelled {
+                    let phase = controller.phase
+                    if phase != lastEmitted {
+                        continuation.yield(phase)
+                        lastEmitted = phase
+                    }
+                    switch phase {
+                    case .completed, .failed:
+                        continuation.finish()
+                        return
+                    default:
+                        break
+                    }
+                    try? await Task.sleep(nanoseconds: 100_000_000)
+                }
+                continuation.finish()
             }
         }
     }
