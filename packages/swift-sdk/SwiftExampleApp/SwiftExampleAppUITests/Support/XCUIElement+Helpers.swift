@@ -117,8 +117,18 @@ func failIfRecoveryPromptVisible(
     file: StaticString = #filePath,
     line: UInt = #line
 ) {
-    let recoverWalletAlert = app.alerts["Recover Wallet?"]
-    if recoverWalletAlert.waitForExistence(timeout: timeout) {
+    // Title is plural for N>1 orphans, singular for one — match
+    // either label in a single predicate-based query so the
+    // total wait stays bounded by `timeout` and both variants
+    // are detected symmetrically.
+    let recoveryAlert = app.alerts.matching(
+        NSPredicate(
+            format: "label == %@ OR label == %@",
+            "Recover Wallets?",
+            "Recover Wallet?"
+        )
+    ).firstMatch
+    if recoveryAlert.waitForExistence(timeout: timeout) {
         XCTFail(
             "Pre-existing orphan-mnemonic recovery alert is blocking the UI test. "
             + "Clean simulator state or resolve the alert manually before running this flow.",

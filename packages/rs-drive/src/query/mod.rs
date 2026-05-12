@@ -3,12 +3,18 @@ use std::sync::Arc;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub use {
     conditions::{ValueClause, WhereClause, WhereOperator},
+    drive_document_count_query::{DocumentCountMode, DriveDocumentCountQuery, SplitCountEntry},
     grovedb::{PathQuery, Query, QueryItem, SizedQuery},
     ordering::OrderClause,
     single_document_drive_query::SingleDocumentDriveQuery,
     single_document_drive_query::SingleDocumentDriveQueryContestedStatus,
     vote_polls_by_end_date_query::VotePollsByEndDateDriveQuery,
     vote_query::IdentityBasedVoteDriveQuery,
+};
+
+#[cfg(feature = "server")]
+pub use drive_document_count_query::{
+    DocumentCountRequest, DocumentCountResponse, RangeCountOptions,
 };
 // Imports available when either "server" or "verify" features are enabled
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -153,6 +159,10 @@ pub mod filter;
 /// A query to get the token's status
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod token_status_drive_query;
+
+/// A query to count documents using CountTree elements
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod drive_document_count_query;
 
 /// A Query Syntax Validation Result that contains data
 pub type QuerySyntaxValidationResult<TData> = ValidationResult<TData, QuerySyntaxError>;

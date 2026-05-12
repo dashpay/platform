@@ -1,5 +1,6 @@
 use dashcore::{Address as DashAddress, Transaction};
 use key_wallet::account::account_type::StandardAccountType;
+use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 
 use crate::broadcaster::TransactionBroadcaster;
 use crate::{CoreWallet, PlatformWalletError};
@@ -27,6 +28,13 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// Uses key-wallet's [`TransactionBuilder`] for UTXO selection, fee
     /// estimation, and signing. Change is sent to the next internal address
     /// of the specified account.
+    ///
+    /// **Note (smell):** the body of this method is a near-duplicate of
+    /// `ManagedWalletInfo::build_and_sign_transaction` in `key-wallet`
+    /// (`wallet/managed_wallet_info/transaction_building.rs`).
+    /// It's reimplemented here because the upstream helper is BIP-44-only,
+    /// parametrizing upstream on `AccountTypePreference` so it picks
+    /// `standard_bip{32,44}_accounts` would be a trivial change
     pub async fn send_to_addresses(
         &self,
         account_type: StandardAccountType,
@@ -53,83 +61,68 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
 
             let current_height = info.core_wallet.synced_height();
 
-            // Look up managed account and immutable Account (for xpub) based on type.
-            let (managed_accounts, wallet_accounts) = match account_type {
+            let (managed_account, account) = match account_type {
                 StandardAccountType::BIP44Account => (
-                    &mut info.core_wallet.accounts.standard_bip44_accounts,
-                    &wallet.accounts.standard_bip44_accounts,
+                    info.core_wallet
+                        .accounts
+                        .standard_bip44_accounts
+                        .get_mut(&account_index)
+                        .ok_or_else(|| {
+                            PlatformWalletError::TransactionBuild(format!(
+                                "{:?} managed account {} not found",
+                                account_type, account_index
+                            ))
+                        })?,
+                    wallet
+                        .accounts
+                        .standard_bip44_accounts
+                        .get(&account_index)
+                        .ok_or_else(|| {
+                            PlatformWalletError::TransactionBuild(format!(
+                                "{:?} account {} not found in wallet",
+                                account_type, account_index
+                            ))
+                        })?,
                 ),
                 StandardAccountType::BIP32Account => (
-                    &mut info.core_wallet.accounts.standard_bip32_accounts,
-                    &wallet.accounts.standard_bip32_accounts,
+                    info.core_wallet
+                        .accounts
+                        .standard_bip32_accounts
+                        .get_mut(&account_index)
+                        .ok_or_else(|| {
+                            PlatformWalletError::TransactionBuild(format!(
+                                "{:?} managed account {} not found",
+                                account_type, account_index
+                            ))
+                        })?,
+                    wallet
+                        .accounts
+                        .standard_bip32_accounts
+                        .get(&account_index)
+                        .ok_or_else(|| {
+                            PlatformWalletError::TransactionBuild(format!(
+                                "{:?} account {} not found in wallet",
+                                account_type, account_index
+                            ))
+                        })?,
                 ),
             };
 
-            let account = managed_accounts.get(&account_index).ok_or_else(|| {
-                PlatformWalletError::TransactionBuild(format!(
-                    "{:?} account {} not found",
-                    account_type, account_index
-                ))
-            })?;
-
-            let spendable: Vec<_> = account
-                .spendable_utxos(current_height)
-                .into_iter()
-                .cloned()
-                .collect();
-
-            let xpub = wallet_accounts
-                .get(&account_index)
-                .map(|a| a.account_xpub)
-                .ok_or_else(|| {
-                    PlatformWalletError::TransactionBuild(format!(
-                        "{:?} account {} not found in wallet",
-                        account_type, account_index
-                    ))
-                })?;
-
-            let mut builder = TransactionBuilder::new();
+            let mut builder = TransactionBuilder::new()
+                .set_current_height(current_height)
+                .set_selection_strategy(SelectionStrategy::LargestFirst)
+                .set_funding(managed_account, account);
             for (addr, amount) in &outputs {
-                builder = builder
-                    .add_output(addr, *amount)
-                    .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
+                builder = builder.add_output(addr, *amount);
             }
 
-            // Need mutable access for change address derivation.
-            let change_account = managed_accounts.get_mut(&account_index).ok_or_else(|| {
-                PlatformWalletError::TransactionBuild(format!(
-                    "{:?} managed account {} not found",
-                    account_type, account_index
-                ))
-            })?;
-
-            let change_addr = change_account
-                .next_change_address(Some(&xpub), true)
+            let (tx, _fee) = builder
+                .build_signed(wallet, |addr| {
+                    managed_account.address_derivation_path(&addr)
+                })
+                .await
                 .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
-
-            builder = builder.set_change_address(change_addr);
-
-            builder = builder
-                .select_inputs(
-                    &spendable,
-                    SelectionStrategy::LargestFirst,
-                    current_height,
-                    |utxo| {
-                        for account in info.core_wallet.accounts.all_accounts() {
-                            if let Some(path) = account.address_derivation_path(&utxo.address) {
-                                if let Ok(key) = wallet.derive_private_key(&path) {
-                                    return Some(key);
-                                }
-                            }
-                        }
-                        None
-                    },
-                )
-                .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
-
-            builder
-                .build()
-                .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?
+            tx
         };
 
         self.broadcast_transaction(&tx).await?;

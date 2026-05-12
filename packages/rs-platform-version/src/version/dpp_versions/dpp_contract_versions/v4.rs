@@ -5,8 +5,8 @@ use crate::version::dpp_versions::dpp_contract_versions::{
 };
 use versioned_feature_core::FeatureVersionBounds;
 
-// Introduced in protocol version 12, document_type_schema is changed to v1
-// which adds additionalProperties: false at the top level of document meta-schema
+// Introduced in protocol version 12. Adds documents_countable feature via try_from_schema v2,
+// and uses v1 document meta-schema with additionalProperties: false at the top level.
 pub const CONTRACT_VERSIONS_V4: DPPContractVersions = DPPContractVersions {
     max_serialized_size: 65000,
     contract_serialization_version: FeatureVersionBounds {
@@ -34,7 +34,7 @@ pub const CONTRACT_VERSIONS_V4: DPPContractVersions = DPPContractVersions {
             index_levels_from_indices: 0,
         },
         class_method_versions: DocumentTypeClassMethodVersions {
-            try_from_schema: 1,
+            try_from_schema: 2, // changed: supports documentsCountable
             create_document_types_from_document_schemas: 1,
         },
         structure_version: 0,

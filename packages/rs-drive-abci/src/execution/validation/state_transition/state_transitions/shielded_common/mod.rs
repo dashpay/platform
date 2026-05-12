@@ -127,6 +127,9 @@ pub fn reconstruct_and_verify_bundle(
                 InvalidShieldedProofError::new("invalid value commitment bytes".to_string())
             })?;
 
+        // `Action::from_parts` returns `None` when `rk` is the identity key
+        // (an Orchard hardening added upstream in 0.13). Reject those as
+        // malformed rather than silently dropping them.
         let action = Action::from_parts(
             nullifier,
             rk,
@@ -138,7 +141,10 @@ pub fn reconstruct_and_verify_bundle(
             ),
             cv_net,
             redpallas::Signature::from(a.spend_auth_sig),
-        );
+        )
+        .ok_or_else(|| {
+            InvalidShieldedProofError::new("action has identity randomizer key".to_string())
+        })?;
         orchard_actions.push(action);
     }
 

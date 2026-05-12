@@ -117,7 +117,13 @@ impl Drive {
             &platform_version.drive,
         )?;
 
-        if let Some(Element::CountSumTree(_, count, sum, _)) = tree_element {
+        // The recent-nullifiers subtree is wrapped in `Element::NotSummed` so
+        // that its sum side does not propagate into the enclosing shielded
+        // pool SumTree. `underlying()` peels the wrapper so we can read the
+        // inner CountSumTree's own (count, sum) for the compaction trigger.
+        if let Some(Element::CountSumTree(_, count, sum, _)) =
+            tree_element.as_ref().map(|e| e.underlying())
+        {
             let max_blocks = platform_version
                 .drive
                 .methods
@@ -131,8 +137,8 @@ impl Drive {
 
             // Check if either threshold would be exceeded after adding the current block
             // count + 1 for the new block, sum + current nullifiers count
-            let new_count = count + 1;
-            let new_sum = sum + nullifiers.len() as i64;
+            let new_count = *count + 1;
+            let new_sum = *sum + nullifiers.len() as i64;
 
             if new_count >= max_blocks || new_sum >= max_nullifiers {
                 // Trigger compaction, including the current block's nullifiers

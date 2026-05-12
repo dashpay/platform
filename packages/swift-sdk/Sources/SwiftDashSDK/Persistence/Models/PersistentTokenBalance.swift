@@ -4,6 +4,11 @@ import SwiftData
 /// SwiftData model for persisting token balance data
 @Model
 public final class PersistentTokenBalance {
+    /// Index `networkRaw` for per-network balance scans. Token-balance
+    /// rows are aggregated per-identity per-token; UI surfaces always
+    /// scope to the active network.
+    #Index<PersistentTokenBalance>([\.networkRaw])
+
     // MARK: - Core Properties
     public var tokenId: String
     public var identityId: Data

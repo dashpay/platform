@@ -147,7 +147,14 @@ struct TokenDetailsView: View {
                 InfoRow(label: "Max Supply:", value: "Unlimited")
             }
 
-            InfoRow(label: "Max Supply Changeable:", value: token.maxSupplyChangeRules != nil ? "Yes" : "No")
+            // `nil` rules and rules whose `authorizedToMakeChange` is
+            // `NoOne` are both effectively "not changeable" — the
+            // bartek05053-style permanently-locked rule (NoOne admin,
+            // NoOne taker, no escape clauses) shipped a non-nil rules
+            // object that the chain still rejects every change for.
+            // Use the same `hasAuthorizedTakers` predicate the
+            // features section already uses for truth-in-UI.
+            InfoRow(label: "Max Supply Changeable:", value: token.maxSupplyChangeRules?.hasAuthorizedTakers == true ? "Yes" : "No")
         }
         .padding()
         .background(Color(UIColor.secondarySystemBackground))
@@ -160,14 +167,25 @@ struct TokenDetailsView: View {
             SectionHeader(title: "Token Features")
 
             VStack(alignment: .leading, spacing: 8) {
-                TokenFeatureRow(label: "Can be minted", isEnabled: token.manualMintingRules != nil)
-                TokenFeatureRow(label: "Can be burned", isEnabled: token.manualBurningRules != nil)
-                TokenFeatureRow(label: "Can be frozen", isEnabled: token.freezeRules != nil)
-                TokenFeatureRow(label: "Can be unfrozen", isEnabled: token.unfreezeRules != nil)
-                TokenFeatureRow(label: "Can destroy frozen funds", isEnabled: token.destroyFrozenFundsRules != nil)
+                TokenFeatureRow(label: "Can be minted",
+                                isEnabled: token.manualMintingRules?.hasAuthorizedTakers ?? false)
+                TokenFeatureRow(label: "Can be burned",
+                                isEnabled: token.manualBurningRules?.hasAuthorizedTakers ?? false)
+                TokenFeatureRow(label: "Can be frozen",
+                                isEnabled: token.freezeRules?.hasAuthorizedTakers ?? false)
+                TokenFeatureRow(label: "Can be unfrozen",
+                                isEnabled: token.unfreezeRules?.hasAuthorizedTakers ?? false)
+                TokenFeatureRow(label: "Can destroy frozen funds",
+                                isEnabled: token.destroyFrozenFundsRules?.hasAuthorizedTakers ?? false)
                 TokenFeatureRow(label: "Transfer to frozen allowed", isEnabled: token.allowTransferToFrozenBalance)
-                TokenFeatureRow(label: "Emergency action available", isEnabled: token.emergencyActionRules != nil)
-                TokenFeatureRow(label: "Started as paused", isEnabled: token.isPaused)
+                TokenFeatureRow(label: "Emergency action available",
+                                isEnabled: token.emergencyActionRules?.hasAuthorizedTakers ?? false)
+                // `token.isPaused` reflects live chain state (reconciled
+                // via `TokenActionPermissionsView.refreshTokenStatus` and
+                // flipped on successful pause/resume), not the immutable
+                // `startAsPaused` config flag — present-tense label
+                // matches what's actually being read.
+                TokenFeatureRow(label: "Currently paused", isEnabled: token.isPaused)
             }
         }
         .padding()
@@ -392,5 +410,17 @@ struct ControlRuleView: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
+    }
+}
+
+fileprivate extension ChangeControlRules {
+    /// `true` when this rule exists *and* names someone allowed to act
+    /// on it. A rule with `authorizedToMakeChange == "NoOne"` is a
+    /// feature that's been intentionally shipped-but-locked — for
+    /// truth-in-UI purposes that should read as "not available," the
+    /// same way `TokenActionEvaluator` already denies the matching
+    /// row on the actions screen.
+    var hasAuthorizedTakers: Bool {
+        authorizedToMakeChange != AuthorizedActionTakers.noOne.rawValue
     }
 }

@@ -10,6 +10,7 @@ struct CoreContentView: View {
     @EnvironmentObject var shieldedService: ShieldedService
     @State private var showProofDetail = false
     @State private var masternodesEnabled: Bool = true
+    @State private var platformSyncExpanded: Bool = false
     // Progress values come from PlatformWalletManager (polled from FFI each second)
 
     /// All persisted platform addresses across every wallet. Summed
@@ -19,14 +20,38 @@ struct CoreContentView: View {
     /// (which only reflects the currently-configured wallet).
     @Query private var platformAddresses: [PersistentPlatformAddress]
 
-    /// Aggregate platform credit balance across every wallet on disk.
-    private var aggregatePlatformBalance: UInt64 {
-        platformAddresses.reduce(0) { $0 + $1.balance }
+    /// All persisted wallets — used as the network-scoping pivot for
+    /// `platformAddresses`. `PersistentPlatformAddress` doesn't carry
+    /// a `networkRaw` column itself; the canonical join is through
+    /// `walletId` to the parent `PersistentWallet.networkRaw`. We
+    /// build a `Set<Data>` for the active network and filter the
+    /// address aggregate against it so switching to local doesn't
+    /// keep showing testnet sums.
+    @Query private var allWallets: [PersistentWallet]
+
+    private var walletIdsOnNetwork: Set<Data> {
+        let raw = platformState.currentNetwork.rawValue
+        return Set(allWallets.lazy
+            .filter { $0.networkRaw == raw }
+            .map(\.walletId))
     }
 
-    /// Addresses with a non-zero balance across every wallet.
+    /// Platform addresses scoped to the active network.
+    private var scopedPlatformAddresses: [PersistentPlatformAddress] {
+        let ids = walletIdsOnNetwork
+        return platformAddresses.filter { ids.contains($0.walletId) }
+    }
+
+    /// Aggregate platform credit balance across every wallet on the
+    /// active network.
+    private var aggregatePlatformBalance: UInt64 {
+        scopedPlatformAddresses.reduce(0) { $0 + $1.balance }
+    }
+
+    /// Addresses with a non-zero balance across every wallet on the
+    /// active network.
     private var aggregateActiveAddressCount: Int {
-        platformAddresses.reduce(0) { $1.balance > 0 ? $0 + 1 : $0 }
+        scopedPlatformAddresses.reduce(0) { $1.balance > 0 ? $0 + 1 : $0 }
     }
 
     // Display helpers
@@ -106,6 +131,26 @@ var body: some View {
                         value: filterHeightsDisplay
                     )
 
+                    // Block time of the SPV chain tip — a stale
+                    // value across polls means core stopped
+                    // producing blocks even though our SPV client
+                    // is healthy. Hidden until the first tip
+                    // header is stored.
+                    if let tipTime = walletManager.spvTipBlockTime {
+                        HStack {
+                            Text("Block Time")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text("\(tipTime, style: .relative) ago")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Text(AppDate.formatted(tipTime, dateStyle: .omitted, timeStyle: .shortened))
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
                     // Controls row
                     HStack(spacing: 8) {
                         Spacer()
@@ -183,108 +228,122 @@ var body: some View {
                         }
                     }
 
-                    // Active addresses — count non-zero balance rows
-                    // across every wallet.
+                    // Chain tip height
                     HStack {
-                        Text("Active Addresses")
+                        Text("Chain Tip Height")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                         Spacer()
-                        Text("\(aggregateActiveAddressCount)")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                    }
-
-                    // Chain tip height
-                    if platformBalanceSyncService.chainTipHeight > 0 {
-                        HStack {
-                            Text("Chain Tip Height")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                            Spacer()
+                        if platformBalanceSyncService.chainTipHeight > 0 {
                             Text(formattedHeight(UInt32(platformBalanceSyncService.chainTipHeight)))
                                 .font(.subheadline)
                                 .fontWeight(.medium)
-                        }
-                    }
-
-                    // Sync checkpoint (from tree scan)
-                    if platformBalanceSyncService.checkpointHeight > 0 {
-                        HStack {
-                            Text("Sync Checkpoint")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                            Spacer()
-                            Text(formattedHeight(UInt32(platformBalanceSyncService.checkpointHeight)))
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-
-                    // Last known recent block (for compaction detection)
-                    HStack {
-                        Text("Last Recent Block")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        if platformBalanceSyncService.lastKnownRecentBlock > 0 {
-                            Text(formattedHeight(UInt32(platformBalanceSyncService.lastKnownRecentBlock)))
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
                         } else {
-                            Text("None found")
+                            Text("—")
                                 .font(.subheadline)
-                                .foregroundColor(.blue)
-                                .onTapGesture {
-                                    showProofDetail = true
-                                }
-                        }
-                    }
-
-                    // Block time
-                    if let blockTime = platformBalanceSyncService.lastSyncBlockTime {
-                        HStack {
-                            Text("Block Time")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                            Spacer()
-                            Text(AppDate.formatted(blockTime, dateStyle: .abbreviated, timeStyle: .omitted))
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Text(AppDate.formatted(blockTime, dateStyle: .omitted, timeStyle: .shortened))
-                                .font(.caption)
                                 .foregroundColor(.secondary)
                         }
                     }
 
-                    // Query counts since launch
-                    if platformBalanceSyncService.syncCountSinceLaunch > 0 {
-                        let svc = platformBalanceSyncService
-                        VStack(spacing: 4) {
+                    // Expandable details
+                    DisclosureGroup(isExpanded: $platformSyncExpanded) {
+                        VStack(spacing: 8) {
+                            // Active addresses — count non-zero balance rows
+                            // across every wallet.
                             HStack {
-                                Text("Queries Since Launch")
+                                Text("Active Addresses")
                                     .font(.subheadline)
                                     .foregroundColor(.secondary)
                                 Spacer()
-                                Text("\(svc.syncCountSinceLaunch) syncs")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
+                                Text("\(aggregateActiveAddressCount)")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
                             }
-                            HStack(spacing: 12) {
-                                QueryCountBadge(label: "Trunk", count: svc.totalTrunkQueries, color: .blue)
-                                QueryCountBadge(label: "Branch", count: svc.totalBranchQueries, color: .indigo)
-                                QueryCountBadge(label: "Compacted", count: svc.totalCompactedQueries, detail: svc.totalCompactedEntries, color: .orange)
-                                QueryCountBadge(label: "Recent", count: svc.totalRecentQueries, detail: svc.totalRecentEntries, color: .green)
+
+                            // Sync checkpoint (from tree scan)
+                            if platformBalanceSyncService.checkpointHeight > 0 {
+                                HStack {
+                                    Text("Sync Checkpoint")
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                    Spacer()
+                                    Text(formattedHeight(UInt32(platformBalanceSyncService.checkpointHeight)))
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+
+                            // Last known recent block (for compaction detection)
+                            HStack {
+                                Text("Last Recent Block")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                if platformBalanceSyncService.lastKnownRecentBlock > 0 {
+                                    Text(formattedHeight(UInt32(platformBalanceSyncService.lastKnownRecentBlock)))
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                } else {
+                                    Text("None found")
+                                        .font(.subheadline)
+                                        .foregroundColor(.blue)
+                                        .onTapGesture {
+                                            showProofDetail = true
+                                        }
+                                }
+                            }
+
+                            // Block time
+                            if let blockTime = platformBalanceSyncService.lastSyncBlockTime {
+                                HStack {
+                                    Text("Block Time")
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                    Spacer()
+                                    Text(AppDate.formatted(blockTime, dateStyle: .abbreviated, timeStyle: .omitted))
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    Text(AppDate.formatted(blockTime, dateStyle: .omitted, timeStyle: .shortened))
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+
+                            // Query counts since launch
+                            if platformBalanceSyncService.syncCountSinceLaunch > 0 {
+                                let svc = platformBalanceSyncService
+                                VStack(spacing: 4) {
+                                    HStack {
+                                        Text("Queries Since Launch")
+                                            .font(.subheadline)
+                                            .foregroundColor(.secondary)
+                                        Spacer()
+                                        Text("\(svc.syncCountSinceLaunch) syncs")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    HStack(spacing: 12) {
+                                        QueryCountBadge(label: "Trunk", count: svc.totalTrunkQueries, color: .blue)
+                                        QueryCountBadge(label: "Branch", count: svc.totalBranchQueries, color: .indigo)
+                                        QueryCountBadge(label: "Compacted", count: svc.totalCompactedQueries, detail: svc.totalCompactedEntries, color: .orange)
+                                        QueryCountBadge(label: "Recent", count: svc.totalRecentQueries, detail: svc.totalRecentEntries, color: .green)
+                                    }
+                                }
+                            }
+
+                            // Error display
+                            if let error = platformBalanceSyncService.lastError {
+                                Text(error)
+                                    .font(.caption)
+                                    .foregroundColor(.red)
+                                    .lineLimit(2)
                             }
                         }
-                    }
-
-                    // Error display
-                    if let error = platformBalanceSyncService.lastError {
-                        Text(error)
+                        .padding(.top, 4)
+                    } label: {
+                        Text(platformSyncExpanded ? "Hide details" : "Show details")
                             .font(.caption)
-                            .foregroundColor(.red)
-                            .lineLimit(2)
+                            .foregroundColor(.blue)
                     }
 
                     // Action buttons
@@ -336,11 +395,25 @@ var body: some View {
                             Text("Syncing...")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
-                        } else {
-                            Image(systemName: "shield.checkered")
-                                .foregroundColor(.purple)
+                        } else if let lastSync = shieldedService.lastSyncTime {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
                                 .font(.caption)
-                            Text("Ready")
+                            Text("Last sync: \(lastSync, style: .relative)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        } else if !shieldedService.isBound {
+                            Image(systemName: "shield.slash")
+                                .foregroundColor(.secondary)
+                                .font(.caption)
+                            Text("Not bound")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        } else {
+                            Image(systemName: "circle.dashed")
+                                .foregroundColor(.secondary)
+                                .font(.caption)
+                            Text("Not synced yet")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                         }
@@ -378,6 +451,42 @@ var body: some View {
                         }
                     }
 
+                    // Sync counters since launch — `total_scanned`
+                    // is the wire-level encrypted-note count (every
+                    // pass), while new + spent are the wallet-side
+                    // outcomes (only ours).
+                    if shieldedService.syncCountSinceLaunch > 0 {
+                        let svc = shieldedService
+                        VStack(spacing: 4) {
+                            HStack {
+                                Text("Queries Since Launch")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Text("\(svc.syncCountSinceLaunch) syncs")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            HStack(spacing: 12) {
+                                QueryCountBadge(
+                                    label: "Scanned",
+                                    count: UInt32(min(svc.totalScanned, UInt64(UInt32.max))),
+                                    color: .blue
+                                )
+                                QueryCountBadge(
+                                    label: "New",
+                                    count: UInt32(min(svc.totalNewNotes, UInt64(UInt32.max))),
+                                    color: .purple
+                                )
+                                QueryCountBadge(
+                                    label: "Spent",
+                                    count: UInt32(min(svc.totalNewlySpent, UInt64(UInt32.max))),
+                                    color: .orange
+                                )
+                            }
+                        }
+                    }
+
                     // Error display
                     if let error = shieldedService.lastError {
                         Text(error)
@@ -391,11 +500,7 @@ var body: some View {
                         Spacer()
 
                         Button {
-                            Task {
-                                if let sdk = platformState.sdk {
-                                    await shieldedService.fullSync(sdk: sdk)
-                                }
-                            }
+                            Task { await shieldedService.manualSync() }
                         } label: {
                             HStack(spacing: 4) {
                                 Image(systemName: "arrow.clockwise")
@@ -460,24 +565,55 @@ var body: some View {
                 .appendingPathComponent(platformState.currentNetwork.networkName)
             try? FileManager.default.createDirectory(at: dataDirURL, withIntermediateDirectories: true)
 
-            let useLocalCore = UserDefaults.standard.bool(forKey: "useLocalhostCore")
-            let peers: [String] = useLocalCore
-                ? ((UserDefaults.standard.string(forKey: "localCorePeers") ?? "127.0.0.1")
-                    .split(separator: ",")
-                    .map { $0.trimmingCharacters(in: .whitespaces) })
-                : []
+            let peers = spvPeerOverride()
+            let restrictToConfiguredPeers = !peers.isEmpty
 
             let config = PlatformSpvStartConfig(
                 dataDir: dataDirURL.path,
                 network: platformState.currentNetwork,
                 peers: peers,
-                restrictToConfiguredPeers: useLocalCore,
+                restrictToConfiguredPeers: restrictToConfiguredPeers,
                 masternodeSyncEnabled: masternodesEnabled
             )
             try walletManager.startSpv(config: config)
         } catch {
             print("❌ Sync failed: \(error)")
         }
+    }
+
+    /// Resolve the SPV peer override for the current network /
+    /// docker combo.
+    ///
+    /// Three modes coexist on top of the same `useLocalhostCore` /
+    /// `localCorePeers` `UserDefaults` keys, which used to bleed into
+    /// each other when the user reconfigured between sessions:
+    ///
+    ///   1. **regtest + docker** — connect to dashmate's `local_seed`
+    ///      Core P2P port. The default 3-node setup maps the seed to
+    ///      `127.0.0.1:20301` (`getLocalConfigFactory.js` base 20001
+    ///      + `setupLocalPresetTaskFactory.js` `+ i*100` with seed
+    ///      at index = `nodeCount`, typically 3). Anything sitting
+    ///      in `localCorePeers` from a previous testnet / mainnet
+    ///      "custom peers" session is ignored — the UI doesn't show
+    ///      that knob on regtest+docker so a stale value is always
+    ///      bleed-through, never user intent.
+    ///   2. **non-regtest + custom peers** — honor `localCorePeers`
+    ///      verbatim. The OptionsView "Use Custom SPV Peers" toggle
+    ///      seeds and edits this string.
+    ///   3. **everything else** — empty list, FFI uses the network's
+    ///      built-in seed nodes.
+    private func spvPeerOverride() -> [String] {
+        let useDocker = UserDefaults.standard.bool(forKey: "useDockerSetup")
+        if platformState.currentNetwork == .regtest && useDocker {
+            return ["127.0.0.1:20301"]
+        }
+        let useLocalCore = UserDefaults.standard.bool(forKey: "useLocalhostCore")
+        guard useLocalCore else { return [] }
+        let raw = UserDefaults.standard.string(forKey: "localCorePeers") ?? ""
+        return raw
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
     }
 
     private func pauseSync() {
@@ -635,6 +771,11 @@ struct SyncProgressRow: View {
 struct WalletRowView: View {
     let wallet: PersistentWallet
     @EnvironmentObject var platformState: AppState
+    /// Canonical Core-balance source. The previously-persisted
+    /// `PersistentWallet.balanceConfirmed`/etc. fields were removed —
+    /// Rust's in-memory account totals (via `accountBalances(for:)`)
+    /// are the single source of truth, mirroring `BalanceCardView`.
+    @EnvironmentObject var walletManager: PlatformWalletManager
 
     /// Per-wallet BLAST-synced platform-address balances. Mirrors
     /// `BalanceCardView` so the summary row sees the same balance as
@@ -669,20 +810,39 @@ struct WalletRowView: View {
         }
     }
 
-    private var totalCoreBalance: UInt64 {
-        wallet.balanceConfirmed + wallet.balanceUnconfirmed
-            + wallet.balanceImmature + wallet.balanceLocked
+    /// One-shot snapshot of the wallet's per-account Core balances.
+    /// `accountBalances(for:)` is a blocking FFI call; the prior
+    /// shape (a `coreBalances` computed property + four `coreX` sums)
+    /// hit the FFI four times per render and again from
+    /// `balanceBreakdown`. Capturing in `body` and threading the
+    /// tuple through reduces every render to a single FFI roundtrip.
+    private typealias CoreBalanceTotals = (
+        confirmed: UInt64,
+        unconfirmed: UInt64,
+        immature: UInt64,
+        locked: UInt64
+    )
+
+    private func coreBalanceTotals() -> CoreBalanceTotals {
+        walletManager.accountBalances(for: wallet.walletId)
+            .reduce(into: (UInt64(0), UInt64(0), UInt64(0), UInt64(0))) { acc, b in
+                acc.0 += b.confirmed
+                acc.1 += b.unconfirmed
+                acc.2 += b.immature
+                acc.3 += b.locked
+            }
     }
 
-    /// Combined wallet balance expressed in DASH. Core uses 1e8
-    /// duffs/DASH; Platform uses 1e11 credits/DASH.
-    private var combinedDashAmount: Double {
-        Double(totalCoreBalance) / 100_000_000.0
+    private static func sumCoreBalance(_ totals: CoreBalanceTotals) -> UInt64 {
+        totals.confirmed + totals.unconfirmed + totals.immature + totals.locked
+    }
+
+    /// Combined wallet balance expressed in DASH for a precomputed
+    /// totals tuple. Core uses 1e8 duffs/DASH; Platform uses 1e11
+    /// credits/DASH.
+    private func combinedDashAmount(coreTotal: UInt64) -> Double {
+        Double(coreTotal) / 100_000_000.0
             + Double(platformBalance) / 100_000_000_000.0
-    }
-
-    private var hasAnyBalance: Bool {
-        totalCoreBalance > 0 || platformBalance > 0
     }
 
     private var walletIdShort: String {
@@ -725,19 +885,19 @@ struct WalletRowView: View {
         return String(format: "%.4f DASH", dash)
     }
 
-    private func balanceBreakdown() -> String? {
+    private func balanceBreakdown(_ totals: CoreBalanceTotals) -> String? {
         var parts: [String] = []
-        if wallet.balanceConfirmed > 0 {
-            parts.append("\(formatBalance(wallet.balanceConfirmed)) confirmed")
+        if totals.confirmed > 0 {
+            parts.append("\(formatBalance(totals.confirmed)) confirmed")
         }
-        if wallet.balanceUnconfirmed > 0 {
-            parts.append("\(formatBalance(wallet.balanceUnconfirmed)) unconfirmed")
+        if totals.unconfirmed > 0 {
+            parts.append("\(formatBalance(totals.unconfirmed)) unconfirmed")
         }
-        if wallet.balanceImmature > 0 {
-            parts.append("\(formatBalance(wallet.balanceImmature)) immature")
+        if totals.immature > 0 {
+            parts.append("\(formatBalance(totals.immature)) immature")
         }
-        if wallet.balanceLocked > 0 {
-            parts.append("\(formatBalance(wallet.balanceLocked)) locked")
+        if totals.locked > 0 {
+            parts.append("\(formatBalance(totals.locked)) locked")
         }
         return parts.isEmpty ? nil : parts.joined(separator: " • ")
     }
@@ -756,7 +916,14 @@ struct WalletRowView: View {
     }()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        // Single FFI snapshot per render — `coreBalanceTotals()` calls
+        // `walletManager.accountBalances(for:)` once; everything below
+        // reads from `core` / `coreTotal` / `hasAny` instead of
+        // re-invoking the accessor.
+        let core = coreBalanceTotals()
+        let coreTotal = Self.sumCoreBalance(core)
+        let hasAny = coreTotal > 0 || platformBalance > 0
+        return VStack(alignment: .leading, spacing: 6) {
             // Header: label (+ status badges) and total Core balance.
             HStack(alignment: .firstTextBaseline) {
                 HStack(spacing: 6) {
@@ -770,10 +937,10 @@ struct WalletRowView: View {
                     }
                 }
                 Spacer()
-                Text(hasAnyBalance ? formatDash(combinedDashAmount) : "Empty")
+                Text(hasAny ? formatDash(combinedDashAmount(coreTotal: coreTotal)) : "Empty")
                     .font(.subheadline)
                     .fontWeight(.medium)
-                    .foregroundColor(hasAnyBalance ? .primary : .secondary)
+                    .foregroundColor(hasAny ? .primary : .secondary)
             }
 
             // Row 1: network + created date.
@@ -790,7 +957,7 @@ struct WalletRowView: View {
             WalletInfoRow(
                 icon: "bitcoinsign.circle",
                 iconColor: .green,
-                text: balanceBreakdown() ?? "No Core balance"
+                text: balanceBreakdown(core) ?? "No Core balance"
             )
 
             // Row 3: account + identity counts.

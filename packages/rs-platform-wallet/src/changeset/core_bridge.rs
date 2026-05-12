@@ -124,13 +124,24 @@ async fn build_core_changeset(
     event: &WalletEvent,
 ) -> CoreChangeSet {
     match event {
-        WalletEvent::TransactionDetected { record, .. } => {
+        WalletEvent::TransactionDetected {
+            record,
+            addresses_derived,
+            ..
+        } => {
             // Derive UTXO deltas BEFORE moving the record into `records`
             // so we still have the per-record borrows.
             CoreChangeSet {
                 new_utxos: derive_new_utxos(record),
                 spent_utxos: derive_spent_utxos(record),
                 records: vec![(**record).clone()],
+                // Mirror the upstream-emitted derived addresses
+                // through to the persister so newly-extended pool
+                // rows are written transactionally with the tx that
+                // triggered the extension. See
+                // `CoreChangeSet.addresses_derived` for the cascade-
+                // link rationale.
+                addresses_derived: addresses_derived.clone(),
                 ..CoreChangeSet::default()
             }
         }
@@ -156,6 +167,7 @@ async fn build_core_changeset(
             inserted,
             updated,
             matured,
+            addresses_derived,
             ..
         } => {
             let mut cs = CoreChangeSet::default();
@@ -173,6 +185,10 @@ async fn build_core_changeset(
             cs.records.extend(updated.iter().cloned());
             cs.records.extend(matured.iter().cloned());
             cs.last_processed_height = Some(*height);
+            // Pool extensions triggered by any record in this block.
+            // Already deduped upstream by `project_derived_addresses`;
+            // `Merge` re-dedupes if multiple events fold together.
+            cs.addresses_derived = addresses_derived.clone();
             cs
         }
         WalletEvent::SyncHeightAdvanced { height, .. } => CoreChangeSet {
@@ -193,8 +209,14 @@ async fn is_chain_locked(
     let Some(info) = guard.get_wallet_info(wallet_id) else {
         return false;
     };
+    // Walk every account; if any holds an in-memory record for this
+    // txid, the chain-lock determination falls out of its
+    // `TransactionContext`. With `keep-finalized-transactions` off
+    // (the default) `transactions()` returns an empty map regardless
+    // of state — chain-lock delivery is event-driven in that mode, and
+    // this helper just reports "no record locally" by returning false.
     for account in info.core_wallet.accounts.all_accounts() {
-        if let Some(record) = account.transactions.get(txid) {
+        if let Some(record) = account.transactions().get(txid) {
             return matches!(record.context, TransactionContext::InChainLockedBlock(_));
         }
     }
@@ -214,6 +236,9 @@ fn derive_new_utxos(record: &TransactionRecord) -> Vec<Utxo> {
     );
     let is_instant = matches!(record.context, TransactionContext::InstantSend(_));
     let is_coinbase = record.transaction.is_coin_base();
+    // We own at least one input iff the wallet recorded any input details
+    // (those entries are keyed to inputs that spent our outpoints).
+    let owns_any_input = !record.input_details.is_empty();
 
     record
         .output_details
@@ -228,6 +253,9 @@ fn derive_new_utxos(record: &TransactionRecord) -> Vec<Utxo> {
                 .get(detail.index as usize)?
                 .clone();
             let address = detail.address.clone()?;
+            // Mirror key-wallet's "trusted change" rule: change output of a
+            // transaction we authored (so it's our funds returning).
+            let is_trusted = matches!(detail.role, OutputRole::Change) && owns_any_input;
             Some(Utxo {
                 outpoint: OutPoint {
                     txid: record.txid,
@@ -240,6 +268,7 @@ fn derive_new_utxos(record: &TransactionRecord) -> Vec<Utxo> {
                 is_confirmed,
                 is_instantlocked: is_instant,
                 is_locked: false,
+                is_trusted,
             })
         })
         .collect()
@@ -275,6 +304,7 @@ fn derive_spent_utxos(record: &TransactionRecord) -> Vec<Utxo> {
                 is_confirmed: false,
                 is_instantlocked: false,
                 is_locked: false,
+                is_trusted: false,
             })
         })
         .collect()

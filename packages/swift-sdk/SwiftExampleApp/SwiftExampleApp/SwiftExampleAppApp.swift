@@ -27,8 +27,13 @@ struct SwiftExampleAppApp: App {
     // Platform identity / document / contract state.
     @StateObject private var platformState = AppState()
 
-    // The one wallet manager — drives SPV, BLAST sync, wallet creation, etc.
-    @StateObject private var walletManager = PlatformWalletManager()
+    // Per-network wallet managers. The Rust `PlatformWalletManager`
+    // is network-locked at `configure(...)` time, so swapping
+    // networks at runtime needs a different manager instance —
+    // not a reconfigured one. The store lazy-creates a manager per
+    // network and republishes the active one so the SwiftUI
+    // environment rebinds to the right instance on switch.
+    @StateObject private var walletManagerStore: WalletManagerStore
 
     // Remaining services.
     @StateObject private var shieldedService = ShieldedService()
@@ -36,9 +41,24 @@ struct SwiftExampleAppApp: App {
     @StateObject private var transitionState = TransitionState()
     @StateObject private var appUIState = AppUIState()
 
+    /// Current manager exposed to views via the env object pipeline.
+    /// Reads from the published `activeManager` on every body
+    /// invocation so the env object rebinds whenever
+    /// `walletManagerStore.activate(...)` swaps the active manager.
+    private var walletManager: PlatformWalletManager {
+        walletManagerStore.activeManager
+    }
+
     @State private var isInitialized = false
     @State private var bootstrapError: Error?
     @State private var bootstrapTask: Task<Void, Never>?
+
+    /// Resolver that backs the platform-wallet-ffi `MnemonicResolverHandle`
+    /// for shielded wallet binding. Reuses the default `WalletStorage`
+    /// keychain access — same shape as the identity-key signing path.
+    /// Held for the lifetime of the App so the underlying handle is
+    /// valid across every `bind_shielded` call.
+    private let shieldedResolver = MnemonicResolver()
 
     init() {
         // Suppress auto layout constraint warnings in debug builds
@@ -57,18 +77,37 @@ struct SwiftExampleAppApp: App {
         // `cleanupLegacyItems` itself.
         WalletStorage.cleanupLegacyItems()
 
+        let container: ModelContainer
         do {
-            self.modelContainer = try DashModelContainer.create()
+            container = try DashModelContainer.create()
         } catch {
             fatalError("Failed to create ModelContainer: \(error)")
         }
+        self.modelContainer = container
+        // Build the store eagerly so the autoclosure for
+        // `@StateObject` can capture the local `container`
+        // directly — referencing `self.modelContainer` here would
+        // make the autoclosure capture `self` mutating, which the
+        // compiler rejects. Same `container` is handed to every
+        // per-network manager the store lazy-creates.
+        _walletManagerStore = StateObject(
+            wrappedValue: WalletManagerStore(modelContainer: container)
+        )
     }
 
     var body: some Scene {
         WindowGroup {
             ContentView(isInitialized: isInitialized, bootstrapError: bootstrapError, onRetry: retryBootstrap)
                 .environmentObject(platformState)
+                // Re-injected on every body invocation. When the
+                // store swaps `activeManager` (network switch), the
+                // computed `walletManager` returns the new instance
+                // and SwiftUI rebinds the env object — the 40+
+                // `@EnvironmentObject var walletManager:
+                // PlatformWalletManager` consumers see the right
+                // network's manager without any view changes.
                 .environmentObject(walletManager)
+                .environmentObject(walletManagerStore)
                 .environmentObject(shieldedService)
                 .environmentObject(platformBalanceSyncService)
                 .environmentObject(transitionState)
@@ -92,27 +131,71 @@ struct SwiftExampleAppApp: App {
                 })) { _, _ in
                     rebindWalletScopedServices()
                 }
+                // Network switch: activate the per-network manager
+                // first (the store lazy-creates one configured with
+                // a fresh SDK if this is the first time we see this
+                // network), then rebind the wallet-scoped services
+                // against it. Order matters — `rebindWalletScopedServices`
+                // reads `walletManager.firstWallet`, which has to
+                // resolve to the new network's manager before it
+                // runs.
+                .onChange(of: platformState.currentNetwork) { _, newNetwork in
+                    activateManager(for: newNetwork)
+                    rebindWalletScopedServices()
+                }
+        }
+    }
+
+    /// Lazy-create + cache a `PlatformWalletManager` for `network`,
+    /// configured against `platformState.sdk`. No-ops on the
+    /// already-active network. Called from bootstrap and from
+    /// `currentNetwork.onChange`.
+    @MainActor
+    private func activateManager(for network: Network) {
+        guard let sdk = platformState.sdk else {
+            SDKLogger.error(
+                "Cannot activate wallet manager for \(network.displayName): "
+                    + "no SDK available (still bootstrapping?)"
+            )
+            return
+        }
+        do {
+            try walletManagerStore.activate(network: network, sdk: sdk)
+        } catch {
+            SDKLogger.error(
+                "Failed to activate wallet manager for "
+                    + "\(network.displayName): \(error.localizedDescription)"
+            )
         }
     }
 
     /// Drive manager-wide BLAST sync state from the set of loaded
-    /// wallets. With no wallets present, sync is stopped and the
-    /// per-wallet `PlatformBalanceSyncService` UI surface is reset.
-    /// Otherwise, we ensure sync is running and bind the balance
-    /// service to `firstWallet` for the single-wallet UI surfaces
-    /// that still expect one focused wallet (detail views reconfigure
-    /// the service per-wallet themselves).
+    /// wallets. With no wallets present on the active manager, sync
+    /// is stopped and the per-wallet `PlatformBalanceSyncService`
+    /// UI surface is reset — so the Sync Status tab shows zeros for
+    /// a network the user hasn't created a wallet on yet, instead
+    /// of leaking values from a wallet on a different network.
+    /// Otherwise, we bind the balance service to a deterministic
+    /// wallet on the active manager. (Detail views reconfigure the
+    /// service per-wallet themselves.)
+    ///
+    /// The active manager is per-network now, so its `firstWallet`
+    /// is already correctly scoped — no need for a separate
+    /// network-filtering pass at this layer.
     @MainActor
     private func rebindWalletScopedServices() {
-        guard let wallet = walletManager.firstWallet else {
+        let wallet = walletManager.firstWallet
+        guard let wallet else {
             do {
                 try walletManager.stopPlatformAddressSync()
+                try walletManager.stopShieldedSync()
             } catch {
                 SDKLogger.error(
-                    "Failed to stop platform address sync: \(error.localizedDescription)"
+                    "Failed to stop sync coordinators: \(error.localizedDescription)"
                 )
             }
             platformBalanceSyncService.reset()
+            shieldedService.reset()
             return
         }
         do {
@@ -127,12 +210,27 @@ struct SwiftExampleAppApp: App {
                 try walletManager.startPlatformAddressSync()
             }
             SDKLogger.log(
-                "🔗 BLAST sync running; balance-sync UI bound to wallet \(wallet.walletId.prefix(4).map { String(format: "%02x", $0) }.joined())… (of \(walletManager.wallets.count) loaded)",
+                "🔗 BLAST sync running; balance-sync UI bound to wallet \(wallet.walletId.prefix(4).map { String(format: "%02x", $0) }.joined())… on \(platformState.currentNetwork.displayName) (of \(walletManager.wallets.count) loaded)",
                 minimumLevel: .medium
             )
+
+            // Bind the shielded service against the same wallet.
+            // The bind is best-effort — failures (no mnemonic in
+            // keychain, biometric prompt declined, etc.) leave the
+            // service in a "not bound" state and the user can
+            // retry from the Sync Status surface.
+            shieldedService.bind(
+                walletManager: walletManager,
+                walletId: wallet.walletId,
+                network: platformState.currentNetwork,
+                resolver: shieldedResolver
+            )
+            if try !walletManager.isShieldedSyncRunning() {
+                try walletManager.startShieldedSync()
+            }
         } catch {
             SDKLogger.error(
-                "Failed to bind platform address wallet: \(error.localizedDescription)"
+                "Failed to bind wallet-scoped services: \(error.localizedDescription)"
             )
         }
     }
@@ -148,30 +246,39 @@ struct SwiftExampleAppApp: App {
             try? await Task.sleep(for: .milliseconds(500))
 
             if let sdk = platformState.sdk {
-                // Configure the wallet manager.
-                try walletManager.configure(sdk: sdk, modelContainer: modelContainer)
-
-                // Restore wallets from the persister (SwiftData). If
-                // no wallets have been persisted yet this is a no-op.
-                // Restored wallets come back watch-only; signing is
-                // deferred until the user unlocks via biometric +
-                // Keychain-stored mnemonic (future work).
-                do {
-                    let restored = try walletManager.loadFromPersistor()
-                    if !restored.isEmpty {
-                        SDKLogger.log(
-                            "🔓 Restored \(restored.count) wallet(s) from persister",
-                            minimumLevel: .medium
-                        )
-                    }
-                } catch {
-                    SDKLogger.error(
-                        "Failed to restore wallets from persister: \(error.localizedDescription)"
+                // Activate the per-network manager for the launch
+                // network. The store creates + configures the
+                // manager and runs `loadFromPersistor` against it
+                // (filtered to the launch network's wallets via
+                // the network-aware persistence handler), so no
+                // separate restore pass is needed here.
+                try walletManagerStore.activate(
+                    network: platformState.currentNetwork,
+                    sdk: sdk
+                )
+                let restoredCount = walletManager.wallets.count
+                if restoredCount > 0 {
+                    SDKLogger.log(
+                        "🔓 Restored \(restoredCount) wallet(s) from persister "
+                            + "for \(platformState.currentNetwork.displayName)",
+                        minimumLevel: .medium
                     )
                 }
 
-                // Initialize shielded pool using first available wallet's data.
-                initializeShieldedService()
+                // Pre-warm per-network managers for any orphan
+                // mnemonic whose original network differs from
+                // the active one, so the orphan-recovery flow
+                // doesn't have to lazy-build them mid-session.
+                // SwiftData's @Query observers in the main
+                // context don't always reflect rows persisted
+                // through a `backgroundContext` that was
+                // created mid-session — pre-warming here means
+                // those backgrounds are wired up alongside the
+                // main context at launch and the recovered
+                // wallet appears in its correct tab on the same
+                // run instead of only after a relaunch.
+                preWarmOrphanNetworkManagers()
+
                 rebindWalletScopedServices()
             }
 
@@ -200,15 +307,42 @@ struct SwiftExampleAppApp: App {
         return ["127.0.0.1"]
     }
 
-    /// Initialize the shielded pool client. Best-effort — does nothing if no
-    /// wallet is available yet.
-    private func initializeShieldedService() {
-        // TODO(platform-wallet): Derive a ZIP32 spending key from
-        // the managed wallet. The legacy code path reused the
-        // seed bytes stashed on the (now-deleted) HDWallet row;
-        // the seed now lives only in the keychain, so a fresh
-        // derivation path is needed. For now the shielded
-        // service starts empty; it will be re-initialized once
-        // the user creates/loads a wallet via `createWallet(...)`.
+    /// Materialize a `PlatformWalletManager` for every network that
+    /// has an orphan keychain mnemonic, except the already-active
+    /// one. Used during bootstrap so the orphan-recovery flow has
+    /// pre-warmed managers when the user authorizes recovery —
+    /// avoids a SwiftData edge case where a mid-session-created
+    /// background `ModelContext` doesn't propagate writes back to
+    /// the launch-time main context's `@Query` observers.
+    @MainActor
+    private func preWarmOrphanNetworkManagers() {
+        let storage = WalletStorage()
+        let keychainIds = (try? storage.listWalletIdsWithMnemonic()) ?? []
+        guard !keychainIds.isEmpty else { return }
+
+        var orphanNetworks: Set<Network> = []
+        for walletId in keychainIds {
+            guard let metadata = (try? storage.metadata(for: walletId)) ?? nil,
+                  let resolved = metadata.resolvedNetworks.first
+            else { continue }
+            orphanNetworks.insert(resolved)
+        }
+
+        let active = platformState.currentNetwork
+        for network in orphanNetworks where network != active {
+            do {
+                _ = try walletManagerStore.backgroundManager(for: network)
+                SDKLogger.log(
+                    "🔥 Pre-warmed wallet manager for \(network.displayName) "
+                        + "(orphan recovery target)",
+                    minimumLevel: .medium
+                )
+            } catch {
+                SDKLogger.error(
+                    "Failed to pre-warm \(network.displayName) manager: "
+                        + error.localizedDescription
+                )
+            }
+        }
     }
 }

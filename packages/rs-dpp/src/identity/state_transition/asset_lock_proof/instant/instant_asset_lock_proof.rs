@@ -295,7 +295,8 @@ mod tests {
     fn test_transaction_accessor() {
         let proof = raw_instant_asset_lock_proof_fixture(None, None);
         let tx = proof.transaction();
-        assert_eq!(tx.version, 0);
+        // DIP-0002 special transactions (AssetLock) use version 3.
+        assert_eq!(tx.version, 3);
         assert_eq!(tx.lock_time, 0);
         assert_eq!(tx.input.len(), 1);
     }

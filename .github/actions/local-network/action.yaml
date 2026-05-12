@@ -28,7 +28,7 @@ runs:
 
     - name: Restore local network data
       id: local-network-data
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@v5
       with:
         path: |
           ${{ env.HOME }}/.dashmate
@@ -63,7 +63,7 @@ runs:
       if: steps.local-network-data.outputs.cache-hit != 'true'
 
     - name: Save local network data
-      uses: actions/cache/save@v4
+      uses: actions/cache/save@v5
       with:
         path: |
           ${{ env.HOME }}/.dashmate

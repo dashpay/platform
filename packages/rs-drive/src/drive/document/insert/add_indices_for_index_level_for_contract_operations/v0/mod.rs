@@ -19,6 +19,17 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Adds indices for an index level and recurses.
+    ///
+    /// `parent_value_tree_is_range_countable` reflects whether the value tree
+    /// at `index_path_info` is a `CountTree` (because the IndexLevel that
+    /// produced it is a range-countable terminator). When true, every
+    /// continuation property-name tree we insert here as a child of that
+    /// `CountTree` is wrapped with `Element::NonCounted` so its storage
+    /// stays addressable but it contributes 0 to the parent count's
+    /// aggregate. Without this, compound continuations would each add 1 (a
+    /// `NormalTree` child) — or worse, their own count_value (a
+    /// `ProvableCountTree` child in nested-range_countable layouts) — and
+    /// double-count documents.
     #[inline]
     #[allow(clippy::too_many_arguments)]
     pub(super) fn add_indices_for_index_level_for_contract_operations_v0(
@@ -28,6 +39,7 @@ impl Drive {
         index_level: &IndexLevel,
         mut any_fields_null: bool,
         mut all_fields_null: bool,
+        parent_value_tree_is_range_countable: bool,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         storage_flags: &Option<&StorageFlags>,
         estimated_costs_only_with_layer_info: &mut Option<
@@ -58,12 +70,21 @@ impl Drive {
 
         let sub_level_index_count = index_level.sub_levels().len() as u32;
 
+        // The current level (the value tree at index_path_info) is a CountTree
+        // when `parent_value_tree_is_range_countable`; otherwise NormalTree.
+        // This shows up in the layer info for the layer we're walking through.
+        let current_layer_tree_type = if parent_value_tree_is_range_countable {
+            TreeType::CountTree
+        } else {
+            TreeType::NormalTree
+        };
+
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             // On this level we will have a 0 and all the top index paths
             estimated_costs_only_with_layer_info.insert(
                 index_path_info.clone().convert_to_key_info_path(),
                 EstimatedLayerInformation {
-                    tree_type: TreeType::NormalTree,
+                    tree_type: current_layer_tree_type,
                     estimated_layer_count: ApproximateElements(sub_level_index_count + 1),
                     estimated_layer_sizes: AllSubtrees(
                         DEFAULT_HASH_SIZE_U8,
@@ -74,20 +95,65 @@ impl Drive {
             );
         }
 
-        let apply_type = if estimated_costs_only_with_layer_info.is_none() {
-            BatchInsertTreeApplyType::StatefulBatchInsertTree
-        } else {
-            BatchInsertTreeApplyType::StatelessBatchInsertTree {
-                in_tree_type: TreeType::NormalTree,
-                tree_type: TreeType::NormalTree,
-                flags_len: storage_flags
-                    .map(|s| s.serialized_size())
-                    .unwrap_or_default(),
-            }
-        };
-
         // fourth we need to store a reference to the document for each index
         for (name, sub_level) in index_level.sub_levels() {
+            let sub_level_range_countable = sub_level
+                .has_index_with_type()
+                .map(|info| info.range_countable)
+                .unwrap_or(false);
+
+            // The property-name tree below the current value tree. If the
+            // index sub_level is a range_countable terminator we need a
+            // `ProvableCountTree` so range queries over the property's
+            // distinct values can use grovedb's `AggregateCountOnRange`.
+            let property_name_tree_type = if sub_level_range_countable {
+                TreeType::ProvableCountTree
+            } else {
+                TreeType::NormalTree
+            };
+
+            // The value tree (one per distinct property value, hosting the
+            // `[0]` reference subtree + sibling continuations) becomes a
+            // `CountTree` when its sub_level is range_countable, so the
+            // parent property-name `ProvableCountTree`'s aggregate sums
+            // per-value counts cleanly.
+            let value_tree_type = if sub_level_range_countable {
+                TreeType::CountTree
+            } else {
+                TreeType::NormalTree
+            };
+
+            // Wrap the property-name tree with `Element::NonCounted` iff its
+            // immediate parent (the value tree at `index_path_info`) is a
+            // CountTree. NonCounted-wrapping is independent of
+            // `property_name_tree_type` — it only affects the *parent's*
+            // count aggregation, not the wrapped element's internals.
+            let wrap_property_name_tree_non_counted = parent_value_tree_is_range_countable;
+
+            let property_name_apply_type = if estimated_costs_only_with_layer_info.is_none() {
+                BatchInsertTreeApplyType::StatefulBatchInsertTree
+            } else {
+                BatchInsertTreeApplyType::StatelessBatchInsertTree {
+                    in_tree_type: current_layer_tree_type,
+                    tree_type: property_name_tree_type,
+                    flags_len: storage_flags
+                        .map(|s| s.serialized_size())
+                        .unwrap_or_default(),
+                }
+            };
+
+            let value_apply_type = if estimated_costs_only_with_layer_info.is_none() {
+                BatchInsertTreeApplyType::StatefulBatchInsertTree
+            } else {
+                BatchInsertTreeApplyType::StatelessBatchInsertTree {
+                    in_tree_type: property_name_tree_type,
+                    tree_type: value_tree_type,
+                    flags_len: storage_flags
+                        .map(|s| s.serialized_size())
+                        .unwrap_or_default(),
+                }
+            };
+
             let mut sub_level_index_path_info = index_path_info.clone();
             let index_property_key = KeyRef(name.as_bytes());
 
@@ -108,16 +174,29 @@ impl Drive {
                 .add_path_info(sub_level_index_path_info.clone());
 
             // here we are inserting an empty tree that will have a subtree of all other index properties
-            self.batch_insert_empty_tree_if_not_exists(
-                path_key_info.clone(),
-                TreeType::NormalTree,
-                *storage_flags,
-                apply_type,
-                transaction,
-                previous_batch_operations,
-                batch_operations,
-                &platform_version.drive,
-            )?;
+            if wrap_property_name_tree_non_counted {
+                self.batch_insert_empty_non_counted_tree_if_not_exists(
+                    path_key_info.clone(),
+                    property_name_tree_type,
+                    *storage_flags,
+                    property_name_apply_type,
+                    transaction,
+                    previous_batch_operations,
+                    batch_operations,
+                    &platform_version.drive,
+                )?;
+            } else {
+                self.batch_insert_empty_tree_if_not_exists(
+                    path_key_info.clone(),
+                    property_name_tree_type,
+                    *storage_flags,
+                    property_name_apply_type,
+                    transaction,
+                    previous_batch_operations,
+                    batch_operations,
+                    &platform_version.drive,
+                )?;
+            }
 
             sub_level_index_path_info.push(index_property_key)?;
 
@@ -137,7 +216,7 @@ impl Drive {
                 estimated_costs_only_with_layer_info.insert(
                     sub_level_index_path_info.clone().convert_to_key_info_path(),
                     EstimatedLayerInformation {
-                        tree_type: TreeType::NormalTree,
+                        tree_type: property_name_tree_type,
                         estimated_layer_count: PotentiallyAtMaxElements,
                         estimated_layer_sizes: AllSubtrees(
                             document_top_field_estimated_size as u8,
@@ -155,12 +234,12 @@ impl Drive {
                 .clone()
                 .add_path_info(sub_level_index_path_info.clone());
 
-            // here we are inserting an empty tree that will have a subtree of all other index properties
+            // here we are inserting the value tree
             self.batch_insert_empty_tree_if_not_exists(
                 path_key_info.clone(),
-                TreeType::NormalTree,
+                value_tree_type,
                 *storage_flags,
-                apply_type,
+                value_apply_type,
                 transaction,
                 previous_batch_operations,
                 batch_operations,
@@ -180,6 +259,7 @@ impl Drive {
                 sub_level,
                 any_fields_null,
                 all_fields_null,
+                sub_level_range_countable,
                 previous_batch_operations,
                 storage_flags,
                 estimated_costs_only_with_layer_info,

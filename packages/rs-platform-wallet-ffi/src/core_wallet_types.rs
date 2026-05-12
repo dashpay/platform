@@ -91,6 +91,20 @@ pub struct TransactionRecordFFI {
     pub has_fee: bool,
     pub label: *mut c_char,
     pub first_seen: u64,
+    /// Outpoints of every input in this transaction, in input index
+    /// order. Always populated from `tx.input.iter()` directly so the
+    /// list survives even when the wallet's in-memory `self.utxos`
+    /// map didn't classify the input as "ours" at processing time.
+    /// Required so the Swift persister can reconcile `(spending tx)
+    /// ↔ (spent TXO)` even when the funding tx is processed after
+    /// the spending tx (in-Swift out-of-order arrival), or when the
+    /// funding output was persisted but never re-loaded into
+    /// `self.utxos`. Iterating `input_details` (which only has
+    /// entries for inputs that hit `self.utxos`) was the silent-drop
+    /// path that left `PersistentTxo.isSpent` stuck at false. Empty
+    /// for coinbase transactions.
+    pub input_outpoints: *mut OutPointFFI,
+    pub input_outpoints_count: usize,
 }
 
 // ---------------------------------------------------------------------------
@@ -362,8 +376,12 @@ fn account_index_of(at: &key_wallet::account::AccountType) -> u32 {
 }
 
 /// Per-account balance entry returned by the query FFI. Carries the
-/// same `AccountTypeTagFFI` discriminants as `AccountSpecFFI` plus
-/// four balance fields from `WalletCoreBalance`.
+/// same `AccountTypeTagFFI` discriminants as `AccountSpecFFI`, the four
+/// balance fields from `WalletCoreBalance`, and address-pool key-usage
+/// totals (`keys_used` / `keys_total`) summed across every pool on the
+/// account. The pool counts are meaningful for both funds and keys
+/// variants; the explorer surfaces them as the headline number on
+/// keys-only rows where balance reads zero by construction.
 #[repr(C)]
 pub struct AccountBalanceEntryFFI {
     pub type_tag: crate::wallet_restore_types::AccountTypeTagFFI,
@@ -377,6 +395,166 @@ pub struct AccountBalanceEntryFFI {
     pub unconfirmed: u64,
     pub immature: u64,
     pub locked: u64,
+    pub keys_used: u32,
+    pub keys_total: u32,
+}
+
+// ---------------------------------------------------------------------------
+// Diagnostic snapshot FFI types
+// ---------------------------------------------------------------------------
+//
+// All structs here are read-only diagnostic surfaces consumed by the
+// iOS memory explorer. Each struct mirrors a `*Snapshot` type in
+// `platform-wallet`'s `manager::accessors` module 1:1.
+
+/// Snapshot of [`PlatformAddressSyncManager`] configuration / last-pass
+/// timestamp. `last_event_wallet_count` was dropped — it aliased
+/// `watch_list_size` and rendering it as an independent field invited
+/// confused interpretation.
+#[repr(C)]
+pub struct PlatformAddressSyncConfigFFI {
+    pub interval_seconds: u64,
+    pub watch_list_size: usize,
+    pub last_event_unix_seconds: u64,
+}
+
+/// Snapshot of [`IdentitySyncManager`] configuration / queue depth.
+#[repr(C)]
+pub struct IdentitySyncConfigFFI {
+    pub interval_seconds: u64,
+    pub queue_depth: usize,
+}
+
+/// Per-wallet core SPV state.
+#[repr(C)]
+pub struct CoreWalletStateFFI {
+    pub synced_height: u32,
+    pub last_processed_height: u32,
+    pub monitor_revision: u64,
+}
+
+/// Per-wallet identity scan state.
+#[repr(C)]
+pub struct IdentityWalletStateFFI {
+    pub last_scanned_index: u32,
+    pub scan_pending: bool,
+}
+
+/// Per-wallet platform address provider state.
+#[repr(C)]
+pub struct PlatformAddressProviderStateFFI {
+    pub initialized: bool,
+    pub accounts_watched: usize,
+    pub found_count: usize,
+    pub known_balances_count: usize,
+    pub watermark_height: u32,
+}
+
+// `WalletInfoMetadataFFI` was removed in lockstep with the explorer's
+// "PlatformWalletInfo Metadata" section — every meaningful field
+// duplicated `CoreWalletStateFFI` or had nothing populating it.
+
+/// One row of the tracked-asset-lock list.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct TrackedAssetLockEntryFFI {
+    pub outpoint_txid: [u8; 32],
+    pub outpoint_vout: u32,
+    /// 0=IdentityRegistration, 1=IdentityTopUp, 2=IdentityTopUpNotBound,
+    /// 3=IdentityInvitation, 4=AssetLockAddressTopUp,
+    /// 5=AssetLockShieldedAddressTopUp.
+    pub lock_type: u8,
+    /// 0=Built, 1=Broadcast, 2=InstantSendLocked, 3=ChainLocked.
+    pub status: u8,
+    pub registration_index: u32,
+    pub instant_lock_present: bool,
+    pub chain_lock_height: u32,
+}
+
+/// Snapshot of the per-account metadata for one account. Strings are
+/// Per-account metadata snapshot.
+///
+/// `is_watch_only` and `custom_name` were dropped in lockstep with
+/// upstream removing both fields from `ManagedCoreFundsAccount` /
+/// `ManagedCoreKeysAccount`. Watch-only is now wallet-level (read off
+/// `Wallet.wallet_type`); `AccountMetadata` no longer exists. The
+/// struct is now plain-data — no heap-owned fields, no paired free fn
+/// strictly required (kept as a stable no-op).
+#[repr(C)]
+pub struct AccountMetadataFFI {
+    pub total_transactions: u64,
+    pub total_utxos: u64,
+    pub monitor_revision: u64,
+}
+
+/// One address row inside [`AccountAddressPoolEntryFFI`]. The pool's
+/// own free fn walks the nested array and reclaims it.
+///
+/// `address` is a heap-owned NUL-terminated UTF-8 string;
+/// `public_key_bytes` is a heap-owned byte buffer (`null` +
+/// `public_key_bytes_len = 0` when the pool entry didn't retain the
+/// derivation source). Both are freed by the parent pool's free fn.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct AddressInfoFFI {
+    pub pubkey_hash: [u8; 20],
+    pub address_index: u32,
+    pub is_used: bool,
+    /// `last_used_height` is reserved on the FFI — upstream
+    /// `AddressInfo` doesn't currently track per-address height. Set
+    /// to `0`; will be populated when upstream gains the field.
+    pub last_used_height: u32,
+    pub address: *mut c_char,
+    pub public_key_bytes: *mut u8,
+    pub public_key_bytes_len: usize,
+}
+
+/// One pool-level entry inside the per-account address pool snapshot.
+/// `addresses` is a heap-owned slice of `AddressInfoFFI`, freed by the
+/// paired free fn (which walks every pool first).
+#[repr(C)]
+pub struct AccountAddressPoolEntryFFI {
+    /// 0=External, 1=Internal, 2=Absent, 3=AbsentHardened.
+    pub pool_type: u8,
+    pub gap_limit: u32,
+    /// `i64`-encoded; `-1` signals "no addresses used yet".
+    pub last_used_index: i64,
+    pub addresses: *mut AddressInfoFFI,
+    pub addresses_count: usize,
+}
+
+/// One UTXO row in the per-account drill-down. `script_pubkey` is
+/// heap-owned and freed by the paired free fn.
+#[repr(C)]
+pub struct AccountUtxoEntryFFI {
+    pub outpoint_txid: [u8; 32],
+    pub outpoint_vout: u32,
+    pub value_duffs: u64,
+    pub script_pubkey: *mut u8,
+    pub script_pubkey_len: usize,
+    pub height: u32,
+    pub is_locked: bool,
+}
+
+/// One transaction row in the per-account paginated drill-down.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct AccountTransactionEntryFFI {
+    pub txid: [u8; 32],
+    pub height: u32,
+    pub timestamp: u64,
+    pub value_delta_duffs: i64,
+    pub fee_duffs: u64,
+    pub is_coinbase: bool,
+}
+
+/// One row of the wallet-bound identity list (registration index +
+/// identity id).
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct WalletIdentityRowFFI {
+    pub registration_index: u32,
+    pub identity_id: [u8; 32],
 }
 
 /// Subset of [`crate::wallet_restore_types::AccountSpecFFI`] carrying
@@ -614,6 +792,38 @@ fn tx_record_to_ffi(
         .unwrap_or_else(|_| CString::new("Unknown").unwrap());
     let label_str = CString::new(tr.label.clone()).unwrap_or_else(|_| CString::new("").unwrap());
 
+    // Build the input-outpoint slice from `tx.input` directly. NOT from
+    // `input_details` — that field only carries entries the wallet
+    // recognized as "ours" at processing time (i.e., entries whose
+    // `previous_output` was already in `self.utxos`), so it silently
+    // drops the spent-outpoint signal whenever the funding tx hadn't
+    // populated the UTXO map yet (in-Swift out-of-order arrival, or
+    // a load_from_persistor that didn't fully repopulate). The Swift
+    // persister reconciles this list against its own `PersistentTxo`
+    // table to mark the spend, so emitting every input — even ones
+    // we don't currently classify as ours — is correct: outpoint is
+    // a globally-unique key and Swift's lookup is a no-op when no
+    // matching row exists. Coinbase inputs are skipped (the previous
+    // output of the synthetic coinbase outpoint is never one of ours).
+    let input_outpoints_vec: Vec<OutPointFFI> = if tr.transaction.is_coin_base() {
+        Vec::new()
+    } else {
+        tr.transaction
+            .input
+            .iter()
+            .map(|input| {
+                let mut prev_txid = [0u8; 32];
+                prev_txid.copy_from_slice(input.previous_output.txid.as_ref());
+                OutPointFFI {
+                    txid: prev_txid,
+                    vout: input.previous_output.vout,
+                }
+            })
+            .collect()
+    };
+    let input_outpoints_count = input_outpoints_vec.len();
+    let input_outpoints = vec_to_ptr(input_outpoints_vec);
+
     TransactionRecordFFI {
         txid,
         tx_data: tx_ptr,
@@ -637,6 +847,8 @@ fn tx_record_to_ffi(
         // refresh from `Date.now()` on insert if it needs a real
         // observation timestamp.
         first_seen: blk_ts as u64,
+        input_outpoints,
+        input_outpoints_count,
     }
 }
 
@@ -726,6 +938,13 @@ pub unsafe fn free_wallet_changeset_ffi(cs: &WalletChangeSetFFI) {
                 }
                 if !tx.label.is_null() {
                     let _ = CString::from_raw(tx.label);
+                }
+                if !tx.input_outpoints.is_null() && tx.input_outpoints_count > 0 {
+                    drop(Vec::from_raw_parts(
+                        tx.input_outpoints,
+                        tx.input_outpoints_count,
+                        tx.input_outpoints_count,
+                    ));
                 }
             }
             drop(Vec::from_raw_parts(

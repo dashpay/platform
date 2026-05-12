@@ -19,6 +19,10 @@ struct TokenResumeActionView: View {
     @State private var publicNote: String = ""
     @State private var isSubmitting: Bool = false
     @State private var submitError: AlertMessage?
+    /// Generation counter so a late `MainActor.run` from a previous
+    /// `submit()` Task can't write back to a re-entered view instance
+    /// after the user pops + repushes mid-broadcast.
+    @State private var submitGeneration: Int = 0
 
     private struct AlertMessage: Identifiable {
         let id = UUID()
@@ -141,6 +145,8 @@ struct TokenResumeActionView: View {
         }
 
         isSubmitting = true
+        submitGeneration &+= 1
+        let gen = submitGeneration
         let signer = KeychainSigner(modelContainer: modelContext.container)
         let identityId = identity.identityId
         let contractId = token.contractId
@@ -158,11 +164,33 @@ struct TokenResumeActionView: View {
                     signer: signer
                 )
                 await MainActor.run {
+                    guard self.submitGeneration == gen else { return }
                     self.isSubmitting = false
+                    // Single-signer submissions execute on this call;
+                    // the chain is now unpaused, so flip the local
+                    // flag so TokenActionPermissionsView's Pause gate
+                    // unlocks immediately. Propose-mode just stores a
+                    // pending group action — the resume takes effect
+                    // when the threshold-crossing co-signer submits,
+                    // so leave isPaused alone in that branch.
+                    if case .none = groupAction {
+                        token.isPaused = false
+                        // The chain action has already succeeded, so a
+                        // SwiftData persistence hiccup isn't user-facing
+                        // (worst case the in-memory flip survives until
+                        // the next contract re-parse reconciles). Log
+                        // for diagnosability instead of swallowing.
+                        do {
+                            try modelContext.save()
+                        } catch {
+                            print("⚠️ TokenResumeActionView: failed to persist isPaused flip: \(error)")
+                        }
+                    }
                     self.dismiss()
                 }
             } catch {
                 await MainActor.run {
+                    guard self.submitGeneration == gen else { return }
                     self.submitError = .init(message: error.localizedDescription)
                     self.isSubmitting = false
                 }

@@ -202,6 +202,7 @@ struct WalletInfoView: View {
     @State private var mainnetAccountCount: Int? = nil
     @State private var testnetAccountCount: Int? = nil
     @State private var devnetAccountCount: Int? = nil
+    @State private var regtestAccountCount: Int? = nil
 
     // "View Seed Phrase" flow.
     @State private var isAuthorizingSeedPhrase = false
@@ -309,6 +310,25 @@ struct WalletInfoView: View {
                             .disabled(isUpdatingNetworks)
                         }
                     }
+
+                    HStack {
+                        Text("Local (Regtest)")
+                        Spacer()
+                        if regtestEnabled {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                        } else {
+                            Button(action: {
+                                Task {
+                                    await enableNetwork(.regtest)
+                                }
+                            }) {
+                                Image(systemName: "plus.circle")
+                                    .foregroundColor(.blue)
+                            }
+                            .disabled(isUpdatingNetworks)
+                        }
+                    }
                 }
 
                 Section {
@@ -357,6 +377,14 @@ struct WalletInfoView: View {
                             Text("Devnet Accounts")
                             Spacer()
                             Text(devnetAccountCount.map(String.init) ?? "–")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    if regtestEnabled {
+                        HStack {
+                            Text("Regtest Accounts")
+                            Spacer()
+                            Text(regtestAccountCount.map(String.init) ?? "–")
                                 .foregroundColor(.secondary)
                         }
                     }
@@ -510,19 +538,69 @@ struct WalletInfoView: View {
         mainnetAccountCount = mainnetEnabled ? count : nil
         testnetAccountCount = testnetEnabled ? count : nil
         devnetAccountCount = devnetEnabled ? count : nil
+        regtestAccountCount = regtestEnabled ? count : nil
     }
 
     private func saveWalletName() {
         // `label` is a computed fallback; the writable backing
         // field is `name`. Empty-string means "unnamed"; the
         // computed `label` then falls back to the hex fingerprint.
-        wallet.name = editedName.isEmpty ? nil : editedName
+        let trimmed = editedName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let newName: String? = trimmed.isEmpty ? nil : trimmed
+        wallet.name = newName
         do {
             try modelContext.save()
             isEditingName = false
         } catch {
             errorMessage = "Failed to save wallet name: \(error.localizedDescription)"
             showError = true
+            return
+        }
+        // Mirror the rename into the keychain metadata blob so a
+        // future reinstall / orphan-recovery picks up the new
+        // label instead of resurrecting the old one (or the
+        // "Recovered Wallet" placeholder when the original name
+        // was never written). Read the existing blob first so the
+        // `networks` and `birthHeight` fields round-trip — those
+        // get filled in at creation time and the rename UI has no
+        // business overwriting them with stale values from the
+        // SwiftData row. Falls back to a freshly-built blob if
+        // none exists yet (older installs that predate the
+        // metadata feature).
+        let storage = WalletStorage()
+        let walletId = wallet.walletId
+        var metadata: WalletKeychainMetadata
+        do {
+            metadata = try storage.metadata(for: walletId)
+                ?? WalletKeychainMetadata()
+        } catch {
+            metadata = WalletKeychainMetadata()
+        }
+        metadata.name = newName
+        metadata.walletDescription = wallet.walletDescription
+        // Backfill `networks` from the SwiftData row when the
+        // existing blob is missing it. `PersistentWallet` is
+        // currently single-network, so the best we can do here is
+        // a one-element list. When multi-network support lands on
+        // the Rust side this can be widened.
+        if metadata.networks == nil, let net = wallet.network {
+            metadata.networks = [net.networkName]
+        }
+        // Same backfill story for `birthHeight` — older blobs
+        // missed it; we have the SwiftData copy on hand so push
+        // it in once.
+        if metadata.birthHeight == nil {
+            metadata.birthHeight = wallet.birthHeight
+        }
+        do {
+            try storage.setMetadata(metadata, for: walletId)
+        } catch {
+            // Non-fatal: SwiftData already has the new name; this
+            // only affects orphan-recovery after a wipe. Surface
+            // through the logger instead of blocking the UI.
+            SDKLogger.error(
+                "Failed to update wallet metadata in keychain: \(error.localizedDescription)"
+            )
         }
     }
 
@@ -554,7 +632,12 @@ struct WalletInfoView: View {
         modelContext.delete(wallet)
         do {
             try modelContext.save()
-            try WalletStorage().deleteMnemonic(for: walletId)
+            let storage = WalletStorage()
+            try storage.deleteMnemonic(for: walletId)
+            // Keychain metadata is independent of the mnemonic
+            // row — clear it here so a deleted wallet doesn't
+            // leave stale name/description behind.
+            try storage.deleteMetadata(for: walletId)
         } catch {
             modelContext.rollback()
             SDKLogger.error(

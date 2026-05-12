@@ -29,8 +29,14 @@ public final class PersistentTransaction {
     /// instead of a 64-char hex string, and the persistence
     /// handler avoids a hex round-trip on every write.
     @Attribute(.unique) public var txid: Data
-    /// Raw transaction bytes.
-    public var transactionData: Data?
+    /// Raw transaction bytes (consensus-encoded — the same wire
+    /// format `dashcore::consensus::encode::serialize` produces and
+    /// `Transaction::consensus_decode` round-trips). The FFI write
+    /// path always populates this; the persister-fallback read path
+    /// (`PlatformWalletPersistence::get_core_tx_record`) hands it
+    /// back over FFI so Rust can decode a real `Transaction`
+    /// without a placeholder body.
+    public var transactionData: Data
     /// Context: 0=mempool, 1=instantSend, 2=inBlock, 3=inChainLockedBlock.
     public var context: UInt32
     /// Block height (0 for mempool).
@@ -76,8 +82,21 @@ public final class PersistentTransaction {
     @Relationship(inverse: \PersistentTxo.spendingTransaction)
     public var inputs: [PersistentTxo] = []
 
+    /// Pending input outpoints — entries this transaction's input
+    /// list references but for which no `PersistentTxo` has been
+    /// upserted yet. Filled by `PlatformWalletPersistenceHandler.
+    /// upsertTransaction` via the FFI's `input_outpoints` slice;
+    /// each entry is consumed (deleted) by `upsertUtxo` when the
+    /// matching previous-output finally arrives. See
+    /// `PersistentPendingInput` for the full reconciliation flow.
+    /// Cascade-delete: removing the spending tx drops every pending
+    /// row that hasn't resolved yet.
+    @Relationship(deleteRule: .cascade, inverse: \PersistentPendingInput.spendingTransaction)
+    public var pendingInputs: [PersistentPendingInput] = []
+
     public init(
         txid: Data,
+        transactionData: Data,
         context: UInt32 = 0,
         blockHeight: UInt32 = 0,
         direction: UInt32 = 0,
@@ -86,6 +105,7 @@ public final class PersistentTransaction {
         firstSeen: UInt64 = 0
     ) {
         self.txid = txid
+        self.transactionData = transactionData
         self.context = context
         self.blockHeight = blockHeight
         self.blockTimestamp = 0

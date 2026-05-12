@@ -38,7 +38,7 @@ impl Drive {
         let limit = effective.min(u16::MAX as u32) as u16;
 
         // PathQuery must match the server-side proof generation exactly:
-        // path = [AddressBalances, "s"], key = [SHIELDED_NOTES_KEY],
+        // path = [ShieldedBalances, "M"], key = [SHIELDED_NOTES_KEY],
         // subquery = range_inclusive(start..=end)
         let end_index = start_index + limit as u64 - 1;
         let mut inner_query = Query::new();

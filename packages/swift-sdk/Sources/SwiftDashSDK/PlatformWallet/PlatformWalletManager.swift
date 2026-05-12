@@ -26,11 +26,25 @@ public class PlatformWalletManager: ObservableObject {
     /// started in [`configure`].
     @Published public private(set) var spvProgress: PlatformSpvSyncProgress = .empty
 
+    /// Block time of the SPV header storage's current tip (if any).
+    /// `nil` while SPV isn't running or hasn't stored a header yet.
+    /// Useful as a "is core producing blocks?" indicator — when this
+    /// stamp stops advancing, the chain is stalled even though the
+    /// local SPV client is healthy.
+    @Published public private(set) var spvTipBlockTime: Date?
+
     /// Whether the Rust-owned platform-address sync manager is currently in flight.
     @Published public private(set) var platformAddressSyncIsSyncing: Bool = false
 
     /// Last completed platform-address sync event emitted by Rust.
     @Published public internal(set) var lastPlatformAddressSyncEvent: PlatformAddressSyncEvent?
+
+    /// Whether the Rust-owned shielded sync coordinator currently has
+    /// a pass in flight.
+    @Published public private(set) var shieldedSyncIsSyncing: Bool = false
+
+    /// Last completed shielded sync event emitted by Rust.
+    @Published public internal(set) var lastShieldedSyncEvent: ShieldedSyncEvent?
 
     /// All wallets currently held by the Rust-side
     /// `PlatformWalletManager`, keyed by the 32-byte wallet id.
@@ -76,6 +90,7 @@ public class PlatformWalletManager: ObservableObject {
         progressPollTask?.cancel()
         if handle != NULL_HANDLE {
             platform_wallet_manager_platform_address_sync_stop(handle).discard()
+            platform_wallet_manager_shielded_sync_stop(handle).discard()
             platform_wallet_manager_destroy(handle).discard()
         }
     }
@@ -97,17 +112,33 @@ public class PlatformWalletManager: ObservableObject {
                 "dash_sdk_get_inner_sdk_ptr returned NULL for the supplied SDK"
             )
         }
-        try configure(sdkPointer: UnsafeRawPointer(innerSdkPtr), modelContainer: modelContainer)
+        // The Rust manager is network-locked at construction
+        // (`WalletManager::new(sdk.network)`); thread that same
+        // network through to the persistence handler so its
+        // `loadWalletList` only restores wallets bound to this
+        // network, matching the per-network manager design.
+        try configure(
+            sdkPointer: UnsafeRawPointer(innerSdkPtr),
+            modelContainer: modelContainer,
+            network: sdk.network
+        )
     }
 
     /// Configure with a raw Sdk pointer (advanced usage).
-    public func configure(sdkPointer: UnsafeRawPointer, modelContainer: ModelContainer? = nil) throws {
+    public func configure(
+        sdkPointer: UnsafeRawPointer,
+        modelContainer: ModelContainer? = nil,
+        network: Network? = nil
+    ) throws {
         var handle: Handle = NULL_HANDLE
 
         let handler: PlatformWalletPersistenceHandler?
         var persistence: PersistenceCallbacks
         if let container = modelContainer {
-            let h = PlatformWalletPersistenceHandler(modelContainer: container)
+            let h = PlatformWalletPersistenceHandler(
+                modelContainer: container,
+                network: network
+            )
             persistence = h.makeCallbacks()
             handler = h
         } else {
@@ -352,6 +383,13 @@ public class PlatformWalletManager: ObservableObject {
     // MARK: - Per-account balances
 
     /// Per-account balance snapshot read from Rust's in-memory state.
+    ///
+    /// `keysUsed` / `keysTotal` are the number of derived addresses
+    /// across every pool on the account, with `keysUsed` further
+    /// filtered by `AddressInfo.used`. The fields are populated for
+    /// both funds and keys variants — the explorer surfaces them as
+    /// the headline number on keys-only rows where balance is zero by
+    /// construction.
     public struct AccountBalance {
         public let typeTag: UInt8
         public let standardTag: UInt8
@@ -364,6 +402,8 @@ public class PlatformWalletManager: ObservableObject {
         public let unconfirmed: UInt64
         public let immature: UInt64
         public let locked: UInt64
+        public let keysUsed: UInt32
+        public let keysTotal: UInt32
     }
 
     /// Query per-account balances directly from the Rust-side
@@ -422,7 +462,9 @@ public class PlatformWalletManager: ObservableObject {
                 confirmed: entry.confirmed,
                 unconfirmed: entry.unconfirmed,
                 immature: entry.immature,
-                locked: entry.locked
+                locked: entry.locked,
+                keysUsed: entry.keys_used,
+                keysTotal: entry.keys_total
             )
         }
     }
@@ -455,6 +497,14 @@ public class PlatformWalletManager: ObservableObject {
                 if let isSyncing = try? self.isPlatformAddressSyncing(),
                    isSyncing != self.platformAddressSyncIsSyncing {
                     self.platformAddressSyncIsSyncing = isSyncing
+                }
+                if let isSyncing = try? self.isShieldedSyncing(),
+                   isSyncing != self.shieldedSyncIsSyncing {
+                    self.shieldedSyncIsSyncing = isSyncing
+                }
+                let tip = (try? self.currentSpvTipBlockTime()) ?? nil
+                if tip != self.spvTipBlockTime {
+                    self.spvTipBlockTime = tip
                 }
                 try? await Task.sleep(for: .seconds(1))
             }

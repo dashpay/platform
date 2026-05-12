@@ -16,7 +16,7 @@ use crate::util::object_size_info::{DocumentAndContractInfo, PathInfo, PathKeyEl
 use crate::util::storage_flags::StorageFlags;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
-use dpp::data_contract::document_type::IndexLevelTypeInfo;
+use dpp::data_contract::document_type::{IndexCountability, IndexLevelTypeInfo};
 use dpp::document::DocumentV0Getters;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::key_info::KeyInfo;
@@ -50,11 +50,15 @@ impl Drive {
             return Ok(());
         }
 
-        // if index is countable, we should use count trees, so we can get the count of elements
-        let reference_tree_type = if index_type.countable {
-            TreeType::CountTree
-        } else {
-            TreeType::NormalTree
+        // The terminal reference's tree type is driven by the index's countability:
+        // `NotCountable` keeps a plain `NormalTree`; `Countable` uses a `CountTree`
+        // so totals are O(1) at the root; `CountableAllowingOffset` uses a
+        // `ProvableCountTree` so future range / offset queries can walk per-node
+        // counts.
+        let reference_tree_type = match index_type.countable {
+            IndexCountability::NotCountable => TreeType::NormalTree,
+            IndexCountability::Countable => TreeType::CountTree,
+            IndexCountability::CountableAllowingOffset => TreeType::ProvableCountTree,
         };
 
         // unique indexes will be stored under key "0"
