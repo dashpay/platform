@@ -26,8 +26,15 @@ use std::collections::{BTreeMap, BTreeSet};
 /// Trait for creating identities on the platform.
 #[async_trait::async_trait]
 pub trait PutIdentity<IS: Signer<IdentityPublicKey>>: Waitable {
-    /// Creates an identity using an asset lock proof.
-    async fn put_to_platform(
+    /// Creates an identity using an asset lock proof whose private key
+    /// is held in-process.
+    ///
+    /// Prefer [`Self::put_to_platform_with_signer`] when the asset-lock
+    /// private key lives outside Rust (Swift / hardware wallet / HSM):
+    /// the `_with_signer` variant routes asset-lock signing through an
+    /// external [`key_wallet::signer::Signer`] so the private key never
+    /// crosses the FFI boundary as raw bytes.
+    async fn put_to_platform_with_private_key(
         &self,
         sdk: &Sdk,
         asset_lock_proof: AssetLockProof,
@@ -37,7 +44,10 @@ pub trait PutIdentity<IS: Signer<IdentityPublicKey>>: Waitable {
     ) -> Result<StateTransition, Error>;
 
     /// Creates an identity using an asset lock and waits for confirmation.
-    async fn put_to_platform_and_wait_for_response(
+    ///
+    /// In-process private-key counterpart to
+    /// [`Self::put_to_platform_and_wait_for_response_with_signer`].
+    async fn put_to_platform_and_wait_for_response_with_private_key(
         &self,
         sdk: &Sdk,
         asset_lock_proof: AssetLockProof,
@@ -47,6 +57,48 @@ pub trait PutIdentity<IS: Signer<IdentityPublicKey>>: Waitable {
     ) -> Result<Self, Error>
     where
         Self: Sized;
+
+    /// Creates an identity using an asset lock proof whose private key
+    /// is held by an external [`key_wallet::signer::Signer`] (Swift,
+    /// hardware wallet, HSM).
+    ///
+    /// `identity_signer` signs the per-key witnesses on `public_keys[]`
+    /// (same as [`Self::put_to_platform_with_private_key`]), while
+    /// `asset_lock_signer` produces the outer state-transition ECDSA
+    /// signature for the key at `asset_lock_proof_path` — atomically
+    /// deriving, signing, and zeroising inside the signer's trust
+    /// boundary.
+    #[cfg(feature = "core_key_wallet")]
+    async fn put_to_platform_with_signer<AS>(
+        &self,
+        sdk: &Sdk,
+        asset_lock_proof: AssetLockProof,
+        asset_lock_proof_path: &dpp::key_wallet::bip32::DerivationPath,
+        asset_lock_signer: &AS,
+        identity_signer: &IS,
+        settings: Option<PutSettings>,
+    ) -> Result<StateTransition, Error>
+    where
+        AS: dpp::key_wallet::signer::Signer + Send + Sync;
+
+    /// Creates an identity using an asset-lock signer and waits for
+    /// confirmation.
+    ///
+    /// Signer-driven counterpart to
+    /// [`Self::put_to_platform_and_wait_for_response_with_private_key`].
+    #[cfg(feature = "core_key_wallet")]
+    async fn put_to_platform_and_wait_for_response_with_signer<AS>(
+        &self,
+        sdk: &Sdk,
+        asset_lock_proof: AssetLockProof,
+        asset_lock_proof_path: &dpp::key_wallet::bip32::DerivationPath,
+        asset_lock_signer: &AS,
+        identity_signer: &IS,
+        settings: Option<PutSettings>,
+    ) -> Result<Self, Error>
+    where
+        Self: Sized,
+        AS: dpp::key_wallet::signer::Signer + Send + Sync;
 
     /// Creates an identity funded by Platform addresses using explicit nonces.
     ///
@@ -91,7 +143,7 @@ pub trait PutIdentity<IS: Signer<IdentityPublicKey>>: Waitable {
 
 #[async_trait::async_trait]
 impl<IS: Signer<IdentityPublicKey>> PutIdentity<IS> for Identity {
-    async fn put_to_platform(
+    async fn put_to_platform_with_private_key(
         &self,
         sdk: &Sdk,
         asset_lock_proof: AssetLockProof,
@@ -99,7 +151,7 @@ impl<IS: Signer<IdentityPublicKey>> PutIdentity<IS> for Identity {
         signer: &IS,
         settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error> {
-        put_identity_with_asset_lock(
+        put_identity_with_asset_lock_and_private_key(
             self,
             sdk,
             asset_lock_proof,
@@ -110,7 +162,7 @@ impl<IS: Signer<IdentityPublicKey>> PutIdentity<IS> for Identity {
         .await
     }
 
-    async fn put_to_platform_and_wait_for_response(
+    async fn put_to_platform_and_wait_for_response_with_private_key(
         &self,
         sdk: &Sdk,
         asset_lock_proof: AssetLockProof,
@@ -119,11 +171,63 @@ impl<IS: Signer<IdentityPublicKey>> PutIdentity<IS> for Identity {
         settings: Option<PutSettings>,
     ) -> Result<Identity, Error> {
         let state_transition = self
-            .put_to_platform(
+            .put_to_platform_with_private_key(
                 sdk,
                 asset_lock_proof,
                 asset_lock_proof_private_key,
                 signer,
+                settings,
+            )
+            .await?;
+
+        Self::wait_for_response(sdk, state_transition, settings).await
+    }
+
+    #[cfg(feature = "core_key_wallet")]
+    async fn put_to_platform_with_signer<AS>(
+        &self,
+        sdk: &Sdk,
+        asset_lock_proof: AssetLockProof,
+        asset_lock_proof_path: &dpp::key_wallet::bip32::DerivationPath,
+        asset_lock_signer: &AS,
+        identity_signer: &IS,
+        settings: Option<PutSettings>,
+    ) -> Result<StateTransition, Error>
+    where
+        AS: dpp::key_wallet::signer::Signer + Send + Sync,
+    {
+        put_identity_with_asset_lock_and_signer(
+            self,
+            sdk,
+            asset_lock_proof,
+            asset_lock_proof_path,
+            asset_lock_signer,
+            identity_signer,
+            settings,
+        )
+        .await
+    }
+
+    #[cfg(feature = "core_key_wallet")]
+    async fn put_to_platform_and_wait_for_response_with_signer<AS>(
+        &self,
+        sdk: &Sdk,
+        asset_lock_proof: AssetLockProof,
+        asset_lock_proof_path: &dpp::key_wallet::bip32::DerivationPath,
+        asset_lock_signer: &AS,
+        identity_signer: &IS,
+        settings: Option<PutSettings>,
+    ) -> Result<Identity, Error>
+    where
+        AS: dpp::key_wallet::signer::Signer + Send + Sync,
+    {
+        let state_transition = self
+            .put_to_platform_with_signer(
+                sdk,
+                asset_lock_proof,
+                asset_lock_proof_path,
+                asset_lock_signer,
+                identity_signer,
                 settings,
             )
             .await?;
@@ -178,7 +282,7 @@ impl<IS: Signer<IdentityPublicKey>> PutIdentity<IS> for Identity {
     }
 }
 
-async fn put_identity_with_asset_lock<S: Signer<IdentityPublicKey>>(
+async fn put_identity_with_asset_lock_and_private_key<S: Signer<IdentityPublicKey>>(
     identity: &Identity,
     sdk: &Sdk,
     asset_lock_proof: AssetLockProof,
@@ -187,10 +291,39 @@ async fn put_identity_with_asset_lock<S: Signer<IdentityPublicKey>>(
     settings: Option<PutSettings>,
 ) -> Result<StateTransition, Error> {
     let (state_transition, _) = identity
-        .broadcast_request_for_new_identity(
+        .broadcast_request_for_new_identity_with_private_key(
             asset_lock_proof,
             asset_lock_proof_private_key,
             signer,
+            sdk.version(),
+        )
+        .await?;
+    ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
+    state_transition.broadcast(sdk, settings).await?;
+    Ok(state_transition)
+}
+
+#[cfg(feature = "core_key_wallet")]
+#[allow(clippy::too_many_arguments)]
+async fn put_identity_with_asset_lock_and_signer<IS, AS>(
+    identity: &Identity,
+    sdk: &Sdk,
+    asset_lock_proof: AssetLockProof,
+    asset_lock_proof_path: &dpp::key_wallet::bip32::DerivationPath,
+    asset_lock_signer: &AS,
+    identity_signer: &IS,
+    settings: Option<PutSettings>,
+) -> Result<StateTransition, Error>
+where
+    IS: Signer<IdentityPublicKey>,
+    AS: dpp::key_wallet::signer::Signer + Send + Sync,
+{
+    let (state_transition, _) = identity
+        .broadcast_request_for_new_identity_with_signer(
+            asset_lock_proof,
+            asset_lock_proof_path,
+            asset_lock_signer,
+            identity_signer,
             sdk.version(),
         )
         .await?;

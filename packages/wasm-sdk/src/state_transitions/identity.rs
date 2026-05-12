@@ -114,7 +114,7 @@ impl WasmSdk {
 
         // Put identity to platform and wait
         identity
-            .put_to_platform_and_wait_for_response(
+            .put_to_platform_and_wait_for_response_with_private_key(
                 self.inner_sdk(),
                 asset_lock_proof,
                 &asset_lock_private_key,
@@ -203,7 +203,7 @@ impl WasmSdk {
 
         // Top up the identity
         let new_balance = identity
-            .top_up_identity(
+            .top_up_identity_with_private_key(
                 self.inner_sdk(),
                 asset_lock_proof,
                 &asset_lock_private_key,

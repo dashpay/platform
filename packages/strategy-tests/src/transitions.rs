@@ -383,7 +383,7 @@ pub fn create_identity_top_up_transition(
         let (asset_lock_proof, private_key) = proof_and_pk;
         let pk_bytes = private_key.to_bytes();
 
-        IdentityTopUpTransition::try_from_identity(
+        IdentityTopUpTransition::try_from_identity_with_private_key(
             identity,
             asset_lock_proof,
             pk_bytes.as_ref(),
@@ -1139,7 +1139,7 @@ pub async fn create_identities_state_transitions(
         if let Some(proof_and_pk) = asset_lock_proofs.pop() {
             let (asset_lock_proof, private_key) = proof_and_pk;
             let pk = private_key.to_bytes();
-            match IdentityCreateTransition::try_from_identity_with_signer(
+            match IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
                 &identity,
                 asset_lock_proof,
                 &pk,
@@ -1227,7 +1227,7 @@ where
             amount_range,
             rng,
         );
-        let identity_create_transition = IdentityCreateTransition::try_from_identity_with_signer(
+        let identity_create_transition = IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
             &identity.clone(),
             asset_lock_proof,
             &pk,
@@ -1276,7 +1276,7 @@ pub async fn create_state_transitions_for_identities_and_proofs(
 ) -> Vec<(Identity, StateTransition)> {
     let mut results = Vec::with_capacity(identities_with_proofs.len());
     for (mut identity, private_key, asset_lock_proof) in identities_with_proofs.into_iter() {
-        let identity_create_transition = IdentityCreateTransition::try_from_identity_with_signer(
+        let identity_create_transition = IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
             &identity.clone(),
             asset_lock_proof,
             &private_key,

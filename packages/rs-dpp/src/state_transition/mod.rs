@@ -1245,6 +1245,130 @@ impl StateTransition {
         Ok(())
     }
 
+    /// Signs `self.signable_bytes()` with an external [`key_wallet::signer::Signer`]
+    /// and stores the resulting Core-ECDSA signature on the state transition.
+    ///
+    /// This is the signer-driven counterpart to [`Self::sign_by_private_key`] for
+    /// the ECDSA (asset-lock-proof) signing path. It exists so callers — most
+    /// notably the iOS Swift SDK and any other host that holds its private keys
+    /// inside a hardware wallet, secure enclave, or remote signing service — can
+    /// produce the asset-lock-proof signature on `IdentityCreate` /
+    /// `IdentityTopUp` state transitions **without ever materialising a raw
+    /// `[u8]` private key on the Rust side**. The signer performs the
+    /// derive + sign + zeroise sequence atomically inside its own trust
+    /// boundary; this function only sees a 32-byte digest and the resulting
+    /// signature.
+    ///
+    /// # Wire-format parity with `sign_by_private_key`
+    ///
+    /// The byte layout of the signature stored on `self` is **byte-identical**
+    /// to the one produced by [`Self::sign_by_private_key`] when called with
+    /// `KeyType::ECDSA_SECP256K1` / `KeyType::ECDSA_HASH160` and the same
+    /// underlying private key. The pre-image transform mirrors
+    /// `dashcore::signer::sign`:
+    ///
+    /// 1. `digest = double_sha256(self.signable_bytes()?)`
+    /// 2. `signer.sign_ecdsa(path, digest).await` → non-recoverable
+    ///    `(secp256k1::ecdsa::Signature, secp256k1::PublicKey)`.
+    /// 3. Recover the recovery id by trying all four candidates against the
+    ///    returned public key (libsecp256k1 normalises both signing paths to
+    ///    low-s form so the 64-byte `r||s` payload is bit-identical).
+    /// 4. Serialise as a 65-byte compact recoverable signature with the
+    ///    `compressed` prefix convention used by `CompactSignature` — i.e.
+    ///    `[recovery_id + 27 + 4, r (32) || s (32)]`.
+    ///
+    /// # Errors
+    ///
+    /// - Returns [`ProtocolError::ExternalSignerError`] wrapping the signer's
+    ///   `Display` error when the underlying signer fails.
+    /// - Returns [`ProtocolError::ExternalSignerError`] if no recovery id
+    ///   matches the public key returned by the signer — this should be
+    ///   unreachable for a conformant signer (invariant violation by a
+    ///   non-conformant signer) but is surfaced rather than panicked on.
+    /// - Returns [`ProtocolError::Generic`] if the SHA-256 transform did not
+    ///   yield a 32-byte digest (defensive — should never happen).
+    /// - Returns [`ProtocolError::InvalidVerificationWrongNumberOfElements`] if
+    ///   `set_signature` rejects the result (matches `sign_by_private_key`).
+    #[cfg(all(feature = "state-transition-signing", feature = "core_key_wallet"))]
+    pub async fn sign_with_signer<S: ::key_wallet::signer::Signer>(
+        &mut self,
+        path: &::key_wallet::bip32::DerivationPath,
+        signer: &S,
+    ) -> Result<(), ProtocolError> {
+        use dashcore::secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
+        use dashcore::secp256k1::{Message, Secp256k1};
+        use dashcore::signer::{double_sha, CompactSignature};
+
+        let data = self.signable_bytes()?;
+        // Pre-image transform matches `dashcore::signer::sign`: double-SHA256
+        // of the signable bytes is the actual ECDSA message digest.
+        let data_hash = double_sha(&data);
+        let digest: [u8; 32] = data_hash
+            .as_slice()
+            .try_into()
+            .map_err(|_| ProtocolError::Generic("double_sha did not return 32 bytes".to_string()))?;
+
+        let (signature, public_key) = signer
+            .sign_ecdsa(path, digest)
+            .await
+            .map_err(|e| ProtocolError::ExternalSignerError(format!("signer failed: {}", e)))?;
+
+        // The signer returns a non-recoverable signature. The legacy path
+        // stores a 65-byte recoverable compact signature, so we brute-force
+        // the recovery id (0..3) by reconstructing a `RecoverableSignature`
+        // and comparing the recovered public key with the one the signer
+        // returned. secp256k1 normalises both `sign_ecdsa` and
+        // `sign_ecdsa_recoverable` outputs to low-s form, so the 64-byte
+        // `r||s` payload is bit-identical to what `dashcore::signer::sign`
+        // produces.
+        let compact_64 = signature.serialize_compact();
+        let secp = Secp256k1::new();
+        let msg = Message::from_digest(digest);
+
+        let mut found: Option<RecoverableSignature> = None;
+        for id in 0..4i32 {
+            let recid = match RecoveryId::try_from(id) {
+                Ok(r) => r,
+                Err(_) => continue,
+            };
+            let candidate = match RecoverableSignature::from_compact(&compact_64, recid) {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+            if let Ok(recovered) = secp.recover_ecdsa(&msg, &candidate) {
+                if recovered == public_key {
+                    found = Some(candidate);
+                    break;
+                }
+            }
+        }
+        let recoverable = found.ok_or_else(|| {
+            // Invariant violation by a non-conformant signer: the
+            // signature returned does not correspond to the public
+            // key the signer claims. Surface as ExternalSignerError
+            // (NOT Generic) so callers can distinguish signer-side
+            // failures from protocol-level invariants.
+            ProtocolError::ExternalSignerError(
+                "signer returned a signature whose recovery id does not match the returned public key".to_string(),
+            )
+        })?;
+
+        // Compressed-pubkey convention matches `dashcore::signer::sign`, which
+        // always passes `true` regardless of the underlying key encoding. The
+        // signer's `sign_ecdsa` returns the compressed `secp256k1::PublicKey`,
+        // so this is consistent.
+        let compact_65 = recoverable.to_compact_signature(true);
+
+        if !self.set_signature(compact_65.to_vec().into()) {
+            return Err(ProtocolError::InvalidVerificationWrongNumberOfElements {
+                needed: self.required_number_of_private_keys(),
+                using: 1,
+                msg: "failed to set ECDSA signature",
+            });
+        }
+        Ok(())
+    }
+
     #[cfg(feature = "state-transition-validation")]
     fn verify_by_raw_public_key<T: BlsModule>(
         &self,
@@ -3119,5 +3243,129 @@ mod tests {
         assert!(!sample_credit_transfer_to_addresses_st()
             .unique_identifiers()
             .is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // sign_with_signer byte-parity test
+    //
+    // Proves that `StateTransition::sign_with_signer` produces a byte-identical
+    // signature to the legacy `sign_by_private_key` ECDSA path when both are
+    // driven by the same underlying secret. This is the on-wire contract the
+    // Swift / external-signer flow depends on: changing the digest pre-image
+    // or the recoverable-compact encoding would silently break asset-lock
+    // verification on testnet/mainnet, so we pin both shapes here.
+    // -----------------------------------------------------------------------
+    #[cfg(all(
+        feature = "state-transition-signing",
+        feature = "core_key_wallet",
+        feature = "bls-signatures"
+    ))]
+    #[tokio::test]
+    async fn sign_with_signer_matches_sign_by_private_key_byte_for_byte() {
+        use async_trait::async_trait;
+        use dashcore::secp256k1::{
+            ecdsa, rand::rngs::OsRng, Message, PublicKey, Secp256k1, SecretKey,
+        };
+        use key_wallet::bip32::DerivationPath;
+        use key_wallet::signer::{Signer as KwSigner, SignerMethod};
+
+        /// Fixed-key in-memory signer used only by this test. Mirrors how a
+        /// real KeychainSigner would behave: derive once, sign atomically,
+        /// return non-recoverable `(Signature, PublicKey)`. The path is
+        /// ignored — the wrapper holds exactly one key.
+        #[derive(Debug)]
+        struct FixedKeySigner {
+            secret: SecretKey,
+            public: PublicKey,
+        }
+
+        #[async_trait]
+        impl KwSigner for FixedKeySigner {
+            type Error = String;
+
+            fn supported_methods(&self) -> &[SignerMethod] {
+                &[SignerMethod::Digest]
+            }
+
+            async fn sign_ecdsa(
+                &self,
+                _path: &DerivationPath,
+                sighash: [u8; 32],
+            ) -> Result<(ecdsa::Signature, PublicKey), Self::Error> {
+                let secp = Secp256k1::new();
+                let msg = Message::from_digest(sighash);
+                let sig = secp.sign_ecdsa(&msg, &self.secret);
+                Ok((sig, self.public))
+            }
+
+            async fn public_key(
+                &self,
+                _path: &DerivationPath,
+            ) -> Result<PublicKey, Self::Error> {
+                Ok(self.public)
+            }
+        }
+
+        // Generate a single random key. Using the same key on both sides is
+        // load-bearing: the legacy path signs raw bytes, the signer path
+        // derives + signs inside the trust boundary. If the digest pre-image
+        // or compact-encoding differs, the bytes will diverge.
+        let secp = Secp256k1::new();
+        let (secret_key, public_key) = secp.generate_keypair(&mut OsRng);
+        let private_key_bytes = secret_key.secret_bytes();
+
+        let signer = FixedKeySigner {
+            secret: secret_key,
+            public: public_key,
+        };
+        let path = DerivationPath::default();
+
+        // Use a sample state transition that exercises signable_bytes() —
+        // any signable ST works since we're only comparing the signature
+        // bytes the two paths produce over the SAME `signable_bytes()`.
+        let mut st_legacy = sample_transfer_st();
+        let mut st_signer = sample_transfer_st();
+
+        // Sanity: both copies must have identical signable_bytes before signing.
+        assert_eq!(
+            st_legacy.signable_bytes().expect("legacy signable_bytes"),
+            st_signer.signable_bytes().expect("signer signable_bytes"),
+            "signable_bytes pre-image must match across copies"
+        );
+
+        // Legacy path: raw &[u8] private key → 65-byte recoverable compact.
+        // BLS is only used by `sign_by_private_key` when key_type is BLS12_381 —
+        // for the ECDSA path it's unused, but the function signature requires
+        // it, so we pass the NativeBlsModule that's already in the workspace.
+        let bls = crate::bls::native_bls::NativeBlsModule;
+        st_legacy
+            .sign_by_private_key(&private_key_bytes, KeyType::ECDSA_HASH160, &bls)
+            .expect("sign_by_private_key");
+
+        // New signer-driven path: digest → external signer → recovered →
+        // 65-byte recoverable compact. Byte-identical to the legacy result.
+        st_signer
+            .sign_with_signer(&path, &signer)
+            .await
+            .expect("sign_with_signer");
+
+        let sig_legacy = st_legacy.signature().expect("legacy signature set");
+        let sig_signer = st_signer.signature().expect("signer signature set");
+
+        assert_eq!(
+            sig_legacy.as_slice().len(),
+            65,
+            "legacy ECDSA signature must be 65 bytes (recoverable compact)"
+        );
+        assert_eq!(
+            sig_signer.as_slice().len(),
+            65,
+            "signer ECDSA signature must be 65 bytes (recoverable compact)"
+        );
+        assert_eq!(
+            sig_legacy.as_slice(),
+            sig_signer.as_slice(),
+            "sign_with_signer must produce byte-identical output to sign_by_private_key"
+        );
     }
 }

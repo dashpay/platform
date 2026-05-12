@@ -87,31 +87,86 @@ pub(crate) trait BroadcastRequestForNewIdentity<T: TransportRequest, S: Signer<I
     /// # Error Handling
     /// This method propagates any errors encountered during the signing or conversion process.
     /// These are returned as [`Error`] instances.
+    ///
+    /// Prefer [`Self::broadcast_request_for_new_identity_with_signer`] when
+    /// the asset-lock private key lives outside Rust (Swift / hardware wallet
+    /// / HSM): the `_with_signer` variant routes asset-lock signing through
+    /// an external [`key_wallet::signer::Signer`] so the private key never
+    /// crosses the FFI boundary as raw bytes.
     #[allow(async_fn_in_trait)]
-    async fn broadcast_request_for_new_identity(
+    async fn broadcast_request_for_new_identity_with_private_key(
         &self,
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &PrivateKey,
         signer: &S,
         platform_version: &PlatformVersion,
     ) -> Result<(StateTransition, BroadcastStateTransitionRequest), Error>;
+
+    /// Signer-driven counterpart to
+    /// [`Self::broadcast_request_for_new_identity_with_private_key`].
+    ///
+    /// `identity_signer` signs the per-key witnesses on `public_keys[]`,
+    /// while `asset_lock_signer` produces the outer state-transition ECDSA
+    /// signature for the key at `asset_lock_proof_path` — atomically
+    /// deriving, signing, and zeroising inside the signer's trust boundary.
+    #[cfg(feature = "core_key_wallet")]
+    #[allow(async_fn_in_trait)]
+    async fn broadcast_request_for_new_identity_with_signer<AS>(
+        &self,
+        asset_lock_proof: AssetLockProof,
+        asset_lock_proof_path: &dpp::key_wallet::bip32::DerivationPath,
+        asset_lock_signer: &AS,
+        identity_signer: &S,
+        platform_version: &PlatformVersion,
+    ) -> Result<(StateTransition, BroadcastStateTransitionRequest), Error>
+    where
+        AS: dpp::key_wallet::signer::Signer + Send + Sync;
 }
 
 impl<S: Signer<IdentityPublicKey>>
     BroadcastRequestForNewIdentity<proto::BroadcastStateTransitionRequest, S> for Identity
 {
-    async fn broadcast_request_for_new_identity(
+    async fn broadcast_request_for_new_identity_with_private_key(
         &self,
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &PrivateKey,
         signer: &S,
         platform_version: &PlatformVersion,
     ) -> Result<(StateTransition, BroadcastStateTransitionRequest), Error> {
-        let identity_create_transition = IdentityCreateTransition::try_from_identity_with_signer(
+        let identity_create_transition =
+            IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
+                self,
+                asset_lock_proof,
+                asset_lock_proof_private_key.inner.as_ref(),
+                signer,
+                &NativeBlsModule,
+                0,
+                platform_version,
+            )
+            .await?;
+        ensure_valid_state_transition_structure(&identity_create_transition, platform_version)?;
+        let request = identity_create_transition.broadcast_request_for_state_transition()?;
+        Ok((identity_create_transition, request))
+    }
+
+    #[cfg(feature = "core_key_wallet")]
+    async fn broadcast_request_for_new_identity_with_signer<AS>(
+        &self,
+        asset_lock_proof: AssetLockProof,
+        asset_lock_proof_path: &dpp::key_wallet::bip32::DerivationPath,
+        asset_lock_signer: &AS,
+        identity_signer: &S,
+        platform_version: &PlatformVersion,
+    ) -> Result<(StateTransition, BroadcastStateTransitionRequest), Error>
+    where
+        AS: dpp::key_wallet::signer::Signer + Send + Sync,
+    {
+        let identity_create_transition = IdentityCreateTransition::try_from_identity_with_signers(
             self,
             asset_lock_proof,
-            asset_lock_proof_private_key.inner.as_ref(),
-            signer,
+            asset_lock_proof_path,
+            identity_signer,
+            asset_lock_signer,
             &NativeBlsModule,
             0,
             platform_version,
