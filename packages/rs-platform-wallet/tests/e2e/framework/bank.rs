@@ -402,6 +402,17 @@ impl BankWallet {
         ];
 
         for attempt in 0..=MAX_RETRIES {
+            // Rec 2 — bank pre-funding credit snapshot (DEBUG; opt-in via
+            // RUST_LOG=platform_wallet::e2e::bank=debug).
+            tracing::debug!(
+                target: "platform_wallet::e2e::bank",
+                bank_credits_before = self.total_credits().await,
+                ?target,
+                credits,
+                attempt,
+                "bank.fund_address: bank balance at attempt entry"
+            );
+
             // === Critical section: build STE + sign + broadcast ===
             // Lock held only across the DAPI-accept boundary. The
             // post-broadcast chain-confirmation wait runs unlocked.
@@ -440,17 +451,35 @@ impl BankWallet {
                 });
 
                 match result.as_ref() {
-                    Ok(_) => tracing::info!(
-                        target: "platform_wallet::e2e::bank",
-                        seq,
-                        attempt,
-                        elapsed_ms = broadcast_started.elapsed().as_millis() as u64,
-                        "bank.fund_address: transfer broadcast accepted (lock released)"
-                    ),
+                    Ok(cs) => {
+                        tracing::info!(
+                            target: "platform_wallet::e2e::bank",
+                            seq,
+                            attempt,
+                            ?target,
+                            credits,
+                            elapsed_ms = broadcast_started.elapsed().as_millis() as u64,
+                            "bank.fund_address: transfer broadcast accepted (lock released)"
+                        );
+                        // tx_hash is not in PlatformAddressChangeSet (Rec 5 deferred —
+                        // requires struct field addition). The SDK logs transaction_id at
+                        // TRACE in dash_sdk::platform::transition::broadcast immediately
+                        // before this INFO line; correlate by timestamp or by seq above.
+                        // changeset Debug is the best available fallback without struct changes.
+                        tracing::trace!(
+                            target: "platform_wallet::e2e::bank",
+                            seq,
+                            ?target,
+                            changeset = ?cs,
+                            "bank.fund_address: broadcast changeset (no tx_hash — grep sdk TRACE by timestamp)"
+                        );
+                    }
                     Err(err) => tracing::warn!(
                         target: "platform_wallet::e2e::bank",
                         seq,
                         attempt,
+                        ?target,
+                        credits,
                         elapsed_ms = broadcast_started.elapsed().as_millis() as u64,
                         error = %err,
                         "bank.fund_address: transfer broadcast failed"

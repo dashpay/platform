@@ -307,6 +307,16 @@ pub async fn setup_with_per_identity_funding(
     let base = setup().await?;
     let mut identities = Vec::with_capacity(funding_per_identity.len());
 
+    // Rec 6 — bank balance breadcrumb at per-test setup entry (DEBUG; opt-in via
+    // RUST_LOG=platform_wallet::e2e::bank=debug). Cached read — no DAPI round-trip.
+    // Creates a depletion-detection breadcrumb across a long suite run.
+    tracing::debug!(
+        target: "platform_wallet::e2e::bank",
+        bank_credits = base.ctx.bank().total_credits().await,
+        identities = funding_per_identity.len(),
+        "bank.setup: cached bank balance at per-identity funding entry"
+    );
+
     // Each identity gets a distinct funding address so the bank's
     // FUNDING_MUTEX serialises funding without contending on the
     // same destination. We fund + observe before registration so

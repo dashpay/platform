@@ -178,7 +178,12 @@ pub async fn wait_for_balance(
                 "wait_for_balance timed out after {timeout:?} \
                  (addr={addr:?} expected={expected} last_observed={last_observed} \
                   first_observed={first_observed:?} polls={polls} \
-                  any_balance_change_observed={any_balance_change_observed})"
+                  any_balance_change_observed={any_balance_change_observed}). \
+                 To find the originating bank.fund_address broadcast, grep TRACE logs \
+                 for `target = {addr:?}` — the INFO `transfer broadcast accepted` line \
+                 and the preceding SDK TRACE `broadcast: start transaction_id=<hash>` \
+                 appear within milliseconds of each other and identify the tx to \
+                 query on a Platform explorer."
             )));
         }
         // Backstop wake on idle chains; real activity wakes us
