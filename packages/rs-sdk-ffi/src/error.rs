@@ -102,6 +102,14 @@ impl From<FFIError> for DashSDKError {
         let (code, message) = match &err {
             FFIError::InvalidParameter(_) => (DashSDKErrorCode::InvalidParameter, err.to_string()),
             FFIError::SDKError(sdk_err) => {
+                // Typed dispatch wins over message sniffing.
+                if matches!(sdk_err, dash_sdk::Error::InvalidArgument(_)) {
+                    return DashSDKError::new(
+                        DashSDKErrorCode::InvalidParameter,
+                        sdk_err.to_string(),
+                    );
+                }
+
                 // Extract more detailed error information
                 let error_str = sdk_err.to_string();
 

@@ -170,6 +170,9 @@ impl From<SdkError> for WasmSdkError {
                 retriable,
             ),
             Generic(msg) => Self::new(WasmSdkErrorKind::Generic, msg, None, retriable),
+            InvalidArgument(msg) => {
+                Self::new(WasmSdkErrorKind::InvalidArgument, msg, None, retriable)
+            }
             ContextProviderError(e) => Self::new(
                 WasmSdkErrorKind::ContextProviderError,
                 e.to_string(),

@@ -62,8 +62,8 @@ fn is_document_replace_revision(revision: Option<u64>) -> bool {
 /// `0` is always invalid regardless of caller intent.
 fn ensure_revision_nonzero(revision: Option<u64>) -> Result<(), Error> {
     if matches!(revision, Some(0)) {
-        return Err(Error::Generic(
-            "InvalidArgument: document revision 0 is invalid; \
+        return Err(Error::InvalidArgument(
+            "document revision 0 is invalid; \
              use unset or 1 (INITIAL_REVISION) for create, or > 1 for replace"
                 .to_string(),
         ));
@@ -80,8 +80,8 @@ fn ensure_revision_for_create(revision: Option<u64>) -> Result<(), Error> {
     match revision {
         None => Ok(()),
         Some(rev) if rev == INITIAL_REVISION => Ok(()),
-        Some(rev) => Err(Error::Generic(format!(
-            "InvalidArgument: document revision is {rev} but create requires revision \
+        Some(rev) => Err(Error::InvalidArgument(format!(
+            "document revision is {rev} but create requires revision \
              to be unset or {INITIAL_REVISION}; use the replace path for revisions > {INITIAL_REVISION}"
         ))),
     }
@@ -95,12 +95,12 @@ fn ensure_revision_for_create(revision: Option<u64>) -> Result<(), Error> {
 fn ensure_revision_for_replace(revision: Option<u64>) -> Result<(), Error> {
     match revision {
         Some(rev) if rev > INITIAL_REVISION => Ok(()),
-        Some(rev) => Err(Error::Generic(format!(
-            "InvalidArgument: document revision is {rev} but replace requires revision > \
+        Some(rev) => Err(Error::InvalidArgument(format!(
+            "document revision is {rev} but replace requires revision > \
              {INITIAL_REVISION}; use the create path for new documents"
         ))),
-        None => Err(Error::Generic(
-            "InvalidArgument: document must have a revision set for replace; \
+        None => Err(Error::InvalidArgument(
+            "document must have a revision set for replace; \
              use the create path for new documents"
                 .to_string(),
         )),
@@ -128,8 +128,8 @@ fn ensure_document_id_matches_entropy(
         entropy.as_slice(),
     );
     if document.id() != expected {
-        return Err(Error::Generic(format!(
-            "InvalidArgument: document.id does not match \
+        return Err(Error::InvalidArgument(format!(
+            "document.id does not match \
              generate_document_id_v0(contract_id, owner_id, document_type_name, entropy); \
              expected {expected}, got {got}. \
              Either set document.id to the derived value before calling \
@@ -197,12 +197,12 @@ pub trait PutDocument<S: Signer<IdentityPublicKey>>: Waitable {
 /// Legacy create-or-replace dispatch: build, sign, and structurally validate
 /// a document [`StateTransition`] without broadcasting it.
 ///
-/// **Compatibility note (kept `pub`):** this helper was previously public
-/// and is retained as a public, source-compatible entry point for downstream
-/// native callers (e.g. `rs-platform-wallet`) that already depend on it. It
-/// dispatches between create and replace based on the document's revision
-/// and supports the legacy `document_state_transition_entropy = None`
-/// fallback (RNG-derived entropy + id auto-rewrite) on the create branch.
+/// **Legacy / source-compatible only.** This helper is retained as a
+/// public, source-compatible entry point for native callers that already
+/// depend on it. It dispatches between create and replace based on the
+/// document's revision and supports the legacy
+/// `document_state_transition_entropy = None` fallback (RNG-derived
+/// entropy + id auto-rewrite) on the create branch.
 ///
 /// **New callers should prefer the strict helpers**
 /// [`build_signed_document_create_transition`] /
@@ -238,7 +238,38 @@ pub trait PutDocument<S: Signer<IdentityPublicKey>>: Waitable {
 /// the cache entry if it still equals the nonce allocated by this attempt, so
 /// concurrent allocations are not clobbered.
 #[allow(clippy::too_many_arguments)]
+#[deprecated(
+    note = "use build_signed_document_create_transition or build_signed_document_replace_transition for strict intent validation"
+)]
 pub async fn build_signed_document_create_or_replace_transition<S: Signer<IdentityPublicKey>>(
+    sdk: &Sdk,
+    document: &Document,
+    document_type: &DocumentType,
+    document_state_transition_entropy: Option<[u8; 32]>,
+    identity_public_key: &IdentityPublicKey,
+    token_payment_info: Option<TokenPaymentInfo>,
+    signer: &S,
+    settings: Option<PutSettings>,
+) -> Result<StateTransition, Error> {
+    build_signed_document_create_or_replace_transition_legacy(
+        sdk,
+        document,
+        document_type,
+        document_state_transition_entropy,
+        identity_public_key,
+        token_payment_info,
+        signer,
+        settings,
+    )
+    .await
+}
+
+/// Private implementation backing the deprecated public legacy dispatcher.
+///
+/// Internal strict helpers route through this private entry point so
+/// in-tree call sites do not trigger the public deprecation warning.
+#[allow(clippy::too_many_arguments)]
+async fn build_signed_document_create_or_replace_transition_legacy<S: Signer<IdentityPublicKey>>(
     sdk: &Sdk,
     document: &Document,
     document_type: &DocumentType,
@@ -330,7 +361,7 @@ pub async fn build_signed_document_create_transition<S: Signer<IdentityPublicKey
         document_type,
         &document_state_transition_entropy,
     )?;
-    build_signed_document_create_or_replace_transition(
+    build_signed_document_create_or_replace_transition_legacy(
         sdk,
         document,
         document_type,
@@ -368,7 +399,7 @@ pub async fn build_signed_document_replace_transition<S: Signer<IdentityPublicKe
     settings: Option<PutSettings>,
 ) -> Result<StateTransition, Error> {
     ensure_revision_for_replace(document.revision())?;
-    build_signed_document_create_or_replace_transition(
+    build_signed_document_create_or_replace_transition_legacy(
         sdk,
         document,
         document_type,
@@ -626,8 +657,8 @@ mod tests {
         assert!(ensure_revision_nonzero(Some(u64::MAX)).is_ok());
 
         let err = ensure_revision_nonzero(Some(0)).expect_err("revision 0 must error");
+        assert!(matches!(err, Error::InvalidArgument(_)), "err: {err:?}");
         let msg = err.to_string();
-        assert!(msg.contains("InvalidArgument"), "msg: {msg}");
         assert!(msg.contains("revision 0"), "msg: {msg}");
     }
 
@@ -640,12 +671,12 @@ mod tests {
     #[test]
     fn ensure_revision_for_create_rejects_zero_and_above_initial() {
         let zero = ensure_revision_for_create(Some(0)).expect_err("revision 0 must error");
-        assert!(zero.to_string().contains("InvalidArgument"));
+        assert!(matches!(zero, Error::InvalidArgument(_)), "err: {zero:?}");
         assert!(zero.to_string().contains("create requires revision"));
 
         let above = ensure_revision_for_create(Some(INITIAL_REVISION + 1))
             .expect_err("revision > INITIAL_REVISION must error on create path");
-        assert!(above.to_string().contains("InvalidArgument"));
+        assert!(matches!(above, Error::InvalidArgument(_)), "err: {above:?}");
         assert!(above.to_string().contains("replace path"));
     }
 
@@ -658,17 +689,23 @@ mod tests {
     #[test]
     fn ensure_revision_for_replace_rejects_missing_zero_and_initial_revision() {
         let missing = ensure_revision_for_replace(None).expect_err("missing revision must error");
-        assert!(missing.to_string().contains("InvalidArgument"));
+        assert!(
+            matches!(missing, Error::InvalidArgument(_)),
+            "err: {missing:?}"
+        );
         assert!(missing.to_string().contains("must have a revision set"));
 
         let zero =
             ensure_revision_for_replace(Some(0)).expect_err("revision 0 must error on replace");
-        assert!(zero.to_string().contains("InvalidArgument"));
+        assert!(matches!(zero, Error::InvalidArgument(_)), "err: {zero:?}");
         assert!(zero.to_string().contains("replace requires revision"));
 
         let initial = ensure_revision_for_replace(Some(INITIAL_REVISION))
             .expect_err("INITIAL_REVISION must error on replace path");
-        assert!(initial.to_string().contains("InvalidArgument"));
+        assert!(
+            matches!(initial, Error::InvalidArgument(_)),
+            "err: {initial:?}"
+        );
         assert!(initial.to_string().contains("replace requires revision"));
     }
 
@@ -896,8 +933,8 @@ mod tests {
         .await
         .expect_err("id-mismatch must error before nonce allocation");
 
+        assert!(matches!(err, Error::InvalidArgument(_)), "err: {err:?}");
         let msg = err.to_string();
-        assert!(msg.contains("InvalidArgument"), "msg: {msg}");
         assert!(
             msg.contains("does not match"),
             "expected id-mismatch error, got: {msg}"

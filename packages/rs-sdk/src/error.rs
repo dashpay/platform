@@ -96,6 +96,12 @@ pub enum Error {
     #[error("SDK error: {0}")]
     Generic(String),
 
+    /// Caller-provided input failed local validation before any network or
+    /// nonce-affecting work. Maps to `WasmSdkErrorKind::InvalidArgument` in
+    /// the wasm-sdk and `DashSDKErrorCode::InvalidParameter` in the FFI.
+    #[error("Invalid argument: {0}")]
+    InvalidArgument(String),
+
     /// Context provider error
     #[error("Context provider error: {0}")]
     ContextProviderError(#[from] ContextProviderError),
