@@ -109,18 +109,27 @@ public class ManagedCoreWallet {
         let cStrings = recipients.map { ($0.address as NSString).utf8String }
         let amounts = recipients.map { $0.amountDuffs }
 
+        // Resolver-backed signer owns mnemonic access for the lifetime
+        // of this call. Each Core ECDSA signature happens atomically
+        // inside the resolver vtable (mnemonic fetched, key derived,
+        // digest signed, buffers zeroed) — no priv key leaves Swift.
+        let resolver = MnemonicResolver()
+
         try cStrings.withUnsafeBufferPointer { addrBuf in
             try amounts.withUnsafeBufferPointer { amountBuf in
-                try core_wallet_send_to_addresses(
-                    handle,
-                    accountType.rawValue,
-                    accountIndex,
-                    addrBuf.baseAddress,
-                    amountBuf.baseAddress,
-                    UInt(recipients.count),
-                    &txBytesPtr,
-                    &txLen
-                ).check()
+                try withExtendedLifetime(resolver) {
+                    try core_wallet_send_to_addresses(
+                        handle,
+                        accountType.rawValue,
+                        accountIndex,
+                        addrBuf.baseAddress,
+                        amountBuf.baseAddress,
+                        UInt(recipients.count),
+                        resolver.handle,
+                        &txBytesPtr,
+                        &txLen
+                    ).check()
+                }
             }
         }
 

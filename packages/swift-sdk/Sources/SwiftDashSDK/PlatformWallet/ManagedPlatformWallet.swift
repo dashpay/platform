@@ -2365,9 +2365,17 @@ extension ManagedPlatformWallet {
         let handle = self.handle
         let signerHandle = signer.handle
         let pubkeys = identityPubkeys
+        // Create a `MnemonicResolver` owned for the lifetime of the
+        // FFI call — Rust constructs a `MnemonicResolverCoreSigner`
+        // from this handle to sign the asset-lock proof's
+        // credit-spending signature on the IdentityCreate transition.
+        // The resolver's vtable callback fetches the mnemonic from
+        // Keychain, derives the priv key at the credit-output path,
+        // signs the digest, and zeroes — atomic per call. No priv
+        // key ever lives in Rust memory across operations.
+        let coreSigner = MnemonicResolver()
         return try await Task.detached(priority: .userInitiated) {
             () -> (Identifier, ManagedIdentity) in
-            _ = signer
             var idTuple: (
                 UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
                 UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
@@ -2380,21 +2388,31 @@ extension ManagedPlatformWallet {
             var outManagedHandle: Handle = NULL_HANDLE
             // Pin each pubkey buffer simultaneously via the existing
             // helper, then hand the assembled row array to the FFI.
+            //
+            // `withExtendedLifetime` is the canonical Swift idiom for
+            // "keep this ARC-managed object alive across an FFI call
+            // that captures a raw handle to it". `_ = signer` /
+            // `_ = coreSigner` is folklore; the optimizer may elide
+            // the discard in -O builds, releasing the resolver mid-
+            // FFI-call → use-after-free in the vtable callback.
             let pubkeyBuffers: [Data] = pubkeys.map { $0.pubkeyBytes }
-            let result = ManagedPlatformWallet.withPubkeyFFIArray(
-                pubkeys,
-                buffers: pubkeyBuffers
-            ) { ffiRowsPtr, ffiRowsCount in
-                platform_wallet_register_identity_with_funding_signer(
-                    handle,
-                    amountDuffs,
-                    identityIndex,
-                    ffiRowsPtr,
-                    UInt(ffiRowsCount),
-                    signerHandle,
-                    &idTuple,
-                    &outManagedHandle
-                )
+            let result = withExtendedLifetime((signer, coreSigner)) {
+                ManagedPlatformWallet.withPubkeyFFIArray(
+                    pubkeys,
+                    buffers: pubkeyBuffers
+                ) { ffiRowsPtr, ffiRowsCount in
+                    platform_wallet_register_identity_with_funding_signer(
+                        handle,
+                        amountDuffs,
+                        identityIndex,
+                        ffiRowsPtr,
+                        UInt(ffiRowsCount),
+                        signerHandle,
+                        coreSigner.handle,
+                        &idTuple,
+                        &outManagedHandle
+                    )
+                }
             }
             try result.check()
             // Copy the 32-byte tuple into a Data via withUnsafeBytes.

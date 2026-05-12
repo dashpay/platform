@@ -51,16 +51,17 @@ public class ManagedAssetLockManager {
     public struct BuildResult {
         /// Serialized signed transaction.
         public let transaction: Data
-        /// 32-byte one-time private key.
-        public let privateKey: Data
+        /// Credit-output derivation path (string form). The signer
+        /// uses this path to produce the consume-phase signature.
+        public let derivationPath: String
     }
 
     /// Result of creating a funded asset lock proof.
     public struct FundedProofResult {
         /// Bincode-encoded AssetLockProof.
         public let proofBytes: Data
-        /// 32-byte one-time private key.
-        public let privateKey: Data
+        /// Credit-output derivation path (string form).
+        public let derivationPath: String
         /// 32-byte transaction ID.
         public let txid: Data
     }
@@ -69,8 +70,8 @@ public class ManagedAssetLockManager {
     public struct ResumeResult {
         /// Bincode-encoded AssetLockProof.
         public let proofBytes: Data
-        /// 32-byte one-time private key.
-        public let privateKey: Data
+        /// Credit-output derivation path (string form).
+        public let derivationPath: String
     }
 
     // MARK: - Queries
@@ -102,60 +103,72 @@ public class ManagedAssetLockManager {
 
     // MARK: - Build
 
-    /// Build an asset lock transaction.
+    /// Build an asset lock transaction. The caller supplies a
+    /// `MnemonicResolver` whose vtable backs every per-input Core
+    /// ECDSA signature; the credit-output private key is never
+    /// exposed across the FFI. The resolver must outlive this call.
     public func buildTransaction(
         amountDuffs: UInt64,
         accountIndex: UInt32 = 0,
         fundingType: FundingType,
-        identityIndex: UInt32 = 0
+        identityIndex: UInt32 = 0,
+        resolver: MnemonicResolver
     ) throws -> BuildResult {
         var txBytesPtr: UnsafeMutablePointer<UInt8>? = nil
         var txLen: UInt = 0
-        var privateKey: FFIByteTuple32 = // gitleaks:allow
-            (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
+        var pathPtr: UnsafeMutablePointer<CChar>? = nil
 
-        try asset_lock_manager_build_transaction(
-            handle, amountDuffs, accountIndex, fundingType.rawValue, identityIndex,
-            &txBytesPtr, &txLen, &privateKey
-        ).check()
+        try withExtendedLifetime(resolver) {
+            try asset_lock_manager_build_transaction(
+                handle, amountDuffs, accountIndex, fundingType.rawValue, identityIndex,
+                resolver.handle, &txBytesPtr, &txLen, &pathPtr
+            ).check()
+        }
 
         guard let txPtr = txBytesPtr, txLen > 0 else {
             throw PlatformWalletError.unknown("FFI returned success but transaction buffer was empty")
         }
         defer { asset_lock_manager_free_tx_bytes(txPtr, txLen) }
+        defer { if let p = pathPtr { platform_wallet_string_free(p) } }
 
         let txData = Data(bytes: txPtr, count: Int(txLen))
-        let keyData = withUnsafeBytes(of: &privateKey) { Data($0) }
-        return BuildResult(transaction: txData, privateKey: keyData)
+        let path = pathPtr.map { String(cString: $0) } ?? ""
+        return BuildResult(transaction: txData, derivationPath: path)
     }
 
-    /// Build, broadcast, and wait for an asset lock proof.
+    /// Build, broadcast, and wait for an asset lock proof. Signing
+    /// happens through the supplied `MnemonicResolver` — the
+    /// credit-output private key never crosses the FFI boundary.
     public func createFundedProof(
         amountDuffs: UInt64,
         accountIndex: UInt32 = 0,
         fundingType: FundingType,
-        identityIndex: UInt32 = 0
+        identityIndex: UInt32 = 0,
+        resolver: MnemonicResolver
     ) throws -> FundedProofResult {
         var proofBytesPtr: UnsafeMutablePointer<UInt8>? = nil
         var proofLen: UInt = 0
-        var privateKey: FFIByteTuple32 = // gitleaks:allow
-            (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
+        var pathPtr: UnsafeMutablePointer<CChar>? = nil
         var txid: FFIByteTuple32 =
             (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
 
-        try asset_lock_manager_create_funded_proof(
-            handle, amountDuffs, accountIndex, fundingType.rawValue, identityIndex,
-            &proofBytesPtr, &proofLen, &privateKey, &txid
-        ).check()
+        try withExtendedLifetime(resolver) {
+            try asset_lock_manager_create_funded_proof(
+                handle, amountDuffs, accountIndex, fundingType.rawValue, identityIndex,
+                resolver.handle, &proofBytesPtr, &proofLen, &pathPtr, &txid
+            ).check()
+        }
 
         guard let proofPtr = proofBytesPtr, proofLen > 0 else {
             throw PlatformWalletError.unknown("FFI returned success but proof buffer was empty")
         }
         defer { asset_lock_manager_free_proof_bytes(proofPtr, proofLen) }
+        defer { if let p = pathPtr { platform_wallet_string_free(p) } }
 
+        let path = pathPtr.map { String(cString: $0) } ?? ""
         return FundedProofResult(
             proofBytes: Data(bytes: proofPtr, count: Int(proofLen)),
-            privateKey: withUnsafeBytes(of: &privateKey) { Data($0) },
+            derivationPath: path,
             txid: withUnsafeBytes(of: &txid) { Data($0) }
         )
     }
@@ -163,6 +176,9 @@ public class ManagedAssetLockManager {
     // MARK: - Resume
 
     /// Resume a tracked asset lock from whatever stage it's at.
+    /// Resume only re-derives the proof + credit-output path; signing
+    /// the consume transaction happens in the next FFI call, which
+    /// is where the resolver plugs in. No signer parameter needed.
     public func resume(
         txid: Data,
         vout: UInt32 = 0,
@@ -176,8 +192,7 @@ public class ManagedAssetLockManager {
 
         var proofBytesPtr: UnsafeMutablePointer<UInt8>? = nil
         var proofLen: UInt = 0
-        var privateKey: FFIByteTuple32 = // gitleaks:allow
-            (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
+        var pathPtr: UnsafeMutablePointer<CChar>? = nil
 
         var txidTuple: FFIByteTuple32 =
             (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
@@ -189,17 +204,19 @@ public class ManagedAssetLockManager {
 
         try asset_lock_manager_resume(
             handle, &txidTuple, vout, timeoutSeconds,
-            &proofBytesPtr, &proofLen, &privateKey
+            &proofBytesPtr, &proofLen, &pathPtr
         ).check()
 
         guard let proofPtr = proofBytesPtr, proofLen > 0 else {
             throw PlatformWalletError.unknown("FFI returned success but proof buffer was empty")
         }
         defer { asset_lock_manager_free_proof_bytes(proofPtr, proofLen) }
+        defer { if let p = pathPtr { platform_wallet_string_free(p) } }
 
+        let path = pathPtr.map { String(cString: $0) } ?? ""
         return ResumeResult(
             proofBytes: Data(bytes: proofPtr, count: Int(proofLen)),
-            privateKey: withUnsafeBytes(of: &privateKey) { Data($0) }
+            derivationPath: path
         )
     }
 }
