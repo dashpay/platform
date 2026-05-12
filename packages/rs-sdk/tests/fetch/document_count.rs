@@ -1,15 +1,15 @@
-//! Mock-based integration tests for the SDK count-fetch paths
-//! on top of the unified [`DocumentQuery`] surface.
+//! Mock-based integration tests for the SDK count-fetch paths.
 //!
 //! `DocumentCount::fetch(sdk, query)` and
 //! `DocumentSplitCounts::fetch(sdk, query)` both consume a
 //! [`DocumentQuery`] (the same type used by
-//! `Document::fetch_many`), the count-specific shape signalled
-//! via `.with_select(Select::Count)` + optional `.with_group_by(…)`.
-//! This file exercises the SDK ↔ mock-DAPI seam:
+//! `Document::fetch_many`), with the count-specific shape
+//! signalled via `.with_select(Select::Count)` + optional
+//! `.with_group_by(…)`. This file exercises the SDK ↔ mock-DAPI
+//! seam:
 //!
 //! - `DocumentQuery` builds + serializes through the mock
-//!   transport for every supported request shape (Total, `In`-
+//!   transport for every supported request shape (total, `In`-
 //!   grouped, distinct-range).
 //! - `Fetch for DocumentCount` and `Fetch for DocumentSplitCounts`
 //!   correctly thread the query, response, and mock expectations.
@@ -19,10 +19,9 @@
 //!
 //! The mock transport short-circuits the wire-level verifier
 //! path, so these tests pin the SDK seam — query builder →
-//! `TryInto<GetDocumentsRequest>` (v1) → mock match →
-//! `MockResponse` decode → `Fetch` return type — which is
-//! exactly the surface that earlier SDK-only regressions on
-//! this PR slipped through unnoticed.
+//! `TryInto<GetDocumentsRequest>` → mock match → `MockResponse`
+//! decode → `Fetch` return type. Anything that ships only
+//! through the live-network path is out of scope here.
 //!
 //! Because `DocumentQuery` is the `Request` type for three
 //! different `Fetch` impls (`Document`, `DocumentCount`,
@@ -121,12 +120,10 @@ async fn test_mock_fetch_document_count_not_found() {
 /// explicit `with_group_by("a")` exercises the SDK seam that
 /// routes `(In, prove=true, group_by=[in_field])` requests to
 /// the server's `PointLookupProof` dispatch and decodes the
-/// response as per-`In`-value entries.
-///
-/// Pre-v1 the grouping was implicit (any In implied PerInValue);
-/// v1 makes it explicit so callers can ask for the aggregate
-/// (empty `group_by`) or per-value entries (`group_by =
-/// [in_field]`) on the same wire shape.
+/// response as per-`In`-value entries. The same `(In, prove=true)`
+/// request with empty `group_by` would route to the aggregate
+/// path instead — the `group_by` field is what selects the
+/// per-value shape.
 #[tokio::test]
 async fn test_mock_fetch_document_split_counts_with_in_clause() {
     let mut sdk = Sdk::new_mock();
@@ -233,9 +230,10 @@ async fn test_mock_fetch_document_split_counts_with_distinct_range() {
 /// `with_group_by(range_field)` exercises the SDK seam that
 /// routes through the `RangeDistinctProof` verifier and sums
 /// the verified per-key entries to produce a single aggregate
-/// count. Pin against the prior regression where every range
-/// query was routed through the aggregate verifier, ignoring
-/// the distinct-grouping signal.
+/// count. The non-grouped range path returns an
+/// `AggregateCountOnRange` proof shape that's NOT interchangeable
+/// with the distinct path, so it matters that `group_by` drives
+/// the dispatch even when the caller asks for a single `u64`.
 #[tokio::test]
 async fn test_mock_fetch_document_count_with_distinct_range_sums_entries() {
     let mut sdk = Sdk::new_mock();

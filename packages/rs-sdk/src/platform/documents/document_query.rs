@@ -48,8 +48,8 @@ pub struct DocumentQuery {
     /// SQL-shaped `SELECT` projection. `Documents` returns matched
     /// rows; `Count` returns either a single aggregate (empty
     /// `group_by`) or per-group entries (non-empty `group_by`).
-    /// Default `Documents` keeps v0-style document fetch semantics
-    /// for callers that don't opt into the count surface.
+    /// Defaults to `Documents` so callers that don't opt into the
+    /// count surface get plain document fetch semantics.
     pub select: Select,
     /// Data contract
     pub data_contract: Arc<DataContract>,
@@ -63,10 +63,12 @@ pub struct DocumentQuery {
     /// `select=Documents` is rejected by the server as unsupported.
     pub group_by: Vec<String>,
     /// SQL `HAVING` clauses, CBOR-encoded the same way as
-    /// `where_clauses`. **Phase 1: always rejected** when non-empty
-    /// by the server (`QuerySyntaxError::Unsupported("HAVING clause
-    /// is not yet implemented")`); reserved on the wire for future
-    /// capability without another version bump.
+    /// `where_clauses`. Non-empty values are rejected by the
+    /// server with
+    /// `QuerySyntaxError::Unsupported("HAVING clause is not yet
+    /// implemented")`. The wire field is reserved so the SDK
+    /// can encode `HAVING` once the server gains support, without
+    /// another version bump.
     pub having: Vec<u8>,
     /// `order_by` clauses for the query
     pub order_by_clauses: Vec<OrderClause>,
@@ -183,11 +185,10 @@ impl DocumentQuery {
     /// Set the full `GROUP BY` field list (replaces any previously
     /// set `group_by`).
     ///
-    /// For Phase 1 the only supported multi-field shape is
+    /// Multi-field `group_by` is only accepted by the server for
     /// `(in_field, range_field)` matching a compound `In + range`
     /// where clause against a `rangeCountable: true` index. Other
-    /// non-empty shapes route to `QuerySyntaxError::Unsupported`
-    /// on the server.
+    /// non-empty shapes return `QuerySyntaxError::Unsupported`.
     pub fn with_group_by_fields<I, S>(mut self, fields: I) -> Self
     where
         I: IntoIterator<Item = S>,
@@ -200,12 +201,11 @@ impl DocumentQuery {
     /// Set the `HAVING` clause CBOR bytes (replaces any prior
     /// value).
     ///
-    /// **Phase 1: always rejected by the server when non-empty**
-    /// with `QuerySyntaxError::Unsupported("HAVING clause is not
-    /// yet implemented")`. Wire field is reserved so future
-    /// capability can ship without another version bump; the
-    /// builder exists so SDK callers can already encode the
-    /// intent.
+    /// Non-empty values are rejected by the server with
+    /// `QuerySyntaxError::Unsupported("HAVING clause is not yet
+    /// implemented")`. The builder exists so SDK callers can
+    /// encode `HAVING` ahead of server support landing without
+    /// another version bump.
     pub fn with_having(mut self, having: Vec<u8>) -> Self {
         self.having = having;
         self

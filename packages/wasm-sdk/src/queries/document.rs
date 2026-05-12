@@ -228,10 +228,10 @@ async fn parse_documents_query(
 /// for the count surface (`select = Count`, with `group_by`
 /// taken directly from the input — no implicit translation).
 ///
-/// The JS `groupBy` field mirrors the v1 wire's `group_by:
-/// repeated string` one-to-one. Callers ask for exactly the
-/// per-group shape they want; Phase 1 server rules reject
-/// unsupported shapes with
+/// The JS `groupBy` field mirrors the wire's `group_by: repeated
+/// string` one-to-one. Callers ask for exactly the per-group
+/// shape they want; the server rejects unsupported
+/// `(select, group_by, where)` combinations with
 /// `QuerySyntaxError::Unsupported`.
 ///
 /// `orderBy` clauses are consumed by `build_documents_query` and
@@ -561,11 +561,11 @@ impl WasmSdk {
     ///   deterministic across operators regardless of their runtime
     ///   config.
     /// - `groupBy?: string[]` — SQL-shaped GROUP BY, mirroring the
-    ///   v1 wire `group_by` field one-to-one. See the
-    ///   `DocumentsQuery` TypeScript declaration for the supported
-    ///   shapes (aggregate / per-`In`-value / per-distinct-range /
-    ///   compound). Phase 1 server rules reject unsupported shapes
-    ///   with `QuerySyntaxError::Unsupported`.
+    ///   wire `group_by` field one-to-one. See the `DocumentsQuery`
+    ///   TypeScript declaration for the supported shapes (aggregate
+    ///   / per-`In`-value / per-distinct-range / compound). The
+    ///   server rejects unsupported `(select, group_by, where)`
+    ///   combinations with `QuerySyntaxError::Unsupported`.
     ///
     /// One entry point per `[plain | withProofInfo]` variant covers
     /// every count mode because `DocumentSplitCounts::fetch` (which

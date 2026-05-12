@@ -1,30 +1,26 @@
-//! SDK-side count surface for the unified v1 `getDocuments`
-//! endpoint.
+//! SDK-side count surface for the `getDocuments` endpoint.
 //!
-//! In v1 there is no separate `DocumentCountQuery` wrapper type:
-//! callers build a regular [`DocumentQuery`] and opt into the
-//! count surface via [`DocumentQuery::with_select`]`(Select::Count)`
-//! plus an optional [`DocumentQuery::with_group_by`] for the
-//! per-group entries shape. The same [`DocumentQuery`] value then
-//! drives three different `Fetch` implementations depending on
-//! which response type the caller asks for:
+//! Callers build a [`DocumentQuery`] and opt into the count
+//! surface via [`DocumentQuery::with_select`]`(Select::Count)`
+//! plus an optional [`DocumentQuery::with_group_by`] for per-
+//! group entries. The same [`DocumentQuery`] value drives three
+//! different `Fetch` implementations depending on which response
+//! type the caller asks for:
 //!
 //!   - [`Document`] / `Documents` (in `document_query.rs`) — when
 //!     `select = Documents`.
-//!   - [`DocumentCount`] (here) — when `select = Count, group_by = []`
-//!     or when summing per-group entries into a single aggregate.
+//!   - [`DocumentCount`] (here) — when `select = Count, group_by = []`,
+//!     or when collapsing per-group entries into a single
+//!     aggregate.
 //!   - [`DocumentSplitCounts`] (here) — when `select = Count,
 //!     group_by = [<field>]`, or when the caller wants the
 //!     aggregate-as-single-empty-key-entry shape.
 //!
-//! The wire shape and proof-verification logic are unchanged from
-//! the prior `DocumentCountQuery` impls — this file is the
-//! "delete the wrapper, keep the verifier dispatch" half of the
-//! PR 2 SDK migration. Dispatch reads `request.group_by` directly:
-//! `[]` → aggregate verifier path, `[field]` / `[field_a, field_b]`
-//! → distinct verifier path. There is no implicit grouping
-//! anywhere — FFI and wasm-sdk surfaces expose `group_by` directly
-//! too, mirroring the v1 wire shape one-to-one.
+//! Dispatch reads `request.group_by` directly: `[]` routes to
+//! the aggregate verifier path, `[field]` / `[field_a, field_b]`
+//! to the distinct verifier path. There is no implicit grouping
+//! anywhere — the FFI and wasm-sdk surfaces also expose
+//! `group_by` directly, mirroring the wire shape one-to-one.
 //!
 //! [`Document`]: dpp::document::Document
 

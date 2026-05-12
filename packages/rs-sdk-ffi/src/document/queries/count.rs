@@ -151,8 +151,9 @@ fn json_to_platform_value(json: serde_json::Value) -> Result<Value, FFIError> {
 /// - `null` or `""` → `[]` (aggregate)
 /// - `"[\"color\"]"` → `["color"]` (per-distinct-`color` entries)
 /// - `"[\"category\",\"color\"]"` → `["category", "color"]`
-///   (compound distinct entries, only valid for
-///   `(In_field, range_field)` shapes per the v1 Phase 1 rules)
+///   (compound distinct entries; only valid for
+///   `(in_field, range_field)` shapes — other multi-field
+///   group_by values return `QuerySyntaxError::Unsupported`)
 ///
 /// Mirrors the wire-level `group_by: repeated string` field on
 /// `GetDocumentsRequestV1` directly — no implicit translation,
@@ -255,10 +256,10 @@ unsafe fn build_base_query(
 ///
 /// # Tunables
 /// - `group_by_json`: optional JSON array of field names mirroring
-///   the v1 wire's `group_by` field directly. Null/empty →
-///   aggregate count. See per-key shape rules above. Only Phase 1
-///   shapes are supported server-side (see proto docs); other
-///   non-empty group_by values return
+///   the wire `group_by` field directly. Null/empty → aggregate
+///   count. See per-key shape rules above and the proto docs for
+///   the supported `(select, group_by, where)` combinations; any
+///   combination outside that set returns
 ///   `QuerySyntaxError::Unsupported`.
 /// - `order_by_json`: optional JSON `[{"field": "<name>", "direction":
 ///   "asc"|"desc"}]`. The first clause's direction controls
@@ -328,10 +329,11 @@ pub unsafe extern "C" fn dash_sdk_document_count(
             limit as u32
         };
 
-        // `group_by_json` mirrors the v1 wire's `repeated string`
+        // `group_by_json` mirrors the wire's `repeated string`
         // field one-to-one. No FFI-side translation: callers ask
-        // for exactly the per-group shape they want. Phase 1
-        // server rules (see proto) reject unsupported shapes.
+        // for exactly the per-group shape they want; the server
+        // rejects unsupported `(select, group_by, where)`
+        // combinations (see proto docs).
         let group_by = parse_group_by_json(group_by_json)?;
         let count_query = base_query
             .with_select(Select::Count)
