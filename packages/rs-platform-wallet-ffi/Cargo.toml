@@ -12,7 +12,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [dependencies]
 platform-wallet = { path = "../rs-platform-wallet" }
 dpp = { path = "../rs-dpp" }
-dash-sdk = { path = "../rs-sdk" }
+dash-sdk = { path = "../rs-sdk", features = ["wallet"] }
 # Needed for `SignerHandle` + `VTableSigner` so the `*_with_signer`
 # entry points can accept iOS-side keychain-backed signers without
 # duplicating the vtable plumbing. See `signer.rs` in rs-sdk-ffi.
@@ -53,6 +53,18 @@ bs58 = "0.5"
 
 # Zeroize intermediate key material crossing the FFI boundary.
 zeroize = { version = "1", features = ["derive"] }
+
+# Needed for the `#[async_trait]` macro on
+# `MnemonicResolverCoreSigner`'s `Signer` impl. The upstream
+# `key_wallet::signer::Signer` trait is `#[async_trait]`-shaped, so
+# our impl has to match the same desugaring for the lifetimes to line up.
+async-trait = "0.1"
+
+# `MnemonicResolverSignerError` uses `#[derive(thiserror::Error)]` so
+# every resolver-side failure mode is a typed enum variant rather than
+# a free-form String. Surfaces clean discriminants to callers (FFI +
+# rs-dpp's `sign_with_signer` → `ProtocolError::ExternalSignerError`).
+thiserror = "2.0"
 
 [dev-dependencies]
 tempfile = "3.8"
