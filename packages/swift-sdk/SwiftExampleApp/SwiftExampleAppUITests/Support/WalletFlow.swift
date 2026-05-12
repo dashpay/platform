@@ -509,14 +509,13 @@ func runIdentityDiscovery(
     // computes a `{-1, -1}` hit point on freshly-shown menu items, the
     // auto-retry then taps a stale element, and the sheet never opens.
     // Wrap "open menu, tap item, verify sheet" in a retry loop driven
-    // by the actual signal (Search Wallets nav bar appears).
+    // by the actual signal (Re-scan for Identities nav bar appears).
     //
-    // Re-tap `addMenu` unconditionally on each retry. A previous attempt
-    // to skip the re-tap when the menu item was already visible turned
-    // out to lock us into the same bad hit point — if the item-tap
-    // missed but the menu stayed open, the next iteration re-tapped the
-    // same dead spot. Closing-and-reopening the menu forces a fresh
-    // accessibility-tree snapshot with a new hit point.
+    // Each retry forces a fresh accessibility-tree snapshot for the
+    // menu: if the previous iteration's item-tap missed and left the
+    // menu open, close it first before re-opening. A naive
+    // unconditional re-tap would toggle an already-open menu shut and
+    // halve the effective retries.
     let searchSheetNavBar = app.navigationBars["Re-scan for Identities"]
     var sheetOpened = false
     for _ in 0..<3 where !sheetOpened {
@@ -537,7 +536,7 @@ func runIdentityDiscovery(
             searchMenuItem.tap()
         } else {
             // Fallback: match the menu item by visible label.
-            let labeled = app.buttons["Search Wallets for Identities"]
+            let labeled = app.buttons["Re-scan for Identities"]
             if labeled.waitForExistence(timeout: 3) {
                 labeled.tap()
             }
