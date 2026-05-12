@@ -1138,7 +1138,7 @@ version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "faf9468729b8cbcea668e36183cb69d317348c2e08e994829fb56ebfdfbaac34"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -1565,7 +1565,7 @@ dependencies = [
 [[package]]
 name = "dash-network"
 version = "0.42.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=53130869e5b9343ae59016323e5e5269e717a8fd#53130869e5b9343ae59016323e5e5269e717a8fd"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=5297d61ac13b4bdfc85aef683e3c46e0597e6741#5297d61ac13b4bdfc85aef683e3c46e0597e6741"
 dependencies = [
  "bincode",
  "bincode_derive",
@@ -1576,7 +1576,7 @@ dependencies = [
 [[package]]
 name = "dash-network-seeds"
 version = "0.42.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=53130869e5b9343ae59016323e5e5269e717a8fd#53130869e5b9343ae59016323e5e5269e717a8fd"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=5297d61ac13b4bdfc85aef683e3c46e0597e6741#5297d61ac13b4bdfc85aef683e3c46e0597e6741"
 dependencies = [
  "dash-network",
 ]
@@ -1653,7 +1653,7 @@ dependencies = [
 [[package]]
 name = "dash-spv"
 version = "0.42.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=53130869e5b9343ae59016323e5e5269e717a8fd#53130869e5b9343ae59016323e5e5269e717a8fd"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=5297d61ac13b4bdfc85aef683e3c46e0597e6741#5297d61ac13b4bdfc85aef683e3c46e0597e6741"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1681,7 +1681,7 @@ dependencies = [
 [[package]]
 name = "dash-spv-ffi"
 version = "0.42.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=53130869e5b9343ae59016323e5e5269e717a8fd#53130869e5b9343ae59016323e5e5269e717a8fd"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=5297d61ac13b4bdfc85aef683e3c46e0597e6741#5297d61ac13b4bdfc85aef683e3c46e0597e6741"
 dependencies = [
  "cbindgen 0.29.2",
  "clap",
@@ -1700,7 +1700,7 @@ dependencies = [
 [[package]]
 name = "dashcore"
 version = "0.42.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=53130869e5b9343ae59016323e5e5269e717a8fd#53130869e5b9343ae59016323e5e5269e717a8fd"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=5297d61ac13b4bdfc85aef683e3c46e0597e6741#5297d61ac13b4bdfc85aef683e3c46e0597e6741"
 dependencies = [
  "anyhow",
  "base64-compat",
@@ -1726,12 +1726,12 @@ dependencies = [
 [[package]]
 name = "dashcore-private"
 version = "0.42.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=53130869e5b9343ae59016323e5e5269e717a8fd#53130869e5b9343ae59016323e5e5269e717a8fd"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=5297d61ac13b4bdfc85aef683e3c46e0597e6741#5297d61ac13b4bdfc85aef683e3c46e0597e6741"
 
 [[package]]
 name = "dashcore-rpc"
 version = "0.42.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=53130869e5b9343ae59016323e5e5269e717a8fd#53130869e5b9343ae59016323e5e5269e717a8fd"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=5297d61ac13b4bdfc85aef683e3c46e0597e6741#5297d61ac13b4bdfc85aef683e3c46e0597e6741"
 dependencies = [
  "dashcore-rpc-json",
  "hex",
@@ -1744,7 +1744,7 @@ dependencies = [
 [[package]]
 name = "dashcore-rpc-json"
 version = "0.42.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=53130869e5b9343ae59016323e5e5269e717a8fd#53130869e5b9343ae59016323e5e5269e717a8fd"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=5297d61ac13b4bdfc85aef683e3c46e0597e6741#5297d61ac13b4bdfc85aef683e3c46e0597e6741"
 dependencies = [
  "bincode",
  "dashcore",
@@ -1759,7 +1759,7 @@ dependencies = [
 [[package]]
 name = "dashcore_hashes"
 version = "0.42.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=53130869e5b9343ae59016323e5e5269e717a8fd#53130869e5b9343ae59016323e5e5269e717a8fd"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=5297d61ac13b4bdfc85aef683e3c46e0597e6741#5297d61ac13b4bdfc85aef683e3c46e0597e6741"
 dependencies = [
  "bincode",
  "dashcore-private",
@@ -2294,7 +2294,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3582,7 +3582,7 @@ checksum = "3640c1c38b8e4e43584d8df18be5fc6b0aa314ce6ebf51b53313d4306cca8e46"
 dependencies = [
  "hermit-abi",
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3808,7 +3808,7 @@ dependencies = [
 [[package]]
 name = "key-wallet"
 version = "0.42.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=53130869e5b9343ae59016323e5e5269e717a8fd#53130869e5b9343ae59016323e5e5269e717a8fd"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=5297d61ac13b4bdfc85aef683e3c46e0597e6741#5297d61ac13b4bdfc85aef683e3c46e0597e6741"
 dependencies = [
  "aes",
  "async-trait",
@@ -3836,7 +3836,7 @@ dependencies = [
 [[package]]
 name = "key-wallet-ffi"
 version = "0.42.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=53130869e5b9343ae59016323e5e5269e717a8fd#53130869e5b9343ae59016323e5e5269e717a8fd"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=5297d61ac13b4bdfc85aef683e3c46e0597e6741#5297d61ac13b4bdfc85aef683e3c46e0597e6741"
 dependencies = [
  "cbindgen 0.29.2",
  "dash-network",
@@ -3852,7 +3852,7 @@ dependencies = [
 [[package]]
 name = "key-wallet-manager"
 version = "0.42.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=53130869e5b9343ae59016323e5e5269e717a8fd#53130869e5b9343ae59016323e5e5269e717a8fd"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=5297d61ac13b4bdfc85aef683e3c46e0597e6741#5297d61ac13b4bdfc85aef683e3c46e0597e6741"
 dependencies = [
  "async-trait",
  "bincode",
@@ -4328,7 +4328,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5337,7 +5337,7 @@ dependencies = [
  "once_cell",
  "socket2 0.5.10",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -6051,7 +6051,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -6064,7 +6064,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -6123,7 +6123,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -6946,7 +6946,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -8350,7 +8350,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
