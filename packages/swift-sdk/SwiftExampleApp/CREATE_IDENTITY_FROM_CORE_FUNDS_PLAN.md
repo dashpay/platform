@@ -1,6 +1,6 @@
 # Create Identity from Core Funds — Plan (Draft 9)
 
-Status: **iter 1 + 2 + 4 done. Testnet validation hit an SPV event-routing concern (separate investigation). iter 3 (SwiftData mirror) and iter 5 (resume picker) still pending.**
+Status: **iter 1 + 2 + 3 + 4 done. iter 5 (resume picker) still pending.**
 Branch: `feat/swift/funding-with-asset-lock`
 Target: SwiftExampleApp, testnet validation first.
 
