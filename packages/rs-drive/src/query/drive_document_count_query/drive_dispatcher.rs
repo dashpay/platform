@@ -486,12 +486,12 @@ impl Drive {
 /// contract lookup; drive owns everything past this point including
 /// mode detection, index picking, and per-mode dispatch.
 ///
-/// Both `raw_where_value` and parsed `Vec<WhereClause>` (built
-/// internally by the dispatcher) are needed because
-/// `DriveDocumentQuery::from_decomposed_values` (used by the
-/// materialize-and-count fallback for `prove=true` point lookups)
-/// takes the raw `Value` while every other path consumes the parsed
-/// clauses. Same dual-shape applies to `raw_order_by_value`.
+/// `raw_where_value` and `raw_order_by_value` arrive as CBOR-decoded
+/// `Value`s and the dispatcher parses them once into structured
+/// `Vec<WhereClause>` / `Vec<OrderClause>` for mode detection +
+/// per-mode executors. None of the count executors consume the raw
+/// `Value` form — the structured parse is the single source of
+/// truth past the dispatcher entry point.
 pub struct DocumentCountRequest<'a> {
     /// Live contract (already loaded by the handler).
     pub contract: &'a dpp::data_contract::DataContract,
@@ -499,28 +499,27 @@ pub struct DocumentCountRequest<'a> {
     pub document_type: DocumentTypeRef<'a>,
     /// Decoded `where` value as it came off the wire (after CBOR
     /// decode). The dispatcher parses this into `Vec<WhereClause>`
-    /// internally for mode detection + per-mode executors that
-    /// consume structured clauses, and forwards the raw value as-is
-    /// to the materialize-and-count fallback (`PointLookupProof`)
-    /// which uses `DriveDocumentQuery::from_decomposed_values`.
+    /// once (`where_clauses_from_value`) for every downstream
+    /// consumer — mode detection, index picking, and the per-mode
+    /// executors all operate on the structured form.
     ///
-    /// Mirrors how the regular `query_documents_v0` handler delegates
-    /// where-clause decomposition to drive: the abci layer just CBOR-
-    /// decodes and hands the raw value down.
+    /// Mirrors how the regular `query_documents_v0` handler
+    /// delegates where-clause decomposition to drive: the abci
+    /// layer just CBOR-decodes and hands the raw value down.
     pub raw_where_value: dpp::platform_value::Value,
-    /// Decoded `order_by` value as it came off the wire. Same dual-
-    /// purpose role as `raw_where_value`: parsed into structured
-    /// `OrderClause`s for split-mode entry direction (per-`In`-value /
-    /// per-distinct-value-in-range / per-distinct-prove), and
-    /// forwarded raw to `DriveDocumentQuery::from_decomposed_values`
-    /// for the `PointLookupProof` walk-order requirement.
+    /// Decoded `order_by` value as it came off the wire. Parsed
+    /// once via `order_clauses_from_value` into
+    /// `Vec<OrderClause>`. The first clause's direction governs
+    /// split-mode entry ordering (per-`In`-value / per-distinct-
+    /// value-in-range) and, on the `RangeDistinctProof` prove
+    /// path, is part of the path-query bytes the SDK reconstructs
+    /// to verify the proof. `PointLookupProof` and the no-proof
+    /// `Total` / `PerInValue` paths don't read order_by.
     ///
     /// `Value::Null` (empty `order_by` field on the wire) → no
     /// clauses. The dispatcher synthesizes a default direction of
     /// "ascending" for split-mode response ordering when no clauses
-    /// are present; the materialize path rejects empty `order_by`
-    /// when the where clause has an `In`/range operator (proof
-    /// determinism requires an explicit walk order).
+    /// are present.
     pub raw_order_by_value: dpp::platform_value::Value,
     /// `return_distinct_counts_in_range` flag from the request.
     pub return_distinct_counts_in_range: bool,
@@ -672,10 +671,10 @@ impl Drive {
         let order_clauses = order_clauses_from_value(&request.raw_order_by_value)?;
 
         // Split-mode entry direction is whatever the first orderBy
-        // clause specifies. Empty orderBy → ascending default. The
-        // raw `order_by` value is also threaded through to the
-        // materialize path (`PointLookupProof`) for proof-walk
-        // determinism — see the executor.
+        // clause specifies. Empty orderBy → ascending default. Used
+        // by per-`In`-value, distinct-range no-proof, and
+        // distinct-range prove paths; the `PointLookupProof` and
+        // flat `Total` paths don't read it.
         let order_by_ascending = order_clauses.first().map(|c| c.ascending).unwrap_or(true);
 
         let mode = DriveDocumentCountQuery::detect_mode(

@@ -535,12 +535,21 @@ impl WasmSdk {
     /// Query-object knobs (all camelCase on the JS side):
     /// - `where: [[field, op, value], ...]`
     /// - `orderBy?: [[field, "asc"|"desc"], ...]` — first clause's
-    ///   direction controls per-key entry ordering. Required when
-    ///   the where carries an `In` or range operator on a prove path
-    ///   (the materialize-and-count walker needs an explicit order
-    ///   for proof determinism).
+    ///   direction controls per-key entry ordering. On the
+    ///   `RangeDistinctProof` prove path the direction is part of
+    ///   the path-query bytes the SDK reconstructs to verify the
+    ///   proof; empty `orderBy` defaults to ascending on both
+    ///   sides. The `PointLookupProof` path (`In` + `prove`, no
+    ///   range) doesn't read `orderBy` — its builder sorts In keys
+    ///   lex-ascending unconditionally for prove/no-proof parity.
     /// - `limit?: number` — caps the number of entries returned in
-    ///   per-key modes (server clamps to its `max_query_limit`).
+    ///   per-key modes. On no-proof paths the server clamps to its
+    ///   `max_query_limit`. On the prove-distinct path the server
+    ///   rejects oversized requests with `InvalidLimit` rather than
+    ///   silently clamping (silent clamping would break proof
+    ///   verification); unset falls back to a compile-time constant
+    ///   the SDK verifier reads, so proof bytes are deterministic
+    ///   across operators regardless of their runtime config.
     /// - `returnDistinctCountsInRange?: boolean` — when `true` AND
     ///   the query carries a range clause, returns per-distinct-
     ///   value entries instead of a single sum.

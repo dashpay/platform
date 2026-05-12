@@ -226,15 +226,23 @@ unsafe fn build_base_query(
 ///   single sum. No-op when there's no range clause.
 /// - `order_by_json`: optional JSON `[{"field": "<name>", "direction":
 ///   "asc"|"desc"}]`. The first clause's direction controls split-mode
-///   entry ordering server-side; clauses are also load-bearing for
-///   `(In + prove)` walk determinism (the SDK reconstructs the same
-///   path query to verify the proof). Null or empty → no orderBy
-///   (server treats as ascending default for split-mode entry
-///   direction; rejects on the `(In + prove)` arm because proof
-///   determinism needs an explicit walk order).
-/// - `limit`: `-1` = use server default (`default_query_limit`),
-///   `≥ 0` = explicit cap (clamped to `max_query_limit` server-side
-///   on no-proof paths, rejected if too large on prove paths).
+///   entry ordering server-side; on the `RangeDistinctProof` prove
+///   path it is part of the path-query bytes the SDK reconstructs to
+///   verify the proof (prover and verifier must agree — empty
+///   `order_by` defaults to ascending on both sides). On the
+///   `PointLookupProof` path (`(In, prove, no-range)`) order_by is
+///   not consulted: the path-query builder sorts In keys lex-
+///   ascending unconditionally for prove/no-proof parity. Null or
+///   empty → no orderBy (ascending default for split-mode entry
+///   direction).
+/// - `limit`: `-1` = use server default
+///   (`default_query_limit` on no-proof paths,
+///   `crate::config::DEFAULT_QUERY_LIMIT` on the prove-distinct path —
+///   the compile-time constant the SDK verifier reads, so proof bytes
+///   stay deterministic across operators). `≥ 0` = explicit cap
+///   (clamped to `max_query_limit` on no-proof paths, rejected with
+///   `InvalidLimit` if too large on the prove-distinct path — silent
+///   clamping would invisibly break verification).
 ///
 /// # Safety
 /// - `sdk_handle` and `data_contract_handle` must be valid, non-null pointers.

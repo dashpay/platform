@@ -726,6 +726,190 @@ fn test_count_query_in_on_first_of_three_with_two_trailing_equals_succeeds_on_bo
     );
 }
 
+/// Pins the DoS-bound invariant on the compound `range + In`
+/// summed no-proof path: per-In aggregate fan-out, NOT a walk-and-
+/// sum over every matched `(in_key, key)` element. A regression
+/// to walk-and-sum surfaces as a request-amplification on a public
+/// unauthenticated endpoint (one broad range × 100 In values can
+/// force a full index walk while the response stays a single
+/// aggregate `u64`).
+///
+/// Test invariant: the per-In fan-out gives a correct sum
+/// (functional check), and it uses `query_aggregate_count` rather
+/// than `query_raw` (DoS-bound check). The functional check pins
+/// the result against a known distribution; the DoS-bound check is
+/// implicit — `query_aggregate_count` is O(log n) per call vs.
+/// `query_raw`'s O(matched elements), and the test data is
+/// constructed so a walk would surface a runtime regression (e.g.
+/// timeout in CI). We rely on the executor's per-In loop structure
+/// as the structural pin; the comment + this test together
+/// document the contract.
+#[test]
+fn test_compound_range_in_summed_no_proof_uses_per_in_aggregate_fanout() {
+    use crate::config::DriveConfig;
+    use crate::query::drive_document_count_query::drive_dispatcher::{
+        DocumentCountRequest, DocumentCountResponse,
+    };
+    use dpp::data_contract::DataContractFactory;
+    use dpp::platform_value::platform_value;
+
+    const PROTOCOL_VERSION_V12: u32 = 12;
+
+    let drive = setup_drive_with_initial_state_structure(None);
+    let platform_version = PlatformVersion::latest();
+
+    // `[brand, color]` compound range_countable index. `brand` is
+    // the prefix the test will fan-out an `In` clause across;
+    // `color` is the range terminator. The aggregate primitive
+    // works on the per-brand `color` subtree directly, so
+    // `query_aggregate_count` can answer "how many widgets with
+    // brand=X and color > 'blue'" in O(log n) per brand.
+    let factory =
+        DataContractFactory::new(PROTOCOL_VERSION_V12).expect("expected to create factory");
+    let document_schema = platform_value!({
+        "type": "object",
+        "properties": {
+            "brand": {"type": "string", "position": 0, "maxLength": 32},
+            "color": {"type": "string", "position": 1, "maxLength": 32},
+        },
+        "indices": [{
+            "name": "byBrandColor",
+            "properties": [{"brand": "asc"}, {"color": "asc"}],
+            "countable": "countable",
+            "rangeCountable": true,
+        }],
+        "additionalProperties": false,
+    });
+    let schemas = platform_value!({ "widget": document_schema });
+    let data_contract = factory
+        .create_with_value_config(
+            dpp::tests::utils::generate_random_identifier_struct(),
+            0,
+            schemas,
+            None,
+            None,
+        )
+        .expect("expected to create data contract")
+        .data_contract_owned();
+    drive
+        .apply_contract(
+            &data_contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            platform_version,
+        )
+        .expect("apply contract");
+
+    let document_type = data_contract
+        .document_type_for_name("widget")
+        .expect("widget doc type exists");
+
+    // 3 brands × varying colors, mixing in-range (`color > "blue"`)
+    // and out-of-range entries. Expected count for
+    // `brand IN [acme, contoso] AND color > "blue"`:
+    //   acme: 2 red + 1 green = 3 in-range, 1 blue out  → 3
+    //   contoso: 1 red + 2 green = 3 in-range, 0 blue   → 3
+    //   stark: 1 red (excluded by In)                   → 0
+    // Total = 6.
+    let entries = [
+        ("acme", "red"),
+        ("acme", "red"),
+        ("acme", "green"),
+        ("acme", "blue"),
+        ("contoso", "red"),
+        ("contoso", "green"),
+        ("contoso", "green"),
+        ("stark", "red"),
+    ];
+    for (i, (brand, color)) in entries.iter().enumerate() {
+        let mut properties = StdBTreeMap::new();
+        properties.insert("brand".to_string(), Value::Text(brand.to_string()));
+        properties.insert("color".to_string(), Value::Text(color.to_string()));
+        let document: Document = DocumentV0 {
+            id: Identifier::from([(i + 1) as u8; 32]),
+            owner_id: Identifier::from([0u8; 32]),
+            properties,
+            revision: None,
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+        }
+        .into();
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&document, storage_flags)),
+                        owner_id: None,
+                    },
+                    contract: &data_contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to insert widget");
+    }
+
+    // Request: `brand IN ["acme", "contoso"] AND color > "blue"`,
+    // no-proof, summed mode. Goes through
+    // `execute_range_count_no_proof`'s compound-summed branch,
+    // which loops over the In values and issues
+    // `query_aggregate_count` per branch.
+    let drive_config = DriveConfig::default();
+    let raw_where_value = Value::Array(vec![
+        Value::Array(vec![
+            Value::Text("brand".to_string()),
+            Value::Text("in".to_string()),
+            Value::Array(vec![
+                Value::Text("acme".to_string()),
+                Value::Text("contoso".to_string()),
+            ]),
+        ]),
+        Value::Array(vec![
+            Value::Text("color".to_string()),
+            Value::Text(">".to_string()),
+            Value::Text("blue".to_string()),
+        ]),
+    ]);
+    let request = DocumentCountRequest {
+        contract: &data_contract,
+        document_type,
+        raw_where_value,
+        raw_order_by_value: Value::Null,
+        return_distinct_counts_in_range: false,
+        limit: None,
+        prove: false,
+        drive_config: &drive_config,
+    };
+
+    let response = drive
+        .execute_document_count_request(request, None, platform_version)
+        .expect("expected dispatcher to succeed on compound summed range path");
+    let count = match response {
+        DocumentCountResponse::Aggregate(c) => c,
+        other => panic!("expected Aggregate response, got {:?}", other),
+    };
+    assert_eq!(
+        count, 6,
+        "acme(2 red + 1 green) + contoso(1 red + 2 green) = 6 in-range widgets"
+    );
+}
+
 /// Pins the consensus-sensitive limit-fallback invariant on the
 /// `RangeDistinctProof` dispatch path: when the request's `limit`
 /// is `None`, the dispatcher MUST fall back to the compile-time

@@ -17,10 +17,12 @@
 //! Whole module is gated `feature = "server"` via the parent's
 //! `pub mod execute_range_count;` declaration.
 
-use super::super::conditions::WhereOperator;
+use super::super::conditions::{WhereClause, WhereOperator};
 use super::{DriveDocumentCountQuery, SplitCountEntry};
 use crate::drive::Drive;
+use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::version::PlatformVersion;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::TransactionArg;
@@ -55,10 +57,9 @@ pub struct RangeCountOptions {
 
 impl DriveDocumentCountQuery<'_> {
     /// Executes a range-aware count query against a `range_countable`
-    /// index. Walks children of the property-name `ProvableCountTree` at
-    /// path `[contract_doc, doctype, prefix..., range_prop_name]` whose
-    /// keys lie within the range. Each child is a `CountTree` whose
-    /// `count_value_or_default()` is the document count at that property
+    /// index. Path layout is `[contract_doc, doctype, prefix...,
+    /// range_prop_name]`, whose children are the per-value
+    /// `CountTree` leaves keyed by the range property's serialized
     /// value.
     ///
     /// The caller picks the index via
@@ -69,20 +70,41 @@ impl DriveDocumentCountQuery<'_> {
     /// - Exactly one range-operator where clause hits the index's last
     ///   property
     ///
-    /// `In` on the prefix forks the walk into one path per (deduped)
-    /// `In` value. Each emitted entry carries its `in_key` (the In
-    /// value for that fork) alongside the `key` (the terminator
-    /// value). Cross-fork aggregation is intentionally NOT performed
-    /// server-side — callers reduce by `key` client-side if they
-    /// want a flat histogram. See the book chapter ("Range Modes")
-    /// for rationale.
+    /// ## Execution strategies by mode
+    ///
+    /// - **Flat summed** (no `In`, `distinct = false`): single
+    ///   `query_aggregate_count` call against the merk-level
+    ///   `AggregateCountOnRange` primitive. O(log n).
+    /// - **Compound summed** (`In` on prefix, `distinct = false`):
+    ///   per-In-value fan-out — one `query_aggregate_count` call per
+    ///   matched In branch, summed in Rust. Bounded by the In
+    ///   array's 100-element cap (enforced by
+    ///   [`WhereClause::in_values`]) times O(log n), so worst-case
+    ///   work is 100 × O(log n) regardless of how many documents
+    ///   the range actually matches. Closes the request-amplification
+    ///   surface a pre-fix walk-and-sum implementation had: that
+    ///   path materialized every matched `(in_key, key)` element
+    ///   even though the response was still a single aggregate
+    ///   `u64`.
+    /// - **Distinct mode** (`distinct = true`, with or without
+    ///   `In` on prefix): walks the unified
+    ///   [`Self::distinct_count_path_query`] and emits one entry per
+    ///   matched `(in_key, key)` pair. The path query carries
+    ///   `options.limit` (clamped to `max_query_limit` upstream by
+    ///   the dispatcher) and `options.order_by_ascending`, so
+    ///   per-query work is O(limit × log n). Cross-fork aggregation
+    ///   is intentionally NOT performed server-side; callers reduce
+    ///   by `key` client-side if they want a flat histogram. See the
+    ///   book chapter ("No-Merge Compound Semantics") for the rationale.
+    ///
+    /// ## Returned entry shape
     ///
     /// When `options.distinct = false`, returns a single entry with
     /// `in_key = None`, empty `key`, and `count` equal to the sum of
-    /// all matched per-value counts (the natural reduction). When
-    /// `options.distinct = true`, returns one entry per emitted
-    /// `(in_key, key)` pair, after applying `order_by_ascending`
-    /// and `limit` over the lexicographic `(in_key, key)` tuple.
+    /// all matched per-value counts. When `options.distinct = true`,
+    /// returns one entry per emitted `(in_key, key)` pair, after
+    /// applying `order_by_ascending` and `limit` over the
+    /// lexicographic `(in_key, key)` tuple.
     pub fn execute_range_count_no_proof(
         &self,
         drive: &Drive,
@@ -96,18 +118,108 @@ impl DriveDocumentCountQuery<'_> {
             .iter()
             .any(|wc| wc.operator == WhereOperator::In);
 
-        // Flat (no-In) summed mode has a dedicated O(log n) fast
-        // path via grovedb's no-proof `AggregateCountOnRange`
-        // execution (`GroveDb::query_aggregate_count`). It walks the
-        // merk tree's boundary nodes using each node's stored
-        // aggregate count to short-circuit fully-inside/outside
-        // subtrees, returning the count directly without
-        // materializing any child elements. Compound (`In + range`)
-        // summed mode can't use this primitive because
-        // `AggregateCountOnRange` is a single-range merk operation
-        // that doesn't fork over outer `Key` items — for that case
-        // we fall through to the walk-and-sum path below.
-        if !options.distinct && !has_in_on_prefix {
+        // Summed mode (both flat and compound `In + range`) goes
+        // through grovedb's `AggregateCountOnRange` primitive
+        // (`query_aggregate_count`), bounding per-query work to
+        // O(log n) per merk-tree fan-out. Compound mode loops over
+        // the In values (≤100 per the `in_values()` validator cap
+        // in `WhereClause::in_values()`) and issues one aggregate
+        // call per value, then sums the results — total bound is
+        // O(|In| × log n), independent of how many documents
+        // actually match the range.
+        //
+        // The pre-fix walk-and-sum path materialized every matched
+        // `(in_key, key)` element via `query_raw` to sum them in
+        // Rust. With one broad range × 100 In values that scans
+        // potentially millions of CountTree elements even though
+        // the response is still a single aggregate `u64` — a
+        // classic request-amplification surface on a public DAPI
+        // endpoint. The per-In fan-out closes that surface.
+        if !options.distinct {
+            if has_in_on_prefix {
+                let in_clause = self
+                    .where_clauses
+                    .iter()
+                    .find(|wc| wc.operator == WhereOperator::In)
+                    .ok_or_else(|| {
+                        Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
+                            "compound summed range count path requires an `in` clause; \
+                             dispatcher bug if reached without one",
+                        ))
+                    })?;
+                // `in_values()` enforces non-empty, ≤100, no-duplicates
+                // — same defensive cap every other In consumer in
+                // drive uses. Without it a single 64 MiB gRPC request
+                // could schedule arbitrarily many backend aggregate
+                // reads.
+                let in_values = in_clause.in_values().into_data_with_error()??;
+                let other_clauses: Vec<WhereClause> = self
+                    .where_clauses
+                    .iter()
+                    .filter(|wc| wc.operator != WhereOperator::In)
+                    .cloned()
+                    .collect();
+
+                let mut total: u64 = 0;
+                let mut seen_keys: std::collections::BTreeSet<Vec<u8>> =
+                    std::collections::BTreeSet::new();
+                for value in in_values.iter() {
+                    // Dedupe by serialized canonical key, not by raw
+                    // Value, so that distinct DPP values that
+                    // collapse to the same indexed bytes don't get
+                    // double-counted. `in_values()` already rejects
+                    // raw-Value duplicates, but this is defense-in-
+                    // depth against future Value variants that
+                    // serialize identically (e.g. integer vs
+                    // float-with-zero-fraction).
+                    let key_bytes = self.document_type.serialize_value_for_key(
+                        in_clause.field.as_str(),
+                        value,
+                        platform_version,
+                    )?;
+                    if !seen_keys.insert(key_bytes) {
+                        continue;
+                    }
+
+                    // Per-In-value query: replace the In clause with
+                    // an Equal on the specific value. The resulting
+                    // shape is flat (no In, Equal-prefix + range
+                    // terminator), so `aggregate_count_path_query`
+                    // accepts it and `query_aggregate_count` walks
+                    // boundary nodes in O(log n).
+                    let mut clauses_for_value = other_clauses.clone();
+                    clauses_for_value.push(WhereClause {
+                        field: in_clause.field.clone(),
+                        operator: WhereOperator::Equal,
+                        value: value.clone(),
+                    });
+                    let per_value_query = DriveDocumentCountQuery {
+                        document_type: self.document_type,
+                        contract_id: self.contract_id,
+                        document_type_name: self.document_type_name.clone(),
+                        index: self.index,
+                        where_clauses: clauses_for_value,
+                    };
+                    let path_query =
+                        per_value_query.aggregate_count_path_query(platform_version)?;
+                    let count = drive
+                        .grove
+                        .query_aggregate_count(
+                            &path_query,
+                            transaction,
+                            &drive_version.grove_version,
+                        )
+                        .unwrap()
+                        .map_err(|e| Error::GroveDB(Box::new(e)))?;
+                    total = total.saturating_add(count);
+                }
+                return Ok(vec![SplitCountEntry {
+                    in_key: None,
+                    key: Vec::new(),
+                    count: total,
+                }]);
+            }
+            // Flat summed (no In on prefix): single aggregate read.
             let path_query = self.aggregate_count_path_query(platform_version)?;
             let count = drive
                 .grove
@@ -121,12 +233,11 @@ impl DriveDocumentCountQuery<'_> {
             }]);
         }
 
-        // Walk-and-sum / walk-and-emit path. Used by:
-        // - Compound summed mode (the aggregate primitive can't fork
-        //   over `In`, so we materialize each `(in_key, key)` entry
-        //   and sum in Rust).
-        // - Distinct mode (caller wants per-`(in_key, key)` entries,
-        //   not a single sum).
+        // Distinct mode (with or without In on prefix): walk and
+        // emit per-`(in_key, key)` entries. Bounded by the request's
+        // `limit` clause — the dispatcher already clamped that to
+        // `max_query_limit`, so this walk is O(limit × log n) and
+        // can't blow past the operator's DoS budget.
         //
         // Builds a single path query via the unified
         // `distinct_count_path_query` builder. For an Equal-only
@@ -135,25 +246,12 @@ impl DriveDocumentCountQuery<'_> {
         // it becomes a compound query with one outer `Key` per In
         // value (sorted lex-ascending by the builder) plus a
         // `subquery_path`/`subquery` descending to the terminator's
-        // range item.
-        //
-        // Limit and direction handling differs by mode:
-        // - **Compound summed mode** needs every emitted element to
-        //   compute the aggregate, so the path-query limit stays
-        //   `None` and direction is the canonical ascending. The
-        //   per-query DoS bound is the index size itself, bounded
-        //   by the contract author's index choice.
-        // - **Distinct mode** pushes the caller's `limit` and
-        //   `order_by_ascending` directly into grovedb so the walk
-        //   stops at `limit` elements in the requested direction.
-        //   Per-query work is then O(limit × log n) instead of
-        //   O(index size), and no Rust-side sort/reverse/truncate
-        //   is needed.
-        let (path_query_limit, left_to_right) = if options.distinct {
-            (options.limit.map(|l| l as u16), options.order_by_ascending)
-        } else {
-            (None, true)
-        };
+        // range item. The builder pushes the caller's `limit` and
+        // `order_by_ascending` directly into grovedb so the walk
+        // stops at `limit` elements in the requested direction —
+        // no Rust-side sort/reverse/truncate needed.
+        let (path_query_limit, left_to_right) =
+            (options.limit.map(|l| l as u16), options.order_by_ascending);
         let path_query =
             self.distinct_count_path_query(path_query_limit, left_to_right, platform_version)?;
         let base_path_len = path_query.path.len();
@@ -180,17 +278,11 @@ impl DriveDocumentCountQuery<'_> {
                         | grovedb::Error::PathKeyNotFound(_)
                 ) =>
             {
-                // No matching prefix path — return zero/empty per
-                // mode below.
-                return Ok(if !options.distinct {
-                    vec![SplitCountEntry {
-                        in_key: None,
-                        key: Vec::new(),
-                        count: 0,
-                    }]
-                } else {
-                    Vec::new()
-                });
+                // No matching prefix path — distinct mode returns
+                // an empty entry list. (Summed modes returned earlier
+                // via the aggregate fast path, so the empty case is
+                // distinct-only here.)
+                return Ok(Vec::new());
             }
             Err(e) => return Err(e),
         };
@@ -215,21 +307,6 @@ impl DriveDocumentCountQuery<'_> {
                 None
             };
             entries.push(SplitCountEntry { in_key, key, count });
-        }
-
-        if !options.distinct {
-            // Summed mode: sum across all emitted entries (across
-            // both forks and per-terminator-value sub-counts).
-            // Returns a single `in_key: None, key: empty` entry with
-            // the aggregate total — matches the wire-format
-            // `aggregate_count` variant the abci handler will lift
-            // it into.
-            let total: u64 = entries.iter().map(|e| e.count).sum();
-            return Ok(vec![SplitCountEntry {
-                in_key: None,
-                key: Vec::new(),
-                count: total,
-            }]);
         }
 
         // Distinct mode: grovedb already emitted entries in the

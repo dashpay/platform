@@ -195,14 +195,24 @@ impl TryFrom<DocumentCountQuery> for GetDocumentsCountRequest {
                     //
                     // `SdkBuilder::with_proofs(false)` is consequently
                     // a **no-op** for `DocumentCountQuery` — the
-                    // blanket `Query<T> for T` impl logs a warning at
-                    // `Fetch::fetch` time when proofs are disabled,
-                    // but the request still ships with `prove: true`.
-                    // Reaching the no-proof endpoint requires a
-                    // separate transport entry point (tracked as a
-                    // follow-up; the unified `GetDocumentsCount`
-                    // server-side supports no-proof modes, only the
-                    // SDK decoder is missing).
+                    // blanket `Query<T> for T` impl in
+                    // `packages/rs-sdk/src/platform/query.rs:119-124`
+                    // emits a `tracing::warn!` at `Fetch::fetch`
+                    // time when proofs are disabled, but the request
+                    // still ships with `prove: true` and the
+                    // response is decoded through
+                    // `FromProof<DocumentCountQuery>`. The server's
+                    // unified `GetDocumentsCount` endpoint supports
+                    // no-proof modes (`Total` / `PerInValue` /
+                    // `RangeNoProof`) but the SDK has no typed
+                    // decoder for them yet — shadowing the blanket
+                    // impl to intercept the flag is blocked by
+                    // Rust's coherence rules (`Query<T> for T`
+                    // covers all `T: TransportRequest`, and
+                    // `DocumentCountQuery` IS its own
+                    // `TransportRequest`). Wiring a no-proof
+                    // decoder is tracked as
+                    // dashpay/platform#3630.
                     prove: true,
                 },
             )),
@@ -510,10 +520,30 @@ impl FromProof<DocumentCountQuery> for DocumentSplitCounts {
             // the same source (see drive_dispatcher.rs), so both
             // sides must land on the same value or the merk-root
             // recomputation fails.
-            let limit_u16 = request
-                .limit
-                .map(|l| l as u16)
-                .unwrap_or(drive::config::DEFAULT_QUERY_LIMIT);
+            // Use `try_from` so a caller passing
+            // `limit > u16::MAX` fails loudly at the SDK boundary
+            // rather than silently truncating to a wrong value the
+            // verifier would then build a mismatched path query
+            // against. The server-side guard in
+            // `drive_dispatcher.rs`'s `RangeDistinctProof` arm
+            // already rejects `effective_limit > max_query_limit`
+            // (and `max_query_limit` is itself a `u16`), so today
+            // the truncation path is only hypothetical — but
+            // defense-in-depth keeps the failure mode explicit if
+            // a future code path widens the wire limit type or
+            // lifts the server cap.
+            let limit_u16 = match request.limit {
+                Some(l) => {
+                    u16::try_from(l).map_err(|_| drive_proof_verifier::Error::RequestError {
+                        error: format!(
+                            "limit {} exceeds u16::MAX; the prove-distinct path query cannot \
+                             represent it",
+                            l
+                        ),
+                    })?
+                }
+                None => drive::config::DEFAULT_QUERY_LIMIT,
+            };
             let left_to_right = request
                 .document_query
                 .order_by_clauses
