@@ -432,24 +432,35 @@ fn test_count_query_total_count_with_in_operator_no_matches() {
     assert_eq!(results[0].count, 0, "expected count of 0 for unmatched In");
 }
 
-/// Pins set-membership semantics on the `In` operator: duplicate values
-/// in the In array must collapse to a single subtree visit. The walker
-/// dedupes by serialized index key before forking, so `age IN [30, 30]`
-/// counts the age=30 subtree once, not twice.
+/// `In` clauses with duplicate values are rejected with
+/// `InvalidInClause` — the system-wide canonical contract enforced
+/// by [`WhereClause::in_values`]. Every In-consuming path the count
+/// dispatcher reaches (the shared `point_lookup_count_path_query`
+/// builder for both no-proof and prove, the `per_in_value`
+/// executor's `in_values()` call, the regular document query path,
+/// the contract-level where-clause validator) routes through the
+/// same `in_values()` validator, so `age IN [30, 30]` is rejected
+/// loudly rather than silently deduplicated.
+///
+/// Pre-unification the no-proof count path was the outlier — its
+/// hand-rolled `expand_paths_and_count` walker bypassed
+/// `in_values()` and silently deduplicated via a `BTreeSet<Vec<u8>>`
+/// of serialized keys. Collapsing the no-proof executor to share
+/// the path-query builder fixed that inconsistency by routing both
+/// sides through the same validator.
 #[test]
-fn test_count_query_in_operator_dedupes_duplicate_values() {
+fn test_count_query_in_operator_rejects_duplicate_values() {
     let (drive, data_contract) = setup_drive_and_contract();
     let platform_version = PlatformVersion::latest();
 
     insert_person_doc(&drive, &data_contract, [1u8; 32], "Alice", "M", "Smith", 30);
-    insert_person_doc(&drive, &data_contract, [2u8; 32], "Bob", "M", "Smith", 30);
-    insert_person_doc(&drive, &data_contract, [3u8; 32], "Carol", "M", "Smith", 40);
 
     let document_type = data_contract
         .document_type_for_name("person")
         .expect("expected document type");
 
-    // age IN [30, 30, 30] — set semantics: should count age=30 once = 2 docs.
+    // age IN [30, 30, 30] — duplicates rejected by the system-wide
+    // `in_values()` validator before any subtree access.
     let in_clause = WhereClause {
         field: "age".to_string(),
         operator: WhereOperator::In,
@@ -470,14 +481,14 @@ fn test_count_query_in_operator_dedupes_duplicate_values() {
         where_clauses: vec![in_clause],
     };
 
-    let results = query
+    let err = query
         .execute_no_proof(&drive, None, platform_version)
-        .expect("expected query to succeed");
-
-    assert_eq!(results.len(), 1);
-    assert_eq!(
-        results[0].count, 2,
-        "expected count of 2 (age=30, set semantics — duplicates collapsed)"
+        .expect_err("expected duplicate-In-values to be rejected");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("no duplicates"),
+        "expected duplicate-rejection error from in_values(), got: {}",
+        msg
     );
 }
 
@@ -498,8 +509,10 @@ fn test_count_query_in_operator_dedupes_duplicate_values() {
 /// Pins:
 /// - Strict picker accepts the 2-prop index when both properties are
 ///   covered (one by In, one by Equal).
-/// - No-proof executor sums per-In-value via the existing per-level
-///   fork in `expand_paths_and_count`: 2 + 1 = 3.
+/// - No-proof executor goes through the same
+///   `point_lookup_count_path_query` builder as the prove side, runs
+///   it through `grove.query`, and sums the emitted CountTree
+///   elements' `count_value`s: 2 + 1 = 3.
 /// - Prove executor builds a compound path query whose `base_path`
 ///   stops at `[..., "firstName"]`, with `outer_query` keys = the
 ///   sorted serialized In values and `set_subquery_path` carrying
@@ -597,14 +610,15 @@ fn test_count_query_in_on_before_last_with_trailing_equal_succeeds_on_both_paths
 /// lastName = ln` on the unique `byFirstNameMiddleLastName` index)
 /// — exercises the most aggressive shape the relaxed prove count
 /// builder accepts: In at position 0 with two trailing Equals
-/// rolling through `subquery_path_extension`. The count path is
+/// rolling through `subquery_path_extension`. Both no-proof and
+/// prove paths go through the same
+/// `point_lookup_count_path_query` builder (no-proof reads the
+/// emitted CountTree elements via `grove.query`; prove signs them
+/// via `get_proved_path_query`), so accepting this shape on one
+/// side automatically accepts it on the other. The count path is
 /// deliberately more permissive than the regular document query
-/// path here because the no-proof count executor
-/// (`expand_paths_and_count`) has always handled In at any
-/// position; relaxing the prove builder brings both count paths
-/// into the same surface. See the builder's docstring for the
-/// divergence rationale vs. `Index::matches` on the regular doc
-/// query path.
+/// path here — see the builder's docstring for the divergence
+/// rationale vs. `Index::matches`.
 ///
 /// Index used: `byFirstNameMiddleLastName` (unique, 3 props).
 /// Where: `firstName IN ["Alice", "Bob"] AND middleName = "M" AND

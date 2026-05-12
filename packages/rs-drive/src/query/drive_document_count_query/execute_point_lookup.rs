@@ -1,10 +1,12 @@
 //! Equal/In point-lookup execution paths for the count query.
 //!
-//! No-proof and proof executors that walk the primary-key CountTree
-//! at fully-resolved or partially-resolved index paths. The walk uses
-//! O(1) CountTree reads at fixed-key paths and falls through to a
-//! per-level sum for any trailing index properties without a where
-//! clause.
+//! No-proof and proof executors for fully-covered Equal/`In` queries
+//! against a `countable: true` index. Both sides share the same
+//! [`DriveDocumentCountQuery::point_lookup_count_path_query`] builder,
+//! so the proof bytes the server signs and the path query the verifier
+//! reconstructs (and the no-proof read this file performs) all see
+//! the exact same shape — there's only one source of truth for which
+//! `CountTree` elements compose the answer.
 //!
 //! Range-mode executors live in
 //! [`super::execute_range_count`](super::execute_range_count); this
@@ -13,30 +15,71 @@
 //! Whole module is gated `feature = "server"` via the parent's
 //! `pub mod execute_point_lookup;` declaration.
 
-use super::super::conditions::WhereOperator;
 use super::{DriveDocumentCountQuery, SplitCountEntry};
-use crate::drive::{Drive, RootTree};
-use crate::error::query::QuerySyntaxError;
+use crate::drive::Drive;
 use crate::error::Error;
-use crate::util::grove_operations::DirectQueryType;
-use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
-use dpp::version::drive_versions::DriveVersion;
 use dpp::version::PlatformVersion;
+use grovedb::query_result_type::{QueryResultElement, QueryResultType};
 use grovedb::TransactionArg;
-use grovedb_path::SubtreePath;
-use std::collections::BTreeSet;
 
 impl DriveDocumentCountQuery<'_> {
     /// Executes the count query without generating a proof.
     ///
-    /// Returns the total count as a single `SplitCountEntry` with an empty key.
+    /// Returns the total count as a single `SplitCountEntry` with
+    /// empty `key` (the unified-count Total shape).
+    ///
+    /// Implementation goes through the same
+    /// [`Self::point_lookup_count_path_query`] builder the prove
+    /// path uses, then runs `grove.query` to fetch the matched
+    /// `CountTree` elements and sums their `count_value_or_default()`
+    /// values. The builder handles all three structural cases
+    /// (Equal-only fully covered, In at any index position, In with
+    /// trailing Equals via `set_subquery_path`) — there's no need
+    /// for a separate recursive walker on the no-proof side.
     pub fn execute_no_proof(
         &self,
         drive: &Drive,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<SplitCountEntry>, Error> {
-        let count = self.execute_total_count(drive, transaction, platform_version)?;
+        let drive_version = &platform_version.drive;
+        let path_query = self.point_lookup_count_path_query(platform_version)?;
+        // `grove_get_path_query` requires a `drive_operations` sink for
+        // cost accounting; the no-proof executor doesn't propagate fees
+        // upward (callers that need cost are the per-mode dispatchers
+        // in `drive_dispatcher.rs`, which wrap this for fee calculation),
+        // so we use a local vec and discard.
+        let mut drive_operations = vec![];
+        let (results, _) = drive.grove_get_path_query(
+            &path_query,
+            transaction,
+            QueryResultType::QueryElementResultType,
+            &mut drive_operations,
+            drive_version,
+        )?;
+        // Sum across emitted CountTree elements:
+        // - Equal-only: 0 or 1 element (0 when the branch is absent).
+        // - In at any position: one element per In branch that has at
+        //   least one doc; missing branches contribute 0 by virtue of
+        //   being absent from the result set.
+        // `count_value_or_default()` returns the `CountTree`'s count
+        // for `Element::CountTree` / `Element::SumTree` and 1 for
+        // `Element::Reference` (the unique-index-with-all-non-null
+        // case — see `Element::count_value_or_default` for the per-
+        // variant contract).
+        let count: u64 = results
+            .elements
+            .iter()
+            .map(|e| match e {
+                QueryResultElement::ElementResultItem(elem) => elem.count_value_or_default(),
+                // `QueryElementResultType` only emits `ElementResultItem`;
+                // the other variants belong to `QueryKeyElementPairResultType`
+                // / `QueryPathKeyElementTrioResultType` which we don't
+                // request. Defensive 0 keeps the executor total-correct
+                // even if grovedb's emission shape ever broadens.
+                _ => 0,
+            })
+            .sum();
         Ok(vec![SplitCountEntry {
             in_key: None,
             key: vec![],
@@ -53,10 +96,11 @@ impl DriveDocumentCountQuery<'_> {
     ///
     /// Builds the path query via
     /// [`Self::point_lookup_count_path_query`] (shared with the
-    /// verifier so the merk-root recomputation matches). Errors surface
-    /// from the builder when the query shape isn't supported — partial
-    /// coverage, `In` on a non-last property, etc. — see that builder's
-    /// docstring for the exhaustive contract.
+    /// verifier AND with [`Self::execute_no_proof`] above, so all three
+    /// sites see byte-identical path queries). Errors surface from the
+    /// builder when the query shape isn't supported — partial
+    /// coverage, more than one In, etc. — see that builder's docstring
+    /// for the exhaustive contract.
     ///
     /// Proof size is O(k × log n) where k is the number of covered
     /// (Equal/In) branches and n is the tree depth: one merk path proof
@@ -77,159 +121,5 @@ impl DriveDocumentCountQuery<'_> {
             .unwrap()
             .map_err(|e| Error::GroveDB(Box::new(e)))?;
         Ok(proof)
-    }
-
-    /// Executes the count query, returning a single `u64` count.
-    ///
-    /// Builds the path that lands exactly on the terminal CountTree for the
-    /// covered Equal/`In` branches and reads `count_value_or_default()`. The
-    /// picker (`find_countable_index_for_where_clauses`) is strict — it only
-    /// returns an index when every index property has a matching `Equal`/`In`
-    /// clause — so by the time we reach this executor every level has a
-    /// resolved key.
-    ///
-    /// For `In` clauses (set-membership), each value forks a separate path
-    /// and the per-branch counts are summed. Duplicate values that share a
-    /// canonical encoding collapse to one fork.
-    fn execute_total_count(
-        &self,
-        drive: &Drive,
-        transaction: TransactionArg,
-        platform_version: &PlatformVersion,
-    ) -> Result<u64, Error> {
-        // Build the base path: [DataContractDocuments, contract_id, 1, doc_type_name]
-        let base_path = vec![
-            vec![RootTree::DataContractDocuments as u8],
-            self.contract_id.to_vec(),
-            vec![1u8],
-            self.document_type_name.as_bytes().to_vec(),
-        ];
-
-        self.expand_paths_and_count(drive, base_path, 0, transaction, platform_version)
-    }
-
-    /// Walks the index property levels Equal-by-Equal (or forks on `In`),
-    /// and reads the terminal CountTree's `count_value`.
-    ///
-    /// Contract: every index property MUST have a matching `Equal`/`In`
-    /// clause. The strict picker
-    /// ([`Self::find_countable_index_for_where_clauses`]) guarantees this
-    /// upstream; the "missing clause for an index property" branch here is
-    /// defensive — it returns
-    /// `InvalidWhereClauseComponents` directing the caller at the
-    /// index-design fix rather than silently falling through to a
-    /// partial-coverage walk.
-    fn expand_paths_and_count(
-        &self,
-        drive: &Drive,
-        current_path: Vec<Vec<u8>>,
-        prop_idx: usize,
-        transaction: TransactionArg,
-        platform_version: &PlatformVersion,
-    ) -> Result<u64, Error> {
-        let drive_version = &platform_version.drive;
-
-        if prop_idx == self.index.properties.len() {
-            // All index properties resolved to a fixed key — O(1) read.
-            return Self::fetch_count_at_path(drive, &current_path, transaction, drive_version);
-        }
-
-        let prop = &self.index.properties[prop_idx];
-        let clause = self
-            .where_clauses
-            .iter()
-            .find(|wc| wc.field == prop.name)
-            .ok_or_else(|| {
-                Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
-                    "count query requires the where clauses to fully cover the \
-                     countable index; one or more index properties have no \
-                     matching `==` or `in` clause — use a more specific index \
-                     (define a `countable: true` index whose properties exactly \
-                     match the clauses) or set `documentsCountable: true` on the \
-                     document type for unfiltered total counts",
-                ))
-            })?;
-
-        match clause.operator {
-            WhereOperator::Equal => {
-                let mut new_path = current_path;
-                new_path.push(prop.name.as_bytes().to_vec());
-                new_path.push(self.document_type.serialize_value_for_key(
-                    prop.name.as_str(),
-                    &clause.value,
-                    platform_version,
-                )?);
-                self.expand_paths_and_count(
-                    drive,
-                    new_path,
-                    prop_idx + 1,
-                    transaction,
-                    platform_version,
-                )
-            }
-            WhereOperator::In => {
-                let values = clause.value.as_array().ok_or_else(|| {
-                    Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
-                        "In where-clause value must be an array",
-                    ))
-                })?;
-
-                // `In` is set-membership: serialize each value to the canonical
-                // index key and dedupe before forking. Without dedupe, a query
-                // like `age in [30, 30]` would visit and sum the same subtree
-                // twice — distinct values that share a canonical encoding
-                // collapse to one fork.
-                let mut seen_keys: BTreeSet<Vec<u8>> = BTreeSet::new();
-                let mut total: u64 = 0;
-                for v in values {
-                    let serialized = self.document_type.serialize_value_for_key(
-                        prop.name.as_str(),
-                        v,
-                        platform_version,
-                    )?;
-                    if !seen_keys.insert(serialized.clone()) {
-                        continue;
-                    }
-                    let mut new_path = current_path.clone();
-                    new_path.push(prop.name.as_bytes().to_vec());
-                    new_path.push(serialized);
-                    total = total.saturating_add(self.expand_paths_and_count(
-                        drive,
-                        new_path,
-                        prop_idx + 1,
-                        transaction,
-                        platform_version,
-                    )?);
-                }
-                Ok(total)
-            }
-            _ => Err(Error::Query(
-                QuerySyntaxError::InvalidWhereClauseComponents(
-                    "count fast path supports only Equal and In where-clause operators",
-                ),
-            )),
-        }
-    }
-
-    /// Fetches the CountTree element count at the given path.
-    /// The CountTree element is at key [0] under the path.
-    fn fetch_count_at_path(
-        drive: &Drive,
-        path: &[Vec<u8>],
-        transaction: TransactionArg,
-        drive_version: &DriveVersion,
-    ) -> Result<u64, Error> {
-        let mut drive_operations = vec![];
-        let path_refs: Vec<&[u8]> = path.iter().map(|p| p.as_slice()).collect();
-        let element = drive.grove_get_raw_optional(
-            SubtreePath::from(path_refs.as_slice()),
-            &[0],
-            DirectQueryType::StatefulDirectQuery,
-            transaction,
-            &mut drive_operations,
-            drive_version,
-        )?;
-
-        Ok(element.map_or(0, |e| e.count_value_or_default()))
     }
 }

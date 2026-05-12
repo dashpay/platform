@@ -515,10 +515,10 @@ impl DriveDocumentCountQuery<'_> {
     /// element lookup with no document-key terminator descent, no
     /// `order_by` interpretation, and no `limit/offset` semantics, so
     /// `set_subquery_path` with an arbitrary trailing tail just
-    /// works. The no-proof count executor (`expand_paths_and_count`)
-    /// has always handled `In` at any position; this builder now
-    /// matches that surface so prove and no-proof accept the same
-    /// query shapes.
+    /// works. Both no-proof ([`Self::execute_no_proof`]) and prove
+    /// ([`Self::execute_point_lookup_count_with_proof`]) executors
+    /// route through this single builder, so they accept the same
+    /// query shapes by construction.
     ///
     /// Output shapes:
     /// - **Equal-only, fully covered**: flat path query at
