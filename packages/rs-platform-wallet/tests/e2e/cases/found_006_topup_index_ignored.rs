@@ -11,39 +11,53 @@
 //! top-ups for the same identity". The implementation prefixes the
 //! parameter with `_` and the function body derives the funding key
 //! path from `identity_index` alone (a `TODO(platform-wallet)` comment
-//! confirms the parameter is unused). Two consecutive top-ups for the
-//! same identity therefore derive from the same `(IdentityTopUp,
-//! identity_index)` path — yielding the same one-time key address,
-//! the same outpoint candidate, and a likely-duplicate asset-lock
-//! transaction or nonce collision.
+//! confirms the parameter is unused). Upstream `CreditOutputFunding`
+//! has no `top_up_index` field, so the routing bug cannot be fixed
+//! downstream alone.
 //!
-//! ## What this test asserts
+//! ## QA-012 investigation (Marvin, 2026-05-12)
 //!
-//! Two consecutive `top_up_identity_with_funding` calls for the same
-//! identity, with different `topup_index` values, must produce
-//! DIFFERENT asset-lock txids (the doc-stated contract). Today they
-//! produce the SAME funding-output address — the second call either
-//! collides with the first's outpoint or builds a duplicate
-//! transaction.
+//! The previous assertion (`assert_ne!(first_txid, second_txid)` after
+//! `topup_index=0` then `topup_index=1`) was a FALSE-GREEN. It passed
+//! because `next_private_key` (key-wallet managed_account_trait.rs:464)
+//! advances a sequential cursor through the HD pool on every call —
+//! regardless of `_topup_index`. Consecutive calls derived key[0] then
+//! key[1], which are distinct, so the txids differed. The distinction
+//! had nothing to do with routing `topup_index` correctly.
+//!
+//! ## Correct pin (per QA-012 §5)
+//!
+//! The real contract is: `top_up_identity_with_funding(..., topup_index=N, ...)`
+//! must derive the credit-output key from HD slot N, not from the sequential
+//! "next available" cursor. To observe the routing mismatch, use a
+//! non-sequential `topup_index`:
+//!
+//! 1. Record the HD address at pool slot `TOPUP_INDEX_NONSEQ` BEFORE
+//!    making any calls (the pool pre-generates `DEFAULT_SPECIAL_GAP_LIMIT`
+//!    addresses, so slot `TOPUP_INDEX_NONSEQ` is already computed).
+//! 2. First call: `topup_index=0` → sequential cursor advances to slot 0;
+//!    both buggy and correct implementations agree.
+//! 3. Second call: `topup_index=TOPUP_INDEX_NONSEQ` →
+//!    - Buggy: sequential cursor advances to slot 1 → credit output = addr[1].
+//!    - Correct: cursor is set from `topup_index` → credit output = addr[TOPUP_INDEX_NONSEQ].
+//! 4. Assert: `actual_credit_output_address == expected_address_at_slot_TOPUP_INDEX_NONSEQ`.
+//!    This FAILS today (addr[1] != addr[TOPUP_INDEX_NONSEQ]) and PASSES once
+//!    upstream `CreditOutputFunding` gains `top_up_index` AND the downstream
+//!    wiring is complete.
 //!
 //! ## FAILS UNTIL
 //!
-//! Found-006's upstream root cause is in `key_wallet`'s
-//! `CreditOutputFunding` — the type plumbs only `identity_index` and
-//! has no `topup_index` field. Downstream cannot fix Found-006
-//! without an upstream API change first. So this test stays red
-//! until the upstream `CreditOutputFunding` gains a `top_up_index`
-//! field AND the downstream `top_up_identity_with_funding` wires it
-//! through.
+//! Upstream `key_wallet::CreditOutputFunding` gains a `top_up_index` field AND
+//! `top_up_identity_with_funding` removes the `_topup_index` prefix and wires
+//! the index through to `AssetLockFundingType`-based account resolution.
 //!
-//! Run with `cargo test -- --ignored` against a testnet bank with
-//! Core funding to observe the failure mode.
+//! Run with `cargo test -- --ignored` against a testnet bank with Core funding.
 
 use std::time::Duration;
 
 use dpp::identity::Identity;
+use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::AccountType;
-use platform_wallet::wallet::asset_lock::tracked::AssetLockStatus;
 use platform_wallet::wallet::identity::types::funding::TopUpFundingMethod;
 use platform_wallet::PlatformWalletError;
 
@@ -68,13 +82,21 @@ const REGISTRATION_FUNDING_CREDITS: u64 = REGISTRATION_FUNDING + 150_000_000;
 /// Per-step wait deadline.
 const STEP_TIMEOUT: Duration = Duration::from_secs(180);
 
+/// The non-sequential `topup_index` used for the second top-up call.
+///
+/// Must NOT equal the sequential-cursor position the second call would
+/// land on (position 1 after the first call marks slot 0 used).
+/// Must be within [0, DEFAULT_SPECIAL_GAP_LIMIT) = [0, 5) so the
+/// expected address is pre-generated in the pool.
+const TOPUP_INDEX_NONSEQ: u32 = 3;
+
 #[ignore = "Found-006 — bug pin. EXPECTED to fail until upstream \
             `key_wallet::CreditOutputFunding` gains a `top_up_index` \
-            field. Same PLATFORM_WALLET_E2E_BANK_CORE_GATE as CR-003. \
-            Run with `cargo test -- --ignored`; the failure mode \
-            today is either (a) duplicate-tx rejection at broadcast, \
-            (b) duplicate txids across the two tracked locks, or (c) \
-            both top-ups silently consuming the same outpoint."]
+            field AND downstream `top_up_identity_with_funding` wires it \
+            through. Run with `cargo test -- --ignored`; the failure mode \
+            today is that the actual credit-output address for the second \
+            call is addr[1] (sequential cursor), not addr[TOPUP_INDEX_NONSEQ] \
+            (correct routing). See QA-012 investigation for details."]
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 async fn found_006_topup_index_ignored() {
     let _ = tracing_subscriber::fmt()
@@ -119,26 +141,51 @@ async fn found_006_topup_index_ignored() {
         .expect("fetch pre")
         .expect("identity visible");
 
-    // Precondition (QA-006): provision the `IdentityTopUp` HD account for
-    // `IDENTITY_INDEX = 0`. Both top-ups below target the same identity
-    // (that is the bug under test), so `top_up_identity_with_funding`
-    // routes both through `identity_index = 0`. The `_topup_index`
-    // parameter is currently ignored (Found-006), meaning both calls
-    // derive from slot 0 — only one slot needs provisioning.
-    //
-    // Expected outcome post-fix of QA-006 precondition:
-    //   - first top-up (topup_index=0): PASSES — slot 0 provisioned.
-    //   - second top-up (topup_index=1): FAILS or collides — the bug
-    //     (Found-006) is that `topup_index` is still ignored and both
-    //     calls derive from the same slot 0 address. This test is a
-    //     RED-by-design pin for that bug. Fixing QA-006's precondition
-    //     unblocks reaching the routing logic; the Found-006 assertion
-    //     at the end will still fail until the upstream routing is fixed.
+    // Provision the `IdentityTopUp` HD account for `IDENTITY_INDEX = 0`.
+    // `add_identity_topup_account` pre-generates `DEFAULT_SPECIAL_GAP_LIMIT`
+    // (= 5) addresses using the account xpub, so slots 0–4 are immediately
+    // available without a private-key round-trip.  (QA-006)
     add_identity_topup_account(s.test_wallet.platform_wallet(), IDENTITY_INDEX)
         .await
         .expect("add IdentityTopUp HD account for IDENTITY_INDEX");
 
+    // -- Pre-derive the expected address for TOPUP_INDEX_NONSEQ ---------
+    //
+    // The correct routing contract is: `topup_index=N` must use HD slot N.
+    // Record slot `TOPUP_INDEX_NONSEQ` before any keys are consumed, so we
+    // can compare it against the actual credit-output address of the second
+    // call regardless of cursor advancement.
+    let expected_credit_output_addr = {
+        let wallet_id = s.test_wallet.platform_wallet().wallet_id();
+        let wm = s
+            .test_wallet
+            .platform_wallet()
+            .wallet_manager()
+            .read()
+            .await;
+        let info = wm.get_wallet_info(&wallet_id).expect("wallet info present");
+        let managed = info
+            .core_wallet
+            .accounts
+            .identity_topup
+            .get(&IDENTITY_INDEX)
+            .expect("IdentityTopUp account must be provisioned");
+        let pools = managed.managed_account_type().address_pools();
+        let pool = pools
+            .first()
+            .expect("IdentityTopUp has exactly one address pool");
+        pool.address_at_index(TOPUP_INDEX_NONSEQ)
+            .unwrap_or_else(|| {
+                panic!(
+                    "Address at slot {TOPUP_INDEX_NONSEQ} must be pre-generated \
+                     (DEFAULT_SPECIAL_GAP_LIMIT = 5 covers slots 0–4)"
+                )
+            })
+    };
+
     // First top-up — topup_index = 0.
+    // Sequential cursor advances from slot 0. Both buggy and correct
+    // implementations agree here (0 == 0).
     s.test_wallet
         .platform_wallet()
         .identity()
@@ -156,15 +203,15 @@ async fn found_006_topup_index_ignored() {
              expected to succeed",
         );
 
-    // Snapshot the tracked top-up locks BEFORE the second top-up so
-    // we can isolate the txid the first call produced.
+    // Snapshot locks after the first call so we can isolate the second
+    // call's tracked lock below.
     let first_locks = s
         .test_wallet
         .platform_wallet()
         .asset_locks()
         .list_tracked_locks()
         .await;
-    let first_topup_txids: Vec<_> = first_locks
+    let first_txid_set: std::collections::HashSet<_> = first_locks
         .iter()
         .filter(|l| {
             matches!(
@@ -174,21 +221,17 @@ async fn found_006_topup_index_ignored() {
         })
         .map(|l| l.out_point.txid)
         .collect();
-    assert_eq!(
-        first_topup_txids.len(),
-        1,
-        "PRE-pin: first top-up must have produced exactly one \
-         IdentityTopUp tracked lock; got {} entries",
-        first_topup_txids.len()
-    );
-    let first_txid = first_topup_txids[0];
 
-    // Second top-up — topup_index = 1. Per the doc this should
-    // derive a fresh funding key and produce a NEW asset-lock tx.
-    // Today this call collides with the first because the
-    // implementation ignores `topup_index`.
-    let second_call = s
-        .test_wallet
+    // Second top-up — topup_index = TOPUP_INDEX_NONSEQ (= 3).
+    //
+    // CONTRACT: this call MUST derive its credit-output key from slot
+    // `TOPUP_INDEX_NONSEQ`, yielding address[TOPUP_INDEX_NONSEQ].
+    //
+    // BUG (today): `_topup_index` is ignored; `next_private_key` advances
+    // the sequential cursor to slot 1. The actual credit-output address is
+    // address[1], NOT address[TOPUP_INDEX_NONSEQ]. The final assertion below
+    // catches this mismatch and fails RED.
+    s.test_wallet
         .platform_wallet()
         .identity()
         .top_up_identity_with_funding(
@@ -196,40 +239,24 @@ async fn found_006_topup_index_ignored() {
             TopUpFundingMethod::FundWithWallet {
                 amount_duffs: TOP_UP_AMOUNT,
             },
-            1,
+            TOPUP_INDEX_NONSEQ,
             None,
         )
-        .await;
+        .await
+        .expect(
+            "Found-006: second top_up_identity_with_funding \
+             (topup_index=TOPUP_INDEX_NONSEQ) must succeed",
+        );
 
-    // The bug surfaces in one of three ways today:
-    //   (a) `second_call` errors at broadcast with a duplicate-tx /
-    //       no-spendable-input shape — `_topup_index` collision means
-    //       the second build re-derives the same funding key, picks the
-    //       same outpoint, and produces an identical asset-lock tx.
-    //   (b) `second_call` succeeds but the new tracked lock has the
-    //       same txid as the first (same outpoint reused).
-    //   (c) `second_call` succeeds, the txids are different, BUT only
-    //       because the first call already consumed the funding
-    //       outpoint and the second falls through to a different
-    //       UTXO by accident — not by design.
-    //
-    // The doc-stated contract is "different topup_index ⇒ different
-    // derivation". Pin that as the hard assertion. Today (a)/(b) make
-    // this assertion fail.
-    second_call.expect(
-        "Found-006: second top_up_identity_with_funding (topup_index=1) \
-         was expected to succeed per the doc-stated contract — failure \
-         here today is the pin of the bug. After upstream fix, the \
-         call should succeed and produce a fresh derivation.",
-    );
-
+    // Find the tracked lock introduced by the second call.
     let post_locks = s
         .test_wallet
         .platform_wallet()
         .asset_locks()
         .list_tracked_locks()
         .await;
-    let post_topup_txids: Vec<_> = post_locks
+
+    let second_lock = post_locks
         .iter()
         .filter(|l| {
             matches!(
@@ -237,44 +264,65 @@ async fn found_006_topup_index_ignored() {
                 key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType::IdentityTopUp
             )
         })
-        .filter(|l| {
-            matches!(
-                l.status,
-                AssetLockStatus::InstantSendLocked | AssetLockStatus::ChainLocked
-            )
-        })
-        .map(|l| l.out_point.txid)
-        .collect();
-
-    assert_eq!(
-        post_topup_txids.len(),
-        2,
-        "Found-006 POST-pin: expected 2 distinct finalised IdentityTopUp \
-         tracked locks after two top-ups, got {}. Today's likely failure \
-         mode: the second call collided on the same derivation and either \
-         didn't produce a new tracked lock or duplicated the first's \
-         outpoint.",
-        post_topup_txids.len()
-    );
-
-    let second_txid = post_topup_txids
-        .iter()
-        .find(|t| **t != first_txid)
-        .copied()
+        .find(|l| !first_txid_set.contains(&l.out_point.txid))
         .unwrap_or_else(|| {
             panic!(
-                "Found-006 POST-pin: no tracked lock with a distinct txid \
-                 from the first call's txid {first_txid} — second top-up \
-                 derived the same funding key as the first. This is the \
-                 bug. After upstream fix, the second call must produce a \
-                 different txid."
+                "Found-006: second top-up must produce a new IdentityTopUp tracked lock \
+                 distinct from the first call's txids {:?}",
+                first_txid_set,
             )
         });
-    assert_ne!(
-        first_txid, second_txid,
-        "Found-006 POST-pin violated: the two top-up calls produced the \
-         same asset-lock txid {first_txid}. `topup_index` is being \
-         ignored — see TEST_SPEC.md Found-006 for the upstream root cause."
+
+    // Extract the credit-output address from the second asset-lock transaction.
+    //
+    // The credit output lives in the special transaction payload (AssetLockPayload),
+    // not in `tx.output[]` — per the DIP-9 structure. Its `script_pubkey` encodes
+    // the P2PKH address derived from the one-time funding key.
+    let network = s.ctx.config.network;
+    let actual_credit_output_addr = {
+        use key_wallet::dashcore::blockdata::transaction::special_transaction::TransactionPayload;
+
+        let payload = second_lock
+            .transaction
+            .special_transaction_payload
+            .as_ref()
+            .expect("asset-lock transaction must carry a special-transaction payload");
+
+        let asset_lock = match payload {
+            TransactionPayload::AssetLockPayloadType(p) => p,
+            _ => {
+                panic!("Found-006: expected AssetLockPayloadType payload, got a different variant")
+            }
+        };
+
+        let credit_out = asset_lock
+            .credit_outputs
+            .first()
+            .expect("AssetLockPayload must have at least one credit output");
+
+        key_wallet::dashcore::Address::from_script(&credit_out.script_pubkey, network)
+            .expect("credit output script must be a valid P2PKH address")
+    };
+
+    // The core assertion: the second call's credit-output address must match
+    // the HD address pre-derived for slot `TOPUP_INDEX_NONSEQ`.
+    //
+    // TODAY (BUG): actual = address[1] (sequential cursor after first call);
+    //              expected = address[TOPUP_INDEX_NONSEQ] = address[3].
+    //              address[1] != address[3]  →  assertion FAILS  →  RED pin.
+    //
+    // AFTER FIX: `topup_index` is routed through `CreditOutputFunding`; the
+    //             call derives key at slot TOPUP_INDEX_NONSEQ correctly.
+    //             actual == expected  →  assertion PASSES.
+    assert_eq!(
+        actual_credit_output_addr, expected_credit_output_addr,
+        "Found-006 (QA-012 rewrite): second top-up (topup_index={TOPUP_INDEX_NONSEQ}) \
+         must derive its credit-output key from HD slot {TOPUP_INDEX_NONSEQ}, yielding \
+         address[{TOPUP_INDEX_NONSEQ}] = {expected_credit_output_addr}. \
+         Today the sequential cursor produces address[1] instead, which means \
+         `topup_index` is being ignored. See QA-012 investigation and \
+         TEST_SPEC.md Found-006 for the upstream root cause \
+         (CreditOutputFunding lacks a `top_up_index` field)."
     );
 
     s.teardown().await.expect("teardown");
