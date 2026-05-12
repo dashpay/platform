@@ -51,6 +51,7 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
+use dash_sdk::platform::address_sync::AddressSyncConfig;
 use dpp::version::PlatformVersion;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 
@@ -245,9 +246,17 @@ async fn pa_004b_sweep_below_dust_gate_no_broadcast() {
         .await
         .expect("re-derive post-sweep view of test wallet");
     post_sweep.platform().initialize().await;
+    // Use full_rescan_after_time_s=0 — forces a full historical scan.
+    // sync_balances(None) on a fresh re-derived wallet anchors the "recent
+    // zone" query at current chain tip; if addr_1's balance was committed
+    // below the recent window, sync returns empty and skips the compacted
+    // scan. See QA-014 investigation /tmp/qa-014-pa-009-rederive-sync-gap.md.
     post_sweep
         .platform()
-        .sync_balances(None)
+        .sync_balances(Some(AddressSyncConfig {
+            full_rescan_after_time_s: 0,
+            ..AddressSyncConfig::default()
+        }))
         .await
         .expect("post-sweep sync");
     let post_sweep_balances = post_sweep.platform().addresses_with_balances().await;
