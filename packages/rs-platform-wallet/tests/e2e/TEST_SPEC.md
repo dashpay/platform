@@ -107,7 +107,7 @@ changes.
 | Identity | yes (`identity/network/{register_from_addresses,top_up_from_addresses,registration,update,transfer,transfer_to_addresses,withdrawal}`) | no | `Signer<IdentityPublicKey>` impl, identity-key derivation helper, `TestWallet::register_identity_from_addresses`, `wait_for_identity_balance` | asset-lock-funded identity **registration** (DET territory; bank holds credits — see CR-003); asset-lock-funded top-up now has spec coverage (ID-002b); identity withdrawal (Layer-1 observation) |
 | Tokens | yes (`tokens/wallet.rs` and `identity/network/tokens/*`) | no | `Signer<IdentityPublicKey>`, identity setup, contract-token discovery helper, `TestTokenContract` fixture pointer | fresh contract deployment (no testnet contract registry); group-action workflows that need multi-identity coordination outside one harness |
 | Core / SPV | yes (`core/{wallet,balance,broadcast,balance_handler}`) | yes — SPV enabled (Task #15 complete, Wave E landed) | `wait_for_core_balance` implemented; faucet helper ready | broadcast tests (deferred P2); tx-is-ours flag tests (DET parity, P2) |
-| Asset Lock | yes (`asset_lock/{build,manager,sync,tracked,lock_notify_handler}`) | no | needs Core-UTXO funded test wallet (SPV runtime is now available), `wait_for_asset_lock` | full path deferred (bank wallet has no Core UTXOs; faucet integration needed) |
+| Asset Lock | yes (`asset_lock/{build,manager,sync,tracked,lock_notify_handler}`) | no | needs Core-UTXO funded test wallet (SPV runtime is now available), `wait_for_asset_lock`; AL-001 concurrent-build case added | sequential single-build path already covered by CR-003 and ID-002b; concurrent-build gap closed by AL-001 |
 | Shielded | yes (`shielded/{keys,note_selection,operations,prover,store,sync}`) | no | not a small extension — prover, viewing keys, note selection | entire surface — separate prover/keys complexity, defer to a dedicated suite |
 | Contracts | yes (`identity/network/contract.rs::create_data_contract_with_signer`) | no | identity signer, schema fixtures (`tests/fixtures/contracts/`), `wait_for_contract_visible` | `replace`/`transfer` of an arbitrary deployed contract owned elsewhere — gated on a contract-registry strategy |
 | DPNS | yes (`identity/network/dpns.rs::{register_name_with_external_signer,resolve_name,sync_dpns_names,contest_vote_state}`) | no | identity signer, name uniqueness (random suffix), `wait_for_dpns_name` | contested-name auctions (P2; multi-identity orchestration heavy) |
@@ -185,6 +185,7 @@ Status legend: **green** = test file present, body has real assertions, runnable
 | CR-002 | Core wallet receive address derivation | P1 | not implemented | M |
 | CR-003 | Asset-lock-funded identity registration (full path) | P2 | green | L |
 | CR-004 | Legacy BIP32 account: balance + UTXO state updates after spend | P1 | failing-by-design | M |
+| AL-001 | Concurrent asset-lock builds from same wallet | P1 | not implemented | L |
 | CT-001 | Document put: deploy a fixture data contract | P1 | not implemented | M |
 | CT-002 | Document put / replace lifecycle | P2 | not implemented | M |
 | CT-003 | Contract update (add document type) | P2 | not implemented | M |
@@ -227,8 +228,8 @@ Status legend: **green** = test file present, body has real assertions, runnable
 | Found-017 | `register_wallet` registers wallet in memory even when persister `store` returns `Err` — vanishes on next launch | P2 | not implemented | S |
 | Found-018 | `PlatformAddressChangeSet::merge` documents fee semantics as "fee paid by the transfer that produced this changeset" but actually accumulates fees across merged changesets | P2 | not implemented | S |
 
-<!-- merge note: theirs' counts already reflect the expanded TK section + ID-007 (93 total; 74 baseline). cr004-spec adds the CR-004 row (P1, env-gated FAILING-by-design), so P1 and total each +1: P1: 25, baseline: 75, total: 94. Kept theirs' "post-Task #15" annotations and noted CR-004 as the env-gated entry under P1. ID-002b (P1, not implemented) added: P1: 26, baseline: 76, total: 95. -->
-Counts by priority: **P0: 10**, **P1: 26** (incl. 2 post-Task #15 + 1 env-gated FAILING-by-design (CR-004) + ID-002b), **P2: 58** (incl. 2 post-Task #15, 1 gated, 18 Found-bug pins), **DEFERRED: 1** (95 total index entries; 76 baseline + 18 Found-bug pins + 1 deferred placeholder).
+<!-- merge note: theirs' counts already reflect the expanded TK section + ID-007 (93 total; 74 baseline). cr004-spec adds the CR-004 row (P1, env-gated FAILING-by-design), so P1 and total each +1: P1: 25, baseline: 75, total: 94. Kept theirs' "post-Task #15" annotations and noted CR-004 as the env-gated entry under P1. ID-002b (P1, not implemented) added: P1: 26, baseline: 76, total: 95. AL-001 (P1, not implemented) added: P1: 27, baseline: 77, total: 96. -->
+Counts by priority: **P0: 10**, **P1: 27** (incl. 2 post-Task #15 + 1 env-gated FAILING-by-design (CR-004) + ID-002b + AL-001), **P2: 58** (incl. 2 post-Task #15, 1 gated, 18 Found-bug pins), **DEFERRED: 1** (96 total index entries; 77 baseline + 18 Found-bug pins + 1 deferred placeholder).
 
 ### Platform Addresses (PA)
 
@@ -1454,6 +1455,65 @@ implies SPV-off is the default is incorrect.
 - **Rationale**: Pins the spend → state-update contract of the Core wallet for the legacy BIP32 account path. Without it, any future regression in `check_core_transaction`'s handling of `standard_bip32_accounts` (which dash-evo-tool, the SwiftExampleApp, and Rust-SDK-driven UIs all depend on) ships silently to consumers and is caught only when downstream consumers file issues. The bug is currently open upstream, so the test fails at first run — exactly the "pin invariants, including currently-broken ones" pattern used throughout this spec.
 - **Operator notes**: Same SPV cold-cache caveat as CR-003 (~15 min on first run). The `PLATFORM_WALLET_E2E_BANK_CORE_GATE` default-on still applies. The legacy BIP32 account derivation must NOT cross-contaminate the wallet's default Core account UTXO set — assertions read `standard_bip32_accounts` slot state directly, not the wallet-aggregate balance.
 
+### Asset Lock (AL)
+
+This section covers primitive-level correctness of `AssetLockManager` — the internal component that coordinates asset-lock transaction building, UTXO selection, IS-lock waiting, and proof correlation. Asset-lock-funded feature flows (identity registration, identity top-up) are tested at the feature level under CR-003 and ID-002b respectively; the AL category pins the manager's invariants that those feature-level tests do not exercise, particularly concurrent-build behaviour. AL tests require a Core-funded test wallet and SPV, so they share the Wave E prerequisite with CR-003.
+
+#### AL-001 — Concurrent asset-lock builds from same wallet
+
+- **Priority**: P1
+- **Status**: Not implemented — TBD test file `tests/e2e/cases/al_001_concurrent_asset_lock_builds.rs`.
+- **Wallet feature exercised**: `wallet/asset_lock/manager.rs::AssetLockManager` (the entire concurrent-build path); transitively `wallet/asset_lock/build.rs::build_asset_lock_transaction` and `wallet/asset_lock/build.rs::create_funded_asset_lock_proof`. The driver is `wallet/identity/network/top_up.rs::top_up_identity_with_funding` (top-up is the more common concurrent load case — multiple identities funded from the same wallet).
+- **DET parallel**: None — DET does not drive concurrent asset-lock builds from a single wallet. No DET parallel; this is new coverage.
+- **Preconditions**:
+  - CR-001 (SPV ready).
+  - Core-funded test wallet with enough headroom for N parallel asset locks + fees. Suggested `N = 3`, per-lock amount `100_000_000` duffs (0.001 DASH), so Core funding floor ≈ `N × (100_000_000 + asset_lock_fee_reserve + core_tx_fee_reserve) + setup_overhead` ≈ 500_000_000 duffs (5 DASH testnet). Same `PLATFORM_WALLET_E2E_BANK_CORE_GATE` env gate as CR-003.
+  - N pre-registered identities (each via address-funded `register_from_addresses` from the ID-001 helper). The concurrent top-ups target DIFFERENT identities to avoid colliding on Found-006 (`topup_index` routing discrepancy); Found-006 has its own dedicated pin.
+- **Scenario**:
+  1. `setup_with_core_funded_test_wallet(CONCURRENT_LOCK_FUNDING_TOTAL)` lands Core funds on the test wallet.
+  2. Register N identities via the address-funded path (ID-001 helper); capture `identity_ids[N]` and `pre_balances[N]`.
+  3. Spawn N concurrent tasks via `tokio::spawn` (NOT a sequential `for` loop):
+     ```rust
+     let handles: Vec<_> = identity_ids
+         .iter()
+         .map(|id| {
+             let wallet = wallet.clone();
+             let signer = signer.clone();
+             tokio::spawn(async move {
+                 wallet.top_up_identity_with_funding(
+                     id.clone(),
+                     IdentityFundingMethod::FundWithWallet { amount_duffs: LOCK_AMOUNT },
+                     &signer,
+                     None,
+                 ).await
+             })
+         })
+         .collect();
+     ```
+  4. `try_join_all(handles).await` — collect all N task outputs.
+  5. Fetch all N identities' chain balances post-top-up.
+  6. Fetch the test wallet's Core balance.
+  7. Read the `tracked_asset_locks` registry — collect the N asset-lock txids that landed.
+- **Assertions**:
+  - All N task results are `Ok(_)` — every concurrent build succeeded.
+  - The N asset-lock txids are all distinct (no duplicate output, no `AssetLockManager` collision).
+  - `post_balances[i] >= pre_balances[i] + (LOCK_AMOUNT * 1000) - top_up_fee_max` for all `i` (where `1000` is `CREDITS_PER_DUFF`).
+  - The test wallet's Core balance decreased by approximately `N × (LOCK_AMOUNT + asset_lock_fee + top_up_fee)` duffs (within a reasonable fee tolerance).
+  - No `tracked_asset_locks` entry is in `Failed` state.
+  - No UTXO double-spend: every input across the N asset-lock transactions is unique — read the input lists from `tracked_asset_locks` and assert pairwise disjoint sets.
+- **Negative variants (defer to follow-up AL-* cases)**:
+  - N tasks with `N >> available_utxos`: assert graceful typed `Wallet::InsufficientFunds` failure, NOT a UTXO double-spend or partial broadcast.
+  - One task panics mid-build: assert remaining tasks complete normally (no shared-state poisoning via `AssetLockManager`).
+  - Concurrent build while a fourth task calls `recover_asset_lock_blocking`: assert no deadlock.
+- **Notes / risks**:
+  - Reuse CR-003's `setup_with_core_funded_test_wallet` helper with a larger funding amount rather than introducing a separate setup variant.
+  - Requires `PLATFORM_WALLET_E2E_BANK_CORE_GATE` (same as CR-003, default-on, 900 s deadline).
+  - Found-008 (`LockNotifyHandler` missed-wakeup) is on the critical path — if Found-008 is not fixed, this test may flake under concurrent load when an IS-lock event arrives in the check/wait gap. This test is NOT the regression pin for Found-008; Found-008 has its own spec entry. Document the dependency in the test body with a `// TODO(Found-008)` comment.
+  - Found-012 (account-type tunnel vision in `validate_or_upgrade_proof`) is also on the path. If any of the N asset-lock transactions ends up funded from a non-BIP-44 account, the test will hit Found-012. Document this dependency similarly.
+- **Harness extensions required**: same as CR-003 — `setup_with_core_funded_test_wallet`, `wait_for_asset_lock`; plus Wave A identity setup helpers already needed by ID-001.
+- **Estimated complexity**: L (~300 LOC including multi-identity setup + concurrent orchestration + multi-assertion validation).
+- **Rationale**: `AssetLockManager` is critical-path code that every asset-lock-funded registration and top-up goes through, but it has never been exercised under concurrent load. CR-003's sequential single-build happy path does not validate the manager's locking, UTXO-reservation, or proof-correlation logic under concurrent callers. Any app driving concurrent top-ups, multi-identity registrations, or batch funding flows hits this path in production. A test that fires 3+ concurrent builds and asserts atomicity, distinct outputs, and no UTXO double-spend pins the contract that real applications depend on.
+
 ### Contracts (CT)
 
 #### CT-001 — Document put: deploy a fixture data contract
@@ -2203,7 +2263,7 @@ order. Each wave unlocks the cases listed.
 - SPV block in `harness.rs:200-218` is active; `SpvContextProvider` is wired (replaces `TrustedHttpContextProvider`).
 - `SpvHealth::status()` accessor is available in the manager.
 - Core-funded test wallet helper (faucet integration) is ready.
-- **Unlocked**: CR-001 (Pass), CR-003 (Pass), CR-002 (not implemented — test body TBD).
+- **Unlocked**: CR-001 (Pass), CR-003 (Pass), CR-002 (not implemented — test body TBD), AL-001 (not implemented — concurrent-build spec added).
 - **Note**: `PLATFORM_WALLET_E2E_DISABLE_SPV=1` is an operator escape hatch for ChainLock-cycle outages (rust-dashcore #470). It is NOT the default. SPV-on has been the operating mode since v17.
 
 ### Wave G — Token harness extensions
