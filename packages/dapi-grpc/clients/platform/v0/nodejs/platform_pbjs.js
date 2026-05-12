@@ -582,39 +582,6 @@ $root.org = (function() {
                          */
 
                         /**
-                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getDocumentsCount}.
-                         * @memberof org.dash.platform.dapi.v0.Platform
-                         * @typedef getDocumentsCountCallback
-                         * @type {function}
-                         * @param {Error|null} error Error, if any
-                         * @param {org.dash.platform.dapi.v0.GetDocumentsCountResponse} [response] GetDocumentsCountResponse
-                         */
-
-                        /**
-                         * Calls getDocumentsCount.
-                         * @function getDocumentsCount
-                         * @memberof org.dash.platform.dapi.v0.Platform
-                         * @instance
-                         * @param {org.dash.platform.dapi.v0.IGetDocumentsCountRequest} request GetDocumentsCountRequest message or plain object
-                         * @param {org.dash.platform.dapi.v0.Platform.getDocumentsCountCallback} callback Node-style callback called with the error, if any, and GetDocumentsCountResponse
-                         * @returns {undefined}
-                         * @variation 1
-                         */
-                        Object.defineProperty(Platform.prototype.getDocumentsCount = function getDocumentsCount(request, callback) {
-                            return this.rpcCall(getDocumentsCount, $root.org.dash.platform.dapi.v0.GetDocumentsCountRequest, $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse, request, callback);
-                        }, "name", { value: "getDocumentsCount" });
-
-                        /**
-                         * Calls getDocumentsCount.
-                         * @function getDocumentsCount
-                         * @memberof org.dash.platform.dapi.v0.Platform
-                         * @instance
-                         * @param {org.dash.platform.dapi.v0.IGetDocumentsCountRequest} request GetDocumentsCountRequest message or plain object
-                         * @returns {Promise<org.dash.platform.dapi.v0.GetDocumentsCountResponse>} Promise
-                         * @variation 2
-                         */
-
-                        /**
                          * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getIdentityByPublicKeyHash}.
                          * @memberof org.dash.platform.dapi.v0.Platform
                          * @typedef getIdentityByPublicKeyHashCallback
@@ -21264,8 +21231,7 @@ $root.org = (function() {
                              * Properties of a GetDocumentsResponseV1.
                              * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse
                              * @interface IGetDocumentsResponseV1
-                             * @property {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV0.IDocuments|null} [documents] GetDocumentsResponseV1 documents
-                             * @property {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.ICountResults|null} [counts] GetDocumentsResponseV1 counts
+                             * @property {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IResultData|null} [data] GetDocumentsResponseV1 data
                              * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetDocumentsResponseV1 proof
                              * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetDocumentsResponseV1 metadata
                              */
@@ -21286,20 +21252,12 @@ $root.org = (function() {
                             }
 
                             /**
-                             * GetDocumentsResponseV1 documents.
-                             * @member {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV0.IDocuments|null|undefined} documents
+                             * GetDocumentsResponseV1 data.
+                             * @member {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IResultData|null|undefined} data
                              * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
                              * @instance
                              */
-                            GetDocumentsResponseV1.prototype.documents = null;
-
-                            /**
-                             * GetDocumentsResponseV1 counts.
-                             * @member {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.ICountResults|null|undefined} counts
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
-                             * @instance
-                             */
-                            GetDocumentsResponseV1.prototype.counts = null;
+                            GetDocumentsResponseV1.prototype.data = null;
 
                             /**
                              * GetDocumentsResponseV1 proof.
@@ -21322,12 +21280,12 @@ $root.org = (function() {
 
                             /**
                              * GetDocumentsResponseV1 result.
-                             * @member {"documents"|"counts"|"proof"|undefined} result
+                             * @member {"data"|"proof"|undefined} result
                              * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
                              * @instance
                              */
                             Object.defineProperty(GetDocumentsResponseV1.prototype, "result", {
-                                get: $util.oneOfGetter($oneOfFields = ["documents", "counts", "proof"]),
+                                get: $util.oneOfGetter($oneOfFields = ["data", "proof"]),
                                 set: $util.oneOfSetter($oneOfFields)
                             });
 
@@ -21355,14 +21313,12 @@ $root.org = (function() {
                             GetDocumentsResponseV1.encode = function encode(message, writer) {
                                 if (!writer)
                                     writer = $Writer.create();
-                                if (message.documents != null && Object.hasOwnProperty.call(message, "documents"))
-                                    $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV0.Documents.encode(message.documents, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
-                                if (message.counts != null && Object.hasOwnProperty.call(message, "counts"))
-                                    $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults.encode(message.counts, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.data != null && Object.hasOwnProperty.call(message, "data"))
+                                    $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData.encode(message.data, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
                                 if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
-                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
                                 if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
-                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
                                 return writer;
                             };
 
@@ -21398,15 +21354,12 @@ $root.org = (function() {
                                     var tag = reader.uint32();
                                     switch (tag >>> 3) {
                                     case 1:
-                                        message.documents = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV0.Documents.decode(reader, reader.uint32());
+                                        message.data = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData.decode(reader, reader.uint32());
                                         break;
                                     case 2:
-                                        message.counts = $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults.decode(reader, reader.uint32());
-                                        break;
-                                    case 3:
                                         message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
                                         break;
-                                    case 4:
+                                    case 3:
                                         message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
                                         break;
                                     default:
@@ -21445,22 +21398,12 @@ $root.org = (function() {
                                 if (typeof message !== "object" || message === null)
                                     return "object expected";
                                 var properties = {};
-                                if (message.documents != null && message.hasOwnProperty("documents")) {
+                                if (message.data != null && message.hasOwnProperty("data")) {
                                     properties.result = 1;
                                     {
-                                        var error = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV0.Documents.verify(message.documents);
+                                        var error = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData.verify(message.data);
                                         if (error)
-                                            return "documents." + error;
-                                    }
-                                }
-                                if (message.counts != null && message.hasOwnProperty("counts")) {
-                                    if (properties.result === 1)
-                                        return "result: multiple values";
-                                    properties.result = 1;
-                                    {
-                                        var error = $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults.verify(message.counts);
-                                        if (error)
-                                            return "counts." + error;
+                                            return "data." + error;
                                     }
                                 }
                                 if (message.proof != null && message.hasOwnProperty("proof")) {
@@ -21493,15 +21436,10 @@ $root.org = (function() {
                                 if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1)
                                     return object;
                                 var message = new $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1();
-                                if (object.documents != null) {
-                                    if (typeof object.documents !== "object")
-                                        throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.documents: object expected");
-                                    message.documents = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV0.Documents.fromObject(object.documents);
-                                }
-                                if (object.counts != null) {
-                                    if (typeof object.counts !== "object")
-                                        throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.counts: object expected");
-                                    message.counts = $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults.fromObject(object.counts);
+                                if (object.data != null) {
+                                    if (typeof object.data !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.data: object expected");
+                                    message.data = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData.fromObject(object.data);
                                 }
                                 if (object.proof != null) {
                                     if (typeof object.proof !== "object")
@@ -21531,15 +21469,10 @@ $root.org = (function() {
                                 var object = {};
                                 if (options.defaults)
                                     object.metadata = null;
-                                if (message.documents != null && message.hasOwnProperty("documents")) {
-                                    object.documents = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV0.Documents.toObject(message.documents, options);
+                                if (message.data != null && message.hasOwnProperty("data")) {
+                                    object.data = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData.toObject(message.data, options);
                                     if (options.oneofs)
-                                        object.result = "documents";
-                                }
-                                if (message.counts != null && message.hasOwnProperty("counts")) {
-                                    object.counts = $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults.toObject(message.counts, options);
-                                    if (options.oneofs)
-                                        object.result = "counts";
+                                        object.result = "data";
                                 }
                                 if (message.proof != null && message.hasOwnProperty("proof")) {
                                     object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
@@ -21562,1053 +21495,217 @@ $root.org = (function() {
                                 return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
                             };
 
-                            return GetDocumentsResponseV1;
-                        })();
+                            GetDocumentsResponseV1.Documents = (function() {
 
-                        return GetDocumentsResponse;
-                    })();
+                                /**
+                                 * Properties of a Documents.
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
+                                 * @interface IDocuments
+                                 * @property {Array.<Uint8Array>|null} [documents] Documents documents
+                                 */
 
-                    v0.GetDocumentsCountRequest = (function() {
-
-                        /**
-                         * Properties of a GetDocumentsCountRequest.
-                         * @memberof org.dash.platform.dapi.v0
-                         * @interface IGetDocumentsCountRequest
-                         * @property {org.dash.platform.dapi.v0.GetDocumentsCountRequest.IGetDocumentsCountRequestV0|null} [v0] GetDocumentsCountRequest v0
-                         */
-
-                        /**
-                         * Constructs a new GetDocumentsCountRequest.
-                         * @memberof org.dash.platform.dapi.v0
-                         * @classdesc Represents a GetDocumentsCountRequest.
-                         * @implements IGetDocumentsCountRequest
-                         * @constructor
-                         * @param {org.dash.platform.dapi.v0.IGetDocumentsCountRequest=} [properties] Properties to set
-                         */
-                        function GetDocumentsCountRequest(properties) {
-                            if (properties)
-                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
-                                    if (properties[keys[i]] != null)
-                                        this[keys[i]] = properties[keys[i]];
-                        }
-
-                        /**
-                         * GetDocumentsCountRequest v0.
-                         * @member {org.dash.platform.dapi.v0.GetDocumentsCountRequest.IGetDocumentsCountRequestV0|null|undefined} v0
-                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest
-                         * @instance
-                         */
-                        GetDocumentsCountRequest.prototype.v0 = null;
-
-                        // OneOf field names bound to virtual getters and setters
-                        var $oneOfFields;
-
-                        /**
-                         * GetDocumentsCountRequest version.
-                         * @member {"v0"|undefined} version
-                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest
-                         * @instance
-                         */
-                        Object.defineProperty(GetDocumentsCountRequest.prototype, "version", {
-                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
-                            set: $util.oneOfSetter($oneOfFields)
-                        });
-
-                        /**
-                         * Creates a new GetDocumentsCountRequest instance using the specified properties.
-                         * @function create
-                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest
-                         * @static
-                         * @param {org.dash.platform.dapi.v0.IGetDocumentsCountRequest=} [properties] Properties to set
-                         * @returns {org.dash.platform.dapi.v0.GetDocumentsCountRequest} GetDocumentsCountRequest instance
-                         */
-                        GetDocumentsCountRequest.create = function create(properties) {
-                            return new GetDocumentsCountRequest(properties);
-                        };
-
-                        /**
-                         * Encodes the specified GetDocumentsCountRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsCountRequest.verify|verify} messages.
-                         * @function encode
-                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest
-                         * @static
-                         * @param {org.dash.platform.dapi.v0.IGetDocumentsCountRequest} message GetDocumentsCountRequest message or plain object to encode
-                         * @param {$protobuf.Writer} [writer] Writer to encode to
-                         * @returns {$protobuf.Writer} Writer
-                         */
-                        GetDocumentsCountRequest.encode = function encode(message, writer) {
-                            if (!writer)
-                                writer = $Writer.create();
-                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
-                                $root.org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
-                            return writer;
-                        };
-
-                        /**
-                         * Encodes the specified GetDocumentsCountRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsCountRequest.verify|verify} messages.
-                         * @function encodeDelimited
-                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest
-                         * @static
-                         * @param {org.dash.platform.dapi.v0.IGetDocumentsCountRequest} message GetDocumentsCountRequest message or plain object to encode
-                         * @param {$protobuf.Writer} [writer] Writer to encode to
-                         * @returns {$protobuf.Writer} Writer
-                         */
-                        GetDocumentsCountRequest.encodeDelimited = function encodeDelimited(message, writer) {
-                            return this.encode(message, writer).ldelim();
-                        };
-
-                        /**
-                         * Decodes a GetDocumentsCountRequest message from the specified reader or buffer.
-                         * @function decode
-                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest
-                         * @static
-                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                         * @param {number} [length] Message length if known beforehand
-                         * @returns {org.dash.platform.dapi.v0.GetDocumentsCountRequest} GetDocumentsCountRequest
-                         * @throws {Error} If the payload is not a reader or valid buffer
-                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
-                         */
-                        GetDocumentsCountRequest.decode = function decode(reader, length) {
-                            if (!(reader instanceof $Reader))
-                                reader = $Reader.create(reader);
-                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsCountRequest();
-                            while (reader.pos < end) {
-                                var tag = reader.uint32();
-                                switch (tag >>> 3) {
-                                case 1:
-                                    message.v0 = $root.org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0.decode(reader, reader.uint32());
-                                    break;
-                                default:
-                                    reader.skipType(tag & 7);
-                                    break;
+                                /**
+                                 * Constructs a new Documents.
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
+                                 * @classdesc Represents a Documents.
+                                 * @implements IDocuments
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IDocuments=} [properties] Properties to set
+                                 */
+                                function Documents(properties) {
+                                    this.documents = [];
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
                                 }
-                            }
-                            return message;
-                        };
 
-                        /**
-                         * Decodes a GetDocumentsCountRequest message from the specified reader or buffer, length delimited.
-                         * @function decodeDelimited
-                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest
-                         * @static
-                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                         * @returns {org.dash.platform.dapi.v0.GetDocumentsCountRequest} GetDocumentsCountRequest
-                         * @throws {Error} If the payload is not a reader or valid buffer
-                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
-                         */
-                        GetDocumentsCountRequest.decodeDelimited = function decodeDelimited(reader) {
-                            if (!(reader instanceof $Reader))
-                                reader = new $Reader(reader);
-                            return this.decode(reader, reader.uint32());
-                        };
+                                /**
+                                 * Documents documents.
+                                 * @member {Array.<Uint8Array>} documents
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Documents
+                                 * @instance
+                                 */
+                                Documents.prototype.documents = $util.emptyArray;
 
-                        /**
-                         * Verifies a GetDocumentsCountRequest message.
-                         * @function verify
-                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest
-                         * @static
-                         * @param {Object.<string,*>} message Plain object to verify
-                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
-                         */
-                        GetDocumentsCountRequest.verify = function verify(message) {
-                            if (typeof message !== "object" || message === null)
-                                return "object expected";
-                            var properties = {};
-                            if (message.v0 != null && message.hasOwnProperty("v0")) {
-                                properties.version = 1;
-                                {
-                                    var error = $root.org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0.verify(message.v0);
-                                    if (error)
-                                        return "v0." + error;
-                                }
-                            }
-                            return null;
-                        };
+                                /**
+                                 * Creates a new Documents instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Documents
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IDocuments=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Documents} Documents instance
+                                 */
+                                Documents.create = function create(properties) {
+                                    return new Documents(properties);
+                                };
 
-                        /**
-                         * Creates a GetDocumentsCountRequest message from a plain object. Also converts values to their respective internal types.
-                         * @function fromObject
-                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest
-                         * @static
-                         * @param {Object.<string,*>} object Plain object
-                         * @returns {org.dash.platform.dapi.v0.GetDocumentsCountRequest} GetDocumentsCountRequest
-                         */
-                        GetDocumentsCountRequest.fromObject = function fromObject(object) {
-                            if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsCountRequest)
-                                return object;
-                            var message = new $root.org.dash.platform.dapi.v0.GetDocumentsCountRequest();
-                            if (object.v0 != null) {
-                                if (typeof object.v0 !== "object")
-                                    throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsCountRequest.v0: object expected");
-                                message.v0 = $root.org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0.fromObject(object.v0);
-                            }
-                            return message;
-                        };
+                                /**
+                                 * Encodes the specified Documents message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Documents.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Documents
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IDocuments} message Documents message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Documents.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.documents != null && message.documents.length)
+                                        for (var i = 0; i < message.documents.length; ++i)
+                                            writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.documents[i]);
+                                    return writer;
+                                };
 
-                        /**
-                         * Creates a plain object from a GetDocumentsCountRequest message. Also converts values to other types if specified.
-                         * @function toObject
-                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest
-                         * @static
-                         * @param {org.dash.platform.dapi.v0.GetDocumentsCountRequest} message GetDocumentsCountRequest
-                         * @param {$protobuf.IConversionOptions} [options] Conversion options
-                         * @returns {Object.<string,*>} Plain object
-                         */
-                        GetDocumentsCountRequest.toObject = function toObject(message, options) {
-                            if (!options)
-                                options = {};
-                            var object = {};
-                            if (message.v0 != null && message.hasOwnProperty("v0")) {
-                                object.v0 = $root.org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0.toObject(message.v0, options);
-                                if (options.oneofs)
-                                    object.version = "v0";
-                            }
-                            return object;
-                        };
+                                /**
+                                 * Encodes the specified Documents message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Documents.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Documents
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IDocuments} message Documents message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Documents.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
 
-                        /**
-                         * Converts this GetDocumentsCountRequest to JSON.
-                         * @function toJSON
-                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest
-                         * @instance
-                         * @returns {Object.<string,*>} JSON object
-                         */
-                        GetDocumentsCountRequest.prototype.toJSON = function toJSON() {
-                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
-                        };
-
-                        GetDocumentsCountRequest.GetDocumentsCountRequestV0 = (function() {
-
-                            /**
-                             * Properties of a GetDocumentsCountRequestV0.
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest
-                             * @interface IGetDocumentsCountRequestV0
-                             * @property {Uint8Array|null} [dataContractId] GetDocumentsCountRequestV0 dataContractId
-                             * @property {string|null} [documentType] GetDocumentsCountRequestV0 documentType
-                             * @property {Uint8Array|null} [where] GetDocumentsCountRequestV0 where
-                             * @property {boolean|null} [returnDistinctCountsInRange] GetDocumentsCountRequestV0 returnDistinctCountsInRange
-                             * @property {Uint8Array|null} [orderBy] GetDocumentsCountRequestV0 orderBy
-                             * @property {number|null} [limit] GetDocumentsCountRequestV0 limit
-                             * @property {boolean|null} [prove] GetDocumentsCountRequestV0 prove
-                             */
-
-                            /**
-                             * Constructs a new GetDocumentsCountRequestV0.
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest
-                             * @classdesc Represents a GetDocumentsCountRequestV0.
-                             * @implements IGetDocumentsCountRequestV0
-                             * @constructor
-                             * @param {org.dash.platform.dapi.v0.GetDocumentsCountRequest.IGetDocumentsCountRequestV0=} [properties] Properties to set
-                             */
-                            function GetDocumentsCountRequestV0(properties) {
-                                if (properties)
-                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
-                                        if (properties[keys[i]] != null)
-                                            this[keys[i]] = properties[keys[i]];
-                            }
-
-                            /**
-                             * GetDocumentsCountRequestV0 dataContractId.
-                             * @member {Uint8Array} dataContractId
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0
-                             * @instance
-                             */
-                            GetDocumentsCountRequestV0.prototype.dataContractId = $util.newBuffer([]);
-
-                            /**
-                             * GetDocumentsCountRequestV0 documentType.
-                             * @member {string} documentType
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0
-                             * @instance
-                             */
-                            GetDocumentsCountRequestV0.prototype.documentType = "";
-
-                            /**
-                             * GetDocumentsCountRequestV0 where.
-                             * @member {Uint8Array} where
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0
-                             * @instance
-                             */
-                            GetDocumentsCountRequestV0.prototype.where = $util.newBuffer([]);
-
-                            /**
-                             * GetDocumentsCountRequestV0 returnDistinctCountsInRange.
-                             * @member {boolean} returnDistinctCountsInRange
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0
-                             * @instance
-                             */
-                            GetDocumentsCountRequestV0.prototype.returnDistinctCountsInRange = false;
-
-                            /**
-                             * GetDocumentsCountRequestV0 orderBy.
-                             * @member {Uint8Array} orderBy
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0
-                             * @instance
-                             */
-                            GetDocumentsCountRequestV0.prototype.orderBy = $util.newBuffer([]);
-
-                            /**
-                             * GetDocumentsCountRequestV0 limit.
-                             * @member {number} limit
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0
-                             * @instance
-                             */
-                            GetDocumentsCountRequestV0.prototype.limit = 0;
-
-                            /**
-                             * GetDocumentsCountRequestV0 prove.
-                             * @member {boolean} prove
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0
-                             * @instance
-                             */
-                            GetDocumentsCountRequestV0.prototype.prove = false;
-
-                            /**
-                             * Creates a new GetDocumentsCountRequestV0 instance using the specified properties.
-                             * @function create
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0
-                             * @static
-                             * @param {org.dash.platform.dapi.v0.GetDocumentsCountRequest.IGetDocumentsCountRequestV0=} [properties] Properties to set
-                             * @returns {org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0} GetDocumentsCountRequestV0 instance
-                             */
-                            GetDocumentsCountRequestV0.create = function create(properties) {
-                                return new GetDocumentsCountRequestV0(properties);
-                            };
-
-                            /**
-                             * Encodes the specified GetDocumentsCountRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0.verify|verify} messages.
-                             * @function encode
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0
-                             * @static
-                             * @param {org.dash.platform.dapi.v0.GetDocumentsCountRequest.IGetDocumentsCountRequestV0} message GetDocumentsCountRequestV0 message or plain object to encode
-                             * @param {$protobuf.Writer} [writer] Writer to encode to
-                             * @returns {$protobuf.Writer} Writer
-                             */
-                            GetDocumentsCountRequestV0.encode = function encode(message, writer) {
-                                if (!writer)
-                                    writer = $Writer.create();
-                                if (message.dataContractId != null && Object.hasOwnProperty.call(message, "dataContractId"))
-                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.dataContractId);
-                                if (message.documentType != null && Object.hasOwnProperty.call(message, "documentType"))
-                                    writer.uint32(/* id 2, wireType 2 =*/18).string(message.documentType);
-                                if (message.where != null && Object.hasOwnProperty.call(message, "where"))
-                                    writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.where);
-                                if (message.returnDistinctCountsInRange != null && Object.hasOwnProperty.call(message, "returnDistinctCountsInRange"))
-                                    writer.uint32(/* id 4, wireType 0 =*/32).bool(message.returnDistinctCountsInRange);
-                                if (message.orderBy != null && Object.hasOwnProperty.call(message, "orderBy"))
-                                    writer.uint32(/* id 5, wireType 2 =*/42).bytes(message.orderBy);
-                                if (message.limit != null && Object.hasOwnProperty.call(message, "limit"))
-                                    writer.uint32(/* id 6, wireType 0 =*/48).uint32(message.limit);
-                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
-                                    writer.uint32(/* id 7, wireType 0 =*/56).bool(message.prove);
-                                return writer;
-                            };
-
-                            /**
-                             * Encodes the specified GetDocumentsCountRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0.verify|verify} messages.
-                             * @function encodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0
-                             * @static
-                             * @param {org.dash.platform.dapi.v0.GetDocumentsCountRequest.IGetDocumentsCountRequestV0} message GetDocumentsCountRequestV0 message or plain object to encode
-                             * @param {$protobuf.Writer} [writer] Writer to encode to
-                             * @returns {$protobuf.Writer} Writer
-                             */
-                            GetDocumentsCountRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
-                                return this.encode(message, writer).ldelim();
-                            };
-
-                            /**
-                             * Decodes a GetDocumentsCountRequestV0 message from the specified reader or buffer.
-                             * @function decode
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0
-                             * @static
-                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                             * @param {number} [length] Message length if known beforehand
-                             * @returns {org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0} GetDocumentsCountRequestV0
-                             * @throws {Error} If the payload is not a reader or valid buffer
-                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
-                             */
-                            GetDocumentsCountRequestV0.decode = function decode(reader, length) {
-                                if (!(reader instanceof $Reader))
-                                    reader = $Reader.create(reader);
-                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0();
-                                while (reader.pos < end) {
-                                    var tag = reader.uint32();
-                                    switch (tag >>> 3) {
-                                    case 1:
-                                        message.dataContractId = reader.bytes();
-                                        break;
-                                    case 2:
-                                        message.documentType = reader.string();
-                                        break;
-                                    case 3:
-                                        message.where = reader.bytes();
-                                        break;
-                                    case 4:
-                                        message.returnDistinctCountsInRange = reader.bool();
-                                        break;
-                                    case 5:
-                                        message.orderBy = reader.bytes();
-                                        break;
-                                    case 6:
-                                        message.limit = reader.uint32();
-                                        break;
-                                    case 7:
-                                        message.prove = reader.bool();
-                                        break;
-                                    default:
-                                        reader.skipType(tag & 7);
-                                        break;
+                                /**
+                                 * Decodes a Documents message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Documents
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Documents} Documents
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Documents.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Documents();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            if (!(message.documents && message.documents.length))
+                                                message.documents = [];
+                                            message.documents.push(reader.bytes());
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
                                     }
-                                }
-                                return message;
-                            };
+                                    return message;
+                                };
 
-                            /**
-                             * Decodes a GetDocumentsCountRequestV0 message from the specified reader or buffer, length delimited.
-                             * @function decodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0
-                             * @static
-                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                             * @returns {org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0} GetDocumentsCountRequestV0
-                             * @throws {Error} If the payload is not a reader or valid buffer
-                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
-                             */
-                            GetDocumentsCountRequestV0.decodeDelimited = function decodeDelimited(reader) {
-                                if (!(reader instanceof $Reader))
-                                    reader = new $Reader(reader);
-                                return this.decode(reader, reader.uint32());
-                            };
+                                /**
+                                 * Decodes a Documents message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Documents
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Documents} Documents
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Documents.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
 
-                            /**
-                             * Verifies a GetDocumentsCountRequestV0 message.
-                             * @function verify
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0
-                             * @static
-                             * @param {Object.<string,*>} message Plain object to verify
-                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
-                             */
-                            GetDocumentsCountRequestV0.verify = function verify(message) {
-                                if (typeof message !== "object" || message === null)
-                                    return "object expected";
-                                if (message.dataContractId != null && message.hasOwnProperty("dataContractId"))
-                                    if (!(message.dataContractId && typeof message.dataContractId.length === "number" || $util.isString(message.dataContractId)))
-                                        return "dataContractId: buffer expected";
-                                if (message.documentType != null && message.hasOwnProperty("documentType"))
-                                    if (!$util.isString(message.documentType))
-                                        return "documentType: string expected";
-                                if (message.where != null && message.hasOwnProperty("where"))
-                                    if (!(message.where && typeof message.where.length === "number" || $util.isString(message.where)))
-                                        return "where: buffer expected";
-                                if (message.returnDistinctCountsInRange != null && message.hasOwnProperty("returnDistinctCountsInRange"))
-                                    if (typeof message.returnDistinctCountsInRange !== "boolean")
-                                        return "returnDistinctCountsInRange: boolean expected";
-                                if (message.orderBy != null && message.hasOwnProperty("orderBy"))
-                                    if (!(message.orderBy && typeof message.orderBy.length === "number" || $util.isString(message.orderBy)))
-                                        return "orderBy: buffer expected";
-                                if (message.limit != null && message.hasOwnProperty("limit"))
-                                    if (!$util.isInteger(message.limit))
-                                        return "limit: integer expected";
-                                if (message.prove != null && message.hasOwnProperty("prove"))
-                                    if (typeof message.prove !== "boolean")
-                                        return "prove: boolean expected";
-                                return null;
-                            };
+                                /**
+                                 * Verifies a Documents message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Documents
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                Documents.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.documents != null && message.hasOwnProperty("documents")) {
+                                        if (!Array.isArray(message.documents))
+                                            return "documents: array expected";
+                                        for (var i = 0; i < message.documents.length; ++i)
+                                            if (!(message.documents[i] && typeof message.documents[i].length === "number" || $util.isString(message.documents[i])))
+                                                return "documents: buffer[] expected";
+                                    }
+                                    return null;
+                                };
 
-                            /**
-                             * Creates a GetDocumentsCountRequestV0 message from a plain object. Also converts values to their respective internal types.
-                             * @function fromObject
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0
-                             * @static
-                             * @param {Object.<string,*>} object Plain object
-                             * @returns {org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0} GetDocumentsCountRequestV0
-                             */
-                            GetDocumentsCountRequestV0.fromObject = function fromObject(object) {
-                                if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0)
+                                /**
+                                 * Creates a Documents message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Documents
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Documents} Documents
+                                 */
+                                Documents.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Documents)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Documents();
+                                    if (object.documents) {
+                                        if (!Array.isArray(object.documents))
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Documents.documents: array expected");
+                                        message.documents = [];
+                                        for (var i = 0; i < object.documents.length; ++i)
+                                            if (typeof object.documents[i] === "string")
+                                                $util.base64.decode(object.documents[i], message.documents[i] = $util.newBuffer($util.base64.length(object.documents[i])), 0);
+                                            else if (object.documents[i].length >= 0)
+                                                message.documents[i] = object.documents[i];
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a Documents message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Documents
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Documents} message Documents
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                Documents.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.arrays || options.defaults)
+                                        object.documents = [];
+                                    if (message.documents && message.documents.length) {
+                                        object.documents = [];
+                                        for (var j = 0; j < message.documents.length; ++j)
+                                            object.documents[j] = options.bytes === String ? $util.base64.encode(message.documents[j], 0, message.documents[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.documents[j]) : message.documents[j];
+                                    }
                                     return object;
-                                var message = new $root.org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0();
-                                if (object.dataContractId != null)
-                                    if (typeof object.dataContractId === "string")
-                                        $util.base64.decode(object.dataContractId, message.dataContractId = $util.newBuffer($util.base64.length(object.dataContractId)), 0);
-                                    else if (object.dataContractId.length >= 0)
-                                        message.dataContractId = object.dataContractId;
-                                if (object.documentType != null)
-                                    message.documentType = String(object.documentType);
-                                if (object.where != null)
-                                    if (typeof object.where === "string")
-                                        $util.base64.decode(object.where, message.where = $util.newBuffer($util.base64.length(object.where)), 0);
-                                    else if (object.where.length >= 0)
-                                        message.where = object.where;
-                                if (object.returnDistinctCountsInRange != null)
-                                    message.returnDistinctCountsInRange = Boolean(object.returnDistinctCountsInRange);
-                                if (object.orderBy != null)
-                                    if (typeof object.orderBy === "string")
-                                        $util.base64.decode(object.orderBy, message.orderBy = $util.newBuffer($util.base64.length(object.orderBy)), 0);
-                                    else if (object.orderBy.length >= 0)
-                                        message.orderBy = object.orderBy;
-                                if (object.limit != null)
-                                    message.limit = object.limit >>> 0;
-                                if (object.prove != null)
-                                    message.prove = Boolean(object.prove);
-                                return message;
-                            };
+                                };
 
-                            /**
-                             * Creates a plain object from a GetDocumentsCountRequestV0 message. Also converts values to other types if specified.
-                             * @function toObject
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0
-                             * @static
-                             * @param {org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0} message GetDocumentsCountRequestV0
-                             * @param {$protobuf.IConversionOptions} [options] Conversion options
-                             * @returns {Object.<string,*>} Plain object
-                             */
-                            GetDocumentsCountRequestV0.toObject = function toObject(message, options) {
-                                if (!options)
-                                    options = {};
-                                var object = {};
-                                if (options.defaults) {
-                                    if (options.bytes === String)
-                                        object.dataContractId = "";
-                                    else {
-                                        object.dataContractId = [];
-                                        if (options.bytes !== Array)
-                                            object.dataContractId = $util.newBuffer(object.dataContractId);
-                                    }
-                                    object.documentType = "";
-                                    if (options.bytes === String)
-                                        object.where = "";
-                                    else {
-                                        object.where = [];
-                                        if (options.bytes !== Array)
-                                            object.where = $util.newBuffer(object.where);
-                                    }
-                                    object.returnDistinctCountsInRange = false;
-                                    if (options.bytes === String)
-                                        object.orderBy = "";
-                                    else {
-                                        object.orderBy = [];
-                                        if (options.bytes !== Array)
-                                            object.orderBy = $util.newBuffer(object.orderBy);
-                                    }
-                                    object.limit = 0;
-                                    object.prove = false;
-                                }
-                                if (message.dataContractId != null && message.hasOwnProperty("dataContractId"))
-                                    object.dataContractId = options.bytes === String ? $util.base64.encode(message.dataContractId, 0, message.dataContractId.length) : options.bytes === Array ? Array.prototype.slice.call(message.dataContractId) : message.dataContractId;
-                                if (message.documentType != null && message.hasOwnProperty("documentType"))
-                                    object.documentType = message.documentType;
-                                if (message.where != null && message.hasOwnProperty("where"))
-                                    object.where = options.bytes === String ? $util.base64.encode(message.where, 0, message.where.length) : options.bytes === Array ? Array.prototype.slice.call(message.where) : message.where;
-                                if (message.returnDistinctCountsInRange != null && message.hasOwnProperty("returnDistinctCountsInRange"))
-                                    object.returnDistinctCountsInRange = message.returnDistinctCountsInRange;
-                                if (message.orderBy != null && message.hasOwnProperty("orderBy"))
-                                    object.orderBy = options.bytes === String ? $util.base64.encode(message.orderBy, 0, message.orderBy.length) : options.bytes === Array ? Array.prototype.slice.call(message.orderBy) : message.orderBy;
-                                if (message.limit != null && message.hasOwnProperty("limit"))
-                                    object.limit = message.limit;
-                                if (message.prove != null && message.hasOwnProperty("prove"))
-                                    object.prove = message.prove;
-                                return object;
-                            };
+                                /**
+                                 * Converts this Documents to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Documents
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                Documents.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
 
-                            /**
-                             * Converts this GetDocumentsCountRequestV0 to JSON.
-                             * @function toJSON
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountRequest.GetDocumentsCountRequestV0
-                             * @instance
-                             * @returns {Object.<string,*>} JSON object
-                             */
-                            GetDocumentsCountRequestV0.prototype.toJSON = function toJSON() {
-                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
-                            };
+                                return Documents;
+                            })();
 
-                            return GetDocumentsCountRequestV0;
-                        })();
-
-                        return GetDocumentsCountRequest;
-                    })();
-
-                    v0.GetDocumentsCountResponse = (function() {
-
-                        /**
-                         * Properties of a GetDocumentsCountResponse.
-                         * @memberof org.dash.platform.dapi.v0
-                         * @interface IGetDocumentsCountResponse
-                         * @property {org.dash.platform.dapi.v0.GetDocumentsCountResponse.IGetDocumentsCountResponseV0|null} [v0] GetDocumentsCountResponse v0
-                         */
-
-                        /**
-                         * Constructs a new GetDocumentsCountResponse.
-                         * @memberof org.dash.platform.dapi.v0
-                         * @classdesc Represents a GetDocumentsCountResponse.
-                         * @implements IGetDocumentsCountResponse
-                         * @constructor
-                         * @param {org.dash.platform.dapi.v0.IGetDocumentsCountResponse=} [properties] Properties to set
-                         */
-                        function GetDocumentsCountResponse(properties) {
-                            if (properties)
-                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
-                                    if (properties[keys[i]] != null)
-                                        this[keys[i]] = properties[keys[i]];
-                        }
-
-                        /**
-                         * GetDocumentsCountResponse v0.
-                         * @member {org.dash.platform.dapi.v0.GetDocumentsCountResponse.IGetDocumentsCountResponseV0|null|undefined} v0
-                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse
-                         * @instance
-                         */
-                        GetDocumentsCountResponse.prototype.v0 = null;
-
-                        // OneOf field names bound to virtual getters and setters
-                        var $oneOfFields;
-
-                        /**
-                         * GetDocumentsCountResponse version.
-                         * @member {"v0"|undefined} version
-                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse
-                         * @instance
-                         */
-                        Object.defineProperty(GetDocumentsCountResponse.prototype, "version", {
-                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
-                            set: $util.oneOfSetter($oneOfFields)
-                        });
-
-                        /**
-                         * Creates a new GetDocumentsCountResponse instance using the specified properties.
-                         * @function create
-                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse
-                         * @static
-                         * @param {org.dash.platform.dapi.v0.IGetDocumentsCountResponse=} [properties] Properties to set
-                         * @returns {org.dash.platform.dapi.v0.GetDocumentsCountResponse} GetDocumentsCountResponse instance
-                         */
-                        GetDocumentsCountResponse.create = function create(properties) {
-                            return new GetDocumentsCountResponse(properties);
-                        };
-
-                        /**
-                         * Encodes the specified GetDocumentsCountResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsCountResponse.verify|verify} messages.
-                         * @function encode
-                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse
-                         * @static
-                         * @param {org.dash.platform.dapi.v0.IGetDocumentsCountResponse} message GetDocumentsCountResponse message or plain object to encode
-                         * @param {$protobuf.Writer} [writer] Writer to encode to
-                         * @returns {$protobuf.Writer} Writer
-                         */
-                        GetDocumentsCountResponse.encode = function encode(message, writer) {
-                            if (!writer)
-                                writer = $Writer.create();
-                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
-                                $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
-                            return writer;
-                        };
-
-                        /**
-                         * Encodes the specified GetDocumentsCountResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsCountResponse.verify|verify} messages.
-                         * @function encodeDelimited
-                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse
-                         * @static
-                         * @param {org.dash.platform.dapi.v0.IGetDocumentsCountResponse} message GetDocumentsCountResponse message or plain object to encode
-                         * @param {$protobuf.Writer} [writer] Writer to encode to
-                         * @returns {$protobuf.Writer} Writer
-                         */
-                        GetDocumentsCountResponse.encodeDelimited = function encodeDelimited(message, writer) {
-                            return this.encode(message, writer).ldelim();
-                        };
-
-                        /**
-                         * Decodes a GetDocumentsCountResponse message from the specified reader or buffer.
-                         * @function decode
-                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse
-                         * @static
-                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                         * @param {number} [length] Message length if known beforehand
-                         * @returns {org.dash.platform.dapi.v0.GetDocumentsCountResponse} GetDocumentsCountResponse
-                         * @throws {Error} If the payload is not a reader or valid buffer
-                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
-                         */
-                        GetDocumentsCountResponse.decode = function decode(reader, length) {
-                            if (!(reader instanceof $Reader))
-                                reader = $Reader.create(reader);
-                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse();
-                            while (reader.pos < end) {
-                                var tag = reader.uint32();
-                                switch (tag >>> 3) {
-                                case 1:
-                                    message.v0 = $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.decode(reader, reader.uint32());
-                                    break;
-                                default:
-                                    reader.skipType(tag & 7);
-                                    break;
-                                }
-                            }
-                            return message;
-                        };
-
-                        /**
-                         * Decodes a GetDocumentsCountResponse message from the specified reader or buffer, length delimited.
-                         * @function decodeDelimited
-                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse
-                         * @static
-                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                         * @returns {org.dash.platform.dapi.v0.GetDocumentsCountResponse} GetDocumentsCountResponse
-                         * @throws {Error} If the payload is not a reader or valid buffer
-                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
-                         */
-                        GetDocumentsCountResponse.decodeDelimited = function decodeDelimited(reader) {
-                            if (!(reader instanceof $Reader))
-                                reader = new $Reader(reader);
-                            return this.decode(reader, reader.uint32());
-                        };
-
-                        /**
-                         * Verifies a GetDocumentsCountResponse message.
-                         * @function verify
-                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse
-                         * @static
-                         * @param {Object.<string,*>} message Plain object to verify
-                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
-                         */
-                        GetDocumentsCountResponse.verify = function verify(message) {
-                            if (typeof message !== "object" || message === null)
-                                return "object expected";
-                            var properties = {};
-                            if (message.v0 != null && message.hasOwnProperty("v0")) {
-                                properties.version = 1;
-                                {
-                                    var error = $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.verify(message.v0);
-                                    if (error)
-                                        return "v0." + error;
-                                }
-                            }
-                            return null;
-                        };
-
-                        /**
-                         * Creates a GetDocumentsCountResponse message from a plain object. Also converts values to their respective internal types.
-                         * @function fromObject
-                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse
-                         * @static
-                         * @param {Object.<string,*>} object Plain object
-                         * @returns {org.dash.platform.dapi.v0.GetDocumentsCountResponse} GetDocumentsCountResponse
-                         */
-                        GetDocumentsCountResponse.fromObject = function fromObject(object) {
-                            if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse)
-                                return object;
-                            var message = new $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse();
-                            if (object.v0 != null) {
-                                if (typeof object.v0 !== "object")
-                                    throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsCountResponse.v0: object expected");
-                                message.v0 = $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.fromObject(object.v0);
-                            }
-                            return message;
-                        };
-
-                        /**
-                         * Creates a plain object from a GetDocumentsCountResponse message. Also converts values to other types if specified.
-                         * @function toObject
-                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse
-                         * @static
-                         * @param {org.dash.platform.dapi.v0.GetDocumentsCountResponse} message GetDocumentsCountResponse
-                         * @param {$protobuf.IConversionOptions} [options] Conversion options
-                         * @returns {Object.<string,*>} Plain object
-                         */
-                        GetDocumentsCountResponse.toObject = function toObject(message, options) {
-                            if (!options)
-                                options = {};
-                            var object = {};
-                            if (message.v0 != null && message.hasOwnProperty("v0")) {
-                                object.v0 = $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.toObject(message.v0, options);
-                                if (options.oneofs)
-                                    object.version = "v0";
-                            }
-                            return object;
-                        };
-
-                        /**
-                         * Converts this GetDocumentsCountResponse to JSON.
-                         * @function toJSON
-                         * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse
-                         * @instance
-                         * @returns {Object.<string,*>} JSON object
-                         */
-                        GetDocumentsCountResponse.prototype.toJSON = function toJSON() {
-                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
-                        };
-
-                        GetDocumentsCountResponse.GetDocumentsCountResponseV0 = (function() {
-
-                            /**
-                             * Properties of a GetDocumentsCountResponseV0.
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse
-                             * @interface IGetDocumentsCountResponseV0
-                             * @property {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.ICountResults|null} [counts] GetDocumentsCountResponseV0 counts
-                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetDocumentsCountResponseV0 proof
-                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetDocumentsCountResponseV0 metadata
-                             */
-
-                            /**
-                             * Constructs a new GetDocumentsCountResponseV0.
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse
-                             * @classdesc Represents a GetDocumentsCountResponseV0.
-                             * @implements IGetDocumentsCountResponseV0
-                             * @constructor
-                             * @param {org.dash.platform.dapi.v0.GetDocumentsCountResponse.IGetDocumentsCountResponseV0=} [properties] Properties to set
-                             */
-                            function GetDocumentsCountResponseV0(properties) {
-                                if (properties)
-                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
-                                        if (properties[keys[i]] != null)
-                                            this[keys[i]] = properties[keys[i]];
-                            }
-
-                            /**
-                             * GetDocumentsCountResponseV0 counts.
-                             * @member {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.ICountResults|null|undefined} counts
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0
-                             * @instance
-                             */
-                            GetDocumentsCountResponseV0.prototype.counts = null;
-
-                            /**
-                             * GetDocumentsCountResponseV0 proof.
-                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0
-                             * @instance
-                             */
-                            GetDocumentsCountResponseV0.prototype.proof = null;
-
-                            /**
-                             * GetDocumentsCountResponseV0 metadata.
-                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0
-                             * @instance
-                             */
-                            GetDocumentsCountResponseV0.prototype.metadata = null;
-
-                            // OneOf field names bound to virtual getters and setters
-                            var $oneOfFields;
-
-                            /**
-                             * GetDocumentsCountResponseV0 result.
-                             * @member {"counts"|"proof"|undefined} result
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0
-                             * @instance
-                             */
-                            Object.defineProperty(GetDocumentsCountResponseV0.prototype, "result", {
-                                get: $util.oneOfGetter($oneOfFields = ["counts", "proof"]),
-                                set: $util.oneOfSetter($oneOfFields)
-                            });
-
-                            /**
-                             * Creates a new GetDocumentsCountResponseV0 instance using the specified properties.
-                             * @function create
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0
-                             * @static
-                             * @param {org.dash.platform.dapi.v0.GetDocumentsCountResponse.IGetDocumentsCountResponseV0=} [properties] Properties to set
-                             * @returns {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0} GetDocumentsCountResponseV0 instance
-                             */
-                            GetDocumentsCountResponseV0.create = function create(properties) {
-                                return new GetDocumentsCountResponseV0(properties);
-                            };
-
-                            /**
-                             * Encodes the specified GetDocumentsCountResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.verify|verify} messages.
-                             * @function encode
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0
-                             * @static
-                             * @param {org.dash.platform.dapi.v0.GetDocumentsCountResponse.IGetDocumentsCountResponseV0} message GetDocumentsCountResponseV0 message or plain object to encode
-                             * @param {$protobuf.Writer} [writer] Writer to encode to
-                             * @returns {$protobuf.Writer} Writer
-                             */
-                            GetDocumentsCountResponseV0.encode = function encode(message, writer) {
-                                if (!writer)
-                                    writer = $Writer.create();
-                                if (message.counts != null && Object.hasOwnProperty.call(message, "counts"))
-                                    $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults.encode(message.counts, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
-                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
-                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
-                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
-                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
-                                return writer;
-                            };
-
-                            /**
-                             * Encodes the specified GetDocumentsCountResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.verify|verify} messages.
-                             * @function encodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0
-                             * @static
-                             * @param {org.dash.platform.dapi.v0.GetDocumentsCountResponse.IGetDocumentsCountResponseV0} message GetDocumentsCountResponseV0 message or plain object to encode
-                             * @param {$protobuf.Writer} [writer] Writer to encode to
-                             * @returns {$protobuf.Writer} Writer
-                             */
-                            GetDocumentsCountResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
-                                return this.encode(message, writer).ldelim();
-                            };
-
-                            /**
-                             * Decodes a GetDocumentsCountResponseV0 message from the specified reader or buffer.
-                             * @function decode
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0
-                             * @static
-                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                             * @param {number} [length] Message length if known beforehand
-                             * @returns {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0} GetDocumentsCountResponseV0
-                             * @throws {Error} If the payload is not a reader or valid buffer
-                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
-                             */
-                            GetDocumentsCountResponseV0.decode = function decode(reader, length) {
-                                if (!(reader instanceof $Reader))
-                                    reader = $Reader.create(reader);
-                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0();
-                                while (reader.pos < end) {
-                                    var tag = reader.uint32();
-                                    switch (tag >>> 3) {
-                                    case 1:
-                                        message.counts = $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults.decode(reader, reader.uint32());
-                                        break;
-                                    case 2:
-                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
-                                        break;
-                                    case 3:
-                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
-                                        break;
-                                    default:
-                                        reader.skipType(tag & 7);
-                                        break;
-                                    }
-                                }
-                                return message;
-                            };
-
-                            /**
-                             * Decodes a GetDocumentsCountResponseV0 message from the specified reader or buffer, length delimited.
-                             * @function decodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0
-                             * @static
-                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                             * @returns {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0} GetDocumentsCountResponseV0
-                             * @throws {Error} If the payload is not a reader or valid buffer
-                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
-                             */
-                            GetDocumentsCountResponseV0.decodeDelimited = function decodeDelimited(reader) {
-                                if (!(reader instanceof $Reader))
-                                    reader = new $Reader(reader);
-                                return this.decode(reader, reader.uint32());
-                            };
-
-                            /**
-                             * Verifies a GetDocumentsCountResponseV0 message.
-                             * @function verify
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0
-                             * @static
-                             * @param {Object.<string,*>} message Plain object to verify
-                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
-                             */
-                            GetDocumentsCountResponseV0.verify = function verify(message) {
-                                if (typeof message !== "object" || message === null)
-                                    return "object expected";
-                                var properties = {};
-                                if (message.counts != null && message.hasOwnProperty("counts")) {
-                                    properties.result = 1;
-                                    {
-                                        var error = $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults.verify(message.counts);
-                                        if (error)
-                                            return "counts." + error;
-                                    }
-                                }
-                                if (message.proof != null && message.hasOwnProperty("proof")) {
-                                    if (properties.result === 1)
-                                        return "result: multiple values";
-                                    properties.result = 1;
-                                    {
-                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
-                                        if (error)
-                                            return "proof." + error;
-                                    }
-                                }
-                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
-                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
-                                    if (error)
-                                        return "metadata." + error;
-                                }
-                                return null;
-                            };
-
-                            /**
-                             * Creates a GetDocumentsCountResponseV0 message from a plain object. Also converts values to their respective internal types.
-                             * @function fromObject
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0
-                             * @static
-                             * @param {Object.<string,*>} object Plain object
-                             * @returns {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0} GetDocumentsCountResponseV0
-                             */
-                            GetDocumentsCountResponseV0.fromObject = function fromObject(object) {
-                                if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0)
-                                    return object;
-                                var message = new $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0();
-                                if (object.counts != null) {
-                                    if (typeof object.counts !== "object")
-                                        throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.counts: object expected");
-                                    message.counts = $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults.fromObject(object.counts);
-                                }
-                                if (object.proof != null) {
-                                    if (typeof object.proof !== "object")
-                                        throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.proof: object expected");
-                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
-                                }
-                                if (object.metadata != null) {
-                                    if (typeof object.metadata !== "object")
-                                        throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.metadata: object expected");
-                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
-                                }
-                                return message;
-                            };
-
-                            /**
-                             * Creates a plain object from a GetDocumentsCountResponseV0 message. Also converts values to other types if specified.
-                             * @function toObject
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0
-                             * @static
-                             * @param {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0} message GetDocumentsCountResponseV0
-                             * @param {$protobuf.IConversionOptions} [options] Conversion options
-                             * @returns {Object.<string,*>} Plain object
-                             */
-                            GetDocumentsCountResponseV0.toObject = function toObject(message, options) {
-                                if (!options)
-                                    options = {};
-                                var object = {};
-                                if (options.defaults)
-                                    object.metadata = null;
-                                if (message.counts != null && message.hasOwnProperty("counts")) {
-                                    object.counts = $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults.toObject(message.counts, options);
-                                    if (options.oneofs)
-                                        object.result = "counts";
-                                }
-                                if (message.proof != null && message.hasOwnProperty("proof")) {
-                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
-                                    if (options.oneofs)
-                                        object.result = "proof";
-                                }
-                                if (message.metadata != null && message.hasOwnProperty("metadata"))
-                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
-                                return object;
-                            };
-
-                            /**
-                             * Converts this GetDocumentsCountResponseV0 to JSON.
-                             * @function toJSON
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0
-                             * @instance
-                             * @returns {Object.<string,*>} JSON object
-                             */
-                            GetDocumentsCountResponseV0.prototype.toJSON = function toJSON() {
-                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
-                            };
-
-                            GetDocumentsCountResponseV0.CountEntry = (function() {
+                            GetDocumentsResponseV1.CountEntry = (function() {
 
                                 /**
                                  * Properties of a CountEntry.
-                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
                                  * @interface ICountEntry
                                  * @property {Uint8Array|null} [inKey] CountEntry inKey
                                  * @property {Uint8Array|null} [key] CountEntry key
@@ -22617,11 +21714,11 @@ $root.org = (function() {
 
                                 /**
                                  * Constructs a new CountEntry.
-                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
                                  * @classdesc Represents a CountEntry.
                                  * @implements ICountEntry
                                  * @constructor
-                                 * @param {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.ICountEntry=} [properties] Properties to set
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ICountEntry=} [properties] Properties to set
                                  */
                                 function CountEntry(properties) {
                                     if (properties)
@@ -22633,7 +21730,7 @@ $root.org = (function() {
                                 /**
                                  * CountEntry inKey.
                                  * @member {Uint8Array} inKey
-                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntry
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntry
                                  * @instance
                                  */
                                 CountEntry.prototype.inKey = $util.newBuffer([]);
@@ -22641,7 +21738,7 @@ $root.org = (function() {
                                 /**
                                  * CountEntry key.
                                  * @member {Uint8Array} key
-                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntry
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntry
                                  * @instance
                                  */
                                 CountEntry.prototype.key = $util.newBuffer([]);
@@ -22649,7 +21746,7 @@ $root.org = (function() {
                                 /**
                                  * CountEntry count.
                                  * @member {number|Long} count
-                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntry
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntry
                                  * @instance
                                  */
                                 CountEntry.prototype.count = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
@@ -22657,21 +21754,21 @@ $root.org = (function() {
                                 /**
                                  * Creates a new CountEntry instance using the specified properties.
                                  * @function create
-                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntry
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntry
                                  * @static
-                                 * @param {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.ICountEntry=} [properties] Properties to set
-                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntry} CountEntry instance
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ICountEntry=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntry} CountEntry instance
                                  */
                                 CountEntry.create = function create(properties) {
                                     return new CountEntry(properties);
                                 };
 
                                 /**
-                                 * Encodes the specified CountEntry message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntry.verify|verify} messages.
+                                 * Encodes the specified CountEntry message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntry.verify|verify} messages.
                                  * @function encode
-                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntry
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntry
                                  * @static
-                                 * @param {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.ICountEntry} message CountEntry message or plain object to encode
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ICountEntry} message CountEntry message or plain object to encode
                                  * @param {$protobuf.Writer} [writer] Writer to encode to
                                  * @returns {$protobuf.Writer} Writer
                                  */
@@ -22688,11 +21785,11 @@ $root.org = (function() {
                                 };
 
                                 /**
-                                 * Encodes the specified CountEntry message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntry.verify|verify} messages.
+                                 * Encodes the specified CountEntry message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntry.verify|verify} messages.
                                  * @function encodeDelimited
-                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntry
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntry
                                  * @static
-                                 * @param {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.ICountEntry} message CountEntry message or plain object to encode
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ICountEntry} message CountEntry message or plain object to encode
                                  * @param {$protobuf.Writer} [writer] Writer to encode to
                                  * @returns {$protobuf.Writer} Writer
                                  */
@@ -22703,18 +21800,18 @@ $root.org = (function() {
                                 /**
                                  * Decodes a CountEntry message from the specified reader or buffer.
                                  * @function decode
-                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntry
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntry
                                  * @static
                                  * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
                                  * @param {number} [length] Message length if known beforehand
-                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntry} CountEntry
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntry} CountEntry
                                  * @throws {Error} If the payload is not a reader or valid buffer
                                  * @throws {$protobuf.util.ProtocolError} If required fields are missing
                                  */
                                 CountEntry.decode = function decode(reader, length) {
                                     if (!(reader instanceof $Reader))
                                         reader = $Reader.create(reader);
-                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntry();
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntry();
                                     while (reader.pos < end) {
                                         var tag = reader.uint32();
                                         switch (tag >>> 3) {
@@ -22738,10 +21835,10 @@ $root.org = (function() {
                                 /**
                                  * Decodes a CountEntry message from the specified reader or buffer, length delimited.
                                  * @function decodeDelimited
-                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntry
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntry
                                  * @static
                                  * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntry} CountEntry
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntry} CountEntry
                                  * @throws {Error} If the payload is not a reader or valid buffer
                                  * @throws {$protobuf.util.ProtocolError} If required fields are missing
                                  */
@@ -22754,7 +21851,7 @@ $root.org = (function() {
                                 /**
                                  * Verifies a CountEntry message.
                                  * @function verify
-                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntry
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntry
                                  * @static
                                  * @param {Object.<string,*>} message Plain object to verify
                                  * @returns {string|null} `null` if valid, otherwise the reason why it is not
@@ -22777,15 +21874,15 @@ $root.org = (function() {
                                 /**
                                  * Creates a CountEntry message from a plain object. Also converts values to their respective internal types.
                                  * @function fromObject
-                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntry
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntry
                                  * @static
                                  * @param {Object.<string,*>} object Plain object
-                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntry} CountEntry
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntry} CountEntry
                                  */
                                 CountEntry.fromObject = function fromObject(object) {
-                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntry)
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntry)
                                         return object;
-                                    var message = new $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntry();
+                                    var message = new $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntry();
                                     if (object.inKey != null)
                                         if (typeof object.inKey === "string")
                                             $util.base64.decode(object.inKey, message.inKey = $util.newBuffer($util.base64.length(object.inKey)), 0);
@@ -22811,9 +21908,9 @@ $root.org = (function() {
                                 /**
                                  * Creates a plain object from a CountEntry message. Also converts values to other types if specified.
                                  * @function toObject
-                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntry
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntry
                                  * @static
-                                 * @param {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntry} message CountEntry
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntry} message CountEntry
                                  * @param {$protobuf.IConversionOptions} [options] Conversion options
                                  * @returns {Object.<string,*>} Plain object
                                  */
@@ -22857,7 +21954,7 @@ $root.org = (function() {
                                 /**
                                  * Converts this CountEntry to JSON.
                                  * @function toJSON
-                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntry
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntry
                                  * @instance
                                  * @returns {Object.<string,*>} JSON object
                                  */
@@ -22868,22 +21965,22 @@ $root.org = (function() {
                                 return CountEntry;
                             })();
 
-                            GetDocumentsCountResponseV0.CountEntries = (function() {
+                            GetDocumentsResponseV1.CountEntries = (function() {
 
                                 /**
                                  * Properties of a CountEntries.
-                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
                                  * @interface ICountEntries
-                                 * @property {Array.<org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.ICountEntry>|null} [entries] CountEntries entries
+                                 * @property {Array.<org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ICountEntry>|null} [entries] CountEntries entries
                                  */
 
                                 /**
                                  * Constructs a new CountEntries.
-                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
                                  * @classdesc Represents a CountEntries.
                                  * @implements ICountEntries
                                  * @constructor
-                                 * @param {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.ICountEntries=} [properties] Properties to set
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ICountEntries=} [properties] Properties to set
                                  */
                                 function CountEntries(properties) {
                                     this.entries = [];
@@ -22895,8 +21992,8 @@ $root.org = (function() {
 
                                 /**
                                  * CountEntries entries.
-                                 * @member {Array.<org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.ICountEntry>} entries
-                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntries
+                                 * @member {Array.<org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ICountEntry>} entries
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntries
                                  * @instance
                                  */
                                 CountEntries.prototype.entries = $util.emptyArray;
@@ -22904,21 +22001,21 @@ $root.org = (function() {
                                 /**
                                  * Creates a new CountEntries instance using the specified properties.
                                  * @function create
-                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntries
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntries
                                  * @static
-                                 * @param {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.ICountEntries=} [properties] Properties to set
-                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntries} CountEntries instance
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ICountEntries=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntries} CountEntries instance
                                  */
                                 CountEntries.create = function create(properties) {
                                     return new CountEntries(properties);
                                 };
 
                                 /**
-                                 * Encodes the specified CountEntries message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntries.verify|verify} messages.
+                                 * Encodes the specified CountEntries message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntries.verify|verify} messages.
                                  * @function encode
-                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntries
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntries
                                  * @static
-                                 * @param {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.ICountEntries} message CountEntries message or plain object to encode
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ICountEntries} message CountEntries message or plain object to encode
                                  * @param {$protobuf.Writer} [writer] Writer to encode to
                                  * @returns {$protobuf.Writer} Writer
                                  */
@@ -22927,16 +22024,16 @@ $root.org = (function() {
                                         writer = $Writer.create();
                                     if (message.entries != null && message.entries.length)
                                         for (var i = 0; i < message.entries.length; ++i)
-                                            $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntry.encode(message.entries[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                            $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntry.encode(message.entries[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
                                     return writer;
                                 };
 
                                 /**
-                                 * Encodes the specified CountEntries message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntries.verify|verify} messages.
+                                 * Encodes the specified CountEntries message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntries.verify|verify} messages.
                                  * @function encodeDelimited
-                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntries
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntries
                                  * @static
-                                 * @param {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.ICountEntries} message CountEntries message or plain object to encode
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ICountEntries} message CountEntries message or plain object to encode
                                  * @param {$protobuf.Writer} [writer] Writer to encode to
                                  * @returns {$protobuf.Writer} Writer
                                  */
@@ -22947,25 +22044,25 @@ $root.org = (function() {
                                 /**
                                  * Decodes a CountEntries message from the specified reader or buffer.
                                  * @function decode
-                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntries
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntries
                                  * @static
                                  * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
                                  * @param {number} [length] Message length if known beforehand
-                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntries} CountEntries
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntries} CountEntries
                                  * @throws {Error} If the payload is not a reader or valid buffer
                                  * @throws {$protobuf.util.ProtocolError} If required fields are missing
                                  */
                                 CountEntries.decode = function decode(reader, length) {
                                     if (!(reader instanceof $Reader))
                                         reader = $Reader.create(reader);
-                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntries();
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntries();
                                     while (reader.pos < end) {
                                         var tag = reader.uint32();
                                         switch (tag >>> 3) {
                                         case 1:
                                             if (!(message.entries && message.entries.length))
                                                 message.entries = [];
-                                            message.entries.push($root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntry.decode(reader, reader.uint32()));
+                                            message.entries.push($root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntry.decode(reader, reader.uint32()));
                                             break;
                                         default:
                                             reader.skipType(tag & 7);
@@ -22978,10 +22075,10 @@ $root.org = (function() {
                                 /**
                                  * Decodes a CountEntries message from the specified reader or buffer, length delimited.
                                  * @function decodeDelimited
-                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntries
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntries
                                  * @static
                                  * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntries} CountEntries
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntries} CountEntries
                                  * @throws {Error} If the payload is not a reader or valid buffer
                                  * @throws {$protobuf.util.ProtocolError} If required fields are missing
                                  */
@@ -22994,7 +22091,7 @@ $root.org = (function() {
                                 /**
                                  * Verifies a CountEntries message.
                                  * @function verify
-                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntries
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntries
                                  * @static
                                  * @param {Object.<string,*>} message Plain object to verify
                                  * @returns {string|null} `null` if valid, otherwise the reason why it is not
@@ -23006,7 +22103,7 @@ $root.org = (function() {
                                         if (!Array.isArray(message.entries))
                                             return "entries: array expected";
                                         for (var i = 0; i < message.entries.length; ++i) {
-                                            var error = $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntry.verify(message.entries[i]);
+                                            var error = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntry.verify(message.entries[i]);
                                             if (error)
                                                 return "entries." + error;
                                         }
@@ -23017,23 +22114,23 @@ $root.org = (function() {
                                 /**
                                  * Creates a CountEntries message from a plain object. Also converts values to their respective internal types.
                                  * @function fromObject
-                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntries
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntries
                                  * @static
                                  * @param {Object.<string,*>} object Plain object
-                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntries} CountEntries
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntries} CountEntries
                                  */
                                 CountEntries.fromObject = function fromObject(object) {
-                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntries)
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntries)
                                         return object;
-                                    var message = new $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntries();
+                                    var message = new $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntries();
                                     if (object.entries) {
                                         if (!Array.isArray(object.entries))
-                                            throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntries.entries: array expected");
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntries.entries: array expected");
                                         message.entries = [];
                                         for (var i = 0; i < object.entries.length; ++i) {
                                             if (typeof object.entries[i] !== "object")
-                                                throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntries.entries: object expected");
-                                            message.entries[i] = $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntry.fromObject(object.entries[i]);
+                                                throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntries.entries: object expected");
+                                            message.entries[i] = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntry.fromObject(object.entries[i]);
                                         }
                                     }
                                     return message;
@@ -23042,9 +22139,9 @@ $root.org = (function() {
                                 /**
                                  * Creates a plain object from a CountEntries message. Also converts values to other types if specified.
                                  * @function toObject
-                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntries
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntries
                                  * @static
-                                 * @param {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntries} message CountEntries
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntries} message CountEntries
                                  * @param {$protobuf.IConversionOptions} [options] Conversion options
                                  * @returns {Object.<string,*>} Plain object
                                  */
@@ -23057,7 +22154,7 @@ $root.org = (function() {
                                     if (message.entries && message.entries.length) {
                                         object.entries = [];
                                         for (var j = 0; j < message.entries.length; ++j)
-                                            object.entries[j] = $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntry.toObject(message.entries[j], options);
+                                            object.entries[j] = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntry.toObject(message.entries[j], options);
                                     }
                                     return object;
                                 };
@@ -23065,7 +22162,7 @@ $root.org = (function() {
                                 /**
                                  * Converts this CountEntries to JSON.
                                  * @function toJSON
-                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntries
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntries
                                  * @instance
                                  * @returns {Object.<string,*>} JSON object
                                  */
@@ -23076,23 +22173,23 @@ $root.org = (function() {
                                 return CountEntries;
                             })();
 
-                            GetDocumentsCountResponseV0.CountResults = (function() {
+                            GetDocumentsResponseV1.CountResults = (function() {
 
                                 /**
                                  * Properties of a CountResults.
-                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
                                  * @interface ICountResults
                                  * @property {number|Long|null} [aggregateCount] CountResults aggregateCount
-                                 * @property {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.ICountEntries|null} [entries] CountResults entries
+                                 * @property {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ICountEntries|null} [entries] CountResults entries
                                  */
 
                                 /**
                                  * Constructs a new CountResults.
-                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
                                  * @classdesc Represents a CountResults.
                                  * @implements ICountResults
                                  * @constructor
-                                 * @param {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.ICountResults=} [properties] Properties to set
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ICountResults=} [properties] Properties to set
                                  */
                                 function CountResults(properties) {
                                     if (properties)
@@ -23104,15 +22201,15 @@ $root.org = (function() {
                                 /**
                                  * CountResults aggregateCount.
                                  * @member {number|Long} aggregateCount
-                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountResults
                                  * @instance
                                  */
                                 CountResults.prototype.aggregateCount = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
 
                                 /**
                                  * CountResults entries.
-                                 * @member {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.ICountEntries|null|undefined} entries
-                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults
+                                 * @member {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ICountEntries|null|undefined} entries
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountResults
                                  * @instance
                                  */
                                 CountResults.prototype.entries = null;
@@ -23123,7 +22220,7 @@ $root.org = (function() {
                                 /**
                                  * CountResults variant.
                                  * @member {"aggregateCount"|"entries"|undefined} variant
-                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountResults
                                  * @instance
                                  */
                                 Object.defineProperty(CountResults.prototype, "variant", {
@@ -23134,21 +22231,21 @@ $root.org = (function() {
                                 /**
                                  * Creates a new CountResults instance using the specified properties.
                                  * @function create
-                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountResults
                                  * @static
-                                 * @param {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.ICountResults=} [properties] Properties to set
-                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults} CountResults instance
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ICountResults=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountResults} CountResults instance
                                  */
                                 CountResults.create = function create(properties) {
                                     return new CountResults(properties);
                                 };
 
                                 /**
-                                 * Encodes the specified CountResults message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults.verify|verify} messages.
+                                 * Encodes the specified CountResults message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountResults.verify|verify} messages.
                                  * @function encode
-                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountResults
                                  * @static
-                                 * @param {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.ICountResults} message CountResults message or plain object to encode
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ICountResults} message CountResults message or plain object to encode
                                  * @param {$protobuf.Writer} [writer] Writer to encode to
                                  * @returns {$protobuf.Writer} Writer
                                  */
@@ -23158,16 +22255,16 @@ $root.org = (function() {
                                     if (message.aggregateCount != null && Object.hasOwnProperty.call(message, "aggregateCount"))
                                         writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.aggregateCount);
                                     if (message.entries != null && Object.hasOwnProperty.call(message, "entries"))
-                                        $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntries.encode(message.entries, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                        $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntries.encode(message.entries, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
                                     return writer;
                                 };
 
                                 /**
-                                 * Encodes the specified CountResults message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults.verify|verify} messages.
+                                 * Encodes the specified CountResults message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountResults.verify|verify} messages.
                                  * @function encodeDelimited
-                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountResults
                                  * @static
-                                 * @param {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.ICountResults} message CountResults message or plain object to encode
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ICountResults} message CountResults message or plain object to encode
                                  * @param {$protobuf.Writer} [writer] Writer to encode to
                                  * @returns {$protobuf.Writer} Writer
                                  */
@@ -23178,18 +22275,18 @@ $root.org = (function() {
                                 /**
                                  * Decodes a CountResults message from the specified reader or buffer.
                                  * @function decode
-                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountResults
                                  * @static
                                  * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
                                  * @param {number} [length] Message length if known beforehand
-                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults} CountResults
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountResults} CountResults
                                  * @throws {Error} If the payload is not a reader or valid buffer
                                  * @throws {$protobuf.util.ProtocolError} If required fields are missing
                                  */
                                 CountResults.decode = function decode(reader, length) {
                                     if (!(reader instanceof $Reader))
                                         reader = $Reader.create(reader);
-                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults();
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountResults();
                                     while (reader.pos < end) {
                                         var tag = reader.uint32();
                                         switch (tag >>> 3) {
@@ -23197,7 +22294,7 @@ $root.org = (function() {
                                             message.aggregateCount = reader.uint64();
                                             break;
                                         case 2:
-                                            message.entries = $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntries.decode(reader, reader.uint32());
+                                            message.entries = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntries.decode(reader, reader.uint32());
                                             break;
                                         default:
                                             reader.skipType(tag & 7);
@@ -23210,10 +22307,10 @@ $root.org = (function() {
                                 /**
                                  * Decodes a CountResults message from the specified reader or buffer, length delimited.
                                  * @function decodeDelimited
-                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountResults
                                  * @static
                                  * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults} CountResults
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountResults} CountResults
                                  * @throws {Error} If the payload is not a reader or valid buffer
                                  * @throws {$protobuf.util.ProtocolError} If required fields are missing
                                  */
@@ -23226,7 +22323,7 @@ $root.org = (function() {
                                 /**
                                  * Verifies a CountResults message.
                                  * @function verify
-                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountResults
                                  * @static
                                  * @param {Object.<string,*>} message Plain object to verify
                                  * @returns {string|null} `null` if valid, otherwise the reason why it is not
@@ -23245,7 +22342,7 @@ $root.org = (function() {
                                             return "variant: multiple values";
                                         properties.variant = 1;
                                         {
-                                            var error = $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntries.verify(message.entries);
+                                            var error = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntries.verify(message.entries);
                                             if (error)
                                                 return "entries." + error;
                                         }
@@ -23256,15 +22353,15 @@ $root.org = (function() {
                                 /**
                                  * Creates a CountResults message from a plain object. Also converts values to their respective internal types.
                                  * @function fromObject
-                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountResults
                                  * @static
                                  * @param {Object.<string,*>} object Plain object
-                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults} CountResults
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountResults} CountResults
                                  */
                                 CountResults.fromObject = function fromObject(object) {
-                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults)
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountResults)
                                         return object;
-                                    var message = new $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults();
+                                    var message = new $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountResults();
                                     if (object.aggregateCount != null)
                                         if ($util.Long)
                                             (message.aggregateCount = $util.Long.fromValue(object.aggregateCount)).unsigned = true;
@@ -23276,8 +22373,8 @@ $root.org = (function() {
                                             message.aggregateCount = new $util.LongBits(object.aggregateCount.low >>> 0, object.aggregateCount.high >>> 0).toNumber(true);
                                     if (object.entries != null) {
                                         if (typeof object.entries !== "object")
-                                            throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults.entries: object expected");
-                                        message.entries = $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntries.fromObject(object.entries);
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountResults.entries: object expected");
+                                        message.entries = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntries.fromObject(object.entries);
                                     }
                                     return message;
                                 };
@@ -23285,9 +22382,9 @@ $root.org = (function() {
                                 /**
                                  * Creates a plain object from a CountResults message. Also converts values to other types if specified.
                                  * @function toObject
-                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountResults
                                  * @static
-                                 * @param {org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults} message CountResults
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountResults} message CountResults
                                  * @param {$protobuf.IConversionOptions} [options] Conversion options
                                  * @returns {Object.<string,*>} Plain object
                                  */
@@ -23304,7 +22401,7 @@ $root.org = (function() {
                                             object.variant = "aggregateCount";
                                     }
                                     if (message.entries != null && message.hasOwnProperty("entries")) {
-                                        object.entries = $root.org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntries.toObject(message.entries, options);
+                                        object.entries = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntries.toObject(message.entries, options);
                                         if (options.oneofs)
                                             object.variant = "entries";
                                     }
@@ -23314,7 +22411,7 @@ $root.org = (function() {
                                 /**
                                  * Converts this CountResults to JSON.
                                  * @function toJSON
-                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountResults
                                  * @instance
                                  * @returns {Object.<string,*>} JSON object
                                  */
@@ -23325,10 +22422,255 @@ $root.org = (function() {
                                 return CountResults;
                             })();
 
-                            return GetDocumentsCountResponseV0;
+                            GetDocumentsResponseV1.ResultData = (function() {
+
+                                /**
+                                 * Properties of a ResultData.
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
+                                 * @interface IResultData
+                                 * @property {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IDocuments|null} [documents] ResultData documents
+                                 * @property {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ICountResults|null} [counts] ResultData counts
+                                 */
+
+                                /**
+                                 * Constructs a new ResultData.
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
+                                 * @classdesc Represents a ResultData.
+                                 * @implements IResultData
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IResultData=} [properties] Properties to set
+                                 */
+                                function ResultData(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * ResultData documents.
+                                 * @member {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IDocuments|null|undefined} documents
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData
+                                 * @instance
+                                 */
+                                ResultData.prototype.documents = null;
+
+                                /**
+                                 * ResultData counts.
+                                 * @member {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ICountResults|null|undefined} counts
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData
+                                 * @instance
+                                 */
+                                ResultData.prototype.counts = null;
+
+                                // OneOf field names bound to virtual getters and setters
+                                var $oneOfFields;
+
+                                /**
+                                 * ResultData variant.
+                                 * @member {"documents"|"counts"|undefined} variant
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData
+                                 * @instance
+                                 */
+                                Object.defineProperty(ResultData.prototype, "variant", {
+                                    get: $util.oneOfGetter($oneOfFields = ["documents", "counts"]),
+                                    set: $util.oneOfSetter($oneOfFields)
+                                });
+
+                                /**
+                                 * Creates a new ResultData instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IResultData=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData} ResultData instance
+                                 */
+                                ResultData.create = function create(properties) {
+                                    return new ResultData(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified ResultData message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IResultData} message ResultData message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                ResultData.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.documents != null && Object.hasOwnProperty.call(message, "documents"))
+                                        $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Documents.encode(message.documents, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                    if (message.counts != null && Object.hasOwnProperty.call(message, "counts"))
+                                        $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountResults.encode(message.counts, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified ResultData message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IResultData} message ResultData message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                ResultData.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a ResultData message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData} ResultData
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                ResultData.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.documents = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Documents.decode(reader, reader.uint32());
+                                            break;
+                                        case 2:
+                                            message.counts = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountResults.decode(reader, reader.uint32());
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a ResultData message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData} ResultData
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                ResultData.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a ResultData message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                ResultData.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    var properties = {};
+                                    if (message.documents != null && message.hasOwnProperty("documents")) {
+                                        properties.variant = 1;
+                                        {
+                                            var error = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Documents.verify(message.documents);
+                                            if (error)
+                                                return "documents." + error;
+                                        }
+                                    }
+                                    if (message.counts != null && message.hasOwnProperty("counts")) {
+                                        if (properties.variant === 1)
+                                            return "variant: multiple values";
+                                        properties.variant = 1;
+                                        {
+                                            var error = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountResults.verify(message.counts);
+                                            if (error)
+                                                return "counts." + error;
+                                        }
+                                    }
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a ResultData message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData} ResultData
+                                 */
+                                ResultData.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData();
+                                    if (object.documents != null) {
+                                        if (typeof object.documents !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData.documents: object expected");
+                                        message.documents = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Documents.fromObject(object.documents);
+                                    }
+                                    if (object.counts != null) {
+                                        if (typeof object.counts !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData.counts: object expected");
+                                        message.counts = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountResults.fromObject(object.counts);
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a ResultData message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData} message ResultData
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                ResultData.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (message.documents != null && message.hasOwnProperty("documents")) {
+                                        object.documents = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Documents.toObject(message.documents, options);
+                                        if (options.oneofs)
+                                            object.variant = "documents";
+                                    }
+                                    if (message.counts != null && message.hasOwnProperty("counts")) {
+                                        object.counts = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountResults.toObject(message.counts, options);
+                                        if (options.oneofs)
+                                            object.variant = "counts";
+                                    }
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this ResultData to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                ResultData.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return ResultData;
+                            })();
+
+                            return GetDocumentsResponseV1;
                         })();
 
-                        return GetDocumentsCountResponse;
+                        return GetDocumentsResponse;
                     })();
 
                     v0.GetIdentityByPublicKeyHashRequest = (function() {
