@@ -159,6 +159,11 @@ struct SearchWalletsForIdentitiesView: View {
                 .font(.caption.monospaced())
                 .foregroundColor(.secondary)
         }
+        // Force a deterministic space-joined accessibility label so the
+        // XCUITest BEGINSWITH-with-trailing-space predicate matches; the
+        // default HStack a11y synthesis joins child Texts with ", ".
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(wallet.label) \(labelFingerprint(wallet.walletId))")
     }
 
     @ViewBuilder
