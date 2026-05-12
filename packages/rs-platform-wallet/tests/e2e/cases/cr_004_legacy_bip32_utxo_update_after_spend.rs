@@ -155,24 +155,27 @@ async fn cr_004_legacy_bip32_utxo_update_after_spend() {
     // `CoreWallet::send_to_addresses(StandardAccountType::BIP32Account, 0, ...)`.
     // `send_to_addresses` selects from the BIP-32 account's spendable
     // set internally and sends change back to the same account; sending
-    // the FULL TOTAL_FUNDING to a fresh sink address forces selection
-    // to consume both UTXOs and emit a near-zero (or zero) change
-    // output, exercising the "send all" semantics the bug report
-    // names.
+    // TOTAL_FUNDING - 2_000 to a fresh sink address leaves only ~1_000 duffs
+    // of potential change after a typical 1_000-5_000 duff fee, which is
+    // well below the P2PKH dust threshold (~2_730 duffs). The builder folds
+    // sub-dust change into the fee, producing a zero-change transaction and
+    // leaving the BIP-32 account with no spendable UTXOs.
     //
-    // The fee is taken from the consumed inputs, so the actual
-    // delivered amount lands slightly under TOTAL_FUNDING — that's
-    // fine, the contract under test is "the SOURCE account's UTXO set
-    // becomes empty after broadcast", not "the destination receives
-    // exactly N". We send to the bank's primary Core receive address
-    // so the swept duffs are recoverable on teardown failure.
+    // QA-008: the original send amount (TOTAL_FUNDING - 50_000) left ~45_000
+    // duffs of change — far above dust — so the builder correctly emitted a
+    // change UTXO and `spendable_utxos` returned 1, not 0. The test's comment
+    // claimed change would be below dust, which was wrong math.
+    //
+    // We send to the bank's primary Core receive address so the swept duffs
+    // are recoverable on teardown failure.
     let sink = s
         .ctx
         .bank()
         .primary_core_receive_address()
         .await
         .expect("bank.primary_core_receive_address");
-    let send_all = TOTAL_FUNDING.saturating_sub(50_000); // leave headroom for fee
+    // Subtract only 2_000 duffs so potential change is sub-dust after fees.
+    let send_all = TOTAL_FUNDING.saturating_sub(2_000);
     let tx = s
         .test_wallet
         .platform_wallet()
@@ -199,11 +202,12 @@ async fn cr_004_legacy_bip32_utxo_update_after_spend() {
     //   route the just-broadcast tx through the BIP-32 account
     //   collection AND mark every consumed UTXO as spent.
     // - `spendable_utxos(current_height)` on the legacy account must
-    //   return an empty set (or, at most, an unspent change output —
-    //   but since we sent `TOTAL_FUNDING - 50_000` with fee deducted
-    //   from inputs, the change is below the dust floor and the
-    //   builder will have folded it into the fee, so we expect
-    //   strictly empty here).
+    //   return an empty set. We sent `TOTAL_FUNDING - 2_000` duffs:
+    //   a typical 2-in/2-out P2PKH fee is 1_000–5_000 duffs, leaving
+    //   at most ~1_000 duffs of potential change — below the P2PKH
+    //   dust threshold (~2_730 duffs). The builder folds sub-dust
+    //   change into the fee, so no change UTXO is emitted and the
+    //   account's spendable set is strictly empty post-broadcast.
     let (bip44_count_post, bip32_count_post) = utxo_counts(&s.test_wallet, 0).await;
     assert_eq!(
         bip44_count_post, 0,
