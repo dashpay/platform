@@ -22,8 +22,8 @@
 //!
 //! Sub-cases A and B are pure assertions on the active `PlatformVersion`
 //! and run cheaply without bank funding or chain machinery. Only sub-case
-//! C exercises the on-chain trim+teardown path and inherits the
-//! QA-V27-007 `#[ignore]` from the unsplit predecessor.
+//! C exercises the on-chain trim+teardown path and is `#[ignore]`-tagged
+//! pending QA-014 (re-derive sync gap-limit issue).
 //!
 //! ## Why not the spec's literal triplet
 //!
@@ -122,18 +122,15 @@ async fn pa_009_min_input_amount_subcase_b() {
     );
 }
 
-// TODO(QA-V27-007): Re-enable when production fix lands. The assertion at the
-// post-trim balance check sees the bank's full balance (~40.8 tDASH) instead
-// of the test wallet's residual because PlatformAddressWallet::transfer at
-// transfer.rs:160 calls set_address_credit_balance for every address in the
-// transition — with no ownership check. Pollutes the source wallet's local
-// ledger when transferring to externally-owned addresses (e.g., bank). Same
-// unguarded primitive at withdrawal.rs:141 and fund_from_asset_lock.rs:129.
-// Severity: HIGH for tests/SDK consumers; MEDIUM-LOW in production sweep
-// path (signing prevents on-chain leak). Fix sketch (~6 LOC ownership filter)
-// in TEST_SPEC.md V27-007 section.
+// TODO(QA-014): re-derive sync returns 0 for addr_1 post-teardown. V27-007
+// is fixed; teardown correctly abandons dust. The failure is in the
+// post-teardown re-derive+sync path: `create_wallet_from_seed_bytes` with
+// `WalletAccountCreationOptions::Default` likely doesn't scan addr_1 (gap
+// limit not wide enough). Investigation pending.
 #[tokio_shared_rt::test(shared)]
-#[ignore = "FAILING — production bug in PlatformAddressWallet::transfer pollutes local ledger with non-owned addresses. See TEST_SPEC.md (V27-007) and TODO comment below."]
+#[ignore = "FAILING — re-derive sync returns 0 for addr_1 post-teardown; \
+            investigation pending (QA-014). V27-007 is fixed; blocking issue \
+            is harness gap-limit in the post-teardown re-derive path."]
 async fn pa_009_min_input_amount_subcase_c() {
     // Sub-case C: below-gate teardown leaves on-chain balance intact.
     // Funds addr_1, trims to TARGET_RESIDUAL via auto-select transfer,
