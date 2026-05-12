@@ -3,6 +3,12 @@
 //! Spec: `tests/e2e/TEST_SPEC.md` (### Core (CR) → CR-004).
 //! Status: FAILING-by-design — runs only via `cargo test -- --ignored`
 //! and is expected to fail until the upstream contract is fixed.
+//! Exercises the multi-variant `next_receive_addresses(count=2, advance=true)`
+//! API which forces pool advance; assertion `addr1 != addr2` is now consistent
+//! with the upstream contract (`key_wallet::AddressPool::next_unused` is
+//! idempotent by design — see upstream `address_pool.rs:1196-1214`; the
+//! multi-variant `next_unused_multiple` is the correct API for N distinct
+//! frontier addresses).
 //! Pins the post-broadcast UTXO-mutation contract on
 //! `standard_bip32_accounts` against
 //! [dashpay/dash-evo-tool#845](https://github.com/dashpay/dash-evo-tool/issues/845):
@@ -70,20 +76,20 @@ async fn cr_004_legacy_bip32_utxo_update_after_spend() {
         .await
         .expect("setup (CR-004 — fresh-seeded test wallet with default account set)");
 
-    // Step 2: derive the legacy BIP32 account 0 receive address inline.
-    // `CoreWallet` has no `next_receive_address_for_bip32_account` helper;
-    // mirror the BIP-44 sibling shape against `standard_bip32_accounts`.
-    let bip32_recv_1 = next_receive_address_for_bip32_account(&s.test_wallet, 0)
-        .await
-        .expect("derive legacy BIP32 receive address (slot 1)");
-    let bip32_recv_2 = next_receive_address_for_bip32_account(&s.test_wallet, 0)
-        .await
-        .expect("derive legacy BIP32 receive address (slot 2)");
+    // Step 2: derive two distinct legacy BIP32 account 0 receive addresses.
+    // `next_receive_addresses(count=2, advance=true)` uses the upstream
+    // `next_unused_multiple` path which advances the pool index per slot,
+    // producing two distinct frontier addresses in one call.
+    let [bip32_recv_1, bip32_recv_2] =
+        next_two_receive_addresses_for_bip32_account(&s.test_wallet, 0)
+            .await
+            .expect("derive two legacy BIP32 receive addresses")
+            .try_into()
+            .expect("next_receive_addresses(2) returned wrong count");
     assert_ne!(
         bip32_recv_1, bip32_recv_2,
         "PRE-pin violated: BIP32 receive-address pool returned the same \
-         address twice — pool advance is broken or marking-used dropped \
-         the inbound funding event."
+         address for both slots — next_unused_multiple pool advance is broken."
     );
 
     // Step 3: bank-fund the legacy account with TWO distinct UTXOs.
@@ -276,15 +282,15 @@ async fn cr_004_legacy_bip32_utxo_update_after_spend() {
 // derivation point lands on `CoreWallet`.
 // ---------------------------------------------------------------------------
 
-/// Derive the next unused receive address on the wallet's legacy BIP-32
-/// account at `account_index`. Mirror of
-/// [`platform_wallet::wallet::core::CoreWallet::next_receive_address_for_account`]
-/// (`packages/rs-platform-wallet/src/wallet/core/wallet.rs:59`) but
-/// against `standard_bip32_accounts`.
-async fn next_receive_address_for_bip32_account(
+/// Derive `count=2` distinct receive addresses on the wallet's legacy BIP-32
+/// account at `account_index` using the upstream `next_unused_multiple` path
+/// (via `ManagedCoreFundsAccount::next_receive_addresses`). Passing
+/// `add_to_state=true` forces the pool to commit the generated indices and
+/// bump `highest_generated`, guaranteeing the returned addresses are distinct.
+async fn next_two_receive_addresses_for_bip32_account(
     test_wallet: &crate::framework::wallet_factory::TestWallet,
     account_index: u32,
-) -> Result<DashAddress, PlatformWalletError> {
+) -> Result<Vec<DashAddress>, PlatformWalletError> {
     let wallet = test_wallet.platform_wallet();
     let mut wm = wallet.wallet_manager().write().await;
     let wallet_id = wallet.wallet_id();
@@ -321,8 +327,8 @@ async fn next_receive_address_for_bip32_account(
         })?;
 
     account
-        .next_receive_address(Some(&xpub), true)
-        .map_err(|e| PlatformWalletError::AddressOperation(e.to_string()))
+        .next_receive_addresses(Some(&xpub), 2, true)
+        .map_err(PlatformWalletError::AddressOperation)
 }
 
 /// Snapshot `(bip44_spendable_count, bip32_spendable_count)` at
