@@ -7,7 +7,7 @@ XCUITest suite that drives the SwiftExampleApp through real user flows on the iO
 - `SwiftExampleAppUITests.testCreateGeneratedWalletFlow` — generates a fresh wallet end-to-end (local-only).
 - `WalletPersistenceTests.testWalletPersistsAcrossRelaunch` — wallet survives an app relaunch.
 - `WalletPersistenceTests.testWalletDeletionCleanupSurvivesRelaunch` — deleted wallet stays gone after relaunch.
-- `CreditTransferTest.testImportWalletAndDiscoverIdentity` — imports a known testnet mnemonic, runs DIP-9 identity discovery, asserts the registered identity exposes a readable balance. **Self-skips without `UI_TEST_MNEMONIC`.**
+- `CreditTransferTest.testImportWalletAndDiscoverIdentity` — imports a known testnet mnemonic, runs DIP-9 identity discovery, asserts the registered identity has a non-zero credit balance. **Self-skips without `UI_TEST_MNEMONIC`.**
 
 The first three are local-only and hermetic; the last hits public testnet DAPI.
 

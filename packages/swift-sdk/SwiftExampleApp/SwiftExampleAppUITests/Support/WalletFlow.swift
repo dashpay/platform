@@ -520,11 +520,19 @@ func runIdentityDiscovery(
     let searchSheetNavBar = app.navigationBars["Re-scan for Identities"]
     var sheetOpened = false
     for _ in 0..<3 where !sheetOpened {
-        addMenu.tap()
-
         let searchMenuItem = app.descendants(matching: .any)
             .matching(identifier: Identifier.Identities.searchWalletsMenuItem)
             .firstMatch
+        // If the menu is still open from a prior failed item-tap,
+        // close it first so the open below forces a fresh
+        // accessibility-tree snapshot. Tapping `addMenu` unconditionally
+        // would toggle an already-open menu shut, halving the effective
+        // retries.
+        if searchMenuItem.exists {
+            addMenu.tap()  // close stale menu
+        }
+        addMenu.tap()      // open fresh menu
+
         if searchMenuItem.waitForExistence(timeout: 3) {
             searchMenuItem.tap()
         } else {
@@ -749,7 +757,16 @@ func bestEffortDeleteWallet(named walletName: String, in app: XCUIApplication) {
     // a modal blocking the wallets tab. The prompt's "Cancel" button
     // declines the recovery offer (we then proceed with the deletion
     // we came here to do).
-    let recoverAlert = app.alerts["Recover Wallet?"]
+    // Match both the singular ("Recover Wallet?") and plural
+    // ("Recover Wallets?", N>1 orphans) titles so the teardown
+    // dismisses either variant.
+    let recoverAlert = app.alerts.matching(
+        NSPredicate(
+            format: "label == %@ OR label == %@",
+            "Recover Wallets?",
+            "Recover Wallet?"
+        )
+    ).firstMatch
     if recoverAlert.waitForExistence(timeout: 1) {
         if recoverAlert.buttons["Cancel"].exists {
             recoverAlert.buttons["Cancel"].tap()
