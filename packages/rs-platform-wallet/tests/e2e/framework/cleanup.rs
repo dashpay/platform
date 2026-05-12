@@ -333,10 +333,25 @@ pub async fn teardown_one(
     test_wallet.sync_balances().await?;
     let platform_version = PlatformVersion::latest();
     let dust_gate = min_input_amount(platform_version);
-    let total = test_wallet.total_credits().await;
+    // QA-004: hoist the address snapshot BEFORE the gate decision so both
+    // the sum used for the gate check and the candidates passed into
+    // `sweep_platform_addresses` come from the same `addresses_with_balances`
+    // call. A concurrent test's `sync_balances` can inject foreign addresses
+    // into the tracked pool between a gate-only `total_credits()` read and
+    // the live `addresses_with_balances()` query inside the sweep, causing
+    // the gate to pass on a wallet-owned sum while the sweep attempts (and
+    // fails) to sign for a foreign address. Using one snapshot closes the
+    // TOCTOU window entirely.
+    let candidates: Vec<(PlatformAddress, Credits)> = test_wallet
+        .platform_wallet()
+        .platform()
+        .addresses_with_balances()
+        .await;
+    let total: Credits = candidates.iter().map(|(_, v)| *v).sum();
     let mut report = SweepReport::default();
     if total >= dust_gate {
-        sweep_platform_addresses(
+        sweep_platform_addresses_with_candidates(
+            candidates,
             test_wallet.platform_wallet(),
             test_wallet.address_signer(),
             bank.primary_receive_address(),
@@ -442,9 +457,10 @@ fn wallet_err(err: PlatformWalletError) -> FrameworkError {
 }
 
 /// Drain every recoverable platform address back to `bank_addr` in a
-/// single transition. Inputs map = balances ≥ `min_input_amount`,
-/// output = the sum, fee comes out of the bank's incoming amount via
-/// `ReduceOutput(0)`.
+/// single transition. Fetches the address snapshot internally; prefer
+/// [`sweep_platform_addresses_with_candidates`] when the caller has
+/// already snapshotted `addresses_with_balances` (e.g. `teardown_one`
+/// for the QA-004 TOCTOU fix).
 ///
 /// Tests that distribute funds across multiple addresses (PA-004b
 /// dust-boundary, PA-009 min-input) leave change on every spent
@@ -461,9 +477,25 @@ async fn sweep_platform_addresses<S>(
 where
     S: Signer<PlatformAddress> + Send + Sync,
 {
+    let candidates = wallet.platform().addresses_with_balances().await;
+    sweep_platform_addresses_with_candidates(candidates, wallet, signer, bank_addr, report).await
+}
+
+/// Inner sweep implementation that operates on a pre-built candidates
+/// snapshot. Called by [`sweep_platform_addresses`] (which builds the
+/// snapshot itself) and by [`teardown_one`] (which hoists the snapshot
+/// before the gate check to avoid the QA-004 TOCTOU window).
+async fn sweep_platform_addresses_with_candidates<S>(
+    candidates: Vec<(PlatformAddress, Credits)>,
+    wallet: &Arc<PlatformWallet>,
+    signer: &S,
+    bank_addr: &PlatformAddress,
+    report: &mut SweepReport,
+) -> FrameworkResult<()>
+where
+    S: Signer<PlatformAddress> + Send + Sync,
+{
     let platform_version = PlatformVersion::latest();
-    let candidates: Vec<(PlatformAddress, Credits)> =
-        wallet.platform().addresses_with_balances().await;
     let SweepPlan {
         inputs,
         skipped_dust,
