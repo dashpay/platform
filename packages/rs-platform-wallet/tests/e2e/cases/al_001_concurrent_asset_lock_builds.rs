@@ -164,10 +164,50 @@ async fn al_001_concurrent_asset_lock_builds() {
         "AL-001: pre-split into N+1 UTXOs for concurrent coin selection"
     );
     // Wait for the split to be SPV-visible before spawning concurrent tasks.
+    //
+    // Two-phase gate:
+    // 1. Aggregate balance — the SPV-updated atomic reaches the expected
+    //    total. Fast to observe; guards against the split tx not arriving
+    //    at all.
+    // 2. Spendable-UTXO count — BIP-44 account 0 has at least N+1
+    //    individual UTXOs in its spendable set. This is the condition
+    //    `build_asset_lock` actually needs: coin selection reads the
+    //    UTXO list, not the balance atomic. The aggregate atomic can
+    //    update before the UTXO index catches up, so gating only on
+    //    step 1 leaves a window where all N concurrent tasks see "No
+    //    UTXOs available for selection" (v47 failure mode).
     let expected_post_split = split_amount.saturating_mul(N as u64 + 1);
     wait_for_core_balance(&s.test_wallet, expected_post_split, STEP_TIMEOUT)
         .await
-        .expect("UTXO pre-split not observed by SPV within timeout");
+        .expect("UTXO pre-split aggregate balance not observed by SPV within timeout");
+
+    {
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+        let wallet = s.test_wallet.platform_wallet();
+        let wallet_id = wallet.wallet_id();
+        wait_for(
+            || async {
+                let wm = wallet.wallet_manager().read().await;
+                let info = wm.get_wallet_info(&wallet_id)?;
+                let height = info.core_wallet.synced_height();
+                let count = info
+                    .core_wallet
+                    .accounts
+                    .standard_bip44_accounts
+                    .get(&0)
+                    .map(|a| a.spendable_utxos(height).len())
+                    .unwrap_or(0);
+                if count > N {
+                    Some(())
+                } else {
+                    None
+                }
+            },
+            STEP_TIMEOUT,
+        )
+        .await
+        .expect("split UTXOs not spendable in BIP-44 account 0 within timeout");
+    }
 
     // Step 2: register N identities via the address-funded path. The
     // concurrent top-ups in step 3 target DIFFERENT identities so we
