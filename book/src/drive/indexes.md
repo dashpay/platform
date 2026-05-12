@@ -402,9 +402,17 @@ With the layout above, a query like `WHERE color BETWEEN 'red' AND 'tomato'` res
 
 No leaf-level enumeration of distinct color values, no enumeration of individual documents — the count is computed entirely from the tree's pre-aggregated structure.
 
-#### Compound indexes (open question)
+#### Compound indexes
 
-What `range_countable` means on a compound index — e.g., `byColorShape = [color, shape]` with `range_countable: true` — is left for later design. The natural reading is "the parent of the *terminating* level of this index", i.e., the `'shape'` tree under each color value, which would itself become a `ProvableCountTree` (and `'circle'` / `'square'` would become `CountTree`s). When that compound's leading prefix is itself another index (`byColor`), the layering of `NonCounted` and counted variants needs to be worked out so neither index's counts pollute the other. We'll cross that bridge when we actually need range queries on a compound index.
+`range_countable: true` on a compound index applies at the index's *terminating* level (its last property). For `byColorShape = [color, shape]` with `range_countable: true`:
+
+- `'shape'` (the property-name tree under each color value) becomes a `ProvableCountTree`.
+- Each `'circle'` / `'square'` value tree becomes a `CountTree`.
+- Documents are referenced as `Element::Reference` leaves under those `CountTree`s, contributing 1 each to the count aggregate.
+
+When the compound's leading prefix is also indexed by another `range_countable` index (e.g. `byColor` is also `range_countable`), sibling continuations under each color `CountTree` are wrapped with `Element::NonCounted` so a doc routed via `byColorShape` doesn't double-count under `byColor`'s color aggregate. The walker (`add_indices_for_index_level_for_contract_operations`) threads a `parent_value_tree_is_range_countable` flag down the recursion to decide when to wrap, regardless of whether the inner tree is itself a `ProvableCountTree`, `CountTree`, or plain `NormalTree`.
+
+End-to-end coverage in `range_countable_index_e2e_tests` (in `packages/rs-drive/src/drive/contract/insert/insert_contract/v0/mod.rs`) pins the storage layout against a real grovedb — including the `count_tree_value_count_excludes_compound_continuation_via_non_counted` test that proves NonCounted-wrapping is load-bearing for compound-index correctness.
 
 ## Tree Type at the Terminal Level
 
@@ -518,7 +526,7 @@ Quick checklist for contract authors:
 - **Don't index what you won't query.** Each index costs storage on every insert/delete and counts against the per-document-type index limit (10 indexes per type currently).
 - **Order index properties from most-selective to least-selective.** A `[country, city]` index is more useful than `[city, country]` for queries like `where country = "FR"`.
 - **`unique: true`** when the platform should reject duplicates at the consensus layer. This is the right place for "this should be unique" invariants — don't enforce them application-side.
-- **`countable: "countable"`** when you'll regularly call `GetDocumentsCount` filtered by this index's leading columns. Adds a constant-factor overhead on insert/delete; reads become O(1).
+- **`countable: "countable"`** when you'll regularly call `GetDocumentsCount` with `==` (or `in`) clauses on **exactly** this index's properties. Adds a constant-factor overhead on insert/delete; reads become O(1). A `countable: true` index counts only queries whose where clauses match its properties exactly — partial-prefix queries are rejected with `WhereClauseOnNonIndexedProperty`, not falling through to a slow scan. Define a separate index per distinct count-query shape you want to support, or set `documentsCountable: true` on the document type for unfiltered totals.
 - **`countable: "countableAllowingOffset"`** when you'll *also* want offset / range queries on this index in a future release. Strictly more expensive than plain `"countable"`; only worth it if you need the capability.
 - **`null_searchable: true`** (the default) is right for almost all cases. Set to `false` only when documents with all-null indexed values shouldn't be findable through this index — typically a niche optimization to avoid a hot all-null prefix.
 

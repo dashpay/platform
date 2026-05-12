@@ -92,13 +92,12 @@ CF_EXTERN_C_BEGIN
 @class GetDataContractsResponse_GetDataContractsResponseV0;
 @class GetDocumentsCountRequest_GetDocumentsCountRequestV0;
 @class GetDocumentsCountResponse_GetDocumentsCountResponseV0;
+@class GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountEntries;
+@class GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountEntry;
+@class GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountResults;
 @class GetDocumentsRequest_GetDocumentsRequestV0;
 @class GetDocumentsResponse_GetDocumentsResponseV0;
 @class GetDocumentsResponse_GetDocumentsResponseV0_Documents;
-@class GetDocumentsSplitCountRequest_GetDocumentsSplitCountRequestV0;
-@class GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0;
-@class GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCountEntry;
-@class GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCounts;
 @class GetEpochsInfoRequest_GetEpochsInfoRequestV0;
 @class GetEpochsInfoResponse_GetEpochsInfoResponseV0;
 @class GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo;
@@ -2422,6 +2421,40 @@ typedef GPB_ENUM(GetDocumentsCountRequest_Version_OneOfCase) {
   GetDocumentsCountRequest_Version_OneOfCase_V0 = 1,
 };
 
+/**
+ * Unified count query.
+ *
+ * Mode is determined by the where clauses encoded in `where` plus
+ * the explicit `return_distinct_counts_in_range` flag. The wire
+ * shape of the no-proof response makes the mode explicit via
+ * `CountResults.variant`:
+ *   * No `In` clause and `return_distinct_counts_in_range` = false:
+ *     total count → `CountResults.aggregate_count` (single u64).
+ *   * Exactly one `In` clause (no range): per-`In`-value counts →
+ *     `CountResults.entries`, one `CountEntry` for each value in
+ *     the `In` array constrained by the other `==` clauses. At
+ *     most one `In` per request; multiple `In` clauses are an
+ *     InvalidArgument error.
+ *   * A range clause (`>`, `<`, `between*`, `startsWith`) and
+ *     `return_distinct_counts_in_range` = true: per-distinct-value
+ *     range histogram → `CountResults.entries`, one `CountEntry`
+ *     per distinct value within the range. Requires
+ *     `range_countable: true` on the index (see Indexes book
+ *     chapter). Also supports an `In` clause on a prefix property
+ *     of the index — in that case each entry carries BOTH the In
+ *     value (`CountEntry.in_key`) and the terminator value
+ *     (`CountEntry.key`). Cross-fork sums are NOT computed
+ *     server-side; callers reduce client-side if they want a flat
+ *     histogram (see book chapter "Range Modes").
+ *   * A range clause with `return_distinct_counts_in_range` = false:
+ *     total over range → `CountResults.aggregate_count`. Also
+ *     requires `range_countable: true`.
+ *
+ * When `prove = true`, the response is a grovedb proof instead of
+ * a `CountResults` value; the client verifies and recovers the
+ * same per-mode shape (single u64 for aggregate, per-key map for
+ * distinct).
+ **/
 GPB_FINAL @interface GetDocumentsCountRequest : GPBMessage
 
 @property(nonatomic, readonly) GetDocumentsCountRequest_Version_OneOfCase versionOneOfCase;
@@ -2441,21 +2474,47 @@ typedef GPB_ENUM(GetDocumentsCountRequest_GetDocumentsCountRequestV0_FieldNumber
   GetDocumentsCountRequest_GetDocumentsCountRequestV0_FieldNumber_DataContractId = 1,
   GetDocumentsCountRequest_GetDocumentsCountRequestV0_FieldNumber_DocumentType = 2,
   GetDocumentsCountRequest_GetDocumentsCountRequestV0_FieldNumber_Where = 3,
-  GetDocumentsCountRequest_GetDocumentsCountRequestV0_FieldNumber_Prove = 4,
+  GetDocumentsCountRequest_GetDocumentsCountRequestV0_FieldNumber_ReturnDistinctCountsInRange = 4,
+  GetDocumentsCountRequest_GetDocumentsCountRequestV0_FieldNumber_OrderBy = 5,
+  GetDocumentsCountRequest_GetDocumentsCountRequestV0_FieldNumber_Limit = 6,
+  GetDocumentsCountRequest_GetDocumentsCountRequestV0_FieldNumber_Prove = 7,
 };
 
 GPB_FINAL @interface GetDocumentsCountRequest_GetDocumentsCountRequestV0 : GPBMessage
 
-/** The ID of the data contract containing the documents */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *dataContractId;
 
-/** The type of document being requested */
 @property(nonatomic, readwrite, copy, null_resettable) NSString *documentType;
 
-/** CBOR-encoded where clauses for filtering */
+/** CBOR-encoded where clauses */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *where;
 
-/** Flag to request a proof as the response */
+/**
+ * Default false (single sum). When true and a range clause is
+ * present, return per-distinct-value entries within the range.
+ **/
+@property(nonatomic, readwrite) BOOL returnDistinctCountsInRange;
+
+/**
+ * CBOR-encoded order_by clauses. Same encoding as
+ * `GetDocumentsRequestV0.order_by`. Required when `where` carries
+ * an `In` or range operator on the prove path: the materialize-
+ * and-count walker needs a deterministic walk order so the SDK
+ * can reconstruct the same path query and verify the proof. The
+ * first orderBy clause's direction also controls entry ordering
+ * in split-mode responses (per-`In`-value or per-range-distinct-
+ * value); ignored for total-count responses.
+ **/
+@property(nonatomic, readwrite, copy, null_resettable) NSData *orderBy;
+
+/**
+ * Maximum number of entries to return on the no-prove path.
+ * Server clamps to its `max_query_limit` config. Unset →
+ * server default. Has no effect on total-count responses.
+ **/
+@property(nonatomic, readwrite) uint32_t limit;
+
+@property(nonatomic, readwrite) BOOL hasLimit;
 @property(nonatomic, readwrite) BOOL prove;
 
 @end
@@ -2487,14 +2546,14 @@ void GetDocumentsCountResponse_ClearVersionOneOfCase(GetDocumentsCountResponse *
 #pragma mark - GetDocumentsCountResponse_GetDocumentsCountResponseV0
 
 typedef GPB_ENUM(GetDocumentsCountResponse_GetDocumentsCountResponseV0_FieldNumber) {
-  GetDocumentsCountResponse_GetDocumentsCountResponseV0_FieldNumber_Count = 1,
+  GetDocumentsCountResponse_GetDocumentsCountResponseV0_FieldNumber_Counts = 1,
   GetDocumentsCountResponse_GetDocumentsCountResponseV0_FieldNumber_Proof = 2,
   GetDocumentsCountResponse_GetDocumentsCountResponseV0_FieldNumber_Metadata = 3,
 };
 
 typedef GPB_ENUM(GetDocumentsCountResponse_GetDocumentsCountResponseV0_Result_OneOfCase) {
   GetDocumentsCountResponse_GetDocumentsCountResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
-  GetDocumentsCountResponse_GetDocumentsCountResponseV0_Result_OneOfCase_Count = 1,
+  GetDocumentsCountResponse_GetDocumentsCountResponseV0_Result_OneOfCase_Counts = 1,
   GetDocumentsCountResponse_GetDocumentsCountResponseV0_Result_OneOfCase_Proof = 2,
 };
 
@@ -2502,13 +2561,10 @@ GPB_FINAL @interface GetDocumentsCountResponse_GetDocumentsCountResponseV0 : GPB
 
 @property(nonatomic, readonly) GetDocumentsCountResponse_GetDocumentsCountResponseV0_Result_OneOfCase resultOneOfCase;
 
-/** Total document count matching the query */
-@property(nonatomic, readwrite) uint64_t count;
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountResults *counts;
 
-/** Cryptographic proof, if requested */
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
-/** Metadata about the blockchain state */
 @property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
 /** Test to see if @c metadata has been set. */
 @property(nonatomic, readwrite) BOOL hasMetadata;
@@ -2520,152 +2576,113 @@ GPB_FINAL @interface GetDocumentsCountResponse_GetDocumentsCountResponseV0 : GPB
  **/
 void GetDocumentsCountResponse_GetDocumentsCountResponseV0_ClearResultOneOfCase(GetDocumentsCountResponse_GetDocumentsCountResponseV0 *message);
 
-#pragma mark - GetDocumentsSplitCountRequest
+#pragma mark - GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountEntry
 
-typedef GPB_ENUM(GetDocumentsSplitCountRequest_FieldNumber) {
-  GetDocumentsSplitCountRequest_FieldNumber_V0 = 1,
-};
-
-typedef GPB_ENUM(GetDocumentsSplitCountRequest_Version_OneOfCase) {
-  GetDocumentsSplitCountRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
-  GetDocumentsSplitCountRequest_Version_OneOfCase_V0 = 1,
-};
-
-GPB_FINAL @interface GetDocumentsSplitCountRequest : GPBMessage
-
-@property(nonatomic, readonly) GetDocumentsSplitCountRequest_Version_OneOfCase versionOneOfCase;
-
-@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsSplitCountRequest_GetDocumentsSplitCountRequestV0 *v0;
-
-@end
-
-/**
- * Clears whatever value was set for the oneof 'version'.
- **/
-void GetDocumentsSplitCountRequest_ClearVersionOneOfCase(GetDocumentsSplitCountRequest *message);
-
-#pragma mark - GetDocumentsSplitCountRequest_GetDocumentsSplitCountRequestV0
-
-typedef GPB_ENUM(GetDocumentsSplitCountRequest_GetDocumentsSplitCountRequestV0_FieldNumber) {
-  GetDocumentsSplitCountRequest_GetDocumentsSplitCountRequestV0_FieldNumber_DataContractId = 1,
-  GetDocumentsSplitCountRequest_GetDocumentsSplitCountRequestV0_FieldNumber_DocumentType = 2,
-  GetDocumentsSplitCountRequest_GetDocumentsSplitCountRequestV0_FieldNumber_Where = 3,
-  GetDocumentsSplitCountRequest_GetDocumentsSplitCountRequestV0_FieldNumber_SplitCountByIndexProperty = 4,
-  GetDocumentsSplitCountRequest_GetDocumentsSplitCountRequestV0_FieldNumber_Prove = 5,
-};
-
-GPB_FINAL @interface GetDocumentsSplitCountRequest_GetDocumentsSplitCountRequestV0 : GPBMessage
-
-/** The ID of the data contract containing the documents */
-@property(nonatomic, readwrite, copy, null_resettable) NSData *dataContractId;
-
-/** The type of document being requested */
-@property(nonatomic, readwrite, copy, null_resettable) NSString *documentType;
-
-/** CBOR-encoded where clauses for filtering */
-@property(nonatomic, readwrite, copy, null_resettable) NSData *where;
-
-/** The index property to split counts by */
-@property(nonatomic, readwrite, copy, null_resettable) NSString *splitCountByIndexProperty;
-
-/** Flag to request a proof as the response */
-@property(nonatomic, readwrite) BOOL prove;
-
-@end
-
-#pragma mark - GetDocumentsSplitCountResponse
-
-typedef GPB_ENUM(GetDocumentsSplitCountResponse_FieldNumber) {
-  GetDocumentsSplitCountResponse_FieldNumber_V0 = 1,
-};
-
-typedef GPB_ENUM(GetDocumentsSplitCountResponse_Version_OneOfCase) {
-  GetDocumentsSplitCountResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
-  GetDocumentsSplitCountResponse_Version_OneOfCase_V0 = 1,
-};
-
-GPB_FINAL @interface GetDocumentsSplitCountResponse : GPBMessage
-
-@property(nonatomic, readonly) GetDocumentsSplitCountResponse_Version_OneOfCase versionOneOfCase;
-
-@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0 *v0;
-
-@end
-
-/**
- * Clears whatever value was set for the oneof 'version'.
- **/
-void GetDocumentsSplitCountResponse_ClearVersionOneOfCase(GetDocumentsSplitCountResponse *message);
-
-#pragma mark - GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0
-
-typedef GPB_ENUM(GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_FieldNumber) {
-  GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_FieldNumber_SplitCounts = 1,
-  GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_FieldNumber_Proof = 2,
-  GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_FieldNumber_Metadata = 3,
-};
-
-typedef GPB_ENUM(GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_Result_OneOfCase) {
-  GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
-  GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_Result_OneOfCase_SplitCounts = 1,
-  GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_Result_OneOfCase_Proof = 2,
-};
-
-GPB_FINAL @interface GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0 : GPBMessage
-
-@property(nonatomic, readonly) GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_Result_OneOfCase resultOneOfCase;
-
-/** Per-key counts */
-@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCounts *splitCounts;
-
-/** Cryptographic proof, if requested */
-@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
-
-/** Metadata about the blockchain state */
-@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
-/** Test to see if @c metadata has been set. */
-@property(nonatomic, readwrite) BOOL hasMetadata;
-
-@end
-
-/**
- * Clears whatever value was set for the oneof 'result'.
- **/
-void GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_ClearResultOneOfCase(GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0 *message);
-
-#pragma mark - GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCountEntry
-
-typedef GPB_ENUM(GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCountEntry_FieldNumber) {
-  GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCountEntry_FieldNumber_Key = 1,
-  GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCountEntry_FieldNumber_Count = 2,
+typedef GPB_ENUM(GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountEntry_FieldNumber) {
+  GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountEntry_FieldNumber_InKey = 1,
+  GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountEntry_FieldNumber_Key = 2,
+  GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountEntry_FieldNumber_Count = 3,
 };
 
 /**
- * A single entry: the key value and how many documents match
+ * A single per-key entry: the splitting key value and how many
+ * documents match. Used by the `entries` variant of
+ * `CountResults` for per-`In`-value and per-distinct-value-in-
+ * range modes.
+ *
+ * For compound queries (an `In` clause on a prefix property of a
+ * `range_countable` index plus a range clause on the terminator),
+ * each entry carries BOTH the In-fork's prefix value
+ * (`in_key`) and the terminator value (`key`). Cross-fork
+ * aggregation is intentionally NOT done server-side — callers
+ * get the unmerged per-(in_key, key) view and can sum
+ * client-side if they want a flat histogram. See the book
+ * chapter ("Range Modes") for rationale.
  **/
-GPB_FINAL @interface GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCountEntry : GPBMessage
+GPB_FINAL @interface GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountEntry : GPBMessage
 
-/** The index property value */
+/**
+ * Serialized prefix key for compound queries — the In's value
+ * for this fork. Absent for flat queries with no `In` on
+ * prefix (in which case entries are keyed purely by `key`).
+ **/
+@property(nonatomic, readwrite, copy, null_resettable) NSData *inKey;
+/** Test to see if @c inKey has been set. */
+@property(nonatomic, readwrite) BOOL hasInKey;
+
+/**
+ * Serialized terminator key (the range-property value for
+ * distinct-range modes, or the `In` value for per-In-value
+ * mode without a range clause).
+ **/
 @property(nonatomic, readwrite, copy, null_resettable) NSData *key;
 
-/** Number of documents with this key value */
+/**
+ * `jstype = JS_STRING` so JS/Web clients receive a string and don't
+ * round counts > 2^53-1 to the nearest representable Number. Matches
+ * the convention used elsewhere in this proto for `uint64` fields
+ * that can exceed Number.MAX_SAFE_INTEGER.
+ **/
 @property(nonatomic, readwrite) uint64_t count;
 
 @end
 
-#pragma mark - GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCounts
+#pragma mark - GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountEntries
 
-typedef GPB_ENUM(GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCounts_FieldNumber) {
-  GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCounts_FieldNumber_EntriesArray = 1,
+typedef GPB_ENUM(GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountEntries_FieldNumber) {
+  GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountEntries_FieldNumber_EntriesArray = 1,
 };
 
-GPB_FINAL @interface GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCounts : GPBMessage
+GPB_FINAL @interface GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountEntries : GPBMessage
 
-@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDocumentsSplitCountResponse_GetDocumentsSplitCountResponseV0_SplitCountEntry*> *entriesArray;
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountEntry*> *entriesArray;
 /** The number of items in @c entriesArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger entriesArray_Count;
 
 @end
+
+#pragma mark - GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountResults
+
+typedef GPB_ENUM(GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountResults_FieldNumber) {
+  GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountResults_FieldNumber_AggregateCount = 1,
+  GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountResults_FieldNumber_Entries = 2,
+};
+
+typedef GPB_ENUM(GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountResults_Variant_OneOfCase) {
+  GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountResults_Variant_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountResults_Variant_OneOfCase_AggregateCount = 1,
+  GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountResults_Variant_OneOfCase_Entries = 2,
+};
+
+/**
+ * Non-proof count result. Shape is mode-dependent and made
+ * explicit on the wire via the inner `variant` oneof:
+ *   * `aggregate_count`: total-count and range-without-distinct
+ *     modes — a single u64 with no per-key breakdown. Callers
+ *     read the total directly without scanning an entries list.
+ *   * `entries`: per-`In`-value and per-distinct-value-in-range
+ *     modes — one CountEntry per distinct value, in serialized-
+ *     key order subject to the first `order_by` clause's
+ *     direction and `limit`.
+ **/
+GPB_FINAL @interface GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountResults : GPBMessage
+
+@property(nonatomic, readonly) GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountResults_Variant_OneOfCase variantOneOfCase;
+
+/**
+ * `jstype = JS_STRING` for the same reason as
+ * `CountEntry.count` — JS Number rounds at 2^53−1.
+ **/
+@property(nonatomic, readwrite) uint64_t aggregateCount;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountEntries *entries;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'variant'.
+ **/
+void GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountResults_ClearVariantOneOfCase(GetDocumentsCountResponse_GetDocumentsCountResponseV0_CountResults *message);
 
 #pragma mark - GetIdentityByPublicKeyHashRequest
 
