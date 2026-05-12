@@ -41,16 +41,24 @@ struct CreateIdentityView: View {
     private static let duffsPerDash: UInt64 = 100_000_000
 
     /// Protocol minimum asset-lock funding for an identity create.
-    /// Mirrors `required_asset_lock_duff_balance_for_processing_start_for_identity_create`
-    /// in `rs-platform-version` (200,000 duffs / 0.002 DASH, stable
-    /// across v1/v2/v3). Submitting below this gets rejected by
-    /// Platform's validation.
-    private static let minIdentityFundingDuffs: UInt64 = 200_000
+    /// Mirrors `IdentityCreateTransition::calculate_min_required_fee_v1`
+    /// in `rs-platform-version`:
+    ///   identity_create_base_cost (2_000_000 credits)
+    ///   + asset_lock_base (200_000 duffs * 1000 credits/duff = 200_000_000)
+    ///   + identity_key_in_creation_cost (6_500_000) * defaultKeyCount (3)
+    ///   = 221_500_000 credits / 1000 = 221_500 duffs (0.002215 DASH).
+    /// The v0 floor was 200_000 duffs but with key_in_creation_cost
+    /// dynamic at v1, the per-key surcharge has to be added. Submitting
+    /// below this gets rejected by Platform with
+    /// `IdentityAssetLockTransactionOutPointNotEnoughBalance`. Keep this
+    /// in sync if `defaultKeyCount` changes.
+    private static let minIdentityFundingDuffs: UInt64 = 221_500
 
     /// Default funding amount pre-filled into the field for the Core
-    /// path. Equal to the protocol minimum; users dial up if they want
-    /// more headroom on the resulting identity's initial credit balance.
-    private static let defaultCoreFundingDuffs: UInt64 = 200_000
+    /// path. Sits 12.5% above the protocol minimum to give headroom
+    /// for the resulting identity's initial credit balance after the
+    /// processing fee is deducted.
+    private static let defaultCoreFundingDuffs: UInt64 = 250_000
 
     /// All locally-persisted wallets. Drives the Source Wallet
     /// picker along with the synthetic "no wallet" sentinel.
