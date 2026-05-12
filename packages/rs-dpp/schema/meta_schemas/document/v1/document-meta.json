@@ -441,6 +441,10 @@
               }
             ],
             "description": "Whether and how the index supports count fast paths. Adds extra storage cost for non-default values."
+          },
+          "rangeCountable": {
+            "type": "boolean",
+            "description": "When true, the property-name level becomes a ProvableCountTree and value trees become CountTrees so range-count queries on the indexed property are O(log n). Requires `countable` to be \"countable\" or \"countableAllowingOffset\". Per-protocol-version 12+; rejected on earlier protocol versions."
           }
         },
         "required": [

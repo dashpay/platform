@@ -81,20 +81,34 @@ impl Drive {
             );
         }
 
-        let apply_type = if estimated_costs_only_with_layer_info.is_none() {
-            BatchInsertTreeApplyType::StatefulBatchInsertTree
-        } else {
-            BatchInsertTreeApplyType::StatelessBatchInsertTree {
-                in_tree_type: TreeType::NormalTree,
-                tree_type: TreeType::NormalTree,
-                flags_len: storage_flags
-                    .map(|s| s.serialized_size())
-                    .unwrap_or_default(),
-            }
-        };
+        // The per-iteration `value_apply_type` (built below) selects
+        // `in_tree_type` / `tree_type` based on each index sub-level's
+        // range_countable flag — see the block inside the loop. We don't
+        // share a single `apply_type` here anymore because the top-level
+        // property-name tree variant is data-driven.
 
         // next we need to store a reference to the document for each index
         for (name, sub_level) in index_level.sub_levels() {
+            // If `sub_level` terminates a `range_countable` index, the
+            // top-level property-name tree (created at contract setup) is a
+            // `ProvableCountTree` and each value tree under it must be a
+            // `CountTree` so the parent's aggregate sums per-value counts
+            // cleanly. Otherwise both stay `NormalTree`.
+            let sub_level_range_countable = sub_level
+                .has_index_with_type()
+                .map(|info| info.range_countable)
+                .unwrap_or(false);
+            let property_name_tree_type = if sub_level_range_countable {
+                TreeType::ProvableCountTree
+            } else {
+                TreeType::NormalTree
+            };
+            let value_tree_type = if sub_level_range_countable {
+                TreeType::CountTree
+            } else {
+                TreeType::NormalTree
+            };
+
             // at this point the contract path is to the contract documents
             // for each index the top index component will already have been added
             // when the contract itself was created
@@ -117,12 +131,26 @@ impl Drive {
 
             // The zero will not matter here, because the PathKeyInfo is variable
             let path_key_info = document_top_field.clone().add_path::<0>(index_path.clone());
-            // here we are inserting an empty tree that will have a subtree of all other index properties
+            // here we are inserting the value tree (per distinct property value)
+            // under the top-level property-name tree. The top-level property-name
+            // tree itself is created at contract setup, so the apply_type's
+            // `in_tree_type` reflects whichever variant the contract setup used.
+            let value_apply_type = if estimated_costs_only_with_layer_info.is_none() {
+                BatchInsertTreeApplyType::StatefulBatchInsertTree
+            } else {
+                BatchInsertTreeApplyType::StatelessBatchInsertTree {
+                    in_tree_type: property_name_tree_type,
+                    tree_type: value_tree_type,
+                    flags_len: storage_flags
+                        .map(|s| s.serialized_size())
+                        .unwrap_or_default(),
+                }
+            };
             self.batch_insert_empty_tree_if_not_exists(
                 path_key_info.clone(),
-                TreeType::NormalTree,
+                value_tree_type,
                 storage_flags,
-                apply_type,
+                value_apply_type,
                 transaction,
                 previous_batch_operations,
                 batch_operations,
@@ -146,7 +174,7 @@ impl Drive {
                 estimated_costs_only_with_layer_info.insert(
                     KeyInfoPath::from_known_owned_path(index_path.clone()),
                     EstimatedLayerInformation {
-                        tree_type: TreeType::NormalTree,
+                        tree_type: property_name_tree_type,
                         estimated_layer_count: PotentiallyAtMaxElements,
                         estimated_layer_sizes: AllSubtrees(
                             document_top_field_estimated_size as u8,
@@ -181,6 +209,7 @@ impl Drive {
                 sub_level,
                 any_fields_null,
                 all_fields_null,
+                sub_level_range_countable,
                 previous_batch_operations,
                 &storage_flags,
                 estimated_costs_only_with_layer_info,

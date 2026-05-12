@@ -1,0 +1,153 @@
+//! Index pickers for the count query.
+//!
+//! Pure functions on the document type's index map + where clauses;
+//! no Drive, no proof. Picks a covering index for a given query
+//! shape, returning `None` if no index can serve the query.
+
+use super::super::conditions::WhereClause;
+use super::DriveDocumentCountQuery;
+use dpp::data_contract::document_type::Index;
+use std::collections::{BTreeMap, BTreeSet};
+
+impl DriveDocumentCountQuery<'_> {
+    /// Finds a `countable: true` index whose properties **exactly match** the
+    /// indexable (Equal/In) where-clause fields — every index property has a
+    /// corresponding clause AND every clause's field appears in the index.
+    ///
+    /// Exact coverage is the contract for both no-proof and prove count
+    /// paths: a countable index counts exactly what it indexes, and queries
+    /// against partially-covered indexes are rejected with a clear error
+    /// directing the caller at the index-design fix. This avoids the
+    /// product-of-uncovered-branching-factors walk that a prefix-match
+    /// approach would silently fall through to, and keeps the storage's
+    /// "count maintained only at the terminal level" trade-off intact (no
+    /// need to maintain counts at intermediate index levels just to serve
+    /// partial-coverage queries cheaply).
+    ///
+    /// Returns `None` if:
+    /// - Any where clause uses an operator other than `Equal` / `In`.
+    /// - The set of indexable where-clause fields doesn't exactly equal the
+    ///   set of properties of any single `countable: true` index.
+    ///
+    /// For the `documents_countable: true` case (total count with no where
+    /// clauses), the dispatcher reads the document-type primary-key tree's
+    /// CountTree directly — that path doesn't use this picker because no
+    /// index is involved.
+    pub fn find_countable_index_for_where_clauses<'b>(
+        indexes: &'b BTreeMap<String, Index>,
+        where_clauses: &[WhereClause],
+    ) -> Option<&'b Index> {
+        if Self::has_unsupported_operator(where_clauses) {
+            return None;
+        }
+
+        let indexable_fields: BTreeSet<&str> = where_clauses
+            .iter()
+            .filter(|wc| Self::is_indexable_for_count(wc.operator))
+            .map(|wc| wc.field.as_str())
+            .collect();
+
+        // Need a clause for every property of the index, so empty
+        // `indexable_fields` only matches an empty-properties index
+        // (which doesn't exist — indexes always have at least one
+        // property — so empty where clauses never match here).
+        if indexable_fields.is_empty() {
+            return None;
+        }
+
+        for index in indexes.values() {
+            if !index.countable.is_countable() {
+                continue;
+            }
+            if index.properties.len() != indexable_fields.len() {
+                continue;
+            }
+            // Every index property must have a matching where-clause
+            // field. Because lengths match, this also implies every
+            // where-clause field appears in the index (no orphan
+            // clauses).
+            let all_covered = index
+                .properties
+                .iter()
+                .all(|prop| indexable_fields.contains(prop.name.as_str()));
+            if all_covered {
+                return Some(index);
+            }
+        }
+
+        None
+    }
+
+    /// Finds a `range_countable` index that can serve a range-count query.
+    ///
+    /// Match criteria:
+    /// - All `Equal`/`In` where-clause fields form a prefix of the index
+    ///   properties.
+    /// - There is exactly one range-operator where-clause, on a property
+    ///   that is the *last* property of the index (the IndexLevel
+    ///   terminator). This is the property whose values get walked.
+    /// - The index has `range_countable = true` and `countable.is_countable()`.
+    ///
+    /// Returns `None` if no such index exists or if there's more than one
+    /// range operator in the where clauses (which would require nested range
+    /// walks the current model doesn't support). Pure point-lookup queries
+    /// (no range operator) should fall back to
+    /// [`Self::find_countable_index_for_where_clauses`].
+    pub fn find_range_countable_index_for_where_clauses<'b>(
+        indexes: &'b BTreeMap<String, Index>,
+        where_clauses: &[WhereClause],
+    ) -> Option<&'b Index> {
+        let range_clauses: Vec<&WhereClause> = where_clauses
+            .iter()
+            .filter(|wc| Self::is_range_operator(wc.operator))
+            .collect();
+        if range_clauses.len() != 1 {
+            return None;
+        }
+        let range_clause = range_clauses[0];
+
+        // Reject any operator that's neither indexable (Equal/In) nor a
+        // range operator — anything else has no defined count semantics.
+        if where_clauses.iter().any(|wc| {
+            !Self::is_indexable_for_count(wc.operator) && !Self::is_range_operator(wc.operator)
+        }) {
+            return None;
+        }
+
+        let prefix_fields: BTreeSet<&str> = where_clauses
+            .iter()
+            .filter(|wc| Self::is_indexable_for_count(wc.operator))
+            .map(|wc| wc.field.as_str())
+            .collect();
+
+        for index in indexes.values() {
+            if !index.range_countable || !index.countable.is_countable() {
+                continue;
+            }
+
+            // Walk the index properties: prefix matches must come first,
+            // followed by the range property as the LAST element.
+            let mut prefix_len = 0usize;
+            for prop in &index.properties {
+                if prefix_fields.contains(prop.name.as_str()) {
+                    prefix_len += 1;
+                } else {
+                    break;
+                }
+            }
+            if prefix_len < prefix_fields.len() {
+                continue;
+            }
+            if prefix_len + 1 != index.properties.len() {
+                // Range property must be the terminator (last property).
+                continue;
+            }
+            let range_prop = &index.properties[prefix_len];
+            if range_prop.name == range_clause.field {
+                return Some(index);
+            }
+        }
+
+        None
+    }
+}
