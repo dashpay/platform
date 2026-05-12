@@ -11,7 +11,7 @@ presumably enumerate the joy of doing it.
 - **v3.1-dev (PR #3609 merged)** — TEST_SPEC reflects post-V20 state:
   - TK-013, PA-001b, PA-005b: previously failing or blocked → PASS after fix
   - TK-002, CR-003: stabilised
-  - CR-004: failing — test contradicts upstream contract (see §3 CR-004 detail); 3-line test-side fix pending (use `next_receive_addresses(_, 2, true)` instead of two single calls)
+  - CR-004: failing — two test-side defects (see §3 CR-004 detail): Layer 1 (`next_unused` idempotency) fixed at `1c4c8a76f4` via `next_receive_addresses(count=2, advance=true)`; Layer 2 (dust-threshold math wrong at line 214, `dash-evo-tool#845` reference cargo-culted) pending (QA-008)
   - `bank.fund_address` now waits for chain-confirmed nonce before releasing `FUNDING_MUTEX` (DAPI replica lag — upstream issue #3611)
   - Parallelism: PA-002, PA-008c, Harness-ID-1 (`id_sweep`) made parallel-safe
   - SPV: enabled by default (v17/v18/v19/v21 all validated SPV-on); `PLATFORM_WALLET_E2E_DISABLE_SPV=1` is an escape hatch for ChainLock-cycle outages (rust-dashcore #470), not the operating mode
@@ -184,7 +184,7 @@ Status legend: **green** = test file present, body has real assertions, runnable
 | CR-001 | SPV mn-list sync readiness | P1 | green | M |
 | CR-002 | Core wallet receive address derivation | P1 | not implemented | M |
 | CR-003 | Asset-lock-funded identity registration (full path) | P2 | green | L |
-| CR-004 | Legacy BIP32 account: balance + UTXO state updates after spend | P1 | failing — test contradicts upstream contract, 3-line test-side fix pending | M |
+| CR-004 | Legacy BIP32 account: balance + UTXO state updates after spend | P1 | failing — two test-side defects: Layer 1 (next_unused idempotency) fixed at `1c4c8a76f4`; Layer 2 (dust-threshold math wrong at line 214) pending | M |
 | AL-001 | Concurrent asset-lock builds from same wallet | P1 | not implemented | L |
 | CT-001 | Document put: deploy a fixture data contract | P1 | not implemented | M |
 | CT-002 | Document put / replace lifecycle | P2 | not implemented | M |
@@ -214,7 +214,7 @@ Status legend: **green** = test file present, body has real assertions, runnable
 | Found-003 | `addresses_with_balances` and `total_credits` only see the first platform-payment account | P2 | not implemented | S |
 | Found-004 | `transfer` / `withdraw` / `fund_from_asset_lock` silently fall back to `address_index = 0` on lookup miss | P2 | not implemented | S |
 | Found-005 | `register_from_addresses` / `top_up_from_addresses` discard SDK-returned address balances and nonces | P2 | not implemented | M |
-| Found-006 | `top_up_identity_with_funding` ignores caller-supplied `topup_index` | P2 | not implemented | S |
+| Found-006 | `top_up_identity_with_funding` requires pre-created `IdentityTopUp { registration_index }` HD slot; absence yields confusing "not found" error | P2 | not implemented | S |
 | Found-007 | `PlatformAddressSyncManager::start` lacks a generation guard so a fast `start()` → `stop()` → `start()` can spawn parallel sync threads | P2 | not implemented | M |
 | Found-008 | `LockNotifyHandler` uses `notify_waiters()` so a lock event arriving in the check / wait gap of `wait_for_proof` is dropped | P2 | not implemented | M |
 | Found-009 | wallet-event adapter swallows `RecvError::Lagged` events without compensating recovery | P2 | not implemented | M |
@@ -1432,10 +1432,35 @@ implies SPV-off is the default is incorrect.
 #### CR-004 — Legacy BIP32 account: balance + UTXO state updates after spend
 
 - **Priority**: P1 — open bug from upstream consumer
-- **Status**: FAILING — `#[ignore]`'d so the default `cargo test` cohort stays green; runs only when `cargo test -- --ignored` is used and is expected to fail until the test-side fix lands. The test asserts an API contract that contradicts the upstream `key-wallet` library's own unit tests (see Root cause below). The production bug (stale UTXO set after spend) tracked in dash-evo-tool#845 is a separate concern; this test's immediate failure is test-design, not production code.
-- **Root cause** (from Marvin's cr_004 investigation, 2026-05-12): `key-wallet::AddressPool::next_unused` is **idempotent by design** — it returns the same "current unused frontier" address until something external marks that address used. The upstream unit test `address_pool.rs:test_next_unused` explicitly asserts `addr1 == addr2` on two consecutive calls to `next_unused` on a freshly seeded pool; advancement requires an intervening `mark_used`. CR-004 calls `next_receive_address` twice on a fresh wallet WITHOUT an intervening spend and asserts the two addresses differ — that assertion inverts the documented upstream contract. The fix is a 3-line test-side change: replace the two single-call `next_receive_address_for_bip32_account` calls with one call to `account.next_receive_addresses(Some(&xpub), 2, true)` (the upstream `next_unused_multiple` path, plumbed through `ManagedCoreFundsAccount::next_receive_addresses`), which is the correct API for "give me N distinct frontier addresses". Ref: `key-wallet/src/managed_account/address_pool.rs:521–540` (the `next_unused` implementation) and `:1196–1214` (the `test_next_unused` upstream proof), audited at SHA `d6dd5da`.
+- **Status**: failing — test contradicts upstream contract, 3-line test-side fix pending at Layer 1 (use `next_receive_addresses(count=2, advance=true)` instead of two single calls); a second test-side fix is also pending at Layer 2 (test math wrong about dust threshold — see Two layered fixes below). Both failures are test-design, not production bugs.
+- **Root cause** (from Marvin's cr_004 and QA-008 investigations, 2026-05-12): two distinct test-side defects, described below.
+- **Two layered fixes** (QA-008 investigation, 2026-05-12):
+
+  **Layer 1 (fixed at `1c4c8a76f4`):** `key-wallet::AddressPool::next_unused` is **idempotent by design** — it returns the same "current unused frontier" address until something external marks that address used. The upstream unit test `address_pool.rs:test_next_unused` explicitly asserts `addr1 == addr2` on two consecutive calls to `next_unused` on a freshly seeded pool; advancement requires an intervening `mark_used`. CR-004 originally called `next_receive_address` twice on a fresh wallet WITHOUT an intervening spend and asserted the two addresses differ — inverting the documented upstream contract. Fix: use the multi-variant `next_receive_addresses(count=2, advance=true)` call (the upstream `next_unused_multiple` path via `ManagedCoreFundsAccount::next_receive_addresses`) to satisfy the idempotent-by-design contract. Ref: `key-wallet/src/managed_account/address_pool.rs:521–540` and `:1196–1214`, audited at SHA `d6dd5da`.
+
+  **Layer 2 (pending fix):** The test at line 214 asserts `bip32_count_post == 0` after sending
+  `TOTAL_FUNDING - 50_000` duffs. Input total is 2 × 50,000,000 = 100,000,000 duffs; the send
+  amount is 99,950,000 duffs; a typical Core 2-input/2-output P2PKH fee is 1,000–5,000 duffs,
+  leaving a change output of approximately 45,000–49,000 duffs — well above the P2PKH dust
+  threshold (~2,730 duffs). `key-wallet`'s `update_utxos`
+  (`managed_core_funds_account.rs:163-206`, audited at SHA `d6dd5da`) correctly inserts this
+  change UTXO as `is_trusted = true` (owned input + BIP-32 internal change address), so
+  `spendable_utxos().len()` returns 1 after the send, not 0. The test comment claiming "change
+  goes below dust" is mathematically wrong; the assertion `count == 0` is wrong. Fix: send
+  `TOTAL_FUNDING.saturating_sub(2_000)` (or similar) to force sub-dust change so the builder
+  folds it into the fee, OR assert `count <= 1` and verify the surviving UTXO's txid equals the
+  broadcast tx (proving it is change, not a stale unspent input).
+
+  **Note on dash-evo-tool#845 reference:** The `dash-evo-tool#845` mention in the test name
+  and assertion comment is cargo-culted — Marvin's QA-008 investigation could not reproduce the
+  alleged upstream SPV UTXO regression in this codebase at the layer the test claims. The
+  spent-marking path in `key-wallet` (`managed_core_funds_account.rs:210-222`) and its routing
+  through `wallet_checker.rs` work correctly for BIP-32 accounts. The bug history may reference
+  an unrelated test in DET; the reference should be removed or qualified once the test math is
+  corrected.
+
 - **Wallet feature exercised**: `wallet/core/wallet.rs:54` (`CoreWallet::balance`); `wallet/core/broadcast.rs:185` (`check_core_transaction` post-broadcast state mutation on `standard_bip32_accounts`).
-- **Bug repro (upstream)**: [dashpay/dash-evo-tool#845](https://github.com/dashpay/dash-evo-tool/issues/845) — sending all funds from a legacy BIP32 account (`StandardAccountType::BIP32Account`) leaves the wallet's local UTXO set stale; a follow-up `send_to_addresses` call fails with `TransactionBuild("Coin selection error: No UTXOs available for selection")` despite the original UTXOs being long since spent on-chain. (Note: this is the stale-UTXO production bug the test was written to pin; the test's own immediate failure is the address-idempotency issue above, which is distinct and must be fixed first.)
+- **Bug repro (upstream)**: [dashpay/dash-evo-tool#845](https://github.com/dashpay/dash-evo-tool/issues/845) — sending all funds from a legacy BIP32 account (`StandardAccountType::BIP32Account`) leaves the wallet's local UTXO set stale; a follow-up `send_to_addresses` call fails with `TransactionBuild("Coin selection error: No UTXOs available for selection")` despite the original UTXOs being long since spent on-chain. (Note: this is the stale-UTXO production bug the test was written to pin. Marvin's QA-008 investigation found no evidence of this regression in the current codebase at this layer; both failures in CR-004 are test-design issues that must be fixed before the underlying production invariant can be validly exercised.)
 - **DET parallel**: none yet — DET is the affected consumer; this test pins the contract on the rs-platform-wallet side so a fix becomes verifiable from a single repository.
 - **Preconditions**: CR-001 + a Core-funded BIP32 legacy account (derivation path `m/44'/1'/0'`, `StandardAccountType::BIP32Account` at index `0`, stored under `wallet.accounts.standard_bip32_accounts`).
 - **Scenario**:
@@ -1931,26 +1956,73 @@ becomes a test failure rather than a silent drift.
 - **Estimated complexity**: M (needs identity-signer + DPNS-style identity setup, then two consecutive identity-funding calls)
 - **Rationale**: The TODO comment in the source admits the gap; a test pins it so the comment doesn't outlive the next refactor that touches these files.
 
-#### Found-006 — `top_up_identity_with_funding` ignores caller-supplied `topup_index`
+#### Found-006 — `top_up_identity_with_funding` requires pre-created `IdentityTopUp { registration_index }` HD slot; absence yields confusing "not found" error
 - **Priority**: P2 (bug pin — failure is the proof)
 - **Wallet feature exercised**: `wallet/identity/network/top_up.rs:60-106`.
-- **Upstream root cause** (confirmed by Marvin's upstream audit at SHA `d6dd5da`): upstream `CreditOutputFunding` in `key-wallet/src/wallet/managed_wallet_info/asset_lock_builder.rs:42-49` exposes only `identity_index` for the `IdentityTopUp` variant. The canonical DIP-9 derivation path, `DerivationPath::identity_top_up_path(network, identity_index, top_up_index)` at `key-wallet/src/bip32.rs:1062-1077`, takes a SECOND index (`top_up_index`) that the `CreditOutputFunding` type system never plumbs. As a result, there is no way for a downstream caller to request a key at a specific `top_up_index` via the current upstream API — the downstream `_topup_index` no-op is a consequence of the upstream API gap, not downstream oversight. Fix requires an upstream API change first (add `top_up_index: u32` to `CreditOutputFunding`, or split `AssetLockFundingType` so the top-up variant carries `{ identity_index, top_up_index }`), followed by downstream wiring in `top_up.rs`. This finding was CONFIRMED as upstream in Marvin's audit (audit Finding #1, HIGH); contrast with Found-013 which was confirmed purely downstream.
-- **Suspected bug**: The method's doc says `topup_index` is "An incrementing index distinguishing successive top-ups for the same identity". The implementation prefixes the parameter with `_` and the function body derives the funding key path from `identity_index` alone (with a `TODO(platform-wallet)` comment confirming the parameter is unused). Two consecutive top-ups for the same identity therefore derive from the same `(IdentityTopUp, identity_index)` path — yielding the same one-time key address, the same outpoint candidate, and a likely-duplicate asset-lock transaction or nonce collision on the same address.
-- **Preconditions**: an identity registered on testnet via the wallet.
+- **Two layered bugs** (QA-006 investigation, 2026-05-12):
+
+  **Bug A — the visible precondition failure (what this pin actually tests):**
+  `top_up_identity_with_funding` calls `create_funded_asset_lock_proof` with
+  `AssetLockFundingType::IdentityTopUp { identity_index }`. Internally,
+  `peek_next_funding_address` (`key-wallet/src/wallet/asset_lock/build.rs:163`,
+  audited at SHA `d6dd5da`) does
+  `wallet_info.accounts.identity_topup.get_mut(&identity_index)` and returns
+  `Err("Identity top-up account for index N not found")` when the BTreeMap has no
+  entry for that index. The map is populated only via
+  `Wallet::add_account(AccountType::IdentityTopUp { registration_index: N }, None)`,
+  which `WalletAccountCreationOptions::Default` never calls — `Default` delegates to
+  `create_special_purpose_accounts` (`key-wallet/src/wallet/helper.rs:524-549`),
+  which creates `IdentityRegistration`, `IdentityInvitation`,
+  `IdentityTopUpNotBoundToIdentity`, and provider-key accounts, but no
+  `IdentityTopUp { registration_index: N }` for any N. As a result, any test or
+  caller that creates a wallet with `Default` and then calls
+  `top_up_identity_with_funding` with `FundWithWallet` receives the "not found" error
+  for every index, including 0. The error fires before any `topup_index`-routing logic
+  is reached. This is on the critical path of ID-002b, AL-001, and this pin (Found-006)
+  itself. Fix owner: upstream `key-wallet` (lazy-create the slot inside
+  `peek_next_funding_address` / `build.rs:163`) OR the `rs-platform-wallet` wrapper
+  (call `add_account(AccountType::IdentityTopUp { registration_index })` lazily before
+  the lookup). The population point is
+  `ManagedAccountCollection::insert_keys_bearing_account`
+  (`key-wallet/src/managed_account/managed_account_collection.rs:307`).
+
+  **Bug B — the original claim, blocked behind Bug A:**
+  Once Bug A is fixed, `topup_index` routing to distinct HD slots is testable. The
+  upstream `CreditOutputFunding` in
+  `key-wallet/src/wallet/managed_wallet_info/asset_lock_builder.rs:42-49` exposes only
+  `identity_index` for the `IdentityTopUp` variant; the canonical DIP-9 path
+  `DerivationPath::identity_top_up_path(network, identity_index, top_up_index)` at
+  `key-wallet/src/bip32.rs:1062-1077` takes a second index that the type system never
+  plumbs. Whether `topup_index` actually routes to distinct HD slots cannot be confirmed
+  until Bug A is fixed so the test can reach the routing logic. Bug B is retained as a
+  follow-up assertion within this pin.
+
+- **Preconditions**: an identity registered on testnet via the wallet; **the test must
+  pre-provision `IdentityTopUp { registration_index }` HD slots before calling
+  `top_up_identity_with_funding`** (v44-discovered prerequisite that Bilby is
+  implementing test-side). Concretely, call
+  `wallet.add_account(AccountType::IdentityTopUp { registration_index: 0 }, None)` and
+  `wallet.add_account(AccountType::IdentityTopUp { registration_index: 1 }, None)` after
+  wallet creation and before the first top-up attempt. Alternatively, use
+  `WalletAccountCreationOptions::AllAccounts` or `SpecificAccounts` with those slots
+  included.
 - **Scenario**:
   1. Register identity `I` via `register_identity_with_funding_external_signer`.
-  2. Call `top_up_identity(&I.id, topup_index=0, amount_duffs=A0, ...)`.
-  3. Call `top_up_identity(&I.id, topup_index=1, amount_duffs=A1, ...)` — same identity, fresh `topup_index`.
+  2. Pre-provision HD slots: `wallet.add_account(AccountType::IdentityTopUp { registration_index: 0 }, None)` and `{ registration_index: 1 }`.
+  3. Call `top_up_identity(&I.id, topup_index=0, amount_duffs=A0, ...)`.
+  4. Call `top_up_identity(&I.id, topup_index=1, amount_duffs=A1, ...)` — same identity, fresh `topup_index`.
 - **Assertions** (the proof shape):
-  - The two top-up calls produce DIFFERENT funding-output addresses (re-derived from different paths).
+  - Without the precondition step, both calls fail with `"Identity top-up account for index N not found"` — this is the Bug A regression proof.
+  - After precondition step, the two top-up calls produce DIFFERENT funding-output addresses (re-derived from different paths) — this is the Bug B assertion.
   - The two asset-lock transactions have different txids.
   - The doc claim about "successive top-ups for the same identity" is honoured — both calls succeed and credit the identity by `A0 + A1` total.
-- **Expected** (after fix): wire `topup_index` into the derivation path (or remove the parameter and document the constraint).
-- **Actual** (current code): two consecutive top-ups for the same identity share the same derivation context; the second is liable to collide with the first depending on caller behaviour.
-- **Severity**: HIGH (the public API has a parameter that does nothing; callers relying on the doc-stated semantics produce broken transactions)
-- **Harness extensions required**: identity setup; access to the asset-lock transaction details (currently inside `AssetLockManager`).
+- **Expected** (after Bug A fix): `top_up_identity_with_funding` works without manual `add_account` preamble; after Bug B fix, `topup_index` routes to distinct HD paths.
+- **Actual** (current code): any call with `WalletAccountCreationOptions::Default` fails at `build.rs:163` with a misleading "not found" error before any routing logic is reached.
+- **Severity**: HIGH — Bug A is on the critical path of every asset-lock-funded top-up; affects ID-002b, AL-001, and this pin. The silent prerequisite provides no actionable guidance to callers.
+- **Owner**: upstream `key-wallet` — lazy-create the `IdentityTopUp` slot inside `peek_next_funding_address` (`build.rs:163`) rather than erroring; OR `rs-platform-wallet` wrapper — call `add_account` lazily before the lookup. Population point: `ManagedAccountCollection::insert_keys_bearing_account` (`managed_account_collection.rs:307`).
+- **Harness extensions required**: identity setup; access to the asset-lock transaction details (currently inside `AssetLockManager`); wallet `add_account` call prior to top-up.
 - **Estimated complexity**: M
-- **Rationale**: A parameter that's documented as load-bearing but discarded by the implementation is a contract violation that no test currently catches. The TODO in the source admits the gap; a test makes it actionable.
+- **Rationale**: Bug A is pinned explicitly — a public API method that fails with a confusing "not found" error for a precondition that no default initialisation path satisfies is a DX contract violation. Bug B (the original `topup_index` ignored claim) is retained as the follow-up assertion once Bug A is fixed.
 
 #### Found-007 — `PlatformAddressSyncManager::start` lacks a generation guard so a fast `start()` → `stop()` → `start()` can spawn parallel sync threads
 - **Priority**: P2 (bug pin — failure is the proof)
