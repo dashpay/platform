@@ -135,6 +135,31 @@ pub struct CoreChangeSet {
     /// the same flush both pushing the same gap-limit boundary
     /// collapse to one entry.
     pub addresses_derived: Vec<key_wallet_manager::DerivedAddress>,
+
+    /// Transaction ids whose in-memory record just got promoted from
+    /// `InBlock` to `InChainLockedBlock` by a chain-lock event.
+    ///
+    /// Projected from `WalletEvent::TransactionsChainlocked.per_account`
+    /// by flattening every per-account txid list into a single flat
+    /// vec — Swift's `PersistentTransaction` table is keyed by txid
+    /// (account-agnostic), so the per-account grouping carries no
+    /// information for the persister.
+    ///
+    /// Under the default `keep-finalized-transactions=OFF` feature the
+    /// records are dropped from the in-memory `transactions()` map
+    /// before this event fires; we cannot re-emit them through
+    /// [`Self::records`] (we no longer have the `TransactionRecord`
+    /// body). The persister handles this by looking up its existing
+    /// row by txid and flipping `context` from `2 (InBlock)` to
+    /// `3 (InChainLockedBlock)`. Block-info columns (`blockHeight` /
+    /// `blockHash` / `blockTimestamp`) stay untouched — the upstream
+    /// promotion preserves the original `BlockInfo`, so whatever the
+    /// row carried while it was `InBlock` is still correct.
+    ///
+    /// De-duplicated on merge — multiple chain-lock events targeting
+    /// the same wallet in a single flush should be a no-op for txids
+    /// already in the list.
+    pub chain_lock_promotions: Vec<Txid>,
 }
 
 impl Merge for CoreChangeSet {
@@ -194,6 +219,19 @@ impl Merge for CoreChangeSet {
                 }
             }
         }
+
+        // Chain-lock promotions dedup. A second event re-asserting an
+        // already-finalized txid is a no-op; preserve arrival order
+        // so the persister sees the first emit as the canonical one.
+        if !other.chain_lock_promotions.is_empty() {
+            let mut seen: std::collections::HashSet<Txid> =
+                self.chain_lock_promotions.iter().copied().collect();
+            for txid in other.chain_lock_promotions {
+                if seen.insert(txid) {
+                    self.chain_lock_promotions.push(txid);
+                }
+            }
+        }
     }
 
     fn is_empty(&self) -> bool {
@@ -204,6 +242,7 @@ impl Merge for CoreChangeSet {
             && self.last_processed_height.is_none()
             && self.synced_height.is_none()
             && self.addresses_derived.is_empty()
+            && self.chain_lock_promotions.is_empty()
     }
 }
 

@@ -370,6 +370,39 @@ public class PlatformWalletPersistenceHandler {
                 }
             }
 
+            // Chain-lock promotions — flat list of txids whose
+            // `PersistentTransaction.context` should be flipped from
+            // `2 (InBlock)` to `3 (InChainLockedBlock)`. Emitted by
+            // the Rust bridge in response to
+            // `WalletEvent::TransactionsChainlocked`. Block-info
+            // columns are intentionally untouched: the upstream
+            // promotion preserves the original `BlockInfo`, so the
+            // existing row already carries the right values from when
+            // the tx was first persisted as `InBlock`.
+            //
+            // A txid in this list with no matching row is silently
+            // skipped — the same chain-lock event can re-fire for a
+            // tx whose record was already evicted from the Rust
+            // in-memory map and never re-persisted on the Swift side
+            // (e.g. a tx born after a wallet wipe). Logging at warn
+            // is too noisy for that benign case.
+            if cs.chain_lock_promotions_count > 0,
+               let promotionsPtr = cs.chain_lock_promotions {
+                for i in 0..<Int(cs.chain_lock_promotions_count) {
+                    let txid = withUnsafeBytes(of: promotionsPtr[i]) { Data($0) }
+                    let descriptor = FetchDescriptor<PersistentTransaction>(
+                        predicate: #Predicate { $0.txid == txid }
+                    )
+                    guard let row = try? backgroundContext.fetch(descriptor).first else {
+                        continue
+                    }
+                    if row.context != 3 {
+                        row.context = 3
+                        row.lastUpdated = Date()
+                    }
+                }
+            }
+
             // No save() — bracketed by changesetBegin/End.
         }
     }

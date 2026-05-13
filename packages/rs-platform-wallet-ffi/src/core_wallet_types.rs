@@ -177,6 +177,22 @@ pub struct WalletChangeSetFFI {
     pub balance: BalanceChangeSetFFI,
     pub accounts: *mut AccountChangeSetFFI,
     pub accounts_count: usize,
+    /// Txids whose persisted `PersistentTransaction.context` should be
+    /// flipped from `2 (InBlock)` to `3 (InChainLockedBlock)` in
+    /// response to a chain-lock event.
+    ///
+    /// Projected from `CoreChangeSet::chain_lock_promotions` — itself
+    /// projected from `WalletEvent::TransactionsChainlocked.per_account`
+    /// at bridge time. The list is account-agnostic at the Swift
+    /// layer because `PersistentTransaction` is keyed by txid; the
+    /// per-account grouping is only meaningful inside key-wallet's
+    /// in-memory transaction maps. Block-info columns are intentionally
+    /// not re-emitted: the existing persisted row already carries the
+    /// correct `blockHeight` / `blockHash` / `blockTimestamp` from the
+    /// earlier `InBlock` upsert, and the promotion preserves that
+    /// `BlockInfo`. `null` / `0` when the round carries no promotions.
+    pub chain_lock_promotions: *mut [u8; 32],
+    pub chain_lock_promotions_count: usize,
 }
 
 // ---------------------------------------------------------------------------
@@ -343,6 +359,23 @@ impl WalletChangeSetFFI {
         }
 
         let accounts_count = ffi_accounts.len();
+
+        // Chain-lock promotions — flat list of txids. Account-agnostic
+        // on the Swift side (`PersistentTransaction` is keyed by txid),
+        // so we don't preserve the per-account grouping the upstream
+        // event carried.
+        let promotions: Vec<[u8; 32]> = cs
+            .chain_lock_promotions
+            .iter()
+            .map(|txid| {
+                let mut buf = [0u8; 32];
+                buf.copy_from_slice(txid.as_ref());
+                buf
+            })
+            .collect();
+        let chain_lock_promotions_count = promotions.len();
+        let chain_lock_promotions = vec_to_ptr(promotions);
+
         WalletChangeSetFFI {
             has_chain,
             chain,
@@ -350,6 +383,8 @@ impl WalletChangeSetFFI {
             balance,
             accounts: vec_to_ptr(ffi_accounts),
             accounts_count,
+            chain_lock_promotions,
+            chain_lock_promotions_count,
         }
     }
 }
@@ -878,6 +913,17 @@ fn vec_to_ptr_u8(v: Vec<u8>, _len: usize) -> *mut u8 {
 /// Must only be called once per changeset.
 pub unsafe fn free_wallet_changeset_ffi(cs: &WalletChangeSetFFI) {
     use std::ffi::CString;
+
+    // Chain-lock promotions are a flat `[u8; 32]` array allocated via
+    // `vec_to_ptr` — free independently of the per-account walk
+    // because a chain-lock-only round may carry zero accounts.
+    if !cs.chain_lock_promotions.is_null() && cs.chain_lock_promotions_count > 0 {
+        drop(Vec::from_raw_parts(
+            cs.chain_lock_promotions,
+            cs.chain_lock_promotions_count,
+            cs.chain_lock_promotions_count,
+        ));
+    }
 
     if cs.accounts.is_null() || cs.accounts_count == 0 {
         return;
