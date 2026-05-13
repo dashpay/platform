@@ -1305,4 +1305,225 @@ mod auto_select_tests {
             other => panic!("expected AddressOperation, got {other:?}"),
         }
     }
+
+    /// `validate_change_address` rejects collisions with user_outputs OR
+    /// the input map; otherwise it accepts.
+    #[test]
+    fn validate_change_address_rejects_both_collision_shapes() {
+        let target = p2pkh(0xAA);
+        let input = p2pkh(0xBB);
+        let other = p2pkh(0xCC);
+        let user_outputs = outputs_for(target, 5_000_000);
+        let input_keys = std::iter::once(&input);
+
+        // Collision with user_outputs.
+        let err = validate_change_address(&target, &user_outputs, input_keys.clone())
+            .expect_err("user_outputs collision");
+        match err {
+            PlatformWalletError::AddressOperation(msg) => {
+                assert!(msg.contains("already appears in user_outputs"), "{msg}");
+            }
+            other => panic!("expected AddressOperation, got {other:?}"),
+        }
+
+        // Collision with inputs.
+        let err = validate_change_address(&input, &user_outputs, input_keys.clone())
+            .expect_err("input collision");
+        match err {
+            PlatformWalletError::AddressOperation(msg) => {
+                assert!(msg.contains("also appears in the input map"), "{msg}");
+            }
+            other => panic!("expected AddressOperation, got {other:?}"),
+        }
+
+        // Fresh address — accepted.
+        validate_change_address(&other, &user_outputs, input_keys)
+            .expect("fresh change_addr must validate");
+    }
+
+    /// `[ReduceOutput(0)]` Phase 3 success: two-input prefix where the trim
+    /// drops the last entry below `min_input_amount` and the donor has the
+    /// headroom to lift it back. Verifies the shift lands both entries
+    /// exactly at min_input and the donor's remaining consumption stays
+    /// ≥ min_input.
+    #[test]
+    fn reduce_output_phase3_donor_lift_success() {
+        let addr_a = p2pkh(0xA1); // larger balance → donor
+        let addr_b = p2pkh(0xB2); // smaller balance → last (gets trimmed)
+        let target = p2pkh(0x99);
+        let pv = LATEST_PLATFORM_VERSION;
+        let min_input = pv.dpp.state_transitions.address_funds.min_input_amount;
+
+        // candidates are caller-supplied in balance-descending order.
+        // total_output leaves only 10_000 on the last entry after trim,
+        // forcing Phase 3 donor lift up to `min_input`.
+        let addr_a_balance = 109_000_000u64;
+        let addr_b_balance = min_input; // exactly min_input
+        let total_output = addr_a_balance + min_input - 90_000;
+        let outputs = outputs_for(target, total_output);
+        let candidates = vec![(addr_a, addr_a_balance), (addr_b, addr_b_balance)];
+        let fee_strategy = vec![AddressFundsFeeStrategyStep::ReduceOutput(0)];
+
+        let selected =
+            select_inputs_reduce_output(candidates, &outputs, total_output, &fee_strategy, pv)
+                .expect("Phase 3 donor lift must succeed");
+
+        // Both entries end exactly at expected post-shift values.
+        let consumed_a = selected[&addr_a];
+        let consumed_b = selected[&addr_b];
+        assert_eq!(consumed_b, min_input, "last lifted back to min_input");
+        assert_eq!(
+            consumed_a,
+            addr_a_balance - 90_000,
+            "donor consumes its balance minus the shift"
+        );
+        let input_sum: Credits = selected.values().sum();
+        assert_eq!(input_sum, total_output, "Σ inputs == total_output");
+
+        assert_selection_validates(&selected, &outputs, fee_strategy, pv);
+    }
+
+    /// `[ReduceOutput(0)]` Phase 3 failure: trim drops the last entry below
+    /// `min_input_amount` and no peer has the headroom to donate. The
+    /// selector must error out rather than ship a sub-minimum input.
+    #[test]
+    fn reduce_output_phase3_redistribution_fails_when_no_donor() {
+        let addr_a = p2pkh(0x01); // donor candidate (only peer); exactly min_input → no headroom
+        let addr_b = p2pkh(0x02); // last entry, gets trimmed below min_input
+        let target = p2pkh(0x99);
+        let pv = LATEST_PLATFORM_VERSION;
+        let min_input = pv.dpp.state_transitions.address_funds.min_input_amount;
+
+        // Both candidates have exactly min_input balance. Prefix covers
+        // total_output by including both; the trim drops addr_b below
+        // min_input and addr_a (min_input == 100_000) cannot give any
+        // positive amount without dropping below min_input itself.
+        let addr_a_balance = min_input;
+        let addr_b_balance = min_input;
+        let total_output = min_input + (min_input / 10); // 110_000: requires both inputs
+        let outputs = outputs_for(target, total_output);
+        let candidates = vec![(addr_a, addr_a_balance), (addr_b, addr_b_balance)];
+        let fee_strategy = vec![AddressFundsFeeStrategyStep::ReduceOutput(0)];
+
+        let err =
+            select_inputs_reduce_output(candidates, &outputs, total_output, &fee_strategy, pv)
+                .expect_err("no donor with headroom — must error");
+        match err {
+            PlatformWalletError::AddressOperation(msg) => {
+                assert!(
+                    msg.contains("Cannot satisfy per-input minimum"),
+                    "unexpected message: {msg}"
+                );
+            }
+            other => panic!("expected AddressOperation, got {other:?}"),
+        }
+    }
+
+    /// `[ReduceOutput(0)]` Phase 1 failure: aggregate candidate balance is
+    /// below `total_output`. The selector must reject with the
+    /// insufficient-balance diagnostic.
+    #[test]
+    fn reduce_output_phase1_insufficient_aggregate_balance() {
+        let addr_a = p2pkh(0x01);
+        let addr_b = p2pkh(0x02);
+        let target = p2pkh(0x99);
+        let pv = LATEST_PLATFORM_VERSION;
+        let min_input = pv.dpp.state_transitions.address_funds.min_input_amount;
+
+        let candidates = vec![(addr_a, min_input), (addr_b, min_input)];
+        let total_output = min_input * 3; // > Σ balances (= 2 * min_input)
+        let outputs = outputs_for(target, total_output);
+        let fee_strategy = vec![AddressFundsFeeStrategyStep::ReduceOutput(0)];
+
+        let err =
+            select_inputs_reduce_output(candidates, &outputs, total_output, &fee_strategy, pv)
+                .expect_err("aggregate balance below total_output — must error");
+        match err {
+            PlatformWalletError::AddressOperation(msg) => {
+                assert!(
+                    msg.contains("Insufficient balance"),
+                    "unexpected message: {msg}"
+                );
+            }
+            other => panic!("expected AddressOperation, got {other:?}"),
+        }
+    }
+
+    /// CMT-007: `transfer_with_change_address` must reject
+    /// `InputSelection::Auto` before doing any I/O. Mock SDK + an empty
+    /// wallet manager are enough — the rejection happens in the wrapper's
+    /// own match arm, well before `wallet_manager.read().await`.
+    #[tokio::test]
+    async fn transfer_with_change_address_rejects_auto_selection() {
+        use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
+        use crate::wallet::platform_addresses::PlatformAddressWallet;
+        use std::sync::Arc;
+        use tokio::sync::RwLock;
+
+        let sdk = Arc::new(
+            dash_sdk::SdkBuilder::new_mock()
+                .build()
+                .expect("mock sdk"),
+        );
+        let wallet_manager = Arc::new(RwLock::new(key_wallet_manager::WalletManager::new(
+            sdk.network,
+        )));
+        let persister = WalletPersister::new([0u8; 32], Arc::new(NoPlatformPersistence));
+        let wallet = PlatformAddressWallet::new(sdk, wallet_manager, [0u8; 32], persister);
+
+        let signer = NullSigner;
+        let outputs = outputs_for(p2pkh(0x77), 10_000_000);
+        let change_addr = p2pkh(0x88);
+        let fee_strategy = vec![AddressFundsFeeStrategyStep::ReduceOutput(0)];
+
+        let err = wallet
+            .transfer_with_change_address(
+                0,
+                InputSelection::Auto,
+                outputs,
+                Some(change_addr),
+                fee_strategy,
+                None,
+                &signer,
+            )
+            .await
+            .expect_err("Auto + Some(change_addr) must error");
+        match err {
+            PlatformWalletError::AddressOperation(msg) => {
+                assert!(
+                    msg.contains("InputSelection::Explicit"),
+                    "unexpected message: {msg}"
+                );
+            }
+            other => panic!("expected AddressOperation, got {other:?}"),
+        }
+    }
+
+    /// Signer used only by tests that exercise paths which short-circuit
+    /// before any signing happens. Never produces a signature.
+    #[derive(Debug)]
+    pub(super) struct NullSigner;
+
+    #[async_trait::async_trait]
+    impl dpp::identity::signer::Signer<PlatformAddress> for NullSigner {
+        async fn sign(
+            &self,
+            _key: &PlatformAddress,
+            _data: &[u8],
+        ) -> Result<dpp::platform_value::BinaryData, dpp::ProtocolError> {
+            unreachable!("NullSigner used by a test path that should short-circuit before signing")
+        }
+
+        async fn sign_create_witness(
+            &self,
+            _key: &PlatformAddress,
+            _data: &[u8],
+        ) -> Result<dpp::address_funds::AddressWitness, dpp::ProtocolError> {
+            unreachable!("NullSigner used by a test path that should short-circuit before signing")
+        }
+
+        fn can_sign_with(&self, _key: &PlatformAddress) -> bool {
+            false
+        }
+    }
 }
