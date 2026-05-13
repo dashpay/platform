@@ -155,6 +155,44 @@ struct CreateIdentityView: View {
     /// on the Identities tab after this sheet dismisses.
     @State private var activeController: IdentityRegistrationController? = nil
 
+    /// Optional pre-pick wired up by the Identities-tab "Resumable
+    /// Registrations" section. When non-nil, the four selection
+    /// `@State`s below are seeded in `init` so the form opens
+    /// already-configured for the resume path — same final state
+    /// the user would land on by hand-picking the wallet, choosing
+    /// "Fund from unused Asset Lock", and tapping the lock in the
+    /// picker. Seeding in `init` (via `_state = State(initialValue:
+    /// …)`) — rather than mutating in `.onAppear` / `.task` —
+    /// matters because the form's `.onChange(of: walletSelection)`
+    /// handler resets `fundingSelection` and `identityIndex` on any
+    /// runtime mutation; treating the preselect as the *initial*
+    /// state instead never trips that reset cascade.
+    /// Default `nil` keeps the original "Identities tab → + →
+    /// Create Identity" entry point unchanged.
+    let preselectedAssetLock: PersistentAssetLock?
+
+    init(preselectedAssetLock: PersistentAssetLock? = nil) {
+        self.preselectedAssetLock = preselectedAssetLock
+        if let lock = preselectedAssetLock {
+            // Explicit `Optional(…)` wraps so the `@State` initial
+            // values match the underlying Optional types — Swift
+            // can't infer a `T?` from a bare `.wallet(...)` literal
+            // here because the inferred type lands on `T`.
+            _walletSelection = State(
+                initialValue: Optional(WalletSelection.wallet(id: lock.walletId))
+            )
+            _fundingSelection = State(
+                initialValue: Optional(FundingSelection.unusedAssetLock)
+            )
+            _selectedAssetLockId = State(
+                initialValue: Optional(lock.persistentModelID)
+            )
+            _identityIndex = State(
+                initialValue: Optional(UInt32(bitPattern: lock.identityIndexRaw))
+            )
+        }
+    }
+
     var body: some View {
         NavigationStack {
             Form {

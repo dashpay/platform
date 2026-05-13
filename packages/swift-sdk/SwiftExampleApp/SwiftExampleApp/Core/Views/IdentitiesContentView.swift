@@ -15,6 +15,19 @@ struct IdentitiesContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \PersistentIdentity.identityIndex)
     private var identities: [PersistentIdentity]
+    /// All tracked asset locks across wallets. Filtered into
+    /// "resumable" rows (status >= `InstantSendLocked` AND no
+    /// `PersistentIdentity` at the same `(walletId, identityIndex)`
+    /// slot) by `resumableAssetLocks` so the orphan-lock-after-crash
+    /// case surfaces as a tappable Resume row. Sorted newest-first
+    /// by `updatedAt` so the most recent unfinished registration
+    /// sits at the top of the section.
+    @Query(sort: [SortDescriptor(\PersistentAssetLock.updatedAt, order: .reverse)])
+    private var allAssetLocks: [PersistentAssetLock]
+    /// All wallets, used purely for the "wallet name" lookup on the
+    /// Resume row label. Cheap query — wallet rows are few and
+    /// the matching is on the in-memory array.
+    @Query private var allWallets: [PersistentWallet]
     @State private var showingLoadIdentity = false
     @State private var showingCreateIdentity = false
     @State private var showingSearchWallets = false
@@ -23,10 +36,15 @@ struct IdentitiesContentView: View {
     /// an id so the dialog can show the display name / truncated id
     /// without a second fetch.
     @State private var identityPendingRemoval: PersistentIdentity?
+    /// Asset lock the user tapped Resume on. Drives the `.sheet(item:)`
+    /// presentation of a pre-configured `CreateIdentityView`. Cleared
+    /// when the sheet dismisses (SwiftUI nils the binding for us).
+    @State private var resumingAssetLock: PersistentAssetLock?
 
     var body: some View {
         List {
             pendingRegistrationsSection
+            resumableRegistrationsSection
             if identities.isEmpty {
                 Section {
                     VStack(spacing: 12) {
@@ -151,6 +169,16 @@ struct IdentitiesContentView: View {
             CreateIdentityView()
                 .environmentObject(platformState)
         }
+        .sheet(item: $resumingAssetLock) { lock in
+            // Pre-configured resume of an orphan asset lock. Same
+            // view, same code path — the constructor seeds the
+            // four selection `@State`s as initial values so the
+            // form opens already on the "Fund from unused Asset
+            // Lock" step with this specific lock highlighted, and
+            // the user only has to tap "Create Identity".
+            CreateIdentityView(preselectedAssetLock: lock)
+                .environmentObject(platformState)
+        }
         .sheet(isPresented: $showingSearchWallets) {
             SearchWalletsForIdentitiesView()
         }
@@ -181,6 +209,114 @@ struct IdentitiesContentView: View {
         PendingRegistrationsList(
             coordinator: walletManager.registrationCoordinator
         )
+    }
+
+    /// "Resumable Registrations" row group. Surfaces orphan
+    /// `PersistentAssetLock` rows — those at status >=
+    /// `InstantSendLocked` (`statusRaw >= 2`) with no
+    /// `PersistentIdentity` at the same `(walletId, identityIndex)`
+    /// slot — that the in-memory `RegistrationCoordinator` can't
+    /// know about because its map is wiped on app restart. Without
+    /// this section, an app kill mid-registration leaves the user
+    /// with no surface signal that there's an orphan lock waiting
+    /// to be resumed: the lock still lives in SwiftData, but the
+    /// "Pending Registrations" section above only reflects the
+    /// in-memory coordinator state. Tapping Resume opens
+    /// `CreateIdentityView` pre-configured for the `.unusedAssetLock`
+    /// funding path with this specific lock pinned.
+    ///
+    /// Empty when there are no orphan locks; collapses to nothing
+    /// in that case so the rest of the screen isn't pushed down by
+    /// an empty header.
+    @ViewBuilder
+    private var resumableRegistrationsSection: some View {
+        let locks = resumableAssetLocks
+        if !locks.isEmpty {
+            Section("Resumable Registrations (\(locks.count))") {
+                ForEach(locks) { lock in
+                    ResumableRegistrationRow(
+                        lock: lock,
+                        walletLabel: walletDisplayLabel(for: lock.walletId),
+                        onResume: {
+                            resumingAssetLock = lock
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    /// Cross-wallet variant of the per-wallet resume picker filter
+    /// implemented at `CreateIdentityView.resumableLocks(...)`. Same
+    /// anti-join logic, but the per-wallet `usedIndices` set is
+    /// generalized to a per-`(walletId, identityIndex)` set so we
+    /// can filter all wallets in one pass.
+    ///
+    /// Independent of `RegistrationCoordinator` — this is purely a
+    /// SwiftData read. Survives app restarts because the underlying
+    /// `PersistentAssetLock` and `PersistentIdentity` rows are
+    /// disk-persisted.
+    private var resumableAssetLocks: [PersistentAssetLock] {
+        let usedSlots: Set<UsedSlot> = Set(
+            identities.compactMap { identity -> UsedSlot? in
+                guard let walletId = identity.wallet?.walletId else {
+                    return nil
+                }
+                return UsedSlot(walletId: walletId, slot: identity.identityIndex)
+            }
+        )
+        return Self.crossWalletResumableLocks(
+            in: allAssetLocks,
+            usedSlots: usedSlots
+        )
+    }
+
+    /// Wallet display label for the Resume row's sub-line. Prefers
+    /// the wallet's stored name (via `PersistentWallet.label`'s
+    /// short-hex fallback), so the row shows "MyWallet" / "Wallet
+    /// a1b2c3d4…" rather than a raw 32-byte id dump.
+    private func walletDisplayLabel(for walletId: Data) -> String {
+        if let wallet = allWallets.first(where: { $0.walletId == walletId }) {
+            return wallet.label
+        }
+        // Defensive — should never hit this branch in practice
+        // because every asset lock is owned by a wallet that's
+        // in `allWallets`. Mirrors the same fallback shape that
+        // `PersistentWallet.label` uses so the cosmetic doesn't
+        // diverge.
+        let hex = walletId.prefix(4)
+            .map { String(format: "%02x", $0) }
+            .joined()
+        return hex.isEmpty ? "Wallet" : "Wallet \(hex)…"
+    }
+
+    /// Pure anti-join across all wallets. A lock is resumable iff
+    /// - `statusRaw >= 2` (InstantSendLocked or ChainLocked), AND
+    /// - no `(walletId, identityIndex)` slot is already claimed by
+    ///   a `PersistentIdentity` row.
+    ///
+    /// Generic over `AssetLockResumeRow` (the same protocol the
+    /// per-wallet helper uses) so the pure filter is unit-testable
+    /// without spinning up a SwiftData container.
+    static func crossWalletResumableLocks<R: AssetLockResumeRow>(
+        in locks: [R],
+        usedSlots: Set<UsedSlot>
+    ) -> [R] {
+        locks.filter { lock in
+            guard lock.statusRaw >= 2 else { return false }
+            let slot = UInt32(bitPattern: lock.identityIndexRaw)
+            return !usedSlots.contains(
+                UsedSlot(walletId: lock.walletId, slot: slot)
+            )
+        }
+    }
+
+    /// Composite key for the per-`(walletId, identityIndex)`
+    /// anti-join. Public visibility so unit tests in the same
+    /// module can build the set directly.
+    struct UsedSlot: Hashable {
+        let walletId: Data
+        let slot: UInt32
     }
 
     /// Short title for the removal confirmation dialog. Uses
@@ -250,6 +386,94 @@ struct IdentitiesContentView: View {
             platformState.showError(
                 message: "Failed to remove identity from device: \(error.localizedDescription)"
             )
+        }
+    }
+}
+
+/// Single row in the "Resumable Registrations" section. Renders the
+/// lock summary (txid prefix, amount, status, owning wallet, slot)
+/// plus a compact Resume button that fires the caller-supplied
+/// `onResume` closure. Visually matches the row density of
+/// `IdentityRow` and the storage-explorer's `AssetLockStorageListView`
+/// row at `StorageModelListViews.swift:1636`.
+private struct ResumableRegistrationRow: View {
+    let lock: PersistentAssetLock
+    let walletLabel: String
+    let onResume: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Asset Lock \(shortOutPoint(lock.outPointHex))")
+                    .font(.body)
+                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(formatDuffs(lock.amountDuffs))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text("·")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text(statusLabel(lock.statusRaw))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text("·")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text("#\(UInt32(bitPattern: lock.identityIndexRaw))")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .monospacedDigit()
+                }
+                Text(walletLabel)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            Button(action: onResume) {
+                Label("Resume", systemImage: "arrow.clockwise")
+                    .labelStyle(.titleAndIcon)
+                    .font(.callout)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            // Buttons embedded in `List` rows can have their hit
+            // test stolen by SwiftUI's row tap surface, which on
+            // some iOS versions ends up firing for every row.
+            // `.buttonStyle(.borderedProminent)` already binds the
+            // tap to this Button, but adding an explicit hit shape
+            // keeps the target tight on the Resume label only.
+        }
+        .padding(.vertical, 2)
+    }
+
+    /// Short txid prefix (first 8 hex chars) from the canonical
+    /// `<txid>:<vout>` outpoint encoding. Matches the row format
+    /// used by `AssetLockStorageListView`.
+    private func shortOutPoint(_ outPointHex: String) -> String {
+        let parts = outPointHex.split(
+            separator: ":",
+            maxSplits: 1,
+            omittingEmptySubsequences: false
+        )
+        guard parts.count == 2 else { return outPointHex }
+        let txidPrefix = parts[0].prefix(8)
+        return "\(txidPrefix):\(parts[1])"
+    }
+
+    private func formatDuffs(_ amountDuffs: Int64) -> String {
+        let dash = Double(amountDuffs) / 1e8
+        return String(format: "%g DASH", dash)
+    }
+
+    private func statusLabel(_ raw: Int) -> String {
+        switch raw {
+        case 0: return "Built"
+        case 1: return "Broadcast"
+        case 2: return "InstantSendLocked"
+        case 3: return "ChainLocked"
+        default: return "Unknown(\(raw))"
         }
     }
 }
