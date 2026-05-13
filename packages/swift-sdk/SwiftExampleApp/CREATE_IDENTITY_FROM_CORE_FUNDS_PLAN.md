@@ -920,38 +920,48 @@ in storage. Predates our changes. Follow-up issue, not this PR.
 
 ---
 
-### Iter 5 — "Fund from unused Asset Lock" picker + crash recovery
+### Iter 5 — Resume an in-flight asset lock + crash recovery ✅ **DONE**
 
 **Goal**: enable resuming a tracked asset lock when the
 previous registration didn't complete. Validate crash recovery
 end-to-end.
 
-**Resume picker semantics**: an "unused" lock is one at status
-`InstantSendLocked` or `ChainLocked` for which **no
-`PersistentIdentity` exists** at the same `(walletId,
-identityIndex)`. (Not `identityIndex == nil` — that field is
-always set on a tracked lock.)
+**Resume surface semantics**: a "resumable" lock is one at
+`statusRaw >= 1` (Broadcast / InstantSendLocked / ChainLocked)
+for which **no `PersistentIdentity` exists** at the same
+`(walletId, identityIndex)` **AND** no in-memory
+`RegistrationCoordinator` controller in `.preparingKeys` /
+`.inFlight` claims that slot. The union of identity-claimed
+and active-controller slots is what's anti-joined against the
+asset-lock rows. The `statusRaw >= 1` floor surfaces in-flight
+Broadcast locks too (rendered with a spinner instead of a
+Resume button) so the user sees visual continuity through the
+IS-lock arrival.
 
-**Steps**:
+**Steps (delivered)**:
 
-1. **Resume-picker `@Query`** on `PersistentAssetLock` filtered
-   by `walletId == selectedWalletId AND statusRaw >= 2 AND no
-   matching PersistentIdentity at (walletId, identityIndexRaw)`.
-   Compound query — may need a post-fetch filter for the
-   anti-join.
+1. **FFI + Swift SDK wrapper** for `IdentityFunding::FromExistingAssetLock`:
+   `platform_wallet_resume_identity_with_existing_asset_lock_signer`
+   in `rs-platform-wallet-ffi`, and
+   `ManagedPlatformWallet.resumeIdentityWithAssetLock(...)` mirroring
+   the existing `registerIdentityWithFunding(...)` shape.
 
-2. **Update `CreateIdentityView`** so picking
-   `.unusedAssetLock` and a specific tracked lock from the list
-   wires through to `registrationCoordinator.startRegistration(
-   walletId:, identityIndex: lock.identityIndexRaw, funding:
-   .fromExistingAssetLock(outPoint: lock.outPointHex), …)`.
+2. **Resumable Registrations section on the Identities tab**
+   (`IdentitiesContentView.swift`). SwiftData-backed, anti-joins
+   identity rows + in-flight controllers, surfaces every orphan
+   asset lock. Tap **Resume** → opens `CreateIdentityView` with
+   the lock pre-pinned via `init(preselectedAssetLock:)`. Submit
+   dispatches through `submitResumed` → coordinator → Swift SDK
+   → FFI. *(Note: the original plan called for an in-form
+   "Fund from unused Asset Lock" sub-picker inside
+   `CreateIdentityView`. That was implemented in commit
+   `f31ee5d842` and then removed in `f466b7c4c7` — the Identities-tab
+   section is strictly better UX: auto-surfaces, pre-fills,
+   fewer taps. Calling a previously-built lock a "Funding
+   source" was also conceptually wrong — it's resumption, not
+   funding.)*
 
-3. **Crash-recovery validation**: trigger a registration, kill
-   the app between `Broadcast` and Platform submission. Re-launch.
-   Verify the tracked lock appears in `StorageExplorerView` /
-   `WalletMemoryExplorerView`. Open CreateIdentity → "Fund from
-   unused Asset Lock" → submit → identity registers, tracked
-   lock removed.
+3. **Crash-recovery validation**: see Iter 5 follow-up below.
 
 ---
 

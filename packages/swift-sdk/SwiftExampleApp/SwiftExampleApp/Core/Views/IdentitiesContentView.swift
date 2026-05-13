@@ -486,7 +486,7 @@ private struct ResumableRegistrationRow: View {
     var body: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Asset Lock \(shortOutPoint(lock.outPointHex))")
+                Text("Asset Lock \(lock.shortOutPointDisplay)")
                     .font(.body)
                     .lineLimit(1)
                 HStack(spacing: 6) {
@@ -496,7 +496,7 @@ private struct ResumableRegistrationRow: View {
                     Text("·")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    Text(statusLabel(lock.statusRaw))
+                    Text(lock.statusLabel)
                         .font(.caption)
                         .foregroundColor(.secondary)
                     Text("·")
@@ -518,16 +518,16 @@ private struct ResumableRegistrationRow: View {
         .padding(.vertical, 2)
     }
 
-    /// Trailing view that depends on the lock's stage. At
-    /// `Broadcast` (1) the lock isn't usable yet — SPV is waiting
+    /// Trailing view that depends on the lock's stage. At Broadcast
+    /// (`!canFundIdentity`) the lock isn't usable yet — SPV is waiting
     /// on the masternodes to sign an InstantSendLock — so we show
     /// a spinner instead of a button. SwiftData `@Query` is
     /// reactive, so when the persister flips the row to
-    /// `InstantSendLocked` (2) this view re-renders into the
-    /// Resume button without any extra plumbing.
+    /// `InstantSendLocked` this view re-renders into the Resume
+    /// button without any extra plumbing.
     @ViewBuilder
     private var trailingAffordance: some View {
-        if lock.statusRaw >= 2 {
+        if lock.canFundIdentity {
             Button(action: onResume) {
                 Label("Resume", systemImage: "arrow.clockwise")
                     .labelStyle(.titleAndIcon)
@@ -546,32 +546,8 @@ private struct ResumableRegistrationRow: View {
         }
     }
 
-    /// Short txid prefix (first 8 hex chars) from the canonical
-    /// `<txid>:<vout>` outpoint encoding. Matches the row format
-    /// used by `AssetLockStorageListView`.
-    private func shortOutPoint(_ outPointHex: String) -> String {
-        let parts = outPointHex.split(
-            separator: ":",
-            maxSplits: 1,
-            omittingEmptySubsequences: false
-        )
-        guard parts.count == 2 else { return outPointHex }
-        let txidPrefix = parts[0].prefix(8)
-        return "\(txidPrefix):\(parts[1])"
-    }
-
     private func formatDuffs(_ amountDuffs: Int64) -> String {
         let dash = Double(amountDuffs) / 1e8
         return String(format: "%g DASH", dash)
-    }
-
-    private func statusLabel(_ raw: Int) -> String {
-        switch raw {
-        case 0: return "Built"
-        case 1: return "Broadcast"
-        case 2: return "InstantSendLocked"
-        case 3: return "ChainLocked"
-        default: return "Unknown(\(raw))"
-        }
     }
 }

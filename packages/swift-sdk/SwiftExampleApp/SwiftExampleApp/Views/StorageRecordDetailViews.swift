@@ -1838,7 +1838,7 @@ struct AssetLockStorageDetailView: View {
         Form {
             Section("Asset Lock") {
                 FieldRow(label: "Outpoint", value: record.outPointHex)
-                FieldRow(label: "Status", value: statusLabel(record.statusRaw))
+                FieldRow(label: "Status", value: record.statusLabel)
                 FieldRow(label: "Funding Type", value: fundingTypeLabel(record.fundingTypeRaw))
                 FieldRow(label: "Identity Index", value: "\(record.identityIndexRaw)")
                 FieldRow(label: "Amount (duffs)", value: "\(record.amountDuffs)")
@@ -1878,7 +1878,7 @@ struct AssetLockStorageDetailView: View {
                         // status so the entry is self-explanatory.
                         FieldRow(
                             label: pendingLabel(record.statusRaw),
-                            value: statusLabel(record.statusRaw)
+                            value: record.statusLabel
                         )
                     }
                 }
@@ -1897,16 +1897,6 @@ struct AssetLockStorageDetailView: View {
         }
         .navigationTitle("Asset Lock")
         .navigationBarTitleDisplayMode(.inline)
-    }
-
-    private func statusLabel(_ raw: Int) -> String {
-        switch raw {
-        case 0: return "Built"
-        case 1: return "Broadcast"
-        case 2: return "InstantSendLocked"
-        case 3: return "ChainLocked"
-        default: return "Unknown(\(raw))"
-        }
     }
 
     private func fundingTypeLabel(_ raw: Int) -> String {

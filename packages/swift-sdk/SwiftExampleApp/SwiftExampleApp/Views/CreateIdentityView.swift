@@ -376,7 +376,7 @@ struct CreateIdentityView: View {
             summaryRow("Wallet", value: walletLabel)
             summaryRow(
                 "Asset Lock",
-                value: shortOutPoint(lock.outPointHex),
+                value: lock.shortOutPointDisplay,
                 monospaced: true
             )
             summaryRow(
@@ -388,7 +388,7 @@ struct CreateIdentityView: View {
             )
             summaryRow(
                 "Status",
-                value: Self.assetLockStatusLabel(rawValue: lock.statusRaw)
+                value: lock.statusLabel
             )
             summaryRow(
                 "Identity Slot",
@@ -429,19 +429,6 @@ struct CreateIdentityView: View {
         }
     }
 
-    /// First 8 hex chars of the txid plus the vout, derived from the
-    /// canonical `<txid>:<vout>` outpoint encoding. Mirrors the row
-    /// format `ResumableRegistrationRow` uses on the Identities tab
-    /// so the same lock reads the same way across surfaces.
-    private func shortOutPoint(_ outPointHex: String) -> String {
-        let parts = outPointHex.split(
-            separator: ":",
-            maxSplits: 1,
-            omittingEmptySubsequences: false
-        )
-        guard parts.count == 2 else { return outPointHex }
-        return "\(parts[0].prefix(8)):\(parts[1])"
-    }
 
     @ViewBuilder
     private func walletAccountSection(for walletId: Data) -> some View {
@@ -1489,28 +1476,7 @@ struct CreateIdentityView: View {
         return (txidRaw, vout)
     }
 
-    /// Human-readable status label for the asset-lock picker row.
-    /// Mirrors the discriminants in
-    /// [`PersistentAssetLock.statusRaw`].
-    private static func assetLockStatusLabel(rawValue: Int) -> String {
-        switch rawValue {
-        case 0: return "Built"
-        case 1: return "Broadcast"
-        case 2: return "InstantSend locked"
-        case 3: return "ChainLock locked"
-        default: return "Unknown"
-        }
-    }
-
-    /// Compact relative date string ("2 minutes ago"). Used by the
-    /// resume picker so the user can see how recent the lock is.
-    private static func relativeDateString(_ date: Date) -> String {
-        let fmt = RelativeDateTimeFormatter()
-        fmt.unitsStyle = .short
-        return fmt.localizedString(for: date, relativeTo: Date())
-    }
-
-/// `"0.01 DASH"` — stripped of trailing zeros, uses up to 8 decimals.
+    /// `"0.01 DASH"` — stripped of trailing zeros, uses up to 8 decimals.
     private static func formatDash(raw: UInt64, divisor: Double) -> String {
         let dash = Double(raw) / divisor
         let fmt = NumberFormatter()

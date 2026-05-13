@@ -1640,7 +1640,7 @@ struct AssetLockStorageListView: View {
                         .font(.system(.caption, design: .monospaced))
                         .lineLimit(1).truncationMode(.middle)
                     HStack(spacing: 8) {
-                        Text(statusLabel(record.statusRaw))
+                        Text(record.statusLabel)
                             .font(.caption2)
                             .foregroundColor(.secondary)
                         Spacer()
@@ -1662,16 +1662,6 @@ struct AssetLockStorageListView: View {
                     systemImage: "lock.shield"
                 )
             }
-        }
-    }
-
-    private func statusLabel(_ raw: Int) -> String {
-        switch raw {
-        case 0: return "Built"
-        case 1: return "Broadcast"
-        case 2: return "InstantSendLocked"
-        case 3: return "ChainLocked"
-        default: return "Unknown(\(raw))"
         }
     }
 }
