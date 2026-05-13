@@ -204,7 +204,7 @@ Status legend: **green** = test file present, body has real assertions, runnable
 | CR-002 | Core wallet receive address derivation | P1 | not implemented | M |
 | CR-003 | Asset-lock-funded identity registration (full path) | P2 | green | L |
 | CR-004 | Legacy BIP32 account: balance + UTXO state updates after spend | P1 | red-by-design — Layer 1 (next_unused idempotency) fixed at `1c4c8a76f4`; Layer 2 is the genuine dash-evo-tool#845 pin (post-broadcast UTXO-mutation not clearing BIP-32 spent inputs); fails deterministically until upstream fix lands | M |
-| AL-001 | Concurrent asset-lock builds from same wallet | P1 | red-real-fail — test file present; split TX builds but concurrent top-up tasks failed with "No UTXOs available" in v47 (SPV UTXO-index visibility gap); two-phase gate fix applied at `403d29c3c8` (untested post-v47; verify in next run) | L |
+| AL-001 | Concurrent asset-lock builds from same wallet | P1 | red-real-fail (shifted-failure-mode) — coin-selection race closed by `403d29c3c8` + PR #3585 `OutpointReservations`; current failure is `FinalityTimeout` at `:299` (task 1 IS-lock wakeup missed); blocked on Found-008 (`LockNotifyHandler::notify_waiters` in `dash-spv`); identical fingerprint v48/v49/v50 | L |
 | CT-001 | Document put: deploy a fixture data contract | P1 | not implemented | M |
 | CT-002 | Document put / replace lifecycle | P2 | not implemented | M |
 | CT-003 | Contract update (add document type) | P2 | not implemented | M |
@@ -1526,13 +1526,30 @@ This section covers primitive-level correctness of `AssetLockManager` — the in
 #### AL-001 — Concurrent asset-lock builds from same wallet
 
 - **Priority**: P1
-- **Status**: red-real-fail (fix in flight) — test file `tests/e2e/cases/al_001_concurrent_asset_lock_builds.rs` implemented and running. The pre-split TX (N+1 UTXOs) builds successfully (`n_outputs=4, split_amount=124997500` logged in v47 trace). Concurrent top-up tasks at step 3 failed in v47 with `"Coin selection error: No UTXOs available for selection"` — aggregate balance atomic updated before UTXO index caught up. A two-phase gate (balance check + spendable-UTXO count check) was applied at `403d29c3c8` after the v47 run to close this gap; result is untested. QA-015 (fee reserve for split TX) is confirmed working. Fix tracked at task #382.
-- **Wallet feature exercised**: `wallet/asset_lock/manager.rs::AssetLockManager` (the entire concurrent-build path); transitively `wallet/asset_lock/build.rs::build_asset_lock_transaction` and `wallet/asset_lock/build.rs::create_funded_asset_lock_proof`. The driver is `wallet/identity/network/top_up.rs::top_up_identity_with_funding` (top-up is the more common concurrent load case — multiple identities funded from the same wallet).
-- **DET parallel**: None — DET does not drive concurrent asset-lock builds from a single wallet. No DET parallel; this is new coverage.
+- **Status**: red-real-fail (shifted-failure-mode) — failure fingerprint `FinalityTimeout(<txid>)` at `al_001_concurrent_asset_lock_builds.rs:299` (task 1). Identical across v48, v49, v50 — no run-to-run drift. Blocked on Found-008 (upstream `rust-dashcore`).
+- **Failure site**: `tests/e2e/cases/al_001_concurrent_asset_lock_builds.rs:299` — the `wait_for_asset_lock` / IS-lock poll on task 1's broadcast transaction.
+- **Upstream blocker**: Found-008 (`LockNotifyHandler::notify_waiters` in `dash-spv`; see detail section below).
+- **Wallet feature exercised**: `wallet/asset_lock/manager.rs::AssetLockManager` (concurrent-build path); transitively `wallet/asset_lock/build.rs::build_asset_lock_transaction` and `wallet/asset_lock/build.rs::create_funded_asset_lock_proof`. Driver: `wallet/identity/network/top_up.rs::top_up_identity_with_funding`.
+- **DET parallel**: None — DET does not drive concurrent asset-lock builds from a single wallet.
+- **Historical failure mode (coin-selection race — now closed)**:
+  - Before `403d29c3c8`: concurrent tasks raced to grab UTXOs. The losing task would observe a balance-updated-but-UTXO-index-stale window and fail with `"Coin selection error: No UTXOs available for selection"` (v47 trace). In the worst case, both tasks obtained the same UTXO and produced a double-spend.
+  - `403d29c3c8` applied a two-phase gate (balance check + spendable-UTXO count check). PR #3585's `OutpointReservations` system (integrated via `02cb61b30d`) closes the race definitively at the architecture level: concurrent callers filter spendable snapshots against an `Arc<Mutex<HashSet<OutPoint>>>` reservation set; the second caller short-circuits with `NoSpendableInputs` before build.
+  - This surface is confirmed closed. Marvin's v50 audit found the failure fingerprint identical to v49 (pre-`02cb61b30d`-merge), validating that PR #3585 is orthogonal to AL-001's remaining gate.
+- **Current failure mode (IS-lock notification race)**:
+  1. Coin selection succeeds for both tasks (reservation guard working as intended).
+  2. Task 1's asset-lock transaction broadcasts to mempool.
+  3. Task 1 waits for the IS-lock (`InstantSend`) notification confirming quorum acceptance.
+  4. The IS-lock event arrives at `LockNotifyHandler` but task 1's wait future never wakes. It times out at `FinalityTimeout`.
+  - Root cause: `LockNotifyHandler::notify_waiters()` (in `dash-spv`, `rust-dashcore`) calls `tokio::sync::Notify::notify_waiters()`. That method signals all currently-registered waiters but does NOT store a permit for waiters that register after the signal fires. If the IS-lock event arrives in the narrow window before task 1's wait future registers with the handler, the wakeup is permanently lost. There is no second IS-lock event for the same transaction.
+  - This is **Found-008** — see the Found-008 detail section for the full spec.
+- **Upstream fix path** (in `rust-dashcore` / `dash-spv`, NOT in this repo):
+  - **Option A** (minimal): change `Notify::notify_waiters()` → `Notify::notify_one()`. `notify_one` stores a pending permit when no waiter is currently registered; the next `notified().await` claim it immediately without waiting for a new event.
+  - **Option B** (thorough): replace `Notify` with a `tokio::sync::broadcast` channel that retains the event for late subscribers within a bounded window.
+  - After the upstream fix lands and the `rust-dashcore` rev is bumped in `Cargo.toml`, AL-001 should turn green without any test-side changes.
 - **Preconditions**:
   - CR-001 (SPV ready).
-  - Core-funded test wallet with enough headroom for N parallel asset locks + fees. Suggested `N = 3`, per-lock amount `100_000_000` duffs (0.001 DASH), so Core funding floor ≈ `N × (100_000_000 + asset_lock_fee_reserve + core_tx_fee_reserve) + setup_overhead` ≈ 500_000_000 duffs (5 DASH testnet). Same `PLATFORM_WALLET_E2E_BANK_CORE_GATE` env gate as CR-003.
-  - N pre-registered identities (each via address-funded `register_from_addresses` from the ID-001 helper). The concurrent top-ups target DIFFERENT identities to avoid colliding on Found-006 (`topup_index` routing discrepancy); Found-006 has its own dedicated pin.
+  - Core-funded test wallet. Suggested `N = 2` concurrent tasks (as implemented), per-lock amount `100_000_000` duffs (0.001 DASH); Core funding floor ≈ 500_000_000 duffs (5 DASH testnet). Same `PLATFORM_WALLET_E2E_BANK_CORE_GATE` env gate as CR-003.
+  - N pre-registered identities (each via address-funded `register_from_addresses` from the ID-001 helper). Concurrent top-ups target different identities to avoid colliding on Found-006.
 - **Scenario**:
   1. `setup_with_core_funded_test_wallet(CONCURRENT_LOCK_FUNDING_TOTAL)` lands Core funds on the test wallet.
   2. Register N identities via the address-funded path (ID-001 helper); capture `identity_ids[N]` and `pre_balances[N]`.
@@ -1554,29 +1571,31 @@ This section covers primitive-level correctness of `AssetLockManager` — the in
          })
          .collect();
      ```
-  4. `try_join_all(handles).await` — collect all N task outputs.
+  4. `try_join_all(handles).await` — collect all N task outputs (fails today at step 4, task 1, with `FinalityTimeout` at `:299`).
   5. Fetch all N identities' chain balances post-top-up.
   6. Fetch the test wallet's Core balance.
   7. Read the `tracked_asset_locks` registry — collect the N asset-lock txids that landed.
-- **Assertions**:
+- **Assertions** (expected post-fix):
   - All N task results are `Ok(_)` — every concurrent build succeeded.
-  - The N asset-lock txids are all distinct (no duplicate output, no `AssetLockManager` collision).
+  - The N asset-lock txids are all distinct (no `AssetLockManager` collision; `OutpointReservations` guards this).
   - `post_balances[i] >= pre_balances[i] + (LOCK_AMOUNT * 1000) - top_up_fee_max` for all `i` (where `1000` is `CREDITS_PER_DUFF`).
-  - The test wallet's Core balance decreased by approximately `N × (LOCK_AMOUNT + asset_lock_fee + top_up_fee)` duffs (within a reasonable fee tolerance).
-  - No `tracked_asset_locks` entry is in `Failed` state.
-  - No UTXO double-spend: every input across the N asset-lock transactions is unique — read the input lists from `tracked_asset_locks` and assert pairwise disjoint sets.
+  - Test wallet's Core balance decreased by approximately `N × (LOCK_AMOUNT + asset_lock_fee + top_up_fee)` (within fee tolerance).
+  - No `tracked_asset_locks` entry in `Failed` state.
+  - No UTXO double-spend: input sets of the N asset-lock transactions are pairwise disjoint.
+- **Why AL-001 stays in the spec**:
+  - When the Found-008 upstream fix lands, AL-001 turns green with zero test-side changes. Acts as the canary.
+  - Documents the historical coin-selection race surface: if a future refactor accidentally reopens the UTXO double-spend window, AL-001 will fail in a different way and flag it before production code is affected.
 - **Negative variants (defer to follow-up AL-* cases)**:
-  - N tasks with `N >> available_utxos`: assert graceful typed `Wallet::InsufficientFunds` failure, NOT a UTXO double-spend or partial broadcast.
-  - One task panics mid-build: assert remaining tasks complete normally (no shared-state poisoning via `AssetLockManager`).
+  - `N >> available_utxos`: assert graceful `Wallet::InsufficientFunds`, not a double-spend.
+  - One task panics mid-build: assert remaining tasks complete (no shared-state poisoning via `AssetLockManager`).
   - Concurrent build while a fourth task calls `recover_asset_lock_blocking`: assert no deadlock.
 - **Notes / risks**:
-  - Reuse CR-003's `setup_with_core_funded_test_wallet` helper with a larger funding amount rather than introducing a separate setup variant.
+  - Found-008 is the current gate. Found-012 (account-type tunnel vision in `validate_or_upgrade_proof`) is also on the path for non-BIP-44-funded builds.
+  - Upstream `next_private_key` is non-idempotent (`mark_index_used` called before return at `managed_account_trait.rs:480`), so concurrent builds do not collide on one-time-key derivation. Confirmed clean by Marvin's upstream audit.
   - Requires `PLATFORM_WALLET_E2E_BANK_CORE_GATE` (same as CR-003, default-on, 900 s deadline).
-  - Found-008 (`LockNotifyHandler` missed-wakeup) is on the critical path — if Found-008 is not fixed, this test may flake under concurrent load when an IS-lock event arrives in the check/wait gap. This test is NOT the regression pin for Found-008; Found-008 has its own spec entry. Document the dependency in the test body with a `// TODO(Found-008)` comment. Upstream `next_private_key` is correctly non-idempotent (`mark_index_used` called before return at upstream `managed_account_trait.rs:480`), so concurrent builds from same wallet do not collide on one-time-key derivation. This was a live concern that Marvin's upstream audit refuted.
-  - Found-012 (account-type tunnel vision in `validate_or_upgrade_proof`) is also on the path. If any of the N asset-lock transactions ends up funded from a non-BIP-44 account, the test will hit Found-012. Document this dependency similarly.
-- **Harness extensions required**: same as CR-003 — `setup_with_core_funded_test_wallet`, `wait_for_asset_lock`; plus Wave A identity setup helpers already needed by ID-001.
+- **Harness extensions required**: same as CR-003 — `setup_with_core_funded_test_wallet`, `wait_for_asset_lock`; plus Wave A identity setup helpers (ID-001).
 - **Estimated complexity**: L (~300 LOC including multi-identity setup + concurrent orchestration + multi-assertion validation).
-- **Rationale**: `AssetLockManager` is critical-path code that every asset-lock-funded registration and top-up goes through, but it has never been exercised under concurrent load. CR-003's sequential single-build happy path does not validate the manager's locking, UTXO-reservation, or proof-correlation logic under concurrent callers. Any app driving concurrent top-ups, multi-identity registrations, or batch funding flows hits this path in production. A test that fires 3+ concurrent builds and asserts atomicity, distinct outputs, and no UTXO double-spend pins the contract that real applications depend on.
+- **Rationale**: `AssetLockManager` is critical-path code that every asset-lock-funded registration and top-up goes through, and it has never been exercised under concurrent load in a green test. CR-003's sequential single-build path does not validate the manager's locking, UTXO-reservation, or proof-correlation logic under concurrent callers. Any app driving concurrent top-ups or multi-identity registrations hits this path in production. AL-001 pins the contract those applications depend on, and documents both the historical UTXO-race surface (now closed) and the remaining IS-lock wakeup gap (Found-008, upstream).
 
 ### Contracts (CT)
 
