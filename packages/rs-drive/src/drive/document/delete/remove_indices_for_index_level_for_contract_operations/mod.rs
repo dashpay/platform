@@ -41,6 +41,7 @@ impl Drive {
         index_level: &IndexLevel,
         any_fields_null: bool,
         all_fields_null: bool,
+        parent_value_tree_is_range_countable: bool,
         storage_flags: &Option<&StorageFlags>,
         previous_batch_operations: &Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
@@ -64,6 +65,7 @@ impl Drive {
                 index_level,
                 any_fields_null,
                 all_fields_null,
+                parent_value_tree_is_range_countable,
                 storage_flags,
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,

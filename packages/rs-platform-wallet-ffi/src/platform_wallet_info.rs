@@ -54,7 +54,6 @@ pub unsafe extern "C" fn platform_wallet_info_create_from_seed(
 pub unsafe extern "C" fn platform_wallet_info_create_from_mnemonic(
     network: FFINetwork,
     mnemonic: *const c_char,
-    passphrase: *const c_char,
     out_handle: *mut Handle,
 ) -> PlatformWalletFFIResult {
     check_ptr!(mnemonic);
@@ -65,31 +64,13 @@ pub unsafe extern "C" fn platform_wallet_info_create_from_mnemonic(
     let mnemonic_str =
         unwrap_result_or_return!(unsafe { std::ffi::CStr::from_ptr(mnemonic).to_str() });
 
-    let passphrase_str = if passphrase.is_null() {
-        None
-    } else {
-        Some(unwrap_result_or_return!(unsafe {
-            std::ffi::CStr::from_ptr(passphrase).to_str()
-        }))
-    };
-
     let mnemonic_obj = unwrap_result_or_return!(mnemonic_str.parse::<key_wallet::Mnemonic>());
 
-    // Create wallet from mnemonic with or without passphrase
-    let wallet = if let Some(pass) = passphrase_str {
-        unwrap_result_or_return!(key_wallet::Wallet::from_mnemonic_with_passphrase(
-            mnemonic_obj,
-            pass.to_string(),
-            network,
-            WalletAccountCreationOptions::None,
-        ))
-    } else {
-        unwrap_result_or_return!(key_wallet::Wallet::from_mnemonic(
-            mnemonic_obj,
-            network,
-            WalletAccountCreationOptions::None,
-        ))
-    };
+    let wallet = unwrap_result_or_return!(key_wallet::Wallet::from_mnemonic(
+        mnemonic_obj,
+        network,
+        WalletAccountCreationOptions::None,
+    ));
 
     // Create PlatformWalletInfo from the wallet
     let platform_wallet = PlatformWalletInfo::from_wallet(&wallet, 0);
@@ -186,7 +167,6 @@ mod tests {
             let result = platform_wallet_info_create_from_mnemonic(
                 FFINetwork::Testnet,
                 mnemonic.as_ptr(),
-                std::ptr::null(),
                 &mut handle,
             );
 

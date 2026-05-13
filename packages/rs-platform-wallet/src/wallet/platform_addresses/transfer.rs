@@ -8,6 +8,7 @@ use dpp::version::PlatformVersion;
 use dpp::version::LATEST_PLATFORM_VERSION;
 use key_wallet::PlatformP2PKHAddress;
 
+use crate::changeset::Merge;
 use crate::wallet::PlatformAddressWallet;
 use crate::{PlatformAddressChangeSet, PlatformWalletError};
 use dash_sdk::platform::transition::transfer_address_funds::TransferAddressFunds;
@@ -134,6 +135,26 @@ impl PlatformAddressWallet {
                         funds,
                     });
                 }
+            }
+        }
+        drop(wm);
+
+        // Mirror `sync.rs`: push the post-broadcast balances through
+        // the persister so any external store stays in sync with the
+        // in-memory account state we just updated above. Without
+        // this, persisted rows for these addresses stay frozen at
+        // pre-send values until the next BLAST sync, and
+        // `initialize_from_persisted` on the next process start would
+        // seed `account.address_credit_balance` from those stale rows
+        // — leaving `auto_select_inputs` to declare an input balance
+        // the protocol then rejects.
+        //
+        // Log-on-error rather than propagate: the on-chain transition
+        // already succeeded, and a persistence hiccup shouldn't mask
+        // that. A subsequent sync reconciles.
+        if !cs.is_empty() {
+            if let Err(e) = self.persister.store(cs.clone().into()) {
+                tracing::error!("Failed to persist transfer changeset: {}", e);
             }
         }
 

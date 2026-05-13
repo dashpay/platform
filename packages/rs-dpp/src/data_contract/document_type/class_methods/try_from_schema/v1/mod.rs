@@ -341,11 +341,33 @@ impl DocumentTypeV1 {
 
                         #[cfg(feature = "validation")]
                         if full_validation {
-                            // Countable indices are only supported starting from protocol version 12
-                            if index.countable && platform_version.protocol_version < 12 {
+                            // `countable` and `rangeCountable` index features
+                            // require GroveDB tree variants and query primitives
+                            // (CountTree / ProvableCountTree / NonCounted /
+                            // AggregateCountOnRange) that only exist from
+                            // protocol v12 onward. NOTE: at protocol v12+ the
+                            // dispatch routes to `try_from_schema_v2`, but v2
+                            // delegates to V1's parser internally for the
+                            // shared core — so this body IS reached at v12+
+                            // and the `< 12` check is load-bearing, not
+                            // defense-in-depth. Without it, v12 contracts
+                            // with countable / range_countable indexes would
+                            // be rejected here.
+                            if index.countable.is_countable()
+                                && platform_version.protocol_version < 12
+                            {
                                 return Err(ProtocolError::ConsensusError(Box::new(
                                     UnsupportedFeatureError::new(
                                         "count index".to_string(),
+                                        platform_version.protocol_version,
+                                    )
+                                    .into(),
+                                )));
+                            }
+                            if index.range_countable && platform_version.protocol_version < 12 {
+                                return Err(ProtocolError::ConsensusError(Box::new(
+                                    UnsupportedFeatureError::new(
+                                        "range-countable index".to_string(),
                                         platform_version.protocol_version,
                                     )
                                     .into(),

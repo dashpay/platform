@@ -1,0 +1,2026 @@
+use super::*;
+use crate::drive::Drive;
+use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
+use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+use crate::util::storage_flags::StorageFlags;
+use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::document::{Document, DocumentV0};
+use dpp::identifier::Identifier;
+use dpp::platform_value::Value;
+use dpp::tests::json_document::json_document_to_contract_with_ids;
+use dpp::version::PlatformVersion;
+use std::borrow::Cow;
+use std::collections::BTreeMap as StdBTreeMap;
+
+fn setup_drive_and_contract() -> (Drive, dpp::prelude::DataContract) {
+    let drive = setup_drive_with_initial_state_structure(None);
+    let platform_version = PlatformVersion::latest();
+
+    let data_contract = json_document_to_contract_with_ids(
+        "tests/supporting_files/contract/family/family-contract-countable.json",
+        None,
+        None,
+        false,
+        platform_version,
+    )
+    .expect("expected to get json based contract");
+
+    drive
+        .apply_contract(
+            &data_contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            platform_version,
+        )
+        .expect("expected to apply contract successfully");
+
+    (drive, data_contract)
+}
+
+/// Inserts a person document with a controlled set of property values,
+/// so tests can drive the count fast path with known firstName / age
+/// values rather than relying on the random-document generator.
+fn insert_person_doc(
+    drive: &Drive,
+    data_contract: &dpp::prelude::DataContract,
+    id: [u8; 32],
+    first_name: &str,
+    middle_name: &str,
+    last_name: &str,
+    age: u64,
+) {
+    let platform_version = PlatformVersion::latest();
+    let document_type = data_contract
+        .document_type_for_name("person")
+        .expect("expected document type");
+
+    let mut properties = StdBTreeMap::new();
+    properties.insert("firstName".to_string(), Value::Text(first_name.to_string()));
+    properties.insert(
+        "middleName".to_string(),
+        Value::Text(middle_name.to_string()),
+    );
+    properties.insert("lastName".to_string(), Value::Text(last_name.to_string()));
+    properties.insert("age".to_string(), Value::U64(age));
+
+    let document: Document = DocumentV0 {
+        id: Identifier::from(id),
+        owner_id: Identifier::from([0u8; 32]),
+        properties,
+        revision: None,
+        created_at: None,
+        updated_at: None,
+        transferred_at: None,
+        created_at_block_height: None,
+        updated_at_block_height: None,
+        transferred_at_block_height: None,
+        created_at_core_block_height: None,
+        updated_at_core_block_height: None,
+        transferred_at_core_block_height: None,
+        creator_id: None,
+    }
+    .into();
+
+    let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+
+    drive
+        .add_document_for_contract(
+            DocumentAndContractInfo {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefInfo((&document, storage_flags)),
+                    owner_id: None,
+                },
+                contract: data_contract,
+                document_type,
+            },
+            false,
+            BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+            None,
+        )
+        .expect("expected to insert document");
+}
+
+/// Exact-coverage query (`age == 30` against the single-property
+/// `byAge` countable index) — the strict-picker happy path on both
+/// no-proof and prove. Pins:
+/// - Picker accepts a 1-property index whose property exactly matches
+///   the where-clause field.
+/// - No-proof executor reads the CountTree at the resolved path and
+///   returns the count.
+/// - Prove executor builds a CountTree-element proof returning
+///   non-empty bytes.
+#[test]
+fn test_count_query_fully_covered_equal_succeeds_on_both_paths() {
+    let (drive, data_contract) = setup_drive_and_contract();
+    let platform_version = PlatformVersion::latest();
+
+    // 3 docs at age=30, 2 at age=40 → byAge count at 30 should be 3.
+    insert_person_doc(&drive, &data_contract, [1u8; 32], "Alice", "", "Smith", 30);
+    insert_person_doc(&drive, &data_contract, [2u8; 32], "Bob", "", "Jones", 30);
+    insert_person_doc(&drive, &data_contract, [3u8; 32], "Carol", "", "Brown", 30);
+    insert_person_doc(&drive, &data_contract, [4u8; 32], "Dave", "", "Smith", 40);
+    insert_person_doc(&drive, &data_contract, [5u8; 32], "Eve", "", "Jones", 40);
+
+    let document_type = data_contract
+        .document_type_for_name("person")
+        .expect("expected document type");
+
+    let age_eq_30 = WhereClause {
+        field: "age".to_string(),
+        operator: WhereOperator::Equal,
+        value: Value::U64(30),
+    };
+    let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+        document_type.indexes(),
+        std::slice::from_ref(&age_eq_30),
+    )
+    .expect("expected picker to accept fully-covered byAge index");
+
+    let query = DriveDocumentCountQuery {
+        document_type,
+        contract_id: data_contract.id().to_buffer(),
+        document_type_name: "person".to_string(),
+        index,
+        where_clauses: vec![age_eq_30],
+    };
+
+    // No-proof path
+    let results = query
+        .execute_no_proof(&drive, None, platform_version)
+        .expect("expected no-proof count to succeed");
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].count, 3, "expected count of 3 docs at age=30");
+    assert!(
+        results[0].key.is_empty(),
+        "expected empty key for fully-covered Equal-only count"
+    );
+
+    // Prove path — emits the CountTree element proof for the resolved
+    // branch. Non-empty bytes guarantee the prover walked a real merk
+    // path (not a degenerate empty envelope).
+    let proof = query
+        .execute_point_lookup_count_with_proof(&drive, None, platform_version)
+        .expect("expected prove count to succeed on fully-covered Equal query");
+    assert!(
+        !proof.is_empty(),
+        "expected non-empty proof bytes for fully-covered Equal prove count"
+    );
+}
+
+/// Strict-picker rejection contract: a where clause that doesn't
+/// exactly cover any `countable: true` index returns `None` from the
+/// picker. Pre-rewrite the picker would have returned a longer-prefix
+/// index and downstream code would have walked partially-covered
+/// trees via `count_recursive`; now the responsibility for index
+/// design sits cleanly with the contract author, and queries against
+/// partially-covered indexes fail loudly at the picker level.
+#[test]
+fn test_count_query_picker_rejects_partial_coverage() {
+    let (_drive, data_contract) = setup_drive_and_contract();
+    let document_type = data_contract
+        .document_type_for_name("person")
+        .expect("expected document type");
+
+    // family-contract-countable.json has byFirstNameLastName (2 props),
+    // byFirstNameMiddleLastName (3 props, unique), and byAge (1 prop).
+    // Empty where doesn't exactly cover any of them.
+    let no_match = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+        document_type.indexes(),
+        &[],
+    );
+    assert!(
+        no_match.is_none(),
+        "strict picker must reject empty where clauses (no index has 0 properties)"
+    );
+
+    // `firstName = X` alone is a prefix of byFirstNameLastName but
+    // not an exact match — there's no 1-property `[firstName]` index
+    // in this contract. Strict picker rejects.
+    let first_name_only = vec![WhereClause {
+        field: "firstName".to_string(),
+        operator: WhereOperator::Equal,
+        value: Value::Text("Alice".to_string()),
+    }];
+    let no_match_partial = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+        document_type.indexes(),
+        &first_name_only,
+    );
+    assert!(
+        no_match_partial.is_none(),
+        "`firstName = X` doesn't exactly cover any index (only as prefix of \
+         2- and 3-property indexes) → picker returns None"
+    );
+
+    // `age = X` exactly covers byAge (1-prop) → picker accepts.
+    // Confirms the strict contract isn't over-rejecting.
+    let age_only = vec![WhereClause {
+        field: "age".to_string(),
+        operator: WhereOperator::Equal,
+        value: Value::U64(30),
+    }];
+    let picked = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+        document_type.indexes(),
+        &age_only,
+    )
+    .expect("byAge is exactly covered");
+    assert_eq!(picked.properties.len(), 1);
+    assert_eq!(picked.properties[0].name, "age");
+}
+
+#[test]
+fn test_find_countable_index_for_where_clauses_no_match() {
+    let platform_version = PlatformVersion::latest();
+
+    let data_contract = json_document_to_contract_with_ids(
+        "tests/supporting_files/contract/family/family-contract-countable.json",
+        None,
+        None,
+        false,
+        platform_version,
+    )
+    .expect("expected to get json based contract");
+
+    let document_type = data_contract
+        .document_type_for_name("person")
+        .expect("expected document type");
+
+    // Create a where clause for a field that doesn't appear as a prefix of any index
+    let where_clause = WhereClause {
+        field: "nonExistentField".to_string(),
+        operator: WhereOperator::Equal,
+        value: Value::Text("test".to_string()),
+    };
+
+    let result = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+        document_type.indexes(),
+        &[where_clause],
+    );
+
+    assert!(
+        result.is_none(),
+        "expected no countable index for non-existent field"
+    );
+}
+
+#[test]
+fn test_has_unsupported_operator() {
+    let eq_clause = WhereClause {
+        field: "age".to_string(),
+        operator: WhereOperator::Equal,
+        value: Value::U64(30),
+    };
+    let in_clause = WhereClause {
+        field: "age".to_string(),
+        operator: WhereOperator::In,
+        value: Value::Array(vec![Value::U64(30), Value::U64(40)]),
+    };
+    let gt_clause = WhereClause {
+        field: "age".to_string(),
+        operator: WhereOperator::GreaterThan,
+        value: Value::U64(20),
+    };
+
+    assert!(!DriveDocumentCountQuery::has_unsupported_operator(&[]));
+    assert!(!DriveDocumentCountQuery::has_unsupported_operator(
+        std::slice::from_ref(&eq_clause)
+    ));
+    assert!(!DriveDocumentCountQuery::has_unsupported_operator(
+        std::slice::from_ref(&in_clause)
+    ));
+    assert!(!DriveDocumentCountQuery::has_unsupported_operator(&[
+        eq_clause.clone(),
+        in_clause.clone(),
+    ]));
+    assert!(DriveDocumentCountQuery::has_unsupported_operator(
+        std::slice::from_ref(&gt_clause)
+    ));
+    assert!(DriveDocumentCountQuery::has_unsupported_operator(&[
+        eq_clause, gt_clause,
+    ]));
+}
+
+#[test]
+fn test_find_countable_index_rejects_unsupported_operator() {
+    let platform_version = PlatformVersion::latest();
+
+    let data_contract = json_document_to_contract_with_ids(
+        "tests/supporting_files/contract/family/family-contract-countable.json",
+        None,
+        None,
+        false,
+        platform_version,
+    )
+    .expect("expected to get json based contract");
+
+    let document_type = data_contract
+        .document_type_for_name("person")
+        .expect("expected document type");
+
+    let gt_clause = WhereClause {
+        field: "age".to_string(),
+        operator: WhereOperator::GreaterThan,
+        value: Value::U64(20),
+    };
+
+    // Even though `age` exists as a countable index, GreaterThan disqualifies it
+    // for the count fast path; the picker must report this as "no usable index"
+    // so the handler turns it into a clear error.
+    assert!(
+        DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+            document_type.indexes(),
+            std::slice::from_ref(&gt_clause),
+        )
+        .is_none()
+    );
+}
+
+#[test]
+fn test_count_query_total_count_with_in_operator() {
+    let (drive, data_contract) = setup_drive_and_contract();
+    let platform_version = PlatformVersion::latest();
+
+    // Three docs with age=30, two with age=40, one with age=50.
+    insert_person_doc(&drive, &data_contract, [1u8; 32], "Alice", "M", "Smith", 30);
+    insert_person_doc(&drive, &data_contract, [2u8; 32], "Bob", "M", "Smith", 30);
+    insert_person_doc(&drive, &data_contract, [3u8; 32], "Carol", "M", "Smith", 30);
+    insert_person_doc(&drive, &data_contract, [4u8; 32], "Dave", "M", "Smith", 40);
+    insert_person_doc(&drive, &data_contract, [5u8; 32], "Eve", "M", "Smith", 40);
+    insert_person_doc(&drive, &data_contract, [6u8; 32], "Frank", "M", "Smith", 50);
+
+    let document_type = data_contract
+        .document_type_for_name("person")
+        .expect("expected document type");
+
+    // age IN [30, 40] should count 5 documents (3 + 2).
+    let in_clause = WhereClause {
+        field: "age".to_string(),
+        operator: WhereOperator::In,
+        value: Value::Array(vec![Value::U64(30), Value::U64(40)]),
+    };
+
+    let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+        document_type.indexes(),
+        std::slice::from_ref(&in_clause),
+    )
+    .expect("expected to find countable index for In on age");
+
+    let query = DriveDocumentCountQuery {
+        document_type,
+        contract_id: data_contract.id().to_buffer(),
+        document_type_name: "person".to_string(),
+        index,
+        where_clauses: vec![in_clause],
+    };
+
+    let results = query
+        .execute_no_proof(&drive, None, platform_version)
+        .expect("expected query to succeed");
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(
+        results[0].count, 5,
+        "expected count of 5 (age=30 has 3, age=40 has 2)"
+    );
+}
+
+#[test]
+fn test_count_query_total_count_with_in_operator_no_matches() {
+    let (drive, data_contract) = setup_drive_and_contract();
+    let platform_version = PlatformVersion::latest();
+
+    insert_person_doc(&drive, &data_contract, [1u8; 32], "Alice", "M", "Smith", 30);
+    insert_person_doc(&drive, &data_contract, [2u8; 32], "Bob", "M", "Smith", 30);
+
+    let document_type = data_contract
+        .document_type_for_name("person")
+        .expect("expected document type");
+
+    // age IN [99, 100] - no matches.
+    let in_clause = WhereClause {
+        field: "age".to_string(),
+        operator: WhereOperator::In,
+        value: Value::Array(vec![Value::U64(99), Value::U64(100)]),
+    };
+
+    let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+        document_type.indexes(),
+        std::slice::from_ref(&in_clause),
+    )
+    .expect("expected to find countable index for In on age");
+
+    let query = DriveDocumentCountQuery {
+        document_type,
+        contract_id: data_contract.id().to_buffer(),
+        document_type_name: "person".to_string(),
+        index,
+        where_clauses: vec![in_clause],
+    };
+
+    let results = query
+        .execute_no_proof(&drive, None, platform_version)
+        .expect("expected query to succeed");
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].count, 0, "expected count of 0 for unmatched In");
+}
+
+/// `In` clauses with duplicate values are rejected with
+/// `InvalidInClause` — the system-wide canonical contract enforced
+/// by [`WhereClause::in_values`]. Every In-consuming path the count
+/// dispatcher reaches (the shared `point_lookup_count_path_query`
+/// builder for both no-proof and prove, the `per_in_value`
+/// executor's `in_values()` call, the regular document query path,
+/// the contract-level where-clause validator) routes through the
+/// same `in_values()` validator, so `age IN [30, 30]` is rejected
+/// loudly rather than silently deduplicated.
+///
+/// Pre-unification the no-proof count path was the outlier — its
+/// hand-rolled `expand_paths_and_count` walker bypassed
+/// `in_values()` and silently deduplicated via a `BTreeSet<Vec<u8>>`
+/// of serialized keys. Collapsing the no-proof executor to share
+/// the path-query builder fixed that inconsistency by routing both
+/// sides through the same validator.
+#[test]
+fn test_count_query_in_operator_rejects_duplicate_values() {
+    let (drive, data_contract) = setup_drive_and_contract();
+    let platform_version = PlatformVersion::latest();
+
+    insert_person_doc(&drive, &data_contract, [1u8; 32], "Alice", "M", "Smith", 30);
+
+    let document_type = data_contract
+        .document_type_for_name("person")
+        .expect("expected document type");
+
+    // age IN [30, 30, 30] — duplicates rejected by the system-wide
+    // `in_values()` validator before any subtree access.
+    let in_clause = WhereClause {
+        field: "age".to_string(),
+        operator: WhereOperator::In,
+        value: Value::Array(vec![Value::U64(30), Value::U64(30), Value::U64(30)]),
+    };
+
+    let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+        document_type.indexes(),
+        std::slice::from_ref(&in_clause),
+    )
+    .expect("expected to find countable index for In on age");
+
+    let query = DriveDocumentCountQuery {
+        document_type,
+        contract_id: data_contract.id().to_buffer(),
+        document_type_name: "person".to_string(),
+        index,
+        where_clauses: vec![in_clause],
+    };
+
+    let err = query
+        .execute_no_proof(&drive, None, platform_version)
+        .expect_err("expected duplicate-In-values to be rejected");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("no duplicates"),
+        "expected duplicate-rejection error from in_values(), got: {}",
+        msg
+    );
+}
+
+/// `In` on the **before-last** index property with a trailing `Equal`
+/// on the last property exercises the relaxed prove count builder
+/// shape. The regular document query path's `Index::matches` allows
+/// `In` on the last OR before-last property of the chosen index, and
+/// the prove count builder follows the same rule (see
+/// `point_lookup_count_path_query` in `path_query.rs`).
+///
+/// Index used: `byFirstNameLastName` (`[firstName, lastName]`).
+/// Where: `firstName IN ["Alice", "Bob"] AND lastName == "Smith"`.
+/// - Alice + Smith: 2 docs
+/// - Bob + Smith: 1 doc
+/// - Bob + Jones: 1 doc (ignored — lastName != Smith)
+/// - Carol + Smith: 1 doc (ignored — firstName not in In array)
+///
+/// Pins:
+/// - Strict picker accepts the 2-prop index when both properties are
+///   covered (one by In, one by Equal).
+/// - No-proof executor goes through the same
+///   `point_lookup_count_path_query` builder as the prove side, runs
+///   it through `grove.query`, and sums the emitted CountTree
+///   elements' `count_value`s: 2 + 1 = 3.
+/// - Prove executor builds a compound path query whose `base_path`
+///   stops at `[..., "firstName"]`, with `outer_query` keys = the
+///   sorted serialized In values and `set_subquery_path` carrying
+///   `["lastName", serialize("Smith")]`; the subquery's `Key([0])`
+///   then picks off the CountTree under each matched In branch.
+/// - Proof verifies (round-trips through `GroveDb::verify_query` in
+///   the verifier), and the verified per-branch entries' counts sum
+///   to the no-proof count.
+#[test]
+fn test_count_query_in_on_before_last_with_trailing_equal_succeeds_on_both_paths() {
+    let (drive, data_contract) = setup_drive_and_contract();
+    let platform_version = PlatformVersion::latest();
+
+    // Different middle names so the unique `byFirstNameMiddleLastName`
+    // index is satisfied — the count goes through the non-unique
+    // 2-prop `byFirstNameLastName` index, which doesn't care about
+    // middleName.
+    insert_person_doc(&drive, &data_contract, [1u8; 32], "Alice", "M", "Smith", 30);
+    insert_person_doc(&drive, &data_contract, [2u8; 32], "Alice", "N", "Smith", 31);
+    insert_person_doc(&drive, &data_contract, [3u8; 32], "Bob", "M", "Smith", 40);
+    insert_person_doc(&drive, &data_contract, [4u8; 32], "Bob", "N", "Jones", 41);
+    insert_person_doc(&drive, &data_contract, [5u8; 32], "Carol", "M", "Smith", 50);
+
+    let document_type = data_contract
+        .document_type_for_name("person")
+        .expect("expected document type");
+
+    let in_first = WhereClause {
+        field: "firstName".to_string(),
+        operator: WhereOperator::In,
+        value: Value::Array(vec![
+            Value::Text("Alice".to_string()),
+            Value::Text("Bob".to_string()),
+        ]),
+    };
+    let eq_last = WhereClause {
+        field: "lastName".to_string(),
+        operator: WhereOperator::Equal,
+        value: Value::Text("Smith".to_string()),
+    };
+    let where_clauses = vec![in_first, eq_last];
+
+    let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+        document_type.indexes(),
+        &where_clauses,
+    )
+    .expect("expected picker to accept byFirstNameLastName for In + Equal coverage");
+    // Sanity-check the picker really chose the 2-prop index, not the
+    // 3-prop unique one — confirms set-equality coverage and pins the
+    // covering-index expectation against future picker tweaks.
+    assert_eq!(index.properties.len(), 2);
+
+    let query = DriveDocumentCountQuery {
+        document_type,
+        contract_id: data_contract.id().to_buffer(),
+        document_type_name: "person".to_string(),
+        index,
+        where_clauses,
+    };
+
+    // No-proof: 2 Alice+Smith + 1 Bob+Smith = 3.
+    let results = query
+        .execute_no_proof(&drive, None, platform_version)
+        .expect("expected no-proof count to succeed");
+    assert_eq!(results.len(), 1);
+    assert_eq!(
+        results[0].count, 3,
+        "expected 3 docs covered by firstName IN [Alice, Bob] AND lastName = Smith"
+    );
+
+    // Prove: builder emits the compound shape; verifier round-trips
+    // and returns per-In-value entries.
+    let proof = query
+        .execute_point_lookup_count_with_proof(&drive, None, platform_version)
+        .expect("expected prove count to succeed on In-on-before-last shape");
+    assert!(
+        !proof.is_empty(),
+        "expected non-empty proof bytes for In-on-before-last prove count"
+    );
+
+    let (_root_hash, entries) = query
+        .verify_point_lookup_count_proof(&proof, platform_version)
+        .expect("expected proof verification to succeed");
+    // Verifier emits one entry per In branch with a non-zero count.
+    // Alice → 2, Bob → 1.
+    let summed: u64 = entries.iter().map(|e| e.count).sum();
+    assert_eq!(
+        summed, 3,
+        "verified per-branch entries should sum to the no-proof total"
+    );
+}
+
+/// `In` on the **first** property of a 3-property index, with two
+/// trailing Equals (`firstName IN [..] AND middleName = m AND
+/// lastName = ln` on the unique `byFirstNameMiddleLastName` index)
+/// — exercises the most aggressive shape the relaxed prove count
+/// builder accepts: In at position 0 with two trailing Equals
+/// rolling through `subquery_path_extension`. Both no-proof and
+/// prove paths go through the same
+/// `point_lookup_count_path_query` builder (no-proof reads the
+/// emitted CountTree elements via `grove.query`; prove signs them
+/// via `get_proved_path_query`), so accepting this shape on one
+/// side automatically accepts it on the other. The count path is
+/// deliberately more permissive than the regular document query
+/// path here — see the builder's docstring for the divergence
+/// rationale vs. `Index::matches`.
+///
+/// Index used: `byFirstNameMiddleLastName` (unique, 3 props).
+/// Where: `firstName IN ["Alice", "Bob"] AND middleName = "M" AND
+/// lastName = "Smith"`.
+/// - (Alice, M, Smith): 1 doc
+/// - (Bob, M, Smith): 1 doc
+/// - (Carol, M, Smith): 1 doc (excluded — firstName not in In)
+/// - (Alice, N, Smith): 1 doc (excluded — middleName ≠ M)
+///
+/// Pins:
+/// - Strict picker accepts the 3-prop covering index.
+/// - No-proof executor sums per-In-value: 1 + 1 = 2.
+/// - Prove executor builds a compound path query with `base_path`
+///   stopping at `[..., "firstName"]`, `outer_query` keys = sorted
+///   serialized In values, `set_subquery_path` =
+///   `["middleName", serialize("M"), "lastName", serialize("Smith")]`,
+///   subquery `Key([0])`.
+/// - Proof verifies and the verified per-branch entries' counts
+///   sum to the no-proof count.
+#[test]
+fn test_count_query_in_on_first_of_three_with_two_trailing_equals_succeeds_on_both_paths() {
+    let (drive, data_contract) = setup_drive_and_contract();
+    let platform_version = PlatformVersion::latest();
+
+    // Pick distinct (firstName, middleName, lastName) tuples so the
+    // unique 3-prop index doesn't reject any inserts. The picker
+    // will route the count query through that same 3-prop index
+    // because the where clauses cover exactly its properties.
+    insert_person_doc(&drive, &data_contract, [1u8; 32], "Alice", "M", "Smith", 30);
+    insert_person_doc(&drive, &data_contract, [2u8; 32], "Bob", "M", "Smith", 40);
+    insert_person_doc(&drive, &data_contract, [3u8; 32], "Carol", "M", "Smith", 50);
+    insert_person_doc(&drive, &data_contract, [4u8; 32], "Alice", "N", "Smith", 31);
+    insert_person_doc(&drive, &data_contract, [5u8; 32], "Bob", "N", "Jones", 41);
+
+    let document_type = data_contract
+        .document_type_for_name("person")
+        .expect("expected document type");
+
+    let in_first = WhereClause {
+        field: "firstName".to_string(),
+        operator: WhereOperator::In,
+        value: Value::Array(vec![
+            Value::Text("Alice".to_string()),
+            Value::Text("Bob".to_string()),
+        ]),
+    };
+    let eq_middle = WhereClause {
+        field: "middleName".to_string(),
+        operator: WhereOperator::Equal,
+        value: Value::Text("M".to_string()),
+    };
+    let eq_last = WhereClause {
+        field: "lastName".to_string(),
+        operator: WhereOperator::Equal,
+        value: Value::Text("Smith".to_string()),
+    };
+    let where_clauses = vec![in_first, eq_middle, eq_last];
+
+    let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+        document_type.indexes(),
+        &where_clauses,
+    )
+    .expect("expected picker to accept the 3-prop covering index");
+    // Sanity-pin the picker actually chose the 3-prop unique
+    // countable index rather than some weaker variant.
+    assert_eq!(index.properties.len(), 3);
+
+    let query = DriveDocumentCountQuery {
+        document_type,
+        contract_id: data_contract.id().to_buffer(),
+        document_type_name: "person".to_string(),
+        index,
+        where_clauses,
+    };
+
+    // No-proof: 1 (Alice,M,Smith) + 1 (Bob,M,Smith) = 2.
+    let results = query
+        .execute_no_proof(&drive, None, platform_version)
+        .expect("expected no-proof count to succeed");
+    assert_eq!(results.len(), 1);
+    assert_eq!(
+        results[0].count, 2,
+        "expected 2 docs covered by firstName IN [Alice, Bob] AND \
+         middleName = M AND lastName = Smith"
+    );
+
+    // Prove: builder emits compound shape with 2-segment
+    // `subquery_path_extension`. Verifier round-trips and returns
+    // per-In-value entries.
+    let proof = query
+        .execute_point_lookup_count_with_proof(&drive, None, platform_version)
+        .expect("expected prove count to succeed on In-on-first-of-3 shape");
+    assert!(
+        !proof.is_empty(),
+        "expected non-empty proof bytes for In-on-first-of-3 prove count"
+    );
+
+    let (_root_hash, entries) = query
+        .verify_point_lookup_count_proof(&proof, platform_version)
+        .expect("expected proof verification to succeed");
+    let summed: u64 = entries.iter().map(|e| e.count).sum();
+    assert_eq!(
+        summed, 2,
+        "verified per-branch entries should sum to the no-proof total"
+    );
+}
+
+/// Pins the DoS-bound invariant on the compound `range + In`
+/// summed no-proof path: per-In aggregate fan-out, NOT a walk-and-
+/// sum over every matched `(in_key, key)` element. A regression
+/// to walk-and-sum surfaces as a request-amplification on a public
+/// unauthenticated endpoint (one broad range × 100 In values can
+/// force a full index walk while the response stays a single
+/// aggregate `u64`).
+///
+/// Test invariant: the per-In fan-out gives a correct sum
+/// (functional check), and it uses `query_aggregate_count` rather
+/// than `query_raw` (DoS-bound check). The functional check pins
+/// the result against a known distribution; the DoS-bound check is
+/// implicit — `query_aggregate_count` is O(log n) per call vs.
+/// `query_raw`'s O(matched elements), and the test data is
+/// constructed so a walk would surface a runtime regression (e.g.
+/// timeout in CI). We rely on the executor's per-In loop structure
+/// as the structural pin; the comment + this test together
+/// document the contract.
+#[test]
+fn test_compound_range_in_summed_no_proof_uses_per_in_aggregate_fanout() {
+    use crate::config::DriveConfig;
+    use crate::query::drive_document_count_query::drive_dispatcher::{
+        DocumentCountRequest, DocumentCountResponse,
+    };
+    use dpp::data_contract::DataContractFactory;
+    use dpp::platform_value::platform_value;
+
+    const PROTOCOL_VERSION_V12: u32 = 12;
+
+    let drive = setup_drive_with_initial_state_structure(None);
+    let platform_version = PlatformVersion::latest();
+
+    // `[brand, color]` compound range_countable index. `brand` is
+    // the prefix the test will fan-out an `In` clause across;
+    // `color` is the range terminator. The aggregate primitive
+    // works on the per-brand `color` subtree directly, so
+    // `query_aggregate_count` can answer "how many widgets with
+    // brand=X and color > 'blue'" in O(log n) per brand.
+    let factory =
+        DataContractFactory::new(PROTOCOL_VERSION_V12).expect("expected to create factory");
+    let document_schema = platform_value!({
+        "type": "object",
+        "properties": {
+            "brand": {"type": "string", "position": 0, "maxLength": 32},
+            "color": {"type": "string", "position": 1, "maxLength": 32},
+        },
+        "indices": [{
+            "name": "byBrandColor",
+            "properties": [{"brand": "asc"}, {"color": "asc"}],
+            "countable": "countable",
+            "rangeCountable": true,
+        }],
+        "additionalProperties": false,
+    });
+    let schemas = platform_value!({ "widget": document_schema });
+    let data_contract = factory
+        .create_with_value_config(
+            dpp::tests::utils::generate_random_identifier_struct(),
+            0,
+            schemas,
+            None,
+            None,
+        )
+        .expect("expected to create data contract")
+        .data_contract_owned();
+    drive
+        .apply_contract(
+            &data_contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            platform_version,
+        )
+        .expect("apply contract");
+
+    let document_type = data_contract
+        .document_type_for_name("widget")
+        .expect("widget doc type exists");
+
+    // 3 brands × varying colors, mixing in-range (`color > "blue"`)
+    // and out-of-range entries. Expected count for
+    // `brand IN [acme, contoso] AND color > "blue"`:
+    //   acme: 2 red + 1 green = 3 in-range, 1 blue out  → 3
+    //   contoso: 1 red + 2 green = 3 in-range, 0 blue   → 3
+    //   stark: 1 red (excluded by In)                   → 0
+    // Total = 6.
+    let entries = [
+        ("acme", "red"),
+        ("acme", "red"),
+        ("acme", "green"),
+        ("acme", "blue"),
+        ("contoso", "red"),
+        ("contoso", "green"),
+        ("contoso", "green"),
+        ("stark", "red"),
+    ];
+    for (i, (brand, color)) in entries.iter().enumerate() {
+        let mut properties = StdBTreeMap::new();
+        properties.insert("brand".to_string(), Value::Text(brand.to_string()));
+        properties.insert("color".to_string(), Value::Text(color.to_string()));
+        let document: Document = DocumentV0 {
+            id: Identifier::from([(i + 1) as u8; 32]),
+            owner_id: Identifier::from([0u8; 32]),
+            properties,
+            revision: None,
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+        }
+        .into();
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&document, storage_flags)),
+                        owner_id: None,
+                    },
+                    contract: &data_contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to insert widget");
+    }
+
+    // Request: `brand IN ["acme", "contoso"] AND color > "blue"`,
+    // no-proof, summed mode. Goes through
+    // `execute_range_count_no_proof`'s compound-summed branch,
+    // which loops over the In values and issues
+    // `query_aggregate_count` per branch.
+    let drive_config = DriveConfig::default();
+    let raw_where_value = Value::Array(vec![
+        Value::Array(vec![
+            Value::Text("brand".to_string()),
+            Value::Text("in".to_string()),
+            Value::Array(vec![
+                Value::Text("acme".to_string()),
+                Value::Text("contoso".to_string()),
+            ]),
+        ]),
+        Value::Array(vec![
+            Value::Text("color".to_string()),
+            Value::Text(">".to_string()),
+            Value::Text("blue".to_string()),
+        ]),
+    ]);
+    let request = DocumentCountRequest {
+        contract: &data_contract,
+        document_type,
+        raw_where_value,
+        raw_order_by_value: Value::Null,
+        return_distinct_counts_in_range: false,
+        limit: None,
+        prove: false,
+        drive_config: &drive_config,
+    };
+
+    let response = drive
+        .execute_document_count_request(request, None, platform_version)
+        .expect("expected dispatcher to succeed on compound summed range path");
+    let count = match response {
+        DocumentCountResponse::Aggregate(c) => c,
+        other => panic!("expected Aggregate response, got {:?}", other),
+    };
+    assert_eq!(
+        count, 6,
+        "acme(2 red + 1 green) + contoso(1 red + 2 green) = 6 in-range widgets"
+    );
+}
+
+/// `where_clauses_from_value` must run the parsed `Vec<WhereClause>`
+/// through `WhereClause::group_clauses` to reject malformed shapes
+/// the regular document-query path rejects.
+///
+/// Without `group_clauses` validation, the count endpoint silently
+/// accepts duplicate/conflicting clauses and returns a count for an
+/// arbitrarily reduced query:
+/// - Two conflicting `Equal` clauses on the same field collapse to
+///   a single clause via `find_countable_index_for_where_clauses`'s
+///   `BTreeSet` over field names and `point_lookup_count_path_query`'s
+///   `.find(...)` for each index property — the executor picks the
+///   first clause and the second is silently dropped.
+/// - Multiple `In` clauses or multiple range clauses similarly slip
+///   through.
+///
+/// This test pins the rejection at the dispatcher seam (via the
+/// `execute_document_count_request` entry point that all callers
+/// reach through the abci handler), so a future change that bypasses
+/// the validator gets caught.
+#[test]
+fn test_count_request_with_duplicate_equality_clauses_is_rejected() {
+    use crate::config::DriveConfig;
+    use crate::query::drive_document_count_query::drive_dispatcher::DocumentCountRequest;
+
+    let (drive, data_contract) = setup_drive_and_contract();
+    let platform_version = PlatformVersion::latest();
+
+    let document_type = data_contract
+        .document_type_for_name("person")
+        .expect("expected document type");
+
+    // Two conflicting `Equal` clauses on `firstName` — the request
+    // is structurally malformed: there's no single document that
+    // satisfies both `firstName = "Alice"` AND `firstName = "Bob"`,
+    // so the answer should be 0, but a regression would return
+    // count("firstName = Alice") or count("firstName = Bob")
+    // depending on iteration order.
+    let raw_where_value = Value::Array(vec![
+        Value::Array(vec![
+            Value::Text("firstName".to_string()),
+            Value::Text("==".to_string()),
+            Value::Text("Alice".to_string()),
+        ]),
+        Value::Array(vec![
+            Value::Text("firstName".to_string()),
+            Value::Text("==".to_string()),
+            Value::Text("Bob".to_string()),
+        ]),
+    ]);
+    let drive_config = DriveConfig::default();
+    let request = DocumentCountRequest {
+        contract: &data_contract,
+        document_type,
+        raw_where_value,
+        raw_order_by_value: Value::Null,
+        return_distinct_counts_in_range: false,
+        limit: None,
+        prove: false,
+        drive_config: &drive_config,
+    };
+
+    let err = drive
+        .execute_document_count_request(request, None, platform_version)
+        .expect_err("expected duplicate-equality request to be rejected");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("duplicate") || msg.contains("DuplicateNonGroupableClauseSameField"),
+        "expected duplicate-equality rejection from group_clauses, got: {}",
+        msg
+    );
+}
+
+/// Pins the consensus-sensitive limit-fallback invariant on the
+/// `RangeDistinctProof` dispatch path: when the request's `limit`
+/// is `None`, the dispatcher MUST fall back to the compile-time
+/// `crate::config::DEFAULT_QUERY_LIMIT` constant (which the SDK
+/// verifier also reads), NOT the operator-tunable
+/// `drive_config.default_query_limit`. The two values are often
+/// equal in practice (both default to 100), so a regression where
+/// the dispatcher reads from `drive_config.default_query_limit`
+/// would only manifest on operators who tuned the runtime value
+/// away from the constant — exactly the silent verify-failure
+/// surface the CodeRabbit review flagged.
+///
+/// Mechanism: we build a `DocumentCountRequest` whose
+/// `drive_config.default_query_limit` is **deliberately set to 50**
+/// (≠ `DEFAULT_QUERY_LIMIT` = 100). If the dispatcher uses
+/// `drive_config.default_query_limit`, the proof embeds
+/// `SizedQuery::limit = 50`; if it uses `DEFAULT_QUERY_LIMIT`, the
+/// proof embeds `SizedQuery::limit = 100`. We then reconstruct the
+/// path query with `Some(DEFAULT_QUERY_LIMIT)` — exactly what the
+/// SDK verifier does — and run `GroveDb::verify_query` on the
+/// proof bytes. The merk-root recomputation only succeeds if the
+/// prover signed with `limit = 100`; if it signed with `limit = 50`
+/// the reconstructed path query bytes differ and `verify_query`
+/// returns an error.
+///
+/// Without the fix in `drive_dispatcher.rs`'s `RangeDistinctProof`
+/// arm this test fails. The "fix" is the one-line change from
+/// `request.drive_config.default_query_limit` to
+/// `crate::config::DEFAULT_QUERY_LIMIT` on the prove path — see
+/// the comment in that arm for the symmetric reasoning.
+#[test]
+fn test_range_distinct_proof_uses_compile_time_default_query_limit_not_operator_config() {
+    use crate::config::{DriveConfig, DEFAULT_QUERY_LIMIT};
+    use crate::query::drive_document_count_query::drive_dispatcher::{
+        DocumentCountRequest, DocumentCountResponse,
+    };
+    use dpp::data_contract::DataContractFactory;
+    use dpp::platform_value::platform_value;
+    use grovedb::GroveDb;
+
+    const PROTOCOL_VERSION_V12: u32 = 12;
+    // Set the operator's tuned limit to **1** — a value small
+    // enough that the prover's walk would actually stop after one
+    // element instead of just covering the entire result set
+    // (which 50 or 100 both would, masking any limit-mismatch by
+    // producing identical proof bytes). With 2+ in-range distinct
+    // keys below and `OPERATOR_TUNED_LIMIT = 1`, the prover-side
+    // limit choice **materially affects which elements end up in
+    // the proof** and the merk-root recomputation. If the
+    // dispatcher (incorrectly) used `default_query_limit = 1`,
+    // the prover would emit a 1-key proof; the verifier
+    // (rebuilding with `DEFAULT_QUERY_LIMIT = 100`) would expect
+    // up to 100 keys and the boundary-subtree hash chain would
+    // not match → `verify_query` returns Err.
+    const OPERATOR_TUNED_LIMIT: u16 = 1;
+    assert_ne!(
+        DEFAULT_QUERY_LIMIT, OPERATOR_TUNED_LIMIT,
+        "test invariant: OPERATOR_TUNED_LIMIT must differ from the \
+         compile-time DEFAULT_QUERY_LIMIT for the regression check \
+         to be load-bearing"
+    );
+
+    let drive = setup_drive_with_initial_state_structure(None);
+    let platform_version = PlatformVersion::latest();
+
+    let factory =
+        DataContractFactory::new(PROTOCOL_VERSION_V12).expect("expected to create factory");
+    let document_schema = platform_value!({
+        "type": "object",
+        "properties": {
+            "color": {"type": "string", "position": 0, "maxLength": 32},
+        },
+        "indices": [{
+            "name": "byColor",
+            "properties": [{"color": "asc"}],
+            "countable": "countable",
+            "rangeCountable": true,
+        }],
+        "additionalProperties": false,
+    });
+    let schemas = platform_value!({ "widget": document_schema });
+    let data_contract = factory
+        .create_with_value_config(
+            dpp::tests::utils::generate_random_identifier_struct(),
+            0,
+            schemas,
+            None,
+            None,
+        )
+        .expect("expected to create data contract")
+        .data_contract_owned();
+
+    drive
+        .apply_contract(
+            &data_contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            platform_version,
+        )
+        .expect("apply contract");
+
+    let document_type = data_contract
+        .document_type_for_name("widget")
+        .expect("widget doc type exists");
+
+    // Spread docs across distinct color values so the
+    // RangeDistinctProof path actually carries per-key counts in
+    // its proof (an empty range would still verify trivially and
+    // mask the limit mismatch). 2 red + 3 green + 1 blue; the
+    // `color > "blue"` clause excludes blue, leaving 2 distinct
+    // in-range keys (red, green).
+    for (i, color) in ["red", "red", "green", "green", "green", "blue"]
+        .iter()
+        .enumerate()
+    {
+        let mut properties = StdBTreeMap::new();
+        properties.insert("color".to_string(), Value::Text(color.to_string()));
+        let document: Document = DocumentV0 {
+            id: Identifier::from([(i + 1) as u8; 32]),
+            owner_id: Identifier::from([0u8; 32]),
+            properties,
+            revision: None,
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+        }
+        .into();
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&document, storage_flags)),
+                        owner_id: None,
+                    },
+                    contract: &data_contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to insert widget");
+    }
+
+    // Operator-tuned DriveConfig with `default_query_limit = 50`.
+    // The dispatcher MUST NOT propagate this onto the prove path's
+    // path query.
+    let drive_config = DriveConfig {
+        default_query_limit: OPERATOR_TUNED_LIMIT,
+        ..Default::default()
+    };
+
+    // Range clause `color > "blue"` as wire-shape (Value::Array of
+    // [field, op, value] tuples) — the dispatcher CBOR-decodes
+    // this internally into structured WhereClauses.
+    let raw_where_value = Value::Array(vec![Value::Array(vec![
+        Value::Text("color".to_string()),
+        Value::Text(">".to_string()),
+        Value::Text("blue".to_string()),
+    ])]);
+    let request = DocumentCountRequest {
+        contract: &data_contract,
+        document_type,
+        raw_where_value,
+        raw_order_by_value: Value::Null,
+        return_distinct_counts_in_range: true,
+        limit: None,
+        prove: true,
+        drive_config: &drive_config,
+    };
+
+    let response = drive
+        .execute_document_count_request(request, None, platform_version)
+        .expect("expected dispatcher to succeed on RangeDistinctProof path");
+    let proof_bytes = match response {
+        DocumentCountResponse::Proof(p) => p,
+        other => panic!("expected Proof response, got {:?}", other),
+    };
+    assert!(
+        !proof_bytes.is_empty(),
+        "expected non-empty proof bytes from RangeDistinctProof path"
+    );
+
+    // Reconstruct the path query the way the SDK verifier does:
+    // anchored to the compile-time `DEFAULT_QUERY_LIMIT`, not the
+    // operator's runtime value. If the dispatcher used
+    // `OPERATOR_TUNED_LIMIT` instead, the reconstructed path
+    // query's `SizedQuery::limit` bytes will differ from what the
+    // prover signed and `verify_query` returns Err.
+    let color_gt_blue = WhereClause {
+        field: "color".to_string(),
+        operator: WhereOperator::GreaterThan,
+        value: Value::Text("blue".to_string()),
+    };
+    let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+        document_type.indexes(),
+        std::slice::from_ref(&color_gt_blue),
+    )
+    .expect("byColor range_countable index covers `color > blue`");
+    let count_query = DriveDocumentCountQuery {
+        document_type,
+        contract_id: data_contract.id().to_buffer(),
+        document_type_name: "widget".to_string(),
+        index,
+        where_clauses: vec![color_gt_blue],
+    };
+    let verifier_path_query = count_query
+        .distinct_count_path_query(Some(DEFAULT_QUERY_LIMIT), true, platform_version)
+        .expect("path query builder should accept the same shape the prover used");
+
+    let (_root_hash, _elements) = GroveDb::verify_query(
+        &proof_bytes,
+        &verifier_path_query,
+        &platform_version.drive.grove_version,
+    )
+    .expect(
+        "expected proof to verify against a path query rebuilt with \
+         DEFAULT_QUERY_LIMIT; a failure here means the dispatcher signed \
+         the proof with the operator-tunable default_query_limit instead — \
+         a consensus-adjacent silent-verify-failure regression",
+    );
+}
+
+/// `execute_document_count_per_in_value_no_proof` runs one GroveDB walk
+/// per `In` value, so its iteration cost is proportional to the array's
+/// length rather than the configured `max_query_limit`. That makes the
+/// In-array length the actual amplification factor — capping the
+/// *output* `limit` after the loop is cosmetic. We delegate the cap to
+/// `WhereClause::in_values()` (the same 100-element validator other In
+/// consumers use); this test pins that delegation at the executor's
+/// entry point so a regression here surfaces as a query-rejection
+/// rather than as a quietly amplified backend scan.
+#[test]
+fn test_count_query_in_operator_rejects_oversized_array() {
+    let (drive, data_contract) = setup_drive_and_contract();
+    let platform_version = PlatformVersion::latest();
+
+    let document_type = data_contract
+        .document_type_for_name("person")
+        .expect("expected document type");
+
+    // 101 distinct `age` values triggers the 100-cap in `in_values()`.
+    let oversized: Vec<Value> = (0u64..101).map(Value::U64).collect();
+    let in_clause = WhereClause {
+        field: "age".to_string(),
+        operator: WhereOperator::In,
+        value: Value::Array(oversized),
+    };
+
+    let err = drive
+        .execute_document_count_per_in_value_no_proof(
+            data_contract.id().to_buffer(),
+            document_type,
+            "person".to_string(),
+            vec![in_clause],
+            super::RangeCountOptions {
+                distinct: false,
+                limit: Some(50),
+                order_by_ascending: true,
+            },
+            None,
+            platform_version,
+        )
+        .expect_err("expected 101-element In array to be rejected");
+
+    let msg = err.to_string();
+    assert!(
+        msg.contains("at most 100"),
+        "expected 100-cap rejection, got: {}",
+        msg
+    );
+}
+
+/// Documents the grovedb semantic the count fast path relies on:
+/// what does a child element contribute to a parent `CountTree`'s count?
+///
+/// Per [`merk/src/element/tree_type.rs`](https://github.com/dashpay/grovedb/blob/8f25b20/merk/src/element/tree_type.rs)
+/// `get_feature_type`, a child inserted under a `TreeType::CountTree` parent
+/// is wrapped as `CountedMerkNode(self.count_value_or_default())`, and per
+/// [`grovedb-element/src/element/helpers.rs`](https://github.com/dashpay/grovedb/blob/8f25b20/grovedb-element/src/element/helpers.rs)
+/// `count_value_or_default` returns the child's stored count value for
+/// `CountTree` / `ProvableCountTree` / `CountSumTree` / `ProvableCountSumTree`
+/// variants and **`1` for everything else** — including an empty `Tree`.
+///
+/// So an empty `Tree` child counts as **1**, not 0. The CountTree's
+/// aggregated count is `local_value + left_subtree_count + right_subtree_count`
+/// (recursively).
+#[test]
+fn test_count_tree_aggregation_with_empty_child_subtrees() {
+    use grovedb::Element;
+    use grovedb_path::SubtreePath;
+
+    let drive = crate::util::test_helpers::setup::setup_drive(None);
+    let platform_version = PlatformVersion::latest();
+    let drive_version = &platform_version.drive;
+    let grove_version = &drive_version.grove_version;
+
+    let root: &[&[u8]] = &[];
+
+    // 1. Insert an empty CountTree at the root, key "ct".
+    drive
+        .grove
+        .insert(
+            SubtreePath::from(root),
+            b"ct",
+            Element::empty_count_tree(),
+            None,
+            None,
+            grove_version,
+        )
+        .unwrap()
+        .expect("insert empty count tree");
+
+    let read_count = |drive: &Drive| -> u64 {
+        let elem = drive
+            .grove
+            .get(SubtreePath::from(root), b"ct", None, grove_version)
+            .unwrap()
+            .expect("read count tree");
+        elem.count_value_or_default()
+    };
+
+    // Empty CountTree → count = 0 (no children at all).
+    assert_eq!(
+        read_count(&drive),
+        0,
+        "freshly created empty count tree should have count 0"
+    );
+
+    // 2. Insert an empty Tree (NormalTree) as a child of the CountTree.
+    let count_tree_path: &[&[u8]] = &[b"ct"];
+    drive
+        .grove
+        .insert(
+            SubtreePath::from(count_tree_path),
+            b"empty_subtree_a",
+            Element::empty_tree(),
+            None,
+            None,
+            grove_version,
+        )
+        .unwrap()
+        .expect("insert empty subtree under count tree");
+
+    // The empty Tree contributes 1 to the parent CountTree's count.
+    assert_eq!(
+        read_count(&drive),
+        1,
+        "an empty Tree child counts as 1 inside a CountTree"
+    );
+
+    // 3. Insert a second empty Tree → count = 2.
+    drive
+        .grove
+        .insert(
+            SubtreePath::from(count_tree_path),
+            b"empty_subtree_b",
+            Element::empty_tree(),
+            None,
+            None,
+            grove_version,
+        )
+        .unwrap()
+        .expect("insert second empty subtree");
+    assert_eq!(
+        read_count(&drive),
+        2,
+        "two empty Tree children count as 2 inside a CountTree"
+    );
+
+    // 4. Insert a non-tree Item child → count = 3 (each non-CountTree element
+    //    contributes 1, regardless of whether it's a Tree, an Item, or a
+    //    Reference).
+    drive
+        .grove
+        .insert(
+            SubtreePath::from(count_tree_path),
+            b"item",
+            Element::new_item(b"hello".to_vec()),
+            None,
+            None,
+            grove_version,
+        )
+        .unwrap()
+        .expect("insert item child");
+    assert_eq!(
+        read_count(&drive),
+        3,
+        "an Item child also contributes 1, same as an empty Tree"
+    );
+}
+
+/// Sanity check that a contract using the new `IndexCountability::CountableAllowingOffset`
+/// variant — a string `"countableAllowingOffset"` in the JSON schema — loads,
+/// is recognized as countable by the picker, and answers a total-count query.
+///
+/// This exercises the full path: schema → `IndexCountability` enum → index
+/// picker → tree-type selection (`ProvableCountTree`) → fast-path read.
+#[test]
+fn test_countable_allowing_offset_variant_end_to_end() {
+    use dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
+    use dpp::data_contract::document_type::IndexCountability;
+
+    let drive = setup_drive_with_initial_state_structure(None);
+    let platform_version = PlatformVersion::latest();
+
+    // Hand-build a contract from JSON value so we can use the string form.
+    // family-contract-countable.json sits next door using "countable": true; this
+    // covers the CountableAllowingOffset variant via the string form and a
+    // single index for clarity.
+    let contract_json = serde_json::json!({
+        "$formatVersion": "0",
+        "id": "94zNLp7A1ZcYG3Egqf2YmQk4DQr9P8D543GwXyCJRz4",
+        "ownerId": "AcYUCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swLk6",
+        "version": 1,
+        "documentSchemas": {
+            "person": {
+                "type": "object",
+                "indices": [
+                    {
+                        "name": "byFirstName",
+                        "properties": [{ "firstName": "asc" }],
+                        "countable": "countableAllowingOffset"
+                    }
+                ],
+                "properties": {
+                    "firstName": {
+                        "type": "string",
+                        "maxLength": 50,
+                        "position": 0
+                    }
+                },
+                "required": ["firstName"],
+                "additionalProperties": false
+            }
+        }
+    });
+
+    let data_contract =
+        dpp::data_contract::DataContract::from_json(contract_json, false, platform_version)
+            .expect("expected to load contract with string-form countable");
+
+    let document_type = data_contract
+        .document_type_for_name("person")
+        .expect("expected document type");
+
+    // Confirm the schema parsed into the right enum variant.
+    let index = document_type
+        .indexes()
+        .values()
+        .next()
+        .expect("expected one index");
+    assert_eq!(
+        index.countable,
+        IndexCountability::CountableAllowingOffset,
+        "string \"countableAllowingOffset\" should parse as CountableAllowingOffset"
+    );
+    assert!(index.countable.allows_offset());
+
+    drive
+        .apply_contract(
+            &data_contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            platform_version,
+        )
+        .expect("expected to apply contract");
+
+    // 2 Alices + 2 Bobs so the byFirstName count at "Alice" is 2.
+    // Using fully-covered `firstName == "Alice"` because the strict
+    // picker requires exact coverage.
+    insert_person_doc(&drive, &data_contract, [1u8; 32], "Alice", "", "", 30);
+    insert_person_doc(&drive, &data_contract, [2u8; 32], "Alice", "", "", 31);
+    insert_person_doc(&drive, &data_contract, [3u8; 32], "Bob", "", "", 40);
+    insert_person_doc(&drive, &data_contract, [4u8; 32], "Bob", "", "", 41);
+
+    let first_name_eq_alice = WhereClause {
+        field: "firstName".to_string(),
+        operator: WhereOperator::Equal,
+        value: Value::Text("Alice".to_string()),
+    };
+    // The picker should accept this index — `is_countable()` covers
+    // both `Countable` and `CountableAllowingOffset` variants.
+    let picked = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+        document_type.indexes(),
+        std::slice::from_ref(&first_name_eq_alice),
+    )
+    .expect("expected picker to accept CountableAllowingOffset index");
+    assert_eq!(picked.countable, IndexCountability::CountableAllowingOffset);
+
+    let query = DriveDocumentCountQuery {
+        document_type,
+        contract_id: data_contract.id().to_buffer(),
+        document_type_name: "person".to_string(),
+        index: picked,
+        where_clauses: vec![first_name_eq_alice],
+    };
+
+    let results = query
+        .execute_no_proof(&drive, None, platform_version)
+        .expect("expected count query to succeed against ProvableCountTree");
+    assert_eq!(results.len(), 1);
+    assert_eq!(
+        results[0].count, 2,
+        "ProvableCountTree should report 2 Alices"
+    );
+}
+
+/// On a unique index, the `countable` flag only affects storage for
+/// **null-bearing** index entries: when a document has any null value among
+/// the indexed properties, insertion goes through the count-tree branch
+/// (the same one non-unique indexes use). For all-non-null docs on a
+/// unique index, the terminal is a bare Reference at key `[0]` and the
+/// flag is a no-op — the count *value* still works correctly because
+/// grovedb's `Element::count_value_or_default()` returns 1 for non-CountTree
+/// elements (Reference falls into the `_ => 1` arm).
+///
+/// This test exercises the all-non-null path on a unique countable index
+/// and verifies the count comes back as 1 — confirming the no-op fallback.
+#[test]
+fn test_count_query_unique_countable_index_returns_correct_count() {
+    let (drive, data_contract) = setup_drive_and_contract();
+    let platform_version = PlatformVersion::latest();
+
+    // 3 distinct (firstName, middleName, lastName) tuples — the unique
+    // countable index `(firstName, middleName, lastName)` stores a
+    // Reference at key [0] under the final value level (no count tree
+    // is created because all indexed fields are non-null).
+    insert_person_doc(&drive, &data_contract, [1u8; 32], "Alice", "M", "Smith", 30);
+    insert_person_doc(&drive, &data_contract, [2u8; 32], "Alice", "N", "Smith", 31);
+    insert_person_doc(&drive, &data_contract, [3u8; 32], "Bob", "O", "Jones", 32);
+
+    let document_type = data_contract
+        .document_type_for_name("person")
+        .expect("expected document type");
+
+    // Pick the unique countable 3-property index by matching its full prefix.
+    let where_clauses = vec![
+        WhereClause {
+            field: "firstName".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text("Alice".to_string()),
+        },
+        WhereClause {
+            field: "middleName".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text("M".to_string()),
+        },
+        WhereClause {
+            field: "lastName".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text("Smith".to_string()),
+        },
+    ];
+
+    let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+        document_type.indexes(),
+        &where_clauses,
+    )
+    .expect("expected to find a countable index covering all 3 properties");
+
+    let query = DriveDocumentCountQuery {
+        document_type,
+        contract_id: data_contract.id().to_buffer(),
+        document_type_name: "person".to_string(),
+        index,
+        where_clauses,
+    };
+
+    let results = query
+        .execute_no_proof(&drive, None, platform_version)
+        .expect("expected query to succeed");
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(
+        results[0].count, 1,
+        "exact match on a unique countable index should be 1, not 0 \
+         (Reference at [0] returns count_value_or_default = 1)"
+    );
+}
+
+#[cfg(test)]
+mod range_countable_picker_tests {
+    //! Coverage for [`DriveDocumentCountQuery::find_range_countable_index_for_where_clauses`].
+    //!
+    //! Builds a small in-memory `BTreeMap<String, Index>` rather than going
+    //! through a full DataContract, since we're only testing the picker
+    //! rule (prefix match + range terminator + range_countable=true) and
+    //! the contract-level wiring is exercised by the e2e tests under
+    //! `drive::contract::insert::insert_contract::v0::range_countable_index_e2e_tests`.
+
+    use super::*;
+    use dpp::data_contract::document_type::{Index, IndexCountability, IndexProperty};
+
+    fn make_index(
+        name: &str,
+        properties: &[&str],
+        countable: IndexCountability,
+        range_countable: bool,
+    ) -> Index {
+        Index {
+            name: name.to_string(),
+            properties: properties
+                .iter()
+                .map(|p| IndexProperty {
+                    name: p.to_string(),
+                    ascending: true,
+                })
+                .collect(),
+            unique: false,
+            null_searchable: true,
+            contested_index: None,
+            countable,
+            range_countable,
+        }
+    }
+
+    fn make_indexes(indexes: Vec<Index>) -> std::collections::BTreeMap<String, Index> {
+        indexes.into_iter().map(|i| (i.name.clone(), i)).collect()
+    }
+
+    /// Single-property range_countable index — straightforward range
+    /// query over `color`.
+    #[test]
+    fn picks_single_property_range_countable_index() {
+        let indexes = make_indexes(vec![make_index(
+            "byColor",
+            &["color"],
+            IndexCountability::Countable,
+            true,
+        )]);
+        let where_clauses = vec![WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: Value::Text("a".to_string()),
+        }];
+        let picked = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+            &indexes,
+            &where_clauses,
+        );
+        assert!(picked.is_some());
+        assert_eq!(picked.unwrap().name, "byColor");
+    }
+
+    /// Compound range_countable `[brand, color]`: Equal on `brand` (the
+    /// prefix), range on `color` (the terminator).
+    #[test]
+    fn picks_compound_range_countable_index_with_equal_prefix() {
+        let indexes = make_indexes(vec![make_index(
+            "byBrandColor",
+            &["brand", "color"],
+            IndexCountability::Countable,
+            true,
+        )]);
+        let where_clauses = vec![
+            WhereClause {
+                field: "brand".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("acme".to_string()),
+            },
+            WhereClause {
+                field: "color".to_string(),
+                operator: WhereOperator::Between,
+                value: Value::Array(vec![
+                    Value::Text("a".to_string()),
+                    Value::Text("z".to_string()),
+                ]),
+            },
+        ];
+        let picked = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+            &indexes,
+            &where_clauses,
+        );
+        assert!(picked.is_some());
+        assert_eq!(picked.unwrap().name, "byBrandColor");
+    }
+
+    /// Range on a non-terminator property must not match. For
+    /// `[brand, color]`, a range on `brand` (with no clause on `color`)
+    /// would not be answerable via the index walker model — there's no
+    /// CountTree at the brand value level.
+    #[test]
+    fn rejects_range_on_non_terminator_property() {
+        let indexes = make_indexes(vec![make_index(
+            "byBrandColor",
+            &["brand", "color"],
+            IndexCountability::Countable,
+            true,
+        )]);
+        let where_clauses = vec![WhereClause {
+            field: "brand".to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: Value::Text("a".to_string()),
+        }];
+        assert!(
+            DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+                &indexes,
+                &where_clauses,
+            )
+            .is_none(),
+            "a range on a non-terminator property must not match — the storage \
+             layout doesn't put a ProvableCountTree at that level"
+        );
+    }
+
+    /// An index without `range_countable: true` must not match even if
+    /// the property structure aligns. The storage layout for these is
+    /// plain NormalTree — no CountTree counts to walk.
+    #[test]
+    fn rejects_non_range_countable_index() {
+        let indexes = make_indexes(vec![make_index(
+            "byColor",
+            &["color"],
+            IndexCountability::Countable,
+            false, // <-- NOT range_countable
+        )]);
+        let where_clauses = vec![WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: Value::Text("a".to_string()),
+        }];
+        assert!(
+            DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+                &indexes,
+                &where_clauses,
+            )
+            .is_none()
+        );
+    }
+
+    /// Two range operators should never resolve to a single index — the
+    /// PathQuery model can express only one range at a time.
+    #[test]
+    fn rejects_multiple_range_operators() {
+        let indexes = make_indexes(vec![make_index(
+            "byColor",
+            &["color"],
+            IndexCountability::Countable,
+            true,
+        )]);
+        let where_clauses = vec![
+            WhereClause {
+                field: "color".to_string(),
+                operator: WhereOperator::GreaterThan,
+                value: Value::Text("a".to_string()),
+            },
+            WhereClause {
+                field: "color".to_string(),
+                operator: WhereOperator::LessThan,
+                value: Value::Text("z".to_string()),
+            },
+        ];
+        assert!(
+            DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+                &indexes,
+                &where_clauses,
+            )
+            .is_none(),
+            "two separate range operators must be rejected (use Between to express a bounded range)"
+        );
+    }
+
+    /// Pure point-lookup queries should NOT match the range picker —
+    /// they belong on `find_countable_index_for_where_clauses` instead.
+    #[test]
+    fn rejects_pure_point_lookup_queries() {
+        let indexes = make_indexes(vec![make_index(
+            "byColor",
+            &["color"],
+            IndexCountability::Countable,
+            true,
+        )]);
+        let where_clauses = vec![WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text("red".to_string()),
+        }];
+        assert!(
+            DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+                &indexes,
+                &where_clauses,
+            )
+            .is_none(),
+            "no range operator → not the range picker's job"
+        );
+    }
+}
+
+#[cfg(test)]
+mod detect_mode_tests {
+    //! Coverage for [`DriveDocumentCountQuery::detect_mode`].
+    //!
+    //! Pure validation/dispatch decisions — no Drive instance, no
+    //! contract, no platform_version needed. Tests the full truth
+    //! table of (range × In × distinct × prove).
+
+    use super::*;
+
+    fn eq_clause(field: &str) -> WhereClause {
+        WhereClause {
+            field: field.to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text("x".to_string()),
+        }
+    }
+    fn in_clause(field: &str) -> WhereClause {
+        WhereClause {
+            field: field.to_string(),
+            operator: WhereOperator::In,
+            value: Value::Array(vec![Value::Text("a".to_string())]),
+        }
+    }
+    fn gt_clause(field: &str) -> WhereClause {
+        WhereClause {
+            field: field.to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: Value::Text("b".to_string()),
+        }
+    }
+    fn lt_clause(field: &str) -> WhereClause {
+        WhereClause {
+            field: field.to_string(),
+            operator: WhereOperator::LessThan,
+            value: Value::Text("z".to_string()),
+        }
+    }
+
+    /// No clauses, no flags → total mode.
+    #[test]
+    fn no_clauses_no_flags_is_total() {
+        let mode = DriveDocumentCountQuery::detect_mode(&[], false, false).unwrap();
+        assert_eq!(mode, DocumentCountMode::Total);
+    }
+
+    /// Equal-only clauses → still total.
+    #[test]
+    fn only_equal_clauses_is_total() {
+        let clauses = vec![eq_clause("a"), eq_clause("b")];
+        assert_eq!(
+            DriveDocumentCountQuery::detect_mode(&clauses, false, false).unwrap(),
+            DocumentCountMode::Total,
+        );
+    }
+
+    /// Single In clause → per-In-value.
+    #[test]
+    fn single_in_is_per_in_value() {
+        let clauses = vec![in_clause("a")];
+        assert_eq!(
+            DriveDocumentCountQuery::detect_mode(&clauses, false, false).unwrap(),
+            DocumentCountMode::PerInValue,
+        );
+    }
+
+    /// Equal + In on different fields → per-In-value.
+    #[test]
+    fn equal_plus_in_is_per_in_value() {
+        let clauses = vec![eq_clause("a"), in_clause("b")];
+        assert_eq!(
+            DriveDocumentCountQuery::detect_mode(&clauses, false, false).unwrap(),
+            DocumentCountMode::PerInValue,
+        );
+    }
+
+    /// Single range + no proof → range no-proof.
+    #[test]
+    fn single_range_no_proof_is_range_no_proof() {
+        let clauses = vec![gt_clause("color")];
+        assert_eq!(
+            DriveDocumentCountQuery::detect_mode(&clauses, false, false).unwrap(),
+            DocumentCountMode::RangeNoProof,
+        );
+    }
+
+    /// Single range + prove → range proof.
+    #[test]
+    fn single_range_with_prove_is_range_proof() {
+        let clauses = vec![gt_clause("color")];
+        assert_eq!(
+            DriveDocumentCountQuery::detect_mode(&clauses, false, true).unwrap(),
+            DocumentCountMode::RangeProof,
+        );
+    }
+
+    /// No range + prove → point-lookup proof (materialize-and-count).
+    #[test]
+    fn no_range_with_prove_is_point_lookup_proof() {
+        let clauses = vec![eq_clause("a")];
+        assert_eq!(
+            DriveDocumentCountQuery::detect_mode(&clauses, false, true).unwrap(),
+            DocumentCountMode::PointLookupProof,
+        );
+    }
+
+    /// Equal-prefix + range terminator + no proof → range no-proof.
+    #[test]
+    fn equal_prefix_plus_range_terminator_is_range_no_proof() {
+        let clauses = vec![eq_clause("brand"), gt_clause("color")];
+        assert_eq!(
+            DriveDocumentCountQuery::detect_mode(&clauses, false, false).unwrap(),
+            DocumentCountMode::RangeNoProof,
+        );
+    }
+
+    /// Two range operators → rejected.
+    #[test]
+    fn two_range_operators_rejected() {
+        let clauses = vec![gt_clause("color"), lt_clause("color")];
+        let err = DriveDocumentCountQuery::detect_mode(&clauses, false, false).unwrap_err();
+        assert!(matches!(
+            err,
+            QuerySyntaxError::InvalidWhereClauseComponents(msg) if msg.contains("at most one range")
+        ));
+    }
+
+    /// Two `In` operators → rejected.
+    #[test]
+    fn two_in_operators_rejected() {
+        let clauses = vec![in_clause("a"), in_clause("b")];
+        let err = DriveDocumentCountQuery::detect_mode(&clauses, false, false).unwrap_err();
+        assert!(matches!(
+            err,
+            QuerySyntaxError::InvalidWhereClauseComponents(msg) if msg.contains("at most one `in`")
+        ));
+    }
+
+    /// Range + In together → routed by mode:
+    /// - `(range, In, no-proof, _)` → `RangeNoProof` (executor uses
+    ///   `distinct_count_path_query`'s compound shape with grovedb
+    ///   subqueries to cartesian-fork over the In values).
+    /// - `(range, In, prove, distinct=true)` → `RangeDistinctProof`
+    ///   (same compound shape, just runs through the prove path).
+    /// - `(range, In, prove, distinct=false)` → **rejected** because
+    ///   grovedb's `AggregateCountOnRange` primitive wraps a single
+    ///   inner range and can't cartesian-fork at the merk layer.
+    #[test]
+    fn range_plus_in_routes_by_mode() {
+        let clauses = vec![in_clause("a"), gt_clause("b")];
+
+        // No-proof — both sum and distinct route through RangeNoProof,
+        // which uses the unified `distinct_count_path_query` builder
+        // and applies `options.distinct` in post-processing.
+        assert_eq!(
+            DriveDocumentCountQuery::detect_mode(&clauses, false, false).unwrap(),
+            DocumentCountMode::RangeNoProof,
+        );
+        assert_eq!(
+            DriveDocumentCountQuery::detect_mode(&clauses, true, false).unwrap(),
+            DocumentCountMode::RangeNoProof,
+        );
+
+        // Prove + distinct — routes to RangeDistinctProof. The path
+        // query carries In as outer `Key`s and the range as the
+        // subquery; the verifier reconstructs the same shape.
+        assert_eq!(
+            DriveDocumentCountQuery::detect_mode(&clauses, true, true).unwrap(),
+            DocumentCountMode::RangeDistinctProof,
+        );
+
+        // Prove + !distinct (aggregate) — still rejected, the
+        // AggregateCountOnRange primitive can't fork.
+        let err = DriveDocumentCountQuery::detect_mode(&clauses, false, true).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                QuerySyntaxError::InvalidWhereClauseComponents(msg)
+                    if msg.contains("not supported on the aggregate prove path")
+            ),
+            "expected aggregate-prove rejection, got: {:?}",
+            err,
+        );
+    }
+
+    /// `return_distinct_counts_in_range = true` without a range → rejected.
+    #[test]
+    fn distinct_without_range_rejected() {
+        let err = DriveDocumentCountQuery::detect_mode(&[], true, false).unwrap_err();
+        assert!(matches!(
+            err,
+            QuerySyntaxError::InvalidWhereClauseComponents(msg) if msg.contains("requires a range where-clause")
+        ));
+    }
+
+    /// `return_distinct_counts_in_range = true` + `prove = true` →
+    /// `RangeDistinctProof`. Per-distinct-value counts come from a
+    /// regular range proof against the property-name
+    /// `ProvableCountTree` (no `AggregateCountOnRange` wrapper), with
+    /// `KVCount(key, value, count)` ops bound to the merk root via
+    /// `node_hash_with_count`. The verifier extracts them as a
+    /// `BTreeMap<Vec<u8>, u64>`.
+    #[test]
+    fn distinct_with_prove_is_range_distinct_proof() {
+        let clauses = vec![gt_clause("color")];
+        assert_eq!(
+            DriveDocumentCountQuery::detect_mode(&clauses, true, true).unwrap(),
+            DocumentCountMode::RangeDistinctProof,
+        );
+    }
+
+    /// Distinct mode in no-prove range → still RangeNoProof; the
+    /// distinct flag is consumed by the executor, not the mode tag.
+    #[test]
+    fn distinct_no_prove_with_range_is_range_no_proof() {
+        let clauses = vec![gt_clause("color")];
+        assert_eq!(
+            DriveDocumentCountQuery::detect_mode(&clauses, true, false).unwrap(),
+            DocumentCountMode::RangeNoProof,
+        );
+    }
+
+    /// `prove = true` + `In` routes to `PointLookupProof` (the
+    /// materialize-and-count proof fallback). The SDK's
+    /// `FromProof<DocumentCountQuery>` for `DocumentSplitCounts`
+    /// then groups verified documents by the In field's serialized
+    /// value to produce per-key count entries. No proof aggregate
+    /// primitive supports per-In-value entries directly, so the
+    /// materialize path is the only correct route until grovedb
+    /// gains a per-key count proof.
+    #[test]
+    fn in_with_prove_routes_to_point_lookup_proof() {
+        let clauses = vec![in_clause("a")];
+        assert_eq!(
+            DriveDocumentCountQuery::detect_mode(&clauses, false, true).unwrap(),
+            DocumentCountMode::PointLookupProof,
+        );
+    }
+}

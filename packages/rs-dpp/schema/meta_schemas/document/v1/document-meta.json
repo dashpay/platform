@@ -429,8 +429,22 @@
             "additionalProperties": false
           },
           "countable": {
+            "oneOf": [
+              {
+                "type": "boolean",
+                "description": "Legacy form. true == \"countable\", false == \"notCountable\". Kept for back-compat with contracts written before the enum form was introduced."
+              },
+              {
+                "type": "string",
+                "enum": ["notCountable", "countable", "countableAllowingOffset"],
+                "description": "\"countable\" — index uses a CountTree (O(1) totals). \"countableAllowingOffset\" — index uses a ProvableCountTree (totals + future O(log n) range / offset queries). \"notCountable\" — plain NormalTree (no count fast path)."
+              }
+            ],
+            "description": "Whether and how the index supports count fast paths. Adds extra storage cost for non-default values."
+          },
+          "rangeCountable": {
             "type": "boolean",
-            "description": "Enables countable operations on the index. Adds extra costs for documents storage"
+            "description": "When true, the property-name level becomes a ProvableCountTree and value trees become CountTrees so range-count queries on the indexed property are O(log n). Requires `countable` to be \"countable\" or \"countableAllowingOffset\". Per-protocol-version 12+; rejected on earlier protocol versions."
           }
         },
         "required": [
