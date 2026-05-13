@@ -23,8 +23,7 @@ use dapi_grpc::platform::v0::{
     GetCurrentQuorumsInfoResponse, GetDataContractHistoryRequest, GetDataContractHistoryResponse,
     GetDataContractRequest, GetDataContractResponse, GetDataContractsRequest,
     GetDataContractsResponse, GetDocumentsCountRequest, GetDocumentsCountResponse,
-    GetDocumentsRequest, GetDocumentsResponse, GetDocumentsSplitCountRequest,
-    GetDocumentsSplitCountResponse, GetEpochsInfoRequest, GetEpochsInfoResponse,
+    GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest, GetEpochsInfoResponse,
     GetEvonodesProposedEpochBlocksByIdsRequest, GetEvonodesProposedEpochBlocksByRangeRequest,
     GetEvonodesProposedEpochBlocksResponse, GetFinalizedEpochInfosRequest,
     GetFinalizedEpochInfosResponse, GetGroupActionSignersRequest, GetGroupActionSignersResponse,
@@ -415,18 +414,6 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_documents_count,
             "get_documents_count",
-        )
-        .await
-    }
-
-    async fn get_documents_split_count(
-        &self,
-        request: Request<GetDocumentsSplitCountRequest>,
-    ) -> Result<Response<GetDocumentsSplitCountResponse>, Status> {
-        self.handle_blocking_query(
-            request,
-            Platform::<DefaultCoreRPC>::query_documents_split_count,
-            "get_documents_split_count",
         )
         .await
     }

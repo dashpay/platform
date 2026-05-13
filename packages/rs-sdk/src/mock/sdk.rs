@@ -137,14 +137,8 @@ impl MockDashPlatformSdk {
                 "DocumentCountQuery" => load_expectation::<
                     crate::platform::documents::document_count_query::DocumentCountQuery,
                 >(&mut dapi, filename)?,
-                "DocumentSplitCountQuery" => load_expectation::<
-                    crate::platform::documents::document_split_count_query::DocumentSplitCountQuery,
-                >(&mut dapi, filename)?,
                 "GetDocumentsCountRequest" => {
                     load_expectation::<proto::GetDocumentsCountRequest>(&mut dapi, filename)?
-                }
-                "GetDocumentsSplitCountRequest" => {
-                    load_expectation::<proto::GetDocumentsSplitCountRequest>(&mut dapi, filename)?
                 }
                 "GetEpochsInfoRequest" => {
                     load_expectation::<proto::GetEpochsInfoRequest>(&mut dapi, filename)?

@@ -2470,6 +2470,19 @@ export namespace GetDocumentsCountRequest {
     getWhere_asB64(): string;
     setWhere(value: Uint8Array | string): void;
 
+    getReturnDistinctCountsInRange(): boolean;
+    setReturnDistinctCountsInRange(value: boolean): void;
+
+    getOrderBy(): Uint8Array | string;
+    getOrderBy_asU8(): Uint8Array;
+    getOrderBy_asB64(): string;
+    setOrderBy(value: Uint8Array | string): void;
+
+    hasLimit(): boolean;
+    clearLimit(): void;
+    getLimit(): number;
+    setLimit(value: number): void;
+
     getProve(): boolean;
     setProve(value: boolean): void;
 
@@ -2488,6 +2501,9 @@ export namespace GetDocumentsCountRequest {
       dataContractId: Uint8Array | string,
       documentType: string,
       where: Uint8Array | string,
+      returnDistinctCountsInRange: boolean,
+      orderBy: Uint8Array | string,
+      limit: number,
       prove: boolean,
     }
   }
@@ -2521,10 +2537,10 @@ export namespace GetDocumentsCountResponse {
   }
 
   export class GetDocumentsCountResponseV0 extends jspb.Message {
-    hasCount(): boolean;
-    clearCount(): void;
-    getCount(): number;
-    setCount(value: number): void;
+    hasCounts(): boolean;
+    clearCounts(): void;
+    getCounts(): GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults | undefined;
+    setCounts(value?: GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults): void;
 
     hasProof(): boolean;
     clearProof(): void;
@@ -2549,199 +2565,105 @@ export namespace GetDocumentsCountResponse {
 
   export namespace GetDocumentsCountResponseV0 {
     export type AsObject = {
-      count: number,
+      counts?: GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountResults.AsObject,
       proof?: Proof.AsObject,
       metadata?: ResponseMetadata.AsObject,
     }
 
-    export enum ResultCase {
-      RESULT_NOT_SET = 0,
-      COUNT = 1,
-      PROOF = 2,
-    }
-  }
+    export class CountEntry extends jspb.Message {
+      hasInKey(): boolean;
+      clearInKey(): void;
+      getInKey(): Uint8Array | string;
+      getInKey_asU8(): Uint8Array;
+      getInKey_asB64(): string;
+      setInKey(value: Uint8Array | string): void;
 
-  export enum VersionCase {
-    VERSION_NOT_SET = 0,
-    V0 = 1,
-  }
-}
-
-export class GetDocumentsSplitCountRequest extends jspb.Message {
-  hasV0(): boolean;
-  clearV0(): void;
-  getV0(): GetDocumentsSplitCountRequest.GetDocumentsSplitCountRequestV0 | undefined;
-  setV0(value?: GetDocumentsSplitCountRequest.GetDocumentsSplitCountRequestV0): void;
-
-  getVersionCase(): GetDocumentsSplitCountRequest.VersionCase;
-  serializeBinary(): Uint8Array;
-  toObject(includeInstance?: boolean): GetDocumentsSplitCountRequest.AsObject;
-  static toObject(includeInstance: boolean, msg: GetDocumentsSplitCountRequest): GetDocumentsSplitCountRequest.AsObject;
-  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
-  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-  static serializeBinaryToWriter(message: GetDocumentsSplitCountRequest, writer: jspb.BinaryWriter): void;
-  static deserializeBinary(bytes: Uint8Array): GetDocumentsSplitCountRequest;
-  static deserializeBinaryFromReader(message: GetDocumentsSplitCountRequest, reader: jspb.BinaryReader): GetDocumentsSplitCountRequest;
-}
-
-export namespace GetDocumentsSplitCountRequest {
-  export type AsObject = {
-    v0?: GetDocumentsSplitCountRequest.GetDocumentsSplitCountRequestV0.AsObject,
-  }
-
-  export class GetDocumentsSplitCountRequestV0 extends jspb.Message {
-    getDataContractId(): Uint8Array | string;
-    getDataContractId_asU8(): Uint8Array;
-    getDataContractId_asB64(): string;
-    setDataContractId(value: Uint8Array | string): void;
-
-    getDocumentType(): string;
-    setDocumentType(value: string): void;
-
-    getWhere(): Uint8Array | string;
-    getWhere_asU8(): Uint8Array;
-    getWhere_asB64(): string;
-    setWhere(value: Uint8Array | string): void;
-
-    getSplitCountByIndexProperty(): string;
-    setSplitCountByIndexProperty(value: string): void;
-
-    getProve(): boolean;
-    setProve(value: boolean): void;
-
-    serializeBinary(): Uint8Array;
-    toObject(includeInstance?: boolean): GetDocumentsSplitCountRequestV0.AsObject;
-    static toObject(includeInstance: boolean, msg: GetDocumentsSplitCountRequestV0): GetDocumentsSplitCountRequestV0.AsObject;
-    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
-    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-    static serializeBinaryToWriter(message: GetDocumentsSplitCountRequestV0, writer: jspb.BinaryWriter): void;
-    static deserializeBinary(bytes: Uint8Array): GetDocumentsSplitCountRequestV0;
-    static deserializeBinaryFromReader(message: GetDocumentsSplitCountRequestV0, reader: jspb.BinaryReader): GetDocumentsSplitCountRequestV0;
-  }
-
-  export namespace GetDocumentsSplitCountRequestV0 {
-    export type AsObject = {
-      dataContractId: Uint8Array | string,
-      documentType: string,
-      where: Uint8Array | string,
-      splitCountByIndexProperty: string,
-      prove: boolean,
-    }
-  }
-
-  export enum VersionCase {
-    VERSION_NOT_SET = 0,
-    V0 = 1,
-  }
-}
-
-export class GetDocumentsSplitCountResponse extends jspb.Message {
-  hasV0(): boolean;
-  clearV0(): void;
-  getV0(): GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0 | undefined;
-  setV0(value?: GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0): void;
-
-  getVersionCase(): GetDocumentsSplitCountResponse.VersionCase;
-  serializeBinary(): Uint8Array;
-  toObject(includeInstance?: boolean): GetDocumentsSplitCountResponse.AsObject;
-  static toObject(includeInstance: boolean, msg: GetDocumentsSplitCountResponse): GetDocumentsSplitCountResponse.AsObject;
-  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
-  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-  static serializeBinaryToWriter(message: GetDocumentsSplitCountResponse, writer: jspb.BinaryWriter): void;
-  static deserializeBinary(bytes: Uint8Array): GetDocumentsSplitCountResponse;
-  static deserializeBinaryFromReader(message: GetDocumentsSplitCountResponse, reader: jspb.BinaryReader): GetDocumentsSplitCountResponse;
-}
-
-export namespace GetDocumentsSplitCountResponse {
-  export type AsObject = {
-    v0?: GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.AsObject,
-  }
-
-  export class GetDocumentsSplitCountResponseV0 extends jspb.Message {
-    hasSplitCounts(): boolean;
-    clearSplitCounts(): void;
-    getSplitCounts(): GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCounts | undefined;
-    setSplitCounts(value?: GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCounts): void;
-
-    hasProof(): boolean;
-    clearProof(): void;
-    getProof(): Proof | undefined;
-    setProof(value?: Proof): void;
-
-    hasMetadata(): boolean;
-    clearMetadata(): void;
-    getMetadata(): ResponseMetadata | undefined;
-    setMetadata(value?: ResponseMetadata): void;
-
-    getResultCase(): GetDocumentsSplitCountResponseV0.ResultCase;
-    serializeBinary(): Uint8Array;
-    toObject(includeInstance?: boolean): GetDocumentsSplitCountResponseV0.AsObject;
-    static toObject(includeInstance: boolean, msg: GetDocumentsSplitCountResponseV0): GetDocumentsSplitCountResponseV0.AsObject;
-    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
-    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-    static serializeBinaryToWriter(message: GetDocumentsSplitCountResponseV0, writer: jspb.BinaryWriter): void;
-    static deserializeBinary(bytes: Uint8Array): GetDocumentsSplitCountResponseV0;
-    static deserializeBinaryFromReader(message: GetDocumentsSplitCountResponseV0, reader: jspb.BinaryReader): GetDocumentsSplitCountResponseV0;
-  }
-
-  export namespace GetDocumentsSplitCountResponseV0 {
-    export type AsObject = {
-      splitCounts?: GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCounts.AsObject,
-      proof?: Proof.AsObject,
-      metadata?: ResponseMetadata.AsObject,
-    }
-
-    export class SplitCountEntry extends jspb.Message {
       getKey(): Uint8Array | string;
       getKey_asU8(): Uint8Array;
       getKey_asB64(): string;
       setKey(value: Uint8Array | string): void;
 
-      getCount(): number;
-      setCount(value: number): void;
+      getCount(): string;
+      setCount(value: string): void;
 
       serializeBinary(): Uint8Array;
-      toObject(includeInstance?: boolean): SplitCountEntry.AsObject;
-      static toObject(includeInstance: boolean, msg: SplitCountEntry): SplitCountEntry.AsObject;
+      toObject(includeInstance?: boolean): CountEntry.AsObject;
+      static toObject(includeInstance: boolean, msg: CountEntry): CountEntry.AsObject;
       static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
       static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-      static serializeBinaryToWriter(message: SplitCountEntry, writer: jspb.BinaryWriter): void;
-      static deserializeBinary(bytes: Uint8Array): SplitCountEntry;
-      static deserializeBinaryFromReader(message: SplitCountEntry, reader: jspb.BinaryReader): SplitCountEntry;
+      static serializeBinaryToWriter(message: CountEntry, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): CountEntry;
+      static deserializeBinaryFromReader(message: CountEntry, reader: jspb.BinaryReader): CountEntry;
     }
 
-    export namespace SplitCountEntry {
+    export namespace CountEntry {
       export type AsObject = {
+        inKey: Uint8Array | string,
         key: Uint8Array | string,
-        count: number,
+        count: string,
       }
     }
 
-    export class SplitCounts extends jspb.Message {
+    export class CountEntries extends jspb.Message {
       clearEntriesList(): void;
-      getEntriesList(): Array<GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCountEntry>;
-      setEntriesList(value: Array<GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCountEntry>): void;
-      addEntries(value?: GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCountEntry, index?: number): GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCountEntry;
+      getEntriesList(): Array<GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntry>;
+      setEntriesList(value: Array<GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntry>): void;
+      addEntries(value?: GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntry, index?: number): GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntry;
 
       serializeBinary(): Uint8Array;
-      toObject(includeInstance?: boolean): SplitCounts.AsObject;
-      static toObject(includeInstance: boolean, msg: SplitCounts): SplitCounts.AsObject;
+      toObject(includeInstance?: boolean): CountEntries.AsObject;
+      static toObject(includeInstance: boolean, msg: CountEntries): CountEntries.AsObject;
       static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
       static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-      static serializeBinaryToWriter(message: SplitCounts, writer: jspb.BinaryWriter): void;
-      static deserializeBinary(bytes: Uint8Array): SplitCounts;
-      static deserializeBinaryFromReader(message: SplitCounts, reader: jspb.BinaryReader): SplitCounts;
+      static serializeBinaryToWriter(message: CountEntries, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): CountEntries;
+      static deserializeBinaryFromReader(message: CountEntries, reader: jspb.BinaryReader): CountEntries;
     }
 
-    export namespace SplitCounts {
+    export namespace CountEntries {
       export type AsObject = {
-        entriesList: Array<GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCountEntry.AsObject>,
+        entriesList: Array<GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntry.AsObject>,
+      }
+    }
+
+    export class CountResults extends jspb.Message {
+      hasAggregateCount(): boolean;
+      clearAggregateCount(): void;
+      getAggregateCount(): string;
+      setAggregateCount(value: string): void;
+
+      hasEntries(): boolean;
+      clearEntries(): void;
+      getEntries(): GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntries | undefined;
+      setEntries(value?: GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntries): void;
+
+      getVariantCase(): CountResults.VariantCase;
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): CountResults.AsObject;
+      static toObject(includeInstance: boolean, msg: CountResults): CountResults.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: CountResults, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): CountResults;
+      static deserializeBinaryFromReader(message: CountResults, reader: jspb.BinaryReader): CountResults;
+    }
+
+    export namespace CountResults {
+      export type AsObject = {
+        aggregateCount: string,
+        entries?: GetDocumentsCountResponse.GetDocumentsCountResponseV0.CountEntries.AsObject,
+      }
+
+      export enum VariantCase {
+        VARIANT_NOT_SET = 0,
+        AGGREGATE_COUNT = 1,
+        ENTRIES = 2,
       }
     }
 
     export enum ResultCase {
       RESULT_NOT_SET = 0,
-      SPLIT_COUNTS = 1,
+      COUNTS = 1,
       PROOF = 2,
     }
   }

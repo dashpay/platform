@@ -61,6 +61,7 @@ impl Index {
             null_searchable: true,
             contested_index: None,
             countable: IndexCountability::NotCountable,
+            range_countable: false,
         })
     }
 }

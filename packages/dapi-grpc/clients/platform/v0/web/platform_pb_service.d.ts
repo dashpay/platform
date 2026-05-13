@@ -148,15 +148,6 @@ type PlatformgetDocumentsCount = {
   readonly responseType: typeof platform_pb.GetDocumentsCountResponse;
 };
 
-type PlatformgetDocumentsSplitCount = {
-  readonly methodName: string;
-  readonly service: typeof Platform;
-  readonly requestStream: false;
-  readonly responseStream: false;
-  readonly requestType: typeof platform_pb.GetDocumentsSplitCountRequest;
-  readonly responseType: typeof platform_pb.GetDocumentsSplitCountResponse;
-};
-
 type PlatformgetIdentityByPublicKeyHash = {
   readonly methodName: string;
   readonly service: typeof Platform;
@@ -598,7 +589,6 @@ export class Platform {
   static readonly getDataContracts: PlatformgetDataContracts;
   static readonly getDocuments: PlatformgetDocuments;
   static readonly getDocumentsCount: PlatformgetDocumentsCount;
-  static readonly getDocumentsSplitCount: PlatformgetDocumentsSplitCount;
   static readonly getIdentityByPublicKeyHash: PlatformgetIdentityByPublicKeyHash;
   static readonly getIdentityByNonUniquePublicKeyHash: PlatformgetIdentityByNonUniquePublicKeyHash;
   static readonly waitForStateTransitionResult: PlatformwaitForStateTransitionResult;
@@ -823,15 +813,6 @@ export class PlatformClient {
   getDocumentsCount(
     requestMessage: platform_pb.GetDocumentsCountRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetDocumentsCountResponse|null) => void
-  ): UnaryResponse;
-  getDocumentsSplitCount(
-    requestMessage: platform_pb.GetDocumentsSplitCountRequest,
-    metadata: grpc.Metadata,
-    callback: (error: ServiceError|null, responseMessage: platform_pb.GetDocumentsSplitCountResponse|null) => void
-  ): UnaryResponse;
-  getDocumentsSplitCount(
-    requestMessage: platform_pb.GetDocumentsSplitCountRequest,
-    callback: (error: ServiceError|null, responseMessage: platform_pb.GetDocumentsSplitCountResponse|null) => void
   ): UnaryResponse;
   getIdentityByPublicKeyHash(
     requestMessage: platform_pb.GetIdentityByPublicKeyHashRequest,

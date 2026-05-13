@@ -115,6 +115,15 @@ impl PerAccountPlatformAddressState {
         self.addresses.insert(address_index, address);
         self.found.insert(address, funds);
     }
+
+    /// Read-only view of the persisted `(address, funds)` entries.
+    ///
+    /// Used by `PlatformAddressWallet::initialize_from_persisted` to
+    /// push the persisted balances onto each `ManagedPlatformAccount`
+    /// before the provider takes over.
+    pub(crate) fn found(&self) -> &BTreeMap<PlatformP2PKHAddress, AddressFunds> {
+        &self.found
+    }
 }
 
 /// Per-wallet account map — keys are DIP-17 account indexes (hardened
