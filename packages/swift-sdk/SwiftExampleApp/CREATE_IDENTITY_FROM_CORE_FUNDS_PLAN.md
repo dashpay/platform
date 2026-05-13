@@ -961,7 +961,39 @@ IS-lock arrival.
    source" was also conceptually wrong — it's resumption, not
    funding.)*
 
-3. **Crash-recovery validation**: see Iter 5 follow-up below.
+3. **Crash-recovery validation**: see UAT matrix below.
+
+---
+
+### Iter 5 UAT matrix — manual testnet validation
+
+The unit tests (`CreateIdentityResumableTests`, 12 cases) pin the
+filter math, phase predicate, outpoint round-trip, and active-slot
+exclusion. Runtime composition — SwiftData `@Query` reactivity +
+coordinator `@Published` mutations + view re-renders + SPV event
+routing — has to be verified on a real testnet sim/device.
+
+| # | Scenario | Expected | Verifies |
+|---|---|---|---|
+| 1 | **Happy path** — Create Identity from wallet balance, complete normally. | No phantom row appears in Resumable during the broadcast → identity-write window. Pending row shows progress, completes, disappears after ~30s retention sweep. | Active-slot anti-join correctness; coordinator retention sweep. |
+| 2 | **🔴 bug repro** — Start a fresh registration; switch to Identities tab while it's mid-flight. | The in-flight slot must NOT appear in Resumable Registrations — only in Pending. | The `Phase.isActive` + identity-slot union in `ResumableRegistrationsList` (commit `02a15497c6`). |
+| 3 | **Crash recovery, status 1** — Force-quit during Broadcasting (kill app before the IS lock arrives). | On relaunch: Resumable row with spinner + "Waiting for InstantSendLock…". After ~10–30s on testnet the row flips to a Resume button automatically (SPV delivers IS lock → persister bumps status 1→2 → `@Query` re-fires). Tap Resume → completes. | Status-1 visibility floor; SwiftData @Query reactivity on status transition; persister IS-lock callback. |
+| 4 | **Crash recovery, status 2/3** — Kill app between IS-lock arrival and Platform submit. | On relaunch: Resume button immediately. Tap → opens `CreateIdentityView` pre-filled (read-only summary) → tap Create Identity → completes. | Path B preselect flow end-to-end; FFI `platform_wallet_resume_identity_with_existing_asset_lock_signer`. |
+| 5 | **Failed retry** — Trigger a failure (toggle airplane mode mid-flight, or some other failure injection). | Pending row shows Failed + Dismiss. Tap Dismiss → Resumable row reappears for the same slot → tap Resume → succeeds on retry. | Coordinator `.failed → .preparingKeys` restart path; controller-level `.failed` re-submit allowed; dismiss → dict mutation → re-render. |
+| 6 | **`.completed` retention guard** — Wait ~10s after a registration success, return to Identities tab. | Pending row still shows Done. Resumable section does NOT show the same slot (anti-join via `PersistentIdentity` row). Coordinator's retention sweep clears Pending at ~30s. | `.completed` not in `Phase.isActive` (correctly — identity row covers the slot). |
+
+**Out-of-scope for this UAT (separately scheduled or out of plan):**
+- Identity top-up flows — separate code path; affected by upstream
+  PR #3549 issue 1 (HIGH) which our resume path doesn't exercise.
+- Non-BIP44 funding accounts (CoinJoin, BIP-32) — separate code path;
+  affected by upstream PR #3549 issue 5 (LOW).
+- `TransactionContext::InstantSend → InBlock` overwrite (upstream
+  PR #3549 issue 2, MEDIUM). Our `PersistentAssetLock.proofBytes`
+  captures the proof at the IS-lock arrival moment so the proof
+  bytes survive the transaction-record context promotion; if
+  scenario #3 ever exhibits "tx confirmed but row stuck on
+  'Waiting for InstantSendLock…' indefinitely", flag this as the
+  suspect and verify `proofBytes` was written at status 1→2.
 
 ---
 
