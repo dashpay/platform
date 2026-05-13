@@ -1,6 +1,6 @@
 # Create Identity from Core Funds — Plan (Draft 9)
 
-Status: **iter 1 + 2 + 3 + 4 + 5 done.**
+Status: **iter 1 + 2 + 3 + 4 + 5 + 6 done.** Iter 7 (walletless paste flow) remains optional / out of scope unless requested.
 Branch: `feat/swift/funding-with-asset-lock`
 Target: SwiftExampleApp, testnet validation first.
 
@@ -955,24 +955,28 @@ always set on a tracked lock.)
 
 ---
 
-### Iter 6 — Explorer drill-downs
+### Iter 6 — Explorer drill-downs ✅ **DONE (covered by iter 3/4 work)**
 
 **Goal**: full explorer visibility for tracked asset locks
 beyond the StorageExplorer row delivered in iter 2.
 
 **Steps**:
 
-1. **`StorageExplorerView` detail view** for
+1. ✅ **`StorageExplorerView` detail view** for
    `PersistentAssetLock`: list locks with `outPointHex`,
    `status`, `amountDuffs`, `identityIndexRaw`, `createdAt`,
-   `updatedAt`. SwiftData-backed.
+   `updatedAt`. SwiftData-backed. — `AssetLockStorageListView`
+   at `StorageModelListViews.swift:1616` and
+   `AssetLockStorageDetailView` at
+   `StorageRecordDetailViews.swift:1794`.
 
-2. **`WalletMemoryExplorerView` drill-down**: expand the
-   existing "N asset locks" count (`:368`) into a sub-section
-   per wallet showing the live FFI snapshot
-   (`trackedAssetLocks(for: walletId)`). Follow the
-   `walletsSection` pattern at `:325`. FFI-backed (this view is
-   for *in-memory* wallet state, not SwiftData).
+2. ✅ **`WalletMemoryExplorerView` drill-down**: per-wallet
+   live FFI snapshot of tracked asset locks via
+   `walletManager.trackedAssetLocks(for: walletId)`. —
+   `trackedAssetLocksSection` inside `WalletMemoryDetailView`
+   at `WalletMemoryExplorerView.swift:686`, reached by tapping
+   a wallet row in `walletsSection` (the row already surfaces
+   the `N asset locks` count via the in-memory summary).
 
 ---
 
