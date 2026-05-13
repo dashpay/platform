@@ -17,7 +17,7 @@ use crate::consensus::ConsensusError;
 use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::{Identity, IdentityPublicKey};
-#[cfg(feature = "state-transition-signing")]
+#[cfg(all(feature = "state-transition-signing", debug_assertions))]
 use crate::serialization::PlatformMessageSignable;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
@@ -213,18 +213,6 @@ impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransitionV0 {
             user_fee_increase,
         };
 
-        // Run the same basic-structure checks as the server-side
-        // `IdentityUpdateStateTransitionStructureValidationV0` impl, going
-        // through the shared version-dispatching wrapper so client and server
-        // pick the same versioned check. When a future v1 basic-structure
-        // check is introduced, the server dispatcher, the wrapper, and this
-        // constructor must be updated in lockstep.
-        let basic_structure_result =
-            identity_update_transition.validate_basic_structure(platform_version)?;
-        if let Some(error) = first_consensus_error_as_protocol_error(basic_structure_result) {
-            return Err(error);
-        }
-
         // Fail-fast: verify the master public key exists on the identity and
         // has `SecurityLevel::MASTER` *before* doing any POP signing work for
         // added unique keys. Catching this here matches the final signing
@@ -248,6 +236,18 @@ impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransitionV0 {
             ));
         }
 
+        // Run the same basic-structure checks as the server-side
+        // `IdentityUpdateStateTransitionStructureValidationV0` impl, going
+        // through the shared version-dispatching wrapper so client and server
+        // pick the same versioned check. When a future v1 basic-structure
+        // check is introduced, the server dispatcher, the wrapper, and this
+        // constructor must be updated in lockstep.
+        let basic_structure_result =
+            identity_update_transition.validate_basic_structure(platform_version)?;
+        if let Some(error) = first_consensus_error_as_protocol_error(basic_structure_result) {
+            return Err(error);
+        }
+
         let state_transition: StateTransition = identity_update_transition.clone().into();
 
         let key_signable_bytes = state_transition.signable_bytes()?;
@@ -269,6 +269,7 @@ impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransitionV0 {
         // `IdentityUpdateStateTransitionIdentityAndSignaturesValidationV0`
         // check. Only keys with unique types were signed above, so verify
         // those exact keys here.
+        #[cfg(debug_assertions)]
         for public_key_with_witness in identity_update_transition.add_public_keys.iter() {
             if !public_key_with_witness.key_type().is_unique_key_type() {
                 continue;

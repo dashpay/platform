@@ -86,7 +86,7 @@ pub struct DriveAbciStateTransitionValidationVersions {
     /// which cross-checks that the legacy drive-abci value matches the DPP-owned value until
     /// the legacy field can be removed/migrated. Do not wire new dispatch logic to this
     /// field.
-    pub identity_update_state_transition: DriveAbciStateTransitionValidationVersion,
+    pub legacy_identity_update_state_transition: DriveAbciStateTransitionValidationVersion,
     pub identity_top_up_state_transition: DriveAbciStateTransitionValidationVersion,
     pub identity_credit_withdrawal_state_transition: DriveAbciStateTransitionValidationVersion,
     pub identity_credit_withdrawal_state_transition_purpose_matches_requirements: FeatureVersion,

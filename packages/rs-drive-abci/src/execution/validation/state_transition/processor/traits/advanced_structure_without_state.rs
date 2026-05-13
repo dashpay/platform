@@ -48,7 +48,7 @@ impl StateTransitionAdvancedStructureValidationV0 for StateTransition {
                     .drive_abci
                     .validation_and_processing
                     .state_transitions
-                    .identity_update_state_transition
+                    .legacy_identity_update_state_transition
                     .advanced_structure
                 {
                     Some(0) => {

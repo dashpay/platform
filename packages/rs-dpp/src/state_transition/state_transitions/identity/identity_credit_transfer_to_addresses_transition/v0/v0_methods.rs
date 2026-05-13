@@ -7,7 +7,8 @@ use crate::address_funds::PlatformAddress;
 use crate::fee::Credits;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::{
-    first_consensus_error_as_protocol_error, StateTransitionStructureValidation,
+    address_funds_constructor_activation_error, first_consensus_error_as_protocol_error,
+    StateTransitionStructureValidation,
 };
 #[cfg(feature = "state-transition-signing")]
 use crate::{
@@ -25,6 +26,8 @@ use crate::state_transition::identity_credit_transfer_to_addresses_transition::m
 use crate::state_transition::identity_credit_transfer_to_addresses_transition::v0::IdentityCreditTransferToAddressesTransitionV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::GetDataContractSecurityLevelRequirementFn;
+#[cfg(feature = "state-transition-signing")]
+use crate::state_transition::StateTransitionType;
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::{FeatureVersion, PlatformVersion};
 
@@ -54,6 +57,13 @@ impl IdentityCreditTransferToAddressesTransitionMethodsV0
             signature_public_key_id: 0,
             signature: Default::default(),
         };
+
+        if let Some(error) = address_funds_constructor_activation_error(
+            StateTransitionType::IdentityCreditTransferToAddresses,
+            platform_version,
+        ) {
+            return Err(error);
+        }
 
         // Validate structure before .into() conversion and signing, since this transition
         // uses sign_external on the StateTransition rather than setting witnesses on the V0 struct.

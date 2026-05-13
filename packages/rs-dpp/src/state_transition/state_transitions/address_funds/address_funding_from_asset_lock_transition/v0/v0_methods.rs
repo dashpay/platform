@@ -14,7 +14,10 @@ use crate::serialization::Signable;
 use crate::state_transition::address_funding_from_asset_lock_transition::methods::AddressFundingFromAssetLockTransitionMethodsV0;
 use crate::state_transition::address_funding_from_asset_lock_transition::v0::AddressFundingFromAssetLockTransitionV0;
 #[cfg(feature = "state-transition-signing")]
-use crate::state_transition::first_consensus_error_as_protocol_error;
+use crate::state_transition::{
+    address_funds_constructor_activation_error, first_consensus_error_as_protocol_error,
+    StateTransitionType,
+};
 #[cfg(feature = "state-transition-signing")]
 use crate::{prelude::UserFeeIncrease, state_transition::StateTransition, ProtocolError};
 #[cfg(feature = "state-transition-signing")]
@@ -44,6 +47,13 @@ impl AddressFundingFromAssetLockTransitionMethodsV0 for AddressFundingFromAssetL
             signature: Default::default(),
             input_witnesses: Vec::new(),
         };
+
+        if let Some(error) = address_funds_constructor_activation_error(
+            StateTransitionType::AddressFundingFromAssetLock,
+            platform_version,
+        ) {
+            return Err(error);
+        }
 
         // Pre-signing structure check: validate everything except the witness
         // count, so structural errors fail fast before performing any async

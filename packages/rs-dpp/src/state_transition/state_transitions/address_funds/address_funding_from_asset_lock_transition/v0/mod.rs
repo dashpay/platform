@@ -71,10 +71,16 @@ pub struct AddressFundingFromAssetLockTransitionV0 {
 mod tests {
     use super::*;
     use crate::address_funds::AddressFundsFeeStrategyStep;
+    use crate::consensus::basic::BasicError;
+    use crate::consensus::ConsensusError;
+    use crate::identity::signer::Signer;
     use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
     use crate::identity::state_transition::AssetLockProved;
+    use crate::state_transition::address_funding_from_asset_lock_transition::methods::AddressFundingFromAssetLockTransitionMethodsV0;
     use crate::state_transition::{StateTransitionLike, StateTransitionType};
+    use async_trait::async_trait;
     use dashcore::OutPoint;
+    use platform_version::version::PlatformVersion;
 
     fn make_transition() -> AddressFundingFromAssetLockTransitionV0 {
         let mut inputs = BTreeMap::new();
@@ -223,5 +229,63 @@ mod tests {
         assert!(t.fee_strategy.is_empty());
         assert_eq!(t.user_fee_increase, 0);
         assert!(t.input_witnesses.is_empty());
+    }
+
+    #[derive(Debug)]
+    struct UnreachableAddressSigner;
+
+    #[async_trait]
+    impl Signer<PlatformAddress> for UnreachableAddressSigner {
+        async fn sign(
+            &self,
+            _key: &PlatformAddress,
+            _data: &[u8],
+        ) -> Result<BinaryData, ProtocolError> {
+            panic!("sign should not run when protocol gating rejects the constructor")
+        }
+
+        async fn sign_create_witness(
+            &self,
+            _key: &PlatformAddress,
+            _data: &[u8],
+        ) -> Result<AddressWitness, ProtocolError> {
+            panic!(
+                "sign_create_witness should not run when protocol gating rejects the constructor"
+            )
+        }
+
+        fn can_sign_with(&self, _key: &PlatformAddress) -> bool {
+            false
+        }
+    }
+
+    #[tokio::test]
+    async fn constructor_returns_not_active_before_structure_validation() {
+        let low_version = PlatformVersion::get(1).expect("platform version 1 exists");
+        let mut inputs = BTreeMap::new();
+        inputs.insert(PlatformAddress::P2pkh([1u8; 20]), (1, 1));
+        let mut outputs = BTreeMap::new();
+        outputs.insert(PlatformAddress::P2pkh([2u8; 20]), None);
+
+        let result = AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_signer(
+            AssetLockProof::Chain(ChainAssetLockProof::new(42, [3u8; 36])),
+            &[7u8; 32],
+            inputs,
+            outputs,
+            vec![AddressFundsFeeStrategyStep::DeductFromInput(99)],
+            &UnreachableAddressSigner,
+            0,
+            low_version,
+        )
+        .await;
+
+        assert!(matches!(
+            result,
+            Err(ProtocolError::ConsensusError(boxed))
+                if matches!(
+                    *boxed,
+                    ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(_))
+                )
+        ));
     }
 }

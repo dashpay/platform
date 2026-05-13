@@ -33,7 +33,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V7: DriveAbciValidationVersions =
                 state: 0,
                 transform_into_action: 0,
             },
-            identity_update_state_transition: DriveAbciStateTransitionValidationVersion {
+            legacy_identity_update_state_transition: DriveAbciStateTransitionValidationVersion {
                 basic_structure: Some(0),
                 advanced_structure: Some(0),
                 identity_signatures: Some(0),

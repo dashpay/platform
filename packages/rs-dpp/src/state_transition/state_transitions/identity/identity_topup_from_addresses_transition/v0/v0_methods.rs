@@ -18,7 +18,10 @@ use {
         identity::{accessors::IdentityGettersV0, signer::Signer, Identity},
         prelude::{AddressNonce, UserFeeIncrease},
         serialization::Signable,
-        state_transition::{first_consensus_error_as_protocol_error, StateTransition},
+        state_transition::{
+            address_funds_constructor_activation_error, first_consensus_error_as_protocol_error,
+            StateTransition, StateTransitionType,
+        },
         version::FeatureVersion,
         ProtocolError,
     },
@@ -47,6 +50,13 @@ impl IdentityTopUpFromAddressesTransitionMethodsV0 for IdentityTopUpFromAddresse
                 user_fee_increase,
                 input_witnesses: vec![],
             };
+
+        if let Some(error) = address_funds_constructor_activation_error(
+            StateTransitionType::IdentityTopUpFromAddresses,
+            platform_version,
+        ) {
+            return Err(error);
+        }
 
         // Pre-signing structure check: validate everything except the witness
         // count, so structural errors fail fast before performing any async

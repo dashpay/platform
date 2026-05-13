@@ -12,7 +12,10 @@ use crate::serialization::Signable;
 use crate::state_transition::address_funds_transfer_transition::methods::AddressFundsTransferTransitionMethodsV0;
 use crate::state_transition::address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0;
 #[cfg(feature = "state-transition-signing")]
-use crate::state_transition::first_consensus_error_as_protocol_error;
+use crate::state_transition::{
+    address_funds_constructor_activation_error, first_consensus_error_as_protocol_error,
+    StateTransitionType,
+};
 #[cfg(feature = "state-transition-signing")]
 use crate::{
     prelude::{AddressNonce, UserFeeIncrease},
@@ -47,6 +50,13 @@ impl AddressFundsTransferTransitionMethodsV0 for AddressFundsTransferTransitionV
             user_fee_increase,
             input_witnesses: Vec::new(),
         };
+
+        if let Some(error) = address_funds_constructor_activation_error(
+            StateTransitionType::AddressFundsTransfer,
+            platform_version,
+        ) {
+            return Err(error);
+        }
 
         // Pre-signing structure check: validate everything except the witness
         // count, so structural errors fail fast before performing any async

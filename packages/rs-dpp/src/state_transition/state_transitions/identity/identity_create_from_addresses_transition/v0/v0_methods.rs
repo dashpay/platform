@@ -20,7 +20,15 @@ use crate::state_transition::StateTransitionType;
 // Crate: Feature-Gated (state-transition-signing)
 // ============================
 #[cfg(feature = "state-transition-signing")]
-use crate::state_transition::first_consensus_error_as_protocol_error;
+use crate::state_transition::{
+    address_funds_constructor_activation_error, first_consensus_error_as_protocol_error,
+};
+#[cfg(all(feature = "state-transition-signing", debug_assertions))]
+use crate::{
+    serialization::PlatformMessageSignable,
+    state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters,
+};
+
 #[cfg(feature = "state-transition-signing")]
 use crate::{
     address_funds::AddressFundsFeeStrategy,
@@ -30,12 +38,9 @@ use crate::{
         IdentityPublicKey,
     },
     prelude::{AddressNonce, UserFeeIncrease},
-    serialization::{PlatformMessageSignable, Signable},
+    serialization::Signable,
     state_transition::{
-        public_key_in_creation::accessors::{
-            IdentityPublicKeyInCreationV0Getters, IdentityPublicKeyInCreationV0Setters,
-        },
-        StateTransition,
+        public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters, StateTransition,
     },
     version::PlatformVersion,
     ProtocolError,
@@ -66,6 +71,13 @@ impl IdentityCreateFromAddressesTransitionMethodsV0 for IdentityCreateFromAddres
                 input_witnesses: Vec::new(),
                 ..Default::default()
             };
+
+        if let Some(error) = address_funds_constructor_activation_error(
+            StateTransitionType::IdentityCreateFromAddresses,
+            platform_version,
+        ) {
+            return Err(error);
+        }
 
         let public_keys: Vec<IdentityPublicKeyInCreation> = identity
             .public_keys()
@@ -124,11 +136,12 @@ impl IdentityCreateFromAddressesTransitionMethodsV0 for IdentityCreateFromAddres
             }
         }
 
-        // Verify proof-of-possession signatures we just produced before
-        // returning, matching the server-side
+        // In debug builds, verify proof-of-possession signatures we just
+        // produced before returning, matching the server-side
         // `IdentityCreateFromAddressesStateTransitionSignaturesValidationV0`
         // check. Only keys with unique types were signed above, so verify
         // those exact keys here.
+        #[cfg(debug_assertions)]
         for public_key_with_witness in identity_create_from_addresses_transition.public_keys.iter()
         {
             if !public_key_with_witness.key_type().is_unique_key_type() {

@@ -16,14 +16,16 @@ use crate::identity::KeyType::ECDSA_HASH160;
 use crate::prelude::AssetLockProof;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::UserFeeIncrease;
+#[cfg(all(feature = "state-transition-signing", debug_assertions))]
+use crate::serialization::PlatformMessageSignable;
 #[cfg(feature = "state-transition-signing")]
-use crate::serialization::{PlatformMessageSignable, Signable};
+use crate::serialization::Signable;
 use crate::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use crate::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
+#[cfg(all(feature = "state-transition-signing", debug_assertions))]
+use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
 #[cfg(feature = "state-transition-signing")]
-use crate::state_transition::public_key_in_creation::accessors::{
-    IdentityPublicKeyInCreationV0Getters, IdentityPublicKeyInCreationV0Setters,
-};
+use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
 
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::IdentityPublicKey;
@@ -104,10 +106,11 @@ impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransitionV0 {
             }
         }
 
-        // Verify the proof-of-possession signatures we just produced before
-        // returning, mirroring the server-side identity_create signatures
-        // validator. Only keys with unique types were signed above, so verify
-        // those exact keys here.
+        // In debug builds, verify the proof-of-possession signatures we just
+        // produced before returning, mirroring the server-side identity_create
+        // signatures validator. Only keys with unique types were signed above,
+        // so verify those exact keys here.
+        #[cfg(debug_assertions)]
         for public_key_with_witness in identity_create_transition.public_keys.iter() {
             if !public_key_with_witness.key_type().is_unique_key_type() {
                 continue;

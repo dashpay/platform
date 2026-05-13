@@ -371,6 +371,91 @@ mod test {
             ),
         }
     }
+
+    #[cfg(feature = "state-transition-signing")]
+    #[tokio::test]
+    async fn try_from_identity_with_signer_checks_master_key_before_basic_structure() {
+        use crate::address_funds::AddressWitness;
+        use crate::consensus::signature::SignatureError;
+        use crate::consensus::ConsensusError;
+        use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use crate::identity::signer::Signer;
+        use crate::identity::v0::IdentityV0;
+        use crate::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+        use crate::state_transition::identity_update_transition::methods::IdentityUpdateTransitionMethodsV0;
+        use crate::version::PlatformVersion;
+        use crate::ProtocolError;
+        use async_trait::async_trait;
+        use std::collections::BTreeMap;
+
+        #[derive(Debug)]
+        struct UnreachableSigner;
+
+        #[async_trait]
+        impl Signer<IdentityPublicKey> for UnreachableSigner {
+            async fn sign(
+                &self,
+                _key: &IdentityPublicKey,
+                _data: &[u8],
+            ) -> Result<BinaryData, ProtocolError> {
+                panic!("sign should not run when master key lookup fails")
+            }
+
+            async fn sign_create_witness(
+                &self,
+                _key: &IdentityPublicKey,
+                _data: &[u8],
+            ) -> Result<AddressWitness, ProtocolError> {
+                panic!("sign_create_witness should not run when master key lookup fails")
+            }
+
+            fn can_sign_with(&self, _key: &IdentityPublicKey) -> bool {
+                false
+            }
+        }
+
+        let platform_version = PlatformVersion::latest();
+        let identity: Identity = IdentityV0 {
+            id: Identifier::default(),
+            public_keys: BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        }
+        .into();
+        let invalid_transfer_high_key: IdentityPublicKey = IdentityPublicKeyV0 {
+            id: 1,
+            purpose: Purpose::TRANSFER,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(vec![1u8; 33]),
+            disabled_at: None,
+        }
+        .into();
+
+        let result = IdentityUpdateTransitionV0::try_from_identity_with_signer(
+            &identity,
+            &999,
+            vec![invalid_transfer_high_key],
+            vec![],
+            1,
+            0,
+            &UnreachableSigner,
+            platform_version,
+            None,
+        )
+        .await;
+
+        assert!(matches!(
+            result,
+            Err(ProtocolError::ConsensusError(boxed))
+                if matches!(
+                    *boxed,
+                    ConsensusError::SignatureError(SignatureError::MissingPublicKeyError(_))
+                )
+        ));
+    }
 }
 
 /// if the property isn't present the empty list is returned. If property is defined, the function

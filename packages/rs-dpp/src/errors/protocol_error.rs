@@ -143,6 +143,9 @@ pub enum ProtocolError {
     #[error(transparent)]
     ConsensusError(Box<ConsensusError>),
 
+    #[error("Multiple consensus errors: {0:?}")]
+    ConsensusErrors(Vec<ConsensusError>),
+
     #[error(transparent)]
     Document(Box<DocumentError>),
 
@@ -353,6 +356,16 @@ impl From<String> for ProtocolError {
 impl From<ConsensusError> for ProtocolError {
     fn from(e: ConsensusError) -> Self {
         ProtocolError::ConsensusError(Box::new(e))
+    }
+}
+
+impl From<Vec<ConsensusError>> for ProtocolError {
+    fn from(mut errors: Vec<ConsensusError>) -> Self {
+        match errors.len() {
+            0 => ProtocolError::Generic("empty consensus error list".to_string()),
+            1 => ProtocolError::ConsensusError(Box::new(errors.remove(0))),
+            _ => ProtocolError::ConsensusErrors(errors),
+        }
     }
 }
 

@@ -506,4 +506,104 @@ mod tests {
             ),
         }
     }
+
+    #[tokio::test]
+    async fn try_from_inputs_with_signer_returns_not_active_before_structure_validation() {
+        use crate::address_funds::AddressFundsFeeStrategyStep;
+        use crate::address_funds::AddressWitness;
+        use crate::consensus::basic::BasicError;
+        use crate::consensus::ConsensusError;
+        use crate::identity::signer::Signer;
+        use crate::identity::v0::IdentityV0;
+        use crate::identity::{Identity, IdentityPublicKey};
+        use crate::state_transition::identity_create_from_addresses_transition::methods::IdentityCreateFromAddressesTransitionMethodsV0;
+        use async_trait::async_trait;
+        use platform_value::{BinaryData, Identifier};
+        use platform_version::version::PlatformVersion;
+        use std::collections::BTreeMap;
+
+        #[derive(Debug)]
+        struct UnreachableIdentityKeySigner;
+
+        #[async_trait]
+        impl Signer<IdentityPublicKey> for UnreachableIdentityKeySigner {
+            async fn sign(
+                &self,
+                _key: &IdentityPublicKey,
+                _data: &[u8],
+            ) -> Result<BinaryData, ProtocolError> {
+                panic!("sign should not run when protocol gating rejects the constructor")
+            }
+
+            async fn sign_create_witness(
+                &self,
+                _key: &IdentityPublicKey,
+                _data: &[u8],
+            ) -> Result<AddressWitness, ProtocolError> {
+                panic!("sign_create_witness should not run when protocol gating rejects the constructor")
+            }
+
+            fn can_sign_with(&self, _key: &IdentityPublicKey) -> bool {
+                false
+            }
+        }
+
+        #[derive(Debug)]
+        struct UnreachableAddressSigner;
+
+        #[async_trait]
+        impl Signer<PlatformAddress> for UnreachableAddressSigner {
+            async fn sign(
+                &self,
+                _key: &PlatformAddress,
+                _data: &[u8],
+            ) -> Result<BinaryData, ProtocolError> {
+                panic!("sign should not run when protocol gating rejects the constructor")
+            }
+
+            async fn sign_create_witness(
+                &self,
+                _key: &PlatformAddress,
+                _data: &[u8],
+            ) -> Result<AddressWitness, ProtocolError> {
+                panic!("sign_create_witness should not run when protocol gating rejects the constructor")
+            }
+
+            fn can_sign_with(&self, _key: &PlatformAddress) -> bool {
+                false
+            }
+        }
+
+        let low_version = PlatformVersion::get(1).expect("platform version 1 exists");
+        let identity: Identity = IdentityV0 {
+            id: Identifier::default(),
+            public_keys: BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        }
+        .into();
+        let mut inputs = BTreeMap::new();
+        inputs.insert(PlatformAddress::P2pkh([1u8; 20]), (1u32, 1));
+
+        let result = IdentityCreateFromAddressesTransitionV0::try_from_inputs_with_signer(
+            &identity,
+            inputs,
+            None,
+            vec![AddressFundsFeeStrategyStep::DeductFromInput(99)],
+            &UnreachableIdentityKeySigner,
+            &UnreachableAddressSigner,
+            0,
+            low_version,
+        )
+        .await;
+
+        assert!(matches!(
+            result,
+            Err(ProtocolError::ConsensusError(boxed))
+                if matches!(
+                    *boxed,
+                    ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(_))
+                )
+        ));
+    }
 }
