@@ -38,8 +38,8 @@ use dash_sdk::platform::Fetch;
 use crate::framework::prelude::*;
 use crate::framework::setup_with_per_identity_funding;
 use crate::framework::tokens::{
-    register_token_contract_via_sdk, token_balance_of, DEFAULT_BASE_SUPPLY, DEFAULT_DECIMALS,
-    DEFAULT_MAX_SUPPLY, DEFAULT_TOKEN_POSITION, TK_OWNER_FUNDING_DISTRIBUTION,
+    register_token_contract_via_sdk, token_balance_of, wait_for_token_balance, DEFAULT_BASE_SUPPLY,
+    DEFAULT_DECIMALS, DEFAULT_MAX_SUPPLY, DEFAULT_TOKEN_POSITION, TK_OWNER_FUNDING_DISTRIBUTION,
     TK_SETUP_WAIT_TIMEOUT,
 };
 
@@ -47,6 +47,10 @@ use crate::framework::tokens::{
 /// that an over-shoot regression (multiple credits, double-mint)
 /// surfaces as an unmistakable balance mismatch.
 const PAYOUT: TokenAmount = 100;
+
+/// Replica-lag budget for the post-claim balance gate. Same 60 s the
+/// sibling token tests (TK-001/004/007/008/009/011) use.
+const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 #[ignore = "requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access; run with `cargo test -- --ignored`"]
@@ -232,6 +236,23 @@ async fn tk_013_token_claim_from_pre_programmed_distribution() {
     match &claim_result {
         ClaimResult::Document(_) | ClaimResult::GroupActionWithDocument(_, _) => {}
     }
+
+    // Mirror the sibling token tests (TK-001/004/007/008/009/011): gate
+    // the post-claim read on the owner's token balance reaching the
+    // expected post-claim amount. Reading immediately after the
+    // `token_claim` broadcast can hit a DAPI replica that hasn't yet
+    // applied the block carrying the payout and return the pre-claim
+    // value, racing the credit-delta assertion below.
+    wait_for_token_balance(
+        ctx,
+        owner_id,
+        contract_id,
+        DEFAULT_TOKEN_POSITION,
+        balance_before + PAYOUT,
+        STEP_TIMEOUT,
+    )
+    .await
+    .expect("owner balance never reached pre-claim + payout");
 
     let balance_after = token_balance_of(ctx, contract_id, DEFAULT_TOKEN_POSITION, owner_id)
         .await
