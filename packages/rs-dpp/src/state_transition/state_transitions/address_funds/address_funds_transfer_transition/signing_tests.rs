@@ -249,6 +249,33 @@ impl Signer<PlatformAddress> for UnreachableAddressSigner {
     }
 }
 
+#[derive(Debug)]
+struct WrongWitnessSigner<'a> {
+    inner: &'a TestAddressSigner,
+    replacement_address: PlatformAddress,
+}
+
+#[async_trait]
+impl Signer<PlatformAddress> for WrongWitnessSigner<'_> {
+    async fn sign(&self, key: &PlatformAddress, data: &[u8]) -> Result<BinaryData, ProtocolError> {
+        self.inner.sign(key, data).await
+    }
+
+    async fn sign_create_witness(
+        &self,
+        _key: &PlatformAddress,
+        data: &[u8],
+    ) -> Result<AddressWitness, ProtocolError> {
+        self.inner
+            .sign_create_witness(&self.replacement_address, data)
+            .await
+    }
+
+    fn can_sign_with(&self, key: &PlatformAddress) -> bool {
+        self.inner.can_sign_with(key)
+    }
+}
+
 /// Verifies all input witnesses against the transition's signable bytes
 fn verify_transition_signatures(
     transition: &AddressFundsTransferTransitionV0,
@@ -330,6 +357,35 @@ async fn test_single_p2pkh_input_signing() {
 
     // Verify signature is valid
     verify_transition_signatures(&transition).expect("signatures should be valid");
+}
+
+#[tokio::test]
+async fn test_constructor_rejects_witness_for_wrong_input_address() {
+    let mut signer = TestAddressSigner::new();
+    let input_address = signer.add_p2pkh([1u8; 32]);
+    let wrong_address = signer.add_p2pkh([2u8; 32]);
+    let output_address = PlatformAddress::P2pkh([99u8; 20]);
+
+    let mut inputs = BTreeMap::new();
+    inputs.insert(input_address, (1u32, 1_000_000u64));
+
+    let mut outputs = BTreeMap::new();
+    outputs.insert(output_address, 1_000_000u64);
+
+    let result = AddressFundsTransferTransitionV0::try_from_inputs_with_signer(
+        inputs,
+        outputs,
+        vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+        &WrongWitnessSigner {
+            inner: &signer,
+            replacement_address: wrong_address,
+        },
+        0,
+        get_platform_version(),
+    )
+    .await;
+
+    assert!(matches!(result, Err(ProtocolError::AddressWitnessError(_))));
 }
 
 #[tokio::test]
@@ -1230,7 +1286,15 @@ async fn test_different_nonces_produce_different_signable_bytes() {
 
 #[tokio::test]
 async fn constructor_returns_not_active_before_structure_validation() {
-    let low_version = PlatformVersion::get(1).expect("platform version 1 exists");
+    let mut low_version = PlatformVersion::get(1)
+        .expect("platform version 1 exists")
+        .clone();
+    low_version
+        .drive_abci
+        .validation_and_processing
+        .state_transitions
+        .address_funds_transfer
+        .basic_structure = None;
     let mut inputs = BTreeMap::new();
     inputs.insert(PlatformAddress::P2pkh([1u8; 20]), (1, 1));
     let mut outputs = BTreeMap::new();
@@ -1242,7 +1306,7 @@ async fn constructor_returns_not_active_before_structure_validation() {
         vec![AddressFundsFeeStrategyStep::DeductFromInput(99)],
         &UnreachableAddressSigner,
         0,
-        low_version,
+        &low_version,
     )
     .await;
 

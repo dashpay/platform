@@ -175,7 +175,7 @@ impl WasmSdk {
             .inner_sdk()
             .transfer_address_funds(inputs_map, outputs_map, fee_strategy, &signer, settings)
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to transfer funds: {}", e)))?;
+            .map_err(WasmSdkError::from)?;
 
         address_infos_to_js_map(address_infos, "transfer")
     }
@@ -298,7 +298,7 @@ impl WasmSdk {
         let (address_infos, new_balance) = identity
             .top_up_from_addresses(self.inner_sdk(), inputs_map, &signer, settings)
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to top up identity: {}", e)))?;
+            .map_err(WasmSdkError::from)?;
 
         Ok(IdentityTopUpFromAddressesResultWasm {
             address_infos: address_infos_to_js_map(address_infos, "top up")?,
@@ -464,7 +464,7 @@ impl WasmSdk {
                 settings,
             )
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to withdraw funds: {}", e)))?;
+            .map_err(WasmSdkError::from)?;
 
         address_infos_to_js_map(address_infos, "withdrawal")
     }
@@ -516,9 +516,7 @@ impl WasmSdk {
                 settings,
             )
             .await
-            .map_err(|e| {
-                WasmSdkError::generic(format!("Failed to transfer credits to addresses: {}", e))
-            })?;
+            .map_err(WasmSdkError::from)?;
 
         Ok(IdentityTransferToAddressesResultWasm {
             address_infos: address_infos_to_js_map(address_infos, "transfer")?,
@@ -756,7 +754,7 @@ impl WasmSdk {
                 settings,
             )
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to fund addresses: {}", e)))?;
+            .map_err(WasmSdkError::from)?;
 
         address_infos_to_js_map(address_infos, "funding")
     }
@@ -925,9 +923,7 @@ impl WasmSdk {
                 settings,
             )
             .await
-            .map_err(|e| {
-                WasmSdkError::generic(format!("Failed to create identity from addresses: {}", e))
-            })?;
+            .map_err(WasmSdkError::from)?;
 
         Ok(IdentityCreateFromAddressesResultWasm {
             identity: created_identity.into(),

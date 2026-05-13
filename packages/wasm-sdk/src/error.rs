@@ -1,7 +1,9 @@
+use dash_sdk::dpp::consensus::codes::ErrorWithCode;
 use dash_sdk::dpp::ProtocolError;
 use dash_sdk::{error::StateTransitionBroadcastError, Error as SdkError};
+use js_sys::{Array, Object, Reflect};
 use rs_dapi_client::CanRetry;
-use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::{prelude::wasm_bindgen, JsValue};
 use wasm_dpp2::error::WasmDppError;
 
 /// Structured error surfaced to JS consumers
@@ -57,6 +59,8 @@ pub struct WasmSdkError {
     code: i32,
     /// Indicates if the operation can be retried safely.
     is_retriable: bool,
+    /// Optional machine-readable details for JS consumers.
+    details: JsValue,
 }
 
 // wasm-bindgen getters defined below in the second impl block
@@ -73,6 +77,7 @@ impl WasmSdkError {
             message: message.into(),
             code: code.unwrap_or(-1),
             is_retriable,
+            details: JsValue::UNDEFINED,
         }
     }
 
@@ -134,7 +139,7 @@ impl From<SdkError> for WasmSdkError {
                 None,
                 retriable,
             ),
-            Protocol(e) => Self::new(WasmSdkErrorKind::Protocol, e.to_string(), None, retriable),
+            Protocol(e) => WasmSdkError::from(e),
             Proof(e) => Self::new(WasmSdkErrorKind::Proof, e.to_string(), None, retriable),
             InvalidProvedResponse(msg) => Self::new(
                 WasmSdkErrorKind::InvalidProvedResponse,
@@ -238,7 +243,99 @@ impl From<SdkError> for WasmSdkError {
 }
 impl From<ProtocolError> for WasmSdkError {
     fn from(err: ProtocolError) -> Self {
-        Self::new(WasmSdkErrorKind::Protocol, err.to_string(), None, false)
+        match err {
+            ProtocolError::ConsensusError(error) => {
+                Self::protocol_with_consensus_errors(vec![*error])
+            }
+            ProtocolError::ConsensusErrors(errors) => Self::protocol_with_consensus_errors(errors),
+            other => Self::new(WasmSdkErrorKind::Protocol, other.to_string(), None, false),
+        }
+    }
+}
+
+impl WasmSdkError {
+    fn protocol_with_consensus_errors(
+        errors: Vec<dash_sdk::dpp::consensus::ConsensusError>,
+    ) -> Self {
+        if errors.is_empty() {
+            let details = Object::new();
+            let _ = Reflect::set(
+                &details,
+                &JsValue::from_str("type"),
+                &JsValue::from_str("ConsensusErrors"),
+            );
+            let _ = Reflect::set(
+                &details,
+                &JsValue::from_str("messages"),
+                &Array::new().into(),
+            );
+            let _ = Reflect::set(
+                &details,
+                &JsValue::from_str("consensusErrors"),
+                &Array::new().into(),
+            );
+
+            let mut error = Self::new(
+                WasmSdkErrorKind::Protocol,
+                "Protocol error contained an empty consensus error list",
+                None,
+                false,
+            );
+            error.details = details.into();
+            return error;
+        }
+
+        let details = Object::new();
+        let messages = Array::new();
+        let structured_errors = Array::new();
+
+        for error in &errors {
+            messages.push(&JsValue::from_str(&error.to_string()));
+
+            let structured_error = Object::new();
+            let _ = Reflect::set(
+                &structured_error,
+                &JsValue::from_str("message"),
+                &JsValue::from_str(&error.to_string()),
+            );
+            let _ = Reflect::set(
+                &structured_error,
+                &JsValue::from_str("code"),
+                &JsValue::from_f64(error.code() as f64),
+            );
+            structured_errors.push(&structured_error.into());
+        }
+
+        let kind = if errors.len() == 1 {
+            "ConsensusError"
+        } else {
+            "ConsensusErrors"
+        };
+        let message = if errors.len() == 1 {
+            errors[0].to_string()
+        } else {
+            format!("{} consensus errors", errors.len())
+        };
+
+        let _ = Reflect::set(
+            &details,
+            &JsValue::from_str("type"),
+            &JsValue::from_str(kind),
+        );
+        let _ = Reflect::set(&details, &JsValue::from_str("messages"), &messages.into());
+        let _ = Reflect::set(
+            &details,
+            &JsValue::from_str("errors"),
+            &structured_errors.into(),
+        );
+
+        Self {
+            kind: WasmSdkErrorKind::Protocol,
+            message,
+            code: -1,
+            is_retriable: false,
+            details: details.into(),
+        }
     }
 }
 
@@ -330,5 +427,11 @@ impl WasmSdkError {
     #[wasm_bindgen(getter = "isRetriable")]
     pub fn is_retriable(&self) -> bool {
         self.is_retriable
+    }
+
+    /// Optional machine-readable details for JS callers.
+    #[wasm_bindgen(getter)]
+    pub fn details(&self) -> JsValue {
+        self.details.clone()
     }
 }

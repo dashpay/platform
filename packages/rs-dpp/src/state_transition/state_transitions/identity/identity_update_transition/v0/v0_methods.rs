@@ -17,7 +17,7 @@ use crate::consensus::ConsensusError;
 use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::{Identity, IdentityPublicKey};
-#[cfg(all(feature = "state-transition-signing", debug_assertions))]
+#[cfg(feature = "state-transition-signing")]
 use crate::serialization::PlatformMessageSignable;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
@@ -40,8 +40,7 @@ use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKe
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::{
-    first_consensus_error_as_protocol_error, GetDataContractSecurityLevelRequirementFn,
-    StateTransition,
+    consensus_errors_as_protocol_error, GetDataContractSecurityLevelRequirementFn, StateTransition,
 };
 #[cfg(feature = "state-transition-signing")]
 use crate::version::FeatureVersion;
@@ -228,12 +227,12 @@ impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransitionV0 {
                 .into(),
             )?;
         if master_public_key.security_level() != SecurityLevel::MASTER {
-            return Err(ProtocolError::InvalidSignaturePublicKeySecurityLevelError(
+            return Err(ProtocolError::from(ConsensusError::from(
                 InvalidSignaturePublicKeySecurityLevelError::new(
                     master_public_key.security_level(),
                     vec![SecurityLevel::MASTER],
                 ),
-            ));
+            )));
         }
 
         // Run the same basic-structure checks as the server-side
@@ -244,7 +243,7 @@ impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransitionV0 {
         // constructor must be updated in lockstep.
         let basic_structure_result =
             identity_update_transition.validate_basic_structure(platform_version)?;
-        if let Some(error) = first_consensus_error_as_protocol_error(basic_structure_result) {
+        if let Some(error) = consensus_errors_as_protocol_error(basic_structure_result) {
             return Err(error);
         }
 
@@ -269,7 +268,6 @@ impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransitionV0 {
         // `IdentityUpdateStateTransitionIdentityAndSignaturesValidationV0`
         // check. Only keys with unique types were signed above, so verify
         // those exact keys here.
-        #[cfg(debug_assertions)]
         for public_key_with_witness in identity_update_transition.add_public_keys.iter() {
             if !public_key_with_witness.key_type().is_unique_key_type() {
                 continue;
@@ -279,7 +277,7 @@ impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransitionV0 {
                 public_key_with_witness.data().as_slice(),
                 public_key_with_witness.signature().as_slice(),
             );
-            if let Some(error) = first_consensus_error_as_protocol_error(pop_result) {
+            if let Some(error) = consensus_errors_as_protocol_error(pop_result) {
                 return Err(error);
             }
         }

@@ -33,7 +33,7 @@ use crate::state_transition::identity_credit_transfer_transition::v0::IdentityCr
 use crate::state_transition::identity_credit_transfer_transition::MIN_TRANSFER_AMOUNT;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::{
-    first_consensus_error_as_protocol_error, GetDataContractSecurityLevelRequirementFn,
+    consensus_errors_as_protocol_error, GetDataContractSecurityLevelRequirementFn,
 };
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::{FeatureVersion, PlatformVersion};
@@ -100,7 +100,7 @@ impl IdentityCreditTransferTransitionMethodsV0 for IdentityCreditTransferTransit
         // drive-abci server dispatcher AND this SDK constructor must be
         // updated together.
         let pre_validation_result = transition_v0.validate_basic_structure_v0();
-        if let Some(error) = first_consensus_error_as_protocol_error(pre_validation_result) {
+        if let Some(error) = consensus_errors_as_protocol_error(pre_validation_result) {
             return Err(error);
         }
 

@@ -116,6 +116,62 @@ impl IdentityCreditWithdrawalTransition {
 }
 
 #[cfg(feature = "state-transition-validation")]
+fn basic_structure_rules_v1_for_transition(
+    amount: u64,
+    pooling: crate::withdrawal::Pooling,
+    core_fee_per_byte: u32,
+    output_script: Option<&crate::identity::core_script::CoreScript>,
+    platform_version: &PlatformVersion,
+) -> crate::validation::SimpleConsensusValidationResult {
+    use crate::consensus::basic::identity::{
+        InvalidCreditWithdrawalTransitionCoreFeeError,
+        InvalidCreditWithdrawalTransitionOutputScriptError,
+        InvalidIdentityCreditWithdrawalTransitionAmountError,
+        NotImplementedCreditWithdrawalTransitionPoolingError,
+    };
+    use crate::util::is_non_zero_fibonacci_number::is_non_zero_fibonacci_number;
+    use crate::validation::SimpleConsensusValidationResult;
+    use crate::withdrawal::Pooling;
+
+    let mut result = SimpleConsensusValidationResult::default();
+
+    if amount < MIN_WITHDRAWAL_AMOUNT
+        || amount > platform_version.system_limits.max_withdrawal_amount
+    {
+        result.add_error(InvalidIdentityCreditWithdrawalTransitionAmountError::new(
+            amount,
+            MIN_WITHDRAWAL_AMOUNT,
+            platform_version.system_limits.max_withdrawal_amount,
+        ));
+    }
+
+    if pooling != Pooling::Never {
+        result.add_error(NotImplementedCreditWithdrawalTransitionPoolingError::new(
+            pooling as u8,
+        ));
+        return result;
+    }
+
+    if !is_non_zero_fibonacci_number(core_fee_per_byte as u64) {
+        result.add_error(InvalidCreditWithdrawalTransitionCoreFeeError::new(
+            core_fee_per_byte,
+            MIN_CORE_FEE_PER_BYTE,
+        ));
+        return result;
+    }
+
+    if let Some(output_script) = output_script {
+        if !output_script.is_p2pkh() && !output_script.is_p2sh() {
+            result.add_error(InvalidCreditWithdrawalTransitionOutputScriptError::new(
+                output_script.clone(),
+            ));
+        }
+    }
+
+    result
+}
+
+#[cfg(feature = "state-transition-validation")]
 impl IdentityCreditWithdrawalTransition {
     /// Shared v1 basic-structure check.
     ///
@@ -138,56 +194,20 @@ impl IdentityCreditWithdrawalTransition {
         &self,
         platform_version: &PlatformVersion,
     ) -> crate::validation::SimpleConsensusValidationResult {
-        use crate::consensus::basic::identity::{
-            InvalidCreditWithdrawalTransitionCoreFeeError,
-            InvalidCreditWithdrawalTransitionOutputScriptError,
-            InvalidIdentityCreditWithdrawalTransitionAmountError,
-            NotImplementedCreditWithdrawalTransitionPoolingError,
-        };
-        use crate::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
-        use crate::util::is_non_zero_fibonacci_number::is_non_zero_fibonacci_number;
-        use crate::validation::SimpleConsensusValidationResult;
-        use crate::withdrawal::Pooling;
-
-        let mut result = SimpleConsensusValidationResult::default();
-
-        let amount = self.amount();
-        if amount < MIN_WITHDRAWAL_AMOUNT
-            || amount > platform_version.system_limits.max_withdrawal_amount
-        {
-            result.add_error(InvalidIdentityCreditWithdrawalTransitionAmountError::new(
-                amount,
-                MIN_WITHDRAWAL_AMOUNT,
-                platform_version.system_limits.max_withdrawal_amount,
-            ));
-        }
-
-        // Pooling other than Never is not implemented yet — match server-side
-        // behavior of returning the pooling error early.
-        if self.pooling() != Pooling::Never {
-            result.add_error(NotImplementedCreditWithdrawalTransitionPoolingError::new(
-                self.pooling() as u8,
-            ));
-            return result;
-        }
-
-        if !is_non_zero_fibonacci_number(self.core_fee_per_byte() as u64) {
-            result.add_error(InvalidCreditWithdrawalTransitionCoreFeeError::new(
-                self.core_fee_per_byte(),
-                MIN_CORE_FEE_PER_BYTE,
-            ));
-            return result;
-        }
-
-        if let Some(output_script) = self.output_script() {
-            if !output_script.is_p2pkh() && !output_script.is_p2sh() {
-                result.add_error(InvalidCreditWithdrawalTransitionOutputScriptError::new(
-                    output_script,
-                ));
+        match self {
+            IdentityCreditWithdrawalTransition::V0(transition) => {
+                basic_structure_rules_v1_for_transition(
+                    transition.amount,
+                    transition.pooling,
+                    transition.core_fee_per_byte,
+                    Some(&transition.output_script),
+                    platform_version,
+                )
+            }
+            IdentityCreditWithdrawalTransition::V1(transition) => {
+                transition.basic_structure_rules_v1(platform_version)
             }
         }
-
-        result
     }
 }
 

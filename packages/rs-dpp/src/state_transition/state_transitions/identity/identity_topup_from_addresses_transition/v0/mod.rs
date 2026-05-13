@@ -391,7 +391,15 @@ mod tests {
 
     #[tokio::test]
     async fn try_from_inputs_with_signer_returns_not_active_before_structure_validation() {
-        let low_version = PlatformVersion::get(1).expect("platform version 1 exists");
+        let mut low_version = PlatformVersion::get(1)
+            .expect("platform version 1 exists")
+            .clone();
+        low_version
+            .drive_abci
+            .validation_and_processing
+            .state_transitions
+            .identity_top_up_from_addresses_state_transition
+            .basic_structure = None;
         let identity: Identity = IdentityV0 {
             id: Identifier::random(),
             public_keys: BTreeMap::<u32, IdentityPublicKey>::new(),
@@ -407,7 +415,7 @@ mod tests {
             inputs,
             &UnreachableAddressSigner,
             0,
-            low_version,
+            &low_version,
             None,
         )
         .await;

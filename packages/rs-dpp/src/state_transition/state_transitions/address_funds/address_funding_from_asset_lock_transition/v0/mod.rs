@@ -78,9 +78,12 @@ mod tests {
     use crate::identity::state_transition::AssetLockProved;
     use crate::state_transition::address_funding_from_asset_lock_transition::methods::AddressFundingFromAssetLockTransitionMethodsV0;
     use crate::state_transition::{StateTransitionLike, StateTransitionType};
+    use crate::tests::fixtures::instant_asset_lock_proof_fixture;
     use async_trait::async_trait;
-    use dashcore::OutPoint;
+    use dashcore::secp256k1::SecretKey;
+    use dashcore::{Network, OutPoint, PrivateKey};
     use platform_version::version::PlatformVersion;
+    use std::str::FromStr;
 
     fn make_transition() -> AddressFundingFromAssetLockTransitionV0 {
         let mut inputs = BTreeMap::new();
@@ -261,7 +264,15 @@ mod tests {
 
     #[tokio::test]
     async fn constructor_returns_not_active_before_structure_validation() {
-        let low_version = PlatformVersion::get(1).expect("platform version 1 exists");
+        let mut low_version = PlatformVersion::get(1)
+            .expect("platform version 1 exists")
+            .clone();
+        low_version
+            .drive_abci
+            .validation_and_processing
+            .state_transitions
+            .address_funds_from_asset_lock
+            .basic_structure = None;
         let mut inputs = BTreeMap::new();
         inputs.insert(PlatformAddress::P2pkh([1u8; 20]), (1, 1));
         let mut outputs = BTreeMap::new();
@@ -275,7 +286,7 @@ mod tests {
             vec![AddressFundsFeeStrategyStep::DeductFromInput(99)],
             &UnreachableAddressSigner,
             0,
-            low_version,
+            &low_version,
         )
         .await;
 
@@ -287,5 +298,39 @@ mod tests {
                     ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(_))
                 )
         ));
+    }
+
+    #[tokio::test]
+    async fn constructor_rejects_wrong_asset_lock_private_key_locally() {
+        let mut inputs = BTreeMap::new();
+        inputs.insert(PlatformAddress::P2pkh([1u8; 20]), (1, 1_000_000));
+        let mut outputs = BTreeMap::new();
+        outputs.insert(PlatformAddress::P2pkh([2u8; 20]), None);
+
+        let correct_private_key =
+            PrivateKey::from_str("cSBnVM4xvxarwGQuAfQFwqDg9k5tErHUHzgWsEfD4zdwUasvqRVY")
+                .expect("fixture private key");
+        let wrong_private_key = PrivateKey::new(
+            SecretKey::from_slice(&[2u8; 32]).expect("valid alternate private key"),
+            Network::Testnet,
+        );
+
+        let result = AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_signer(
+            instant_asset_lock_proof_fixture(Some(correct_private_key), None),
+            &wrong_private_key.inner.secret_bytes(),
+            inputs,
+            outputs,
+            vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+            &UnreachableAddressSigner,
+            0,
+            PlatformVersion::latest(),
+        )
+        .await;
+
+        assert!(
+            matches!(result, Err(ProtocolError::Generic(ref message)) if message.contains("does not match the locked output")),
+            "unexpected result: {:?}",
+            result
+        );
     }
 }

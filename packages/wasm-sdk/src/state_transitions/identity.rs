@@ -122,7 +122,7 @@ impl WasmSdk {
                 settings,
             )
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to create identity: {}", e)))?;
+            .map_err(WasmSdkError::from)?;
 
         Ok(())
     }
@@ -684,7 +684,7 @@ impl WasmSdk {
             None,
         )
         .await
-        .map_err(|e| WasmSdkError::generic(format!("Failed to create update transition: {}", e)))?;
+        .map_err(WasmSdkError::from)?;
 
         // Broadcast the transition
         use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;

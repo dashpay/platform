@@ -7,7 +7,7 @@ use crate::address_funds::PlatformAddress;
 use crate::fee::Credits;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::{
-    address_funds_constructor_activation_error, first_consensus_error_as_protocol_error,
+    address_funds_constructor_dispatch_error, consensus_errors_as_protocol_error,
     StateTransitionStructureValidation,
 };
 #[cfg(feature = "state-transition-signing")]
@@ -58,7 +58,7 @@ impl IdentityCreditTransferToAddressesTransitionMethodsV0
             signature: Default::default(),
         };
 
-        if let Some(error) = address_funds_constructor_activation_error(
+        if let Some(error) = address_funds_constructor_dispatch_error(
             StateTransitionType::IdentityCreditTransferToAddresses,
             platform_version,
         ) {
@@ -74,7 +74,7 @@ impl IdentityCreditTransferToAddressesTransitionMethodsV0
         // updated together (e.g. by routing through a versioned
         // `validate_basic_structure` wrapper as IdentityUpdate does).
         let validation_result = transition_v0.validate_structure(platform_version);
-        if let Some(error) = first_consensus_error_as_protocol_error(validation_result) {
+        if let Some(error) = consensus_errors_as_protocol_error(validation_result) {
             return Err(error);
         }
 

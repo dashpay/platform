@@ -19,8 +19,8 @@ use {
         prelude::{AddressNonce, UserFeeIncrease},
         serialization::Signable,
         state_transition::{
-            address_funds_constructor_activation_error, first_consensus_error_as_protocol_error,
-            StateTransition, StateTransitionType,
+            address_funds_constructor_dispatch_error, consensus_errors_as_protocol_error,
+            verify_address_witnesses, StateTransition, StateTransitionType,
         },
         version::FeatureVersion,
         ProtocolError,
@@ -51,7 +51,7 @@ impl IdentityTopUpFromAddressesTransitionMethodsV0 for IdentityTopUpFromAddresse
                 input_witnesses: vec![],
             };
 
-        if let Some(error) = address_funds_constructor_activation_error(
+        if let Some(error) = address_funds_constructor_dispatch_error(
             StateTransitionType::IdentityTopUpFromAddresses,
             platform_version,
         ) {
@@ -69,7 +69,7 @@ impl IdentityTopUpFromAddressesTransitionMethodsV0 for IdentityTopUpFromAddresse
         // `validate_basic_structure` wrapper as IdentityUpdate does).
         let pre_validation_result = identity_top_up_from_addresses_transition
             .validate_structure_without_input_witnesses(platform_version);
-        if let Some(error) = first_consensus_error_as_protocol_error(pre_validation_result) {
+        if let Some(error) = consensus_errors_as_protocol_error(pre_validation_result) {
             return Err(error);
         }
 
@@ -83,13 +83,18 @@ impl IdentityTopUpFromAddressesTransitionMethodsV0 for IdentityTopUpFromAddresse
         for address in identity_top_up_from_addresses_transition.inputs.keys() {
             input_witnesses.push(signer.sign_create_witness(address, &signable_bytes).await?);
         }
+        verify_address_witnesses(
+            identity_top_up_from_addresses_transition.inputs.keys(),
+            &input_witnesses,
+            &signable_bytes,
+        )?;
         identity_top_up_from_addresses_transition.input_witnesses = input_witnesses;
 
         // After signing, only the witness count needs (re-)validation; the rest
         // of the structure was already verified above.
         let validation_result =
             identity_top_up_from_addresses_transition.validate_input_witnesses_count();
-        if let Some(error) = first_consensus_error_as_protocol_error(validation_result) {
+        if let Some(error) = consensus_errors_as_protocol_error(validation_result) {
             return Err(error);
         }
 

@@ -109,7 +109,7 @@ const_assert_matches!(
             .drive_abci
             .validation_and_processing
             .state_transitions
-            .legacy_identity_update_state_transition
+            .identity_update_state_transition
             .basic_structure
     ),
     (Some(0), Some(0))
@@ -118,11 +118,13 @@ const_assert_matches!(
 #[cfg(test)]
 mod tests {
     use super::LATEST_PLATFORM_VERSION;
+    use platform_version::version::PLATFORM_VERSIONS;
 
     /// Constructors with `LOCKSTEP` notes that hard-code the v0 basic-structure
     /// check. Each entry is `(label, basic_structure_field_value)`.
-    fn sdk_v0_lockstep_dispatch_fields() -> Vec<(&'static str, Option<u16>)> {
-        let v = LATEST_PLATFORM_VERSION;
+    fn sdk_v0_lockstep_dispatch_fields(
+        v: &platform_version::version::PlatformVersion,
+    ) -> Vec<(&'static str, Option<u16>)> {
         let st = &v.drive_abci.validation_and_processing.state_transitions;
         vec![
             (
@@ -164,16 +166,22 @@ mod tests {
     }
 
     #[test]
-    fn sdk_constructors_hardcoded_v0_dispatch_still_matches_latest_platform_version() {
-        let mismatches: Vec<(&'static str, Option<u16>)> = sdk_v0_lockstep_dispatch_fields()
-            .into_iter()
-            .filter(|(_, version)| *version != Some(0))
+    fn sdk_constructors_hardcoded_v0_dispatch_still_matches_all_supported_platform_versions() {
+        let mismatches: Vec<(u32, &'static str, Option<u16>)> = PLATFORM_VERSIONS
+            .iter()
+            .flat_map(|platform_version| {
+                sdk_v0_lockstep_dispatch_fields(platform_version)
+                    .into_iter()
+                    .filter(|(_, version)| !matches!(*version, None | Some(0)))
+                    .map(|(label, version)| (platform_version.protocol_version, label, version))
+                    .collect::<Vec<_>>()
+            })
             .collect();
 
         assert!(
             mismatches.is_empty(),
             "SDK constructor(s) hard-code the v0 basic-structure check but the \
-             latest PlatformVersion no longer resolves their drive-abci \
+             supported PlatformVersion table no longer resolves their drive-abci \
              basic_structure to Some(0): {:?}. Update the constructor(s) \
              (search for `LOCKSTEP` in packages/rs-dpp/src/state_transition) \
              so they dispatch to the new version, or migrate them to a \
@@ -183,54 +191,78 @@ mod tests {
     }
 
     #[test]
-    fn identity_credit_withdrawal_v1_constructor_dispatch_still_matches_latest_platform_version() {
-        let actual = LATEST_PLATFORM_VERSION
-            .drive_abci
-            .validation_and_processing
-            .state_transitions
-            .identity_credit_withdrawal_state_transition
-            .basic_structure;
+    fn identity_credit_withdrawal_v1_constructor_dispatch_matches_supported_versions() {
+        let mismatches: Vec<(u32, Option<u16>)> = PLATFORM_VERSIONS
+            .iter()
+            .filter_map(|platform_version| {
+                let actual = platform_version
+                    .drive_abci
+                    .validation_and_processing
+                    .state_transitions
+                    .identity_credit_withdrawal_state_transition
+                    .basic_structure;
+                (!matches!(actual, None | Some(0) | Some(1)))
+                    .then_some((platform_version.protocol_version, actual))
+            })
+            .collect();
+
         assert_eq!(
-            actual,
-            Some(1),
+            mismatches,
+            Vec::<(u32, Option<u16>)>::new(),
             "drive-abci identity_credit_withdrawal_state_transition.basic_structure \
-             changed from Some(1); the SDK constructor for \
-             IdentityCreditWithdrawalTransitionV1 hard-codes the v1 check via \
-             IdentityCreditWithdrawalTransition::basic_structure_rules_v1 and \
-             must be updated to dispatch to the new version before bumping this."
+             is neither inactive/v0 nor the v1 constructor dispatch: {:?}. \
+             Update the SDK constructor dispatch before bumping these versions.",
+            mismatches
         );
     }
 
     #[test]
-    fn identity_update_dpp_and_legacy_basic_structure_move_together() {
-        let v = LATEST_PLATFORM_VERSION;
-        let dpp_field = v
-            .dpp
-            .state_transitions
-            .identities
-            .identity_update
-            .basic_structure;
-        let legacy_drive_abci_field = v
-            .drive_abci
-            .validation_and_processing
-            .state_transitions
-            .legacy_identity_update_state_transition
-            .basic_structure;
+    fn identity_update_dpp_and_drive_abci_basic_structure_move_together() {
+        let mismatches: Vec<(u32, Option<u16>, Option<u16>)> = PLATFORM_VERSIONS
+            .iter()
+            .filter_map(|platform_version| {
+                let dpp_field = platform_version
+                    .dpp
+                    .state_transitions
+                    .identities
+                    .identity_update
+                    .basic_structure;
+                let drive_abci_field = platform_version
+                    .drive_abci
+                    .validation_and_processing
+                    .state_transitions
+                    .identity_update_state_transition
+                    .basic_structure;
+
+                (dpp_field != drive_abci_field).then_some((
+                    platform_version.protocol_version,
+                    dpp_field,
+                    drive_abci_field,
+                ))
+            })
+            .collect();
+
         assert_eq!(
-            dpp_field,
+            mismatches,
+            Vec::<(u32, Option<u16>, Option<u16>)>::new(),
+            "DPP-owned identity_update.basic_structure diverged from the drive-abci \
+             identity_update_state_transition.basic_structure in supported versions: {:?}. \
+             These fields must move together until the drive-abci field is removed/migrated.",
+            mismatches
+        );
+
+        let latest = LATEST_PLATFORM_VERSION;
+        assert_eq!(
+            latest
+                .dpp
+                .state_transitions
+                .identities
+                .identity_update
+                .basic_structure,
             Some(0),
             "DPP-owned identity_update.basic_structure changed from Some(0); \
              update both DPP `IdentityUpdateTransitionV0::validate_basic_structure` \
              and drive-abci's identity_update dispatcher to handle the new version."
-        );
-        assert_eq!(
-            dpp_field, legacy_drive_abci_field,
-            "DPP-owned identity_update.basic_structure ({:?}) diverged from the \
-             legacy drive-abci field legacy_identity_update_state_transition.basic_structure \
-             ({:?}). These two fields must move together until the legacy field is \
-             removed/migrated; bumping only one will produce silent client/server \
-             drift.",
-            dpp_field, legacy_drive_abci_field
         );
     }
 }

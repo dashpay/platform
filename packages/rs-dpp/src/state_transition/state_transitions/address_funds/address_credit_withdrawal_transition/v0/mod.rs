@@ -93,7 +93,15 @@ mod signing_tests {
 
     #[tokio::test]
     async fn constructor_returns_not_active_before_structure_validation() {
-        let low_version = PlatformVersion::get(1).expect("platform version 1 exists");
+        let mut low_version = PlatformVersion::get(1)
+            .expect("platform version 1 exists")
+            .clone();
+        low_version
+            .drive_abci
+            .validation_and_processing
+            .state_transitions
+            .address_credit_withdrawal
+            .basic_structure = None;
         let mut inputs = BTreeMap::new();
         inputs.insert(PlatformAddress::P2pkh([1u8; 20]), (1, 1));
 
@@ -106,7 +114,7 @@ mod signing_tests {
             CoreScript::default(),
             &UnreachableAddressSigner,
             0,
-            low_version,
+            &low_version,
         )
         .await;
 

@@ -16,25 +16,40 @@ use crate::identity::KeyType::ECDSA_HASH160;
 use crate::prelude::AssetLockProof;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::UserFeeIncrease;
-#[cfg(all(feature = "state-transition-signing", debug_assertions))]
+#[cfg(feature = "state-transition-signing")]
 use crate::serialization::PlatformMessageSignable;
 #[cfg(feature = "state-transition-signing")]
 use crate::serialization::Signable;
 use crate::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use crate::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
-#[cfg(all(feature = "state-transition-signing", debug_assertions))]
+#[cfg(feature = "state-transition-signing")]
 use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
+#[cfg(feature = "state-transition-signing")]
+use crate::util::hash::ripemd160_sha256;
 
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::IdentityPublicKey;
 use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 #[cfg(feature = "state-transition-signing")]
-use crate::state_transition::{first_consensus_error_as_protocol_error, StateTransition};
+use crate::state_transition::{consensus_errors_as_protocol_error, StateTransition};
 #[cfg(feature = "state-transition-signing")]
 use crate::version::PlatformVersion;
+#[cfg(feature = "state-transition-signing")]
+use dashcore::secp256k1::{Secp256k1, SecretKey};
+#[cfg(feature = "state-transition-signing")]
+use dashcore::ScriptBuf;
+
+#[cfg(feature = "state-transition-signing")]
+fn p2pkh_pubkey_hash(script: &ScriptBuf) -> Option<[u8; 20]> {
+    script
+        .is_p2pkh()
+        .then(|| script.as_bytes().get(3..23)?.try_into().ok())
+        .flatten()
+}
+
 impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
     async fn try_from_identity_with_signer_and_private_key<S: Signer<IdentityPublicKey>>(
@@ -68,7 +83,7 @@ impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransitionV0 {
                 true, // in create_identity context
                 platform_version,
             )?;
-        if let Some(error) = first_consensus_error_as_protocol_error(validation_result) {
+        if let Some(error) = consensus_errors_as_protocol_error(validation_result) {
             return Err(error);
         }
 
@@ -86,7 +101,7 @@ impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransitionV0 {
         let asset_lock_validation_result = identity_create_transition
             .asset_lock_proof()
             .validate_structure(platform_version)?;
-        if let Some(error) = first_consensus_error_as_protocol_error(asset_lock_validation_result) {
+        if let Some(error) = consensus_errors_as_protocol_error(asset_lock_validation_result) {
             return Err(error);
         }
 
@@ -106,11 +121,10 @@ impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransitionV0 {
             }
         }
 
-        // In debug builds, verify the proof-of-possession signatures we just
-        // produced before returning, mirroring the server-side identity_create
-        // signatures validator. Only keys with unique types were signed above,
-        // so verify those exact keys here.
-        #[cfg(debug_assertions)]
+        // Verify the proof-of-possession signatures we just produced before
+        // returning, mirroring the server-side identity_create signatures
+        // validator. Only keys with unique types were signed above, so verify
+        // those exact keys here.
         for public_key_with_witness in identity_create_transition.public_keys.iter() {
             if !public_key_with_witness.key_type().is_unique_key_type() {
                 continue;
@@ -120,13 +134,52 @@ impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransitionV0 {
                 public_key_with_witness.data().as_slice(),
                 public_key_with_witness.signature().as_slice(),
             );
-            if let Some(error) = first_consensus_error_as_protocol_error(pop_result) {
+            if let Some(error) = consensus_errors_as_protocol_error(pop_result) {
                 return Err(error);
             }
         }
 
-        let mut state_transition: StateTransition = identity_create_transition.into();
+        if let Some(transaction) = identity_create_transition.asset_lock_proof().transaction() {
+            let output_index =
+                identity_create_transition.asset_lock_proof().output_index() as usize;
+            let output = transaction
+                .special_transaction_payload
+                .as_ref()
+                .and_then(|payload| match payload {
+                    dashcore::transaction::special_transaction::TransactionPayload::AssetLockPayloadType(payload) => {
+                        payload.credit_outputs.get(output_index)
+                    }
+                    _ => None,
+                })
+                .ok_or_else(|| {
+                    ProtocolError::Generic(format!(
+                        "asset lock proof output {output_index} is not available for local signature verification"
+                    ))
+                })?;
 
+            if let Some(locked_pubkey_hash) = p2pkh_pubkey_hash(&output.script_pubkey) {
+                let secret_key =
+                    SecretKey::from_slice(asset_lock_proof_private_key).map_err(|e| {
+                        ProtocolError::Generic(format!("invalid asset lock proof private key: {e}"))
+                    })?;
+                let secp = Secp256k1::new();
+                let public_key =
+                    dashcore::secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
+                let compressed_pubkey_hash = ripemd160_sha256(&public_key.serialize());
+                let uncompressed_pubkey_hash =
+                    ripemd160_sha256(&public_key.serialize_uncompressed());
+
+                if locked_pubkey_hash != compressed_pubkey_hash
+                    && locked_pubkey_hash != uncompressed_pubkey_hash
+                {
+                    return Err(ProtocolError::Generic(
+                        "asset lock proof private key does not match the locked output".to_string(),
+                    ));
+                }
+            }
+        }
+
+        let mut state_transition: StateTransition = identity_create_transition.into();
         state_transition.sign_by_private_key(asset_lock_proof_private_key, ECDSA_HASH160, bls)?;
 
         Ok(state_transition)

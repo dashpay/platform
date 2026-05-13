@@ -24,7 +24,7 @@ impl StateTransitionIdentityNonceValidationV0 for IdentityUpdateTransition {
             .drive_abci
             .validation_and_processing
             .state_transitions
-            .legacy_identity_update_state_transition
+            .identity_update_state_transition
             .nonce
         {
             Some(0) => self.validate_nonce_v0(

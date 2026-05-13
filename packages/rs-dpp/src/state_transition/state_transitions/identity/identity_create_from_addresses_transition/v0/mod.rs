@@ -574,7 +574,15 @@ mod tests {
             }
         }
 
-        let low_version = PlatformVersion::get(1).expect("platform version 1 exists");
+        let mut low_version = PlatformVersion::get(1)
+            .expect("platform version 1 exists")
+            .clone();
+        low_version
+            .drive_abci
+            .validation_and_processing
+            .state_transitions
+            .identity_create_from_addresses_state_transition
+            .basic_structure = None;
         let identity: Identity = IdentityV0 {
             id: Identifier::default(),
             public_keys: BTreeMap::new(),
@@ -593,7 +601,7 @@ mod tests {
             &UnreachableIdentityKeySigner,
             &UnreachableAddressSigner,
             0,
-            low_version,
+            &low_version,
         )
         .await;
 

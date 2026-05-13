@@ -15,8 +15,8 @@ use crate::state_transition::address_credit_withdrawal_transition::methods::Addr
 use crate::state_transition::address_credit_withdrawal_transition::v0::AddressCreditWithdrawalTransitionV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::{
-    address_funds_constructor_activation_error, first_consensus_error_as_protocol_error,
-    StateTransitionType,
+    address_funds_constructor_dispatch_error, consensus_errors_as_protocol_error,
+    verify_address_witnesses, StateTransitionType,
 };
 #[cfg(feature = "state-transition-signing")]
 use crate::withdrawal::Pooling;
@@ -62,7 +62,7 @@ impl AddressCreditWithdrawalTransitionMethodsV0 for AddressCreditWithdrawalTrans
             input_witnesses: Vec::new(),
         };
 
-        if let Some(error) = address_funds_constructor_activation_error(
+        if let Some(error) = address_funds_constructor_dispatch_error(
             StateTransitionType::AddressCreditWithdrawal,
             platform_version,
         ) {
@@ -80,7 +80,7 @@ impl AddressCreditWithdrawalTransitionMethodsV0 for AddressCreditWithdrawalTrans
         // `validate_basic_structure` wrapper as IdentityUpdate does).
         let pre_validation_result = address_credit_withdrawal_transition
             .validate_structure_without_input_witnesses(platform_version);
-        if let Some(error) = first_consensus_error_as_protocol_error(pre_validation_result) {
+        if let Some(error) = consensus_errors_as_protocol_error(pre_validation_result) {
             return Err(error);
         }
 
@@ -93,13 +93,18 @@ impl AddressCreditWithdrawalTransitionMethodsV0 for AddressCreditWithdrawalTrans
         for address in address_credit_withdrawal_transition.inputs.keys() {
             input_witnesses.push(signer.sign_create_witness(address, &signable_bytes).await?);
         }
+        verify_address_witnesses(
+            address_credit_withdrawal_transition.inputs.keys(),
+            &input_witnesses,
+            &signable_bytes,
+        )?;
         address_credit_withdrawal_transition.input_witnesses = input_witnesses;
 
         // After signing, only the witness count needs (re-)validation; the rest
         // of the structure was already verified above.
         let validation_result =
             address_credit_withdrawal_transition.validate_input_witnesses_count();
-        if let Some(error) = first_consensus_error_as_protocol_error(validation_result) {
+        if let Some(error) = consensus_errors_as_protocol_error(validation_result) {
             return Err(error);
         }
 

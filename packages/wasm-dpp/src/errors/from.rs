@@ -9,12 +9,16 @@ use crate::document::errors::from_document_to_js_error;
 use crate::errors::value_error::PlatformValueErrorWasm;
 
 use super::data_contract_not_present_error::DataContractNotPresentNotConsensusErrorWasm;
+use super::protocol_error::consensus_errors_to_js_error;
 use crate::errors::consensus::consensus_error::from_consensus_error;
 
 pub fn from_dpp_err(pe: ProtocolError) -> JsValue {
     match pe {
         // TODO(versioning): restore this
         ProtocolError::ConsensusError(consensus_error) => from_consensus_error(*consensus_error),
+        ProtocolError::ConsensusErrors(consensus_errors) => {
+            consensus_errors_to_js_error(consensus_errors)
+        }
         ProtocolError::DataContractError(e) => from_data_contract_to_js_error(e),
 
         ProtocolError::Document(e) => from_document_to_js_error(*e),

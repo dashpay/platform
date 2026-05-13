@@ -194,15 +194,14 @@ impl AddressCreditWithdrawalTransitionV0 {
             .inputs
             .values()
             .try_fold(0u64, |acc, (_, amount)| acc.checked_add(*amount));
-        if input_sum.is_none() {
+        let Some(input_sum) = input_sum else {
             return SimpleConsensusValidationResult::new_with_error(
                 BasicError::OverflowError(OverflowError::new("Input sum overflow".to_string()))
                     .into(),
             );
-        }
+        };
 
         // Validate that input_sum > output_amount (withdrawal amount must be positive)
-        let input_sum = input_sum.unwrap(); // Safe: checked above
         let output_amount = self.output.as_ref().map_or(0, |(_, amount)| *amount);
         if input_sum <= output_amount {
             return SimpleConsensusValidationResult::new_with_error(

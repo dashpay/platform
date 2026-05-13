@@ -361,8 +361,13 @@ impl From<ConsensusError> for ProtocolError {
 
 impl From<Vec<ConsensusError>> for ProtocolError {
     fn from(mut errors: Vec<ConsensusError>) -> Self {
+        debug_assert!(
+            !errors.is_empty(),
+            "ProtocolError::from(Vec<ConsensusError>) expects a non-empty error list"
+        );
+
         match errors.len() {
-            0 => ProtocolError::Generic("empty consensus error list".to_string()),
+            0 => ProtocolError::ConsensusErrors(errors),
             1 => ProtocolError::ConsensusError(Box::new(errors.remove(0))),
             _ => ProtocolError::ConsensusErrors(errors),
         }

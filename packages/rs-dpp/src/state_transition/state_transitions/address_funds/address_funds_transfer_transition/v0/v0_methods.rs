@@ -13,8 +13,8 @@ use crate::state_transition::address_funds_transfer_transition::methods::Address
 use crate::state_transition::address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::{
-    address_funds_constructor_activation_error, first_consensus_error_as_protocol_error,
-    StateTransitionType,
+    address_funds_constructor_dispatch_error, consensus_errors_as_protocol_error,
+    verify_address_witnesses, StateTransitionType,
 };
 #[cfg(feature = "state-transition-signing")]
 use crate::{
@@ -51,7 +51,7 @@ impl AddressFundsTransferTransitionMethodsV0 for AddressFundsTransferTransitionV
             input_witnesses: Vec::new(),
         };
 
-        if let Some(error) = address_funds_constructor_activation_error(
+        if let Some(error) = address_funds_constructor_dispatch_error(
             StateTransitionType::AddressFundsTransfer,
             platform_version,
         ) {
@@ -69,7 +69,7 @@ impl AddressFundsTransferTransitionMethodsV0 for AddressFundsTransferTransitionV
         // `validate_basic_structure` wrapper as IdentityUpdate does).
         let pre_validation_result =
             address_funds_transition.validate_structure_without_input_witnesses(platform_version);
-        if let Some(error) = first_consensus_error_as_protocol_error(pre_validation_result) {
+        if let Some(error) = consensus_errors_as_protocol_error(pre_validation_result) {
             return Err(error);
         }
 
@@ -82,12 +82,17 @@ impl AddressFundsTransferTransitionMethodsV0 for AddressFundsTransferTransitionV
         for address in address_funds_transition.inputs.keys() {
             input_witnesses.push(signer.sign_create_witness(address, &signable_bytes).await?);
         }
+        verify_address_witnesses(
+            address_funds_transition.inputs.keys(),
+            &input_witnesses,
+            &signable_bytes,
+        )?;
         address_funds_transition.input_witnesses = input_witnesses;
 
         // After signing, only the witness count needs (re-)validation; the rest
         // of the structure was already verified above.
         let validation_result = address_funds_transition.validate_input_witnesses_count();
-        if let Some(error) = first_consensus_error_as_protocol_error(validation_result) {
+        if let Some(error) = consensus_errors_as_protocol_error(validation_result) {
             return Err(error);
         }
 

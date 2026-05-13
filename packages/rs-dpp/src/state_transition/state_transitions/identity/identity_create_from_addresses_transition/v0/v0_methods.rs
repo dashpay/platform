@@ -21,9 +21,10 @@ use crate::state_transition::StateTransitionType;
 // ============================
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::{
-    address_funds_constructor_activation_error, first_consensus_error_as_protocol_error,
+    address_funds_constructor_dispatch_error, consensus_errors_as_protocol_error,
+    verify_address_witnesses,
 };
-#[cfg(all(feature = "state-transition-signing", debug_assertions))]
+#[cfg(feature = "state-transition-signing")]
 use crate::{
     serialization::PlatformMessageSignable,
     state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters,
@@ -72,7 +73,7 @@ impl IdentityCreateFromAddressesTransitionMethodsV0 for IdentityCreateFromAddres
                 ..Default::default()
             };
 
-        if let Some(error) = address_funds_constructor_activation_error(
+        if let Some(error) = address_funds_constructor_dispatch_error(
             StateTransitionType::IdentityCreateFromAddresses,
             platform_version,
         ) {
@@ -102,7 +103,7 @@ impl IdentityCreateFromAddressesTransitionMethodsV0 for IdentityCreateFromAddres
                 true, // in create_identity context
                 platform_version,
             )?;
-        if let Some(error) = first_consensus_error_as_protocol_error(validation_result) {
+        if let Some(error) = consensus_errors_as_protocol_error(validation_result) {
             return Err(error);
         }
 
@@ -113,7 +114,7 @@ impl IdentityCreateFromAddressesTransitionMethodsV0 for IdentityCreateFromAddres
         // signer work. See the LOCKSTEP note above.
         let pre_validation_result = identity_create_from_addresses_transition
             .validate_structure_without_input_witnesses(platform_version);
-        if let Some(error) = first_consensus_error_as_protocol_error(pre_validation_result) {
+        if let Some(error) = consensus_errors_as_protocol_error(pre_validation_result) {
             return Err(error);
         }
 
@@ -136,12 +137,11 @@ impl IdentityCreateFromAddressesTransitionMethodsV0 for IdentityCreateFromAddres
             }
         }
 
-        // In debug builds, verify proof-of-possession signatures we just
-        // produced before returning, matching the server-side
+        // Verify proof-of-possession signatures we just produced before
+        // returning, matching the server-side
         // `IdentityCreateFromAddressesStateTransitionSignaturesValidationV0`
         // check. Only keys with unique types were signed above, so verify
         // those exact keys here.
-        #[cfg(debug_assertions)]
         for public_key_with_witness in identity_create_from_addresses_transition.public_keys.iter()
         {
             if !public_key_with_witness.key_type().is_unique_key_type() {
@@ -152,7 +152,7 @@ impl IdentityCreateFromAddressesTransitionMethodsV0 for IdentityCreateFromAddres
                 public_key_with_witness.data().as_slice(),
                 public_key_with_witness.signature().as_slice(),
             );
-            if let Some(error) = first_consensus_error_as_protocol_error(pop_result) {
+            if let Some(error) = consensus_errors_as_protocol_error(pop_result) {
                 return Err(error);
             }
         }
@@ -167,13 +167,18 @@ impl IdentityCreateFromAddressesTransitionMethodsV0 for IdentityCreateFromAddres
                     .await?,
             );
         }
+        verify_address_witnesses(
+            identity_create_from_addresses_transition.inputs.keys(),
+            &input_witnesses,
+            &signable_bytes,
+        )?;
         identity_create_from_addresses_transition.input_witnesses = input_witnesses;
 
         // After signing, only the witness count needs (re-)validation; the rest
         // of the structure was already verified above.
         let validation_result =
             identity_create_from_addresses_transition.validate_input_witnesses_count();
-        if let Some(error) = first_consensus_error_as_protocol_error(validation_result) {
+        if let Some(error) = consensus_errors_as_protocol_error(validation_result) {
             return Err(error);
         }
 

@@ -49,7 +49,7 @@ impl StateTransitionActionTransformer for IdentityUpdateTransition {
             .drive_abci
             .validation_and_processing
             .state_transitions
-            .legacy_identity_update_state_transition
+            .identity_update_state_transition
             .transform_into_action
         {
             0 => self.transform_into_action_v0(),
@@ -109,7 +109,7 @@ impl StateTransitionStateValidation for IdentityUpdateTransition {
             .drive_abci
             .validation_and_processing
             .state_transitions
-            .legacy_identity_update_state_transition
+            .identity_update_state_transition
             .state
         {
             0 => self.validate_state_v0(platform, tx, platform_version),
