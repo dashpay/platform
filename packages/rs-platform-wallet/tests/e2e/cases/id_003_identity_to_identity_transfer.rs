@@ -16,7 +16,7 @@ use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
 
 use crate::framework::setup_with_n_identities;
-use crate::framework::wait::wait_for_identity_balance;
+use crate::framework::wait::{wait_for_identity_balance, wait_for_identity_balance_change};
 
 /// Credits committed to each identity. KEPT LARGER than 0.001 tDASH:
 /// must stay above `IDENTITY_SWEEP_FLOOR` (50M, `cleanup.rs`) so the
@@ -103,11 +103,15 @@ async fn id_003_identity_to_identity_credit_transfer() {
     .await
     .expect("receiver balance never reached post-transfer floor");
 
-    let post_a = Identity::fetch(guard.base.ctx.sdk(), identity_a.id)
-        .await
-        .expect("fetch post A")
-        .expect("identity_a still visible")
-        .balance();
+    // Marvin QA-906 forensics: the receiver-side gate above only proves
+    // that *some* replica has applied the transfer block — not that the
+    // DAPI replica round-robined for the sender fetch has. The transfer
+    // always charges the sender (credits debit + fee), so any change
+    // clears the gate. Same shape as TK-006/007/008.
+    let post_a =
+        wait_for_identity_balance_change(guard.base.ctx.sdk(), identity_a.id, pre_a, STEP_TIMEOUT)
+            .await
+            .expect("sender balance never changed after transfer");
 
     // Receiver must gain exactly TRANSFER_AMOUNT — credit transfers
     // do NOT charge the receiver. The fee is paid out of the
