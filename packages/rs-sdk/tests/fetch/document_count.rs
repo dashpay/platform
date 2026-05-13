@@ -147,12 +147,12 @@ async fn test_mock_fetch_document_split_counts_with_in_clause() {
         SplitCountEntry {
             in_key: None,
             key: b"alpha".to_vec(),
-            count: 7,
+            count: Some(7),
         },
         SplitCountEntry {
             in_key: None,
             key: b"beta".to_vec(),
-            count: 3,
+            count: Some(3),
         },
     ]);
 
@@ -168,7 +168,7 @@ async fn test_mock_fetch_document_split_counts_with_in_clause() {
 
     assert_eq!(retrieved, expected);
     assert_eq!(retrieved.0.len(), 2);
-    let summed: u64 = retrieved.0.iter().map(|e| e.count).sum();
+    let summed: u64 = retrieved.0.iter().map(|e| e.count.unwrap_or(0)).sum();
     assert_eq!(summed, 10, "alpha(7) + beta(3) = 10 docs");
 }
 
@@ -201,12 +201,12 @@ async fn test_mock_fetch_document_split_counts_with_distinct_range() {
         SplitCountEntry {
             in_key: None,
             key: b"red".to_vec(),
-            count: 12,
+            count: Some(12),
         },
         SplitCountEntry {
             in_key: None,
             key: b"green".to_vec(),
-            count: 8,
+            count: Some(8),
         },
     ]);
 
@@ -264,4 +264,75 @@ async fn test_mock_fetch_document_count_with_distinct_range_sums_entries() {
 
     assert_eq!(retrieved, expected);
     assert_eq!(retrieved.0, 20);
+}
+
+/// `DocumentSplitCounts` round-trips entries carrying both
+/// `Some(_)` (verified) and `None` (caller asked but verifier was
+/// silent) through the mock transport.
+///
+/// The mock path doesn't exercise the SDK's synthesis logic (that
+/// requires a real proof + verifier), but it pins the wire/mock
+/// shape: a fixture built with mixed `Some` / `None` counts must
+/// survive the mock serialize/deserialize hop unchanged. Any
+/// regression that flattens `None` to `Some(0)` or drops `None`
+/// entries silently would fail here.
+#[tokio::test]
+async fn test_mock_fetch_document_split_counts_preserves_none_for_absent_in_values() {
+    let mut sdk = Sdk::new_mock();
+
+    let document_type = mock_document_type();
+    let data_contract = mock_data_contract(Some(&document_type));
+    let query = DocumentQuery::new(Arc::new(data_contract), document_type.name())
+        .expect("build DocumentQuery")
+        .with_where(WhereClause {
+            field: "a".to_string(),
+            operator: WhereOperator::In,
+            value: Value::Array(vec![
+                Value::Text("alpha".to_string()),
+                Value::Text("beta".to_string()),
+                Value::Text("gamma".to_string()),
+            ]),
+        })
+        .with_select(Select::Count)
+        .with_group_by("a");
+
+    // Mixed-shape fixture: `alpha` has a verified count, `beta` is
+    // verified-zero (Some(0) from a hypothetical no-proof path or
+    // a future absence-proof-equipped verifier), `gamma` is
+    // verified-silent (None — the SDK synthesizes this on the
+    // proof path when an In value's CountTree element doesn't
+    // exist in the merk index).
+    let expected = DocumentSplitCounts::from_verified(vec![
+        SplitCountEntry {
+            in_key: None,
+            key: b"alpha".to_vec(),
+            count: Some(7),
+        },
+        SplitCountEntry {
+            in_key: None,
+            key: b"beta".to_vec(),
+            count: Some(0),
+        },
+        SplitCountEntry {
+            in_key: None,
+            key: b"gamma".to_vec(),
+            count: None,
+        },
+    ]);
+
+    sdk.mock()
+        .expect_fetch::<DocumentSplitCounts, _>(query.clone(), Some(expected.clone()))
+        .await
+        .expect("expectation should be added");
+
+    let retrieved = DocumentSplitCounts::fetch(&sdk, query)
+        .await
+        .expect("fetch should succeed")
+        .expect("split counts should be present");
+
+    assert_eq!(retrieved, expected);
+    assert_eq!(retrieved.0.len(), 3);
+    assert_eq!(retrieved.0[0].count, Some(7), "alpha verified count");
+    assert_eq!(retrieved.0[1].count, Some(0), "beta verified zero");
+    assert_eq!(retrieved.0[2].count, None, "gamma absent from proof");
 }

@@ -83,7 +83,11 @@ impl DriveDocumentCountQuery<'_> {
         Ok(vec![SplitCountEntry {
             in_key: None,
             key: vec![],
-            count,
+            // Point-lookup executor summed verified CountTree
+            // counts to produce this; the count is explicit, hence
+            // `Some(_)` (possibly `Some(0)` if every covered branch
+            // was empty or absent).
+            count: Some(count),
         }])
     }
 

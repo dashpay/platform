@@ -587,11 +587,14 @@ impl MockResponse for drive_proof_verifier::DocumentCount {
 impl MockResponse for drive_proof_verifier::DocumentSplitCounts {
     fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
         let bincode_config = standard();
-        // Serialize as `(Option<Vec<u8>>, Vec<u8>, u64)` triples so
-        // the In dimension survives the mock roundtrip. Required for
-        // compound (`In + range + distinct`) test fixtures to keep
-        // their `in_key` values across the mock encode/decode hop.
-        let triples: Vec<(Option<Vec<u8>>, Vec<u8>, u64)> = self
+        // Serialize as `(Option<Vec<u8>>, Vec<u8>, Option<u64>)`
+        // triples so the In dimension AND the verified-vs-absent
+        // count distinction both survive the mock roundtrip.
+        // Required for compound (`In + range + distinct`) test
+        // fixtures to keep their `in_key` values, and for
+        // GroupByIn-absent-branch fixtures to keep their `None`
+        // counts.
+        let triples: Vec<(Option<Vec<u8>>, Vec<u8>, Option<u64>)> = self
             .0
             .iter()
             .map(|e| (e.in_key.clone(), e.key.clone(), e.count))
@@ -605,7 +608,7 @@ impl MockResponse for drive_proof_verifier::DocumentSplitCounts {
     {
         // Alias the wire triple so clippy doesn't flag the bincode
         // generic as too complex. Same shape mock_serialize emits.
-        type DecodedTriples = Vec<(Option<Vec<u8>>, Vec<u8>, u64)>;
+        type DecodedTriples = Vec<(Option<Vec<u8>>, Vec<u8>, Option<u64>)>;
         let bincode_config = standard();
         let (triples, _): (DecodedTriples, _) =
             bincode::decode_from_slice(buf, bincode_config).expect("decode DocumentSplitCounts");

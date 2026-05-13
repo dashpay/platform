@@ -85,10 +85,20 @@ impl DriveDocumentCountQuery<'_> {
             } else {
                 Vec::new()
             };
+            // PointLookupProof verifier emits one entry per
+            // verified CountTree element — always `Some(_)`. The
+            // proof only contains existing branches (zero-count
+            // branches aren't materialized in the merk tree), so
+            // SDK callers using this verifier directly will not
+            // see any `None` entries. The SDK's
+            // `FromProof<DocumentQuery>` for `DocumentSplitCounts`
+            // is what synthesizes `None` entries when the caller's
+            // In array contains values that weren't covered by the
+            // proof.
             out.push(SplitCountEntry {
                 in_key: None,
                 key,
-                count,
+                count: Some(count),
             });
         }
         Ok((root_hash, out))

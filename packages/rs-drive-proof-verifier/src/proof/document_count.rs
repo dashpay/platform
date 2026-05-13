@@ -276,18 +276,18 @@ mod tests {
         let a = SplitCountEntry {
             in_key: Some(b"acme".to_vec()),
             key: b"red".to_vec(),
-            count: 42,
+            count: Some(42),
         };
         let b = a.clone();
         assert_eq!(a, b);
         assert_eq!(a.in_key.as_deref(), Some(b"acme".as_slice()));
         assert_eq!(a.key, b"red".to_vec());
-        assert_eq!(a.count, 42);
+        assert_eq!(a.count, Some(42));
 
         let flat = SplitCountEntry {
             in_key: None,
             key: b"green".to_vec(),
-            count: 7,
+            count: Some(7),
         };
         assert!(flat.in_key.is_none());
 
@@ -302,7 +302,10 @@ mod tests {
             ..a.clone()
         };
         assert_ne!(a, different_key);
-        let different_count = SplitCountEntry { count: 99, ..a };
+        let different_count = SplitCountEntry {
+            count: Some(99),
+            ..a
+        };
         assert_ne!(b, different_count);
     }
 

@@ -1583,7 +1583,8 @@ mod range_countable_index_e2e_tests {
         assert_eq!(summed.len(), 1);
         assert!(summed[0].key.is_empty(), "summed entry has empty key");
         assert_eq!(
-            summed[0].count, 5,
+            summed[0].count,
+            Some(5),
             "color > 'blue' should sum to 3 (green) + 2 (red) = 5"
         );
 
@@ -1604,9 +1605,9 @@ mod range_countable_index_e2e_tests {
             .expect("range count should succeed");
         assert_eq!(split.len(), 2);
         assert_eq!(split[0].key, b"green".to_vec());
-        assert_eq!(split[0].count, 3);
+        assert_eq!(split[0].count, Some(3));
         assert_eq!(split[1].key, b"red".to_vec());
-        assert_eq!(split[1].count, 2);
+        assert_eq!(split[1].count, Some(2));
 
         // distinct=true with limit=1: only the first entry.
         let limited = query
@@ -1762,9 +1763,9 @@ mod range_countable_index_e2e_tests {
             .expect("range count should succeed");
         assert_eq!(split.len(), 2);
         assert_eq!(split[0].key, b"bbb".to_vec());
-        assert_eq!(split[0].count, 1);
+        assert_eq!(split[0].count, Some(1));
         assert_eq!(split[1].key, b"ccc".to_vec());
-        assert_eq!(split[1].count, 1);
+        assert_eq!(split[1].count, Some(1));
     }
 
     /// `execute_aggregate_count_with_proof` should produce a grovedb
@@ -2030,13 +2031,13 @@ mod range_countable_index_e2e_tests {
         );
         assert_eq!(split[0].in_key.as_deref(), Some(b"acme".as_slice()));
         assert_eq!(split[0].key, b"red".to_vec());
-        assert_eq!(split[0].count, 3);
+        assert_eq!(split[0].count, Some(3));
         assert_eq!(split[1].in_key.as_deref(), Some(b"contoso".as_slice()));
         assert_eq!(split[1].key, b"green".to_vec());
-        assert_eq!(split[1].count, 1);
+        assert_eq!(split[1].count, Some(1));
         assert_eq!(split[2].in_key.as_deref(), Some(b"contoso".as_slice()));
         assert_eq!(split[2].key, b"red".to_vec());
-        assert_eq!(split[2].count, 2);
+        assert_eq!(split[2].count, Some(2));
 
         // Client-side merge over `key` recovers the flat histogram:
         //   green: 1
@@ -2045,7 +2046,7 @@ mod range_countable_index_e2e_tests {
             split
                 .iter()
                 .fold(std::collections::BTreeMap::new(), |mut m, e| {
-                    *m.entry(e.key.clone()).or_insert(0) += e.count;
+                    *m.entry(e.key.clone()).or_insert(0) += e.count.unwrap_or(0);
                     m
                 });
         assert_eq!(merged.get(b"green".as_slice()), Some(&1));
@@ -2070,7 +2071,7 @@ mod range_countable_index_e2e_tests {
             "summed mode always emits a single in_key=None, key=empty entry"
         );
         assert!(summed[0].key.is_empty());
-        assert_eq!(summed[0].count, 6);
+        assert_eq!(summed[0].count, Some(6));
     }
 
     /// `StartsWith "r"` is encoded as `Range(serialize("r")..
@@ -2174,7 +2175,8 @@ mod range_countable_index_e2e_tests {
         assert_eq!(summed.len(), 1, "summed mode → one entry");
         assert!(summed[0].key.is_empty(), "summed entry has empty key");
         assert_eq!(
-            summed[0].count, 6,
+            summed[0].count,
+            Some(6),
             "color startsWith 'r' should sum to 2 (red) + 3 (rose) + 1 (ruby) = 6"
         );
 
@@ -2198,11 +2200,11 @@ mod range_countable_index_e2e_tests {
             "distinct mode → one entry per matching color"
         );
         assert_eq!(split[0].key, b"red".to_vec());
-        assert_eq!(split[0].count, 2);
+        assert_eq!(split[0].count, Some(2));
         assert_eq!(split[1].key, b"rose".to_vec());
-        assert_eq!(split[1].count, 3);
+        assert_eq!(split[1].count, Some(3));
         assert_eq!(split[2].key, b"ruby".to_vec());
-        assert_eq!(split[2].count, 1);
+        assert_eq!(split[2].count, Some(1));
 
         // Mode 3: prove aggregate. Verifies via
         // `GroveDb::verify_aggregate_count_query` against the path
@@ -2321,7 +2323,8 @@ mod range_countable_index_e2e_tests {
             .expect("empty startsWith prefix should succeed (matches empty-string sentinel only)");
         assert_eq!(result.len(), 1, "summed mode → one entry");
         assert_eq!(
-            result[0].count, 0,
+            result[0].count,
+            Some(0),
             "no docs have color = empty-string sentinel"
         );
     }
@@ -3192,9 +3195,11 @@ mod range_countable_index_e2e_tests {
                 expected_letter
             );
             assert_eq!(
-                entry.count, expected_count,
+                entry.count,
+                Some(expected_count),
                 "lot '{}' should have {} cars",
-                expected_letter, expected_count
+                expected_letter,
+                expected_count
             );
         }
 
@@ -3202,7 +3207,7 @@ mod range_countable_index_e2e_tests {
         // aggregate (348). Different code path, same answer — the
         // distinct walk and the merk-level aggregate are obligated
         // to agree.
-        let total: u64 = entries.iter().map(|e| e.count).sum();
+        let total: u64 = entries.iter().map(|e| e.count.unwrap_or(0)).sum();
         assert_eq!(
             total, 348,
             "sum of per-lot counts must equal the aggregate (3+4+...+26 = 348)"

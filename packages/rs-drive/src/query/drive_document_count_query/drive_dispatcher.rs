@@ -87,7 +87,11 @@ impl Drive {
             return Ok(vec![SplitCountEntry {
                 in_key: None,
                 key: vec![],
-                count,
+                // `documents_countable` fast path: we read the
+                // CountTree directly and got an explicit count, so
+                // this is a verified `Some(_)` (possibly `Some(0)`
+                // for an empty doctype).
+                count: Some(count),
             }]);
         }
 
@@ -250,7 +254,13 @@ impl Drive {
                 where_clauses: clauses_for_value,
             };
             let results = count_query.execute_no_proof(self, transaction, platform_version)?;
-            let count = results.first().map_or(0, |entry| entry.count);
+            // Per-In fan-out: each sub-query returns one entry with
+            // its branch count (or empty if the branch doesn't exist
+            // in the index). Treat missing-entry as 0 here — the
+            // no-proof path is enumerating known-In values and a
+            // missing entry means "no docs at this value" which the
+            // executor verified.
+            let count = results.first().and_then(|entry| entry.count).unwrap_or(0);
             merged.insert(key_bytes, count);
         }
 
@@ -268,7 +278,10 @@ impl Drive {
             .map(|(key, count)| SplitCountEntry {
                 in_key: None,
                 key,
-                count,
+                // The no-proof per-In fan-out enumerates the caller's
+                // In array and produces an explicit count per branch
+                // (zero or otherwise) — always `Some(_)`.
+                count: Some(count),
             })
             .collect();
         if !options.order_by_ascending {
@@ -748,7 +761,7 @@ impl Drive {
                     transaction,
                     platform_version,
                 )?;
-                let total = entries.first().map(|e| e.count).unwrap_or(0);
+                let total = entries.first().and_then(|e| e.count).unwrap_or(0);
                 Ok(DocumentCountResponse::Aggregate(total))
             }
             DocumentCountMode::PerInValue => {
@@ -804,7 +817,7 @@ impl Drive {
                     // empty-key entry containing the sum (or empty
                     // vec if the path doesn't exist). Collapse to
                     // `Aggregate`.
-                    let total = entries.first().map(|e| e.count).unwrap_or(0);
+                    let total = entries.first().and_then(|e| e.count).unwrap_or(0);
                     Ok(DocumentCountResponse::Aggregate(total))
                 } else {
                     Ok(DocumentCountResponse::Entries(entries))

@@ -197,7 +197,13 @@ impl FromProof<DocumentQuery> for DocumentCount {
                 // cryptographically committed — same forge-resistance
                 // as `AggregateCountOnRange`, just expressed as a
                 // post-verification reduction in Rust.
-                let total: u64 = entries.iter().map(|e| e.count).sum();
+                //
+                // `flatten` drops `None` entries — distinct-walk
+                // verifier never emits them today (every emitted
+                // entry corresponds to a verified `KVCount` op),
+                // but this keeps the aggregate honest if a future
+                // synthesis step on this code path ever does.
+                let total: u64 = entries.iter().filter_map(|e| e.count).sum();
                 return Ok((Some(DocumentCount(total)), mtd.clone(), proof.clone()));
             }
 
@@ -277,8 +283,11 @@ impl FromProof<DocumentQuery> for DocumentCount {
         // entry (empty `key`) and the sum is just that entry's count;
         // for Equal-prefix + In-on-last it sums the per-In-value
         // counts. A branch with zero docs is omitted by the verifier
-        // so missing entries contribute 0.
-        let total: u64 = entries.iter().map(|e| e.count).sum();
+        // so missing entries contribute 0. `filter_map` drops `None`
+        // entries that downstream synthesis might have added (e.g.
+        // SDK marking absent In branches as `None` to avoid
+        // conflating "no proof" with "zero").
+        let total: u64 = entries.iter().filter_map(|e| e.count).sum();
         Ok((Some(DocumentCount(total)), mtd.clone(), proof.clone()))
     }
 }
@@ -298,14 +307,17 @@ impl Fetch for DocumentCount {
 /// Splitting is signalled by:
 /// - An `In` where-clause on the request: the field of that clause
 ///   becomes the split property and each value in the array becomes
-///   one entry in the result (with synthesized zero-count entries
-///   for `In` values that have no documents — see v1 message-level
-///   docstring for the "zero-count entries on `In`-grouped
-///   queries" rule).
+///   one entry in the result. On the **proof path**, the SDK
+///   synthesizes a `count: None` entry for each In value the proof
+///   was silent on (zero-count branches aren't materialized in the
+///   merk tree, so absent-from-proof is cryptographically distinct
+///   from `Some(0)`). The **no-proof path** emits `count: Some(0)`
+///   for branches the executor confirmed are empty.
 /// - A range where-clause plus `with_group_by(range_field)`: each
 ///   distinct value in the range becomes one entry. Zero-count
-///   ranges are simply absent (matching the index walker's natural
-///   behaviour, SQL-conformant).
+///   ranges are simply absent on both paths — the range itself is
+///   unbounded so there's no caller-supplied "expected keys" list
+///   to synthesize `None` entries against.
 ///
 /// Without any grouping the response is a single entry with empty
 /// `key` (i.e., the total count expressed as one-element entries
@@ -432,9 +444,12 @@ impl FromProof<DocumentQuery> for DocumentSplitCounts {
         //    proves the per-branch CountTree elements; SDK returns
         //    them as `Vec<SplitCountEntry>`. For Equal-only fully-
         //    covered the verifier returns one empty-key entry
-        //    (re-emitted as zero-count if absent); for Equal-prefix
-        //    + In-on-last it returns one entry per In value (zero-
-        //    count In branches are simply absent).
+        //    (re-emitted as `Some(0)` if absent — the proof
+        //    committed to the empty tree). For Equal-prefix +
+        //    In-on-last it returns one entry per existing In
+        //    branch, then `synthesize_missing_in_entries` appends a
+        //    `count: None` entry for each In value in the request
+        //    that the proof was silent on.
         let response: Self::Response = response.into();
         let document_type = request
             .data_contract
@@ -466,7 +481,12 @@ impl FromProof<DocumentQuery> for DocumentSplitCounts {
             let entries = vec![SplitCountEntry {
                 in_key: None,
                 key: Vec::new(),
-                count,
+                // `documents_countable` fast-path: the proof
+                // verified the primary-key CountTree element
+                // directly. The returned count IS the verified
+                // value (possibly 0 for an empty doctype), so
+                // emit `Some(_)` rather than `None`.
+                count: Some(count),
             }];
             return Ok((
                 Some(DocumentSplitCounts::from_verified(entries)),
@@ -495,17 +515,35 @@ impl FromProof<DocumentQuery> for DocumentSplitCounts {
 
         let mut entries =
             verify_point_lookup_count_proof(&count_query, proof, mtd, platform_version, provider)?;
-        // Total-count case (Equal-only fully-covered) MUST surface as
-        // a single empty-key entry — callers distinguish "verified
-        // zero" from "no proof returned" purely by structure. If the
-        // verifier dropped the entry because count was 0, re-emit it.
+        // Total-count case (Equal-only fully-covered): the proof
+        // either covers a single CountTree element (entry present
+        // with `Some(N)`) or doesn't materialize any element
+        // because the doctype is empty. The second case still
+        // counts as "verified zero" — the proof committed to the
+        // empty tree — so emit `Some(0)`, not `None`. `None` is
+        // reserved for "caller asked but verifier was silent on
+        // this key," which is a different (and currently unused
+        // on this path) signal.
         if !has_in && entries.is_empty() {
             entries.push(SplitCountEntry {
                 in_key: None,
                 key: Vec::new(),
-                count: 0,
+                count: Some(0),
             });
         }
+
+        // In-on-last + prove path: the proof only materializes
+        // existing CountTree elements (zero-count branches aren't
+        // stored in the merk tree). The caller's request lists
+        // every In value they asked about; synthesize a `None`
+        // entry for each In value the proof was silent on so
+        // callers can tell "verified zero" (which the
+        // PointLookupProof shape can't produce on its own) apart
+        // from "absent from proof, unverified."
+        if has_in {
+            entries = synthesize_missing_in_entries(&request, entries, platform_version);
+        }
+
         Ok((
             Some(DocumentSplitCounts::from_verified(entries)),
             mtd.clone(),
@@ -516,4 +554,70 @@ impl FromProof<DocumentQuery> for DocumentSplitCounts {
 
 impl Fetch for DocumentSplitCounts {
     type Request = DocumentQuery;
+}
+
+/// On the In-on-last + prove path, append a `count: None` entry
+/// for every In value in the request that the verifier was silent
+/// on. The PointLookupProof shape only materializes existing
+/// CountTree elements (zero-count branches aren't stored in the
+/// merk tree), so absent-from-proof on this path means either
+/// "verified zero" or "proof was truncated" — distinct from
+/// `Some(0)` which would mean a cryptographically committed zero.
+/// Synthesizing `None` keeps callers from conflating those two.
+///
+/// Key serialization mirrors the prover's
+/// `point_lookup_count_path_query` (which serializes each In
+/// value via `document_type.serialize_value_for_key`), so the
+/// synthesized keys byte-match the keys the verified entries
+/// carry.
+fn synthesize_missing_in_entries(
+    request: &DocumentQuery,
+    mut entries: Vec<SplitCountEntry>,
+    platform_version: &PlatformVersion,
+) -> Vec<SplitCountEntry> {
+    use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+    use std::collections::HashSet;
+
+    let Some(in_clause) = request
+        .where_clauses
+        .iter()
+        .find(|wc| wc.operator == drive::query::WhereOperator::In)
+    else {
+        return entries;
+    };
+    let dpp::platform_value::Value::Array(in_values) = &in_clause.value else {
+        return entries;
+    };
+    let Ok(document_type) = request
+        .data_contract
+        .document_type_for_name(&request.document_type_name)
+    else {
+        return entries;
+    };
+
+    // Serialize each requested In value to the same byte form the
+    // prover used as the merk path key. `filter_map` silently drops
+    // values that fail to serialize — those wouldn't have made it
+    // to the merk path query either, so they'd not appear in the
+    // proof regardless.
+    let expected: HashSet<Vec<u8>> = in_values
+        .iter()
+        .filter_map(|v| {
+            document_type
+                .serialize_value_for_key(&in_clause.field, v, platform_version)
+                .ok()
+        })
+        .collect();
+    let present: HashSet<Vec<u8>> = entries.iter().map(|e| e.key.clone()).collect();
+
+    for key in expected {
+        if !present.contains(&key) {
+            entries.push(SplitCountEntry {
+                in_key: None,
+                key,
+                count: None,
+            });
+        }
+    }
+    entries
 }

@@ -216,7 +216,9 @@ impl DriveDocumentCountQuery<'_> {
                 return Ok(vec![SplitCountEntry {
                     in_key: None,
                     key: Vec::new(),
-                    count: total,
+                    // Range-summed total derived from the executor's
+                    // per-In aggregate fan-out — verified count.
+                    count: Some(total),
                 }]);
             }
             // Flat summed (no In on prefix): single aggregate read.
@@ -229,7 +231,9 @@ impl DriveDocumentCountQuery<'_> {
             return Ok(vec![SplitCountEntry {
                 in_key: None,
                 key: Vec::new(),
-                count,
+                // Single `AggregateCountOnRange` read — explicit
+                // verified count.
+                count: Some(count),
             }]);
         }
 
@@ -306,7 +310,13 @@ impl DriveDocumentCountQuery<'_> {
             } else {
                 None
             };
-            entries.push(SplitCountEntry { in_key, key, count });
+            // Distinct-walk emits one entry per distinct value
+            // with its verified count; always `Some(_)`.
+            entries.push(SplitCountEntry {
+                in_key,
+                key,
+                count: Some(count),
+            });
         }
 
         // Distinct mode: grovedb already emitted entries in the

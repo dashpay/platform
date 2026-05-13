@@ -478,7 +478,15 @@ impl<C> Platform<C> {
                     // `|In| × max_per-branch-count`, well under u64.
                     let total: u64 = entries
                         .iter()
-                        .map(|e| e.count)
+                        // `count.unwrap_or(0)` here is safe: this
+                        // arm is server-side, summing entries the
+                        // executor emitted. Executor never emits
+                        // `None` (that's an SDK-side
+                        // synthesis-for-missing concept). The
+                        // `unwrap_or(0)` is a belt-and-suspenders
+                        // guard against any future executor that
+                        // forgets the contract.
+                        .map(|e| e.count.unwrap_or(0))
                         .fold(0u64, |a, b| a.saturating_add(b));
                     GetDocumentsResponseV1 {
                         result: Some(get_documents_response_v1::Result::Data(ResultData {
@@ -523,7 +531,17 @@ fn into_v1_entry(e: SplitCountEntry) -> CountEntry {
     CountEntry {
         in_key: e.in_key,
         key: e.key,
-        count: e.count,
+        // The wire `count` is `uint64`, so it can only carry
+        // `Some(_)`. Server-side never emits `None` entries to
+        // begin with — `None` is the SDK-side synthesis signal for
+        // "caller's In array contained a value the proof was
+        // silent on," and that decision lives client-side because
+        // the wire never has the caller's full In array context.
+        // `unwrap_or(0)` is defense-in-depth: a future executor
+        // bug emitting `None` shouldn't crash the response path,
+        // it should round to zero on the wire (matching the
+        // proto's `uint64` default).
+        count: e.count.unwrap_or(0),
     }
 }
 

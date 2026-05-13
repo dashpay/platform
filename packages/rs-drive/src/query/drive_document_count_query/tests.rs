@@ -157,7 +157,11 @@ fn test_count_query_fully_covered_equal_succeeds_on_both_paths() {
         .execute_no_proof(&drive, None, platform_version)
         .expect("expected no-proof count to succeed");
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0].count, 3, "expected count of 3 docs at age=30");
+    assert_eq!(
+        results[0].count,
+        Some(3),
+        "expected count of 3 docs at age=30"
+    );
     assert!(
         results[0].key.is_empty(),
         "expected empty key for fully-covered Equal-only count"
@@ -386,7 +390,8 @@ fn test_count_query_total_count_with_in_operator() {
 
     assert_eq!(results.len(), 1);
     assert_eq!(
-        results[0].count, 5,
+        results[0].count,
+        Some(5),
         "expected count of 5 (age=30 has 3, age=40 has 2)"
     );
 }
@@ -429,7 +434,11 @@ fn test_count_query_total_count_with_in_operator_no_matches() {
         .expect("expected query to succeed");
 
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0].count, 0, "expected count of 0 for unmatched In");
+    assert_eq!(
+        results[0].count,
+        Some(0),
+        "expected count of 0 for unmatched In"
+    );
 }
 
 /// `In` clauses with duplicate values are rejected with
@@ -579,7 +588,8 @@ fn test_count_query_in_on_before_last_with_trailing_equal_succeeds_on_both_paths
         .expect("expected no-proof count to succeed");
     assert_eq!(results.len(), 1);
     assert_eq!(
-        results[0].count, 3,
+        results[0].count,
+        Some(3),
         "expected 3 docs covered by firstName IN [Alice, Bob] AND lastName = Smith"
     );
 
@@ -598,7 +608,7 @@ fn test_count_query_in_on_before_last_with_trailing_equal_succeeds_on_both_paths
         .expect("expected proof verification to succeed");
     // Verifier emits one entry per In branch with a non-zero count.
     // Alice → 2, Bob → 1.
-    let summed: u64 = entries.iter().map(|e| e.count).sum();
+    let summed: u64 = entries.iter().map(|e| e.count.unwrap_or(0)).sum();
     assert_eq!(
         summed, 3,
         "verified per-branch entries should sum to the no-proof total"
@@ -700,7 +710,8 @@ fn test_count_query_in_on_first_of_three_with_two_trailing_equals_succeeds_on_bo
         .expect("expected no-proof count to succeed");
     assert_eq!(results.len(), 1);
     assert_eq!(
-        results[0].count, 2,
+        results[0].count,
+        Some(2),
         "expected 2 docs covered by firstName IN [Alice, Bob] AND \
          middleName = M AND lastName = Smith"
     );
@@ -719,7 +730,7 @@ fn test_count_query_in_on_first_of_three_with_two_trailing_equals_succeeds_on_bo
     let (_root_hash, entries) = query
         .verify_point_lookup_count_proof(&proof, platform_version)
         .expect("expected proof verification to succeed");
-    let summed: u64 = entries.iter().map(|e| e.count).sum();
+    let summed: u64 = entries.iter().map(|e| e.count.unwrap_or(0)).sum();
     assert_eq!(
         summed, 2,
         "verified per-branch entries should sum to the no-proof total"
@@ -1500,7 +1511,8 @@ fn test_countable_allowing_offset_variant_end_to_end() {
         .expect("expected count query to succeed against ProvableCountTree");
     assert_eq!(results.len(), 1);
     assert_eq!(
-        results[0].count, 2,
+        results[0].count,
+        Some(2),
         "ProvableCountTree should report 2 Alices"
     );
 }
@@ -1572,7 +1584,8 @@ fn test_count_query_unique_countable_index_returns_correct_count() {
 
     assert_eq!(results.len(), 1);
     assert_eq!(
-        results[0].count, 1,
+        results[0].count,
+        Some(1),
         "exact match on a unique countable index should be 1, not 0 \
          (Reference at [0] returns count_value_or_default = 1)"
     );

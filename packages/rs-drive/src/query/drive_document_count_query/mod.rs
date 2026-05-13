@@ -99,7 +99,23 @@ pub struct SplitCountEntry {
     pub key: Vec<u8>,
     /// The count of documents matching this `(in_key, key)` tuple
     /// (or just `key` for flat queries).
-    pub count: u64,
+    ///
+    /// Three-valued by design:
+    /// - `Some(n)` with `n > 0` — verified count for an entry the
+    ///   underlying data path materialized.
+    /// - `Some(0)` — caller queried this branch and the executor
+    ///   confirmed zero matching documents (emitted only by the
+    ///   no-proof path, which can enumerate the In array and probe
+    ///   each branch).
+    /// - `None` — caller queried this branch but the verifier was
+    ///   silent on it. Distinguished from `Some(0)` so callers
+    ///   don't confuse "verified zero" with "proof didn't cover
+    ///   this." Emitted by the SDK's proof verifier when an In
+    ///   value in the request doesn't appear in the proof's
+    ///   CountTree elements (zero-count branches aren't stored in
+    ///   the merk tree, and the current proof shape doesn't carry
+    ///   absence proofs).
+    pub count: Option<u64>,
 }
 
 /// SQL-shaped count-query mode — names the response shape the

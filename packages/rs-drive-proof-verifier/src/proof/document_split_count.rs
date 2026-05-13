@@ -31,7 +31,7 @@ impl DocumentSplitCounts {
     pub fn into_flat_map(self) -> BTreeMap<Vec<u8>, u64> {
         let mut out: BTreeMap<Vec<u8>, u64> = BTreeMap::new();
         for entry in self.0 {
-            *out.entry(entry.key).or_insert(0) += entry.count;
+            *out.entry(entry.key).or_insert(0) += entry.count.unwrap_or(0);
         }
         out
     }
@@ -109,7 +109,11 @@ mod tests {
         SplitCountEntry {
             in_key: in_key.map(|s| s.to_vec()),
             key: key.to_vec(),
-            count,
+            // Test helper always builds verified entries; `None`
+            // entries (caller asked but verifier was silent) are
+            // tested via explicit struct construction at the SDK
+            // synthesis call site, not through this helper.
+            count: Some(count),
         }
     }
 
