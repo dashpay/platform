@@ -179,6 +179,26 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 });
             }
 
+            // Defense-in-depth: re-snapshot spendable UTXOs after `build_signed` and confirm
+            // every selected outpoint is still present. Today every UTXO mutator goes through
+            // the wallet write lock that we hold across build, so this is unreachable — but
+            // a future mutator running outside the lock (mempool listener, chain reorg, etc.)
+            // would slip through the pre-build `spendable` snapshot above; this fresh re-fetch
+            // catches it before broadcast. The reservations guard remains the primary in-process
+            // race defense; this is the cross-process / cross-subsystem net.
+            let fresh_spendable_outpoints: BTreeSet<OutPoint> = managed_account
+                .spendable_utxos(current_height)
+                .into_iter()
+                .map(|utxo| utxo.outpoint)
+                .collect();
+            if !selected.is_subset(&fresh_spendable_outpoints) {
+                let missing: Vec<OutPoint> = selected
+                    .difference(&fresh_spendable_outpoints)
+                    .copied()
+                    .collect();
+                return Err(PlatformWalletError::ConcurrentSpendConflict { selected: missing });
+            }
+
             // Reserve before releasing the lock so the next caller sees these outpoints
             // filtered out. Guard held until `check_core_transaction` marks them spent
             // (success) or the error unwinds (failure → outpoints released for retry).
@@ -276,18 +296,18 @@ mod tests {
     //!   UTXO as spendable again.
     //! - An empty spendable snapshot (e.g. all UTXOs reserved) maps to
     //!   `NoSpendableInputs` via the early-exit guard.
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     use async_trait::async_trait;
     use dashcore::consensus::deserialize;
     use dashcore::{Transaction, Txid};
     use tokio::sync::RwLock;
 
-    use crate::broadcaster::TransactionBroadcaster;
-    use crate::wallet::core::balance::WalletBalance;
-    use crate::wallet::core::CoreWallet;
     use crate::PlatformWalletError;
+    use crate::broadcaster::TransactionBroadcaster;
+    use crate::wallet::core::CoreWallet;
+    use crate::wallet::core::balance::WalletBalance;
     use key_wallet::Network;
     use key_wallet_manager::WalletManager;
 
@@ -410,9 +430,9 @@ mod tests {
 
     use dashcore::hashes::Hash;
     use dashcore::{Address as DashAddress, OutPoint, TxOut};
-    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
-    use key_wallet::wallet::Wallet;
     use key_wallet::Utxo;
+    use key_wallet::wallet::Wallet;
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use tokio::sync::Notify;
 
     use crate::wallet::platform_wallet::PlatformWalletInfo;
