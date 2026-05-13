@@ -187,23 +187,12 @@ fn validate_and_route(
                 })
                 .map(|wc| wc.field.as_str());
 
-            match request_v1.group_by.as_slice() {
-                [] => {
-                    // Aggregate count is a single row; `limit` is
-                    // structurally meaningless. Reject explicitly
-                    // rather than silently ignoring or worse —
-                    // forwarding to Drive's per-In fan-out, which
-                    // would honor the limit and return a partial
-                    // sum disguised as a total.
-                    if request_v1.limit.is_some() {
-                        return Err(QueryError::Query(QuerySyntaxError::InvalidLimit(
-                            "`limit` is not valid for SELECT COUNT with empty GROUP BY \
-                             (aggregate count is a single row; omit `limit` to fix)"
-                                .to_string(),
-                        )));
-                    }
-                    Ok(RoutingDecision::Count(CountMode::Aggregate))
-                }
+            // Compute the SQL-shape mode from `(group_by, where)`
+            // first; check `limit` validity against the mode after
+            // so the rejection lives in one place keyed off
+            // `CountMode::accepts_limit()`.
+            let mode = match request_v1.group_by.as_slice() {
+                [] => CountMode::Aggregate,
                 [field] => {
                     if Some(field.as_str()) == in_field {
                         // Single-field GROUP BY on the `In` field is
@@ -222,7 +211,7 @@ fn validate_and_route(
                                  or drop the other constraint)",
                             ));
                         }
-                        Ok(RoutingDecision::Count(CountMode::GroupByIn))
+                        CountMode::GroupByIn
                     } else if Some(field.as_str()) == range_field {
                         // Same compound-shape concern as the In
                         // branch above — `group_by=[range_field]`
@@ -237,29 +226,60 @@ fn validate_and_route(
                                  or drop the other constraint)",
                             ));
                         }
-                        Ok(RoutingDecision::Count(CountMode::GroupByRange))
+                        CountMode::GroupByRange
                     } else {
-                        Err(not_yet_implemented(&format!(
+                        return Err(not_yet_implemented(&format!(
                             "GROUP BY on field '{}' which is not constrained by an \
                              `In` or range where clause",
                             field
-                        )))
+                        )));
                     }
                 }
                 [first, second] => {
                     if Some(first.as_str()) == in_field && Some(second.as_str()) == range_field {
-                        Ok(RoutingDecision::Count(CountMode::GroupByCompound))
+                        CountMode::GroupByCompound
                     } else {
-                        Err(not_yet_implemented(
+                        return Err(not_yet_implemented(
                             "two-field GROUP BY outside the `(In, range)` compound \
                              shape (the existing compound count path orders entries \
                              as `(in_key, key)`; other orderings would need a new \
                              merk walk)",
-                        ))
+                        ));
                     }
                 }
-                _ => Err(not_yet_implemented("GROUP BY with more than two fields")),
+                _ => return Err(not_yet_implemented("GROUP BY with more than two fields")),
+            };
+
+            // Reject `limit` on modes that can't honor it. Aggregate
+            // returns one row; GroupByIn is bounded by the In array
+            // (capped at 100 by `WhereClause::in_values()`) and the
+            // PointLookupProof path can't represent a partial-In
+            // selection in its `SizedQuery`. Either way silent
+            // truncation or fan-out summing would mislead callers
+            // who set a `limit`.
+            if request_v1.limit.is_some() && !mode.accepts_limit() {
+                let reason = match mode {
+                    CountMode::Aggregate => {
+                        "`limit` is not valid for SELECT COUNT with empty GROUP BY \
+                         (aggregate count is a single row; omit `limit` to fix)"
+                    }
+                    CountMode::GroupByIn => {
+                        "`limit` is not valid for SELECT COUNT with GROUP BY on an \
+                         `In` field (result is bounded by the In array — capped at \
+                         100 entries; narrow the In array directly to reduce the \
+                         result set)"
+                    }
+                    CountMode::GroupByRange | CountMode::GroupByCompound => unreachable!(
+                        "`accepts_limit()` returns true for these variants; \
+                         outer guard already filtered them out"
+                    ),
+                };
+                return Err(QueryError::Query(QuerySyntaxError::InvalidLimit(
+                    reason.to_string(),
+                )));
             }
+
+            Ok(RoutingDecision::Count(mode))
         }
     }
 }
@@ -685,6 +705,38 @@ mod tests {
                 assert!(
                     msg.contains("aggregate count is a single row"),
                     "expected aggregate-count limit-rejection message, got: {msg}"
+                );
+            }
+            other => panic!("expected InvalidLimit, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn reject_count_group_by_in_with_limit() {
+        // GROUP BY on an `In` field returns at most `|In|` entries
+        // (capped at 100 by `WhereClause::in_values()`). A `limit`
+        // is either redundant (≤ 100) or would silently truncate
+        // the proof to fewer In branches than requested — the
+        // PointLookupProof path can't represent a partial-In
+        // selection in its `SizedQuery`, so the limit gets dropped
+        // before reaching the path-query builder. Reject upstream
+        // to make the contract explicit.
+        let request = GetDocumentsRequestV1 {
+            select: V1Select::Count as i32,
+            group_by: vec!["age".to_string()],
+            limit: Some(1),
+            ..empty_v1_request()
+        };
+        let where_clauses = vec![WhereClause {
+            field: "age".to_string(),
+            operator: WhereOperator::In,
+            value: platform_value!([30u32, 40u32, 50u32]),
+        }];
+        match validate_and_route_for_tests(&request, &where_clauses) {
+            Err(QueryError::Query(QuerySyntaxError::InvalidLimit(msg))) => {
+                assert!(
+                    msg.contains("bounded by the In array"),
+                    "expected GroupByIn limit-rejection message, got: {msg}"
                 );
             }
             other => panic!("expected InvalidLimit, got {other:?}"),

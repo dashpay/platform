@@ -713,6 +713,15 @@ impl DriveDocumentCountQuery<'_> {
                 }
                 outer_query.set_subquery(subquery);
 
+                // `SizedQuery::new(_, None, None)` is intentional —
+                // PointLookupProof always returns ALL In branches.
+                // The handler rejects `limit` upstream on this path
+                // (see [`CountMode::accepts_limit`]'s `GroupByIn`
+                // arm) because the In array is already capped at 100
+                // by `WhereClause::in_values()`, and a partial-In
+                // selection isn't representable in this `SizedQuery`
+                // shape without rebuilding the verifier to know
+                // which subset got truncated.
                 Ok(PathQuery::new(
                     base_path,
                     SizedQuery::new(outer_query, None, None),

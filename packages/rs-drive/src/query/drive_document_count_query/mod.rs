@@ -140,7 +140,15 @@ pub enum CountMode {
     ///
     /// Where-clause invariants: exactly one `In` clause whose field
     /// matches `group_by[0]`; no range clause.
-    /// `limit` caps the number of In branches returned.
+    ///
+    /// `limit` is rejected upstream when set. The In array is
+    /// already capped at 100 entries by `WhereClause::in_values()`,
+    /// so the result size is bounded by construction; a separate
+    /// `limit` would either be redundant (≤ 100) or would silently
+    /// truncate the proof to fewer In branches than the caller
+    /// asked for (because the PointLookupProof path can't represent
+    /// a partial-In-array selection in its `SizedQuery`). Callers
+    /// that want fewer branches narrow the In array directly.
     GroupByIn,
 
     /// `select=COUNT, group_by=[range_field]`. One entry per distinct
@@ -176,6 +184,25 @@ impl CountMode {
     /// the two range-grouped variants do; aggregate and per-In
     /// take other paths even when a range clause is present.
     pub fn requires_distinct_walk(self) -> bool {
+        matches!(self, Self::GroupByRange | Self::GroupByCompound)
+    }
+
+    /// Whether the caller-supplied `limit` is meaningful for this
+    /// mode. Two variants accept it:
+    ///
+    /// - [`Self::GroupByRange`] — bounds the number of distinct
+    ///   range values returned (the range itself is unbounded).
+    /// - [`Self::GroupByCompound`] — same, applied per In branch.
+    ///
+    /// The other two variants reject `limit` upstream:
+    ///
+    /// - [`Self::Aggregate`] — result is a single row.
+    /// - [`Self::GroupByIn`] — result is bounded by the In array
+    ///   (capped at 100 entries by `WhereClause::in_values()`);
+    ///   silent partial truncation isn't representable on the
+    ///   PointLookupProof path, so the limit would be misleading
+    ///   either way.
+    pub fn accepts_limit(self) -> bool {
         matches!(self, Self::GroupByRange | Self::GroupByCompound)
     }
 }
