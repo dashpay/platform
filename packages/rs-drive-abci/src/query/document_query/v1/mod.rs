@@ -55,7 +55,8 @@ use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::error::query::QuerySyntaxError;
 use drive::query::{
-    DocumentCountRequest, DocumentCountResponse, SplitCountEntry, WhereClause, WhereOperator,
+    CountMode, DocumentCountRequest, DocumentCountResponse, SplitCountEntry, WhereClause,
+    WhereOperator,
 };
 use drive::util::grove_operations::GroveDBToUse;
 
@@ -201,7 +202,7 @@ fn validate_and_route(
                                 .to_string(),
                         )));
                     }
-                    Ok(RoutingDecision::CountAggregate)
+                    Ok(RoutingDecision::Count(CountMode::Aggregate))
                 }
                 [field] => {
                     if Some(field.as_str()) == in_field {
@@ -221,7 +222,7 @@ fn validate_and_route(
                                  or drop the other constraint)",
                             ));
                         }
-                        Ok(RoutingDecision::CountEntriesViaInField)
+                        Ok(RoutingDecision::Count(CountMode::GroupByIn))
                     } else if Some(field.as_str()) == range_field {
                         // Same compound-shape concern as the In
                         // branch above — `group_by=[range_field]`
@@ -236,7 +237,7 @@ fn validate_and_route(
                                  or drop the other constraint)",
                             ));
                         }
-                        Ok(RoutingDecision::CountEntriesViaRangeField)
+                        Ok(RoutingDecision::Count(CountMode::GroupByRange))
                     } else {
                         Err(not_yet_implemented(&format!(
                             "GROUP BY on field '{}' which is not constrained by an \
@@ -247,7 +248,7 @@ fn validate_and_route(
                 }
                 [first, second] => {
                     if Some(first.as_str()) == in_field && Some(second.as_str()) == range_field {
-                        Ok(RoutingDecision::CountEntriesViaCompound)
+                        Ok(RoutingDecision::Count(CountMode::GroupByCompound))
                     } else {
                         Err(not_yet_implemented(
                             "two-field GROUP BY outside the `(In, range)` compound \
@@ -263,14 +264,16 @@ fn validate_and_route(
     }
 }
 
-/// Outcome of `validate_and_route` — names the executor path the
-/// v1 request will dispatch to.
+/// Outcome of `validate_and_route` — names the path the v1 request
+/// will dispatch to.
+///
+/// `Count(CountMode)` carries the SQL-shape contract (`Aggregate` /
+/// `GroupByIn` / `GroupByRange` / `GroupByCompound`) directly; the
+/// dispatcher passes it through to [`DocumentCountRequest::mode`]
+/// without further translation.
 enum RoutingDecision {
     Documents,
-    CountAggregate,
-    CountEntriesViaInField,
-    CountEntriesViaRangeField,
-    CountEntriesViaCompound,
+    Count(CountMode),
 }
 
 /// Test-only: expose the routing decision for unit tests without
@@ -282,10 +285,10 @@ pub(super) fn validate_and_route_for_tests(
 ) -> Result<&'static str, QueryError> {
     validate_and_route(request_v1, where_clauses).map(|d| match d {
         RoutingDecision::Documents => "documents",
-        RoutingDecision::CountAggregate => "count_aggregate",
-        RoutingDecision::CountEntriesViaInField => "count_entries_via_in_field",
-        RoutingDecision::CountEntriesViaRangeField => "count_entries_via_range_field",
-        RoutingDecision::CountEntriesViaCompound => "count_entries_via_compound",
+        RoutingDecision::Count(CountMode::Aggregate) => "count_aggregate",
+        RoutingDecision::Count(CountMode::GroupByIn) => "count_entries_via_in_field",
+        RoutingDecision::Count(CountMode::GroupByRange) => "count_entries_via_range_field",
+        RoutingDecision::Count(CountMode::GroupByCompound) => "count_entries_via_compound",
     })
 }
 
@@ -310,28 +313,9 @@ impl<C> Platform<C> {
             RoutingDecision::Documents => {
                 self.dispatch_documents_v1(request_v1, platform_state, platform_version)
             }
-            RoutingDecision::CountAggregate => self.dispatch_count_v1(
-                request_v1,
-                /* return_distinct_counts_in_range = */ false,
-                /* expect_aggregate = */ true,
-                platform_state,
-                platform_version,
-            ),
-            RoutingDecision::CountEntriesViaInField => self.dispatch_count_v1(
-                request_v1,
-                /* return_distinct_counts_in_range = */ false,
-                /* expect_aggregate = */ false,
-                platform_state,
-                platform_version,
-            ),
-            RoutingDecision::CountEntriesViaRangeField
-            | RoutingDecision::CountEntriesViaCompound => self.dispatch_count_v1(
-                request_v1,
-                /* return_distinct_counts_in_range = */ true,
-                /* expect_aggregate = */ false,
-                platform_state,
-                platform_version,
-            ),
+            RoutingDecision::Count(mode) => {
+                self.dispatch_count_v1(request_v1, mode, platform_state, platform_version)
+            }
         }
     }
 
@@ -366,16 +350,18 @@ impl<C> Platform<C> {
         Ok(result.map(translate_documents_v0_to_v1))
     }
 
-    /// Forward a `select = COUNT` request through drive's count
-    /// dispatcher directly. Replaces the old delegation through the
-    /// v0-count abci handler (which has been removed in this PR);
-    /// the wire response is now `GetDocumentsResponseV1` with
-    /// the inner `ResultData.counts` variant for non-proof results.
+    /// Forward a `select = COUNT` request to drive's count
+    /// dispatcher. `mode` is the SQL-shape contract derived from
+    /// `(select, group_by, where)` by `validate_and_route`; drive
+    /// uses it to pick the executor strategy and decide whether to
+    /// collapse the response to a single aggregate or return per-
+    /// group entries. The wire response is `GetDocumentsResponseV1`
+    /// with the inner `ResultData.counts` variant for non-proof
+    /// results.
     fn dispatch_count_v1(
         &self,
         request_v1: GetDocumentsRequestV1,
-        return_distinct_counts_in_range: bool,
-        expect_aggregate: bool,
+        mode: CountMode,
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetDocumentsResponseV1>, Error> {
@@ -435,7 +421,7 @@ impl<C> Platform<C> {
             document_type,
             raw_where_value: where_value,
             raw_order_by_value: order_by_value,
-            return_distinct_counts_in_range,
+            mode,
             limit: request_v1.limit,
             prove: request_v1.prove,
             drive_config: &self.config.drive,
@@ -462,7 +448,7 @@ impl<C> Platform<C> {
                 metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
             },
             DocumentCountResponse::Entries(entries) => {
-                if expect_aggregate {
+                if mode.is_aggregate() {
                     // `select=COUNT, group_by=[]` against a request
                     // that drove a PerInValue execution (In + no
                     // range + no prove). Sum entries into a single

@@ -521,8 +521,15 @@ pub struct DocumentCountRequest<'a> {
     /// "ascending" for split-mode response ordering when no clauses
     /// are present.
     pub raw_order_by_value: dpp::platform_value::Value,
-    /// `return_distinct_counts_in_range` flag from the request.
-    pub return_distinct_counts_in_range: bool,
+    /// SQL-shaped output mode — the caller's `(select, group_by)`
+    /// contract resolved into one of four shapes (Aggregate,
+    /// GroupByIn, GroupByRange, GroupByCompound). The dispatcher
+    /// uses this to distinguish e.g. "aggregate count with In
+    /// fan-out" (which does NOT accept `limit`) from "per-In-value
+    /// entries" (which does) — they're otherwise indistinguishable
+    /// from the where clauses alone. See [`CountMode`] for the
+    /// per-variant where-clause and `limit` invariants.
+    pub mode: super::CountMode,
     /// Limit cap from the request. Callers SHOULD pre-clamp against
     /// their server-side `max_query_limit` policy, but Drive also
     /// enforces a defense-in-depth clamp before forwarding to the
@@ -544,11 +551,12 @@ pub struct DocumentCountRequest<'a> {
 /// no-proof responses) plus the outer `Proof` arm:
 ///
 /// - `Aggregate(u64)` — total-count modes (`Total` and
-///   `RangeNoProof` with `return_distinct_counts_in_range = false`).
-///   The abci handler maps this to `CountResults.aggregate_count`.
+///   `RangeNoProof` under [`super::CountMode::Aggregate`]). The abci
+///   handler maps this to `CountResults.aggregate_count`.
 /// - `Entries(Vec<SplitCountEntry>)` — per-key modes (`PerInValue`
-///   and `RangeNoProof` with `return_distinct_counts_in_range =
-///   true`). The abci handler maps this to `CountResults.entries`.
+///   and `RangeNoProof` under [`super::CountMode::GroupByRange`] /
+///   [`super::CountMode::GroupByCompound`]). The abci handler maps
+///   this to `CountResults.entries`.
 /// - `Proof(Vec<u8>)` — grovedb proof bytes the client verifies via
 ///   either `verify_aggregate_count_query` (for `RangeProof`),
 ///   `verify_distinct_count_proof` (for `RangeDistinctProof`), or
@@ -719,11 +727,8 @@ impl Drive {
         // flat `Total` paths don't read it.
         let order_by_ascending = order_clauses.first().map(|c| c.ascending).unwrap_or(true);
 
-        let mode = DriveDocumentCountQuery::detect_mode(
-            &where_clauses,
-            request.return_distinct_counts_in_range,
-            request.prove,
-        )?;
+        let mode =
+            DriveDocumentCountQuery::detect_mode(&where_clauses, request.mode, request.prove)?;
 
         let contract_id = request.contract.id_ref().to_buffer();
         let document_type_name = request.document_type.name().to_string();
@@ -774,15 +779,14 @@ impl Drive {
             }
             DocumentCountMode::RangeNoProof => {
                 // Range no-proof → either aggregate (sum) or entries
-                // (per-distinct-value), based on
-                // `return_distinct_counts_in_range`. Clamp limit
-                // defense-in-depth.
+                // (per-distinct-value), based on `request.mode`.
+                // Clamp limit defense-in-depth.
                 let effective_limit = request
                     .limit
                     .unwrap_or(request.drive_config.default_query_limit as u32)
                     .min(request.drive_config.max_query_limit as u32);
                 let options = RangeCountOptions {
-                    distinct: request.return_distinct_counts_in_range,
+                    distinct: request.mode.requires_distinct_walk(),
                     limit: Some(effective_limit),
                     order_by_ascending,
                 };
@@ -795,14 +799,15 @@ impl Drive {
                     transaction,
                     platform_version,
                 )?;
-                if request.return_distinct_counts_in_range {
-                    Ok(DocumentCountResponse::Entries(entries))
-                } else {
-                    // !distinct: executor returns a single empty-key
-                    // entry containing the sum (or empty vec if the
-                    // path doesn't exist). Collapse to `Aggregate`.
+                if request.mode.is_aggregate() {
+                    // Aggregate mode: executor returns a single
+                    // empty-key entry containing the sum (or empty
+                    // vec if the path doesn't exist). Collapse to
+                    // `Aggregate`.
                     let total = entries.first().map(|e| e.count).unwrap_or(0);
                     Ok(DocumentCountResponse::Aggregate(total))
+                } else {
+                    Ok(DocumentCountResponse::Entries(entries))
                 }
             }
             DocumentCountMode::RangeProof => Ok(DocumentCountResponse::Proof(
@@ -850,8 +855,8 @@ impl Drive {
                 if effective_limit > request.drive_config.max_query_limit as u32 {
                     return Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(
                         "limit {} exceeds max_query_limit {} on the prove + \
-                         return_distinct_counts_in_range path; reduce the requested \
-                         limit or use prove = false",
+                         distinct-walk path (GROUP BY a range field); reduce the \
+                         requested limit or use prove = false",
                         effective_limit, request.drive_config.max_query_limit
                     ))));
                 }

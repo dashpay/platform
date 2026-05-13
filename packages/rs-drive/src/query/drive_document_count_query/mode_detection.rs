@@ -6,7 +6,7 @@
 //! attempting verification).
 
 use super::super::conditions::{WhereClause, WhereOperator};
-use super::{DocumentCountMode, DriveDocumentCountQuery};
+use super::{CountMode, DocumentCountMode, DriveDocumentCountQuery};
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::error::query::QuerySyntaxError;
 
@@ -74,9 +74,16 @@ impl DriveDocumentCountQuery<'_> {
     #[cfg(any(feature = "server", feature = "verify"))]
     pub fn detect_mode(
         where_clauses: &[WhereClause],
-        return_distinct_counts_in_range: bool,
+        mode: CountMode,
         prove: bool,
     ) -> Result<DocumentCountMode, QuerySyntaxError> {
+        // The caller-supplied `CountMode` is the SQL-shape contract
+        // (Aggregate / GroupByIn / GroupByRange / GroupByCompound).
+        // Translate it back to the "distinct walk required?" boolean
+        // the per-mode tuple match below was written against. Pure
+        // mechanical mapping: the distinct walk is what the two
+        // range-grouped variants need.
+        let distinct = mode.requires_distinct_walk();
         // Reject any operator that's neither an indexable point operator
         // (Equal/In) nor a range operator. Defense-in-depth: the request
         // shape forbids these elsewhere, but folding the check in here
@@ -128,69 +135,69 @@ impl DriveDocumentCountQuery<'_> {
         // no-proof and prove) and for total-range-no-proof, the
         // `distinct_count_path_query` builder handles In on prefix
         // via grovedb's native subquery primitive.
-        if has_range && has_in && prove && !return_distinct_counts_in_range {
+        if has_range && has_in && prove && !distinct {
             return Err(QuerySyntaxError::InvalidWhereClauseComponents(
                 "range count queries with an `in` clause are not supported on the \
-                 aggregate prove path; use `return_distinct_counts_in_range = true` \
-                 for compound In-on-prefix prove queries, or `prove = false` for the \
-                 no-proof variant",
+                 aggregate prove path; use a two-field `group_by = [in_field, \
+                 range_field]` for the compound distinct-prove path, or `prove = \
+                 false` for the no-proof variant",
             ));
         }
 
-        if return_distinct_counts_in_range && !has_range {
+        if distinct && !has_range {
             return Err(QuerySyntaxError::InvalidWhereClauseComponents(
-                "return_distinct_counts_in_range requires a range where-clause",
+                "GROUP BY on a range field requires a range where-clause; the \
+                 range field must appear in `where` for the distinct walk to \
+                 have a window to iterate over",
             ));
         }
 
-        Ok(
-            match (has_range, has_in, prove, return_distinct_counts_in_range) {
-                // Range + prove + distinct (with or without In on
-                // prefix): per-distinct-value counts come from a
-                // regular range proof against the property-name
-                // `ProvableCountTree`. With In on prefix the path
-                // query uses grovedb's subquery primitive to
-                // cartesian-fork; the verifier walks the same
-                // compound shape.
-                (true, _, true, true) => DocumentCountMode::RangeDistinctProof,
-                // Range + prove + summed (no In): `AggregateCountOnRange`
-                // collapse — single u64 verified out. The In case is
-                // rejected above.
-                (true, false, true, false) => DocumentCountMode::RangeProof,
-                // Range + no-proof: the executor uses the same
-                // `distinct_count_path_query` builder; In on prefix
-                // forks via grovedb subquery at execution time. Sum
-                // vs. distinct comes from `RangeCountOptions.distinct`
-                // applied to the merged result.
-                (true, _, false, _) => DocumentCountMode::RangeNoProof,
-                (false, true, false, _) => DocumentCountMode::PerInValue,
-                // `In` + `prove = true` (no range): route to the
-                // CountTree-element proof path. The shared
-                // `point_lookup_count_path_query` builder emits one
-                // `Element::CountTree` per matched In branch (via
-                // outer `Key`s + `[0]` subquery); the SDK's
-                // `verify_point_lookup_count_proof` extracts
-                // `count_value_or_default()` from each verified
-                // element and the `FromProof<DocumentCountQuery>`
-                // for `DocumentSplitCounts` returns them as
-                // per-In-value entries. Proof size is O(|In values|
-                // × log n) — no document materialization, no
-                // `u16::MAX` cap on matching docs.
-                (false, true, true, _) => DocumentCountMode::PointLookupProof,
-                // No range, no In, `prove = true`: same CountTree-
-                // element proof shape — either the documents_countable
-                // primary-key CountTree fast path (empty where) or
-                // a single per-branch CountTree element for an
-                // Equal-only fully-covered query.
-                (false, false, true, _) => DocumentCountMode::PointLookupProof,
-                (false, false, false, _) => DocumentCountMode::Total,
-                // (true, true, true, false) — range + In on the
-                // aggregate prove path — is rejected by the
-                // explicit early check above.
-                (true, true, true, false) => unreachable!(
-                    "range + In + prove + !distinct is rejected before the dispatch match"
-                ),
-            },
-        )
+        Ok(match (has_range, has_in, prove, distinct) {
+            // Range + prove + distinct (with or without In on
+            // prefix): per-distinct-value counts come from a
+            // regular range proof against the property-name
+            // `ProvableCountTree`. With In on prefix the path
+            // query uses grovedb's subquery primitive to
+            // cartesian-fork; the verifier walks the same
+            // compound shape.
+            (true, _, true, true) => DocumentCountMode::RangeDistinctProof,
+            // Range + prove + summed (no In): `AggregateCountOnRange`
+            // collapse — single u64 verified out. The In case is
+            // rejected above.
+            (true, false, true, false) => DocumentCountMode::RangeProof,
+            // Range + no-proof: the executor uses the same
+            // `distinct_count_path_query` builder; In on prefix
+            // forks via grovedb subquery at execution time. Sum
+            // vs. distinct comes from `RangeCountOptions.distinct`
+            // applied to the merged result.
+            (true, _, false, _) => DocumentCountMode::RangeNoProof,
+            (false, true, false, _) => DocumentCountMode::PerInValue,
+            // `In` + `prove = true` (no range): route to the
+            // CountTree-element proof path. The shared
+            // `point_lookup_count_path_query` builder emits one
+            // `Element::CountTree` per matched In branch (via
+            // outer `Key`s + `[0]` subquery); the SDK's
+            // `verify_point_lookup_count_proof` extracts
+            // `count_value_or_default()` from each verified
+            // element and the `FromProof<DocumentCountQuery>`
+            // for `DocumentSplitCounts` returns them as
+            // per-In-value entries. Proof size is O(|In values|
+            // × log n) — no document materialization, no
+            // `u16::MAX` cap on matching docs.
+            (false, true, true, _) => DocumentCountMode::PointLookupProof,
+            // No range, no In, `prove = true`: same CountTree-
+            // element proof shape — either the documents_countable
+            // primary-key CountTree fast path (empty where) or
+            // a single per-branch CountTree element for an
+            // Equal-only fully-covered query.
+            (false, false, true, _) => DocumentCountMode::PointLookupProof,
+            (false, false, false, _) => DocumentCountMode::Total,
+            // (true, true, true, false) — range + In on the
+            // aggregate prove path — is rejected by the
+            // explicit early check above.
+            (true, true, true, false) => {
+                unreachable!("range + In + prove + !distinct is rejected before the dispatch match")
+            }
+        })
     }
 }

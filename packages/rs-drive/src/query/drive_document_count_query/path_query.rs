@@ -217,8 +217,8 @@ impl DriveDocumentCountQuery<'_> {
                 return Err(Error::Query(
                     QuerySyntaxError::InvalidWhereClauseComponents(
                         "aggregate-count proof: prefix properties must use `==` (no `in`); \
-                         use `return_distinct_counts_in_range = true` for compound In-on-prefix \
-                         queries",
+                         use a two-field `group_by = [in_field, range_field]` for compound \
+                         In-on-prefix queries",
                     ),
                 ));
             }

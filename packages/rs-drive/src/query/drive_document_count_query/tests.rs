@@ -891,7 +891,7 @@ fn test_compound_range_in_summed_no_proof_uses_per_in_aggregate_fanout() {
         document_type,
         raw_where_value,
         raw_order_by_value: Value::Null,
-        return_distinct_counts_in_range: false,
+        mode: CountMode::Aggregate,
         limit: None,
         prove: false,
         drive_config: &drive_config,
@@ -965,7 +965,7 @@ fn test_count_request_with_duplicate_equality_clauses_is_rejected() {
         document_type,
         raw_where_value,
         raw_order_by_value: Value::Null,
-        return_distinct_counts_in_range: false,
+        mode: CountMode::Aggregate,
         limit: None,
         prove: false,
         drive_config: &drive_config,
@@ -1160,7 +1160,7 @@ fn test_range_distinct_proof_uses_compile_time_default_query_limit_not_operator_
         document_type,
         raw_where_value,
         raw_order_by_value: Value::Null,
-        return_distinct_counts_in_range: true,
+        mode: CountMode::GroupByRange,
         limit: None,
         prove: true,
         drive_config: &drive_config,
@@ -1827,7 +1827,7 @@ mod detect_mode_tests {
     /// No clauses, no flags → total mode.
     #[test]
     fn no_clauses_no_flags_is_total() {
-        let mode = DriveDocumentCountQuery::detect_mode(&[], false, false).unwrap();
+        let mode = DriveDocumentCountQuery::detect_mode(&[], CountMode::Aggregate, false).unwrap();
         assert_eq!(mode, DocumentCountMode::Total);
     }
 
@@ -1836,7 +1836,7 @@ mod detect_mode_tests {
     fn only_equal_clauses_is_total() {
         let clauses = vec![eq_clause("a"), eq_clause("b")];
         assert_eq!(
-            DriveDocumentCountQuery::detect_mode(&clauses, false, false).unwrap(),
+            DriveDocumentCountQuery::detect_mode(&clauses, CountMode::Aggregate, false).unwrap(),
             DocumentCountMode::Total,
         );
     }
@@ -1846,7 +1846,7 @@ mod detect_mode_tests {
     fn single_in_is_per_in_value() {
         let clauses = vec![in_clause("a")];
         assert_eq!(
-            DriveDocumentCountQuery::detect_mode(&clauses, false, false).unwrap(),
+            DriveDocumentCountQuery::detect_mode(&clauses, CountMode::Aggregate, false).unwrap(),
             DocumentCountMode::PerInValue,
         );
     }
@@ -1856,7 +1856,7 @@ mod detect_mode_tests {
     fn equal_plus_in_is_per_in_value() {
         let clauses = vec![eq_clause("a"), in_clause("b")];
         assert_eq!(
-            DriveDocumentCountQuery::detect_mode(&clauses, false, false).unwrap(),
+            DriveDocumentCountQuery::detect_mode(&clauses, CountMode::Aggregate, false).unwrap(),
             DocumentCountMode::PerInValue,
         );
     }
@@ -1866,7 +1866,7 @@ mod detect_mode_tests {
     fn single_range_no_proof_is_range_no_proof() {
         let clauses = vec![gt_clause("color")];
         assert_eq!(
-            DriveDocumentCountQuery::detect_mode(&clauses, false, false).unwrap(),
+            DriveDocumentCountQuery::detect_mode(&clauses, CountMode::Aggregate, false).unwrap(),
             DocumentCountMode::RangeNoProof,
         );
     }
@@ -1876,7 +1876,7 @@ mod detect_mode_tests {
     fn single_range_with_prove_is_range_proof() {
         let clauses = vec![gt_clause("color")];
         assert_eq!(
-            DriveDocumentCountQuery::detect_mode(&clauses, false, true).unwrap(),
+            DriveDocumentCountQuery::detect_mode(&clauses, CountMode::Aggregate, true).unwrap(),
             DocumentCountMode::RangeProof,
         );
     }
@@ -1886,7 +1886,7 @@ mod detect_mode_tests {
     fn no_range_with_prove_is_point_lookup_proof() {
         let clauses = vec![eq_clause("a")];
         assert_eq!(
-            DriveDocumentCountQuery::detect_mode(&clauses, false, true).unwrap(),
+            DriveDocumentCountQuery::detect_mode(&clauses, CountMode::Aggregate, true).unwrap(),
             DocumentCountMode::PointLookupProof,
         );
     }
@@ -1896,7 +1896,7 @@ mod detect_mode_tests {
     fn equal_prefix_plus_range_terminator_is_range_no_proof() {
         let clauses = vec![eq_clause("brand"), gt_clause("color")];
         assert_eq!(
-            DriveDocumentCountQuery::detect_mode(&clauses, false, false).unwrap(),
+            DriveDocumentCountQuery::detect_mode(&clauses, CountMode::Aggregate, false).unwrap(),
             DocumentCountMode::RangeNoProof,
         );
     }
@@ -1905,7 +1905,8 @@ mod detect_mode_tests {
     #[test]
     fn two_range_operators_rejected() {
         let clauses = vec![gt_clause("color"), lt_clause("color")];
-        let err = DriveDocumentCountQuery::detect_mode(&clauses, false, false).unwrap_err();
+        let err = DriveDocumentCountQuery::detect_mode(&clauses, CountMode::Aggregate, false)
+            .unwrap_err();
         assert!(matches!(
             err,
             QuerySyntaxError::InvalidWhereClauseComponents(msg) if msg.contains("at most one range")
@@ -1916,7 +1917,8 @@ mod detect_mode_tests {
     #[test]
     fn two_in_operators_rejected() {
         let clauses = vec![in_clause("a"), in_clause("b")];
-        let err = DriveDocumentCountQuery::detect_mode(&clauses, false, false).unwrap_err();
+        let err = DriveDocumentCountQuery::detect_mode(&clauses, CountMode::Aggregate, false)
+            .unwrap_err();
         assert!(matches!(
             err,
             QuerySyntaxError::InvalidWhereClauseComponents(msg) if msg.contains("at most one `in`")
@@ -1940,11 +1942,11 @@ mod detect_mode_tests {
         // which uses the unified `distinct_count_path_query` builder
         // and applies `options.distinct` in post-processing.
         assert_eq!(
-            DriveDocumentCountQuery::detect_mode(&clauses, false, false).unwrap(),
+            DriveDocumentCountQuery::detect_mode(&clauses, CountMode::Aggregate, false).unwrap(),
             DocumentCountMode::RangeNoProof,
         );
         assert_eq!(
-            DriveDocumentCountQuery::detect_mode(&clauses, true, false).unwrap(),
+            DriveDocumentCountQuery::detect_mode(&clauses, CountMode::GroupByRange, false).unwrap(),
             DocumentCountMode::RangeNoProof,
         );
 
@@ -1952,13 +1954,14 @@ mod detect_mode_tests {
         // query carries In as outer `Key`s and the range as the
         // subquery; the verifier reconstructs the same shape.
         assert_eq!(
-            DriveDocumentCountQuery::detect_mode(&clauses, true, true).unwrap(),
+            DriveDocumentCountQuery::detect_mode(&clauses, CountMode::GroupByRange, true).unwrap(),
             DocumentCountMode::RangeDistinctProof,
         );
 
         // Prove + !distinct (aggregate) — still rejected, the
         // AggregateCountOnRange primitive can't fork.
-        let err = DriveDocumentCountQuery::detect_mode(&clauses, false, true).unwrap_err();
+        let err =
+            DriveDocumentCountQuery::detect_mode(&clauses, CountMode::Aggregate, true).unwrap_err();
         assert!(
             matches!(
                 err,
@@ -1970,17 +1973,18 @@ mod detect_mode_tests {
         );
     }
 
-    /// `return_distinct_counts_in_range = true` without a range → rejected.
+    /// `CountMode::GroupByRange` without a range clause → rejected.
     #[test]
     fn distinct_without_range_rejected() {
-        let err = DriveDocumentCountQuery::detect_mode(&[], true, false).unwrap_err();
+        let err =
+            DriveDocumentCountQuery::detect_mode(&[], CountMode::GroupByRange, false).unwrap_err();
         assert!(matches!(
             err,
             QuerySyntaxError::InvalidWhereClauseComponents(msg) if msg.contains("requires a range where-clause")
         ));
     }
 
-    /// `return_distinct_counts_in_range = true` + `prove = true` →
+    /// `CountMode::GroupByRange` + `prove = true` →
     /// `RangeDistinctProof`. Per-distinct-value counts come from a
     /// regular range proof against the property-name
     /// `ProvableCountTree` (no `AggregateCountOnRange` wrapper), with
@@ -1991,7 +1995,7 @@ mod detect_mode_tests {
     fn distinct_with_prove_is_range_distinct_proof() {
         let clauses = vec![gt_clause("color")];
         assert_eq!(
-            DriveDocumentCountQuery::detect_mode(&clauses, true, true).unwrap(),
+            DriveDocumentCountQuery::detect_mode(&clauses, CountMode::GroupByRange, true).unwrap(),
             DocumentCountMode::RangeDistinctProof,
         );
     }
@@ -2002,7 +2006,7 @@ mod detect_mode_tests {
     fn distinct_no_prove_with_range_is_range_no_proof() {
         let clauses = vec![gt_clause("color")];
         assert_eq!(
-            DriveDocumentCountQuery::detect_mode(&clauses, true, false).unwrap(),
+            DriveDocumentCountQuery::detect_mode(&clauses, CountMode::GroupByRange, false).unwrap(),
             DocumentCountMode::RangeNoProof,
         );
     }
@@ -2019,7 +2023,7 @@ mod detect_mode_tests {
     fn in_with_prove_routes_to_point_lookup_proof() {
         let clauses = vec![in_clause("a")];
         assert_eq!(
-            DriveDocumentCountQuery::detect_mode(&clauses, false, true).unwrap(),
+            DriveDocumentCountQuery::detect_mode(&clauses, CountMode::Aggregate, true).unwrap(),
             DocumentCountMode::PointLookupProof,
         );
     }

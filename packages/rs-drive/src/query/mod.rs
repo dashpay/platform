@@ -14,7 +14,7 @@ pub use {
 
 #[cfg(feature = "server")]
 pub use drive_document_count_query::{
-    DocumentCountRequest, DocumentCountResponse, RangeCountOptions,
+    CountMode, DocumentCountRequest, DocumentCountResponse, RangeCountOptions,
 };
 // Imports available when either "server" or "verify" features are enabled
 #[cfg(any(feature = "server", feature = "verify"))]

@@ -3950,7 +3950,7 @@ mod range_countable_index_e2e_tests {
             document_type,
             raw_where_value: where_clause_value,
             raw_order_by_value: dpp::platform_value::Value::Null,
-            return_distinct_counts_in_range: true,
+            mode: crate::query::CountMode::GroupByRange,
             limit: Some(too_large),
             prove: true,
             drive_config: &drive_config,

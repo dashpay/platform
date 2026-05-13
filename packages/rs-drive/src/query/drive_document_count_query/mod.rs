@@ -102,15 +102,93 @@ pub struct SplitCountEntry {
     pub count: u64,
 }
 
+/// SQL-shaped count-query mode — names the response shape the
+/// caller asked for via `(select, group_by)` on the wire.
+///
+/// **Two count-mode enums coexist in this module.** This one names
+/// the *output shape* the request produces (single aggregate vs
+/// per-group entries). [`DocumentCountMode`] below names the
+/// *executor strategy* (which proof primitive / which walk path
+/// Drive uses to compute that shape). `CountMode` lives on
+/// [`DocumentCountRequest`] as the caller-supplied contract;
+/// `DocumentCountMode` is derived from `(CountMode, where_clauses,
+/// prove)` by [`DriveDocumentCountQuery::detect_mode`] just before
+/// dispatch.
+///
+/// The invariants below are enforced upstream (in drive-abci's
+/// `validate_and_route`) before a `DocumentCountRequest` is built.
+/// They're documented here so any new caller knows the
+/// shape-validity contract attached to each variant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CountMode {
+    /// `select=COUNT, group_by=[]`. Single u64 result.
+    ///
+    /// Where-clause shapes accepted:
+    /// - empty (relies on a `documentsCountable: true` doctype),
+    /// - Equal-only (fully covered by a `countable: true` index),
+    /// - one `In` (per-In fan-out, summed server-side),
+    /// - one range (uses `AggregateCountOnRange` for prove,
+    ///   `RangeNoProof` for no-proof),
+    /// - one `In` + one range on the no-proof path (per-In fan-out
+    ///   each doing a range walk; prove is rejected).
+    ///
+    /// `limit` is structurally meaningless (aggregate is one row)
+    /// and is rejected upstream when set.
+    Aggregate,
+
+    /// `select=COUNT, group_by=[in_field]`. One entry per `In` value.
+    ///
+    /// Where-clause invariants: exactly one `In` clause whose field
+    /// matches `group_by[0]`; no range clause.
+    /// `limit` caps the number of In branches returned.
+    GroupByIn,
+
+    /// `select=COUNT, group_by=[range_field]`. One entry per distinct
+    /// value within the range.
+    ///
+    /// Where-clause invariants: exactly one range clause whose field
+    /// matches `group_by[0]`; no `In` clause.
+    /// `limit` caps the number of distinct values; on the prove
+    /// path it's validated-not-clamped (oversized values rejected
+    /// with `InvalidLimit`).
+    GroupByRange,
+
+    /// `select=COUNT, group_by=[in_field, range_field]`. One entry
+    /// per `(in_key, range_key)` pair.
+    ///
+    /// Where-clause invariants: exactly one `In` clause on `group_by[0]`
+    /// AND exactly one range clause on `group_by[1]`.
+    /// `limit` caps entries *per In branch* (not globally).
+    GroupByCompound,
+}
+
+impl CountMode {
+    /// Whether this mode produces a single aggregate u64 (vs
+    /// per-group entries). Aggregate is the `select=COUNT,
+    /// group_by=[]` shape; the three grouped variants produce
+    /// entries.
+    pub fn is_aggregate(self) -> bool {
+        matches!(self, Self::Aggregate)
+    }
+
+    /// Whether this mode requires the distinct walk on a range
+    /// clause (per-distinct-value entries via `KVCount` ops). Only
+    /// the two range-grouped variants do; aggregate and per-In
+    /// take other paths even when a range clause is present.
+    pub fn requires_distinct_walk(self) -> bool {
+        matches!(self, Self::GroupByRange | Self::GroupByCompound)
+    }
+}
+
 /// Classification of a count query's shape, used to dispatch to the
 /// right executor. Returned by
 /// [`DriveDocumentCountQuery::detect_mode`].
 ///
-/// The discriminator is purely a function of the where-clause operators
-/// + request flags (`return_distinct_counts_in_range`, `prove`); it
-/// does not depend on the contract's index set. Picking a covering
-/// index for the chosen mode is a separate step that requires the
-/// document type's `BTreeMap<String, Index>`.
+/// The discriminator is purely a function of the where-clause
+/// operators + the caller's [`CountMode`] + `prove`; it does not
+/// depend on the contract's index set. Picking a covering index for
+/// the chosen mode is a separate step that requires the document
+/// type's `BTreeMap<String, Index>`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DocumentCountMode {
     /// No range, no `In` — single summed entry with empty key. Reads
@@ -122,19 +200,22 @@ pub enum DocumentCountMode {
     PerInValue,
     /// Exactly one range clause, no proof — walks the property-name
     /// `ProvableCountTree`'s children inside the range. Returns either
-    /// a single summed entry or per-distinct-value entries depending on
-    /// `return_distinct_counts_in_range`.
+    /// a single summed entry or per-distinct-value entries depending
+    /// on whether the caller's [`CountMode`] requires a distinct walk
+    /// ([`CountMode::GroupByRange`] / [`CountMode::GroupByCompound`])
+    /// or not ([`CountMode::Aggregate`]).
     RangeNoProof,
     /// Exactly one range clause + `prove = true` +
-    /// `return_distinct_counts_in_range = false` — produces a grovedb
+    /// [`CountMode::Aggregate`] — produces a grovedb
     /// `AggregateCountOnRange` proof that verifies to a single u64.
     /// The merk-level primitive returns one aggregate; per-distinct-
     /// value entries with proof go through [`Self::RangeDistinctProof`]
     /// instead.
     RangeProof,
     /// Exactly one range clause + `prove = true` +
-    /// `return_distinct_counts_in_range = true` — produces a regular
-    /// range proof against the property-name `ProvableCountTree`. The
+    /// [`CountMode::GroupByRange`] or [`CountMode::GroupByCompound`]
+    /// — produces a regular range proof against the property-name
+    /// `ProvableCountTree`. The
     /// proof's `KVCount(key, value, count)` ops carry per-distinct-
     /// value counts, each cryptographically committed via
     /// `node_hash_with_count` to the merk root. The verifier walks the
