@@ -19,6 +19,22 @@ import SwiftUI
 import SwiftDashSDK
 import SwiftData
 
+/// Minimum surface of a tracked asset-lock row needed by the
+/// resume-picker anti-join. Exists so the pure filter
+/// `CreateIdentityView.resumableLocks(in:usedIndices:walletId:)` can
+/// be unit-tested with lightweight structs instead of forcing tests
+/// to spin up a SwiftData `ModelContainer` just to construct
+/// `PersistentAssetLock` `@Model` instances. `PersistentAssetLock`
+/// conforms automatically because it already exposes all three
+/// properties on its public surface.
+protocol AssetLockResumeRow {
+    var walletId: Data { get }
+    var statusRaw: Int { get }
+    var identityIndexRaw: Int32 { get }
+}
+
+extension PersistentAssetLock: AssetLockResumeRow {}
+
 struct CreateIdentityView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
@@ -1173,16 +1189,38 @@ struct CreateIdentityView: View {
         return allAssetLocks.first { $0.persistentModelID == id }
     }
 
-    /// Resumable asset locks for the given wallet. Filters down to:
-    /// - `walletId == walletId`
-    /// - `statusRaw >= 2` (InstantSendLocked / ChainLocked)
-    /// - No matching `PersistentIdentity` at the same
-    ///   `(walletId, identityIndex)` — the anti-join is post-fetch
-    ///   in Swift because SwiftData `#Predicate` can't express
-    ///   "no matching row in another model" cleanly.
+    /// Resumable asset locks for the given wallet. View entry point —
+    /// wraps the pure `Self.resumableLocks(in:usedIndices:walletId:)`
+    /// with the live `@Query` results so the pure helper stays testable
+    /// without a SwiftData container.
     private func resumableAssetLocks(for walletId: Data) -> [PersistentAssetLock] {
-        let usedIndices = usedIdentityIndices(for: walletId)
-        return allAssetLocks.filter { lock in
+        Self.resumableLocks(
+            in: allAssetLocks,
+            usedIndices: usedIdentityIndices(for: walletId),
+            walletId: walletId
+        )
+    }
+
+    /// Pure anti-join: returns the subset of `locks` that are
+    /// resumable for `walletId`. A lock is resumable iff
+    /// - `walletId` matches, AND
+    /// - `statusRaw >= 2` (InstantSendLocked or ChainLocked — only
+    ///   finalized locks can fund a Platform identity), AND
+    /// - the lock's `identityIndexRaw` slot is not in
+    ///   `usedIndices` (i.e. no `PersistentIdentity` already lives
+    ///   on this `(walletId, identityIndex)` pair).
+    ///
+    /// SwiftData `#Predicate` can't express "no matching row in
+    /// another model" cleanly, so this filter runs post-fetch. The
+    /// signature is intentionally generic over `AssetLockResumeRow`
+    /// so unit tests can feed it lightweight structs instead of
+    /// real `@Model` rows.
+    static func resumableLocks<R: AssetLockResumeRow>(
+        in locks: [R],
+        usedIndices: Set<UInt32>,
+        walletId: Data
+    ) -> [R] {
+        locks.filter { lock in
             guard lock.walletId == walletId else { return false }
             guard lock.statusRaw >= 2 else { return false }
             let slot = UInt32(bitPattern: lock.identityIndexRaw)
