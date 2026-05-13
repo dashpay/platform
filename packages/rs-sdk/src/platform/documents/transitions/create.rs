@@ -81,7 +81,12 @@ impl DocumentCreateTransitionBuilder {
         self
     }
 
-    /// Adds a user fee increase to the document create transition
+    /// Adds a user fee increase to the document create transition.
+    ///
+    /// The dedicated [`Self::user_fee_increase`] field is the single source
+    /// of truth for the effective value applied at sign time. Explicit
+    /// setters always win regardless of call order — see
+    /// [`Self::with_settings`] for the order-independence contract.
     ///
     /// # Arguments
     ///
@@ -95,7 +100,21 @@ impl DocumentCreateTransitionBuilder {
         self
     }
 
-    /// Adds settings to the document create transition
+    /// Adds settings to the document create transition.
+    ///
+    /// `user_fee_increase` and `state_transition_creation_options` are owned
+    /// by their dedicated builder fields, which are the single source of
+    /// truth for the effective values applied at sign time. This method
+    /// extracts those two fields out of the supplied [`PutSettings`] into
+    /// the dedicated fields **only if** the dedicated field is still
+    /// `None`, and then stores the remainder of `settings` (with those two
+    /// fields cleared) on the builder.
+    ///
+    /// Net effect: explicit setters always win over `with_settings` for
+    /// `user_fee_increase` and `state_transition_creation_options`, regardless
+    /// of call order. All other [`PutSettings`] fields (timeouts, retry
+    /// behavior, nonce stale time, etc.) flow through unchanged to be used
+    /// for nonce allocation and broadcast.
     ///
     /// # Arguments
     ///
@@ -104,12 +123,28 @@ impl DocumentCreateTransitionBuilder {
     /// # Returns
     ///
     /// * `Self` - The updated builder
-    pub fn with_settings(mut self, settings: PutSettings) -> Self {
+    pub fn with_settings(mut self, mut settings: PutSettings) -> Self {
+        if self.user_fee_increase.is_none() {
+            self.user_fee_increase = settings.user_fee_increase;
+        }
+        if self.state_transition_creation_options.is_none() {
+            self.state_transition_creation_options = settings.state_transition_creation_options;
+        }
+        // Strip the fee/creation-options fields from the stored settings so
+        // the dedicated builder fields are the sole source of truth at
+        // sign time. The remainder of `settings` flows through unchanged.
+        settings.user_fee_increase = None;
+        settings.state_transition_creation_options = None;
         self.settings = Some(settings);
         self
     }
 
-    /// Adds creation_options to the document create transition
+    /// Adds creation_options to the document create transition.
+    ///
+    /// The dedicated [`Self::state_transition_creation_options`] field is the
+    /// single source of truth for the effective value applied at sign time.
+    /// Explicit setters always win regardless of call order — see
+    /// [`Self::with_settings`] for the order-independence contract.
     ///
     /// # Arguments
     ///
@@ -241,6 +276,150 @@ impl DocumentCreateTransitionBuilder {
         ensure_valid_state_transition_structure(&state_transition, platform_version)?;
 
         Ok(state_transition)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::platform::transition::put_settings::PutSettings;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::document::DocumentV0;
+    use dpp::platform_value::Identifier as PVIdentifier;
+    use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
+    use dpp::tests::fixtures::get_data_contract_fixture;
+    use dpp::version::PlatformVersion;
+
+    fn fixture_data_contract() -> Arc<DataContract> {
+        Arc::new(
+            get_data_contract_fixture(
+                None,
+                Default::default(),
+                PlatformVersion::latest().protocol_version,
+            )
+            .data_contract_owned(),
+        )
+    }
+
+    fn fixture_document(contract: &DataContract) -> Document {
+        Document::V0(DocumentV0 {
+            id: PVIdentifier::from([1u8; 32]),
+            owner_id: contract.owner_id(),
+            properties: Default::default(),
+            revision: None,
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+        })
+    }
+
+    /// `with_settings` must extract `user_fee_increase` and
+    /// `state_transition_creation_options` from the supplied `PutSettings`
+    /// into the dedicated builder fields so `sign_with_nonce` (which reads
+    /// only the dedicated fields) honors them on the wire.
+    #[test]
+    fn with_settings_extracts_fee_and_options_into_dedicated_fields() {
+        let data_contract = fixture_data_contract();
+        let document = fixture_document(&data_contract);
+        let settings = PutSettings {
+            user_fee_increase: Some(42),
+            state_transition_creation_options: Some(StateTransitionCreationOptions::default()),
+            ..Default::default()
+        };
+
+        let builder = DocumentCreateTransitionBuilder::new(
+            data_contract,
+            "niceDocument".to_string(),
+            document,
+            [0u8; 32],
+        )
+        .with_settings(settings);
+
+        assert_eq!(builder.user_fee_increase, settings.user_fee_increase);
+        assert_eq!(
+            builder.state_transition_creation_options,
+            settings.state_transition_creation_options
+        );
+        // Stored settings has those two fields cleared so the dedicated
+        // fields are the sole source of truth at sign time.
+        let stored = builder.settings.expect("settings must be stored");
+        assert_eq!(stored.user_fee_increase, None);
+        assert_eq!(stored.state_transition_creation_options, None);
+    }
+
+    /// Explicit setters must beat `with_settings` regardless of call order
+    /// (mirrors the delete builder's contract).
+    #[test]
+    fn explicit_setters_beat_settings_regardless_of_order() {
+        let data_contract = fixture_data_contract();
+        let document = fixture_document(&data_contract);
+
+        let settings_first = DocumentCreateTransitionBuilder::new(
+            data_contract.clone(),
+            "niceDocument".to_string(),
+            document.clone(),
+            [0u8; 32],
+        )
+        .with_settings(PutSettings {
+            user_fee_increase: Some(7),
+            ..Default::default()
+        })
+        .with_user_fee_increase(42);
+
+        let explicit_first = DocumentCreateTransitionBuilder::new(
+            data_contract,
+            "niceDocument".to_string(),
+            document,
+            [0u8; 32],
+        )
+        .with_user_fee_increase(42)
+        .with_settings(PutSettings {
+            user_fee_increase: Some(7),
+            ..Default::default()
+        });
+
+        assert_eq!(settings_first.user_fee_increase, Some(42));
+        assert_eq!(explicit_first.user_fee_increase, Some(42));
+    }
+
+    /// `with_settings` must preserve every non-fee/options `PutSettings`
+    /// field as supplied so timeouts, retry behavior, and nonce stale time
+    /// still drive nonce allocation and broadcast.
+    #[test]
+    fn with_settings_preserves_other_put_settings_fields() {
+        let data_contract = fixture_data_contract();
+        let document = fixture_document(&data_contract);
+        let original = PutSettings {
+            user_fee_increase: Some(7),
+            state_transition_creation_options: Some(StateTransitionCreationOptions::default()),
+            identity_nonce_stale_time_s: Some(123),
+            wait_timeout: Some(std::time::Duration::from_secs(45)),
+            ..Default::default()
+        };
+
+        let builder = DocumentCreateTransitionBuilder::new(
+            data_contract,
+            "niceDocument".to_string(),
+            document,
+            [0u8; 32],
+        )
+        .with_settings(original);
+
+        let stored = builder.settings.expect("settings must be stored");
+        assert_eq!(stored.user_fee_increase, None);
+        assert_eq!(stored.state_transition_creation_options, None);
+        assert_eq!(
+            stored.identity_nonce_stale_time_s,
+            original.identity_nonce_stale_time_s
+        );
+        assert_eq!(stored.wait_timeout, original.wait_timeout);
     }
 }
 

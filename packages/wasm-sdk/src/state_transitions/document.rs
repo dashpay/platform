@@ -100,7 +100,7 @@ use wasm_dpp2::state_transitions::batch::token_payment_info::{
 };
 use wasm_dpp2::utils::{
     get_class_type, try_from_options_optional, try_from_options_with, try_to_string, try_to_u64,
-    IntoWasm,
+    IntoWasm, JsValueExt,
 };
 use wasm_dpp2::IdentitySignerWasm;
 use wasm_dpp2::StateTransitionWasm;
@@ -154,25 +154,74 @@ fn try_from_options_optional_token_payment_info(
         return Ok(None);
     }
 
-    // Accept either an existing wasm-dpp2 `TokenPaymentInfo` class instance
-    // (e.g. produced by `new TokenPaymentInfo(...)` or returned by another
-    // wasm-sdk accessor) **or** a plain `DocumentTokenPaymentInfo` options
-    // bag. We detect the class type via the `__type` getter set up by
-    // `impl_wasm_type_info!` and convert via `TryFrom<&JsValue>` (which uses
-    // the `IntoWasm` pointer extraction) before falling back to the
-    // constructor-from-options path for plain objects.
-    let class_type = get_class_type(&token_payment_info_value).unwrap_or_default();
-    let token_payment_info = if class_type == "TokenPaymentInfo" {
-        TokenPaymentInfoWasm::try_from(&token_payment_info_value)
-            .map_err(|err| WasmSdkError::invalid_argument(err.to_string()))?
-    } else {
-        TokenPaymentInfoWasm::constructor(
+    // We support two input shapes for `tokenPaymentInfo`:
+    //
+    // 1. A plain `DocumentTokenPaymentInfo` options bag (no `__type`
+    //    marker) — parsed via the public constructor.
+    // 2. An existing wasm-dpp2 `TokenPaymentInfo` class instance produced
+    //    by `new TokenPaymentInfo(...)` (whose `__type` getter returns
+    //    `"TokenPaymentInfo"`) — copied through its public getters and then
+    //    parsed via the public constructor.
+    //
+    // Avoid `TokenPaymentInfoWasm::try_from(&value)` here: that path reads
+    // the wasm-bindgen `__wbg_ptr` field, and this API accepts untrusted JS
+    // values. A forged object can spoof the public `__type` getter/string,
+    // but it cannot force us to dereference an arbitrary wasm pointer when
+    // we only copy public fields into a fresh options bag.
+    let class_type = get_class_type(&token_payment_info_value)
+        .map_err(|err| WasmSdkError::invalid_argument(err.to_string()))?;
+    let token_payment_info = match class_type.as_str() {
+        "TokenPaymentInfo" => TokenPaymentInfoWasm::constructor(
+            token_payment_info_options_from_public_fields(&token_payment_info_value)?,
+        )
+        .map_err(|err| WasmSdkError::invalid_argument(err.to_string()))?,
+        // Plain object path: no `__type` getter is set up, so
+        // `get_class_type` returns `Ok("")` (empty string default in
+        // `JsValue::as_string().unwrap_or_default()`). Treat the empty
+        // string the same as "no class marker present".
+        "" => TokenPaymentInfoWasm::constructor(
             token_payment_info_value.unchecked_into::<TokenPaymentInfoOptionsJs>(),
         )
-        .map_err(|err| WasmSdkError::invalid_argument(err.to_string()))?
+        .map_err(|err| WasmSdkError::invalid_argument(err.to_string()))?,
+        other => {
+            return Err(WasmSdkError::invalid_argument(format!(
+                "tokenPaymentInfo must be a plain DocumentTokenPaymentInfo options object \
+                 or a TokenPaymentInfo instance, got class '{other}'"
+            )));
+        }
     };
 
     Ok(Some(token_payment_info.into()))
+}
+
+fn token_payment_info_options_from_public_fields(
+    value: &JsValue,
+) -> Result<TokenPaymentInfoOptionsJs, WasmSdkError> {
+    let options = js_sys::Object::new();
+    for field in [
+        "paymentTokenContractId",
+        "tokenContractPosition",
+        "minimumTokenCost",
+        "maximumTokenCost",
+        "gasFeesPaidBy",
+    ] {
+        let field_value = Reflect::get(value, &JsValue::from_str(field)).map_err(|err| {
+            WasmSdkError::invalid_argument(format!(
+                "failed to read tokenPaymentInfo.{field}: {}",
+                err.error_message()
+            ))
+        })?;
+        if !field_value.is_undefined() {
+            Reflect::set(&options, &JsValue::from_str(field), &field_value).map_err(|err| {
+                WasmSdkError::invalid_argument(format!(
+                    "failed to copy tokenPaymentInfo.{field}: {}",
+                    err.error_message()
+                ))
+            })?;
+        }
+    }
+
+    Ok(options.unchecked_into::<TokenPaymentInfoOptionsJs>())
 }
 
 // ============================================================================
@@ -278,6 +327,18 @@ impl WasmSdk {
 
         let mut entropy_array = [0u8; 32];
         entropy_array.copy_from_slice(&entropy);
+
+        // Reject id-vs-entropy mismatches *before* fetching the contract.
+        // The same invariant is independently enforced by the strict rs-sdk
+        // helper as the security boundary; this just saves a round trip on
+        // caller mistakes.
+        ensure_document_id_matches_entropy_fast(
+            document.id(),
+            contract_id,
+            document.owner_id(),
+            &document_type_name,
+            &entropy_array,
+        )?;
 
         // Extract identity key from options
         let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
@@ -684,6 +745,18 @@ impl WasmSdk {
 
         let mut entropy_array = [0u8; 32];
         entropy_array.copy_from_slice(&entropy);
+
+        // Reject id-vs-entropy mismatches *before* fetching the contract.
+        // The same invariant is independently enforced by the strict rs-sdk
+        // helper as the security boundary; this just saves a round trip on
+        // caller mistakes.
+        ensure_document_id_matches_entropy_fast(
+            document.id(),
+            contract_id,
+            document.owner_id(),
+            &document_type_name,
+            &entropy_array,
+        )?;
 
         // Extract identity key from options
         let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
@@ -1338,41 +1411,87 @@ impl WasmSdk {
 // Helper Functions
 // ============================================================================
 
+/// Fast-fail verification that `document.id` matches the v0 document-id
+/// derivation for `(contract_id, owner_id, document_type_name, entropy)`.
+///
+/// This is the same invariant the strict create helper enforces, but lifted
+/// out of the rs-sdk path so wasm-sdk `documentCreate` /
+/// `prepareDocumentCreate` can reject mismatches **before** the contract is
+/// fetched from Platform (or read from local cache), saving a round trip on
+/// caller mistakes. The rs-sdk helper still enforces this independently as
+/// the security boundary; this is purely an early reject.
+fn ensure_document_id_matches_entropy_fast(
+    document_id: Identifier,
+    contract_id: Identifier,
+    owner_id: Identifier,
+    document_type_name: &str,
+    entropy: &[u8; 32],
+) -> Result<(), WasmSdkError> {
+    let expected = Document::generate_document_id_v0(
+        &contract_id,
+        &owner_id,
+        document_type_name,
+        entropy.as_slice(),
+    );
+    if document_id != expected {
+        return Err(WasmSdkError::invalid_argument(format!(
+            "document.id does not match \
+             generate_document_id_v0(dataContractId, ownerId, documentTypeName, entropy); \
+             expected {expected}, got {document_id}. \
+             The Document constructor derives both together by default; if you set the \
+             id or entropy explicitly, keep them consistent."
+        )));
+    }
+    Ok(())
+}
+
 fn ensure_document_create_revision(
     revision: Option<u64>,
     replace_api_name: &str,
 ) -> Result<(), WasmSdkError> {
-    if let Some(revision) = revision {
-        if revision != INITIAL_REVISION {
-            return Err(WasmSdkError::invalid_argument(format!(
-                "Document revision is {} but create requires revision to be unset or {}. Use {} for existing documents.",
-                revision, INITIAL_REVISION, replace_api_name,
-            )));
-        }
+    match revision {
+        None => Ok(()),
+        Some(rev) if rev == INITIAL_REVISION => Ok(()),
+        // `Some(0)` is invalid for *both* create and replace, so do not
+        // point users at the sibling API — they would just see the same
+        // rejection from `ensure_document_replace_revision`. Emit a
+        // dedicated message that makes the always-invalid value explicit.
+        Some(0) => Err(WasmSdkError::invalid_argument(format!(
+            "Document revision is 0 but revision 0 is invalid for both create and replace. \
+             Use unset or {} (INITIAL_REVISION) for create, or > {} for replace.",
+            INITIAL_REVISION, INITIAL_REVISION,
+        ))),
+        Some(rev) => Err(WasmSdkError::invalid_argument(format!(
+            "Document revision is {} but create requires revision to be unset or {}. Use {} for existing documents.",
+            rev, INITIAL_REVISION, replace_api_name,
+        ))),
     }
-
-    Ok(())
 }
 
 fn ensure_document_replace_revision(
     revision: Option<u64>,
     create_api_name: &str,
 ) -> Result<(), WasmSdkError> {
-    let revision = revision.ok_or_else(|| {
-        WasmSdkError::invalid_argument(format!(
+    match revision {
+        Some(rev) if rev > INITIAL_REVISION => Ok(()),
+        // `Some(0)` is invalid for *both* create and replace, so do not
+        // point users at the sibling API — they would just see the same
+        // rejection from `ensure_document_create_revision`. Emit a
+        // dedicated message that makes the always-invalid value explicit.
+        Some(0) => Err(WasmSdkError::invalid_argument(format!(
+            "Document revision is 0 but revision 0 is invalid for both create and replace. \
+             Use unset or {} (INITIAL_REVISION) for create, or > {} for replace.",
+            INITIAL_REVISION, INITIAL_REVISION,
+        ))),
+        Some(rev) => Err(WasmSdkError::invalid_argument(format!(
+            "Document revision is {} but replace requires revision > {}. Use {} for new documents.",
+            rev, INITIAL_REVISION, create_api_name,
+        ))),
+        None => Err(WasmSdkError::invalid_argument(format!(
             "Document must have a revision set for replace. Use {} for new documents.",
             create_api_name,
-        ))
-    })?;
-
-    if revision <= INITIAL_REVISION {
-        return Err(WasmSdkError::invalid_argument(format!(
-            "Document revision is {} but replace requires revision > {}. Use {} for new documents.",
-            revision, INITIAL_REVISION, create_api_name,
-        )));
+        ))),
     }
-
-    Ok(())
 }
 
 /// Get an owned DocumentType from a DataContract
@@ -1409,10 +1528,48 @@ mod tests {
 
     #[test]
     fn create_revision_guard_rejects_non_initial_revision() {
-        let err = ensure_document_create_revision(Some(0), "prepareDocumentReplace")
-            .expect_err("revision 0 should fail");
+        let err = ensure_document_create_revision(Some(2), "prepareDocumentReplace")
+            .expect_err("revision > INITIAL_REVISION should fail");
         assert!(err.to_string().contains("prepareDocumentReplace"));
         assert!(err.to_string().contains("create requires revision"));
+    }
+
+    /// Revision `Some(0)` is invalid for *both* create and replace. The
+    /// rejection message must therefore not point users at the sibling
+    /// API (which would also reject), it must say revision 0 is invalid
+    /// for both paths.
+    #[test]
+    fn create_revision_guard_rejects_zero_with_dedicated_message() {
+        let err = ensure_document_create_revision(Some(0), "prepareDocumentReplace")
+            .expect_err("revision 0 should fail");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("revision 0 is invalid for both create and replace"),
+            "expected dedicated revision-0 message, got: {msg}"
+        );
+        assert!(
+            !msg.contains("prepareDocumentReplace"),
+            "revision-0 message must not point users at the sibling API which also rejects: {msg}"
+        );
+    }
+
+    /// Revision `Some(0)` is invalid for *both* create and replace. The
+    /// rejection message must therefore not point users at the sibling
+    /// API (which would also reject), it must say revision 0 is invalid
+    /// for both paths.
+    #[test]
+    fn replace_revision_guard_rejects_zero_with_dedicated_message() {
+        let err = ensure_document_replace_revision(Some(0), "prepareDocumentCreate")
+            .expect_err("revision 0 should fail");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("revision 0 is invalid for both create and replace"),
+            "expected dedicated revision-0 message, got: {msg}"
+        );
+        assert!(
+            !msg.contains("prepareDocumentCreate"),
+            "revision-0 message must not point users at the sibling API which also rejects: {msg}"
+        );
     }
 
     #[test]
@@ -1435,6 +1592,50 @@ mod tests {
                 .expect_err("initial revision should fail");
         assert!(initial.to_string().contains("prepareDocumentCreate"));
         assert!(initial.to_string().contains("replace requires revision"));
+    }
+
+    /// `ensure_document_id_matches_entropy_fast` must produce the same
+    /// derivation as `Document::generate_document_id_v0`, so a matching id
+    /// passes and a non-matching id is rejected with a clear message. This
+    /// lets `documentCreate` / `prepareDocumentCreate` reject caller
+    /// mistakes before fetching the contract.
+    #[test]
+    fn fast_id_matches_entropy_accepts_matching_id_and_rejects_mismatch() {
+        let contract_id = Identifier::from([1u8; 32]);
+        let owner_id = Identifier::from([2u8; 32]);
+        let entropy = [3u8; 32];
+        let document_type_name = "note";
+        let expected = Document::generate_document_id_v0(
+            &contract_id,
+            &owner_id,
+            document_type_name,
+            entropy.as_slice(),
+        );
+
+        assert!(ensure_document_id_matches_entropy_fast(
+            expected,
+            contract_id,
+            owner_id,
+            document_type_name,
+            &entropy,
+        )
+        .is_ok());
+
+        let bogus = Identifier::from([0xAB; 32]);
+        assert_ne!(bogus, expected, "test precondition");
+        let err = ensure_document_id_matches_entropy_fast(
+            bogus,
+            contract_id,
+            owner_id,
+            document_type_name,
+            &entropy,
+        )
+        .expect_err("mismatch must be rejected");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("does not match"),
+            "expected id-mismatch message, got: {msg}"
+        );
     }
 
     /// Regression test for the UnsupportedFeatureError pass-through path.

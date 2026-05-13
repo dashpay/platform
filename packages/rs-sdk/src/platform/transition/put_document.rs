@@ -517,18 +517,76 @@ pub async fn build_signed_document_replace_transition<S: Signer<IdentityPublicKe
     signer: &S,
     settings: Option<PutSettings>,
 ) -> Result<StateTransition, Error> {
+    // Validate revision *before* allocating a nonce so caller mistakes
+    // never bump the local nonce cache.
     ensure_revision_for_replace(document.revision())?;
-    build_signed_document_create_or_replace_transition_legacy(
+
+    let owner_id = document.owner_id();
+    let contract_id = document_type.data_contract_id();
+    let new_identity_contract_nonce = sdk
+        .get_identity_contract_nonce(owner_id, contract_id, true, settings)
+        .await?;
+
+    let result = build_and_sign_replace_after_nonce(
         sdk,
         document,
         document_type,
-        None, // entropy is unused on the replace path
         identity_public_key,
         token_payment_info,
         signer,
         settings,
+        new_identity_contract_nonce,
     )
-    .await
+    .await;
+
+    match result {
+        Ok(transition) => Ok(transition),
+        Err(err) => {
+            sdk.rollback_identity_contract_nonce(
+                owner_id,
+                contract_id,
+                new_identity_contract_nonce,
+            )
+            .await;
+            Err(err)
+        }
+    }
+}
+
+/// Inner build/sign/validation step for the strict replace path.
+///
+/// Runs after the identity-contract nonce has been allocated; the caller is
+/// responsible for rolling that nonce back if this returns an error. The
+/// replace path goes straight to
+/// [`BatchTransition::new_document_replacement_transition_from_document`]
+/// — entropy is intentionally not threaded through here because replacement
+/// transitions do not derive a new document id.
+#[allow(clippy::too_many_arguments)]
+async fn build_and_sign_replace_after_nonce<S: Signer<IdentityPublicKey>>(
+    sdk: &Sdk,
+    document: &Document,
+    document_type: &DocumentType,
+    identity_public_key: &IdentityPublicKey,
+    token_payment_info: Option<TokenPaymentInfo>,
+    signer: &S,
+    settings: Option<PutSettings>,
+    new_identity_contract_nonce: u64,
+) -> Result<StateTransition, Error> {
+    let put_settings = settings.unwrap_or_default();
+    let transition = BatchTransition::new_document_replacement_transition_from_document(
+        document.clone(),
+        document_type.as_ref(),
+        identity_public_key,
+        new_identity_contract_nonce,
+        put_settings.user_fee_increase.unwrap_or_default(),
+        token_payment_info,
+        signer,
+        sdk.version(),
+        put_settings.state_transition_creation_options,
+    )
+    .await?;
+    ensure_valid_state_transition_structure(&transition, sdk.version())?;
+    Ok(transition)
 }
 
 /// Inner build/sign/validation step shared by the create-or-replace dispatch.

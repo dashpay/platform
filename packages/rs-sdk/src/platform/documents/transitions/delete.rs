@@ -184,10 +184,13 @@ impl DocumentDeleteTransitionBuilder {
     /// Signs the document delete transition.
     ///
     /// Allocates a fresh identity-contract nonce from `sdk` and delegates to
-    /// [`Self::sign_with_nonce`]. Use [`Self::sign_with_nonce`] directly if
-    /// you need to pre-allocate the nonce so a pre-broadcast failure can roll
-    /// it back via
-    /// [`Sdk::rollback_identity_contract_nonce`](crate::Sdk::rollback_identity_contract_nonce).
+    /// [`Self::sign_with_nonce`]. If signing fails *after* the nonce has been
+    /// allocated, the bumped identity-contract nonce is conditionally rolled
+    /// back via
+    /// [`Sdk::rollback_identity_contract_nonce`](crate::Sdk::rollback_identity_contract_nonce)
+    /// so the local cache does not advance past a nonce the network never
+    /// observed. Use [`Self::sign_with_nonce`] directly if you need to
+    /// pre-allocate the nonce yourself and handle rollback at the call site.
     ///
     /// # Arguments
     ///
@@ -206,22 +209,32 @@ impl DocumentDeleteTransitionBuilder {
         signer: &impl Signer<IdentityPublicKey>,
         platform_version: &PlatformVersion,
     ) -> Result<StateTransition, Error> {
+        let owner_id = self.owner_id;
+        let contract_id = self.data_contract.id();
         let identity_contract_nonce = sdk
-            .get_identity_contract_nonce(
-                self.owner_id,
-                self.data_contract.id(),
-                true,
-                self.settings,
-            )
+            .get_identity_contract_nonce(owner_id, contract_id, true, self.settings)
             .await?;
 
-        self.sign_with_nonce(
-            identity_contract_nonce,
-            identity_public_key,
-            signer,
-            platform_version,
-        )
-        .await
+        match self
+            .sign_with_nonce(
+                identity_contract_nonce,
+                identity_public_key,
+                signer,
+                platform_version,
+            )
+            .await
+        {
+            Ok(transition) => Ok(transition),
+            Err(err) => {
+                sdk.rollback_identity_contract_nonce(
+                    owner_id,
+                    contract_id,
+                    identity_contract_nonce,
+                )
+                .await;
+                Err(err)
+            }
+        }
     }
 
     /// Signs the document delete transition using a pre-allocated
@@ -277,6 +290,11 @@ impl DocumentDeleteTransitionBuilder {
         )
         .await?;
 
+        // Run the same structure validation as create/replace so callers
+        // of the builder API get the same pre-broadcast guarantees as the
+        // shared `build_signed_document_delete_transition` helper.
+        ensure_valid_state_transition_structure(&state_transition, platform_version)?;
+
         Ok(state_transition)
     }
 }
@@ -300,10 +318,9 @@ pub enum DocumentDeleteResult {
 ///
 /// - allocates a fresh identity-contract nonce via
 ///   [`Sdk::get_identity_contract_nonce`] with `bump_first = true`,
-/// - signs the transition by delegating to
-///   [`DocumentDeleteTransitionBuilder::sign_with_nonce`],
-/// - runs structure validation via
-///   [`ensure_valid_state_transition_structure`], and
+/// - signs and structurally validates the transition by delegating to
+///   [`DocumentDeleteTransitionBuilder::sign_with_nonce`] (which calls
+///   [`ensure_valid_state_transition_structure`] internally), and
 /// - on any **pre-broadcast** error (sign/build or local structure
 ///   validation) conditionally rolls the bumped identity-contract nonce
 ///   back via [`Sdk::rollback_identity_contract_nonce`], so the local
@@ -324,7 +341,7 @@ pub async fn build_signed_document_delete_transition<S: Signer<IdentityPublicKey
         .get_identity_contract_nonce(owner_id, contract_id, true, builder.settings)
         .await?;
 
-    let state_transition = match builder
+    match builder
         .sign_with_nonce(
             identity_contract_nonce,
             identity_public_key,
@@ -333,21 +350,13 @@ pub async fn build_signed_document_delete_transition<S: Signer<IdentityPublicKey
         )
         .await
     {
-        Ok(transition) => transition,
+        Ok(transition) => Ok(transition),
         Err(err) => {
             sdk.rollback_identity_contract_nonce(owner_id, contract_id, identity_contract_nonce)
                 .await;
-            return Err(err);
+            Err(err)
         }
-    };
-
-    if let Err(err) = ensure_valid_state_transition_structure(&state_transition, sdk.version()) {
-        sdk.rollback_identity_contract_nonce(owner_id, contract_id, identity_contract_nonce)
-            .await;
-        return Err(err);
     }
-
-    Ok(state_transition)
 }
 
 #[cfg(test)]
@@ -675,7 +684,7 @@ mod tests {
             Identifier::default(),
             Identifier::default(),
         )
-        .with_settings(original_settings.clone())
+        .with_settings(original_settings)
         .with_user_fee_increase(42)
         .with_state_transition_creation_options(explicit_options);
 
