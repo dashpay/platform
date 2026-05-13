@@ -332,7 +332,7 @@ struct IdentitiesContentView: View {
     /// Generic over `AssetLockResumeRow` (the same protocol the
     /// per-wallet helper uses) so the pure filter is unit-testable
     /// without spinning up a SwiftData container.
-    static func crossWalletResumableLocks<R: AssetLockResumeRow>(
+    nonisolated static func crossWalletResumableLocks<R: AssetLockResumeRow>(
         in locks: [R],
         usedSlots: Set<UsedSlot>
     ) -> [R] {

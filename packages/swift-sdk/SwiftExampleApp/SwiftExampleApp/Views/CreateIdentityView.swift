@@ -20,10 +20,11 @@ import SwiftDashSDK
 import SwiftData
 
 /// Minimum surface of a tracked asset-lock row needed by the
-/// resume-picker anti-join. Exists so the pure filter
-/// `CreateIdentityView.resumableLocks(in:usedIndices:walletId:)` can
-/// be unit-tested with lightweight structs instead of forcing tests
-/// to spin up a SwiftData `ModelContainer` just to construct
+/// cross-wallet anti-join behind the Identities-tab "Resumable
+/// Registrations" section. Exists so the pure filter
+/// `IdentitiesContentView.crossWalletResumableLocks(in:usedSlots:)`
+/// can be unit-tested with lightweight structs instead of forcing
+/// tests to spin up a SwiftData `ModelContainer` just to construct
 /// `PersistentAssetLock` `@Model` instances. `PersistentAssetLock`
 /// conforms automatically because it already exposes all three
 /// properties on its public surface.
@@ -94,11 +95,13 @@ struct CreateIdentityView: View {
     /// Core-address `isUsed` flag).
     @Query private var allIdentities: [PersistentIdentity]
 
-    /// All tracked asset locks across wallets. Filtered down to
-    /// resumable rows (status >= `InstantSendLocked`, no matching
-    /// `PersistentIdentity` at the same `(walletId, identityIndexRaw)`)
-    /// inside `resumableAssetLocks(for:)` so the anti-join — which
-    /// SwiftData predicates can't express cross-model — stays in Swift.
+    /// All tracked asset locks across wallets. Used here only to
+    /// resolve `selectedAssetLockId` (the resume-flow init seed
+    /// from Path B) back to a concrete row so the submit gate can
+    /// hand its outpoint to the FFI. The cross-wallet anti-join
+    /// that drives the Identities-tab Resumable Registrations
+    /// section lives in `IdentitiesContentView` and runs against
+    /// its own `@Query`.
     @Query(sort: [SortDescriptor(\PersistentAssetLock.updatedAt, order: .reverse)])
     private var allAssetLocks: [PersistentAssetLock]
 
@@ -208,10 +211,21 @@ struct CreateIdentityView: View {
                     // continues to run if this sheet is dismissed.
                     RegistrationProgressSection(controller: controller)
                     terminalSection(for: controller)
+                } else if let lock = preselectedAssetLock {
+                    // Path B (Resumable Registrations → Resume):
+                    // wallet + lock + slot are all pinned by the
+                    // tapped row, so the form collapses to a
+                    // read-only summary and a single submit button.
+                    // The picker UI is intentionally absent — the
+                    // user already chose the lock on the Identities
+                    // tab; re-prompting would be noise.
+                    resumeSummarySection(for: lock)
+                    if canSubmit {
+                        submitSection
+                    }
                 } else {
                     sourceWalletSection
                     fundingSection
-                    assetLockPickerIfNeeded
                     amountSection
                     identityIndexSection
                     if canSubmit {
@@ -347,15 +361,86 @@ struct CreateIdentityView: View {
         }
     }
 
-    /// Resume picker shown only when the user picked
-    /// `.unusedAssetLock` against a wallet. Hidden otherwise so the
-    /// form stays compact for the common "fund from account" paths.
+    /// Read-only summary shown in place of the source-wallet /
+    /// funding-source / amount / identity-index sections when the
+    /// caller pre-pinned an asset lock via `init(preselectedAssetLock:)`
+    /// (Path B — Identities tab → "Resumable Registrations" → Resume).
+    /// The choices are already made; this view confirms them so the
+    /// user can sanity-check before tapping Create Identity.
     @ViewBuilder
-    private var assetLockPickerIfNeeded: some View {
-        if case .wallet(let walletId) = walletSelection,
-           fundingSelection == .unusedAssetLock {
-            assetLockPickerSection(for: walletId)
+    private func resumeSummarySection(for lock: PersistentAssetLock) -> some View {
+        let walletLabel = wallets
+            .first(where: { $0.walletId == lock.walletId })?
+            .label ?? "Wallet"
+        Section {
+            summaryRow("Wallet", value: walletLabel)
+            summaryRow(
+                "Asset Lock",
+                value: shortOutPoint(lock.outPointHex),
+                monospaced: true
+            )
+            summaryRow(
+                "Amount",
+                value: Self.formatDash(
+                    raw: UInt64(bitPattern: Int64(lock.amountDuffs)),
+                    divisor: Double(Self.duffsPerDash)
+                )
+            )
+            summaryRow(
+                "Status",
+                value: Self.assetLockStatusLabel(rawValue: lock.statusRaw)
+            )
+            summaryRow(
+                "Identity Slot",
+                value: "#\(UInt32(bitPattern: lock.identityIndexRaw))"
+            )
+        } header: {
+            Text("Resuming Registration")
+        } footer: {
+            Text(
+                "Tap Create Identity to complete this in-flight "
+                + "registration. The wallet, slot, and asset lock are "
+                + "fixed by the original registration."
+            )
         }
+    }
+
+    /// One key/value row used by `resumeSummarySection`. Plain
+    /// `HStack` rather than `LabeledContent` because the value should
+    /// flow with the row's content style (so the txid prefix can be
+    /// monospaced) and `LabeledContent` resists styling overrides
+    /// on its value slot.
+    @ViewBuilder
+    private func summaryRow(
+        _ label: String,
+        value: String,
+        monospaced: Bool = false
+    ) -> some View {
+        HStack {
+            Text(label)
+            Spacer()
+            let valueText = Text(value)
+                .foregroundColor(.secondary)
+            if monospaced {
+                valueText.font(.system(.body, design: .monospaced))
+            } else {
+                valueText
+            }
+        }
+    }
+
+    /// First 8 hex chars of the txid plus the vout, derived from the
+    /// canonical `<txid>:<vout>` outpoint encoding. Mirrors the row
+    /// format `ResumableRegistrationRow` uses on the Identities tab
+    /// so the same lock reads the same way across surfaces.
+    private func shortOutPoint(_ outPointHex: String) -> String {
+        let parts = outPointHex.split(
+            separator: ":",
+            maxSplits: 1,
+            omittingEmptySubsequences: false
+        )
+        guard parts.count == 2 else { return outPointHex }
+        return "\(parts[0].prefix(8)):\(parts[1])"
     }
 
     @ViewBuilder
@@ -369,20 +454,12 @@ struct CreateIdentityView: View {
                     Text("\(option.label) — \(option.balanceText)")
                         .tag(Optional(FundingSelection.account(id: option.persistentId)))
                 }
-                Divider()
-                Text("Fund from unused Asset Lock")
-                    .tag(Optional(FundingSelection.unusedAssetLock))
             }
             .onChange(of: fundingSelection) { _, newValue in
                 // Pre-fill the amount with the full available balance
                 // of the selected Platform Payment account so the
                 // happy path is one tap. Users can dial it down.
                 amountDash = defaultAmountString(for: newValue)
-                // Clear any prior asset-lock pick when the user
-                // switches away from `.unusedAssetLock` — a stale
-                // selection would otherwise stick around invisible
-                // and the submit gate would still accept it.
-                selectedAssetLockId = nil
             }
         } header: {
             Text("Funding Source")
@@ -390,109 +467,10 @@ struct CreateIdentityView: View {
             Text(
                 "Any account on the selected wallet with a balance can fund "
                 + "the identity — Core or Platform Payment. Empty accounts "
-                + "are hidden. \"Fund from unused Asset Lock\" picks an "
-                + "existing tracked asset lock instead."
+                + "are hidden. To resume a prior in-flight registration, "
+                + "use the Resumable Registrations section on the Identities tab."
             )
         }
-    }
-
-    /// Picker for the `.unusedAssetLock` funding mode. Lists tracked
-    /// asset locks on the current wallet whose status is at least
-    /// `InstantSendLocked` (`statusRaw >= 2`) AND which have no
-    /// matching `PersistentIdentity` at the same
-    /// `(walletId, identityIndexRaw)`. The latter is the anti-join
-    /// the resume picker semantics call for — a tracked lock whose
-    /// identity has already registered is "consumed" even if the
-    /// row hasn't been purged yet.
-    ///
-    /// Tapping a row stores the row's `persistentModelID` and pushes
-    /// the lock's `identityIndexRaw` into the form's identity-index
-    /// state. The user can't re-pick the index — resume is bound to
-    /// the lock's original slot.
-    @ViewBuilder
-    private func assetLockPickerSection(for walletId: Data) -> some View {
-        let resumable = resumableAssetLocks(for: walletId)
-        if resumable.isEmpty {
-            Section {
-                Text("No resumable asset locks on this wallet.")
-                    .font(.callout)
-                    .foregroundColor(.secondary)
-            } header: {
-                Text("Unused Asset Locks")
-            } footer: {
-                Text(
-                    "A resumable asset lock is one that's at InstantSend / "
-                    + "ChainLock state but whose identity registration "
-                    + "didn't complete. Build a fresh one via \"Fund from "
-                    + "account\" instead."
-                )
-            }
-        } else {
-            Section {
-                ForEach(resumable, id: \.persistentModelID) { lock in
-                    assetLockRow(lock)
-                }
-            } header: {
-                Text("Unused Asset Locks")
-            } footer: {
-                Text(
-                    "Pick a tracked asset lock to resume its identity "
-                    + "registration. The lock's original identity-index "
-                    + "slot is reused."
-                )
-            }
-        }
-    }
-
-    /// Single tappable row in the resume picker. Visually mirrors the
-    /// `Picker`-style selected checkmark used elsewhere in the form so
-    /// the interaction model reads the same way.
-    @ViewBuilder
-    private func assetLockRow(_ lock: PersistentAssetLock) -> some View {
-        let isSelected = selectedAssetLockId == lock.persistentModelID
-        Button {
-            selectedAssetLockId = lock.persistentModelID
-            // Pin the identity-index to the lock's slot — resume
-            // can't change the slot, it consumes the one the lock
-            // was built for.
-            identityIndex = UInt32(bitPattern: lock.identityIndexRaw)
-        } label: {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        Text(Self.formatDash(
-                            raw: UInt64(bitPattern: Int64(lock.amountDuffs)),
-                            divisor: Double(Self.duffsPerDash)
-                        ))
-                        .font(.body)
-                        .foregroundColor(.primary)
-                        Text("·")
-                            .foregroundColor(.secondary)
-                        Text("slot #\(UInt32(bitPattern: lock.identityIndexRaw))")
-                            .font(.callout)
-                            .foregroundColor(.secondary)
-                            .monospacedDigit()
-                    }
-                    HStack(spacing: 6) {
-                        Text(Self.assetLockStatusLabel(rawValue: lock.statusRaw))
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text("·")
-                            .foregroundColor(.secondary)
-                        Text(Self.relativeDateString(lock.updatedAt))
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                Spacer()
-                if isSelected {
-                    Image(systemName: "checkmark")
-                        .foregroundColor(.accentColor)
-                }
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
     }
 
     /// Amount (in DASH) to fund the new identity with. Shown for
@@ -680,14 +658,15 @@ struct CreateIdentityView: View {
         case (.wallet(let walletId), .some):
             guard let identityIndex = identityIndex else { return false }
             // The resume path is bound to the lock's original
-            // identity-index slot. Selecting a lock pins
-            // `identityIndex` to its `identityIndexRaw`, so the
-            // collision check below would always trip when the
-            // lock's slot has been "taken" by the lock itself.
-            // Resume specifically needs the slot to NOT have a
-            // `PersistentIdentity` (the anti-join in
-            // `resumableAssetLocks`); the picker only surfaces
-            // rows that satisfy that, so we trust the row.
+            // identity-index slot. Path B's init seeds
+            // `identityIndex` to the lock's `identityIndexRaw`,
+            // so the collision check below would always trip
+            // (the lock's slot has been "taken" by the lock
+            // itself). Resume specifically needs the slot to NOT
+            // have a `PersistentIdentity` — the cross-wallet
+            // anti-join in `IdentitiesContentView` already filtered
+            // for that on the row the user tapped Resume on, so
+            // we trust the seed.
             if fundingSelection == .unusedAssetLock {
                 return selectedAssetLockId != nil
             }
@@ -1225,45 +1204,6 @@ struct CreateIdentityView: View {
     private var selectedAssetLock: PersistentAssetLock? {
         guard let id = selectedAssetLockId else { return nil }
         return allAssetLocks.first { $0.persistentModelID == id }
-    }
-
-    /// Resumable asset locks for the given wallet. View entry point —
-    /// wraps the pure `Self.resumableLocks(in:usedIndices:walletId:)`
-    /// with the live `@Query` results so the pure helper stays testable
-    /// without a SwiftData container.
-    private func resumableAssetLocks(for walletId: Data) -> [PersistentAssetLock] {
-        Self.resumableLocks(
-            in: allAssetLocks,
-            usedIndices: usedIdentityIndices(for: walletId),
-            walletId: walletId
-        )
-    }
-
-    /// Pure anti-join: returns the subset of `locks` that are
-    /// resumable for `walletId`. A lock is resumable iff
-    /// - `walletId` matches, AND
-    /// - `statusRaw >= 2` (InstantSendLocked or ChainLocked — only
-    ///   finalized locks can fund a Platform identity), AND
-    /// - the lock's `identityIndexRaw` slot is not in
-    ///   `usedIndices` (i.e. no `PersistentIdentity` already lives
-    ///   on this `(walletId, identityIndex)` pair).
-    ///
-    /// SwiftData `#Predicate` can't express "no matching row in
-    /// another model" cleanly, so this filter runs post-fetch. The
-    /// signature is intentionally generic over `AssetLockResumeRow`
-    /// so unit tests can feed it lightweight structs instead of
-    /// real `@Model` rows.
-    static func resumableLocks<R: AssetLockResumeRow>(
-        in locks: [R],
-        usedIndices: Set<UInt32>,
-        walletId: Data
-    ) -> [R] {
-        locks.filter { lock in
-            guard lock.walletId == walletId else { return false }
-            guard lock.statusRaw >= 2 else { return false }
-            let slot = UInt32(bitPattern: lock.identityIndexRaw)
-            return !usedIndices.contains(slot)
-        }
     }
 
     /// The currently-selected Core / CoinJoin account, if any. Used

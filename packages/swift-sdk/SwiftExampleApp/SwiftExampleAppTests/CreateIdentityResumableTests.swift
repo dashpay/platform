@@ -1,21 +1,33 @@
 import XCTest
 @testable import SwiftExampleApp
 
-/// Tests the pure anti-join that powers the "Fund from unused Asset
-/// Lock" resume picker (iter 5). The filter has three pieces of
-/// business logic that can silently regress:
+/// Tests the pure anti-join that powers the Identities-tab
+/// "Resumable Registrations" section. This is the *only* surface
+/// the user has post-app-restart to see an in-flight registration:
+/// the in-memory `RegistrationCoordinator` map is wiped on relaunch,
+/// so without the SwiftData-backed cross-wallet filter the user
+/// would have no signal that an orphan asset lock is waiting.
 ///
-///   1. `walletId` match — never surface a lock from a different
-///      wallet (would otherwise sign with the wrong key path).
-///   2. `statusRaw >= 2` floor — only InstantSendLocked (2) or
-///      ChainLocked (3) locks are resumable; Built (0) and
-///      Broadcast (1) aren't final and the Platform side rejects
-///      them.
-///   3. Anti-join on `(walletId, identityIndexRaw)` against the
-///      set of in-use identity slots — never offer a lock whose
-///      slot already has a `PersistentIdentity` row, otherwise the
-///      resume submit would collide with an already-registered
-///      identity.
+/// The filter has four pieces of business logic that can silently
+/// regress:
+///
+///   1. `statusRaw >= 1` floor — Built (0) is rejected (tight
+///      crash window with no useful UX action), Broadcast (1) and
+///      every later status are accepted. The row's *trailing
+///      affordance* — spinner vs. Resume button — is staged on
+///      `statusRaw >= 2` separately inside `ResumableRegistrationRow`,
+///      not at the filter level.
+///   2. Anti-join on `(walletId, identityIndex)` — a slot taken
+///      by a `PersistentIdentity` row removes its lock from the
+///      surface even if the lock's own status would otherwise
+///      qualify. This is what makes the filter "orphan-only".
+///   3. The anti-join is **per-wallet**: slot 0 used on wallet A
+///      must not block slot 0 on wallet B. The `UsedSlot` value
+///      key (walletId + slot) carries that scoping.
+///   4. `identityIndexRaw` is stored as `Int32` but compared as
+///      `UInt32` via `UInt32(bitPattern:)`. A future cast change
+///      (e.g. `UInt32(lockIdentityIndexRaw)` — which would trap on
+///      negative inputs) must fail loudly here, not in production.
 ///
 /// We exercise these with a lightweight `FakeAssetLockRow` so the
 /// test stays a pure function call — no SwiftData container needed.
@@ -30,170 +42,86 @@ final class CreateIdentityResumableTests: XCTestCase {
     private let walletA = Data(repeating: 0xA1, count: 8)
     private let walletB = Data(repeating: 0xB2, count: 8)
 
-    // MARK: - walletId match
+    // MARK: - status floor
 
-    func testFiltersOutLocksFromOtherWallets() {
-        let locks: [FakeAssetLockRow] = [
-            FakeAssetLockRow(walletId: walletA, statusRaw: 2, identityIndexRaw: 0),
-            FakeAssetLockRow(walletId: walletB, statusRaw: 2, identityIndexRaw: 0),
+    func testRejectsBuiltLocks() {
+        // Built (0) is the tight crash window between "build TX" and
+        // "broadcast TX". There's no useful resume action, so it
+        // shouldn't appear on the Identities tab at all.
+        let locks = [
+            FakeAssetLockRow(walletId: walletA, statusRaw: 0, identityIndexRaw: 0)
         ]
-        let result = CreateIdentityView.resumableLocks(
+        let result = IdentitiesContentView.crossWalletResumableLocks(
             in: locks,
-            usedIndices: [],
-            walletId: walletA
-        )
-        XCTAssertEqual(result, [locks[0]])
-    }
-
-    // MARK: - statusRaw floor
-
-    func testRejectsBuiltAndBroadcastStatuses() {
-        let locks: [FakeAssetLockRow] = [
-            FakeAssetLockRow(walletId: walletA, statusRaw: 0, identityIndexRaw: 0), // Built
-            FakeAssetLockRow(walletId: walletA, statusRaw: 1, identityIndexRaw: 1), // Broadcast
-        ]
-        let result = CreateIdentityView.resumableLocks(
-            in: locks,
-            usedIndices: [],
-            walletId: walletA
+            usedSlots: []
         )
         XCTAssertTrue(result.isEmpty)
     }
 
+    /// Broadcast (1) must surface even though it's not actionable —
+    /// the row renders a spinner ("Waiting for InstantSendLock…")
+    /// until SPV delivers the IS lock and the persister flips it
+    /// to (2). Hiding (1) would create the UX asymmetry where a
+    /// just-broadcast lock vanishes from the UI for ~10-30 seconds
+    /// and then reappears at (2) — confusing rather than reassuring.
+    func testAcceptsBroadcastForVisibility() {
+        let lock = FakeAssetLockRow(walletId: walletA, statusRaw: 1, identityIndexRaw: 0)
+        let result = IdentitiesContentView.crossWalletResumableLocks(
+            in: [lock],
+            usedSlots: []
+        )
+        XCTAssertEqual(result, [lock])
+    }
+
     func testAcceptsInstantSendLockedAndChainLocked() {
-        let locks: [FakeAssetLockRow] = [
-            FakeAssetLockRow(walletId: walletA, statusRaw: 2, identityIndexRaw: 0), // ISLock
-            FakeAssetLockRow(walletId: walletA, statusRaw: 3, identityIndexRaw: 1), // CLock
-        ]
-        let result = CreateIdentityView.resumableLocks(
-            in: locks,
-            usedIndices: [],
-            walletId: walletA
-        )
-        XCTAssertEqual(result.count, 2)
-    }
-
-    /// Defensive: any unknown future status (e.g. 4) should still
-    /// pass the `>= 2` floor. If we ever flip from "≥2 means final"
-    /// to a closed set, this test will need updating — that's
-    /// intentional, the surprise is signal.
-    func testForwardCompatibleStatusFloor() {
         let locks = [
-            FakeAssetLockRow(walletId: walletA, statusRaw: 4, identityIndexRaw: 0)
-        ]
-        let result = CreateIdentityView.resumableLocks(
-            in: locks,
-            usedIndices: [],
-            walletId: walletA
-        )
-        XCTAssertEqual(result.count, 1)
-    }
-
-    // MARK: - anti-join on used slots
-
-    func testFiltersOutLocksWhoseSlotIsAlreadyUsed() {
-        let locks: [FakeAssetLockRow] = [
             FakeAssetLockRow(walletId: walletA, statusRaw: 2, identityIndexRaw: 0),
             FakeAssetLockRow(walletId: walletA, statusRaw: 3, identityIndexRaw: 1),
-            FakeAssetLockRow(walletId: walletA, statusRaw: 2, identityIndexRaw: 2),
         ]
-        let result = CreateIdentityView.resumableLocks(
+        let result = IdentitiesContentView.crossWalletResumableLocks(
             in: locks,
-            usedIndices: [0, 2],
-            walletId: walletA
-        )
-        XCTAssertEqual(result, [locks[1]]) // only slot 1 is unused
-    }
-
-    /// The `usedIndices` set is per-wallet by construction (the
-    /// view derives it from `usedIdentityIndices(for: walletId)`),
-    /// so a slot used on wallet B must not bleed into wallet A's
-    /// pickability check. We model that by simply not including
-    /// wallet-B's slots in `usedIndices` when filtering for A.
-    func testUsedSlotsScopedPerWallet() {
-        let locks: [FakeAssetLockRow] = [
-            FakeAssetLockRow(walletId: walletA, statusRaw: 2, identityIndexRaw: 0),
-        ]
-        // Pretend wallet B has slot 0 used, but the caller — which
-        // is filtering for wallet A — never tells us that. Lock on
-        // wallet A at slot 0 must stay resumable.
-        let result = CreateIdentityView.resumableLocks(
-            in: locks,
-            usedIndices: [],
-            walletId: walletA
+            usedSlots: []
         )
         XCTAssertEqual(result, locks)
     }
 
-    /// `identityIndexRaw` is `Int32` (the storage row type) but the
-    /// in-use index set is `Set<UInt32>` (the FFI / wallet-side
-    /// type). The filter bridges via `UInt32(bitPattern:)`. A
-    /// negative `Int32` therefore maps to a high `UInt32`. This
-    /// test pins that conversion so a future cast change (e.g.
-    /// `UInt32(lockIdentityIndexRaw)` which would trap on negative)
-    /// fails loudly here instead of crashing in production.
-    func testNegativeIdentityIndexBridgesViaBitPattern() {
-        let negativeIndex: Int32 = -1
-        let bridged = UInt32(bitPattern: negativeIndex) // 0xFFFF_FFFF
-
-        // Lock with slot -1 / 0xFFFF_FFFF — when that exact bridged
-        // value is in `usedIndices`, the lock must be filtered out.
-        let locks: [FakeAssetLockRow] = [
-            FakeAssetLockRow(walletId: walletA, statusRaw: 2, identityIndexRaw: negativeIndex)
-        ]
-        let blocked = CreateIdentityView.resumableLocks(
-            in: locks,
-            usedIndices: [bridged],
-            walletId: walletA
+    /// Defensive: any unknown future status (e.g. 4) should still
+    /// pass the `>= 1` floor. If we ever flip from "≥1 means
+    /// surfaced" to a closed set, this test will need updating —
+    /// that's intentional, the surprise is signal.
+    func testForwardCompatibleStatusFloor() {
+        let lock = FakeAssetLockRow(walletId: walletA, statusRaw: 4, identityIndexRaw: 0)
+        let result = IdentitiesContentView.crossWalletResumableLocks(
+            in: [lock],
+            usedSlots: []
         )
-        XCTAssertTrue(blocked.isEmpty)
-
-        // ...and when it's NOT in `usedIndices`, the lock stays.
-        let kept = CreateIdentityView.resumableLocks(
-            in: locks,
-            usedIndices: [],
-            walletId: walletA
-        )
-        XCTAssertEqual(kept, locks)
+        XCTAssertEqual(result, [lock])
     }
 
-    // MARK: - empty inputs
+    // MARK: - anti-join
 
-    func testEmptyLocksListReturnsEmpty() {
-        let result = CreateIdentityView.resumableLocks(
-            in: [FakeAssetLockRow](),
-            usedIndices: [0, 1, 2],
-            walletId: walletA
+    func testFiltersOutLocksWhoseOwnWalletSlotIsAlreadyUsed() {
+        // A registration that completed normally leaves both a
+        // `PersistentAssetLock` and a `PersistentIdentity` row. The
+        // lock is "consumed" even if it hasn't been purged yet, so
+        // the surface must hide it.
+        let lock = FakeAssetLockRow(walletId: walletA, statusRaw: 2, identityIndexRaw: 7)
+        let usedSlots: Set<IdentitiesContentView.UsedSlot> = [
+            IdentitiesContentView.UsedSlot(walletId: walletA, slot: 7)
+        ]
+        let result = IdentitiesContentView.crossWalletResumableLocks(
+            in: [lock],
+            usedSlots: usedSlots
         )
         XCTAssertTrue(result.isEmpty)
     }
 
-    // MARK: - cross-wallet anti-join (Identities-tab surface)
-
-    /// `IdentitiesContentView.resumableRegistrationsSection` is the
-    /// surface that catches orphan locks after an app crash — the
-    /// in-memory `RegistrationCoordinator` map is wiped on restart,
-    /// so this section is the user's only signal that an asset
-    /// lock at `InstantSendLocked` / `ChainLocked` is waiting to be
-    /// resumed. It uses `crossWalletResumableLocks(in:usedSlots:)`
-    /// instead of the per-wallet helper because the section spans
-    /// every wallet in one pass.
-    ///
-    /// The pair of tests below pin the two pieces of business
-    /// logic that differ from the per-wallet form:
-    ///
-    ///   1. The `usedSlots` set is keyed by
-    ///      `(walletId, identityIndex)` — a slot used on wallet A
-    ///      must not block the same numerical slot on wallet B.
-    ///   2. The cross-wallet pass still enforces the `statusRaw >=
-    ///      2` floor — Built / Broadcast locks aren't resumable
-    ///      regardless of which wallet they live on.
-    func testCrossWalletFilterDoesNotBleedSlotsAcrossWallets() {
+    func testDoesNotBleedUsedSlotsAcrossWallets() {
         // Same numerical slot (0) on both wallets, but only
         // wallet-A's slot is taken by an existing identity. The
-        // lock on wallet B at slot 0 must stay resumable — the
+        // lock on wallet B at slot 0 must stay surfaced — the
         // user's identity on A has no bearing on B's slot pool.
-        let locks: [FakeAssetLockRow] = [
+        let locks = [
             FakeAssetLockRow(walletId: walletA, statusRaw: 2, identityIndexRaw: 0),
             FakeAssetLockRow(walletId: walletB, statusRaw: 2, identityIndexRaw: 0),
         ]
@@ -204,93 +132,50 @@ final class CreateIdentityResumableTests: XCTestCase {
             in: locks,
             usedSlots: usedSlots
         )
-        // Only wallet B's lock survives.
         XCTAssertEqual(result, [locks[1]])
     }
 
-    func testCrossWalletFilterEnforcesStatusFloor() {
-        // The Resumable Registrations section uses a `>= 1`
-        // (Broadcast) floor — strictly lower than the per-wallet
-        // picker's `>= 2` floor. Reason: the section is the user's
-        // only post-restart signal that *any* registration is in
-        // flight, including pre-IS-lock locks that aren't
-        // tappable yet. Built (0) is still rejected — that's a
-        // tight crash window with no useful UX recovery action.
-        let locks: [FakeAssetLockRow] = [
-            FakeAssetLockRow(walletId: walletA, statusRaw: 0, identityIndexRaw: 0), // Built — rejected
-            FakeAssetLockRow(walletId: walletA, statusRaw: 1, identityIndexRaw: 1), // Broadcast — accepted
-            FakeAssetLockRow(walletId: walletB, statusRaw: 3, identityIndexRaw: 0), // ChainLocked — accepted
-        ]
-        let result = IdentitiesContentView.crossWalletResumableLocks(
-            in: locks,
-            usedSlots: []
-        )
-        XCTAssertEqual(result, [locks[1], locks[2]])
-    }
+    // MARK: - Int32 -> UInt32 bridge
 
-    /// The whole point of dropping the cross-wallet floor from
-    /// `>= 2` to `>= 1`: a lock at `Broadcast` (1) must surface
-    /// on the Identities tab so a user who killed the app between
-    /// "broadcast TX" and "wait for IS lock" sees their in-flight
-    /// registration. Without this, the row would silently vanish
-    /// until SPV delivered the IS lock and the persister flipped
-    /// the row to (2) — confusing rather than reassuring.
-    func testCrossWalletFilterIncludesBroadcastForVisibility() {
-        let lock = FakeAssetLockRow(walletId: walletA, statusRaw: 1, identityIndexRaw: 0)
-        let result = IdentitiesContentView.crossWalletResumableLocks(
+    /// `identityIndexRaw` is `Int32` (the storage row type) but the
+    /// `UsedSlot.slot` field is `UInt32` (the FFI / wallet-side
+    /// type). The filter bridges via `UInt32(bitPattern:)`. A
+    /// negative `Int32` maps to a high `UInt32`. This test pins
+    /// the conversion so a future change to `UInt32(...)` —
+    /// which would trap on negative inputs — fails loudly here
+    /// instead of crashing in production.
+    func testNegativeIdentityIndexBridgesViaBitPattern() {
+        let negativeIndex: Int32 = -1
+        let bridged = UInt32(bitPattern: negativeIndex) // 0xFFFF_FFFF
+        let lock = FakeAssetLockRow(
+            walletId: walletA,
+            statusRaw: 2,
+            identityIndexRaw: negativeIndex
+        )
+
+        // With the bridged slot in `usedSlots`, the lock is filtered.
+        let blocked = IdentitiesContentView.crossWalletResumableLocks(
+            in: [lock],
+            usedSlots: [IdentitiesContentView.UsedSlot(walletId: walletA, slot: bridged)]
+        )
+        XCTAssertTrue(blocked.isEmpty)
+
+        // Without it, the lock stays.
+        let kept = IdentitiesContentView.crossWalletResumableLocks(
             in: [lock],
             usedSlots: []
         )
-        XCTAssertEqual(result, [lock])
+        XCTAssertEqual(kept, [lock])
     }
 
-    /// The per-wallet picker (`CreateIdentityView.resumableLocks`)
-    /// has a *different*, stricter floor: `>= 2`. It only surfaces
-    /// locks that can fund a Platform identity right now —
-    /// Broadcast locks have no usable proof yet. This test pins
-    /// the asymmetry so a future "unify the floors" refactor
-    /// fails loudly here.
-    func testPickerFloorStaysStricterThanSectionFloor() {
-        let broadcast = FakeAssetLockRow(walletId: walletA, statusRaw: 1, identityIndexRaw: 0)
+    // MARK: - empty inputs
 
-        let pickerResult = CreateIdentityView.resumableLocks(
-            in: [broadcast],
-            usedIndices: [],
-            walletId: walletA
-        )
-        XCTAssertTrue(
-            pickerResult.isEmpty,
-            "Per-wallet picker must reject Broadcast (1)"
-        )
-
-        let sectionResult = IdentitiesContentView.crossWalletResumableLocks(
-            in: [broadcast],
-            usedSlots: []
-        )
-        XCTAssertEqual(
-            sectionResult,
-            [broadcast],
-            "Resumable Registrations section must accept Broadcast (1)"
-        )
-    }
-
-    /// Edge case: a lock at a slot that's marked used on its OWN
-    /// wallet must still be filtered out. This is the orphan-
-    /// recovery semantics in reverse — if the registration has
-    /// completed (a `PersistentIdentity` row exists at the same
-    /// `(walletId, identityIndex)`), the lock is no longer
-    /// "resumable", it's consumed. Even if its
-    /// `PersistentAssetLock` row hasn't been purged yet.
-    func testCrossWalletFilterFiltersOutOwnWalletUsedSlot() {
-        let locks: [FakeAssetLockRow] = [
-            FakeAssetLockRow(walletId: walletA, statusRaw: 2, identityIndexRaw: 7)
-        ]
-        let usedSlots: Set<IdentitiesContentView.UsedSlot> = [
-            IdentitiesContentView.UsedSlot(walletId: walletA, slot: 7)
-        ]
+    func testEmptyLocksReturnsEmpty() {
         let result = IdentitiesContentView.crossWalletResumableLocks(
-            in: locks,
-            usedSlots: usedSlots
+            in: [FakeAssetLockRow](),
+            usedSlots: [
+                IdentitiesContentView.UsedSlot(walletId: walletA, slot: 0)
+            ]
         )
         XCTAssertTrue(result.isEmpty)
     }
