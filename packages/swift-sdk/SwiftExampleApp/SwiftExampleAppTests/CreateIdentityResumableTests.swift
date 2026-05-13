@@ -209,20 +209,69 @@ final class CreateIdentityResumableTests: XCTestCase {
     }
 
     func testCrossWalletFilterEnforcesStatusFloor() {
-        // Two locks on two different wallets, both at slot 0, but
-        // wallet A's is `Broadcast` (statusRaw 1, pre-final) and
-        // wallet B's is `ChainLocked` (statusRaw 3, final). Only
-        // the ChainLocked lock should pass the filter — Broadcast
-        // can't fund a Platform identity yet.
+        // The Resumable Registrations section uses a `>= 1`
+        // (Broadcast) floor — strictly lower than the per-wallet
+        // picker's `>= 2` floor. Reason: the section is the user's
+        // only post-restart signal that *any* registration is in
+        // flight, including pre-IS-lock locks that aren't
+        // tappable yet. Built (0) is still rejected — that's a
+        // tight crash window with no useful UX recovery action.
         let locks: [FakeAssetLockRow] = [
-            FakeAssetLockRow(walletId: walletA, statusRaw: 1, identityIndexRaw: 0),
-            FakeAssetLockRow(walletId: walletB, statusRaw: 3, identityIndexRaw: 0),
+            FakeAssetLockRow(walletId: walletA, statusRaw: 0, identityIndexRaw: 0), // Built — rejected
+            FakeAssetLockRow(walletId: walletA, statusRaw: 1, identityIndexRaw: 1), // Broadcast — accepted
+            FakeAssetLockRow(walletId: walletB, statusRaw: 3, identityIndexRaw: 0), // ChainLocked — accepted
         ]
         let result = IdentitiesContentView.crossWalletResumableLocks(
             in: locks,
             usedSlots: []
         )
-        XCTAssertEqual(result, [locks[1]])
+        XCTAssertEqual(result, [locks[1], locks[2]])
+    }
+
+    /// The whole point of dropping the cross-wallet floor from
+    /// `>= 2` to `>= 1`: a lock at `Broadcast` (1) must surface
+    /// on the Identities tab so a user who killed the app between
+    /// "broadcast TX" and "wait for IS lock" sees their in-flight
+    /// registration. Without this, the row would silently vanish
+    /// until SPV delivered the IS lock and the persister flipped
+    /// the row to (2) — confusing rather than reassuring.
+    func testCrossWalletFilterIncludesBroadcastForVisibility() {
+        let lock = FakeAssetLockRow(walletId: walletA, statusRaw: 1, identityIndexRaw: 0)
+        let result = IdentitiesContentView.crossWalletResumableLocks(
+            in: [lock],
+            usedSlots: []
+        )
+        XCTAssertEqual(result, [lock])
+    }
+
+    /// The per-wallet picker (`CreateIdentityView.resumableLocks`)
+    /// has a *different*, stricter floor: `>= 2`. It only surfaces
+    /// locks that can fund a Platform identity right now —
+    /// Broadcast locks have no usable proof yet. This test pins
+    /// the asymmetry so a future "unify the floors" refactor
+    /// fails loudly here.
+    func testPickerFloorStaysStricterThanSectionFloor() {
+        let broadcast = FakeAssetLockRow(walletId: walletA, statusRaw: 1, identityIndexRaw: 0)
+
+        let pickerResult = CreateIdentityView.resumableLocks(
+            in: [broadcast],
+            usedIndices: [],
+            walletId: walletA
+        )
+        XCTAssertTrue(
+            pickerResult.isEmpty,
+            "Per-wallet picker must reject Broadcast (1)"
+        )
+
+        let sectionResult = IdentitiesContentView.crossWalletResumableLocks(
+            in: [broadcast],
+            usedSlots: []
+        )
+        XCTAssertEqual(
+            sectionResult,
+            [broadcast],
+            "Resumable Registrations section must accept Broadcast (1)"
+        )
     }
 
     /// Edge case: a lock at a slot that's marked used on its OWN

@@ -212,18 +212,28 @@ struct IdentitiesContentView: View {
     }
 
     /// "Resumable Registrations" row group. Surfaces orphan
-    /// `PersistentAssetLock` rows — those at status >=
-    /// `InstantSendLocked` (`statusRaw >= 2`) with no
-    /// `PersistentIdentity` at the same `(walletId, identityIndex)`
-    /// slot — that the in-memory `RegistrationCoordinator` can't
-    /// know about because its map is wiped on app restart. Without
-    /// this section, an app kill mid-registration leaves the user
-    /// with no surface signal that there's an orphan lock waiting
-    /// to be resumed: the lock still lives in SwiftData, but the
-    /// "Pending Registrations" section above only reflects the
-    /// in-memory coordinator state. Tapping Resume opens
-    /// `CreateIdentityView` pre-configured for the `.unusedAssetLock`
-    /// funding path with this specific lock pinned.
+    /// `PersistentAssetLock` rows — those at status >= `Broadcast`
+    /// (`statusRaw >= 1`) with no `PersistentIdentity` at the same
+    /// `(walletId, identityIndex)` slot — that the in-memory
+    /// `RegistrationCoordinator` can't know about because its map
+    /// is wiped on app restart. Without this section, an app kill
+    /// mid-registration leaves the user with no surface signal
+    /// that there's an in-flight lock: the lock still lives in
+    /// SwiftData, but the "Pending Registrations" section above
+    /// only reflects the in-memory coordinator state.
+    ///
+    /// Each row's trailing affordance is staged on the lock's
+    /// `statusRaw`:
+    /// - `1` Broadcast: spinner + "Waiting for InstantSendLock…"
+    ///   — the lock can't fund a Platform identity until the
+    ///   masternodes sign an IS lock. SPV is running; the
+    ///   persister will flip the row to (2) when the event
+    ///   arrives, and SwiftData `@Query` re-renders the row
+    ///   into the actionable state without any extra wiring.
+    /// - `2` / `3` InstantSendLocked / ChainLocked: Resume
+    ///   button. Tapping opens `CreateIdentityView` pre-configured
+    ///   for the `.unusedAssetLock` funding path with this lock
+    ///   pinned.
     ///
     /// Empty when there are no orphan locks; collapses to nothing
     /// in that case so the rest of the screen isn't pushed down by
@@ -290,10 +300,34 @@ struct IdentitiesContentView: View {
         return hex.isEmpty ? "Wallet" : "Wallet \(hex)…"
     }
 
-    /// Pure anti-join across all wallets. A lock is resumable iff
-    /// - `statusRaw >= 2` (InstantSendLocked or ChainLocked), AND
+    /// Pure anti-join across all wallets. A lock is *visible* on the
+    /// Resumable Registrations surface iff
+    /// - `statusRaw >= 1` (Broadcast or higher), AND
     /// - no `(walletId, identityIndex)` slot is already claimed by
     ///   a `PersistentIdentity` row.
+    ///
+    /// The floor here (`>= 1`, Broadcast) is intentionally **lower
+    /// than the per-wallet picker's floor** in
+    /// `CreateIdentityView.resumableLocks(...)` (which uses `>= 2`,
+    /// InstantSendLocked). Reason: the picker only surfaces locks
+    /// that can fund a Platform identity *right now* — only IS-
+    /// or chain-locked locks have a usable proof — so its row is
+    /// always immediately actionable. This section, by contrast,
+    /// is the user's only signal that *any* registration is
+    /// mid-flight after an app restart. A lock at Broadcast (1) is
+    /// in mid-handoff — SPV will deliver the InstantSendLock
+    /// shortly and the persister will flip it to (2), at which
+    /// point the row's trailing affordance flips from a spinner to
+    /// a Resume button automatically (SwiftData `@Query` is
+    /// reactive). Hiding (1) entirely would create the UX
+    /// asymmetry where users see their just-broadcast lock at
+    /// (1) vanish from the UI, then reappear seconds later at
+    /// (2) — confusing rather than reassuring.
+    ///
+    /// `statusRaw == 0` (Built but never broadcast) is still
+    /// filtered out: it's a tight crash window between TX build
+    /// and broadcast, and there's no useful UX action to take.
+    /// A re-broadcast would have to come from a different surface.
     ///
     /// Generic over `AssetLockResumeRow` (the same protocol the
     /// per-wallet helper uses) so the pure filter is unit-testable
@@ -303,7 +337,7 @@ struct IdentitiesContentView: View {
         usedSlots: Set<UsedSlot>
     ) -> [R] {
         locks.filter { lock in
-            guard lock.statusRaw >= 2 else { return false }
+            guard lock.statusRaw >= 1 else { return false }
             let slot = UInt32(bitPattern: lock.identityIndexRaw)
             return !usedSlots.contains(
                 UsedSlot(walletId: lock.walletId, slot: slot)
@@ -431,6 +465,21 @@ private struct ResumableRegistrationRow: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 8)
+            trailingAffordance
+        }
+        .padding(.vertical, 2)
+    }
+
+    /// Trailing view that depends on the lock's stage. At
+    /// `Broadcast` (1) the lock isn't usable yet — SPV is waiting
+    /// on the masternodes to sign an InstantSendLock — so we show
+    /// a spinner instead of a button. SwiftData `@Query` is
+    /// reactive, so when the persister flips the row to
+    /// `InstantSendLocked` (2) this view re-renders into the
+    /// Resume button without any extra plumbing.
+    @ViewBuilder
+    private var trailingAffordance: some View {
+        if lock.statusRaw >= 2 {
             Button(action: onResume) {
                 Label("Resume", systemImage: "arrow.clockwise")
                     .labelStyle(.titleAndIcon)
@@ -438,14 +487,15 @@ private struct ResumableRegistrationRow: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.small)
-            // Buttons embedded in `List` rows can have their hit
-            // test stolen by SwiftUI's row tap surface, which on
-            // some iOS versions ends up firing for every row.
-            // `.buttonStyle(.borderedProminent)` already binds the
-            // tap to this Button, but adding an explicit hit shape
-            // keeps the target tight on the Resume label only.
+        } else {
+            HStack(spacing: 6) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Waiting for InstantSendLock…")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
         }
-        .padding(.vertical, 2)
     }
 
     /// Short txid prefix (first 8 hex chars) from the canonical
