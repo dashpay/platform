@@ -153,7 +153,7 @@ async fn pa_001b_change_address_branch_subcase_b() {
     // `src`'s funding sync has already invoked `mark_and_maintain_gap_limit`
     // and pushed the pool to `highest_used + gap_limit = 21`, leaving
     // zero headroom for a fresh-past-watermark derivation. The batch
-    // call hits `GapLimitExceeded` deterministically once sync has
+    // call hits `GapLimitError::Exceeded` deterministically once sync has
     // observed `src` (reliably under threads=8, racy at threads=1).
     //
     // PA-001b's contract is just "two distinct unused addresses" — it

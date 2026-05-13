@@ -16,8 +16,7 @@
 //!   `WalletManager + Sdk` fixture.
 //!
 //! Both helpers reject `count` overflowing the pool's headroom with
-//! [`PlatformWalletError::GapLimitExceeded`] and leave the pool
-//! untouched.
+//! [`GapLimitError::Exceeded`] and leave the pool untouched.
 //!
 //! ## Why this is test-only
 //!
@@ -38,6 +37,44 @@ use dpp::address_funds::PlatformAddress;
 use key_wallet::account::account_collection::PlatformPaymentAccountKey;
 use platform_wallet::{PlatformWallet, PlatformWalletError};
 
+/// Test-only error type for the gap-limit batch-derivation helpers.
+///
+/// The gap-limit ceiling rejection is a contract this harness pins
+/// (PA-005b) but production wallets never construct: the production
+/// receive-address API hands out one index at a time. Keeping the
+/// variant inside the harness keeps `PlatformWalletError` free of
+/// test-only shapes.
+#[derive(Debug, thiserror::Error)]
+pub enum GapLimitError {
+    /// `count` would push the unused run past `highest_used + gap_limit`.
+    /// The pool is left untouched.
+    #[error(
+        "gap-limit exceeded: requested {requested} fresh unused addresses but only \
+         {available} are derivable past the current gap-limit boundary \
+         (highest_used={highest_used:?}, highest_generated={highest_generated:?}, \
+         gap_limit={gap_limit})"
+    )]
+    Exceeded {
+        requested: usize,
+        available: u32,
+        highest_used: Option<u32>,
+        highest_generated: Option<u32>,
+        gap_limit: u32,
+    },
+
+    /// Underlying wallet-manager or pool-derivation failure. Boxed
+    /// because `PlatformWalletError` is large (~2.6 KiB) and would
+    /// otherwise dominate this enum's stack footprint.
+    #[error(transparent)]
+    Wallet(#[from] Box<PlatformWalletError>),
+}
+
+impl From<PlatformWalletError> for GapLimitError {
+    fn from(err: PlatformWalletError) -> Self {
+        GapLimitError::Wallet(Box::new(err))
+    }
+}
+
 /// Derive `count` consecutive fresh-unused receive addresses on the
 /// default platform-payment account, always extending past
 /// `highest_generated`.
@@ -55,23 +92,23 @@ use platform_wallet::{PlatformWallet, PlatformWalletError};
 /// when nothing is used yet). If `count` would push the unused run
 /// past that ceiling — i.e.
 /// `(highest_generated + count) - highest_used > gap_limit` — the
-/// call returns [`PlatformWalletError::GapLimitExceeded`] without
-/// mutating pool state. Callers can mark an address used (e.g. by
-/// funding it) to open more headroom and retry.
+/// call returns [`GapLimitError::Exceeded`] without mutating pool
+/// state. Callers can mark an address used (e.g. by funding it) to
+/// open more headroom and retry.
 ///
 /// # Errors
 ///
-/// - [`PlatformWalletError::GapLimitExceeded`] when `count` exceeds
-///   the pool's current headroom.
-/// - [`PlatformWalletError::WalletNotFound`] when the wallet id is
-///   missing from the manager.
-/// - [`PlatformWalletError::AddressSync`] for any underlying
+/// - [`GapLimitError::Exceeded`] when `count` exceeds the pool's
+///   current headroom.
+/// - [`GapLimitError::Wallet`] wrapping [`PlatformWalletError::WalletNotFound`]
+///   when the wallet id is missing from the manager, or
+///   [`PlatformWalletError::AddressSync`] for any underlying
 ///   pool-level derivation or conversion failure.
 pub async fn next_unused_receive_addresses(
     wallet: &std::sync::Arc<PlatformWallet>,
     account_key: PlatformPaymentAccountKey,
     count: usize,
-) -> Result<Vec<PlatformAddress>, PlatformWalletError> {
+) -> Result<Vec<PlatformAddress>, GapLimitError> {
     if count == 0 {
         return Ok(Vec::new());
     }
@@ -116,11 +153,13 @@ pub async fn next_unused_receive_addresses(
     addresses
         .into_iter()
         .map(|address| {
-            PlatformAddress::try_from(address).map_err(|e| {
-                PlatformWalletError::AddressSync(format!(
-                    "Failed to convert to PlatformAddress: {e}"
-                ))
-            })
+            PlatformAddress::try_from(address)
+                .map_err(|e| {
+                    PlatformWalletError::AddressSync(format!(
+                        "Failed to convert to PlatformAddress: {e}"
+                    ))
+                })
+                .map_err(GapLimitError::from)
         })
         .collect()
 }
@@ -129,14 +168,14 @@ pub async fn next_unused_receive_addresses(
 /// always extending past `highest_generated`. Pure pool-level helper
 /// driven by [`next_unused_receive_addresses`] above.
 ///
-/// Returns [`PlatformWalletError::GapLimitExceeded`] without mutating
-/// the pool when `count` exceeds the current headroom. The caller is
-/// expected to hold an exclusive (`&mut`) borrow of the pool.
+/// Returns [`GapLimitError::Exceeded`] without mutating the pool when
+/// `count` exceeds the current headroom. The caller is expected to
+/// hold an exclusive (`&mut`) borrow of the pool.
 pub(super) fn derive_fresh_unused_addresses(
     pool: &mut key_wallet::AddressPool,
     key_source: &key_wallet::KeySource,
     count: usize,
-) -> Result<Vec<key_wallet::Address>, PlatformWalletError> {
+) -> Result<Vec<key_wallet::Address>, GapLimitError> {
     if count == 0 {
         return Ok(Vec::new());
     }
@@ -158,7 +197,7 @@ pub(super) fn derive_fresh_unused_addresses(
     let available: u32 = ceiling.saturating_sub(next_index).saturating_add(1);
     let count_u32 = u32::try_from(count).unwrap_or(u32::MAX);
     if count_u32 > available {
-        return Err(PlatformWalletError::GapLimitExceeded {
+        return Err(GapLimitError::Exceeded {
             requested: count,
             available,
             highest_used: pool.highest_used,
@@ -168,7 +207,7 @@ pub(super) fn derive_fresh_unused_addresses(
     }
 
     pool.generate_addresses(count_u32, key_source, true)
-        .map_err(|e| PlatformWalletError::AddressSync(e.to_string()))
+        .map_err(|e| GapLimitError::from(PlatformWalletError::AddressSync(e.to_string())))
 }
 
 #[cfg(test)]
@@ -179,13 +218,12 @@ mod tests {
     //! sub-cases. The helper itself is the meaningful contract — the
     //! wallet wrapper is a thin lock-and-lookup pass-through.
 
-    use super::derive_fresh_unused_addresses;
+    use super::{derive_fresh_unused_addresses, GapLimitError};
     use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey};
     use key_wallet::dashcore::secp256k1::Secp256k1;
     use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType};
     use key_wallet::mnemonic::{Language, Mnemonic};
     use key_wallet::{KeySource, Network};
-    use platform_wallet::PlatformWalletError;
 
     fn test_key_source() -> KeySource {
         let mnemonic = Mnemonic::from_phrase(
@@ -258,7 +296,7 @@ mod tests {
         // Requesting 21 must error rather than over-extend.
         let err = derive_fresh_unused_addresses(&mut pool, &key_source, 21).unwrap_err();
         match err {
-            PlatformWalletError::GapLimitExceeded {
+            GapLimitError::Exceeded {
                 requested,
                 available,
                 gap_limit: gl,
@@ -268,7 +306,7 @@ mod tests {
                 assert_eq!(available, 20);
                 assert_eq!(gl, gap_limit);
             }
-            other => panic!("expected GapLimitExceeded, got {:?}", other),
+            other => panic!("expected GapLimitError::Exceeded, got {:?}", other),
         }
         // Pool must remain untouched after a rejected request.
         assert_eq!(pool.highest_generated, None);

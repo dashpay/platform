@@ -11,14 +11,13 @@
 //! - `pa_005b_gap_limit_triplet_subcase_b` — `count = gap_limit`: must
 //!   succeed at the boundary.
 //! - `pa_005b_gap_limit_triplet_subcase_c` — `count = gap_limit + 1`:
-//!   must return [`PlatformWalletError::GapLimitExceeded`] without
-//!   mutating the pool, and a follow-up boundary call must still succeed.
+//!   must return [`GapLimitError::Exceeded`] without mutating the
+//!   pool, and a follow-up boundary call must still succeed.
 
-use crate::framework::gap_limit::next_unused_receive_addresses;
+use crate::framework::gap_limit::{next_unused_receive_addresses, GapLimitError};
 use crate::framework::prelude::*;
 use key_wallet::account::account_collection::PlatformPaymentAccountKey;
 use key_wallet::wallet::initialization::PlatformPaymentAccountSpec;
-use platform_wallet::PlatformWalletError;
 
 fn default_account_key() -> PlatformPaymentAccountKey {
     let PlatformPaymentAccountSpec { account, key_class } = PlatformPaymentAccountSpec::default();
@@ -66,7 +65,7 @@ async fn pa_005b_gap_limit_triplet_subcase_b() {
 
 #[tokio_shared_rt::test(shared)]
 async fn pa_005b_gap_limit_triplet_subcase_c() {
-    // Sub-case C: derive gap_limit + 1 — must reject with GapLimitExceeded
+    // Sub-case C: derive gap_limit + 1 — must reject with GapLimitError::Exceeded
     // and leave the pool untouched.
     let s = setup().await.expect("e2e setup failed (sub-case C)");
     let key = default_account_key();
@@ -76,7 +75,7 @@ async fn pa_005b_gap_limit_triplet_subcase_c() {
         .await
         .expect_err("gap_limit+1 must error");
     match err {
-        PlatformWalletError::GapLimitExceeded {
+        GapLimitError::Exceeded {
             requested,
             available,
             gap_limit: gl,
@@ -86,7 +85,7 @@ async fn pa_005b_gap_limit_triplet_subcase_c() {
             assert_eq!(available, pool_gap_limit);
             assert_eq!(gl, pool_gap_limit);
         }
-        other => panic!("expected GapLimitExceeded, got {other:?}"),
+        other => panic!("expected GapLimitError::Exceeded, got {other:?}"),
     }
     // After a rejected request, a follow-up at the boundary must still
     // succeed — proves the pool was not mutated.
