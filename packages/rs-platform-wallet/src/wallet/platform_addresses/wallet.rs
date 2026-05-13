@@ -117,11 +117,7 @@ impl PlatformAddressWallet {
                         .platform_payment_managed_account_at_index_mut(*account_index)
                     {
                         for (p2pkh, funds) in account_state.found() {
-                            account.set_address_credit_balance(
-                                *p2pkh,
-                                funds.balance,
-                                None,
-                            );
+                            account.set_address_credit_balance(*p2pkh, funds.balance, None);
                         }
                     }
                 }
