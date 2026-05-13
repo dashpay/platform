@@ -625,36 +625,6 @@ pub struct PlatformAddressChangeSet {
     /// Last block height with recent address changes (compaction marker).
     /// `None` means "no change".
     pub last_known_recent_block: Option<u64>,
-    /// Lower-bound static fee estimate for the transfer that produced
-    /// this changeset, in credits. `0` for changesets not produced by
-    /// `transfer()` (e.g. sync-only changesets). See
-    /// [`Self::estimated_min_fee`].
-    pub fee: Credits,
-}
-
-impl PlatformAddressChangeSet {
-    /// Lower-bound static fee estimate for the transfer that produced
-    /// this changeset, in credits.
-    ///
-    /// Returns `0` for changesets that didn't originate from a
-    /// `transfer()` call — e.g. sync-only changesets, or changesets
-    /// constructed via `Default::default()`. The value is the raw
-    /// `AddressFundsTransferTransition::estimate_min_fee(input_count,
-    /// output_count, version)` result captured at submit time — it is
-    /// **NOT** the actual on-chain fee and is **NOT** adjusted by the
-    /// `fee_strategy`.
-    ///
-    /// `estimate_min_fee` only models the static
-    /// `state_transition_min_fees` floor; chain-time fees include
-    /// storage + processing costs that scale with the operation set
-    /// (~6.5M static vs ~14.94M observed real for 1in/1out at the time
-    /// of writing). Tests asserting on the actual chain-time debit
-    /// must read the post-broadcast balance delta directly, not this
-    /// value. See platform issue #3040 for the open ticket on
-    /// upgrading `estimate_min_fee` to a chain-time-accurate estimate.
-    pub fn estimated_min_fee(&self) -> Credits {
-        self.fee
-    }
 }
 
 impl Merge for PlatformAddressChangeSet {
@@ -679,12 +649,6 @@ impl Merge for PlatformAddressChangeSet {
                     .map_or(r, |existing| existing.max(r)),
             );
         }
-        // Fee: append-sum via `saturating_add`. Sync-only merges
-        // (`fee == 0`) are a no-op so a transfer's recorded fee
-        // survives untouched; merging two transfer changesets sums
-        // the per-operation fees so the merged total reflects the
-        // "total fee paid across operations in this batch" intent.
-        self.fee = self.fee.saturating_add(other.fee);
     }
 
     fn is_empty(&self) -> bool {
@@ -692,7 +656,6 @@ impl Merge for PlatformAddressChangeSet {
             && self.sync_height.is_none()
             && self.sync_timestamp.is_none()
             && self.last_known_recent_block.is_none()
-            && self.fee == 0
     }
 }
 
