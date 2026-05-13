@@ -5,9 +5,6 @@
 //! `#[cfg(feature = "serde")]` gate on the `pub mod` line in
 //! `changeset/mod.rs`).
 
-use dash_sdk::platform::address_sync::AddressFunds;
-use dpp::balances::credits::Credits;
-use dpp::prelude::AddressNonce;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -50,39 +47,6 @@ pub mod asset_lock_funding_type {
                     "unknown AssetLockFundingType tag: {other}"
                 )))
             }
-        })
-    }
-}
-
-/// Adapter for `AddressFunds` (re-exported from `dash-sdk`; no serde
-/// derive there). Encodes the two scalar fields side-by-side.
-pub mod address_funds {
-    use super::*;
-
-    #[derive(Serialize, Deserialize)]
-    struct Wire {
-        nonce: AddressNonce,
-        balance: Credits,
-    }
-
-    pub fn serialize<S: Serializer>(
-        value: &AddressFunds,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error> {
-        Wire {
-            nonce: value.nonce,
-            balance: value.balance,
-        }
-        .serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D: Deserializer<'de>>(
-        deserializer: D,
-    ) -> Result<AddressFunds, D::Error> {
-        let w = Wire::deserialize(deserializer)?;
-        Ok(AddressFunds {
-            nonce: w.nonce,
-            balance: w.balance,
         })
     }
 }

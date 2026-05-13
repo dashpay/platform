@@ -625,10 +625,6 @@ pub struct PlatformAddressBalanceEntry {
     pub account_index: u32,
     pub address_index: u32,
     pub address: PlatformP2PKHAddress,
-    #[cfg_attr(
-        feature = "serde",
-        serde(with = "crate::changeset::serde_adapters::address_funds")
-    )]
     pub funds: AddressFunds,
 }
 

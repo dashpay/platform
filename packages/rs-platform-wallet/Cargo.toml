@@ -81,6 +81,7 @@ shielded = ["dep:grovedb-commitment-tree", "dep:zip32", "dash-sdk/shielded", "dp
 serde = [
     "dep:serde",
     "key-wallet/serde",
+    "dash-sdk/serde",
 ]
 # Forward to the upstream `key-wallet` / `key-wallet-manager`
 # `keep-finalized-transactions` feature. With it OFF (the default),
