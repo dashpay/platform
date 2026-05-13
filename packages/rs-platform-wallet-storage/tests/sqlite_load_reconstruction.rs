@@ -6,7 +6,9 @@
 //! on upstream `Wallet::from_persisted` — the persister stores the data
 //! (verified via direct SQL probes) but cannot reconstruct the
 //! `Wallet` + `ManagedWalletInfo` pair that `ClientWalletStartState`
-//! requires. They're tracked in a TODO in `persister.rs::load`.
+//! requires. The unwired fields are listed in
+//! `persister::LOAD_UNIMPLEMENTED` and surfaced via a `tracing::warn!`
+//! on every `load`.
 
 mod common;
 

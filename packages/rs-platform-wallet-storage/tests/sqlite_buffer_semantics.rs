@@ -270,13 +270,6 @@ fn tc015_two_wallets_in_one_db() {
     assert_eq!(h_b, 22);
 }
 
-// Mark the unused `BTreeMap` import as used in case future expansion of
-// this test file needs it.
-#[allow(dead_code)]
-fn _unused_btreemap() -> BTreeMap<u32, u32> {
-    BTreeMap::new()
-}
-
 /// TC-023: one `flush(wallet_id)` produces exactly one SQLite
 /// transaction.
 ///
