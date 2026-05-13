@@ -13,8 +13,8 @@ use crate::wallet::PlatformAddressWallet;
 use crate::{PlatformAddressChangeSet, PlatformWalletError};
 use dash_sdk::platform::transition::transfer_address_funds::TransferAddressFunds;
 
-pub use super::InputSelection;
 use super::saturating_sum_credits;
+pub use super::InputSelection;
 
 impl PlatformAddressWallet {
     /// Transfer credits between platform addresses.
@@ -1481,11 +1481,7 @@ mod auto_select_tests {
         use std::sync::Arc;
         use tokio::sync::RwLock;
 
-        let sdk = Arc::new(
-            dash_sdk::SdkBuilder::new_mock()
-                .build()
-                .expect("mock sdk"),
-        );
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let wallet_manager = Arc::new(RwLock::new(key_wallet_manager::WalletManager::new(
             sdk.network,
         )));
