@@ -108,48 +108,78 @@ pub(crate) fn ensure_revision_for_replace(revision: Option<u64>) -> Result<(), E
     }
 }
 
-/// Centralized v0 document-id derivation.
+/// Platform-version-dispatched document-id derivation.
 ///
 /// Both the strict create-path id check and the legacy create-path entropy
 /// fallback go through this helper so the document-id formula has exactly
-/// **one** canonical implementation in this module.
+/// **one** canonical dispatch site in this module.
 ///
-/// # v0 versioning note
-///
-/// This helper is intentionally hard-pinned to
-/// [`Document::generate_document_id_v0`]. A future protocol version that
-/// introduces a new document-id derivation should change this helper (or
-/// branch internally on platform version) — grep for `derive_document_id_v0`
-/// **and** `generate_document_id_v0` to catch every call site that needs to
-/// migrate together.
-///
-/// **TODO (consensus / platform-version migration):** when a new
-/// document-id derivation is introduced via a consensus or platform-version
-/// bump, this helper and every `generate_document_id_v0` call site (the
-/// strict create-path id check, the legacy entropy fallback, the wasm-sdk
-/// fast-path id check, and the Rust SDK tests) must move to a
-/// platform-version-aware dispatch in lockstep. The current v0-only pin
-/// is a deliberate choice — the strict create path rejects mismatches with
-/// `Error::InvalidArgument`, so once a v1 derivation ships, native callers
-/// that have hand-derived ids with the old formula will start failing here
-/// until they migrate.
-fn derive_document_id_v0(
+/// The active version is read from
+/// `platform_version.dpp.document_versions.document_method_versions.derive_document_id`.
+/// `0` selects [`Document::generate_document_id_v0`]; an unknown version
+/// surfaces as [`dpp::ProtocolError::UnknownVersionMismatch`] so a new
+/// derivation introduced in a future platform version is rejected fast at
+/// every call site instead of silently using the v0 formula.
+fn derive_document_id(
     document_type: DocumentTypeRef<'_>,
     owner_id: &Identifier,
     entropy: &[u8; 32],
-) -> Identifier {
-    Document::generate_document_id_v0(
+    platform_version: &dpp::version::PlatformVersion,
+) -> Result<Identifier, dpp::ProtocolError> {
+    derive_document_id_from_parts(
         &document_type.data_contract_id(),
         owner_id,
         document_type.name(),
-        entropy.as_slice(),
+        entropy,
+        platform_version,
     )
+}
+
+/// Platform-version-dispatched document-id derivation from raw parts.
+///
+/// Identical to [`derive_document_id`] but accepts the bare
+/// `(contract_id, owner_id, document_type_name)` tuple instead of a
+/// [`DocumentTypeRef`]. Exposed publicly so out-of-tree callers
+/// (e.g. the `wasm-sdk` fast id-vs-entropy check on
+/// `prepareDocumentCreate`) can dispatch through the same single
+/// `DocumentMethodVersions::derive_document_id` match without
+/// duplicating the version table or carrying a `DocumentType` value.
+///
+/// `0` selects [`Document::generate_document_id_v0`]; an unknown
+/// version surfaces as [`dpp::ProtocolError::UnknownVersionMismatch`]
+/// so a new derivation introduced in a future platform version is
+/// rejected fast at every call site instead of silently using the v0
+/// formula.
+pub fn derive_document_id_from_parts(
+    contract_id: &Identifier,
+    owner_id: &Identifier,
+    document_type_name: &str,
+    entropy: &[u8; 32],
+    platform_version: &dpp::version::PlatformVersion,
+) -> Result<Identifier, dpp::ProtocolError> {
+    match platform_version
+        .dpp
+        .document_versions
+        .document_method_versions
+        .derive_document_id
+    {
+        0 => Ok(Document::generate_document_id_v0(
+            contract_id,
+            owner_id,
+            document_type_name,
+            entropy.as_slice(),
+        )),
+        version => Err(dpp::ProtocolError::UnknownVersionMismatch {
+            method: "derive_document_id".to_string(),
+            known_versions: vec![0],
+            received: version,
+        }),
+    }
 }
 
 /// Strict create-path id check: documents handed to
 /// [`build_signed_document_create_transition`] must already have their `id`
-/// derived from the supplied entropy via [`derive_document_id_v0`] (currently
-/// [`Document::generate_document_id_v0`]).
+/// derived from the supplied entropy via [`derive_document_id`].
 ///
 /// This guards against silently signing a transition whose committed
 /// document id does not match the entropy bound into the create transition.
@@ -160,12 +190,20 @@ pub(crate) fn ensure_document_id_matches_entropy(
     document: &Document,
     document_type: DocumentTypeRef<'_>,
     entropy: &[u8; 32],
+    platform_version: &dpp::version::PlatformVersion,
 ) -> Result<(), Error> {
-    let expected = derive_document_id_v0(document_type, &document.owner_id(), entropy);
+    let expected = derive_document_id(
+        document_type,
+        &document.owner_id(),
+        entropy,
+        platform_version,
+    )
+    .map_err(Error::Protocol)?;
     if document.id() != expected {
         return Err(Error::InvalidArgument(format!(
-            "document.id does not match \
-             generate_document_id_v0(contract_id, owner_id, document_type_name, entropy); \
+            "document.id does not match the platform-version-dispatched \
+             document-id derivation \
+             (contract_id, owner_id, document_type_name, entropy); \
              expected {expected}, got {got}. \
              Either set document.id to the derived value before calling \
              build_signed_document_create_transition, or use the legacy \
@@ -181,23 +219,28 @@ fn resolve_document_create_entropy(
     document: &Document,
     document_type: &DocumentType,
     document_state_transition_entropy: Option<[u8; 32]>,
-) -> (Document, [u8; 32]) {
-    document_state_transition_entropy
-        .map(|entropy| (document.clone(), entropy))
-        .unwrap_or_else(|| {
+    platform_version: &dpp::version::PlatformVersion,
+) -> Result<(Document, [u8; 32]), Error> {
+    match document_state_transition_entropy {
+        Some(entropy) => Ok((document.clone(), entropy)),
+        None => {
             let mut rng = StdRng::from_entropy();
             let mut doc = document.clone();
             let entropy = rng.gen::<[u8; 32]>();
-            // Use the centralized v0 derivation so the legacy auto-generate
-            // fallback always agrees with the strict id-matches-entropy
-            // check in `ensure_document_id_matches_entropy`.
-            doc.set_id(derive_document_id_v0(
+            // Use the centralized dispatched derivation so the legacy
+            // auto-generate fallback always agrees with the strict
+            // id-matches-entropy check in `ensure_document_id_matches_entropy`.
+            let id = derive_document_id(
                 document_type.as_ref(),
                 &doc.owner_id(),
                 &entropy,
-            ));
-            (doc, entropy)
-        })
+                platform_version,
+            )
+            .map_err(Error::Protocol)?;
+            doc.set_id(id);
+            Ok((doc, entropy))
+        }
+    }
 }
 
 #[async_trait::async_trait]
@@ -433,7 +476,7 @@ async fn build_signed_document_create_transition_owned<S: Signer<IdentityPublicK
     // Verify the caller's document id matches the entropy *before* we
     // allocate any identity-contract nonce, so a stale/wrong id never
     // bumps the local nonce cache.
-    ensure_document_id_matches_entropy(&document, document_type.as_ref(), &entropy)?;
+    ensure_document_id_matches_entropy(&document, document_type.as_ref(), &entropy, sdk.version())?;
 
     let owner_id = document.owner_id();
     let contract_id = document_type.data_contract_id();
@@ -634,7 +677,8 @@ async fn build_and_sign_create_or_replace_after_nonce<S: Signer<IdentityPublicKe
             document,
             document_type,
             document_state_transition_entropy,
-        );
+            sdk.version(),
+        )?;
         BatchTransition::new_document_creation_transition_from_document(
             doc,
             document_type.as_ref(),
@@ -728,7 +772,7 @@ impl<S: Signer<IdentityPublicKey>> PutDocument<S> for Document {
                 }
                 None => {
                     let (resolved_document, resolved_entropy) =
-                        resolve_document_create_entropy(self, &document_type, None);
+                        resolve_document_create_entropy(self, &document_type, None, sdk.version())?;
                     build_signed_document_create_transition_owned(
                         sdk,
                         resolved_document,
@@ -921,18 +965,26 @@ mod tests {
         assert!(initial.to_string().contains("replace requires revision"));
     }
 
+    /// `derive_document_id_from_parts` must produce the same id bytes
+    /// as the underlying `Document::generate_document_id_v0` for any
+    /// `(contract_id, owner_id, document_type_name, entropy)` tuple on
+    /// the v0 arm — otherwise the strict id-matches-entropy guard, the
+    /// legacy auto-generate fallback, and the wasm-sdk fast pre-check
+    /// could disagree silently.
     #[test]
-    fn derive_document_id_v0_matches_generate_document_id_v0() {
-        // The centralized helper must produce the same id bytes as the
-        // underlying `Document::generate_document_id_v0` for any
-        // (document_type, owner_id, entropy) triple — otherwise the strict
-        // id-matches-entropy guard and the legacy auto-generate fallback
-        // could disagree silently.
+    fn derive_document_id_from_parts_matches_generate_document_id_v0() {
         let document_type = test_document_type();
         let owner_id = Identifier::from([0x42; 32]);
         let entropy = [0xCCu8; 32];
 
-        let derived = derive_document_id_v0(document_type.as_ref(), &owner_id, &entropy);
+        let derived = derive_document_id_from_parts(
+            &document_type.data_contract_id(),
+            &owner_id,
+            document_type.name(),
+            &entropy,
+            PlatformVersion::latest(),
+        )
+        .expect("v0 arm must succeed on latest platform version");
         let direct = Document::generate_document_id_v0(
             &document_type.data_contract_id(),
             &owner_id,
@@ -943,14 +995,69 @@ mod tests {
         assert_eq!(derived, direct);
     }
 
+    /// `derive_document_id` must dispatch on
+    /// `platform_version.dpp.document_versions.document_method_versions.derive_document_id`,
+    /// matching the v0 formula on the v0 arm and surfacing
+    /// `UnknownVersionMismatch` for any other version constant. The
+    /// dispatch is checked by mutating the platform-version field
+    /// directly so the test exercises the match arm without depending on
+    /// a future platform version landing.
+    #[test]
+    fn derive_document_id_dispatches_on_platform_version() {
+        let document_type = test_document_type();
+        let owner_id = Identifier::from([0x55; 32]);
+        let entropy = [0xAAu8; 32];
+
+        let v0_id = Document::generate_document_id_v0(
+            &document_type.data_contract_id(),
+            &owner_id,
+            document_type.name(),
+            entropy.as_slice(),
+        );
+
+        let latest = PlatformVersion::latest();
+        let derived = derive_document_id(document_type.as_ref(), &owner_id, &entropy, latest)
+            .expect("v0 arm must succeed on latest platform version");
+        assert_eq!(derived, v0_id);
+
+        // Synthesize an unknown future version of the derivation to prove
+        // the dispatcher rejects it instead of silently using the v0
+        // formula.
+        let mut bumped = latest.clone();
+        bumped
+            .dpp
+            .document_versions
+            .document_method_versions
+            .derive_document_id = 99;
+        let err = derive_document_id(document_type.as_ref(), &owner_id, &entropy, &bumped)
+            .expect_err("unknown derive_document_id version must error");
+        match err {
+            dpp::ProtocolError::UnknownVersionMismatch {
+                method,
+                known_versions,
+                received,
+            } => {
+                assert_eq!(method, "derive_document_id");
+                assert_eq!(known_versions, vec![0]);
+                assert_eq!(received, 99);
+            }
+            other => panic!("expected UnknownVersionMismatch, got {other:?}"),
+        }
+    }
+
     #[test]
     fn creation_entropy_fallback_regenerates_document_id() {
         let document_type = test_document_type();
         let original_id = Identifier::from([3; 32]);
         let document = test_document(None, original_id);
 
-        let (resolved_document, entropy) =
-            resolve_document_create_entropy(&document, &document_type, None);
+        let (resolved_document, entropy) = resolve_document_create_entropy(
+            &document,
+            &document_type,
+            None,
+            PlatformVersion::latest(),
+        )
+        .expect("resolve_document_create_entropy must accept latest platform version");
 
         let expected_id = Document::generate_document_id_v0(
             &document_type.data_contract_id(),
@@ -970,8 +1077,13 @@ mod tests {
         let document = test_document(Some(INITIAL_REVISION), original_id);
         let provided_entropy = [11; 32];
 
-        let (resolved_document, resolved_entropy) =
-            resolve_document_create_entropy(&document, &document_type, Some(provided_entropy));
+        let (resolved_document, resolved_entropy) = resolve_document_create_entropy(
+            &document,
+            &document_type,
+            Some(provided_entropy),
+            PlatformVersion::latest(),
+        )
+        .expect("resolve_document_create_entropy must accept latest platform version");
 
         assert_eq!(resolved_entropy, provided_entropy);
         assert_eq!(resolved_document.id(), original_id);

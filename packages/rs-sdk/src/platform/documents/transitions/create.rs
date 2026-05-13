@@ -34,6 +34,18 @@ pub struct DocumentCreateTransitionBuilder {
     pub settings: Option<PutSettings>,
     pub user_fee_increase: Option<UserFeeIncrease>,
     pub state_transition_creation_options: Option<StateTransitionCreationOptions>,
+    /// Tracks whether [`Self::user_fee_increase`] was last set by an
+    /// explicit [`Self::with_user_fee_increase`] call (as opposed to being
+    /// extracted from a [`Self::with_settings`] call). Used by
+    /// [`Self::with_settings`] to honor the "explicit setter wins
+    /// regardless of order" contract while still letting a second
+    /// `with_settings` call overwrite a prior settings-derived value.
+    user_fee_increase_explicit: bool,
+    /// Tracks whether [`Self::state_transition_creation_options`] was last
+    /// set by an explicit
+    /// [`Self::with_state_transition_creation_options`] call; mirrors
+    /// [`Self::user_fee_increase_explicit`] for the second dedicated field.
+    state_transition_creation_options_explicit: bool,
 }
 
 impl DocumentCreateTransitionBuilder {
@@ -64,6 +76,8 @@ impl DocumentCreateTransitionBuilder {
             settings: None,
             user_fee_increase: None,
             state_transition_creation_options: None,
+            user_fee_increase_explicit: false,
+            state_transition_creation_options_explicit: false,
         }
     }
 
@@ -97,6 +111,7 @@ impl DocumentCreateTransitionBuilder {
     /// * `Self` - The updated builder
     pub fn with_user_fee_increase(mut self, user_fee_increase: UserFeeIncrease) -> Self {
         self.user_fee_increase = Some(user_fee_increase);
+        self.user_fee_increase_explicit = true;
         self
     }
 
@@ -106,15 +121,23 @@ impl DocumentCreateTransitionBuilder {
     /// by their dedicated builder fields, which are the single source of
     /// truth for the effective values applied at sign time. This method
     /// extracts those two fields out of the supplied [`PutSettings`] into
-    /// the dedicated fields **only if** the dedicated field is still
-    /// `None`, and then stores the remainder of `settings` (with those two
-    /// fields cleared) on the builder.
+    /// the dedicated fields, **overwriting** any value previously derived
+    /// from a prior [`Self::with_settings`] call but leaving values set by
+    /// the explicit [`Self::with_user_fee_increase`] /
+    /// [`Self::with_state_transition_creation_options`] setters untouched.
+    /// The remainder of `settings` (with those two fields cleared) is then
+    /// stored on the builder.
     ///
-    /// Net effect: explicit setters always win over `with_settings` for
-    /// `user_fee_increase` and `state_transition_creation_options`, regardless
-    /// of call order. All other [`PutSettings`] fields (timeouts, retry
-    /// behavior, nonce stale time, etc.) flow through unchanged to be used
-    /// for nonce allocation and broadcast.
+    /// Net effect:
+    /// * a second `with_settings` call replaces the prior settings-derived
+    ///   fee/options instead of being silently dropped;
+    /// * explicit setters always win over `with_settings` for
+    ///   `user_fee_increase` and `state_transition_creation_options`,
+    ///   regardless of call order.
+    ///
+    /// All other [`PutSettings`] fields (timeouts, retry behavior, nonce
+    /// stale time, etc.) flow through unchanged to be used for nonce
+    /// allocation and broadcast.
     ///
     /// # Arguments
     ///
@@ -126,7 +149,9 @@ impl DocumentCreateTransitionBuilder {
     pub fn with_settings(mut self, settings: PutSettings) -> Self {
         let stored = settings.split_dedicated_fields(
             &mut self.user_fee_increase,
+            self.user_fee_increase_explicit,
             &mut self.state_transition_creation_options,
+            self.state_transition_creation_options_explicit,
         );
         self.settings = Some(stored);
         self
@@ -151,6 +176,7 @@ impl DocumentCreateTransitionBuilder {
         creation_options: StateTransitionCreationOptions,
     ) -> Self {
         self.state_transition_creation_options = Some(creation_options);
+        self.state_transition_creation_options_explicit = true;
         self
     }
 
@@ -192,6 +218,7 @@ impl DocumentCreateTransitionBuilder {
                 &self.document,
                 document_type,
                 &self.document_state_transition_entropy,
+                platform_version,
             )?;
         }
 
@@ -250,6 +277,7 @@ impl DocumentCreateTransitionBuilder {
             &self.document,
             document_type,
             &self.document_state_transition_entropy,
+            platform_version,
         )?;
 
         let state_transition = BatchTransition::new_document_creation_transition_from_document(
@@ -382,6 +410,52 @@ mod tests {
         assert_eq!(explicit_first.user_fee_increase, Some(42));
     }
 
+    /// A second `with_settings` call must overwrite the prior
+    /// settings-derived fee/options on the dedicated builder fields.
+    /// Otherwise calling `with_settings` twice would silently drop the
+    /// second call's `user_fee_increase` / `state_transition_creation_options`.
+    #[test]
+    fn second_with_settings_overwrites_prior_settings_derived_fee_and_options() {
+        let data_contract = fixture_data_contract();
+        let document = fixture_document(&data_contract);
+
+        let first = PutSettings {
+            user_fee_increase: Some(7),
+            state_transition_creation_options: Some(StateTransitionCreationOptions {
+                batch_feature_version: Some(7),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let second = PutSettings {
+            user_fee_increase: Some(42),
+            state_transition_creation_options: Some(StateTransitionCreationOptions {
+                batch_feature_version: Some(2),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert_ne!(
+            first.state_transition_creation_options, second.state_transition_creation_options,
+            "test precondition: first/second options must differ to prove which one wins"
+        );
+
+        let builder = DocumentCreateTransitionBuilder::new(
+            data_contract,
+            "niceDocument".to_string(),
+            document,
+            [0u8; 32],
+        )
+        .with_settings(first)
+        .with_settings(second);
+
+        assert_eq!(builder.user_fee_increase, second.user_fee_increase);
+        assert_eq!(
+            builder.state_transition_creation_options,
+            second.state_transition_creation_options
+        );
+    }
+
     /// `with_settings` must preserve every non-fee/options `PutSettings`
     /// field as supplied so timeouts, retry behavior, and nonce stale time
     /// still drive nonce allocation and broadcast.
@@ -464,6 +538,7 @@ impl Sdk {
             settings,
             user_fee_increase,
             state_transition_creation_options,
+            ..
         } = create_document_transition_builder;
 
         // Preserve broadcast-time settings (request_settings, wait_timeout,

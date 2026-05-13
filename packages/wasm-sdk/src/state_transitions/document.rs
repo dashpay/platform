@@ -117,7 +117,8 @@ use dash_sdk::platform::documents::transitions::{
 };
 use dash_sdk::platform::transition::purchase_document::PurchaseDocument;
 use dash_sdk::platform::transition::put_document::{
-    build_signed_document_create_transition, build_signed_document_replace_transition, PutDocument,
+    build_signed_document_create_transition, build_signed_document_replace_transition,
+    derive_document_id_from_parts, PutDocument,
 };
 use dash_sdk::platform::transition::transfer_document::TransferDocument;
 use dash_sdk::platform::transition::update_price_of_document::UpdatePriceOfDocument;
@@ -133,7 +134,6 @@ use wasm_dpp2::state_transitions::batch::token_payment_info::{
 use wasm_dpp2::utils::{
     get_class_type, try_from_options_optional, try_from_options_optional_with,
     try_from_options_with, try_to_fixed_bytes, try_to_string, try_to_u32, try_to_u64, JsValueExt,
-    ToSerdeJSONExt,
 };
 use wasm_dpp2::IdentitySignerWasm;
 use wasm_dpp2::StateTransitionWasm;
@@ -406,6 +406,7 @@ impl WasmSdk {
             document.owner_id(),
             &document_type_name,
             &entropy_array,
+            self.inner_sdk().version(),
         )?;
 
         // Extract identity key from options
@@ -814,6 +815,7 @@ impl WasmSdk {
             document.owner_id(),
             &document_type_name,
             &entropy_array,
+            self.inner_sdk().version(),
         )?;
 
         // Extract identity key from options
@@ -1659,8 +1661,7 @@ fn extract_delete_identifiers(
 }
 
 /// Extract a `DocumentWasm` from the `document` field of a prepare-options
-/// object via *public/structural JS reads only*, building a fresh `Document`
-/// in Rust from those reads.
+/// object.
 ///
 /// `prepareDocumentCreate` / `prepareDocumentReplace` accept either:
 ///   * a `wasm-dpp2` `Document` class instance (whose getters return
@@ -1668,16 +1669,26 @@ fn extract_delete_identifiers(
 ///   * a plain `{ id, ownerId, dataContractId, documentTypeName, properties,
 ///     revision?, entropy?, createdAt?, … }` options bag.
 ///
-/// We deliberately do **not** call `DocumentWasm::try_from` /
-/// `to_wasm::<DocumentWasm>("Document")` here: those paths read the
-/// wasm-bindgen `__wbg_ptr` field on the value and dereference it as a Rust
-/// pointer. A forged JS object can advertise `__type === "Document"` but
-/// still hand us an arbitrary numeric `__wbg_ptr`, so trusting that pointer
-/// on untrusted inputs is unsound. Real `Document` instances expose every
-/// field below via ordinary `#[wasm_bindgen(getter = ...)]` accessors, so
-/// `Reflect::get` works the same way for both shapes — but the bytes we
-/// build the `Document` from are always derived from the public surface,
-/// never from a caller-supplied pointer.
+/// # Structural-only extraction
+///
+/// Both shapes are read through the **public JS surface only**
+/// (`Reflect::get`, public getters, `toBytes()` / `toString()`,
+/// [`wasm_dpp2::serialization::js_value_to_platform_value`]); the
+/// wasm-bindgen `__wbg_ptr` field is never dereferenced. This keeps the
+/// hardening from spoofed `__type` + `__wbg_ptr` attacks consistent
+/// across the two accepted input shapes, including the typed
+/// `properties` payload: `js_value_to_platform_value` preserves
+/// `Uint8Array` (32-byte → `Value::Identifier`, otherwise
+/// `Value::Bytes`) and `BigInt` (→ `Value::U64` / `Value::I64`) coming
+/// back from the public `Document.properties` getter, which itself uses
+/// [`wasm_dpp2::serialization::platform_value_to_object`] to serialize
+/// the inner Rust map. We deliberately do **not** call
+/// `DocumentWasm::try_from(&JsValue)` /
+/// `to_wasm::<DocumentWasm>("Document")` here: those paths trust the
+/// caller-supplied `__wbg_ptr` numeric value as a Rust pointer, which is
+/// unsound on public JS input — the same rationale that motivates
+/// `extract_identifier_property` / `extract_delete_identifiers` and
+/// shares the threat model documented at the top of this file.
 fn extract_prepare_document(options: &JsValue) -> Result<DocumentWasm, WasmSdkError> {
     let document_js = Reflect::get(options, &JsValue::from_str("document"))
         .map_err(|_| WasmSdkError::invalid_argument("document is required"))?;
@@ -1692,8 +1703,16 @@ fn extract_prepare_document(options: &JsValue) -> Result<DocumentWasm, WasmSdkEr
     let document_type_name = try_from_options_with(&document_js, "documentTypeName", |v| {
         try_to_string(v, "documentTypeName")
     })?;
+    // Rebuild the typed `BTreeMap<String, Value>` from the public
+    // `Document.properties` getter (or a plain JS options bag) without
+    // touching `__wbg_ptr`. `js_value_to_platform_value` preserves
+    // `Uint8Array` as `Value::Identifier` (32-byte) / `Value::Bytes` and
+    // `BigInt` as `Value::U64` / `Value::I64`, matching what
+    // `platform_value_to_object` produces on the getter side.
     let properties = try_from_options_with(&document_js, "properties", |v| {
-        v.with_serde_to_platform_value_map()
+        let pv = wasm_dpp2::serialization::js_value_to_platform_value(v)?;
+        pv.into_btree_string_map()
+            .map_err(|err| wasm_dpp2::error::WasmDppError::invalid_argument(err.to_string()))
     })?;
 
     let revision =
@@ -1767,8 +1786,9 @@ fn extract_prepare_document(options: &JsValue) -> Result<DocumentWasm, WasmSdkEr
     ))
 }
 
-/// Fast-fail verification that `document.id` matches the v0 document-id
-/// derivation for `(contract_id, owner_id, document_type_name, entropy)`.
+/// Fast-fail verification that `document.id` matches the
+/// platform-version-dispatched document-id derivation for
+/// `(contract_id, owner_id, document_type_name, entropy)`.
 ///
 /// This is the same invariant the strict create helper enforces, but lifted
 /// out of the rs-sdk path so wasm-sdk `documentCreate` /
@@ -1776,23 +1796,40 @@ fn extract_prepare_document(options: &JsValue) -> Result<DocumentWasm, WasmSdkEr
 /// fetched from Platform (or read from local cache), saving a round trip on
 /// caller mistakes. The rs-sdk helper still enforces this independently as
 /// the security boundary; this is purely an early reject.
+///
+/// Dispatch goes through the shared rs-sdk
+/// [`derive_document_id_from_parts`] helper so the
+/// `DocumentMethodVersions::derive_document_id` match lives in exactly
+/// one place: an unknown future version surfaces here as an
+/// `InvalidArgument` instead of silently using the v0 formula. The
+/// rs-sdk strict create helper performs the same dispatch independently.
 fn ensure_document_id_matches_entropy_fast(
     document_id: Identifier,
     contract_id: Identifier,
     owner_id: Identifier,
     document_type_name: &str,
     entropy: &[u8; 32],
+    platform_version: &dash_sdk::dpp::version::PlatformVersion,
 ) -> Result<(), WasmSdkError> {
-    let expected = Document::generate_document_id_v0(
+    let expected = derive_document_id_from_parts(
         &contract_id,
         &owner_id,
         document_type_name,
-        entropy.as_slice(),
-    );
+        entropy,
+        platform_version,
+    )
+    .map_err(|err| {
+        WasmSdkError::invalid_argument(format!(
+            "{err}; the wasm-sdk fast id-vs-entropy check could not dispatch \
+             the derive_document_id version for this platform version. \
+             Upgrade wasm-sdk to a build that supports this platform version."
+        ))
+    })?;
     if document_id != expected {
         return Err(WasmSdkError::invalid_argument(format!(
-            "document.id does not match \
-             generate_document_id_v0(dataContractId, ownerId, documentTypeName, entropy); \
+            "document.id does not match the platform-version-dispatched \
+             document-id derivation \
+             (dataContractId, ownerId, documentTypeName, entropy); \
              expected {expected}, got {document_id}. \
              The Document constructor derives both together by default; if you set the \
              id or entropy explicitly, keep them consistent."
@@ -1974,6 +2011,7 @@ mod tests {
             owner_id,
             document_type_name,
             &entropy,
+            PlatformVersion::latest(),
         )
         .is_ok());
 
@@ -1985,12 +2023,52 @@ mod tests {
             owner_id,
             document_type_name,
             &entropy,
+            PlatformVersion::latest(),
         )
         .expect_err("mismatch must be rejected");
         let msg = err.to_string();
         assert!(
             msg.contains("does not match"),
             "expected id-mismatch message, got: {msg}"
+        );
+    }
+
+    /// Unknown `derive_document_id` versions must be rejected by the wasm
+    /// fast check instead of silently falling back to the v0 formula, so
+    /// the wasm fast pre-check tracks the same dispatch table as the
+    /// rs-sdk `derive_document_id_from_parts` helper. Synthesizes a
+    /// bumped version constant rather than depending on a future
+    /// platform version landing.
+    #[test]
+    fn fast_id_matches_entropy_rejects_unknown_derive_version() {
+        let contract_id = Identifier::from([1u8; 32]);
+        let owner_id = Identifier::from([2u8; 32]);
+        let entropy = [3u8; 32];
+        let document_type_name = "note";
+        // Any document id will do — the dispatcher must error before
+        // any equality check happens.
+        let document_id = Identifier::from([0xAB; 32]);
+
+        let mut bumped = PlatformVersion::latest().clone();
+        bumped
+            .dpp
+            .document_versions
+            .document_method_versions
+            .derive_document_id = 99;
+
+        let err = ensure_document_id_matches_entropy_fast(
+            document_id,
+            contract_id,
+            owner_id,
+            document_type_name,
+            &entropy,
+            &bumped,
+        )
+        .expect_err("unknown derive_document_id version must be rejected");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("derive_document_id"),
+            "expected dispatch-error message mentioning derive_document_id, got: {msg}"
         );
     }
 
