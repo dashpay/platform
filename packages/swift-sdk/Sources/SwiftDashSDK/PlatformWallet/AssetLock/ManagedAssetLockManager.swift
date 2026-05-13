@@ -219,4 +219,41 @@ public class ManagedAssetLockManager {
             derivationPath: path
         )
     }
+
+    /// Fire-and-forget catch-up for a tracked asset lock — the
+    /// app-launch / app-foreground variant of [`resume`].
+    ///
+    /// Drives the same `resume_asset_lock` path as [`resume`] but
+    /// discards the returned proof + derivation-path tuple. The proof
+    /// reaches the UI via the `AssetLockChangeSet` that
+    /// `advance_asset_lock_status` queues — `statusRaw = 3 +
+    /// proofBytes` lands on the `PersistentAssetLock` row, the UI
+    /// observes it through `@Query`, no Swift-side state to plumb.
+    ///
+    /// Blocking: the Rust `runtime().block_on(...)` parks the calling
+    /// thread for up to `timeoutSeconds`. Callers MUST schedule this
+    /// on a background queue / `Task.detached`.
+    public func catchUpBlocking(
+        txid: Data,
+        vout: UInt32 = 0,
+        timeoutSeconds: UInt64 = 300
+    ) throws {
+        guard txid.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "txid must be 32 bytes, got \(txid.count)"
+            )
+        }
+
+        var txidTuple: FFIByteTuple32 =
+            (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
+        txid.withUnsafeBytes { buf in
+            withUnsafeMutableBytes(of: &txidTuple) { dst in
+                dst.copyBytes(from: buf.prefix(32))
+            }
+        }
+
+        try asset_lock_manager_catch_up_blocking(
+            handle, &txidTuple, vout, timeoutSeconds
+        ).check()
+    }
 }

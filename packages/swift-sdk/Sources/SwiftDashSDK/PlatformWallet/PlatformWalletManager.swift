@@ -74,6 +74,17 @@ public class PlatformWalletManager: ObservableObject {
     /// Background task that polls SPV progress.
     private var progressPollTask: Task<Void, Never>?
 
+    /// `ManagedAssetLockManager` instances retained while their
+    /// detached catch-up tasks run. Each wrapper's `deinit`
+    /// invalidates the underlying FFI handle, which would crash the
+    /// in-flight `asset_lock_manager_catch_up_blocking` call — so we
+    /// hold the wrappers here for the duration of a batch. Replaced
+    /// (and the previous batch released) on each
+    /// `catchUpStuckAssetLocks` invocation, by which time the prior
+    /// batch's tasks have either resolved or hit their five-minute
+    /// timeout.
+    private var retainedAssetLockManagers: [ManagedAssetLockManager] = []
+
     // MARK: - Init
 
     /// Empty init for `@StateObject` usage. Call [`configure`] before
@@ -319,7 +330,131 @@ public class PlatformWalletManager: ObservableObject {
             }
         }
 
+        // Kick off a background catch-up pass for every persisted
+        // asset lock at `statusRaw < 2`. Closes the SPV-restart gap:
+        // the wallet's in-memory transactions map was just
+        // selectively repopulated by the load path (Rust-side
+        // `restore_unresolved_asset_lock_tx_records`), so the next
+        // chain-lock event picked up by SPV will cascade through
+        // `apply_chain_lock` and promote each funding tx; the
+        // catch-up `Task` parks on `wait_for_proof` until that
+        // happens and on success the Rust changeset writes
+        // `statusRaw = 3 + proofBytes` back to SwiftData. UI updates
+        // reactively via `@Query`.
+        catchUpStuckAssetLocks(wallets: restored)
+
         return restored
+    }
+
+    /// For every persisted asset lock at `statusRaw < 2` (Built /
+    /// Broadcast), kick off a background `Task` that drives
+    /// `asset_lock_manager_catch_up_blocking` to completion or
+    /// timeout. Fire-and-forget — the proof reaches the UI via the
+    /// `AssetLockChangeSet` that the catch-up call queues internally.
+    ///
+    /// Called from `loadFromPersistor` after every wallet is
+    /// inserted. App-foreground / network-reconnect callers can
+    /// invoke this directly to retry whatever was still pending.
+    public func catchUpStuckAssetLocks(wallets: [ManagedPlatformWallet]) {
+        guard let persistenceHandler = persistenceHandler else { return }
+        // Release the previous batch's manager wrappers now that we
+        // know their tasks have either completed or timed out (any
+        // task still running past the 300s timeout is misbehaving
+        // and the bound is on the Rust side anyway). Without this
+        // the array would grow unboundedly across foregroundings.
+        retainedAssetLockManagers.removeAll(keepingCapacity: true)
+        for wallet in wallets {
+            let walletId = wallet.walletId
+            let locks = persistenceHandler.loadCachedAssetLocks(walletId: walletId)
+            let pending = locks.filter { $0.statusRaw < 2 }
+            if pending.isEmpty { continue }
+
+            // Snapshot the asset-lock manager handle ON the main
+            // actor (where `wallet` lives). The `ManagedAssetLockManager`
+            // class isn't `Sendable` (its `deinit` calls
+            // `asset_lock_manager_destroy`), so the detached Task
+            // captures the bare `Handle` value (an `Int64`) and
+            // calls the FFI directly. Lifetime: stash the manager
+            // wrapper on `retainedAssetLockManagers` so its `deinit`
+            // (which would invalidate the handle) waits for the
+            // tasks to complete; the wrapper is dropped on the next
+            // call to `catchUpStuckAssetLocks` or on manager
+            // shutdown, whichever comes first.
+            let assetLockManager: ManagedAssetLockManager
+            do {
+                assetLockManager = try wallet.assetLockManager()
+            } catch {
+                self.lastError = error
+                continue
+            }
+            // The previous batch's manager wrappers (if any) are
+            // dropped here — their tasks have either completed
+            // (success path persisted via the changeset) or hit the
+            // 300s timeout long ago. The replacement keeps the
+            // current batch's handles alive for the duration of the
+            // new tasks.
+            retainedAssetLockManagers.append(assetLockManager)
+            let handle = assetLockManager.handle
+
+            for entry in pending {
+                guard let outpoint =
+                    PlatformWalletManager.decodeOutPointForCatchUp(entry.outPointHex)
+                else { continue }
+                let txid = outpoint.txid
+                let vout = outpoint.vout
+                Task.detached(priority: .background) {
+                    // Build the txid tuple inline so the Task body
+                    // captures only Sendable values (Data, Handle,
+                    // UInt32).
+                    var txidTuple: FFIByteTuple32 =
+                        (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                         0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
+                    txid.withUnsafeBytes { buf in
+                        withUnsafeMutableBytes(of: &txidTuple) { dst in
+                            dst.copyBytes(from: buf.prefix(32))
+                        }
+                    }
+                    // Timeouts and proof-wait failures are expected
+                    // during normal operation (e.g. SPV not yet
+                    // caught up to the funding block, or the
+                    // chain-lock hasn't fired yet). The FFI returns
+                    // a non-zero code in those cases — discard.
+                    // Five-minute ceiling matches the `wait_for_proof`
+                    // deadline the production resume path uses.
+                    let result = asset_lock_manager_catch_up_blocking(
+                        handle, &txidTuple, vout, 300
+                    )
+                    _ = result
+                }
+            }
+        }
+    }
+
+    /// Parse `<txid_hex (display order)>:<vout>` into the wire-order
+    /// 32-byte `txid` + `vout` pair the FFI expects. Internal to
+    /// `catchUpStuckAssetLocks`; mirrors the Swift-side
+    /// `decodeOutPointHex` helper without taking a dependency on the
+    /// private one in the persistence handler.
+    private static func decodeOutPointForCatchUp(
+        _ hex: String
+    ) -> (txid: Data, vout: UInt32)? {
+        let parts = hex.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+        guard parts.count == 2 else { return nil }
+        let txidHex = String(parts[0])
+        guard let vout = UInt32(parts[1]) else { return nil }
+        guard txidHex.count == 64 else { return nil }
+        var txid = Data(capacity: 32)
+        var idx = txidHex.startIndex
+        for _ in 0..<32 {
+            let end = txidHex.index(idx, offsetBy: 2)
+            guard let byte = UInt8(txidHex[idx..<end], radix: 16) else { return nil }
+            txid.append(byte)
+            idx = end
+        }
+        // outPointHex is display-order; the FFI expects wire-order
+        // (the same orientation `PersistentTransaction.txid` is
+        // stored in).
+        return (txid: Data(txid.reversed()), vout: vout)
     }
 
     // MARK: - Per-wallet lookup

@@ -69,6 +69,41 @@ pub unsafe extern "C" fn asset_lock_manager_resume(
     PlatformWalletFFIResult::ok()
 }
 
+/// Fire-and-forget variant of [`asset_lock_manager_resume`] for the
+/// app-launch / app-foreground catch-up flow.
+///
+/// Calls `resume_asset_lock` internally and drops the returned
+/// `(proof, derivation_path)` tuple — the chain-lock cascade that
+/// `wait_for_proof` drives also queues an `AssetLockChangeSet` via
+/// `advance_asset_lock_status` that writes `statusRaw = 3 +
+/// proofBytes` back to SwiftData, which is the only payload the UI
+/// needs. There's no proof or path to plumb out, so the FFI surface
+/// stays free of out-params (and the matching free callbacks).
+///
+/// Returns `ok` on a successful proof resolution, an error on
+/// timeout / wait failure. The Swift caller is expected to schedule
+/// this on a background queue — `runtime().block_on(...)` parks the
+/// calling thread for up to `timeout_secs`.
+#[no_mangle]
+pub unsafe extern "C" fn asset_lock_manager_catch_up_blocking(
+    handle: Handle,
+    txid: *const [u8; 32],
+    vout: u32,
+    timeout_secs: u64,
+) -> PlatformWalletFFIResult {
+    check_ptr!(txid);
+
+    let out_point = parse_outpoint(txid, vout);
+    let timeout = Duration::from_secs(timeout_secs);
+
+    let option = ASSET_LOCK_MANAGER_STORAGE.with_item(handle, |manager| {
+        runtime().block_on(manager.resume_asset_lock(&out_point, timeout))
+    });
+    let result = unwrap_option_or_return!(option);
+    let _ = unwrap_result_or_return!(result);
+    PlatformWalletFFIResult::ok()
+}
+
 /// Recover a tracked asset lock from a serialized transaction.
 ///
 /// Re-tracks the asset lock in memory so it can be resumed later.
