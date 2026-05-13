@@ -504,6 +504,19 @@ is XOR-masked + `memset_s`-zeroed.
   for test parity with `prePersistIdentityKeysForRegistration`
   (which already does this).
 
+- **Transaction-list rendering for asset-lock TXs** — the wallet's
+  transaction list currently renders an asset-lock TX as "0 DASH
+  transaction to itself" because the special asset-lock output
+  script doesn't decode as a P2PKH/P2SH destination and the
+  generic row formatter has no asset-lock-aware branch. The
+  funds are accounted (they leave the Core balance to fund the
+  identity), but the row label is misleading. Detect asset-lock
+  TXs (cross-reference against `PersistentAssetLock.outPointHex`
+  via the txid) and render them as e.g. "Asset Lock — 0.0025
+  DASH locked for identity #N" with a tap-through to the
+  `AssetLockStorageDetailView` row. Belongs in the same render
+  path as the existing TX-list view, not in this branch's scope.
+
 #### 📌 Architectural / longer-term
 
 - **Adversarial P0 #1** — Wallet-manager write lock is held across
