@@ -1,4 +1,5 @@
 import XCTest
+import SwiftDashSDK
 @testable import SwiftExampleApp
 
 /// Tests the pure anti-join that powers the Identities-tab
@@ -210,6 +211,59 @@ final class CreateIdentityResumableTests: XCTestCase {
             usedSlots: activeSlots
         )
         XCTAssertTrue(result.isEmpty)
+    }
+
+    // MARK: - outpoint hex round-trip
+
+    /// `PersistentAssetLock.encodeOutPoint` (rawBytes → display
+    /// hex) and `CreateIdentityView.parseOutPointHex` (display hex
+    /// → rawBytes) are the two halves of the outpoint round-trip
+    /// the resume path depends on: the persister writes the
+    /// display-order hex, the submit path reads it and hands the
+    /// raw wire-order bytes to the FFI. If either side flips
+    /// endianness, the resume FFI silently addresses a different
+    /// outpoint and the Platform proof-verification failure that
+    /// follows is opaque. Pin the round-trip explicitly.
+    func testOutPointHexRoundTripPreservesRawBytes() {
+        // Deliberately asymmetric bytes so any endian flip is
+        // visible. txid wire-order = little-endian.
+        let originalTxid = Data([
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+            0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10,
+            0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
+            0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F, 0x20,
+        ])
+        let originalVout: UInt32 = 7
+
+        // The persister writes the 36-byte (txid_le || vout_le)
+        // blob — assemble it the same way and encode.
+        var raw = Data(originalTxid)
+        withUnsafeBytes(of: originalVout.littleEndian) { raw.append(contentsOf: $0) }
+        XCTAssertEqual(raw.count, 36)
+        let hex = PersistentAssetLock.encodeOutPoint(rawBytes: raw)
+
+        // Decode via the submit-path parser.
+        guard let (rtTxid, rtVout) = CreateIdentityView.parseOutPointHex(hex) else {
+            XCTFail("parseOutPointHex returned nil for canonical encoding \(hex)")
+            return
+        }
+        XCTAssertEqual(rtTxid, originalTxid,
+                       "txid bytes round-tripped through display-hex must match")
+        XCTAssertEqual(rtVout, originalVout)
+    }
+
+    /// Defensive: parseOutPointHex must reject malformed inputs
+    /// instead of silently producing zeros. Same risk class as the
+    /// endianness flip — a "valid-looking" but wrong outpoint
+    /// would fail at the Platform layer with confusing errors.
+    func testParseOutPointHexRejectsMalformedInputs() {
+        XCTAssertNil(CreateIdentityView.parseOutPointHex(""))
+        XCTAssertNil(CreateIdentityView.parseOutPointHex("nope"))
+        XCTAssertNil(CreateIdentityView.parseOutPointHex("abc:1"))  // txid too short
+        XCTAssertNil(CreateIdentityView.parseOutPointHex(
+            String(repeating: "a", count: 64) + ":bogus"))            // vout NaN
+        XCTAssertNil(CreateIdentityView.parseOutPointHex(
+            String(repeating: "g", count: 64) + ":0"))                // non-hex chars
     }
 
     /// Exhaustive predicate test for which controller phases hold

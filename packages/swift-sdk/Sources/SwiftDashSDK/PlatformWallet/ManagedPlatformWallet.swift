@@ -2498,6 +2498,14 @@ extension ManagedPlatformWallet {
             }
             var outPoint = OutPointFFI(txid: txidTuple, vout: outPointVout)
             let pubkeyBuffers: [Data] = pubkeys.map { $0.pubkeyBytes }
+            // `withExtendedLifetime` pins `signer` and `coreSigner`
+            // through the closure body. The FFI call inside is
+            // synchronous (Rust uses `block_on_worker` under the
+            // hood), so the closure returns before the lifetime
+            // wrapper exits — invariant holds. If anyone refactors
+            // this to spawn an unawaited Task inside, the resolver
+            // could be dropped mid-flight and Rust would see a
+            // dangling pointer; keep the FFI call inline.
             let result = withExtendedLifetime((signer, coreSigner)) {
                 ManagedPlatformWallet.withPubkeyFFIArray(
                     pubkeys,

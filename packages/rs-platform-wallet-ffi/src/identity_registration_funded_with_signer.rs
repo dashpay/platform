@@ -245,18 +245,15 @@ pub unsafe extern "C" fn platform_wallet_resume_identity_with_existing_asset_loc
         );
     }
 
+    // `OutPointFFI::txid` is `[u8; 32]` so the conversion is
+    // infallible — `from_byte_array` consumes the array directly,
+    // unlike `from_slice` which would defensively return a `Result`
+    // for length checking we don't need here. Matches the
+    // convention already used across `rs-drive-abci` /
+    // `rs-platform-wallet-ffi/src/persistence.rs`.
     let out_point_ffi = *out_point;
-    let txid = match dashcore::Txid::from_slice(&out_point_ffi.txid) {
-        Ok(t) => t,
-        Err(e) => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorInvalidParameter,
-                format!("out_point.txid is not a valid 32-byte txid: {e}"),
-            );
-        }
-    };
     let resume_outpoint = dashcore::OutPoint {
-        txid,
+        txid: dashcore::Txid::from_byte_array(out_point_ffi.txid),
         vout: out_point_ffi.vout,
     };
 

@@ -1451,7 +1451,13 @@ struct CreateIdentityView: View {
     /// endian order — what the FFI's `OutPointFFI.txid` field
     /// expects. Reverse of `PersistentAssetLock.encodeOutPoint`.
     /// Returns `nil` on any parse failure.
-    private static func parseOutPointHex(_ hex: String) -> (Data, UInt32)? {
+    ///
+    /// Internal (not private) so the unit test target can pin the
+    /// round-trip with `encodeOutPoint`. Wrong endianness on either
+    /// side would silently address a different outpoint and produce
+    /// confusing Platform-side proof-verification failures, so the
+    /// round-trip invariant is worth pinning explicitly.
+    static func parseOutPointHex(_ hex: String) -> (Data, UInt32)? {
         let parts = hex.split(
             separator: ":",
             maxSplits: 1,
