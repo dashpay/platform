@@ -249,7 +249,7 @@ Status legend: **green** = test file present, body has real assertions, runnable
 | Found-019 | `SeedBackedIdentitySigner` re-hashes `ECDSA_HASH160` keys, double-hashing the lookup so any `ECDSA_HASH160`-typed `IdentityPublicKey` silently misses | P2 | not implemented | S |
 | Found-020 | PA-001b spec/impl drift: `output_change_address` parameter never landed in production | P2 | passing-as-regression — resolved via spec realignment (PA-001b rewritten to match implicit-change semantics); retained for historical traceability | S |
 | Found-021 | `TransactionRecord::update_context` silently drops `InstantLock` state when tx transitions `InstantSend` → `InBlock` | P2 | red-by-design — pure unit test pins the merging invariant; fails deterministically until upstream `key-wallet` retains the IS-lock across `InBlock` promotion | M |
-| Found-022 | `AssetLockBuilder::build` marks change-pool index used before `build_asset_lock` can fail, contradicting doc-comment guarantee | P2 | red-by-design — test forces coin-selection failure on a UTXO-less wallet and asserts change-pool `highest_used == None`; fails today with `Some(0)` because `set_funding` consumes the index before `build_signed` can fail | S |
+| Found-022 | `AssetLockBuilder::build` bumps `monitor_revision` on the BIP-44 funds account before `build_asset_lock` can fail, contradicting the doc-comment "no addresses consumed on failure" guarantee | P2 | red-by-design — test forces coin-selection failure on a UTXO-less wallet, snapshots `account.monitor_revision()` before the call, and asserts it is unchanged after; fails today (bumps by 1) because `set_funding` calls `next_change_address(..., add_to_state=true)` (which always invokes `bump_monitor_revision`) before `build_signed` can fail | S |
 | Found-023 | `ManagedAccountCollection` lacks a `find_transaction_record(&Txid)` helper — every consumer rolls its own incomplete loop | P2 | not implemented | S |
 | Found-024 | `PlatformAddressWallet::transfer` writes foreign output-address balances to local ledger (no ownership check) | P1 | passing-as-regression | S |
 | Found-025 | `rs-sdk` address sync silently discards balance update when address is not yet in `pending_addresses` snapshot (TK-suite flake root cause) | P1 | red-by-design — pure unit test present; fails deterministically until upstream `rs-sdk` address-sync fix lands at `packages/rs-sdk/src/platform/address_sync/mod.rs:619` | M |
@@ -2367,27 +2367,36 @@ becomes a test failure rather than a silent drift.
 - **Estimated complexity**: M (upstream change required before downstream test can pass; test itself is M once the API is in place).
 - **Rationale**: Asset-lock proof flows commonly observe InstantSend first, then block confirmation. The IS-lock is the proof material until the block becomes chain-locked. Dropping it silently on block arrival means any proof consumer that is not racing to read before block confirmation loses its proof. Filed from Marvin's upstream audit (audit Finding #2, MEDIUM — re-classified HIGH here because the downstream impact is silent data loss on the critical proof path).
 
-#### Found-022 — `AssetLockBuilder::build` marks change-pool index used before `build_asset_lock` can fail, contradicting doc-comment guarantee
+#### Found-022 — `AssetLockBuilder::build` bumps `monitor_revision` on the BIP-44 funds account before `build_asset_lock` can fail, contradicting the doc-comment "no addresses consumed on failure" guarantee
 - **Priority**: P2 (bug pin — failure is the proof)
-- **Severity**: MEDIUM (silent address-pool drift when build fails; the doc-comment's "no addresses consumed" guarantee is misleading)
+- **Severity**: MEDIUM (silent funds-account mutation when build fails; the doc-comment's "no addresses consumed" guarantee is misleading and `monitor_revision` consumers see a phantom advance)
 - **Owner: upstream `key-wallet` (rust-dashcore)**
-- **Status**: red-by-design. Test pin at `tests/e2e/cases/found_022_asset_lock_builder_consumes_change_index_on_failure.rs` (commit `b673a7d99b`). `#[tokio_shared_rt::test(shared)]` constructs a UTXO-less wallet, calls `build_asset_lock`, and asserts the internal-addresses pool `highest_used == None`. Fails today with `Some(0)` because the change-address consumption moved into `TransactionBuilder::set_funding` in the resolved rev (`5313086`) — same defect contract, different file (`transaction_builder.rs` rather than `asset_lock_builder.rs:242`).
+- **Status**: red-by-design. Test pin at `tests/e2e/cases/found_022_asset_lock_builder_consumes_change_index_on_failure.rs`. `#[tokio_shared_rt::test(shared)]` constructs a UTXO-less wallet, snapshots `account.monitor_revision()` on BIP-44 account 0, calls `build_asset_lock` (which fails at coin selection with `NoUtxosAvailable`), and asserts the snapshot is unchanged. Fails today because the snapshot advances by one across the failed build — the upstream `TransactionBuilder::set_funding` call path mutates the funds account before `build_signed` can fail.
 - **Wallet feature exercised**: `wallet/asset_lock/build.rs` (any path through `build_asset_lock_transaction` that exercises the upstream builder).
-- **Suspected bug** (upstream `key-wallet`, SHA `d6dd5da`): The doc-comment on `build_asset_lock` at `key-wallet/src/wallet/managed_wallet_info/asset_lock_builder.rs:185-191` claims "The transaction is built first, and keys are only derived after a successful build — so no addresses are consumed if the build fails." This is misleading. The BIP-44 change address is taken via `account.next_change_address(xpub.as_ref(), true)` at `:242` (`true` marks the index used; see `ManagedCoreFundsAccount::next_change_address` calling `internal_addresses.next_unused(..., add_to_state=true)`). If `tx_builder_with_inputs?` at `:286` then errors (e.g. `BranchAndBound` cannot select inputs), the change-address index has already been consumed. The "no addresses consumed" guarantee applies only to credit-output funding keys (derived at `:300-312`), not to the BIP-44 change-address pool.
-- **Preconditions**: a build attempt that succeeds past change-address derivation but fails on `build_asset_lock` (e.g. coin selection fails after the change address is taken).
+- **Suspected bug** (upstream `key-wallet`, rev `5313086`): The doc-comment on `build_asset_lock` claims "The transaction is built first, and keys are only derived after a successful build — so no addresses are consumed if the build fails." This is misleading. `TransactionBuilder::set_funding` at `key-wallet/src/wallet/managed_wallet_info/transaction_builder.rs:79-83` runs BEFORE `build_signed` can perform coin selection:
+  ```rust
+  pub fn set_funding(mut self, funds_acc: &mut ManagedCoreFundsAccount, acc: &Account) -> Self {
+      self.inputs = funds_acc.utxos.values().cloned().collect();
+      self.change_addr = funds_acc.next_change_address(Some(&acc.account_xpub), true).ok();
+      self
+  }
+  ```
+  `funds_acc.next_change_address(..., add_to_state=true)` always invokes `self.keys.bump_monitor_revision()` at `key-wallet/src/managed_account/managed_core_funds_account.rs:540` regardless of whether the eventual build succeeds. When `build_signed` then errors with `NoUtxosAvailable`, the funds account has already been mutated and no transaction was produced.
+- **Observability footnote** — only `monitor_revision` is mutated under realistic test setup. The internal `AddressPool` is NOT visibly drifted because `WalletAccountCreationOptions::Default` pre-populates the BIP-44 internal pool with a full gap-limit window (30 derived addresses, indices 0..=29). `AddressPool::next_unused` at `key-wallet/src/managed_account/address_pool.rs:521-540` first scans `0..=highest_generated` for an unused entry and short-circuits to index 0 without calling `generate_address_at_index`. So neither `addresses.len()` nor `highest_generated` change; only the unconditional `bump_monitor_revision()` call leaves a footprint. Earlier framings of this finding ("change-pool `highest_used == None`" / "phantom address leaked into `addresses`") do not bite in practice — see the test module-doc for the diagnostic chain.
+- **Preconditions**: a build attempt that fails on `build_asset_lock` (e.g. coin selection fails) after `set_funding` has already run.
 - **Scenario**:
-  1. Record the next change-pool index before any build attempt.
-  2. Trigger a build that fails at the coin-selection step (inject a wallet with insufficient UTXOs for coin selection, but enough to pass earlier validation).
-  3. Record the change-pool index after the failed build.
-  4. Attempt a second build with adequate funds and observe which change address is handed out.
+  1. Construct a fresh `Wallet` + `ManagedWalletInfo` with default accounts and zero UTXOs.
+  2. Snapshot `account.monitor_revision()` on BIP-44 account 0 via `ManagedAccountTrait`.
+  3. Call `ManagedWalletInfo::build_asset_lock`; expect `Err(Builder(CoinSelection(NoUtxosAvailable)))`.
+  4. Re-read `monitor_revision()` and compare against the snapshot.
 - **Assertions** (the proof shape):
-  - After the failed build, the change-pool index is the SAME as before — no index was consumed. OR the doc-comment is corrected to scope the guarantee to "no credit-output funding keys consumed" and callers are told to handle change-pool drift.
-  - Counter-assertion if buggy (today): the change-pool index advanced even though the build failed — silent drift.
-- **Expected** (after upstream fix): either (a) defer change-address consumption until after `build_asset_lock` succeeds — peek the next index, then `mark_first_pool_index_used` once the build is known good; or (b) correct the doc to accurately scope the guarantee.
-- **Actual** (current upstream code): change-pool index is consumed eagerly at `:242`; the doc claims otherwise.
-- **Harness extensions required**: ability to inspect the change-pool's `highest_used` index after a failed build attempt; mock or forced coin-selection failure that fires after change-address derivation.
-- **Estimated complexity**: S (test itself is straightforward once the upstream API exposes the pool-index accessor; the upstream fix is S-M).
-- **Rationale**: A doc-comment that promises "no addresses consumed on failure" and a code path that silently consumes a change-address index is a broken contract. Callers relying on the doc to reason about pool drift after error handling will be wrong. Filed from Marvin's upstream audit (audit Finding #3, MEDIUM).
+  - After the failed build, `monitor_revision` is unchanged from the pre-build snapshot — no funds-account mutation occurred on the failure path.
+  - Counter-assertion if buggy (today): `monitor_revision` has advanced by one — the funds account was mutated even though no transaction was produced.
+- **Expected** (after upstream fix): either (a) defer `next_change_address` until after `build_signed` succeeds; or (b) teach `set_funding` to peek the change address without bumping (`add_to_state=false` and no `bump_monitor_revision` on the failure path).
+- **Actual** (current upstream code): `set_funding` calls `next_change_address(..., add_to_state=true)` eagerly; the call unconditionally bumps `monitor_revision`; `build_signed` then fails on the empty UTXO set.
+- **Harness extensions required**: none — `ManagedAccountTrait::monitor_revision()` is public and reachable from the test crate via `key_wallet::account::ManagedAccountTrait`.
+- **Estimated complexity**: S (test is a self-contained unit test; the upstream fix is S-M).
+- **Rationale**: A doc-comment that promises "no addresses consumed on failure" and a code path that silently mutates the funds account is a broken contract. Consumers that watch `monitor_revision` for "did the account change?" signaling (cache invalidation, persistence triggers, monitor diffs) will see phantom bumps that don't correspond to any actual transaction. Filed from Marvin's upstream audit (audit Finding #3, MEDIUM); retargeted from the original `highest_used` formulation after empirical diagnosis showed the visible footprint is `monitor_revision`, not pool state.
 
 #### Found-023 — `ManagedAccountCollection` lacks a `find_transaction_record(&Txid)` helper — every consumer rolls its own incomplete loop
 - **Priority**: P2 (bug pin — failure is the proof)
