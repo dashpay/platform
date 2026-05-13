@@ -2596,6 +2596,31 @@ public class PlatformWalletPersistenceHandler {
             entry.tracked_asset_locks = assetLockBuf.map { UnsafePointer($0) }
             entry.tracked_asset_locks_count = UInt(assetLockCount)
 
+            // Funding tx records for asset locks at `statusRaw < 2`
+            // (Built / Broadcast). The Rust load path re-inserts each
+            // entry into the matching `standard_bip44_accounts[
+            // account_index].transactions_mut()` bucket so the next
+            // incoming chain-lock event can cascade-promote them.
+            // Without this, the in-memory transactions map starts
+            // empty after every restart, `apply_chain_lock` finds
+            // nothing to promote at that height, and any asset lock
+            // whose funding block has already been chain-locked
+            // stays stuck at `Broadcast` indefinitely.
+            //
+            // Rows are filtered to `statusRaw < 2` so already-IS-
+            // locked / already-chain-locked locks (which already
+            // carry their proof on the `PersistentAssetLock` row and
+            // don't need cascade-promotion) don't take up FFI
+            // bandwidth. Empty / null when the wallet has no
+            // unresolved locks.
+            let (unresolvedBuf, unresolvedCount) =
+                buildUnresolvedAssetLockTxRecordBuffer(
+                    walletId: w.walletId,
+                    allocation: allocation
+                )
+            entry.unresolved_asset_lock_tx_records = unresolvedBuf.map { UnsafePointer($0) }
+            entry.unresolved_asset_lock_tx_records_count = UInt(unresolvedCount)
+
             // Primary-identity selection + gap-limit scan watermark
             // were dropped from the FFI shape — both moved off the
             // Rust manager (UI owns selection now, scan resume is
@@ -2841,6 +2866,111 @@ public class PlatformWalletPersistenceHandler {
             return (nil, 0)
         }
         allocation.assetLockArrays.append((buf, written))
+        return (buf, written)
+    }
+
+    /// Build the per-wallet `UnresolvedAssetLockTxRecordFFI` array
+    /// for the load callback. One entry per `PersistentAssetLock` row
+    /// at `statusRaw < 2` (Built / Broadcast) whose funding tx has a
+    /// matching `PersistentTransaction` row. Returns `(nil, 0)` when
+    /// there are no eligible rows.
+    ///
+    /// The Rust side reads each row and re-inserts the decoded
+    /// transaction into the matching BIP44 account's in-memory
+    /// `transactions()` map so the next chain-lock event can promote
+    /// it via `apply_chain_lock`. See
+    /// `restore_unresolved_asset_lock_tx_records` for the Rust-side
+    /// contract.
+    ///
+    /// Rows with no matching `PersistentTransaction` (e.g. an
+    /// orphaned asset-lock row whose tx never made it into the
+    /// transaction table) are skipped — the Rust side has no way to
+    /// reconstruct the funding tx without its consensus bytes, so
+    /// projecting an empty row would just bloat the FFI surface.
+    private func buildUnresolvedAssetLockTxRecordBuffer(
+        walletId: Data,
+        allocation: LoadAllocation
+    ) -> (UnsafeMutablePointer<UnresolvedAssetLockTxRecordFFI>?, Int) {
+        // Filter to `statusRaw < 2` so already-IS-locked /
+        // already-chain-locked rows don't end up in the array —
+        // those locks have their proof bytes persisted on the
+        // `PersistentAssetLock` row and the Rust side doesn't need
+        // the funding tx in the in-memory map to use them.
+        let descriptor = FetchDescriptor<PersistentAssetLock>(
+            predicate: #Predicate { entry in
+                entry.walletId == walletId && entry.statusRaw < 2
+            }
+        )
+        guard let locks = try? backgroundContext.fetch(descriptor), !locks.isEmpty else {
+            return (nil, 0)
+        }
+
+        // Pre-query the matching `PersistentTransaction` rows.
+        // `PersistentAssetLock.outPointHex` carries the txid in
+        // display order; `PersistentTransaction.txid` is wire order
+        // — the same flip `decodeOutPointHex` already performs.
+        let buf = UnsafeMutablePointer<UnresolvedAssetLockTxRecordFFI>.allocate(
+            capacity: locks.count
+        )
+        var written = 0
+        for lock in locks {
+            guard let outpoint = decodeOutPointHex(lock.outPointHex) else {
+                continue
+            }
+            let txid = outpoint.prefix(32)
+            let txidData = Data(txid)
+            let txDescriptor = FetchDescriptor<PersistentTransaction>(
+                predicate: #Predicate { $0.txid == txidData }
+            )
+            guard let txRow = try? backgroundContext.fetch(txDescriptor).first else {
+                // No matching tx — Rust can't reconstruct the
+                // funding body without its consensus bytes. Skip.
+                continue
+            }
+            let txBytes = txRow.transactionData
+            guard !txBytes.isEmpty else {
+                // A stub row whose real upsert never arrived;
+                // skip rather than emit an undecodable buffer.
+                continue
+            }
+
+            // Allocate the consensus-bytes buffer. Lifetime is
+            // owned by `allocation.scalarBuffers`, freed by
+            // `LoadAllocation.release()` after Rust returns.
+            let txBuf = UnsafeMutablePointer<UInt8>.allocate(capacity: txBytes.count)
+            txBytes.copyBytes(to: txBuf, count: txBytes.count)
+            allocation.scalarBuffers.append((txBuf, txBytes.count))
+
+            var entry = UnresolvedAssetLockTxRecordFFI()
+            // `accountIndex` isn't stored on `PersistentAssetLock`
+            // (the existing `buildAssetLockRestoreBuffer` makes the
+            // same assumption). In production iOS the funding
+            // account is always BIP44 index 0 — the same default
+            // used by `recover_asset_lock_blocking`. The Rust side
+            // looks up `standard_bip44_accounts.get(&account_index)`
+            // so a wrong value here would silently drop the
+            // restore; documented as a known limit until per-row
+            // `accountIndex` lands on the SwiftData model.
+            entry.account_index = 0
+            entry.tx_bytes = txBuf
+            entry.tx_bytes_len = UInt(txBytes.count)
+            entry.context_raw = txRow.context
+            entry.block_height = txRow.blockHeight
+            if let hash = txRow.blockHash, hash.count == 32 {
+                withUnsafeMutableBytes(of: &entry.block_hash) { raw in
+                    raw.copyBytes(from: hash)
+                }
+            }
+            entry.block_timestamp = UInt64(txRow.blockTimestamp)
+            entry.first_seen = txRow.firstSeen
+            buf[written] = entry
+            written += 1
+        }
+        if written == 0 {
+            buf.deallocate()
+            return (nil, 0)
+        }
+        allocation.unresolvedAssetLockTxRecordArrays.append((buf, written))
         return (buf, written)
     }
 
@@ -3222,6 +3352,12 @@ private final class LoadAllocation {
     /// and proof-bytes buffers each row references live in
     /// `scalarBuffers`.
     var assetLockArrays: [(UnsafeMutablePointer<AssetLockEntryFFI>, Int)] = []
+    /// Per-wallet `UnresolvedAssetLockTxRecordFFI` arrays — the funding
+    /// tx records for asset locks at `statusRaw < 2` that the Rust
+    /// load path re-inserts into the in-memory `transactions()` map
+    /// so the next chain-lock event can cascade-promote them. The
+    /// `tx_bytes` buffer each row references lives in `scalarBuffers`.
+    var unresolvedAssetLockTxRecordArrays: [(UnsafeMutablePointer<UnresolvedAssetLockTxRecordFFI>, Int)] = []
 
     func release() {
         if let entries = entries {
@@ -3266,6 +3402,10 @@ private final class LoadAllocation {
             ptr.deallocate()
         }
         for (ptr, count) in assetLockArrays {
+            ptr.deinitialize(count: count)
+            ptr.deallocate()
+        }
+        for (ptr, count) in unresolvedAssetLockTxRecordArrays {
             ptr.deinitialize(count: count)
             ptr.deallocate()
         }
