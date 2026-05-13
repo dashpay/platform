@@ -78,6 +78,14 @@ struct CreateIdentityView: View {
     /// Core-address `isUsed` flag).
     @Query private var allIdentities: [PersistentIdentity]
 
+    /// All tracked asset locks across wallets. Filtered down to
+    /// resumable rows (status >= `InstantSendLocked`, no matching
+    /// `PersistentIdentity` at the same `(walletId, identityIndexRaw)`)
+    /// inside `resumableAssetLocks(for:)` so the anti-join — which
+    /// SwiftData predicates can't express cross-model — stays in Swift.
+    @Query(sort: [SortDescriptor(\PersistentAssetLock.updatedAt, order: .reverse)])
+    private var allAssetLocks: [PersistentAssetLock]
+
     // MARK: - Selection state
 
     /// The source wallet selection. `nil` encodes "pick nothing yet";
@@ -97,6 +105,12 @@ struct CreateIdentityView: View {
     /// Accepted encoding is base64 or lowercase hex — the submit
     /// logic (future) will detect + decode.
     @State private var walletlessProof: String = ""
+
+    /// Persistent-id of the asset-lock row the user picked under
+    /// `.unusedAssetLock`. Nil until they tap one. Identifying via
+    /// `PersistentIdentifier` (not `outPointHex`) keeps the picker
+    /// resilient if the underlying row updates its status mid-pick.
+    @State private var selectedAssetLockId: PersistentIdentifier? = nil
 
     /// Amount (in DASH) to fund the new identity with. Populated
     /// automatically from the selected account's balance; the user
@@ -143,6 +157,7 @@ struct CreateIdentityView: View {
                 } else {
                     sourceWalletSection
                     fundingSection
+                    assetLockPickerIfNeeded
                     amountSection
                     identityIndexSection
                     if canSubmit {
@@ -278,6 +293,17 @@ struct CreateIdentityView: View {
         }
     }
 
+    /// Resume picker shown only when the user picked
+    /// `.unusedAssetLock` against a wallet. Hidden otherwise so the
+    /// form stays compact for the common "fund from account" paths.
+    @ViewBuilder
+    private var assetLockPickerIfNeeded: some View {
+        if case .wallet(let walletId) = walletSelection,
+           fundingSelection == .unusedAssetLock {
+            assetLockPickerSection(for: walletId)
+        }
+    }
+
     @ViewBuilder
     private func walletAccountSection(for walletId: Data) -> some View {
         let options = accountOptions(for: walletId)
@@ -298,6 +324,11 @@ struct CreateIdentityView: View {
                 // of the selected Platform Payment account so the
                 // happy path is one tap. Users can dial it down.
                 amountDash = defaultAmountString(for: newValue)
+                // Clear any prior asset-lock pick when the user
+                // switches away from `.unusedAssetLock` — a stale
+                // selection would otherwise stick around invisible
+                // and the submit gate would still accept it.
+                selectedAssetLockId = nil
             }
         } header: {
             Text("Funding Source")
@@ -309,6 +340,105 @@ struct CreateIdentityView: View {
                 + "existing tracked asset lock instead."
             )
         }
+    }
+
+    /// Picker for the `.unusedAssetLock` funding mode. Lists tracked
+    /// asset locks on the current wallet whose status is at least
+    /// `InstantSendLocked` (`statusRaw >= 2`) AND which have no
+    /// matching `PersistentIdentity` at the same
+    /// `(walletId, identityIndexRaw)`. The latter is the anti-join
+    /// the resume picker semantics call for — a tracked lock whose
+    /// identity has already registered is "consumed" even if the
+    /// row hasn't been purged yet.
+    ///
+    /// Tapping a row stores the row's `persistentModelID` and pushes
+    /// the lock's `identityIndexRaw` into the form's identity-index
+    /// state. The user can't re-pick the index — resume is bound to
+    /// the lock's original slot.
+    @ViewBuilder
+    private func assetLockPickerSection(for walletId: Data) -> some View {
+        let resumable = resumableAssetLocks(for: walletId)
+        if resumable.isEmpty {
+            Section {
+                Text("No resumable asset locks on this wallet.")
+                    .font(.callout)
+                    .foregroundColor(.secondary)
+            } header: {
+                Text("Unused Asset Locks")
+            } footer: {
+                Text(
+                    "A resumable asset lock is one that's at InstantSend / "
+                    + "ChainLock state but whose identity registration "
+                    + "didn't complete. Build a fresh one via \"Fund from "
+                    + "account\" instead."
+                )
+            }
+        } else {
+            Section {
+                ForEach(resumable, id: \.persistentModelID) { lock in
+                    assetLockRow(lock)
+                }
+            } header: {
+                Text("Unused Asset Locks")
+            } footer: {
+                Text(
+                    "Pick a tracked asset lock to resume its identity "
+                    + "registration. The lock's original identity-index "
+                    + "slot is reused."
+                )
+            }
+        }
+    }
+
+    /// Single tappable row in the resume picker. Visually mirrors the
+    /// `Picker`-style selected checkmark used elsewhere in the form so
+    /// the interaction model reads the same way.
+    @ViewBuilder
+    private func assetLockRow(_ lock: PersistentAssetLock) -> some View {
+        let isSelected = selectedAssetLockId == lock.persistentModelID
+        Button {
+            selectedAssetLockId = lock.persistentModelID
+            // Pin the identity-index to the lock's slot — resume
+            // can't change the slot, it consumes the one the lock
+            // was built for.
+            identityIndex = UInt32(bitPattern: lock.identityIndexRaw)
+        } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(Self.formatDash(
+                            raw: UInt64(bitPattern: Int64(lock.amountDuffs)),
+                            divisor: Double(Self.duffsPerDash)
+                        ))
+                        .font(.body)
+                        .foregroundColor(.primary)
+                        Text("·")
+                            .foregroundColor(.secondary)
+                        Text("slot #\(UInt32(bitPattern: lock.identityIndexRaw))")
+                            .font(.callout)
+                            .foregroundColor(.secondary)
+                            .monospacedDigit()
+                    }
+                    HStack(spacing: 6) {
+                        Text(Self.assetLockStatusLabel(rawValue: lock.statusRaw))
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text("·")
+                            .foregroundColor(.secondary)
+                        Text(Self.relativeDateString(lock.updatedAt))
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                Spacer()
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .foregroundColor(.accentColor)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     /// Amount (in DASH) to fund the new identity with. Shown for
@@ -380,39 +510,67 @@ struct CreateIdentityView: View {
         // creations don't burn an identity-registration slot off our
         // HD tree.
         if case .wallet(let walletId) = walletSelection {
-            let used = usedIdentityIndices(for: walletId)
-            let collision = identityIndex.map { used.contains($0) } ?? false
-            Section {
-                Stepper(value: Binding(
-                    get: { identityIndex ?? 0 },
-                    set: { identityIndex = $0 }
-                ), in: 0...UInt32.max) {
+            // Resume path: the lock fixes the slot. Render a read-
+            // only summary so the user can confirm which slot the
+            // tracked lock is anchored to, but the stepper is
+            // disabled.
+            if fundingSelection == .unusedAssetLock {
+                Section {
                     HStack {
                         Text("Identity Registration Index")
                         Spacer()
-                        Text("#\(identityIndex ?? 0)")
-                            .foregroundColor(collision ? .red : .secondary)
-                            .monospacedDigit()
+                        if let identityIndex = identityIndex {
+                            Text("#\(identityIndex)")
+                                .foregroundColor(.secondary)
+                                .monospacedDigit()
+                        } else {
+                            Text("—")
+                                .foregroundColor(.secondary)
+                        }
                     }
-                }
-                if collision {
+                } header: {
+                    Text("Identity Registration Index")
+                } footer: {
                     Text(
-                        "Index #\(identityIndex ?? 0) is already taken on "
-                        + "this wallet. Pick a different index."
+                        "Resuming uses the asset lock's original slot — "
+                        + "the index can't be overridden on this path."
                     )
-                    .font(.caption)
-                    .foregroundColor(.red)
                 }
-            } header: {
-                Text("Identity Registration Index")
-            } footer: {
-                Text(
-                    "The DIP-9 identity-registration slot the new identity "
-                    + "will consume "
-                    + "(`m/9'/coin'/5'/0'/0'/N'/0'`). Defaults to one past "
-                    + "the highest index already used on this wallet; "
-                    + "override to pick any other unused index."
-                )
+            } else {
+                let used = usedIdentityIndices(for: walletId)
+                let collision = identityIndex.map { used.contains($0) } ?? false
+                Section {
+                    Stepper(value: Binding(
+                        get: { identityIndex ?? 0 },
+                        set: { identityIndex = $0 }
+                    ), in: 0...UInt32.max) {
+                        HStack {
+                            Text("Identity Registration Index")
+                            Spacer()
+                            Text("#\(identityIndex ?? 0)")
+                                .foregroundColor(collision ? .red : .secondary)
+                                .monospacedDigit()
+                        }
+                    }
+                    if collision {
+                        Text(
+                            "Index #\(identityIndex ?? 0) is already taken on "
+                            + "this wallet. Pick a different index."
+                        )
+                        .font(.caption)
+                        .foregroundColor(.red)
+                    }
+                } header: {
+                    Text("Identity Registration Index")
+                } footer: {
+                    Text(
+                        "The DIP-9 identity-registration slot the new identity "
+                        + "will consume "
+                        + "(`m/9'/coin'/5'/0'/0'/N'/0'`). Defaults to one past "
+                        + "the highest index already used on this wallet; "
+                        + "override to pick any other unused index."
+                    )
+                }
             }
         }
     }
@@ -467,6 +625,18 @@ struct CreateIdentityView: View {
                 .isEmpty
         case (.wallet(let walletId), .some):
             guard let identityIndex = identityIndex else { return false }
+            // The resume path is bound to the lock's original
+            // identity-index slot. Selecting a lock pins
+            // `identityIndex` to its `identityIndexRaw`, so the
+            // collision check below would always trip when the
+            // lock's slot has been "taken" by the lock itself.
+            // Resume specifically needs the slot to NOT have a
+            // `PersistentIdentity` (the anti-join in
+            // `resumableAssetLocks`); the picker only surfaces
+            // rows that satisfy that, so we trust the row.
+            if fundingSelection == .unusedAssetLock {
+                return selectedAssetLockId != nil
+            }
             // Block submit on collision with an existing identity's
             // registration index. The picker shows a red collision
             // hint, but the button stays disabled regardless so the
@@ -483,8 +653,6 @@ struct CreateIdentityView: View {
                 let available = coreAccountBalanceDuffs(account)
                 return duffs >= Self.minIdentityFundingDuffs && duffs <= available
             }
-            // Remaining wallet-backed paths (unused asset lock,
-            // future variants) are stubbed — submit stays disabled.
             return false
         default:
             return false
@@ -578,9 +746,72 @@ struct CreateIdentityView: View {
                 managedWallet: managedWallet,
                 network: network
             )
+        } else if fundingSelection == .unusedAssetLock,
+                  let lock = selectedAssetLock {
+            submitResumed(
+                lock: lock,
+                walletId: walletId,
+                identityIndex: identityIndex,
+                identityPubkeys: identityPubkeys,
+                signer: signer,
+                managedWallet: managedWallet,
+                network: network
+            )
         } else {
             submitError = .init(message: "Selected funding source is not yet supported.")
         }
+    }
+
+    /// Resume registration against an existing tracked asset lock.
+    /// Same shape as `submitCoreFunded` — the only differences are
+    /// (a) the body closure invokes
+    /// `resumeIdentityWithAssetLock(...)` instead of
+    /// `registerIdentityWithFunding(amountDuffs:...)`, and (b) the
+    /// outpoint is decoded from the lock row's display-order
+    /// `outPointHex` to the raw 32-byte txid + u32 vout the FFI
+    /// wants.
+    private func submitResumed(
+        lock: PersistentAssetLock,
+        walletId: Data,
+        identityIndex: UInt32,
+        identityPubkeys: [ManagedPlatformWallet.IdentityPubkey],
+        signer: KeychainSigner,
+        managedWallet: ManagedPlatformWallet,
+        network: Network
+    ) {
+        guard let parts = Self.parseOutPointHex(lock.outPointHex) else {
+            submitError = .init(
+                message: "Tracked asset lock has a malformed outpoint and can't be resumed: \(lock.outPointHex)"
+            )
+            return
+        }
+        let (txidRaw, vout) = parts
+
+        isCreating = true
+
+        let coordinator = walletManager.registrationCoordinator
+        let controller = coordinator.startRegistration(
+            walletId: walletId,
+            identityIndex: identityIndex,
+            body: {
+                let (identityId, _) = try await managedWallet.resumeIdentityWithAssetLock(
+                    outPointTxid: txidRaw,
+                    outPointVout: vout,
+                    identityIndex: identityIndex,
+                    identityPubkeys: identityPubkeys,
+                    signer: signer
+                )
+                return identityId
+            }
+        )
+
+        self.activeController = controller
+        observeController(
+            controller,
+            walletId: walletId,
+            identityIndex: identityIndex,
+            network: network
+        )
     }
 
     /// Platform-Payment funded registration. Spends credits from
@@ -933,6 +1164,32 @@ struct CreateIdentityView: View {
         return account
     }
 
+    /// The tracked asset lock the user picked in the resume flow.
+    /// Looked up via `persistentModelID` so it stays valid even if
+    /// the row's mutable fields (status, updatedAt) tick after
+    /// selection.
+    private var selectedAssetLock: PersistentAssetLock? {
+        guard let id = selectedAssetLockId else { return nil }
+        return allAssetLocks.first { $0.persistentModelID == id }
+    }
+
+    /// Resumable asset locks for the given wallet. Filters down to:
+    /// - `walletId == walletId`
+    /// - `statusRaw >= 2` (InstantSendLocked / ChainLocked)
+    /// - No matching `PersistentIdentity` at the same
+    ///   `(walletId, identityIndex)` — the anti-join is post-fetch
+    ///   in Swift because SwiftData `#Predicate` can't express
+    ///   "no matching row in another model" cleanly.
+    private func resumableAssetLocks(for walletId: Data) -> [PersistentAssetLock] {
+        let usedIndices = usedIdentityIndices(for: walletId)
+        return allAssetLocks.filter { lock in
+            guard lock.walletId == walletId else { return false }
+            guard lock.statusRaw >= 2 else { return false }
+            let slot = UInt32(bitPattern: lock.identityIndexRaw)
+            return !usedIndices.contains(slot)
+        }
+    }
+
     /// The currently-selected Core / CoinJoin account, if any. Used
     /// for the Core-funded identity-creation path (Standard BIP44/BIP32
     /// or CoinJoin). The Rust function `create_funded_asset_lock_proof`
@@ -1176,6 +1433,58 @@ struct CreateIdentityView: View {
         case 0, 1, 14: return true
         default: return false
         }
+    }
+
+    /// Decode the display-order `outPointHex` (`<txid hex>:<vout>`)
+    /// stored on `PersistentAssetLock` back into `(rawTxidBytes,
+    /// vout)`. The rawTxidBytes are 32 bytes in wire / little-
+    /// endian order — what the FFI's `OutPointFFI.txid` field
+    /// expects. Reverse of `PersistentAssetLock.encodeOutPoint`.
+    /// Returns `nil` on any parse failure.
+    private static func parseOutPointHex(_ hex: String) -> (Data, UInt32)? {
+        let parts = hex.split(
+            separator: ":",
+            maxSplits: 1,
+            omittingEmptySubsequences: false
+        )
+        guard parts.count == 2 else { return nil }
+        let txidHex = String(parts[0])
+        guard let vout = UInt32(parts[1]) else { return nil }
+        guard txidHex.count == 64 else { return nil }
+        var txidDisplay = Data(capacity: 32)
+        var idx = txidHex.startIndex
+        for _ in 0..<32 {
+            let end = txidHex.index(idx, offsetBy: 2)
+            guard let byte = UInt8(txidHex[idx..<end], radix: 16) else {
+                return nil
+            }
+            txidDisplay.append(byte)
+            idx = end
+        }
+        // Reverse to raw wire-order to match OutPointFFI.txid.
+        let txidRaw = Data(txidDisplay.reversed())
+        return (txidRaw, vout)
+    }
+
+    /// Human-readable status label for the asset-lock picker row.
+    /// Mirrors the discriminants in
+    /// [`PersistentAssetLock.statusRaw`].
+    private static func assetLockStatusLabel(rawValue: Int) -> String {
+        switch rawValue {
+        case 0: return "Built"
+        case 1: return "Broadcast"
+        case 2: return "InstantSend locked"
+        case 3: return "ChainLock locked"
+        default: return "Unknown"
+        }
+    }
+
+    /// Compact relative date string ("2 minutes ago"). Used by the
+    /// resume picker so the user can see how recent the lock is.
+    private static func relativeDateString(_ date: Date) -> String {
+        let fmt = RelativeDateTimeFormatter()
+        fmt.unitsStyle = .short
+        return fmt.localizedString(for: date, relativeTo: Date())
     }
 
 /// `"0.01 DASH"` — stripped of trailing zeros, uses up to 8 decimals.
