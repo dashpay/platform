@@ -24,16 +24,26 @@ impl DriveDocumentCountQuery<'_> {
     /// the emitted path equals `path_query.path` so the entry's `key`
     /// stays empty.
     ///
-    /// `GroveDb::verify_query` is appropriate here for the same reason
-    /// as the distinct-count verifier: because each branch's count is
-    /// returned as its own entry, a missing `Key` branch (no documents
-    /// at that In value) surfaces as a missing entry rather than a
-    /// wrong total — the caller can detect "I asked for 3 In values
-    /// but got entries for 2" directly. We don't need
-    /// `absence_proofs_for_non_existing_searched_keys: true` for
-    /// soundness; it would be a useful future addition for "prove this
-    /// In value has zero entries" but isn't required for the unmerged
-    /// per-branch contract.
+    /// `GroveDb::verify_query` returns `(path, key, Option<Element>)`
+    /// triples — `Some(element)` for keys that exist in the merk tree,
+    /// `None` for queried keys whose merk traversal terminated without
+    /// finding the CountTree element. We propagate the `Option`
+    /// directly onto [`SplitCountEntry::count`]:
+    ///
+    /// - `Some(element)` → `Some(element.count_value_or_default())` —
+    ///   verified count for an existing branch.
+    /// - `None` (grovedb's missing-key signal) → `count: None` — the
+    ///   merk path was traversed for this In value but no CountTree
+    ///   element was there. Distinct from `Some(0)`: the path query
+    ///   doesn't set `absence_proofs_for_non_existing_searched_keys`,
+    ///   so this isn't a cryptographic "verified zero docs" — it's
+    ///   "the proof was implicit about this branch." Callers that
+    ///   want explicit zero-proof bytes should use a future variant
+    ///   that flips the flag.
+    ///
+    /// Crucially, the SDK does NOT need to re-discover missing In
+    /// values by comparing the request's In array against the
+    /// verifier output — grovedb already enumerates them.
     #[inline(always)]
     pub(super) fn verify_point_lookup_count_proof_v0(
         &self,
@@ -62,11 +72,7 @@ impl DriveDocumentCountQuery<'_> {
             // we don't store it in the entry because the count's
             // user-visible key is the In value (compound shape) or
             // empty (Equal-only).
-            let Some(e) = elem else { continue };
-            let count = e.count_value_or_default();
-            if count == 0 {
-                continue;
-            }
+            //
             // Compound shape (In at any index position, 0..N
             // trailing Equals afterwards): the In value sits at
             // `path[base_path_len]` — the first extra segment past
@@ -85,20 +91,22 @@ impl DriveDocumentCountQuery<'_> {
             } else {
                 Vec::new()
             };
-            // PointLookupProof verifier emits one entry per
-            // verified CountTree element — always `Some(_)`. The
-            // proof only contains existing branches (zero-count
-            // branches aren't materialized in the merk tree), so
-            // SDK callers using this verifier directly will not
-            // see any `None` entries. The SDK's
-            // `FromProof<DocumentQuery>` for `DocumentSplitCounts`
-            // is what synthesizes `None` entries when the caller's
-            // In array contains values that weren't covered by the
-            // proof.
+            // Propagate grovedb's `Option<Element>` directly:
+            //   `Some(element)` → `Some(count_value_or_default())`
+            //   `None`          → `None` (queried but proof was
+            //                     implicit; not the same as
+            //                     `Some(0)` since this path doesn't
+            //                     request explicit absence proofs).
+            // Zero-count CountTree elements aren't materialized in
+            // the merk tree (a CountTree is removed when its last
+            // doc is deleted), so `Some(0)` from this branch would
+            // mean a malformed proof — pass it through verbatim
+            // rather than swallow it.
+            let count = elem.map(|e| e.count_value_or_default());
             out.push(SplitCountEntry {
                 in_key: None,
                 key,
-                count: Some(count),
+                count,
             });
         }
         Ok((root_hash, out))

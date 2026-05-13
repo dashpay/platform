@@ -664,23 +664,25 @@ message GetDocumentsRequest {
   // matching documents, the underlying merk index has nothing to
   // emit (zero-count branches aren't materialized as CountTree
   // elements), so the wire `CountEntries.entries` list contains
-  // only the In values that exist. Callers can compare the
-  // emitted entries against their original In array client-side
-  // to identify the absent values.
+  // only the In values that exist.
   //
-  // The SDK's `FromProof` decoder for proof-backed responses
-  // takes this further: it synthesizes a `SplitCountEntry { key:
-  // in_value, count: None }` for each missing In value so callers
-  // get a complete list keyed by their request's In array, with
-  // `count: None` marking "absent from proof" as cryptographically
-  // distinct from `Some(0)` (which the proof shape can't produce
-  // without an absence proof). That synthesis is SDK-only — the
-  // wire never carries `None`.
+  // The SDK's proof decoder picks this up from grovedb's
+  // `verify_query` directly: that function enumerates every key
+  // the path query asked about and returns
+  // `(path, key, Option<Element>)` triples — `Some(element)` for
+  // present branches, `None` for absent. The drive-side
+  // verifier (`verify_point_lookup_count_proof`) propagates the
+  // `Option` onto `SplitCountEntry::count`, so SDK callers get a
+  // complete list keyed by their request's In array with
+  // `count: None` marking "queried, proof was silent." The wire
+  // `CountEntry.count` is plain `uint64` and only carries values
+  // that exist; `None` is reconstructed at verify time from the
+  // proof's path-query enumeration.
   //
   // For range-grouped queries the walker only emits keys that
-  // exist in the index, which IS SQL-conformant; no synthesis
-  // step there because the range itself is unbounded and the
-  // caller has no explicit "expected keys" list to compare
+  // exist in the index, which IS SQL-conformant; no equivalent
+  // reconstruction step because the range itself is unbounded and
+  // the caller has no explicit "expected keys" list to compare
   // against.
   message GetDocumentsRequestV1 {
     // Projection over the matched row set. Determines whether the

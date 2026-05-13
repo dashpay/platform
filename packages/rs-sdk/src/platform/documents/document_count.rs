@@ -307,17 +307,17 @@ impl Fetch for DocumentCount {
 /// Splitting is signalled by:
 /// - An `In` where-clause on the request: the field of that clause
 ///   becomes the split property and each value in the array becomes
-///   one entry in the result. On the **proof path**, the SDK
-///   synthesizes a `count: None` entry for each In value the proof
-///   was silent on (zero-count branches aren't materialized in the
-///   merk tree, so absent-from-proof is cryptographically distinct
-///   from `Some(0)`). The **no-proof path** emits `count: Some(0)`
-///   for branches the executor confirmed are empty.
+///   one entry in the result. On the **proof path**, grovedb's
+///   `verify_query` already enumerates every queried key and emits
+///   `Some(element)` for present branches and `None` for absent
+///   ones — the verifier propagates this directly onto
+///   `SplitCountEntry::count` (no SDK-side synthesis needed). The
+///   **no-proof path** queries each branch and emits `count:
+///   Some(0)` for ones the executor confirmed are empty.
 /// - A range where-clause plus `with_group_by(range_field)`: each
 ///   distinct value in the range becomes one entry. Zero-count
 ///   ranges are simply absent on both paths — the range itself is
-///   unbounded so there's no caller-supplied "expected keys" list
-///   to synthesize `None` entries against.
+///   unbounded, so there's no enumerable key set to ever-emit.
 ///
 /// Without any grouping the response is a single entry with empty
 /// `key` (i.e., the total count expressed as one-element entries
@@ -338,17 +338,6 @@ impl FromProof<DocumentQuery> for DocumentSplitCounts {
     {
         let request: Self::Request = request.into();
         assert_select_is_count(&request)?;
-
-        // `has_in` controls the single-empty-key-entry guarantee on
-        // the no-range prove path: Equal-only fully-covered queries
-        // promise one entry with empty key (the verified count, even
-        // if zero); In-on-last queries promise one entry per emitted
-        // In value (zero-count branches are simply absent —
-        // intentional v1 divergence from SQL; see proto docs).
-        let has_in = request
-            .where_clauses
-            .iter()
-            .any(|wc| wc.operator == drive::query::WhereOperator::In);
 
         let has_range = request
             .where_clauses
@@ -441,15 +430,15 @@ impl FromProof<DocumentQuery> for DocumentSplitCounts {
         //    doctype's primary-key CountTree directly. Result is a
         //    single empty-key entry with the verified count.
         // 2. **Else**: require a covering countable index. Server
-        //    proves the per-branch CountTree elements; SDK returns
-        //    them as `Vec<SplitCountEntry>`. For Equal-only fully-
-        //    covered the verifier returns one empty-key entry
-        //    (re-emitted as `Some(0)` if absent — the proof
-        //    committed to the empty tree). For Equal-prefix +
-        //    In-on-last it returns one entry per existing In
-        //    branch, then `synthesize_missing_in_entries` appends a
-        //    `count: None` entry for each In value in the request
-        //    that the proof was silent on.
+        //    proves the per-branch CountTree elements; the verifier
+        //    walks grovedb's `(path, key, Option<Element>)` triples
+        //    and emits one `SplitCountEntry` per queried key,
+        //    mapping `Some(element)` to `Some(count_value)` and
+        //    `None` to `count: None`. Equal-only fully-covered
+        //    returns a single empty-key entry; Equal-prefix +
+        //    In-on-last returns one entry per In value (with
+        //    `count: None` for In values whose CountTree branch
+        //    isn't materialized in the merk tree).
         let response: Self::Response = response.into();
         let document_type = request
             .data_contract
@@ -513,36 +502,17 @@ impl FromProof<DocumentQuery> for DocumentSplitCounts {
             where_clauses: request.where_clauses.clone(),
         };
 
-        let mut entries =
+        let entries =
             verify_point_lookup_count_proof(&count_query, proof, mtd, platform_version, provider)?;
-        // Total-count case (Equal-only fully-covered): the proof
-        // either covers a single CountTree element (entry present
-        // with `Some(N)`) or doesn't materialize any element
-        // because the doctype is empty. The second case still
-        // counts as "verified zero" — the proof committed to the
-        // empty tree — so emit `Some(0)`, not `None`. `None` is
-        // reserved for "caller asked but verifier was silent on
-        // this key," which is a different (and currently unused
-        // on this path) signal.
-        if !has_in && entries.is_empty() {
-            entries.push(SplitCountEntry {
-                in_key: None,
-                key: Vec::new(),
-                count: Some(0),
-            });
-        }
-
-        // In-on-last + prove path: the proof only materializes
-        // existing CountTree elements (zero-count branches aren't
-        // stored in the merk tree). The caller's request lists
-        // every In value they asked about; synthesize a `None`
-        // entry for each In value the proof was silent on so
-        // callers can tell "verified zero" (which the
-        // PointLookupProof shape can't produce on its own) apart
-        // from "absent from proof, unverified."
-        if has_in {
-            entries = synthesize_missing_in_entries(&request, entries, platform_version);
-        }
+        // The verifier already emits one entry per queried key
+        // (grovedb's `verify_query` returns
+        // `(path, key, Option<Element>)` triples for every key the
+        // path query enumerates — `Some` for present, `None` for
+        // absent). The SDK doesn't synthesize missing entries
+        // anymore — they're already in `entries` with `count: None`.
+        // Equal-only fully-covered + empty doctype: same path,
+        // entries carries a single `count: None` entry instead of
+        // being empty.
 
         Ok((
             Some(DocumentSplitCounts::from_verified(entries)),
@@ -554,70 +524,4 @@ impl FromProof<DocumentQuery> for DocumentSplitCounts {
 
 impl Fetch for DocumentSplitCounts {
     type Request = DocumentQuery;
-}
-
-/// On the In-on-last + prove path, append a `count: None` entry
-/// for every In value in the request that the verifier was silent
-/// on. The PointLookupProof shape only materializes existing
-/// CountTree elements (zero-count branches aren't stored in the
-/// merk tree), so absent-from-proof on this path means either
-/// "verified zero" or "proof was truncated" — distinct from
-/// `Some(0)` which would mean a cryptographically committed zero.
-/// Synthesizing `None` keeps callers from conflating those two.
-///
-/// Key serialization mirrors the prover's
-/// `point_lookup_count_path_query` (which serializes each In
-/// value via `document_type.serialize_value_for_key`), so the
-/// synthesized keys byte-match the keys the verified entries
-/// carry.
-fn synthesize_missing_in_entries(
-    request: &DocumentQuery,
-    mut entries: Vec<SplitCountEntry>,
-    platform_version: &PlatformVersion,
-) -> Vec<SplitCountEntry> {
-    use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
-    use std::collections::HashSet;
-
-    let Some(in_clause) = request
-        .where_clauses
-        .iter()
-        .find(|wc| wc.operator == drive::query::WhereOperator::In)
-    else {
-        return entries;
-    };
-    let dpp::platform_value::Value::Array(in_values) = &in_clause.value else {
-        return entries;
-    };
-    let Ok(document_type) = request
-        .data_contract
-        .document_type_for_name(&request.document_type_name)
-    else {
-        return entries;
-    };
-
-    // Serialize each requested In value to the same byte form the
-    // prover used as the merk path key. `filter_map` silently drops
-    // values that fail to serialize — those wouldn't have made it
-    // to the merk path query either, so they'd not appear in the
-    // proof regardless.
-    let expected: HashSet<Vec<u8>> = in_values
-        .iter()
-        .filter_map(|v| {
-            document_type
-                .serialize_value_for_key(&in_clause.field, v, platform_version)
-                .ok()
-        })
-        .collect();
-    let present: HashSet<Vec<u8>> = entries.iter().map(|e| e.key.clone()).collect();
-
-    for key in expected {
-        if !present.contains(&key) {
-            entries.push(SplitCountEntry {
-                in_key: None,
-                key,
-                count: None,
-            });
-        }
-    }
-    entries
 }
