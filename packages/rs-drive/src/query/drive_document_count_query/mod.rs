@@ -51,6 +51,31 @@ pub use drive_dispatcher::{DocumentCountRequest, DocumentCountResponse};
 #[cfg(feature = "server")]
 pub use execute_range_count::RangeCountOptions;
 
+/// Hard cap on entries the count fan-out arms ask the executor
+/// to return.
+///
+/// Count fan-out (`PerInValue`, and the Aggregate + range
+/// sub-case of `RangeNoProof`) emits at most one entry per `In`
+/// value, and `In` is structurally capped at 100 by
+/// [`super::conditions::WhereClause::in_values`]. This cap sits
+/// well above the real bound. Two reasons to pin it explicitly
+/// instead of leaning on the operator-tunable
+/// `default_query_limit`:
+///
+/// 1. `default_query_limit` is a documents-fetch knob — applying
+///    it to count fan-out can truncate aggregate sums below |In|
+///    under tighter operator tuning, silently producing wrong
+///    totals.
+/// 2. Pinning a number here keeps the dispatcher's correctness
+///    independent of operator configuration.
+///
+/// `1024` is high enough that the cap never fires under the
+/// current `WhereClause::in_values` policy. If a future code
+/// change makes it reachable, treat that as a signal to revisit
+/// the bound before raising the constant.
+#[cfg(feature = "server")]
+pub const MAX_LIMIT_AS_FAILSAFE: u32 = 1024;
+
 #[cfg(feature = "server")]
 #[cfg(test)]
 mod tests;

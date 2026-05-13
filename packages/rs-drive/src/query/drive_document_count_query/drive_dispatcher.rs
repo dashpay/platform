@@ -765,17 +765,21 @@ impl Drive {
                 Ok(DocumentCountResponse::Aggregate(total))
             }
             DocumentCountMode::PerInValue => {
-                // Per-`In`-value → entries. The proto contract on
-                // `GetDocumentsCountRequestV0.{order_by, limit}`
-                // applies; clamp `limit` defensively (the abci handler
-                // passes raw, see `DocumentCountRequest::limit` doc).
-                let effective_limit = request
-                    .limit
-                    .unwrap_or(request.drive_config.default_query_limit as u32)
-                    .min(request.drive_config.max_query_limit as u32);
+                // Per-`In`-value: one entry per In value (executor
+                // emits at most |In|). Only reachable from
+                // `CountMode::Aggregate` (sum the entries) and
+                // `CountMode::GroupByIn` (return the entries) —
+                // both reject explicit `limit` upstream, so
+                // `request.limit` is always None here. |In| is
+                // structurally capped at 100 by
+                // `WhereClause::in_values()`; cap at
+                // `MAX_LIMIT_AS_FAILSAFE` instead of the operator-
+                // tunable `default_query_limit`, which would
+                // silently truncate the fan-out (and corrupt the
+                // aggregate sum) under tighter tuning.
                 let options = RangeCountOptions {
                     distinct: false, // ignored by PerInValue executor
-                    limit: Some(effective_limit),
+                    limit: Some(super::MAX_LIMIT_AS_FAILSAFE),
                     order_by_ascending,
                 };
                 Ok(DocumentCountResponse::Entries(
@@ -793,11 +797,26 @@ impl Drive {
             DocumentCountMode::RangeNoProof => {
                 // Range no-proof → either aggregate (sum) or entries
                 // (per-distinct-value), based on `request.mode`.
-                // Clamp limit defense-in-depth.
-                let effective_limit = request
-                    .limit
-                    .unwrap_or(request.drive_config.default_query_limit as u32)
-                    .min(request.drive_config.max_query_limit as u32);
+                // Two limit regimes here:
+                // - Aggregate: per-In fan-out, each branch doing one
+                //   `AggregateCountOnRange` read (or a single read
+                //   when no In is present). Result size is bounded
+                //   by |In| ≤ 100. Cap at `MAX_LIMIT_AS_FAILSAFE` so
+                //   the dispatcher doesn't truncate aggregate sums
+                //   under operator-tuned `default_query_limit`.
+                // - Distinct walk (GroupByRange / GroupByCompound):
+                //   range itself is unbounded, so the caller's
+                //   `limit` (or `default_query_limit` fallback,
+                //   clamped to `max_query_limit`) is the legitimate
+                //   safety cap.
+                let effective_limit = if request.mode.is_aggregate() {
+                    super::MAX_LIMIT_AS_FAILSAFE
+                } else {
+                    request
+                        .limit
+                        .unwrap_or(request.drive_config.default_query_limit as u32)
+                        .min(request.drive_config.max_query_limit as u32)
+                };
                 let options = RangeCountOptions {
                     distinct: request.mode.requires_distinct_walk(),
                     limit: Some(effective_limit),

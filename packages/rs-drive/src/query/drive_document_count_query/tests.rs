@@ -441,6 +441,127 @@ fn test_count_query_total_count_with_in_operator_no_matches() {
     );
 }
 
+/// Pin against silent-aggregate-truncation: the PerInValue / range
+/// fan-out arms used to unwrap `request.limit` to
+/// `drive_config.default_query_limit`, which under tighter operator
+/// tuning would truncate the per-In fan-out below |In| and produce
+/// a wrong aggregate sum.
+///
+/// `CountMode::Aggregate` callers reject explicit `limit` upstream
+/// (`validate_and_route` returns `InvalidLimit`), so the only path
+/// into the dispatcher with a meaningful In fan-out cap is the
+/// constant `MAX_LIMIT_AS_FAILSAFE` baked into the dispatcher. This
+/// test sets `default_query_limit = 3` and asks for an Aggregate
+/// over an 8-element In array: pre-fix this returned 3 (sum of
+/// first 3 In branches), post-fix it returns 8.
+#[test]
+fn test_aggregate_count_in_fan_out_ignores_default_query_limit() {
+    use crate::config::DriveConfig;
+    use crate::query::drive_document_count_query::drive_dispatcher::{
+        DocumentCountRequest, DocumentCountResponse,
+    };
+
+    let (drive, data_contract) = setup_drive_and_contract();
+    let platform_version = PlatformVersion::latest();
+
+    // 8 distinct ages, one doc per age. Each doc gets a unique
+    // (firstName, middleName, lastName) tuple to satisfy the
+    // family-contract-countable's unique compound index.
+    // Count > `OPERATOR_TUNED_LIMIT` (3) so truncation would be
+    // detectable.
+    let names = [
+        "Alice", "Bob", "Carol", "Dave", "Eve", "Frank", "Grace", "Heidi",
+    ];
+    for (i, (age, name)) in [30u64, 40, 50, 60, 70, 80, 90, 100]
+        .iter()
+        .zip(names.iter())
+        .enumerate()
+    {
+        insert_person_doc(
+            &drive,
+            &data_contract,
+            [i as u8 + 1; 32],
+            name,
+            "M",
+            "Smith",
+            *age,
+        );
+    }
+
+    let document_type = data_contract
+        .document_type_for_name("person")
+        .expect("expected document type");
+
+    // Operator-tuned tight `default_query_limit`. Pre-fix the
+    // dispatcher would propagate this to the PerInValue executor
+    // and truncate the fan-out to 3 of the 8 In branches.
+    const OPERATOR_TUNED_LIMIT: u16 = 3;
+    let drive_config = DriveConfig {
+        default_query_limit: OPERATOR_TUNED_LIMIT,
+        ..Default::default()
+    };
+
+    // Wire-shape `where` value the dispatcher CBOR-decodes: a single
+    // `In` clause on `age` with all 8 values.
+    let raw_where_value = Value::Array(vec![Value::Array(vec![
+        Value::Text("age".to_string()),
+        Value::Text("in".to_string()),
+        Value::Array(vec![
+            Value::U64(30),
+            Value::U64(40),
+            Value::U64(50),
+            Value::U64(60),
+            Value::U64(70),
+            Value::U64(80),
+            Value::U64(90),
+            Value::U64(100),
+        ]),
+    ])]);
+
+    let request = DocumentCountRequest {
+        contract: &data_contract,
+        document_type,
+        raw_where_value,
+        raw_order_by_value: Value::Null,
+        mode: CountMode::Aggregate,
+        // Aggregate rejects explicit `limit` upstream; the
+        // dispatcher must not substitute `default_query_limit` for
+        // the per-In fan-out cap or the aggregate is wrong.
+        limit: None,
+        prove: false,
+        drive_config: &drive_config,
+    };
+
+    let response = drive
+        .execute_document_count_request(request, None, platform_version)
+        .expect("dispatcher should succeed on Aggregate + In + no-prove");
+
+    // rs-drive's dispatcher emits `Entries` for the PerInValue
+    // path; drive-abci's `dispatch_count_v1` is what sums them
+    // into a single `Aggregate` response on the wire. At this
+    // layer we exercise the fan-out directly: both the entry
+    // count and the sum-of-counts must match the full 8 In
+    // branches, regardless of `OPERATOR_TUNED_LIMIT`.
+    let entries = match response {
+        DocumentCountResponse::Entries(e) => e,
+        other => panic!("expected Entries response from PerInValue dispatch, got {other:?}"),
+    };
+    assert_eq!(
+        entries.len(),
+        8,
+        "PerInValue fan-out must emit all 8 In branches regardless of \
+         operator-tuned default_query_limit ({OPERATOR_TUNED_LIMIT}); pre-fix \
+         this returned {OPERATOR_TUNED_LIMIT} entries because the dispatcher \
+         propagated `default_query_limit` to the executor's `RangeCountOptions::limit`"
+    );
+    let total: u64 = entries.iter().filter_map(|e| e.count).sum();
+    assert_eq!(
+        total, 8,
+        "aggregate sum over per-In entries must be 8; under the pre-fix \
+         truncation the sum would have been {OPERATOR_TUNED_LIMIT}"
+    );
+}
+
 /// `In` clauses with duplicate values are rejected with
 /// `InvalidInClause` — the system-wide canonical contract enforced
 /// by [`WhereClause::in_values`]. Every In-consuming path the count

@@ -15,6 +15,7 @@ pub use {
 #[cfg(feature = "server")]
 pub use drive_document_count_query::{
     CountMode, DocumentCountRequest, DocumentCountResponse, RangeCountOptions,
+    MAX_LIMIT_AS_FAILSAFE,
 };
 // Imports available when either "server" or "verify" features are enabled
 #[cfg(any(feature = "server", feature = "verify"))]
