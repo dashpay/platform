@@ -14,6 +14,7 @@ use crate::{PlatformAddressChangeSet, PlatformWalletError};
 use dash_sdk::platform::transition::transfer_address_funds::TransferAddressFunds;
 
 pub use super::InputSelection;
+use super::saturating_sum_credits;
 
 impl PlatformAddressWallet {
     /// Transfer credits between platform addresses.
@@ -206,14 +207,20 @@ impl PlatformAddressWallet {
         };
 
         let (input_sum, augmented_selection) = match input_selection {
-            InputSelection::Explicit(ref inputs) => (
-                inputs.values().copied().sum::<Credits>(),
-                InputSelection::Explicit(inputs.clone()),
-            ),
-            InputSelection::ExplicitWithNonces(ref inputs) => (
-                inputs.values().map(|(_n, c)| *c).sum::<Credits>(),
-                InputSelection::ExplicitWithNonces(inputs.clone()),
-            ),
+            InputSelection::Explicit(ref inputs) => {
+                validate_change_address(&change_addr, &user_outputs, inputs.keys())?;
+                (
+                    saturating_sum_credits(inputs.values().copied()),
+                    InputSelection::Explicit(inputs.clone()),
+                )
+            }
+            InputSelection::ExplicitWithNonces(ref inputs) => {
+                validate_change_address(&change_addr, &user_outputs, inputs.keys())?;
+                (
+                    saturating_sum_credits(inputs.values().map(|(_n, c)| *c)),
+                    InputSelection::ExplicitWithNonces(inputs.clone()),
+                )
+            }
             InputSelection::Auto => {
                 return Err(PlatformWalletError::AddressOperation(
                     "output_change_address: Some(_) requires InputSelection::Explicit \
@@ -248,12 +255,7 @@ impl PlatformAddressWallet {
         fee_strategy: &[AddressFundsFeeStrategyStep],
         platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<PlatformAddress, Credits>, PlatformWalletError> {
-        // Saturating fold matches the file-wide policy. Total credit supply
-        // is far below `u64::MAX`, so saturation is unreachable in practice.
-        let total_output: Credits = outputs
-            .values()
-            .copied()
-            .fold(0u64, Credits::saturating_add);
+        let total_output: Credits = saturating_sum_credits(outputs.values().copied());
 
         let wm = self.wallet_manager.read().await;
         let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
@@ -512,11 +514,8 @@ fn select_inputs_deduct_from_input(
             .expect("prefix is non-empty: we just pushed");
 
         let fee_target_max = fee_target_balance.saturating_sub(estimated_fee);
-        let other_total: Credits = prefix
-            .iter()
-            .filter(|(addr, _)| addr != &fee_target_addr)
-            .map(|(_, bal)| *bal)
-            .sum();
+        // `accumulated` is the prefix Σ; subtracting the fee target gives Σ of peers.
+        let other_total: Credits = accumulated.saturating_sub(fee_target_balance);
         let fee_target_min =
             std::cmp::max(min_input_amount, total_output.saturating_sub(other_total));
 
@@ -818,10 +817,41 @@ fn select_inputs_reduce_output(
     Ok(selected)
 }
 
+/// Reject `change_addr` collisions before the chain does: the protocol
+/// errors deterministically when a transition has the same address as
+/// both input and output, and silently merging into a caller-declared
+/// output would mask a destination amount. Called at every
+/// `transfer_with_change_address` entry that has the inputs map in scope.
+fn validate_change_address<'a, I>(
+    change_addr: &PlatformAddress,
+    user_outputs: &BTreeMap<PlatformAddress, Credits>,
+    inputs: I,
+) -> Result<(), PlatformWalletError>
+where
+    I: IntoIterator<Item = &'a PlatformAddress>,
+{
+    if user_outputs.contains_key(change_addr) {
+        return Err(PlatformWalletError::AddressOperation(format!(
+            "output_change_address {change_addr:?} already appears in user_outputs; \
+             refusing to silently merge a change-output amount into a caller-declared \
+             output. Pick a fresh change_addr.",
+        )));
+    }
+    if inputs.into_iter().any(|addr| addr == change_addr) {
+        return Err(PlatformWalletError::AddressOperation(format!(
+            "output_change_address {change_addr:?} also appears in the input map; \
+             the protocol rejects transitions where the same address is both input \
+             and output. Pick a fresh change_addr.",
+        )));
+    }
+    Ok(())
+}
+
 /// Augment `user_outputs` with an explicit change output absorbing the
-/// surplus `Σ inputs − Σ user_outputs`. Validates the three error cases
-/// `transfer_with_change_address` rejects before dispatching to `transfer`:
-/// duplicate change address, no surplus, and (defensively) underflow.
+/// surplus `Σ inputs − Σ user_outputs`. Caller MUST invoke
+/// [`validate_change_address`] first to rule out collisions; this fn
+/// re-checks the user_outputs side defensively and rejects the
+/// no-surplus case.
 fn augment_outputs_with_change(
     mut user_outputs: BTreeMap<PlatformAddress, Credits>,
     change_addr: PlatformAddress,
@@ -834,7 +864,7 @@ fn augment_outputs_with_change(
              output. Pick a fresh change_addr.",
         )));
     }
-    let user_output_sum: Credits = user_outputs.values().copied().sum();
+    let user_output_sum: Credits = saturating_sum_credits(user_outputs.values().copied());
     if input_sum <= user_output_sum {
         return Err(PlatformWalletError::AddressOperation(format!(
             "output_change_address: Some(_) requires Σ inputs ({input_sum}) > \
@@ -842,8 +872,6 @@ fn augment_outputs_with_change(
              Drop output_change_address or grow the input map.",
         )));
     }
-    // Saturating arithmetic mirrors the file-wide policy; total credit supply
-    // is far below `u64::MAX`, and the guard above already rules out underflow.
     let change_amount = input_sum.saturating_sub(user_output_sum);
     user_outputs.insert(change_addr, change_amount);
     Ok(user_outputs)
