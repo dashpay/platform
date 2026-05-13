@@ -589,13 +589,9 @@ fn select_inputs_deduct_from_input(
         if new_consumed > fee_target_max {
             return Err(PlatformWalletError::AddressOperation(format!(
                 "Cannot satisfy fee headroom after redistributing sub-minimum tail \
-                 inputs: fee-target {} would consume {} (balance {}, max {}), leaving \
-                 less than estimated fee {} of remaining balance",
-                format_address(&fee_target_addr),
-                new_consumed,
-                fee_target_balance,
-                fee_target_max,
-                estimated_fee,
+                 inputs: fee-target {fee_target_addr} would consume {new_consumed} \
+                 (balance {fee_target_balance}, max {fee_target_max}), leaving \
+                 less than estimated fee {estimated_fee} of remaining balance",
             )));
         }
         fee_target_consumed = new_consumed;
@@ -617,10 +613,9 @@ fn select_inputs_deduct_from_input(
     );
     if selected.keys().next().copied() != Some(fee_target_addr) {
         return Err(PlatformWalletError::AddressOperation(format!(
-            "Internal selection error: fee target {} is not the BTreeMap index-0 \
-             (lex-smallest) entry; first entry is {:?}",
-            format_address(&fee_target_addr),
-            selected.keys().next().map(format_address),
+            "Internal selection error: fee target {fee_target_addr} is not the BTreeMap \
+             index-0 (lex-smallest) entry; first entry is {:?}",
+            selected.keys().next().map(|a| a.to_string()),
         )));
     }
     debug_assert!(
@@ -629,11 +624,9 @@ fn select_inputs_deduct_from_input(
     );
     if fee_target_balance.saturating_sub(fee_target_consumed) < estimated_fee {
         return Err(PlatformWalletError::AddressOperation(format!(
-            "Internal selection error: fee target {} retains {} after consumption, \
-             below estimated fee {}",
-            format_address(&fee_target_addr),
+            "Internal selection error: fee target {fee_target_addr} retains {} after \
+             consumption, below estimated fee {estimated_fee}",
             fee_target_balance.saturating_sub(fee_target_consumed),
-            estimated_fee,
         )));
     }
 
@@ -716,12 +709,9 @@ fn select_inputs_reduce_output(
         .find(|(_, balance)| *balance < min_input_amount)
     {
         return Err(PlatformWalletError::AddressOperation(format!(
-            "Candidate {} has balance {} below min_input_amount {}; \
-             callers must pre-filter via build_auto_select_candidates \
-             before invoking the selector",
-            format_address(bad_addr),
-            bad_balance,
-            min_input_amount,
+            "Candidate {bad_addr} has balance {bad_balance} below \
+             min_input_amount {min_input_amount}; callers must pre-filter via \
+             build_auto_select_candidates before invoking the selector",
         )));
     }
 
@@ -875,13 +865,6 @@ fn augment_outputs_with_change(
     let change_amount = input_sum.saturating_sub(user_output_sum);
     user_outputs.insert(change_addr, change_amount);
     Ok(user_outputs)
-}
-
-fn format_address(addr: &PlatformAddress) -> String {
-    match addr {
-        PlatformAddress::P2pkh(hash) => format!("p2pkh({})", hex::encode(hash)),
-        PlatformAddress::P2sh(hash) => format!("p2sh({})", hex::encode(hash)),
-    }
 }
 
 #[cfg(test)]
@@ -1111,11 +1094,7 @@ mod auto_select_tests {
                 .expect("redistribute path must reach Ok");
 
         for (addr, amount) in selected.iter() {
-            assert!(
-                *amount >= min_input,
-                "{} consumes {amount}",
-                format_address(addr)
-            );
+            assert!(*amount >= min_input, "{addr} consumes {amount}");
         }
         assert!(
             !selected.contains_key(&addr_y),
