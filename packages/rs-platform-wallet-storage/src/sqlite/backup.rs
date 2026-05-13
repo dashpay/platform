@@ -10,6 +10,7 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::persister::{PruneReport, RetentionPolicy};
+use crate::sqlite::util::permissions::apply_secure_permissions;
 
 /// Distinguishes auto-backup filenames.
 #[derive(Debug, Clone, Copy)]
@@ -46,6 +47,9 @@ pub fn run_to(src: &Connection, dest: &Path) -> Result<(), WalletStorageError> {
         }
     }
     let mut backup_conn = Connection::open(dest)?;
+    // SEC-011: chmod 600 on Unix so the backup file isn't world/group
+    // readable just because the process umask was lax.
+    apply_secure_permissions(dest)?;
     let backup = Backup::new(src, &mut backup_conn)?;
     // 100 pages × 4 KiB = 400 KiB per step on default SQLite page size.
     backup.run_to_completion(100, Duration::from_millis(5), None)?;
@@ -169,12 +173,7 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
     // 7. SEC-004: chmod 600 on Unix so the restored DB doesn't inherit
     //    a wider mode from a previous file at the same path. Windows
     //    has no equivalent permission model here — skipped.
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let perms = std::fs::Permissions::from_mode(0o600);
-        std::fs::set_permissions(dest_db_path, perms)?;
-    }
+    apply_secure_permissions(dest_db_path)?;
     Ok(())
 }
 

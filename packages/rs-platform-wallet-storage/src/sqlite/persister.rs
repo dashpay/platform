@@ -16,6 +16,7 @@ use crate::sqlite::buffer::Buffer;
 use crate::sqlite::config::{FlushMode, SqlitePersisterConfig, Synchronous};
 use crate::sqlite::error::{AutoBackupOperation, WalletStorageError};
 use crate::sqlite::schema::{self, PER_WALLET_TABLES};
+use crate::sqlite::util::permissions::apply_secure_permissions;
 use crate::sqlite::util::safe_cast;
 
 /// Sub-areas of `ClientStartState` that `load()` does not yet
@@ -106,6 +107,10 @@ impl SqlitePersister {
         // pending migrations so the integrity probe sees the configured
         // journal mode and busy timeout.
         let mut conn = Connection::open(&config.path)?;
+        // SEC-011: chmod 600 on Unix so a freshly created DB doesn't
+        // inherit a wider mode from the process umask. Idempotent on
+        // re-open.
+        apply_secure_permissions(&config.path)?;
         apply_pragmas(&mut conn, &config)?;
 
         // Determine whether `schema_history` exists *before* we run
