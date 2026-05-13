@@ -27,6 +27,7 @@
 //! Gated behind `#[ignore]` for the same reason as transfer / TK-013.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -45,8 +46,9 @@ use dash_sdk::platform::Fetch;
 use crate::framework::prelude::*;
 use crate::framework::setup_with_per_identity_funding;
 use crate::framework::tokens::{
-    token_balance_of, token_supply_of, DEFAULT_BASE_SUPPLY, DEFAULT_DECIMALS, DEFAULT_MAX_SUPPLY,
-    DEFAULT_TOKEN_POSITION, TK_OWNER_FUNDING_SIMPLE, TK_PEER_FUNDING_ACTIVE, TK_SETUP_WAIT_TIMEOUT,
+    token_balance_of, token_supply_of, wait_for_token_balance, DEFAULT_BASE_SUPPLY,
+    DEFAULT_DECIMALS, DEFAULT_MAX_SUPPLY, DEFAULT_TOKEN_POSITION, TK_OWNER_FUNDING_SIMPLE,
+    TK_PEER_FUNDING_ACTIVE, TK_SETUP_WAIT_TIMEOUT,
 };
 use crate::framework::wallet_factory::RegisteredIdentity;
 
@@ -57,6 +59,10 @@ const MINT_AMOUNT: TokenAmount = 42;
 
 /// Group is at position 0 in the contract, threshold 2-of-3.
 const GROUP_POSITION: GroupContractPosition = 0;
+
+/// Replica-lag budget for the post-cosign balance gate. Same 60 s the
+/// sibling token tests (TK-001/004/007/008/009/011) use.
+const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 #[ignore = "requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access; run with `cargo test -- --ignored`"]
@@ -215,6 +221,24 @@ async fn tk_014_token_group_action_mint_co_sign() {
     )
     .await
     .expect("peer A co-sign mint");
+
+    // Mirror the sibling token tests (TK-001/004/007/008/009/011):
+    // gate the post-cosign reads on the recipient's token balance
+    // reaching the expected post-mint amount. The co-sign ST closes
+    // the group action and credits the recipient; reading immediately
+    // can hit a DAPI replica that hasn't yet applied the block and
+    // return the pre-mint value, racing the balance + supply
+    // assertions below.
+    wait_for_token_balance(
+        ctx,
+        recipient_id,
+        contract_id,
+        DEFAULT_TOKEN_POSITION,
+        balance_before + MINT_AMOUNT,
+        STEP_TIMEOUT,
+    )
+    .await
+    .expect("recipient balance never reached pre-mint + minted amount");
 
     // Step 4 — recipient balance and supply must have advanced now
     // that the threshold (2-of-3) is met.
