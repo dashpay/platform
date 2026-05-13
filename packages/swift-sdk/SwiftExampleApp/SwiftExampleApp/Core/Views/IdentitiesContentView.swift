@@ -238,100 +238,59 @@ struct IdentitiesContentView: View {
     /// Empty when there are no orphan locks; collapses to nothing
     /// in that case so the rest of the screen isn't pushed down by
     /// an empty header.
+    /// Wraps the Resumable Registrations section in a dedicated view
+    /// that observes `RegistrationCoordinator` directly. Necessary
+    /// because the section's filter needs to consult **both** the
+    /// SwiftData @Query results AND the coordinator's in-memory
+    /// controller map: an in-flight registration owns its slot
+    /// transiently between `asset-lock-broadcast` and `PersistentIdentity-
+    /// written`, and during that window the orphan-lock anti-join
+    /// alone would let the same slot surface as both "Pending" and
+    /// "Resumable" → user could tap Resume and race a duplicate
+    /// FFI against the original.
     @ViewBuilder
     private var resumableRegistrationsSection: some View {
-        let locks = resumableAssetLocks
-        if !locks.isEmpty {
-            Section("Resumable Registrations (\(locks.count))") {
-                ForEach(locks) { lock in
-                    ResumableRegistrationRow(
-                        lock: lock,
-                        walletLabel: walletDisplayLabel(for: lock.walletId),
-                        onResume: {
-                            resumingAssetLock = lock
-                        }
-                    )
-                }
-            }
-        }
-    }
-
-    /// Cross-wallet variant of the per-wallet resume picker filter
-    /// implemented at `CreateIdentityView.resumableLocks(...)`. Same
-    /// anti-join logic, but the per-wallet `usedIndices` set is
-    /// generalized to a per-`(walletId, identityIndex)` set so we
-    /// can filter all wallets in one pass.
-    ///
-    /// Independent of `RegistrationCoordinator` — this is purely a
-    /// SwiftData read. Survives app restarts because the underlying
-    /// `PersistentAssetLock` and `PersistentIdentity` rows are
-    /// disk-persisted.
-    private var resumableAssetLocks: [PersistentAssetLock] {
-        let usedSlots: Set<UsedSlot> = Set(
-            identities.compactMap { identity -> UsedSlot? in
-                guard let walletId = identity.wallet?.walletId else {
-                    return nil
-                }
-                return UsedSlot(walletId: walletId, slot: identity.identityIndex)
-            }
+        ResumableRegistrationsList(
+            coordinator: walletManager.registrationCoordinator,
+            allAssetLocks: allAssetLocks,
+            allWallets: allWallets,
+            allIdentities: identities,
+            resumingAssetLock: $resumingAssetLock
         )
-        return Self.crossWalletResumableLocks(
-            in: allAssetLocks,
-            usedSlots: usedSlots
-        )
-    }
-
-    /// Wallet display label for the Resume row's sub-line. Prefers
-    /// the wallet's stored name (via `PersistentWallet.label`'s
-    /// short-hex fallback), so the row shows "MyWallet" / "Wallet
-    /// a1b2c3d4…" rather than a raw 32-byte id dump.
-    private func walletDisplayLabel(for walletId: Data) -> String {
-        if let wallet = allWallets.first(where: { $0.walletId == walletId }) {
-            return wallet.label
-        }
-        // Defensive — should never hit this branch in practice
-        // because every asset lock is owned by a wallet that's
-        // in `allWallets`. Mirrors the same fallback shape that
-        // `PersistentWallet.label` uses so the cosmetic doesn't
-        // diverge.
-        let hex = walletId.prefix(4)
-            .map { String(format: "%02x", $0) }
-            .joined()
-        return hex.isEmpty ? "Wallet" : "Wallet \(hex)…"
     }
 
     /// Pure anti-join across all wallets. A lock is *visible* on the
     /// Resumable Registrations surface iff
     /// - `statusRaw >= 1` (Broadcast or higher), AND
-    /// - no `(walletId, identityIndex)` slot is already claimed by
-    ///   a `PersistentIdentity` row.
+    /// - no `(walletId, identityIndex)` slot is in `usedSlots`.
     ///
-    /// The floor here (`>= 1`, Broadcast) is intentionally **lower
-    /// than the per-wallet picker's floor** in
-    /// `CreateIdentityView.resumableLocks(...)` (which uses `>= 2`,
-    /// InstantSendLocked). Reason: the picker only surfaces locks
-    /// that can fund a Platform identity *right now* — only IS-
-    /// or chain-locked locks have a usable proof — so its row is
-    /// always immediately actionable. This section, by contrast,
-    /// is the user's only signal that *any* registration is
-    /// mid-flight after an app restart. A lock at Broadcast (1) is
-    /// in mid-handoff — SPV will deliver the InstantSendLock
-    /// shortly and the persister will flip it to (2), at which
-    /// point the row's trailing affordance flips from a spinner to
-    /// a Resume button automatically (SwiftData `@Query` is
-    /// reactive). Hiding (1) entirely would create the UX
-    /// asymmetry where users see their just-broadcast lock at
-    /// (1) vanish from the UI, then reappear seconds later at
-    /// (2) — confusing rather than reassuring.
+    /// `usedSlots` is the **union** of two sources of slot
+    /// occupancy (the caller assembles it):
+    /// 1. Persisted `PersistentIdentity` rows — registrations that
+    ///    have completed and written an identity to SwiftData.
+    /// 2. In-memory `RegistrationCoordinator` controllers in
+    ///    `.preparingKeys` or `.inFlight` — registrations whose
+    ///    asset lock has been broadcast but whose identity row
+    ///    hasn't landed yet. Including these prevents a transient
+    ///    window where the same lock would surface here *and* in
+    ///    the in-memory Pending Registrations list, letting the
+    ///    user race a duplicate Resume tap against the original.
     ///
-    /// `statusRaw == 0` (Built but never broadcast) is still
-    /// filtered out: it's a tight crash window between TX build
-    /// and broadcast, and there's no useful UX action to take.
-    /// A re-broadcast would have to come from a different surface.
+    /// The status floor (`>= 1`, Broadcast) is intentionally low:
+    /// a lock at Broadcast (1) is in mid-handoff — SPV will
+    /// deliver the InstantSendLock shortly and the persister will
+    /// flip it to (2), at which point the row's trailing affordance
+    /// flips from a spinner to a Resume button automatically
+    /// (SwiftData `@Query` is reactive). Hiding (1) entirely would
+    /// create a UX asymmetry where the just-broadcast lock vanishes
+    /// from the UI then reappears seconds later at (2).
     ///
-    /// Generic over `AssetLockResumeRow` (the same protocol the
-    /// per-wallet helper uses) so the pure filter is unit-testable
-    /// without spinning up a SwiftData container.
+    /// `statusRaw == 0` (Built but never broadcast) is filtered
+    /// out: a tight crash window between TX build and broadcast
+    /// with no useful UX action to take.
+    ///
+    /// Generic over `AssetLockResumeRow` so the pure filter is
+    /// unit-testable without a SwiftData container.
     nonisolated static func crossWalletResumableLocks<R: AssetLockResumeRow>(
         in locks: [R],
         usedSlots: Set<UsedSlot>
@@ -421,6 +380,95 @@ struct IdentitiesContentView: View {
                 message: "Failed to remove identity from device: \(error.localizedDescription)"
             )
         }
+    }
+}
+
+/// Section view backing the Identities tab's "Resumable Registrations"
+/// surface. Observes `RegistrationCoordinator` (`@ObservedObject`) so
+/// the in-memory controller map is part of the filter input, not just
+/// the SwiftData-backed identity rows: a controller in `.preparingKeys`
+/// or `.inFlight` owns its slot transiently before a `PersistentIdentity`
+/// row exists for it, and during that window the orphan-lock anti-join
+/// would otherwise surface the same slot as both "Pending" and
+/// "Resumable" → a duplicate Resume tap could race a second FFI for
+/// the same outpoint.
+///
+/// Phase-change reactivity within an existing controller is best-
+/// effort. The coordinator's `@Published controllers` dict re-emits
+/// on add/remove but not on phase transitions inside an existing
+/// entry. The two transitions that need re-render are
+/// `.inFlight → .completed` (handled — the persister writes a
+/// `PersistentIdentity` row, the @Query re-fires) and
+/// `.inFlight → .failed` (not handled directly; the row re-surfaces
+/// once the user dismisses the failed Pending entry, which mutates
+/// the dict). The latter delay is acceptable given the explicit
+/// dismiss UX on `.failed` rows.
+private struct ResumableRegistrationsList: View {
+    @ObservedObject var coordinator: RegistrationCoordinator
+    let allAssetLocks: [PersistentAssetLock]
+    let allWallets: [PersistentWallet]
+    let allIdentities: [PersistentIdentity]
+    @Binding var resumingAssetLock: PersistentAssetLock?
+
+    var body: some View {
+        let locks = resumableLocks
+        if !locks.isEmpty {
+            Section("Resumable Registrations (\(locks.count))") {
+                ForEach(locks) { lock in
+                    ResumableRegistrationRow(
+                        lock: lock,
+                        walletLabel: walletDisplayLabel(for: lock.walletId),
+                        onResume: {
+                            resumingAssetLock = lock
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    /// Filter is `anti-join(identity-claimed slots ∪ in-flight slots)`
+    /// over `crossWalletResumableLocks`. The union is the key
+    /// fix: identity rows alone leave a window where the asset
+    /// lock is already broadcast but the registration hasn't
+    /// persisted an identity yet, and during that window the
+    /// row would double-count in both Pending and Resumable.
+    private var resumableLocks: [PersistentAssetLock] {
+        let identitySlots: Set<IdentitiesContentView.UsedSlot> = Set(
+            allIdentities.compactMap { identity in
+                guard let walletId = identity.wallet?.walletId else {
+                    return nil
+                }
+                return IdentitiesContentView.UsedSlot(
+                    walletId: walletId,
+                    slot: identity.identityIndex
+                )
+            }
+        )
+        let activeSlots: Set<IdentitiesContentView.UsedSlot> = Set(
+            coordinator.controllers
+                .filter { _, controller in controller.phase.isActive }
+                .map { (key, _) in
+                    IdentitiesContentView.UsedSlot(
+                        walletId: key.walletId,
+                        slot: key.identityIndex
+                    )
+                }
+        )
+        return IdentitiesContentView.crossWalletResumableLocks(
+            in: allAssetLocks,
+            usedSlots: identitySlots.union(activeSlots)
+        )
+    }
+
+    private func walletDisplayLabel(for walletId: Data) -> String {
+        if let wallet = allWallets.first(where: { $0.walletId == walletId }) {
+            return wallet.label
+        }
+        let hex = walletId.prefix(4)
+            .map { String(format: "%02x", $0) }
+            .joined()
+        return hex.isEmpty ? "Wallet" : "Wallet \(hex)…"
     }
 }
 

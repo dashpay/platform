@@ -40,6 +40,30 @@ final class IdentityRegistrationController: ObservableObject {
         /// the coordinator's map until the user dismisses it
         /// manually.
         case failed(String)
+
+        /// Whether the controller is currently holding its slot
+        /// against a fresh registration. Used by the Resumable
+        /// Registrations surface to hide orphan asset locks whose
+        /// slot is mid-flight — otherwise the same lock could
+        /// appear in both Pending and Resumable lists during the
+        /// window between asset-lock broadcast and PersistentIdentity
+        /// write, letting the user race a duplicate Resume tap
+        /// against the original FFI call.
+        ///
+        /// `.completed` is NOT active here: by the time the
+        /// controller flips to `.completed` the persister has
+        /// (or is about to) write a `PersistentIdentity` row,
+        /// which the identity-slot anti-join already covers.
+        /// `.failed` is NOT active either: the user is expected
+        /// to retry, so the lock should resurface for selection.
+        var isActive: Bool {
+            switch self {
+            case .preparingKeys, .inFlight:
+                return true
+            case .idle, .completed, .failed:
+                return false
+            }
+        }
     }
 
     /// Current phase. Updates flow:
@@ -77,17 +101,29 @@ final class IdentityRegistrationController: ObservableObject {
         phase = .preparingKeys
     }
 
-    /// Submit the registration. Single-flighted by the coordinator:
-    /// callers should check `phase != .inFlight` before invoking,
-    /// otherwise the controller silently ignores re-submits to keep
-    /// the FFI call exclusive.
+    /// Submit the registration. Defensively rejects any phase that
+    /// shouldn't fire a fresh FFI call:
+    ///   - `.inFlight`: a second FFI call would race the first,
+    ///     ending with a misleading "asset lock consumed" failure.
+    ///   - `.completed`: re-submitting after success would flip the
+    ///     UI from "Done" back to a spinner before failing on the
+    ///     consumed lock.
+    /// `.idle`, `.preparingKeys`, and `.failed` are allowed — the
+    /// coordinator drives the legitimate-restart flow through them
+    /// (callers must call `enterPreparingKeys()` before `submit()`,
+    /// `failed → preparingKeys → submit` is how a user retries).
     ///
     /// `body` performs the actual FFI call. It runs detached on a
     /// background priority and reports the identity id on success
     /// or rethrows on failure. The controller flips `phase` to
     /// `.completed` / `.failed` accordingly.
     func submit(body: @escaping () async throws -> Data) {
-        guard phase != .inFlight else { return }
+        switch phase {
+        case .idle, .preparingKeys, .failed:
+            break
+        case .inFlight, .completed:
+            return
+        }
         phase = .inFlight
         lastSubmittedAt = Date()
         task = Task { [weak self] in

@@ -75,26 +75,47 @@ final class RegistrationCoordinator: ObservableObject {
     /// controller for `CreateIdentityView` to bind a
     /// `RegistrationProgressView` against.
     ///
-    /// Single-flighting is handled inside
-    /// `IdentityRegistrationController.submit` — a second call for
-    /// the same slot while the first is in flight is silently
-    /// ignored at the controller layer.
+    /// Single-flighting is enforced here at the coordinator level
+    /// (rather than just inside `IdentityRegistrationController.submit`)
+    /// because the controller's `enterPreparingKeys()` unconditionally
+    /// overwrites `phase`; without a phase check before that call, a
+    /// second tap on the same slot during the FFI window would set
+    /// `.inFlight → .preparingKeys → .inFlight`, racing two FFI calls
+    /// for the same asset lock. The Resumable Registrations section
+    /// surfaces orphan locks based on the absence of a
+    /// `PersistentIdentity` row, which only lands after the FFI
+    /// returns — so during the lock-broadcast-to-identity-write
+    /// window, the same slot was visible in both Pending and
+    /// Resumable surfaces and could be double-tapped.
     func startRegistration(
         walletId: Data,
         identityIndex: UInt32,
         body: @escaping () async throws -> Data
     ) -> IdentityRegistrationController {
         let key = SlotKey(walletId: walletId, identityIndex: identityIndex)
-        let controller: IdentityRegistrationController
         if let existing = controllers[key] {
-            controller = existing
-        } else {
-            controller = IdentityRegistrationController(
-                walletId: walletId,
-                identityIndex: identityIndex
-            )
-            controllers[key] = controller
+            switch existing.phase {
+            case .preparingKeys, .inFlight, .completed:
+                // Active or just-completed — don't re-enter. Returning
+                // the existing controller lets the caller bind to its
+                // progress / terminal state without disrupting it.
+                return existing
+            case .idle, .failed:
+                // Legitimate restart paths: a brand-new idle
+                // controller (shouldn't happen via the standard
+                // entry but safe to allow), or a user-initiated
+                // retry after a failure.
+                existing.enterPreparingKeys()
+                existing.submit(body: body)
+                scheduleRetentionSweep(key: key, controller: existing)
+                return existing
+            }
         }
+        let controller = IdentityRegistrationController(
+            walletId: walletId,
+            identityIndex: identityIndex
+        )
+        controllers[key] = controller
         controller.enterPreparingKeys()
         controller.submit(body: body)
         scheduleRetentionSweep(key: key, controller: controller)

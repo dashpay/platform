@@ -668,7 +668,14 @@ struct CreateIdentityView: View {
             // for that on the row the user tapped Resume on, so
             // we trust the seed.
             if fundingSelection == .unusedAssetLock {
-                return selectedAssetLockId != nil
+                // Resolve the id to a live row before enabling
+                // submit — the row could have been deleted between
+                // Path B's init-seed and now (e.g. another flow
+                // consumed the same outpoint, or SwiftData pruning
+                // collapsed it). Submitting with a stale id would
+                // fall into the dispatch's "not yet supported"
+                // branch and show a confusing error.
+                return selectedAssetLock != nil
             }
             // Block submit on collision with an existing identity's
             // registration index. The picker shows a red collision

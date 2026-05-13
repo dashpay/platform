@@ -179,4 +179,59 @@ final class CreateIdentityResumableTests: XCTestCase {
         )
         XCTAssertTrue(result.isEmpty)
     }
+
+    // MARK: - in-flight controller exclusion
+
+    /// Regression for the double-counting bug: during a normal
+    /// in-session registration, the asset lock reaches `Broadcast`
+    /// (or higher) **before** the persister writes a
+    /// `PersistentIdentity` row. Without including in-flight
+    /// controller slots in `usedSlots`, the same lock would
+    /// appear in BOTH the in-memory Pending Registrations list
+    /// and the SwiftData-backed Resumable Registrations section
+    /// — and a second tap on Resume would race a duplicate FFI
+    /// call against the original. The fix is structural: the
+    /// `ResumableRegistrationsList` view unions identity-claimed
+    /// slots with `controller.phase.isActive` slots before
+    /// calling `crossWalletResumableLocks`. The unioned set is
+    /// what gets passed here; this test pins that the filter
+    /// honors active-slot occupancy the same way it honors
+    /// identity-row occupancy.
+    func testInFlightSlotIsExcludedFromResumableSurface() {
+        let lock = FakeAssetLockRow(walletId: walletA, statusRaw: 2, identityIndexRaw: 3)
+        // No `PersistentIdentity` exists at (walletA, 3) yet, but a
+        // controller in `.inFlight` does. The union of identity
+        // slots (empty) and active slots (one) must hide the lock.
+        let activeSlots: Set<IdentitiesContentView.UsedSlot> = [
+            IdentitiesContentView.UsedSlot(walletId: walletA, slot: 3)
+        ]
+        let result = IdentitiesContentView.crossWalletResumableLocks(
+            in: [lock],
+            usedSlots: activeSlots
+        )
+        XCTAssertTrue(result.isEmpty)
+    }
+
+    /// Exhaustive predicate test for which controller phases hold
+    /// the slot. The Resumable surface uses this to decide which
+    /// in-memory controllers block their lock from re-appearing
+    /// in the section. Changing this predicate without thinking
+    /// about both the Pending and Resumable surfaces is how
+    /// double-tap-Resume bugs come back.
+    func testControllerPhaseIsActivePredicate() {
+        XCTAssertFalse(IdentityRegistrationController.Phase.idle.isActive,
+                       ".idle: pre-submit — no slot occupancy yet")
+        XCTAssertTrue(IdentityRegistrationController.Phase.preparingKeys.isActive,
+                      ".preparingKeys: keys derived; FFI imminent — slot held")
+        XCTAssertTrue(IdentityRegistrationController.Phase.inFlight.isActive,
+                      ".inFlight: FFI mid-call — slot held")
+        XCTAssertFalse(
+            IdentityRegistrationController.Phase
+                .completed(identityId: Data(repeating: 0xCC, count: 32))
+                .isActive,
+            ".completed: PersistentIdentity row covers the slot via the identity anti-join — don't double-block"
+        )
+        XCTAssertFalse(IdentityRegistrationController.Phase.failed("nope").isActive,
+                       ".failed: user is expected to retry — let the lock resurface")
+    }
 }
