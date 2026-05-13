@@ -43,7 +43,8 @@ use crate::token_persistence::{TokenBalanceRemovalFFI, TokenBalanceUpsertFFI};
 use crate::wallet_registration_persistence::AccountAddressPoolFFI;
 use crate::wallet_restore_types::{
     AccountSpecFFI, AccountTypeTagFFI, IdentityKeyRestoreFFI, IdentityRestoreEntryFFI,
-    LoadWalletListFreeFn, StandardAccountTypeTagFFI, UtxoRestoreEntryFFI, WalletRestoreEntryFFI,
+    LoadWalletListFreeFn, StandardAccountTypeTagFFI, UnresolvedAssetLockTxRecordFFI,
+    UtxoRestoreEntryFFI, WalletRestoreEntryFFI,
 };
 use dpp::address_funds::PlatformAddress;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -1960,6 +1961,62 @@ fn build_wallet_start_state(
         wallet_info.update_balance();
     }
 
+    // Selectively repopulate the in-memory `transactions()` map with
+    // the funding-tx records of any tracked asset locks still at
+    // `statusRaw < 2` (Built / Broadcast). The wallet's load path
+    // otherwise leaves `transactions()` empty for these accounts —
+    // most tx history is consumed reactively from SwiftData rather
+    // than the in-memory map, so the bulk-restore cost isn't
+    // justified. But asset locks waiting on a proof are the one
+    // exception: `WalletManager::apply_chain_lock` walks the in-
+    // memory `transactions()` map looking for records to promote
+    // from `InBlock` to `InChainLockedBlock`. If the funding tx
+    // isn't present at the moment the next CLSig fires, the
+    // promotion silently drops on the floor and the asset lock
+    // stays stuck at `Broadcast` indefinitely.
+    //
+    // Re-injecting these specific records is the minimum surface
+    // that lets the existing event-driven cascade do its job: at
+    // the next chain-lock event the bridge's Fix-1
+    // `chain_lock_promotions` projection picks them up, Swift
+    // flips their `PersistentTransaction.context` to `3`, and the
+    // `AssetLockManager::resolve_status_with_in_memory` path
+    // builds a `ChainAssetLockProof` from the row's block info.
+    //
+    // Each restored record is synthetic: `input_details` /
+    // `output_details` are empty (we don't have the per-account
+    // role classification at load time), `net_amount` is zero, and
+    // `account_type` reflects the funding BIP44 slot. None of
+    // those fields are read by the chain-lock cascade — only
+    // `context` and `height()` matter for the
+    // `apply_chain_lock` → bridge → persister loop.
+    let unresolved_recs: &[UnresolvedAssetLockTxRecordFFI] =
+        if entry.unresolved_asset_lock_tx_records.is_null()
+            || entry.unresolved_asset_lock_tx_records_count == 0
+        {
+            &[]
+        } else {
+            unsafe {
+                slice::from_raw_parts(
+                    entry.unresolved_asset_lock_tx_records,
+                    entry.unresolved_asset_lock_tx_records_count,
+                )
+            }
+        };
+    if !unresolved_recs.is_empty() {
+        let stats =
+            restore_unresolved_asset_lock_tx_records(&mut wallet_info, unresolved_recs)?;
+        if stats.restored > 0 || stats.dropped() > 0 {
+            tracing::info!(
+                wallet_id = %hex::encode(entry.wallet_id),
+                restored = stats.restored,
+                dropped_decode = stats.dropped_decode,
+                dropped_no_account = stats.dropped_no_account,
+                "load: unresolved-asset-lock tx-record restore complete"
+            );
+        }
+    }
+
     let mut per_account = PerWalletPlatformAddressState::new();
     for (&account_key, account) in &wallet.accounts.platform_payment_accounts {
         per_account.entry(account_key.account).or_insert_with(|| {
@@ -2513,5 +2570,320 @@ unsafe fn slice_from_raw<'a>(ptr: *const u8, len: usize) -> &'a [u8] {
         &[]
     } else {
         slice::from_raw_parts(ptr, len)
+    }
+}
+
+/// Per-call statistics for [`restore_unresolved_asset_lock_tx_records`].
+/// Pulled out as a struct so the caller logs a single rollup line and
+/// the unit tests can assert on the breakdown without ad-hoc tuples.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct UnresolvedRestoreStats {
+    restored: usize,
+    dropped_decode: usize,
+    dropped_no_account: usize,
+}
+
+impl UnresolvedRestoreStats {
+    fn dropped(&self) -> usize {
+        self.dropped_decode + self.dropped_no_account
+    }
+}
+
+/// Project a slice of [`UnresolvedAssetLockTxRecordFFI`] rows onto the
+/// in-memory `transactions()` maps of the matching
+/// `standard_bip44_accounts[account_index]` slots on the rebuilt
+/// `ManagedWalletInfo`.
+///
+/// See the call site in [`build_wallet_start_state`] for the design
+/// rationale on WHY this exists at all (selective bulk-restore for
+/// the chain-lock cascade path). This helper is the pure
+/// computational core, separated so a Rust unit test can exercise it
+/// without standing up an entire `WalletRestoreEntryFFI`.
+///
+/// Returns an `Err` only for non-recoverable corruption (malformed
+/// `block_hash`). Per-row decode failures and no-matching-account
+/// rows are counted into `UnresolvedRestoreStats` so the caller can
+/// emit a single rollup log line.
+fn restore_unresolved_asset_lock_tx_records(
+    wallet_info: &mut ManagedWalletInfo,
+    records: &[UnresolvedAssetLockTxRecordFFI],
+) -> Result<UnresolvedRestoreStats, PersistenceError> {
+    use dashcore::hashes::Hash;
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+    use key_wallet::managed_account::transaction_record::{
+        TransactionDirection, TransactionRecord,
+    };
+    use key_wallet::transaction_checking::{BlockInfo, TransactionContext, TransactionType};
+
+    let mut stats = UnresolvedRestoreStats::default();
+    for rec in records {
+        let tx_bytes = unsafe { slice_from_raw(rec.tx_bytes, rec.tx_bytes_len) };
+        let tx: dashcore::Transaction = match dashcore::consensus::encode::deserialize(tx_bytes) {
+            Ok(t) => t,
+            Err(e) => {
+                stats.dropped_decode += 1;
+                tracing::warn!(
+                    account_index = rec.account_index,
+                    error = %e,
+                    "load: skipping unresolved-asset-lock tx record with undecodable bytes"
+                );
+                continue;
+            }
+        };
+
+        // Only the two confirmed contexts are reconstructible from
+        // the persisted scalars; `0` / `1` either have no block
+        // info to project or need an IS-lock signature blob we
+        // don't carry. Treat them as `Mempool` — defensive code
+        // for an edge that shouldn't occur in practice (an asset
+        // lock at `Built` / `Broadcast` has by definition not yet
+        // observed IS-lock or block confirmation).
+        let context = match rec.context_raw {
+            2 => {
+                let block_hash = dashcore::BlockHash::from_slice(&rec.block_hash)
+                    .map_err(|e| format!(
+                        "load: malformed block_hash on unresolved asset-lock tx record: {}",
+                        e
+                    ))?;
+                TransactionContext::InBlock(BlockInfo::new(
+                    rec.block_height,
+                    block_hash,
+                    rec.block_timestamp as u32,
+                ))
+            }
+            3 => {
+                let block_hash = dashcore::BlockHash::from_slice(&rec.block_hash)
+                    .map_err(|e| format!(
+                        "load: malformed block_hash on unresolved asset-lock tx record: {}",
+                        e
+                    ))?;
+                TransactionContext::InChainLockedBlock(BlockInfo::new(
+                    rec.block_height,
+                    block_hash,
+                    rec.block_timestamp as u32,
+                ))
+            }
+            _ => TransactionContext::Mempool,
+        };
+
+        // Asset-lock txs are funded from a BIP44 account; that's
+        // the only account map the asset-lock recovery flow
+        // consults (`recover_asset_lock_blocking` reads
+        // `info.core_wallet.accounts.standard_bip44_accounts.get(
+        // &account_index)...transactions().get(&out_point.txid)`),
+        // so restoration goes through the same map. Records for
+        // other variants would never be reached by that lookup.
+        let Some(account) = wallet_info
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&rec.account_index)
+        else {
+            stats.dropped_no_account += 1;
+            tracing::warn!(
+                account_index = rec.account_index,
+                "load: dropping unresolved-asset-lock tx record — no matching BIP44 account"
+            );
+            continue;
+        };
+
+        let account_type = account.managed_account_type().to_account_type();
+        let record = TransactionRecord::new(
+            tx,
+            account_type,
+            context,
+            // Funding transactions ARE asset locks by definition —
+            // the upstream router classifies them via the
+            // `AssetLockPayloadType` special-tx payload. Use the
+            // same tag here so any downstream code keying off
+            // `transaction_type` sees the canonical value.
+            TransactionType::AssetLock,
+            // The funding flow always starts from our own UTXOs
+            // and writes one credit output to ourselves; per
+            // `TransactionDirection::Internal`'s docstring, a
+            // self-transfer with no outputs to external addresses
+            // is "Internal". `wait_for_proof` doesn't read
+            // direction; this is just the most-correct tag.
+            TransactionDirection::Internal,
+            Vec::new(),
+            Vec::new(),
+            0,
+        );
+        account.transactions_mut().insert(record.txid, record);
+        stats.restored += 1;
+    }
+    Ok(stats)
+}
+
+#[cfg(test)]
+mod tests {
+    //! Unit tests for the load-side helpers. Focused on the
+    //! restoration loops that don't need the full FFI plumbing —
+    //! exercising the in-memory mutation against synthetic input.
+
+    use super::*;
+    use dashcore::blockdata::transaction::txin::TxIn;
+    use dashcore::blockdata::transaction::txout::TxOut;
+    use dashcore::blockdata::transaction::Transaction;
+    use dashcore::consensus::encode::serialize;
+    use dashcore::{Network, ScriptBuf};
+    use key_wallet::account::{Account, AccountType, StandardAccountType};
+    use key_wallet::bip32::{ExtendedPrivKey, ExtendedPubKey};
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::wallet::Wallet;
+    use dashcore::secp256k1::Secp256k1;
+
+    /// Pins the contract that an `InBlock` unresolved-asset-lock row
+    /// projects onto the matching BIP44 account's in-memory
+    /// `transactions()` map with the correct context — the precise
+    /// invariant the chain-lock cascade depends on at the next CLSig
+    /// after a wallet restart.
+    #[test]
+    fn restore_unresolved_records_inserts_inblock_record() {
+        let mut wallet_info = test_managed_wallet_info_with_bip44(0);
+        let tx = synthetic_minimal_tx();
+        let txid = tx.txid();
+        let tx_bytes = serialize(&tx);
+
+        // Build a single `InBlock` row pointing at account 0.
+        let mut tx_buf: Vec<u8> = tx_bytes.clone();
+        let block_hash = [0x42u8; 32];
+        let rec = UnresolvedAssetLockTxRecordFFI {
+            account_index: 0,
+            tx_bytes: tx_buf.as_mut_ptr(),
+            tx_bytes_len: tx_buf.len(),
+            context_raw: 2,
+            block_height: 1475917,
+            block_hash,
+            block_timestamp: 1700000000,
+            first_seen: 1699999000,
+        };
+
+        let stats = restore_unresolved_asset_lock_tx_records(&mut wallet_info, &[rec])
+            .expect("restoration should not return an error for a well-formed row");
+        assert_eq!(
+            stats,
+            UnresolvedRestoreStats {
+                restored: 1,
+                dropped_decode: 0,
+                dropped_no_account: 0
+            }
+        );
+
+        let account = wallet_info
+            .accounts
+            .standard_bip44_accounts
+            .get(&0)
+            .expect("BIP44 account 0 must exist on the synthetic wallet");
+        let restored = account
+            .transactions()
+            .get(&txid)
+            .expect("restored record must be in the in-memory map");
+        match &restored.context {
+            key_wallet::transaction_checking::TransactionContext::InBlock(info) => {
+                assert_eq!(info.height(), 1475917);
+                let actual_hash = info.block_hash();
+                let actual_hash_bytes: &[u8; 32] = actual_hash.as_ref();
+                assert_eq!(actual_hash_bytes, &block_hash);
+            }
+            other => panic!("expected InBlock context, got {:?}", other),
+        }
+
+        // Keep the buffer alive until after the read so the
+        // `tx_bytes` pointer remains valid for the duration of
+        // `restore_unresolved_asset_lock_tx_records`. The function
+        // copies the decoded `Transaction` into the record, so the
+        // original buffer can drop after the call returns — but we
+        // keep it alive explicitly here to make the lifetime
+        // contract obvious for reviewers.
+        drop(tx_buf);
+    }
+
+    /// Pins that a no-matching-account row is counted but doesn't
+    /// abort the load — important so a stray persisted row from a
+    /// pruned account doesn't poison wallet load.
+    #[test]
+    fn restore_unresolved_records_skips_missing_account() {
+        let mut wallet_info = test_managed_wallet_info_with_bip44(0);
+        let tx = synthetic_minimal_tx();
+        let mut tx_buf: Vec<u8> = serialize(&tx);
+
+        let rec = UnresolvedAssetLockTxRecordFFI {
+            account_index: 99, // not present
+            tx_bytes: tx_buf.as_mut_ptr(),
+            tx_bytes_len: tx_buf.len(),
+            context_raw: 2,
+            block_height: 1,
+            block_hash: [0u8; 32],
+            block_timestamp: 0,
+            first_seen: 0,
+        };
+
+        let stats = restore_unresolved_asset_lock_tx_records(&mut wallet_info, &[rec])
+            .expect("missing-account is a recoverable drop, not an error");
+        assert_eq!(stats.restored, 0);
+        assert_eq!(stats.dropped_no_account, 1);
+        drop(tx_buf);
+    }
+
+    /// Helper: build a `ManagedWalletInfo` with a single BIP44
+    /// account at `index`. Uses a hard-coded valid xpub so the
+    /// construction is deterministic; the test cares about the
+    /// `transactions()` map structure, not key material.
+    fn test_managed_wallet_info_with_bip44(index: u32) -> ManagedWalletInfo {
+        // Derive a valid testnet xpub from the canonical
+        // `abandon × 11 about` BIP-39 vector so the construction is
+        // reproducible and doesn't depend on a hand-typed
+        // base58-checked string. Same pattern the upstream
+        // `account_collection_test.rs` uses.
+        let mnemonic = Mnemonic::from_phrase(
+            "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+            Language::English,
+        )
+        .expect("static BIP-39 vector must parse");
+        let seed = mnemonic.to_seed("");
+        let master = ExtendedPrivKey::new_master(Network::Testnet, &seed)
+            .expect("master derivation must succeed");
+        let secp = Secp256k1::new();
+        let xpub = ExtendedPubKey::from_priv(&secp, &master);
+        let account = Account::from_xpub(
+            None,
+            AccountType::Standard {
+                index,
+                standard_account_type: StandardAccountType::BIP44Account,
+            },
+            xpub,
+            Network::Testnet,
+        )
+        .expect("Account::from_xpub on a valid xpub must succeed");
+        let mut accounts = key_wallet::AccountCollection::new();
+        accounts
+            .insert(account)
+            .expect("inserting the single account must succeed");
+        let wallet = Wallet::new_external_signable(Network::Testnet, [0u8; 32], accounts);
+        ManagedWalletInfo::from_wallet(&wallet, 0)
+    }
+
+    /// Helper: a minimum valid consensus-encodable transaction —
+    /// version 1, one synthetic input, one zero-value output. The
+    /// restoration helper only cares that the bytes round-trip
+    /// through `consensus::encode::deserialize`; the tx's semantic
+    /// validity is irrelevant.
+    fn synthetic_minimal_tx() -> Transaction {
+        Transaction {
+            version: 1,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: dashcore::OutPoint::null(),
+                script_sig: ScriptBuf::new(),
+                sequence: 0xffffffff,
+                witness: dashcore::Witness::default(),
+            }],
+            output: vec![TxOut {
+                value: 0,
+                script_pubkey: ScriptBuf::new(),
+            }],
+            special_transaction_payload: None,
+        }
     }
 }

@@ -309,6 +309,65 @@ pub struct UtxoRestoreEntryFFI {
     pub is_locked: bool,
 }
 
+/// One persisted transaction record carried back at load time so the
+/// in-memory `transactions()` map can be selectively repopulated for
+/// the small subset of records that matter for chain-lock cascade —
+/// today, the funding transactions of tracked asset locks still at
+/// `Built` / `Broadcast` (`statusRaw < 2`).
+///
+/// Why selectively rather than wholesale: the wallet's own load path
+/// only bulk-restores UTXOs, not tx records, by design — most tx
+/// history is consumed reactively through SwiftData `@Query`s, not
+/// from the in-memory map. The exception is asset locks waiting for
+/// IS-lock / chain-lock proofs: their funding tx must live in the
+/// in-memory map at the moment the next chain-lock event fires, or
+/// `WalletManager::apply_chain_lock` finds nothing to promote and
+/// the bridge has no `chain_lock_promotions` to emit. Restoring
+/// these specific records closes that gap without breaking the rest
+/// of the lazy-load model.
+///
+/// `context_raw` matches `TransactionContext` discriminants:
+/// 0 = Mempool, 1 = InstantSend, 2 = InBlock, 3 = InChainLockedBlock.
+/// Only `2` and `3` are reconstructible from these scalar fields;
+/// `0` / `1` need either no block info (Mempool) or an IS-lock blob
+/// we don't carry (InstantSend), so the Rust load path treats them
+/// as `Mempool` — defensive code for an edge that shouldn't occur in
+/// practice (an asset lock at `Built` / `Broadcast` has by definition
+/// not yet observed IS-lock or block confirmation).
+#[repr(C)]
+pub struct UnresolvedAssetLockTxRecordFFI {
+    /// BIP44 account index the funding tx spent UTXOs from — the
+    /// same `account_index` the Rust `TrackedAssetLock` carries.
+    /// Routes the record into the matching
+    /// `standard_bip44_accounts[account_index].transactions_mut()`
+    /// bucket at load time.
+    pub account_index: u32,
+    /// Consensus-encoded asset-lock transaction body. Same wire
+    /// format `dashcore::consensus::encode::serialize` produces, so
+    /// `Transaction::consensus_decode` round-trips. Swift-owned for
+    /// the callback window; freed by `LoadWalletListFreeFn`.
+    pub tx_bytes: *mut u8,
+    pub tx_bytes_len: usize,
+    /// `TransactionContext` discriminant; see struct docstring for
+    /// values. Anything other than `2` / `3` is treated as `Mempool`
+    /// by the load path.
+    pub context_raw: u32,
+    /// Block height (meaningful only when `context_raw` is `2` or
+    /// `3`; zero placeholder otherwise).
+    pub block_height: u32,
+    /// Block hash (wire-orientation 32 bytes; meaningful only when
+    /// `context_raw` is `2` or `3`; zeros otherwise).
+    pub block_hash: [u8; 32],
+    /// Block timestamp (Unix seconds; same meaningfulness rule as
+    /// `block_height`).
+    pub block_timestamp: u64,
+    /// Persisted "first seen" Unix-second timestamp. Carried so the
+    /// rebuilt `TransactionRecord` mirrors what Swift had on disk;
+    /// `wait_for_proof` itself reads only `context` + `height()`, so
+    /// a zero here is benign for the chain-lock cascade path.
+    pub first_seen: u64,
+}
+
 /// Per-wallet entry returned by `on_load_wallet_list_fn`.
 ///
 /// `accounts` points to a contiguous array of length `accounts_count`.
@@ -360,6 +419,22 @@ pub struct WalletRestoreEntryFFI {
     /// when the wallet has no persisted tracked locks.
     pub tracked_asset_locks: *const AssetLockEntryFFI,
     pub tracked_asset_locks_count: usize,
+    /// Funding tx records for tracked asset locks at `statusRaw < 2`
+    /// (Built / Broadcast). The Rust load path re-inserts each entry
+    /// into the matching `standard_bip44_accounts[account_index]
+    /// .transactions_mut()` bucket so the next incoming chain-lock
+    /// event can find these txids in the in-memory map and promote
+    /// them via `apply_chain_lock` — closing the SPV-restart gap
+    /// where an asset lock would otherwise stay stuck at `Broadcast`
+    /// indefinitely because the wallet's `transactions()` started
+    /// empty and no follow-up CLSig at a higher height was ever
+    /// going to re-fire promotion for the lower-height block.
+    ///
+    /// Each entry's `tx_bytes` buffer is Swift-owned and freed by
+    /// `LoadWalletListFreeFn`. `null` / `0` when the wallet has no
+    /// unresolved asset locks.
+    pub unresolved_asset_lock_tx_records: *const UnresolvedAssetLockTxRecordFFI,
+    pub unresolved_asset_lock_tx_records_count: usize,
 }
 
 // SAFETY: Pointers are Swift-owned and lifetime-scoped to the callback.
