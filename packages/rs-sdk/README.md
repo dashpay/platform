@@ -46,6 +46,12 @@ You can see examples of mocking in [mock_fetch.rs](tests/fetch/mock_fetch.rs) an
 
 You can find quick start example in `examples/` folder. Examples must be configured by setting constants.
 
+## Compatibility notes
+
+- `DocumentDeleteTransitionBuilder::with_settings(settings).sign(...)` now honors `settings.user_fee_increase` and `settings.state_transition_creation_options` when those builder fields were not set directly. Native rs-sdk callers that passed delete transition fee/creation options through `PutSettings` may now see those intended values take effect on the wire instead of being silently dropped.
+
+
+
 You can also inspect tests in `tests/` folder for more detailed examples.
 
 Also refer to [Platform Explorer](https://github.com/dashpay/rs-platform-explorer/) which uses the SDK to execute various state transitions.

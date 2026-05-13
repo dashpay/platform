@@ -44,10 +44,11 @@ use crate::{Error, Sdk};
 use dpp::dashcore::secp256k1::rand::rngs::StdRng;
 use dpp::dashcore::secp256k1::rand::{Rng, SeedableRng};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::DocumentType;
+use dpp::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters, INITIAL_REVISION};
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
+use dpp::prelude::Identifier;
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::StateTransition;
@@ -76,7 +77,7 @@ fn ensure_revision_nonzero(revision: Option<u64>) -> Result<(), Error> {
 /// Accepts `None` and `Some(INITIAL_REVISION)`. Rejects `Some(0)` and any
 /// revision strictly greater than `INITIAL_REVISION`. This is the rs-sdk-side
 /// fail-fast equivalent of the wasm-sdk `ensureDocumentCreateRevision` guard.
-fn ensure_revision_for_create(revision: Option<u64>) -> Result<(), Error> {
+pub(crate) fn ensure_revision_for_create(revision: Option<u64>) -> Result<(), Error> {
     match revision {
         None => Ok(()),
         Some(rev) if rev == INITIAL_REVISION => Ok(()),
@@ -92,7 +93,7 @@ fn ensure_revision_for_create(revision: Option<u64>) -> Result<(), Error> {
 /// Accepts only `Some(rev)` with `rev > INITIAL_REVISION`. Rejects `None`,
 /// `Some(0)`, and `Some(INITIAL_REVISION)`. This is the rs-sdk-side fail-fast
 /// equivalent of the wasm-sdk `ensureDocumentReplaceRevision` guard.
-fn ensure_revision_for_replace(revision: Option<u64>) -> Result<(), Error> {
+pub(crate) fn ensure_revision_for_replace(revision: Option<u64>) -> Result<(), Error> {
     match revision {
         Some(rev) if rev > INITIAL_REVISION => Ok(()),
         Some(rev) => Err(Error::InvalidArgument(format!(
@@ -107,26 +108,49 @@ fn ensure_revision_for_replace(revision: Option<u64>) -> Result<(), Error> {
     }
 }
 
+/// Centralized v0 document-id derivation.
+///
+/// Both the strict create-path id check and the legacy create-path entropy
+/// fallback go through this helper so the document-id formula has exactly
+/// **one** canonical implementation in this module.
+///
+/// # v0 versioning note
+///
+/// This helper is intentionally hard-pinned to
+/// [`Document::generate_document_id_v0`]. A future protocol version that
+/// introduces a new document-id derivation should change this helper (or
+/// branch internally on platform version) — grep for `derive_document_id_v0`
+/// **and** `generate_document_id_v0` to catch every call site that needs to
+/// migrate together.
+fn derive_document_id_v0(
+    document_type: DocumentTypeRef<'_>,
+    owner_id: &Identifier,
+    entropy: &[u8; 32],
+) -> Identifier {
+    Document::generate_document_id_v0(
+        &document_type.data_contract_id(),
+        owner_id,
+        document_type.name(),
+        entropy.as_slice(),
+    )
+}
+
 /// Strict create-path id check: documents handed to
 /// [`build_signed_document_create_transition`] must already have their `id`
-/// derived from the supplied entropy via [`Document::generate_document_id_v0`].
+/// derived from the supplied entropy via [`derive_document_id_v0`] (currently
+/// [`Document::generate_document_id_v0`]).
 ///
 /// This guards against silently signing a transition whose committed
 /// document id does not match the entropy bound into the create transition.
 /// Callers that want id auto-generation should use the legacy
 /// [`PutDocument::put_to_platform`] trait method, which still accepts
 /// `entropy = None` and rewrites the document id before signing.
-fn ensure_document_id_matches_entropy(
+pub(crate) fn ensure_document_id_matches_entropy(
     document: &Document,
-    document_type: &DocumentType,
+    document_type: DocumentTypeRef<'_>,
     entropy: &[u8; 32],
 ) -> Result<(), Error> {
-    let expected = Document::generate_document_id_v0(
-        &document_type.data_contract_id(),
-        &document.owner_id(),
-        document_type.name(),
-        entropy.as_slice(),
-    );
+    let expected = derive_document_id_v0(document_type, &document.owner_id(), entropy);
     if document.id() != expected {
         return Err(Error::InvalidArgument(format!(
             "document.id does not match \
@@ -153,11 +177,13 @@ fn resolve_document_create_entropy(
             let mut rng = StdRng::from_entropy();
             let mut doc = document.clone();
             let entropy = rng.gen::<[u8; 32]>();
-            doc.set_id(Document::generate_document_id_v0(
-                &document_type.data_contract_id(),
+            // Use the centralized v0 derivation so the legacy auto-generate
+            // fallback always agrees with the strict id-matches-entropy
+            // check in `ensure_document_id_matches_entropy`.
+            doc.set_id(derive_document_id_v0(
+                document_type.as_ref(),
                 &doc.owner_id(),
-                document_type.name(),
-                entropy.as_slice(),
+                &entropy,
             ));
             (doc, entropy)
         })
@@ -352,26 +378,119 @@ pub async fn build_signed_document_create_transition<S: Signer<IdentityPublicKey
     signer: &S,
     settings: Option<PutSettings>,
 ) -> Result<StateTransition, Error> {
-    ensure_revision_for_create(document.revision())?;
-    // Verify the caller's document id matches the entropy *before* we
-    // allocate any identity-contract nonce, so a stale/wrong id never
-    // bumps the local nonce cache.
-    ensure_document_id_matches_entropy(
-        document,
-        document_type,
-        &document_state_transition_entropy,
-    )?;
-    build_signed_document_create_or_replace_transition_legacy(
+    // Clone-once owned dispatch: the strict create path never re-resolves
+    // entropy (caller already supplied it), so route past the legacy
+    // create-or-replace dispatcher to avoid an extra Document clone in the
+    // `Some(entropy)` branch of `resolve_document_create_entropy`.
+    build_signed_document_create_transition_owned(
         sdk,
-        document,
+        document.clone(),
         document_type,
-        Some(document_state_transition_entropy),
+        document_state_transition_entropy,
         identity_public_key,
         token_payment_info,
         signer,
         settings,
     )
     .await
+}
+
+/// Internal owned-document variant of
+/// [`build_signed_document_create_transition`].
+///
+/// Validates revision and id-matches-entropy **before** any nonce
+/// allocation, allocates an identity-contract nonce, and dispatches with
+/// the document moved by value so `BatchTransition::new_document_creation_transition_from_document`
+/// gets ownership without a second clone.
+///
+/// This is the single-clone entry point used by the legacy
+/// [`PutDocument::put_to_platform`] None-entropy fallback (which resolves
+/// entropy + rewrites the document id once, then hands the owned document
+/// to this helper).
+#[allow(clippy::too_many_arguments)]
+async fn build_signed_document_create_transition_owned<S: Signer<IdentityPublicKey>>(
+    sdk: &Sdk,
+    document: Document,
+    document_type: &DocumentType,
+    entropy: [u8; 32],
+    identity_public_key: &IdentityPublicKey,
+    token_payment_info: Option<TokenPaymentInfo>,
+    signer: &S,
+    settings: Option<PutSettings>,
+) -> Result<StateTransition, Error> {
+    ensure_revision_for_create(document.revision())?;
+    // Verify the caller's document id matches the entropy *before* we
+    // allocate any identity-contract nonce, so a stale/wrong id never
+    // bumps the local nonce cache.
+    ensure_document_id_matches_entropy(&document, document_type.as_ref(), &entropy)?;
+
+    let owner_id = document.owner_id();
+    let contract_id = document_type.data_contract_id();
+    let new_identity_contract_nonce = sdk
+        .get_identity_contract_nonce(owner_id, contract_id, true, settings)
+        .await?;
+
+    let result = build_and_sign_create_after_nonce(
+        sdk,
+        document,
+        document_type,
+        entropy,
+        identity_public_key,
+        token_payment_info,
+        signer,
+        settings,
+        new_identity_contract_nonce,
+    )
+    .await;
+
+    match result {
+        Ok(transition) => Ok(transition),
+        Err(err) => {
+            sdk.rollback_identity_contract_nonce(
+                owner_id,
+                contract_id,
+                new_identity_contract_nonce,
+            )
+            .await;
+            Err(err)
+        }
+    }
+}
+
+/// Inner build/sign/validation step for the strict create path.
+///
+/// Runs after the identity-contract nonce has been allocated; the caller is
+/// responsible for rolling that nonce back if this returns an error. Moves
+/// `document` into `BatchTransition::new_document_creation_transition_from_document`
+/// so the strict create path performs a single Document clone end-to-end.
+#[allow(clippy::too_many_arguments)]
+async fn build_and_sign_create_after_nonce<S: Signer<IdentityPublicKey>>(
+    sdk: &Sdk,
+    document: Document,
+    document_type: &DocumentType,
+    entropy: [u8; 32],
+    identity_public_key: &IdentityPublicKey,
+    token_payment_info: Option<TokenPaymentInfo>,
+    signer: &S,
+    settings: Option<PutSettings>,
+    new_identity_contract_nonce: u64,
+) -> Result<StateTransition, Error> {
+    let put_settings = settings.unwrap_or_default();
+    let transition = BatchTransition::new_document_creation_transition_from_document(
+        document,
+        document_type.as_ref(),
+        entropy,
+        identity_public_key,
+        new_identity_contract_nonce,
+        put_settings.user_fee_increase.unwrap_or_default(),
+        token_payment_info,
+        signer,
+        sdk.version(),
+        put_settings.state_transition_creation_options,
+    )
+    .await?;
+    ensure_valid_state_transition_structure(&transition, sdk.version())?;
+    Ok(transition)
 }
 
 /// Build, sign, and structurally validate a document **replace** transition
@@ -513,29 +632,47 @@ impl<S: Signer<IdentityPublicKey>> PutDocument<S> for Document {
         // callers (they aren't picking a branch themselves).
         ensure_revision_nonzero(self.revision())?;
         let transition = if self.revision().is_none() || self.revision() == Some(INITIAL_REVISION) {
-            // Create path. Preserve legacy behavior: when the caller did not
-            // supply entropy, generate it and rewrite `document.id` so the
-            // pair stays consistent before we hand the (document, entropy)
-            // to the strict create helper. The strict helper still verifies
-            // that `document.id == generate_document_id_v0(entropy)` before
-            // allocating any nonce, so the legacy fallback cannot mask an
-            // id/entropy mismatch.
-            let (resolved_document, resolved_entropy) = resolve_document_create_entropy(
-                self,
-                &document_type,
-                document_state_transition_entropy,
-            );
-            build_signed_document_create_transition(
-                sdk,
-                &resolved_document,
-                &document_type,
-                resolved_entropy,
-                &identity_public_key,
-                token_payment_info,
-                signer,
-                settings,
-            )
-            .await?
+            // Create path. Avoid the outer pre-resolve clone when the
+            // caller already supplied entropy: pass `self` straight to the
+            // strict create helper, which clones once internally for
+            // `BatchTransition::new_document_creation_transition_from_document`.
+            //
+            // For the legacy `None` entropy fallback we resolve once here
+            // (generate entropy + rewrite document id) and hand the owned
+            // document to `build_signed_document_create_transition_owned`,
+            // so the create path performs a single Document clone end-to-end.
+            // The strict id-matches-entropy check runs before any nonce
+            // allocation in both branches.
+            match document_state_transition_entropy {
+                Some(entropy) => {
+                    build_signed_document_create_transition(
+                        sdk,
+                        self,
+                        &document_type,
+                        entropy,
+                        &identity_public_key,
+                        token_payment_info,
+                        signer,
+                        settings,
+                    )
+                    .await?
+                }
+                None => {
+                    let (resolved_document, resolved_entropy) =
+                        resolve_document_create_entropy(self, &document_type, None);
+                    build_signed_document_create_transition_owned(
+                        sdk,
+                        resolved_document,
+                        &document_type,
+                        resolved_entropy,
+                        &identity_public_key,
+                        token_payment_info,
+                        signer,
+                        settings,
+                    )
+                    .await?
+                }
+            }
         } else {
             // Replace path: entropy is unused; the strict helper enforces
             // `revision > INITIAL_REVISION`.
@@ -713,6 +850,28 @@ mod tests {
             "err: {initial:?}"
         );
         assert!(initial.to_string().contains("replace requires revision"));
+    }
+
+    #[test]
+    fn derive_document_id_v0_matches_generate_document_id_v0() {
+        // The centralized helper must produce the same id bytes as the
+        // underlying `Document::generate_document_id_v0` for any
+        // (document_type, owner_id, entropy) triple — otherwise the strict
+        // id-matches-entropy guard and the legacy auto-generate fallback
+        // could disagree silently.
+        let document_type = test_document_type();
+        let owner_id = Identifier::from([0x42; 32]);
+        let entropy = [0xCCu8; 32];
+
+        let derived = derive_document_id_v0(document_type.as_ref(), &owner_id, &entropy);
+        let direct = Document::generate_document_id_v0(
+            &document_type.data_contract_id(),
+            &owner_id,
+            document_type.name(),
+            entropy.as_slice(),
+        );
+
+        assert_eq!(derived, direct);
     }
 
     #[test]

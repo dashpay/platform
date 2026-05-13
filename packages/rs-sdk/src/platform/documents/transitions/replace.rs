@@ -1,5 +1,9 @@
 use crate::platform::transition::broadcast::BroadcastStateTransition;
+use crate::platform::transition::put_document::{
+    build_signed_document_replace_transition, ensure_revision_for_replace,
+};
 use crate::platform::transition::put_settings::PutSettings;
+use crate::platform::transition::validation::ensure_valid_state_transition_structure;
 use crate::{Error, Sdk};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
@@ -144,6 +148,8 @@ impl DocumentReplaceTransitionBuilder {
         signer: &impl Signer<IdentityPublicKey>,
         platform_version: &PlatformVersion,
     ) -> Result<StateTransition, Error> {
+        ensure_revision_for_replace(self.document.revision())?;
+
         let owner_id = self.document.owner_id();
         let contract_id = self.data_contract.id();
         let identity_contract_nonce = sdk
@@ -194,6 +200,8 @@ impl DocumentReplaceTransitionBuilder {
             .document_type_for_name(&self.document_type_name)
             .map_err(|e| Error::Protocol(e.into()))?;
 
+        ensure_revision_for_replace(self.document.revision())?;
+
         let state_transition = BatchTransition::new_document_replacement_transition_from_document(
             self.document.clone(),
             document_type,
@@ -206,6 +214,8 @@ impl DocumentReplaceTransitionBuilder {
             self.state_transition_creation_options,
         )
         .await?;
+
+        ensure_valid_state_transition_structure(&state_transition, platform_version)?;
 
         Ok(state_transition)
     }
@@ -254,19 +264,58 @@ impl Sdk {
             "document_replace: start"
         );
 
-        let platform_version = self.version();
+        // Destructure so we can move builder-owned fields (notably the
+        // `StateTransitionCreationOptions`, which is not necessarily Clone)
+        // into the effective settings without an extra copy.
+        let DocumentReplaceTransitionBuilder {
+            data_contract,
+            document_type_name,
+            document,
+            token_payment_info,
+            settings,
+            user_fee_increase,
+            state_transition_creation_options,
+        } = replace_document_transition_builder;
 
-        let put_settings = replace_document_transition_builder.settings;
+        // Keep original settings for broadcast (request_settings,
+        // wait_timeout, etc.) and overlay builder-specific
+        // user_fee_increase / state_transition_creation_options onto the
+        // effective settings passed to the strict helper.
+        let broadcast_settings = settings;
+        let mut effective_settings = settings.unwrap_or_default();
+        if let Some(ufi) = user_fee_increase {
+            effective_settings.user_fee_increase = Some(ufi);
+        }
+        if state_transition_creation_options.is_some() {
+            effective_settings.state_transition_creation_options =
+                state_transition_creation_options;
+        }
+
+        let document_type = data_contract
+            .document_type_cloned_for_name(&document_type_name)
+            .map_err(|e| Error::Protocol(e.into()))?;
 
         trace!("document_replace: signing state transition");
-        let state_transition = replace_document_transition_builder
-            .sign(self, signing_key, signer, platform_version)
-            .await?;
+        // Route through the strict replace helper so the one-shot
+        // `document_replace` builder API gets the same fail-fast
+        // revision-vs-intent validation as the wasm-sdk
+        // `prepareDocumentReplace` path. Pre-broadcast errors roll back
+        // the allocated identity-contract nonce inside the helper.
+        let state_transition = build_signed_document_replace_transition(
+            self,
+            &document,
+            &document_type,
+            signing_key,
+            token_payment_info,
+            signer,
+            Some(effective_settings),
+        )
+        .await?;
         trace!("document_replace: state transition signed");
 
         trace!("document_replace: broadcasting and awaiting response");
         let proof_result = state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(self, put_settings)
+            .broadcast_and_wait::<StateTransitionProofResult>(self, broadcast_settings)
             .await?;
         trace!("document_replace: broadcast completed");
 

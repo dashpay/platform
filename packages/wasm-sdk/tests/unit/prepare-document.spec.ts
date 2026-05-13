@@ -115,6 +115,26 @@ describe('prepareDocument* validation', function describePrepareDocumentValidati
       }
     });
 
+    it('rejects a document whose id does not match its entropy', async () => {
+      // The strict create path requires document.id to be derived from
+      // (dataContractId, ownerId, documentTypeName, entropy) via the v0
+      // document-id derivation. Manually overwriting `id` after construction
+      // breaks that invariant and must fail with InvalidArgument before
+      // any nonce allocation.
+      const { signer, identityKey } = buildSigner();
+      const document = buildDocument();
+      document.id = DUMMY_ID;
+
+      try {
+        await client.prepareDocumentCreate({ document, identityKey, signer });
+        expect.fail('expected prepareDocumentCreate to reject mismatched id/entropy');
+      } catch (e) {
+        expect(e).to.be.instanceOf(sdk.WasmSdkError);
+        expect(e.name).to.equal('InvalidArgument');
+        expect(e.message).to.match(/does not match/i);
+      }
+    });
+
     it('rejects a document with revision 0 (would silently be a replace)', async () => {
       // `build_document_create_or_replace_transition` routes any `revision != INITIAL_REVISION`
       // to the replace branch, so `revision = 0` must be rejected too — otherwise it would

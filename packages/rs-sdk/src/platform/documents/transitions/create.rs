@@ -1,5 +1,10 @@
 use crate::platform::transition::broadcast::BroadcastStateTransition;
+use crate::platform::transition::put_document::{
+    build_signed_document_create_transition, ensure_document_id_matches_entropy,
+    ensure_revision_for_create,
+};
 use crate::platform::transition::put_settings::PutSettings;
+use crate::platform::transition::validation::ensure_valid_state_transition_structure;
 use crate::{Error, Sdk};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
@@ -149,6 +154,19 @@ impl DocumentCreateTransitionBuilder {
         signer: &impl Signer<IdentityPublicKey>,
         platform_version: &PlatformVersion,
     ) -> Result<StateTransition, Error> {
+        {
+            let document_type = self
+                .data_contract
+                .document_type_for_name(&self.document_type_name)
+                .map_err(|e| Error::Protocol(e.into()))?;
+            ensure_revision_for_create(self.document.revision())?;
+            ensure_document_id_matches_entropy(
+                &self.document,
+                document_type,
+                &self.document_state_transition_entropy,
+            )?;
+        }
+
         let owner_id = self.document.owner_id();
         let contract_id = self.data_contract.id();
         let identity_contract_nonce = sdk
@@ -199,6 +217,13 @@ impl DocumentCreateTransitionBuilder {
             .document_type_for_name(&self.document_type_name)
             .map_err(|e| Error::Protocol(e.into()))?;
 
+        ensure_revision_for_create(self.document.revision())?;
+        ensure_document_id_matches_entropy(
+            &self.document,
+            document_type,
+            &self.document_state_transition_entropy,
+        )?;
+
         let state_transition = BatchTransition::new_document_creation_transition_from_document(
             self.document.clone(),
             document_type,
@@ -212,6 +237,8 @@ impl DocumentCreateTransitionBuilder {
             self.state_transition_creation_options,
         )
         .await?;
+
+        ensure_valid_state_transition_structure(&state_transition, platform_version)?;
 
         Ok(state_transition)
     }
@@ -253,13 +280,56 @@ impl Sdk {
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<DocumentCreateResult, Error> {
-        let platform_version = self.version();
+        // Destructure so we can move builder-owned fields (notably the
+        // `StateTransitionCreationOptions`, which is not necessarily Clone)
+        // into the effective settings without an extra copy.
+        let DocumentCreateTransitionBuilder {
+            data_contract,
+            document_type_name,
+            document,
+            document_state_transition_entropy,
+            token_payment_info,
+            settings,
+            user_fee_increase,
+            state_transition_creation_options,
+        } = create_document_transition_builder;
 
-        let put_settings = create_document_transition_builder.settings;
+        // Preserve broadcast-time settings (request_settings, wait_timeout,
+        // identity_nonce_stale_time_s) by keeping the original builder
+        // settings around for the broadcast call. The strict helper gets
+        // an `effective` clone that overlays the builder-specific
+        // user_fee_increase / state_transition_creation_options fields.
+        let broadcast_settings = settings;
+        let mut effective_settings = settings.unwrap_or_default();
+        if let Some(ufi) = user_fee_increase {
+            effective_settings.user_fee_increase = Some(ufi);
+        }
+        if state_transition_creation_options.is_some() {
+            effective_settings.state_transition_creation_options =
+                state_transition_creation_options;
+        }
 
-        let state_transition = create_document_transition_builder
-            .sign(self, signing_key, signer, platform_version)
-            .await?;
+        // Resolve the owned document type from the contract.
+        let document_type = data_contract
+            .document_type_cloned_for_name(&document_type_name)
+            .map_err(|e| Error::Protocol(e.into()))?;
+
+        // Route through the strict create helper so the one-shot
+        // `document_create` builder API gets the same fail-fast revision
+        // and id-matches-entropy validation as the wasm-sdk
+        // `prepareDocumentCreate` path. Pre-broadcast errors roll back the
+        // allocated identity-contract nonce inside the helper.
+        let state_transition = build_signed_document_create_transition(
+            self,
+            &document,
+            &document_type,
+            document_state_transition_entropy,
+            signing_key,
+            token_payment_info,
+            signer,
+            Some(effective_settings),
+        )
+        .await?;
 
         // Low-level debug logging via tracing
         trace!("document_create: state transition created and signed");
@@ -267,7 +337,7 @@ impl Sdk {
         trace!(transition = ?state_transition, "document_create: transition details");
 
         let proof_result = state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(self, put_settings)
+            .broadcast_and_wait::<StateTransitionProofResult>(self, broadcast_settings)
             .await?;
 
         match proof_result {

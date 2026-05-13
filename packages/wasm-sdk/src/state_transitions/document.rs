@@ -53,6 +53,22 @@
 //! Earlier wasm-sdk behavior could silently route invalid revisions to the other
 //! transition type. That implicit routing is no longer performed: invalid
 //! revisions now fail with `InvalidArgument` instead.
+//!
+//! ## Document id ↔ entropy invariant (create paths)
+//!
+//! `documentCreate()` / `prepareDocumentCreate()` now require that the
+//! document's `id` matches the id derived from
+//! `(dataContractId, ownerId, documentTypeName, entropy)` via the v0 document
+//! id derivation. Mismatches are rejected with `InvalidArgument` **before**
+//! any identity-contract nonce is allocated, so failed calls do not advance
+//! the local nonce cache.
+//!
+//! **Migration / compatibility note:** earlier wasm-sdk behavior accepted any
+//! `id` and silently embedded the document under whatever id the caller had
+//! set. If you previously built a `Document` with a hand-picked id and a
+//! separate entropy value, you must now either let the `Document`
+//! constructor derive both together (its default behavior) or call
+//! `Document.generateId(...)` with the same entropy you intend to use.
 
 use crate::error::WasmSdkError;
 use crate::sdk::WasmSdk;
@@ -138,10 +154,23 @@ fn try_from_options_optional_token_payment_info(
         return Ok(None);
     }
 
-    let token_payment_info = TokenPaymentInfoWasm::constructor(
-        token_payment_info_value.unchecked_into::<TokenPaymentInfoOptionsJs>(),
-    )
-    .map_err(|err| WasmSdkError::invalid_argument(err.to_string()))?;
+    // Accept either an existing wasm-dpp2 `TokenPaymentInfo` class instance
+    // (e.g. produced by `new TokenPaymentInfo(...)` or returned by another
+    // wasm-sdk accessor) **or** a plain `DocumentTokenPaymentInfo` options
+    // bag. We detect the class type via the `__type` getter set up by
+    // `impl_wasm_type_info!` and convert via `TryFrom<&JsValue>` (which uses
+    // the `IntoWasm` pointer extraction) before falling back to the
+    // constructor-from-options path for plain objects.
+    let class_type = get_class_type(&token_payment_info_value).unwrap_or_default();
+    let token_payment_info = if class_type == "TokenPaymentInfo" {
+        TokenPaymentInfoWasm::try_from(&token_payment_info_value)
+            .map_err(|err| WasmSdkError::invalid_argument(err.to_string()))?
+    } else {
+        TokenPaymentInfoWasm::constructor(
+            token_payment_info_value.unchecked_into::<TokenPaymentInfoOptionsJs>(),
+        )
+        .map_err(|err| WasmSdkError::invalid_argument(err.to_string()))?
+    };
 
     Ok(Some(token_payment_info.into()))
 }
@@ -164,6 +193,13 @@ export interface DocumentCreateOptions {
    * Revision must be omitted or set to 1 (INITIAL_REVISION).
    * Other revisions are rejected with InvalidArgument instead of being routed
    * to documentReplace().
+   *
+   * **Migration note (id ↔ entropy invariant):** `document.id` must match
+   * the id derived from `(dataContractId, ownerId, documentTypeName, entropy)`
+   * via the v0 document-id derivation. Mismatches are rejected with
+   * `InvalidArgument` before any identity-contract nonce is allocated. The
+   * `Document` constructor derives both together by default; if you set the
+   * id or entropy explicitly, keep them consistent.
    */
   document: Document;
 
@@ -568,7 +604,17 @@ const PREPARE_DOCUMENT_CREATE_OPTIONS_TS: &'static str = r#"
  * 4. On timeout, deserialize cached bytes and rebroadcast the **identical** ST
  */
 export interface PrepareDocumentCreateOptions {
-  /** The document to create. */
+  /**
+   * The document to create.
+   *
+   * **Migration note (id ↔ entropy invariant):** `document.id` must match
+   * the id derived from `(dataContractId, ownerId, documentTypeName, entropy)`
+   * via the v0 document-id derivation. Mismatches are rejected with
+   * `InvalidArgument` before any identity-contract nonce is allocated, so
+   * failed calls do not advance the local nonce cache. The `Document`
+   * constructor derives both together by default; if you set the id or
+   * entropy explicitly, keep them consistent.
+   */
   document: Document;
   /** The identity public key to use for signing. */
   identityKey: IdentityPublicKey;

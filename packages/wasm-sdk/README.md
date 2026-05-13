@@ -178,6 +178,7 @@ The full surface includes identity, document, contract, token, group, epoch/syst
 ### Document revision rules
 
 - `documentCreate()` requires the document revision to be omitted or set to `1` (`INITIAL_REVISION`).
+- `documentCreate()` and `prepareDocumentCreate()` require `document.id` to match the id derived from `(dataContractId, ownerId, documentTypeName, entropy)`; mismatches reject with `InvalidArgument` before nonce allocation.
 - `documentReplace()` requires the document revision to be greater than `1`.
 - Invalid one-shot document revisions now reject with `InvalidArgument`; the wasm SDK no longer silently routes them to the other transition type.
 
