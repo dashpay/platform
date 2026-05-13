@@ -28,7 +28,8 @@ use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
 use crate::framework::prelude::*;
 use crate::framework::tokens::{
     mint_to, setup_with_token_and_two_identities, token_balance_of, token_pricing_of,
-    DEFAULT_TOKEN_POSITION, TK_OWNER_FUNDING_SIMPLE, TK_PEER_FUNDING_ACTIVE,
+    wait_for_token_balance, DEFAULT_TOKEN_POSITION, TK_OWNER_FUNDING_SIMPLE,
+    TK_PEER_FUNDING_ACTIVE,
 };
 use crate::framework::wait::wait_for_token_predicate;
 
@@ -170,6 +171,23 @@ async fn tk_011_set_price_and_direct_purchase_round_trip() {
         .token_purchase(purchase_builder, &buyer.critical_key, buyer.signer.as_ref())
         .await
         .expect("purchase transition");
+
+    // Mirror the sibling token tests (TK-001/004/007/008/009): gate the
+    // post-purchase reads on the buyer's token balance reaching the
+    // purchased amount. The direct-purchase ST mints new tokens to the
+    // buyer; reading immediately can hit a DAPI replica that hasn't
+    // applied the block yet and return the pre-purchase value, racing
+    // the credit-delta assertions below.
+    wait_for_token_balance(
+        ctx,
+        buyer.id,
+        contract_id,
+        position,
+        buyer_token_pre + PURCHASE_AMOUNT,
+        STEP_TIMEOUT,
+    )
+    .await
+    .expect("buyer balance never reached purchased amount");
 
     // Step 4: post-purchase balances.
     let buyer_token_post = token_balance_of(ctx, contract_id, position, buyer.id)
