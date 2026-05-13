@@ -296,18 +296,18 @@ mod tests {
     //!   UTXO as spendable again.
     //! - An empty spendable snapshot (e.g. all UTXOs reserved) maps to
     //!   `NoSpendableInputs` via the early-exit guard.
-    use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
 
     use async_trait::async_trait;
     use dashcore::consensus::deserialize;
     use dashcore::{Transaction, Txid};
     use tokio::sync::RwLock;
 
-    use crate::PlatformWalletError;
     use crate::broadcaster::TransactionBroadcaster;
-    use crate::wallet::core::CoreWallet;
     use crate::wallet::core::balance::WalletBalance;
+    use crate::wallet::core::CoreWallet;
+    use crate::PlatformWalletError;
     use key_wallet::Network;
     use key_wallet_manager::WalletManager;
 
@@ -430,9 +430,9 @@ mod tests {
 
     use dashcore::hashes::Hash;
     use dashcore::{Address as DashAddress, OutPoint, TxOut};
-    use key_wallet::Utxo;
-    use key_wallet::wallet::Wallet;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use key_wallet::wallet::Wallet;
+    use key_wallet::Utxo;
     use tokio::sync::Notify;
 
     use crate::wallet::platform_wallet::PlatformWalletInfo;
