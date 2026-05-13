@@ -394,7 +394,9 @@ where
 
 /// Classify why no candidate survived the filter. Returns `None` when no
 /// funded address exists at all (caller falls through to generic
-/// insufficient-balance); otherwise reports both failure shapes in one variant.
+/// insufficient-balance); otherwise returns the dominant failure shape.
+/// When both apply, `OnlyOutputAddressesFunded` wins — rotating the receive
+/// address is the typically more actionable fix.
 fn detect_no_selectable_inputs<I>(
     address_balances: I,
     outputs: &BTreeMap<PlatformAddress, Credits>,
@@ -416,15 +418,20 @@ where
             sub_min_aggregate = sub_min_aggregate.saturating_add(balance);
         }
     }
-    if funded_outputs.is_empty() && sub_min_count == 0 {
-        return None;
+    if !funded_outputs.is_empty() {
+        return Some(PlatformWalletError::OnlyOutputAddressesFunded {
+            funded_outputs,
+            min_input_amount,
+        });
     }
-    Some(PlatformWalletError::NoSelectableInputs {
-        funded_outputs,
-        sub_min_count,
-        sub_min_aggregate,
-        min_input_amount,
-    })
+    if sub_min_count > 0 {
+        return Some(PlatformWalletError::OnlyDustInputs {
+            sub_min_count,
+            sub_min_aggregate,
+            min_input_amount,
+        });
+    }
+    None
 }
 
 /// `[DeductFromInput(0)]` selector. Order-agnostic: walks `candidates` as-is
@@ -1195,42 +1202,64 @@ mod auto_select_tests {
         assert_selection_validates(&selected, &outputs, fee_strategy, pv);
     }
 
-    /// Both failure modes coexist: one funded-but-also-output address AND
-    /// one sub-min address. Detector reports both via the unified
-    /// `NoSelectableInputs` variant.
+    /// Detector returns `OnlyOutputAddressesFunded` when every funded address
+    /// is also a destination, and `OnlyDustInputs` when every funded balance
+    /// is below `min_input_amount`. When both shapes apply simultaneously,
+    /// the address-collision signal wins (more actionable fix).
     #[test]
-    fn detect_no_selectable_inputs_combines_both_cases() {
+    fn detect_no_selectable_inputs_classifies_failure_shape() {
         let pv = LATEST_PLATFORM_VERSION;
         let min_input = pv.dpp.state_transitions.address_funds.min_input_amount;
 
         let addr_out = p2pkh(0xC3);
         let addr_dust = p2pkh(0xD4);
         let outputs = outputs_for(addr_out, min_input);
-        let address_balances = [(addr_out, min_input * 5), (addr_dust, min_input / 3)];
 
-        let err =
-            detect_no_selectable_inputs(address_balances.iter().copied(), &outputs, min_input)
-                .expect("expected NoSelectableInputs");
-        match &err {
-            PlatformWalletError::NoSelectableInputs {
+        // Output-collision only.
+        let collision_only = [(addr_out, min_input * 5)];
+        match detect_no_selectable_inputs(collision_only.iter().copied(), &outputs, min_input)
+            .expect("collision case")
+        {
+            PlatformWalletError::OnlyOutputAddressesFunded {
                 funded_outputs,
+                min_input_amount,
+            } => {
+                assert_eq!(funded_outputs, vec![addr_out]);
+                assert_eq!(min_input_amount, min_input);
+            }
+            other => panic!("expected OnlyOutputAddressesFunded, got {other:?}"),
+        }
+
+        // Dust only.
+        let no_outputs: BTreeMap<PlatformAddress, Credits> = BTreeMap::new();
+        let dust_only = [(addr_dust, min_input / 3)];
+        match detect_no_selectable_inputs(dust_only.iter().copied(), &no_outputs, min_input)
+            .expect("dust case")
+        {
+            PlatformWalletError::OnlyDustInputs {
                 sub_min_count,
                 sub_min_aggregate,
                 min_input_amount,
             } => {
-                assert_eq!(funded_outputs, &vec![addr_out]);
-                assert_eq!(*sub_min_count, 1);
-                assert_eq!(*sub_min_aggregate, min_input / 3);
-                assert_eq!(*min_input_amount, min_input);
+                assert_eq!(sub_min_count, 1);
+                assert_eq!(sub_min_aggregate, min_input / 3);
+                assert_eq!(min_input_amount, min_input);
             }
-            other => panic!("expected NoSelectableInputs, got {other:?}"),
+            other => panic!("expected OnlyDustInputs, got {other:?}"),
         }
-        let rendered = err.to_string();
-        assert!(rendered.contains("funded_outputs"), "{rendered}");
-        assert!(rendered.contains("sub_min_count"), "{rendered}");
 
-        // No funded address at all → detector returns None (caller falls
-        // through to generic insufficient-balance error).
+        // Both: collision wins.
+        let both = [(addr_out, min_input * 5), (addr_dust, min_input / 3)];
+        match detect_no_selectable_inputs(both.iter().copied(), &outputs, min_input)
+            .expect("combined case")
+        {
+            PlatformWalletError::OnlyOutputAddressesFunded { funded_outputs, .. } => {
+                assert_eq!(funded_outputs, vec![addr_out]);
+            }
+            other => panic!("expected OnlyOutputAddressesFunded, got {other:?}"),
+        }
+
+        // No funded address → None (caller falls through to insufficient-balance).
         let no_funds = [(addr_out, 0u64), (addr_dust, 0u64)];
         assert!(
             detect_no_selectable_inputs(no_funds.iter().copied(), &outputs, min_input).is_none()
