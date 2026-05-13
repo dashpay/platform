@@ -644,6 +644,11 @@ fn select_inputs_deduct_from_input(
 /// `[ReduceOutput(0)]` selector. Output 0 absorbs the fee at chain time, so
 /// inputs only need to sum to `total_output` — no fee headroom on inputs.
 ///
+/// Production callers feed candidates from `build_auto_select_candidates`,
+/// which already drops sub-`min_input_amount` balances; the helper also
+/// guards against direct test/future-caller invocations that skip the
+/// pre-filter and would otherwise produce a sub-minimum prefix entry.
+///
 /// Algorithm:
 /// 1. Grow the prefix until `Σ balances ≥ total_output`.
 /// 2. Trim the last prefix entry by `surplus = Σ − total_output` so
@@ -735,8 +740,11 @@ fn select_inputs_reduce_output(
         selected.insert(*addr, consumed);
     }
 
-    // Donor needs balance ≥ `min_input_amount + shift`. Sort balance-
-    // descending locally so the largest peer is tried first.
+    // Donor must keep ≥ `min_input_amount` itself, so its balance must reach
+    // `min_input_amount + shift`. Pick the largest peer first — that is the
+    // peer most likely to retain enough headroom after donating. We re-sort
+    // here rather than rely on caller order to keep the donor invariant
+    // local to this block.
     let last_addr = prefix[last_index].0;
     let last_consumed = selected[&last_addr];
     if last_consumed < min_input_amount && prefix.len() > 1 {
