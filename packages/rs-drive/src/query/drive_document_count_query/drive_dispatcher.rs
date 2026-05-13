@@ -619,13 +619,13 @@ fn where_clauses_from_value(value: &dpp::platform_value::Value) -> Result<Vec<Wh
                     WhereClause::from_components(components)
                 }
                 _ => Err(Error::Query(QuerySyntaxError::InvalidFormatWhereClause(
-                    "where clause must be an array",
+                    "where clause must be an array".to_string(),
                 ))),
             })
             .collect::<Result<Vec<_>, _>>()?,
         _ => {
             return Err(Error::Query(QuerySyntaxError::InvalidFormatWhereClause(
-                "where clause must be an array",
+                "where clause must be an array".to_string(),
             )));
         }
     };
@@ -658,17 +658,17 @@ fn order_clauses_from_value(value: &dpp::platform_value::Value) -> Result<Vec<Or
                     // uniform with the where-clause parser above.
                     OrderClause::from_components(components).map_err(|_e| {
                         Error::Query(QuerySyntaxError::InvalidFormatWhereClause(
-                            "order_by clause must have [field, \"asc\"|\"desc\"] shape",
+                            "order_by clause must have [field, \"asc\"|\"desc\"] shape".to_string(),
                         ))
                     })
                 }
                 _ => Err(Error::Query(QuerySyntaxError::InvalidFormatWhereClause(
-                    "order_by clause must be an array",
+                    "order_by clause must be an array".to_string(),
                 ))),
             })
             .collect(),
         _ => Err(Error::Query(QuerySyntaxError::InvalidFormatWhereClause(
-            "order_by clause must be an array",
+            "order_by clause must be an array".to_string(),
         ))),
     }
 }

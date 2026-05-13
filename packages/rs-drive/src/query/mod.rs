@@ -655,14 +655,14 @@ impl<'a> DriveDocumentQuery<'a> {
                                     WhereClause::from_components(clauses_components)
                                 } else {
                                     Err(Error::Query(QuerySyntaxError::InvalidFormatWhereClause(
-                                        "where clause must be an array",
+                                        "where clause must be an array".to_string(),
                                     )))
                                 }
                             })
                             .collect::<Result<Vec<WhereClause>, Error>>()
                     } else {
                         Err(Error::Query(QuerySyntaxError::InvalidFormatWhereClause(
-                            "where clause must be an array",
+                            "where clause must be an array".to_string(),
                         )))
                     }
                 })?;
@@ -783,13 +783,13 @@ impl<'a> DriveDocumentQuery<'a> {
                         WhereClause::from_components(clauses_components)
                     } else {
                         Err(Error::Query(QuerySyntaxError::InvalidFormatWhereClause(
-                            "where clause must be an array",
+                            "where clause must be an array".to_string(),
                         )))
                     }
                 })
                 .collect::<Result<Vec<WhereClause>, Error>>(),
             _ => Err(Error::Query(QuerySyntaxError::InvalidFormatWhereClause(
-                "where clause must be an array",
+                "where clause must be an array".to_string(),
             ))),
         }?;
 

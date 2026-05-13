@@ -693,11 +693,12 @@ message GetDocumentsRequest {
     //     proof bytes are deterministic across operators).
     optional uint32 limit = 5;
 
-    // Pagination cursor. Valid for `select=DOCUMENTS` and for
-    // `select=COUNT` with non-empty `group_by` (paginate entries by
-    // the grouping field's serialized key). Rejected on
-    // `select=COUNT, group_by=[]` — no concept of "start" for a
-    // single aggregate.
+    // Pagination cursor. Valid only for `select=DOCUMENTS`. The
+    // count surface (`select=COUNT`) rejects cursors entirely:
+    // aggregate counts have no concept of "start," and per-group
+    // entry paginators would need a new merk walk that doesn't
+    // exist yet — callers paginate counts by narrowing the
+    // where-clause range itself instead.
     oneof start {
       bytes start_after = 6;
       bytes start_at = 7;

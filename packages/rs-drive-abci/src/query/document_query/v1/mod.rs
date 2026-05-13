@@ -89,7 +89,9 @@ fn decode_where_clauses(where_bytes: &[u8]) -> Result<Vec<WhereClause>, QueryErr
         Value::Null => return Ok(Vec::new()),
         _ => {
             return Err(QueryError::Query(
-                QuerySyntaxError::InvalidFormatWhereClause("where clause must be an array"),
+                QuerySyntaxError::InvalidFormatWhereClause(
+                    "where clause must be an array".to_string(),
+                ),
             ));
         }
     };
@@ -99,13 +101,15 @@ fn decode_where_clauses(where_bytes: &[u8]) -> Result<Vec<WhereClause>, QueryErr
             Value::Array(c) => c,
             _ => {
                 return Err(QueryError::Query(
-                    QuerySyntaxError::InvalidFormatWhereClause("where clause must be an array"),
+                    QuerySyntaxError::InvalidFormatWhereClause(
+                        "where clause must be an array".to_string(),
+                    ),
                 ));
             }
         };
         let clause = WhereClause::from_components(&components).map_err(|e| {
-            QueryError::Query(QuerySyntaxError::InvalidFormatWhereClause(Box::leak(
-                format!("invalid where clause components: {e}").into_boxed_str(),
+            QueryError::Query(QuerySyntaxError::InvalidFormatWhereClause(format!(
+                "invalid where clause components: {e}"
             )))
         })?;
         clauses.push(clause);
@@ -183,11 +187,55 @@ fn validate_and_route(
                 .map(|wc| wc.field.as_str());
 
             match request_v1.group_by.as_slice() {
-                [] => Ok(RoutingDecision::CountAggregate),
+                [] => {
+                    // Aggregate count is a single row; `limit` is
+                    // structurally meaningless. Reject explicitly
+                    // rather than silently ignoring or worse —
+                    // forwarding to Drive's per-In fan-out, which
+                    // would honor the limit and return a partial
+                    // sum disguised as a total.
+                    if request_v1.limit.is_some() {
+                        return Err(QueryError::Query(QuerySyntaxError::InvalidLimit(
+                            "`limit` is not valid for SELECT COUNT with empty GROUP BY \
+                             (aggregate count is a single row; omit `limit` to fix)"
+                                .to_string(),
+                        )));
+                    }
+                    Ok(RoutingDecision::CountAggregate)
+                }
                 [field] => {
                     if Some(field.as_str()) == in_field {
+                        // Single-field GROUP BY on the `In` field is
+                        // only well-defined when no range clause is
+                        // also constraining the result; otherwise
+                        // Drive's compound walk emits unmerged
+                        // `(in_key, key)` entries that don't match
+                        // the caller's stated grouping. Force them
+                        // to spell out the compound shape with a
+                        // two-element `group_by`.
+                        if range_field.is_some() {
+                            return Err(not_yet_implemented(
+                                "single-field GROUP BY when both `In` and range \
+                                 clauses are present (use a two-element GROUP BY \
+                                 `[in_field, range_field]` for the compound shape, \
+                                 or drop the other constraint)",
+                            ));
+                        }
                         Ok(RoutingDecision::CountEntriesViaInField)
                     } else if Some(field.as_str()) == range_field {
+                        // Same compound-shape concern as the In
+                        // branch above — `group_by=[range_field]`
+                        // with an active `In` clause produces
+                        // compound rows from Drive that don't match
+                        // the caller's grouping.
+                        if in_field.is_some() {
+                            return Err(not_yet_implemented(
+                                "single-field GROUP BY when both `In` and range \
+                                 clauses are present (use a two-element GROUP BY \
+                                 `[in_field, range_field]` for the compound shape, \
+                                 or drop the other constraint)",
+                            ));
+                        }
                         Ok(RoutingDecision::CountEntriesViaRangeField)
                     } else {
                         Err(not_yet_implemented(&format!(
@@ -628,6 +676,89 @@ mod tests {
         assert_eq!(
             validate_and_route_for_tests(&request, &[]).unwrap(),
             "count_aggregate"
+        );
+    }
+
+    #[test]
+    fn reject_count_aggregate_with_limit() {
+        // Aggregate count is a single row; a `limit` is structurally
+        // meaningless and previously caused Drive's per-In fan-out
+        // to honor it and return a partial sum disguised as a total.
+        let request = GetDocumentsRequestV1 {
+            select: V1Select::Count as i32,
+            limit: Some(1),
+            ..empty_v1_request()
+        };
+        let where_clauses = vec![WhereClause {
+            field: "age".to_string(),
+            operator: WhereOperator::In,
+            value: platform_value!([30u32, 40u32]),
+        }];
+        match validate_and_route_for_tests(&request, &where_clauses) {
+            Err(QueryError::Query(QuerySyntaxError::InvalidLimit(msg))) => {
+                assert!(
+                    msg.contains("aggregate count is a single row"),
+                    "expected aggregate-count limit-rejection message, got: {msg}"
+                );
+            }
+            other => panic!("expected InvalidLimit, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn reject_single_field_group_by_on_in_field_when_range_also_constrained() {
+        // `group_by=[in_field]` looks well-formed in isolation, but
+        // the simultaneous range clause forces Drive's compound walk
+        // to emit `(in_key, key)` rows that don't match the caller's
+        // single-field grouping. Caller must spell out the compound
+        // shape explicitly with `[in_field, range_field]`.
+        let request = GetDocumentsRequestV1 {
+            select: V1Select::Count as i32,
+            group_by: vec!["brand".to_string()],
+            ..empty_v1_request()
+        };
+        let where_clauses = vec![
+            WhereClause {
+                field: "brand".to_string(),
+                operator: WhereOperator::In,
+                value: platform_value!(["acme", "contoso"]),
+            },
+            WhereClause {
+                field: "color".to_string(),
+                operator: WhereOperator::GreaterThan,
+                value: platform_value!("blue"),
+            },
+        ];
+        assert_not_yet_implemented(
+            validate_and_route_for_tests(&request, &where_clauses),
+            "single-field GROUP BY when both `In` and range clauses are present",
+        );
+    }
+
+    #[test]
+    fn reject_single_field_group_by_on_range_field_when_in_also_constrained() {
+        // Mirror of the above for the range-field branch: same
+        // compound-shape mismatch, different `group_by` entry.
+        let request = GetDocumentsRequestV1 {
+            select: V1Select::Count as i32,
+            group_by: vec!["color".to_string()],
+            ..empty_v1_request()
+        };
+        let where_clauses = vec![
+            WhereClause {
+                field: "brand".to_string(),
+                operator: WhereOperator::In,
+                value: platform_value!(["acme", "contoso"]),
+            },
+            WhereClause {
+                field: "color".to_string(),
+                operator: WhereOperator::GreaterThan,
+                value: platform_value!("blue"),
+            },
+        ];
+        assert_not_yet_implemented(
+            validate_and_route_for_tests(&request, &where_clauses),
+            "single-field GROUP BY when both `In` and range clauses are present",
         );
     }
 
