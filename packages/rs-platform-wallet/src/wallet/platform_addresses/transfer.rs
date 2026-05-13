@@ -145,19 +145,9 @@ impl PlatformAddressWallet {
         }
         drop(wm);
 
-        // Mirror `sync.rs`: push the post-broadcast balances through
-        // the persister so any external store stays in sync with the
-        // in-memory account state we just updated above. Without
-        // this, persisted rows for these addresses stay frozen at
-        // pre-send values until the next BLAST sync, and
-        // `initialize_from_persisted` on the next process start would
-        // seed `account.address_credit_balance` from those stale rows
-        // — leaving `auto_select_inputs` to declare an input balance
-        // the protocol then rejects.
-        //
-        // Log-on-error rather than propagate: the on-chain transition
-        // already succeeded, and a persistence hiccup shouldn't mask
-        // that. A subsequent sync reconciles.
+        // Mirror `sync.rs`: persist post-broadcast balances so a restart
+        // doesn't reseed `auto_select_inputs` from stale rows. Log-on-error
+        // because the on-chain transition already succeeded.
         if !cs.is_empty() {
             if let Err(e) = self.persister.store(cs.clone().into()) {
                 tracing::error!("Failed to persist transfer changeset: {}", e);
@@ -169,34 +159,29 @@ impl PlatformAddressWallet {
 
     /// Transfer credits with an explicit "change address" override.
     ///
-    /// Companion to [`Self::transfer`] that surfaces the implicit
-    /// "where does the residual go?" decision as a first-class
-    /// parameter (PA-001b).
-    ///
-    /// Override semantics:
-    /// - `output_change_address: None` — passthrough to [`Self::transfer`];
-    ///   residual stays on the input addresses under the existing implicit-change
-    ///   behaviour.
-    /// - `output_change_address: Some(change_addr)` — every input is spent in
-    ///   full, and `change_addr` is added as an extra output absorbing
-    ///   `Σ inputs − Σ user_outputs`. The protocol's `Σ inputs == Σ outputs`
-    ///   invariant holds because the change output exactly balances the surplus.
+    /// When `output_change_address` is `Some(change_addr)`, the wrapper adds
+    /// a change output absorbing `Σ consumed − Σ user_outputs` so the
+    /// `Σ inputs == Σ outputs` invariant holds. When `None`, this is a
+    /// passthrough to [`Self::transfer`].
     ///
     /// The change branch requires [`InputSelection::Explicit`] or
-    /// [`InputSelection::ExplicitWithNonces`]: the caller declares inputs and
-    /// their consumption explicitly, which is the only shape where "consume
-    /// the entire input balance" is unambiguous — auto-selection trims to a
-    /// covering prefix and has no concept of a residual to route. The map's
-    /// values must equal the full balances the caller wants consumed; the
-    /// wrapper sums them and assigns the surplus to `change_addr`.
+    /// [`InputSelection::ExplicitWithNonces`] — auto-selection trims inputs
+    /// to a covering prefix and has no concept of a residual.
+    ///
+    /// Under `[DeductFromInput(*)]` the caller MUST reserve fee headroom on
+    /// the targeted input (i.e. its map value must be strictly below its
+    /// on-chain balance by at least the estimated fee); otherwise the chain
+    /// rejects the transition with `fee_fully_covered = false`. In that
+    /// case `change_amount = (Σ consumed) − (Σ user_outputs)` is smaller
+    /// than `(Σ balances) − (Σ user_outputs)`. Under `[ReduceOutput(0)]`
+    /// callers may pass the full balances; output 0 absorbs the fee.
     ///
     /// # Errors
     ///
     /// [`PlatformWalletError::AddressOperation`] when the change branch is
-    /// requested with [`InputSelection::Auto`], when `change_addr` already
-    /// appears in `user_outputs` (would merge silently), or when
-    /// `Σ inputs ≤ Σ user_outputs` (no surplus to route).
-    #[allow(clippy::too_many_arguments)] // mirrors `transfer` plus the change-address override; a builder would obscure PA-001b's additive surface.
+    /// requested with [`InputSelection::Auto`], when `change_addr` collides
+    /// with `user_outputs` or `inputs`, or when `Σ inputs ≤ Σ user_outputs`.
+    #[allow(clippy::too_many_arguments)] // mirrors `transfer` plus the change-address override.
     pub async fn transfer_with_change_address<S: Signer<PlatformAddress> + Send + Sync>(
         &self,
         account_index: u32,
@@ -310,8 +295,7 @@ impl PlatformAddressWallet {
             min_input_amount,
         );
 
-        // Empty candidates: classify the cause and raise a typed diagnostic
-        // so callers don't parse downstream message strings.
+        // Classify empty-candidates failure into a typed diagnostic.
         if candidates.is_empty() {
             if let Some(err) = detect_no_selectable_inputs(
                 address_balances.iter().copied(),
@@ -488,8 +472,7 @@ fn select_inputs_deduct_from_input(
         .address_funds
         .min_input_amount;
 
-    // No input can simultaneously be ≥ `min_input_amount` AND sum to
-    // `total_output` if `total_output < min_input_amount`. Reject upfront.
+    // Unsatisfiable: every input must be ≥ min_input_amount.
     if total_output < min_input_amount {
         return Err(PlatformWalletError::AddressOperation(format!(
             "Transfer amount {} is below the protocol minimum input amount {}; \
@@ -499,8 +482,6 @@ fn select_inputs_deduct_from_input(
         )));
     }
 
-    // Saturating arithmetic on `Credits` (== u64): total Dash credit supply
-    // is far below `u64::MAX`, so saturation is unreachable in practice.
     let mut prefix: Vec<(PlatformAddress, Credits)> = Vec::new();
     let mut accumulated: Credits = 0;
     let mut last_estimated_fee: Credits = 0;
@@ -599,8 +580,7 @@ fn select_inputs_deduct_from_input(
 
     if residue_to_fee_target > 0 {
         let new_consumed = fee_target_consumed.saturating_add(residue_to_fee_target);
-        // Unreachable given Phase 3's headroom check; debug_assert surfaces a
-        // logic regression in test runs, the runtime Err keeps release safe.
+        // Unreachable given Phase 3's headroom check.
         debug_assert!(
             new_consumed <= fee_target_max,
             "fee target consumption {} exceeds max {} after residue fold",
@@ -624,9 +604,8 @@ fn select_inputs_deduct_from_input(
 
     selected.insert(fee_target_addr, fee_target_consumed);
 
-    // Defensive post-checks: a malformed Σ or misaligned fee target would ship
-    // a guaranteed-rejected transition. debug_assert surfaces the regression in
-    // test runs; runtime Err keeps release builds safe.
+    // Defensive post-checks: a malformed Σ or misaligned fee target ships
+    // a guaranteed-rejected transition.
     debug_assert_eq!(
         selected.values().copied().sum::<Credits>(),
         total_output,
@@ -708,8 +687,6 @@ fn select_inputs_reduce_output(
         )));
     }
 
-    // Saturating arithmetic everywhere: total credit supply is far below
-    // `u64::MAX`, so saturation is unreachable in practice.
     let mut prefix: Vec<(PlatformAddress, Credits)> = Vec::new();
     let mut accumulated: Credits = 0;
     for (address, balance) in candidates {
@@ -758,8 +735,8 @@ fn select_inputs_reduce_output(
         selected.insert(*addr, consumed);
     }
 
-    // Donor must keep ≥ `min_input_amount` itself, so its balance must reach
-    // `min_input_amount + shift`. Largest-peer-first maximises that chance.
+    // Donor needs balance ≥ `min_input_amount + shift`. Sort balance-
+    // descending locally so the largest peer is tried first.
     let last_addr = prefix[last_index].0;
     let last_consumed = selected[&last_addr];
     if last_consumed < min_input_amount && prefix.len() > 1 {
