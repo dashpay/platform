@@ -2420,4 +2420,105 @@ extension ManagedPlatformWallet {
             return (identityId, ManagedIdentity(handle: outManagedHandle))
         }.value
     }
+
+    /// Resume identity registration from an existing tracked asset lock.
+    ///
+    /// Sibling to
+    /// [`registerIdentityWithFunding(amountDuffs:identityIndex:identityPubkeys:signer:)`]:
+    /// the wallet-balance variant builds a fresh asset-lock transaction;
+    /// this variant picks up a lock that's already tracked (status
+    /// `InstantSendLocked` / `ChainLocked`) and drives whatever stages
+    /// remain. Use case is crash recovery — a prior attempt left the
+    /// lock in storage but the IdentityCreate transition never landed,
+    /// and the user picks the lock from the
+    /// "Fund from unused Asset Lock" surface in `CreateIdentityView`.
+    ///
+    /// `outPointTxid` is the 32-byte raw txid (little-endian wire order,
+    /// same shape as `OutPointFFI.txid` on the Rust side and what
+    /// `PersistentAssetLock.outPointHex` reverses for display); the
+    /// caller is responsible for decoding back from the display-order
+    /// hex before passing in.
+    ///
+    /// Caller MUST pre-derive `identityPubkeys` (typically via
+    /// `dash_sdk_derive_identity_keys_from_mnemonic`) AND pre-persist
+    /// each key's private material to the Keychain using
+    /// `prePersistIdentityKeysForRegistration` BEFORE calling this —
+    /// same precondition as `registerIdentityWithFunding`.
+    ///
+    /// Returns `(identityId, ManagedIdentity)` for the freshly
+    /// registered identity.
+    public func resumeIdentityWithAssetLock(
+        outPointTxid: Data,
+        outPointVout: UInt32,
+        identityIndex: UInt32,
+        identityPubkeys: [ManagedPlatformWallet.IdentityPubkey],
+        signer: KeychainSigner
+    ) async throws -> (Identifier, ManagedIdentity) {
+        guard outPointTxid.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "outPointTxid must be exactly 32 bytes (was \(outPointTxid.count))"
+            )
+        }
+        guard !identityPubkeys.isEmpty else {
+            throw PlatformWalletError.invalidParameter("identityPubkeys is empty")
+        }
+        let handle = self.handle
+        let signerHandle = signer.handle
+        let pubkeys = identityPubkeys
+        // Same `MnemonicResolver` lifetime + vtable rationale as
+        // `registerIdentityWithFunding` — the credit-output private key
+        // is fetched per-call from Keychain, signed, zeroed; no priv
+        // key ever lives in Rust memory across operations.
+        let coreSigner = MnemonicResolver()
+        return try await Task.detached(priority: .userInitiated) {
+            () -> (Identifier, ManagedIdentity) in
+            var idTuple: (
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+            ) = (
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            )
+            var outManagedHandle: Handle = NULL_HANDLE
+            var txidTuple: (
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+            ) = (
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            )
+            outPointTxid.withUnsafeBytes { src in
+                Swift.withUnsafeMutableBytes(of: &txidTuple) { dst in
+                    dst.copyMemory(from: src)
+                }
+            }
+            var outPoint = OutPointFFI(txid: txidTuple, vout: outPointVout)
+            let pubkeyBuffers: [Data] = pubkeys.map { $0.pubkeyBytes }
+            let result = withExtendedLifetime((signer, coreSigner)) {
+                ManagedPlatformWallet.withPubkeyFFIArray(
+                    pubkeys,
+                    buffers: pubkeyBuffers
+                ) { ffiRowsPtr, ffiRowsCount in
+                    platform_wallet_resume_identity_with_existing_asset_lock_signer(
+                        handle,
+                        &outPoint,
+                        identityIndex,
+                        ffiRowsPtr,
+                        UInt(ffiRowsCount),
+                        signerHandle,
+                        coreSigner.handle,
+                        &idTuple,
+                        &outManagedHandle
+                    )
+                }
+            }
+            try result.check()
+            let identityId = Swift.withUnsafeBytes(of: idTuple) { Data($0) }
+            return (identityId, ManagedIdentity(handle: outManagedHandle))
+        }.value
+    }
 }
