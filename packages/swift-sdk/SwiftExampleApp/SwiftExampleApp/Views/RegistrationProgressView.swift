@@ -315,21 +315,11 @@ struct RegistrationProgressSection: View {
 /// `Form` should use `RegistrationProgressSection` directly.
 struct RegistrationProgressView: View {
     @ObservedObject var controller: IdentityRegistrationController
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject var walletManager: PlatformWalletManager
 
-    /// Tap handler for the "View" button on success. Called with
-    /// the newly created identity id. The parent flow is expected
-    /// to (a) dismiss any presenting sheet and (b) navigate to
-    /// `IdentityDetailView` in its own NavigationStack. Empty
-    /// default for the standalone Pending-Registrations entry
-    /// point, where there's no sheet to dismiss.
-    var onViewIdentity: (Data) -> Void = { _ in }
-
-    init(
-        controller: IdentityRegistrationController,
-        onViewIdentity: @escaping (Data) -> Void = { _ in }
-    ) {
+    init(controller: IdentityRegistrationController) {
         self.controller = controller
-        self.onViewIdentity = onViewIdentity
     }
 
     var body: some View {
@@ -354,16 +344,19 @@ struct RegistrationProgressView: View {
                         .font(.system(.caption, design: .monospaced))
                         .foregroundColor(.secondary)
                         .textSelection(.enabled)
+                    // Dismisses the pushed progress view AND drops
+                    // the controller from the coordinator so the
+                    // "Pending Registrations" row on the Identities
+                    // tab clears immediately (instead of lingering
+                    // ~30 s for the retention sweep).
                     Button {
-                        // Close the create-identity sheet and let
-                        // the parent push `IdentityDetailView` in
-                        // its own NavigationStack. The handoff
-                        // happens in `IdentitiesContentView` via
-                        // a `(walletId, identityId)` state binding
-                        // wired to a `.navigationDestination`.
-                        onViewIdentity(identityId)
+                        walletManager.registrationCoordinator.dismiss(
+                            walletId: controller.walletId,
+                            identityIndex: controller.identityIndex
+                        )
+                        dismiss()
                     } label: {
-                        Text("View")
+                        Text("Done")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)

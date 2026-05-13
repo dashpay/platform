@@ -1794,16 +1794,15 @@ struct WalletManagerMetadataStorageDetailView: View {
 struct AssetLockStorageDetailView: View {
     let record: PersistentAssetLock
 
-    /// Look up the operational identity at this asset lock's
-    /// `(walletId, identityIndex)` slot. Populated only for
-    /// IdentityRegistration / IdentityTopUp funding types — the
-    /// other funding types (invitation / asset-lock-address top-up)
-    /// don't bind to a specific identity slot on this wallet.
-    @Query private var linkedIdentities: [PersistentIdentity]
+    /// Candidate identity rows at this asset lock's
+    /// `identityIndex`. Filtered down to the strict
+    /// `(walletId, identityIndex)` match in `linkedIdentity` —
+    /// using the predicate alone would miss legacy rows that
+    /// don't yet have the `wallet` relationship populated.
+    @Query private var candidateIdentities: [PersistentIdentity]
 
     init(record: PersistentAssetLock) {
         self.record = record
-        let walletId = record.walletId
         // `PersistentAssetLock.identityIndexRaw` is `Int32` (the
         // changeset FFI uses i32 to match the upstream tracked
         // type), but `PersistentIdentity.identityIndex` is `UInt32`
@@ -1812,12 +1811,27 @@ struct AssetLockStorageDetailView: View {
         // SwiftData's `#Predicate` macro doesn't allow inline
         // conversions inside the closure body.
         let identityIndex = UInt32(bitPattern: record.identityIndexRaw)
-        _linkedIdentities = Query(
+        _candidateIdentities = Query(
             filter: #Predicate<PersistentIdentity> { identity in
-                identity.wallet?.walletId == walletId
-                    && identity.identityIndex == identityIndex
+                identity.identityIndex == identityIndex
             }
         )
+    }
+
+    /// Resolve the identity row this asset lock points at. Strict
+    /// `(walletId, identityIndex)` match preferred; legacy rows
+    /// that lack the `wallet` relationship fall back to a plain
+    /// `identityIndex` match (single candidate only — multiple
+    /// orphaned candidates at the same index are ambiguous and we
+    /// don't guess).
+    private var linkedIdentity: PersistentIdentity? {
+        if let strict = candidateIdentities.first(where: {
+            $0.wallet?.walletId == record.walletId
+        }) {
+            return strict
+        }
+        let orphaned = candidateIdentities.filter { $0.wallet == nil }
+        return orphaned.count == 1 ? orphaned.first : nil
     }
 
     var body: some View {
@@ -1830,22 +1844,42 @@ struct AssetLockStorageDetailView: View {
                 FieldRow(label: "Amount (duffs)", value: "\(record.amountDuffs)")
                 FieldRow(label: "Wallet ID", value: hexString(record.walletId))
             }
-            if isIdentityFunding, let identity = linkedIdentities.first {
-                // Bridge to the operational identity detail view
-                // from inside the storage page. Separate section
-                // so the row is visually clearly a navigation
-                // affordance — a single `NavigationLink` chevron,
-                // not mixed in with the plain `FieldRow` text rows
-                // above.
+            if isIdentityFunding {
+                // Identity section is always shown for identity-
+                // funding asset locks (Registration / TopUp). If the
+                // linked identity is in SwiftData, drill-down link;
+                // otherwise surface the current registration status
+                // so partial / in-flight asset locks aren't silently
+                // hidden.
                 Section("Identity") {
-                    NavigationLink {
-                        IdentityDetailView(identityId: identity.identityId)
-                    } label: {
+                    if let identity = linkedIdentity {
+                        // Static row — punted on navigation. Pushing
+                        // `IdentityDetailView` from this nested
+                        // Settings → Storage path hung the main
+                        // thread on iOS 26 and burned a session
+                        // chasing the cause. Tap-to-copy `Text` is
+                        // good enough for an explorer surface; the
+                        // operational identity view is reachable
+                        // from the Identities tab.
                         Text(identity.identityIdBase58)
                             .font(.system(.caption, design: .monospaced))
                             .foregroundColor(.primary)
                             .lineLimit(1)
                             .truncationMode(.middle)
+                            .textSelection(.enabled)
+                    } else {
+                        // No matching identity row yet. Either the
+                        // asset lock is still pre-finality
+                        // (statusRaw 0/1) and the registration
+                        // hasn't been submitted, or it's IS/CL-
+                        // locked (2/3) but the IdentityCreate
+                        // transition failed or wasn't submitted —
+                        // surface either case with the current
+                        // status so the entry is self-explanatory.
+                        FieldRow(
+                            label: pendingLabel(record.statusRaw),
+                            value: statusLabel(record.statusRaw)
+                        )
                     }
                 }
             }
@@ -1893,5 +1927,18 @@ struct AssetLockStorageDetailView: View {
     /// resolve to a single identity on this wallet.
     private var isIdentityFunding: Bool {
         record.fundingTypeRaw == 0 || record.fundingTypeRaw == 1
+    }
+
+    /// Label for the pending row shown when no identity row has
+    /// been persisted for this slot yet. Communicates whether the
+    /// lock is mid-flight (still on its way to finality) versus
+    /// IS/CL-locked but the IdentityCreate transition never
+    /// completed.
+    private func pendingLabel(_ raw: Int) -> String {
+        switch raw {
+        case 0, 1: return "In progress"
+        case 2, 3: return "Pending (unused)"
+        default: return "Pending"
+        }
     }
 }

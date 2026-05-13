@@ -25,14 +25,6 @@ struct CreateIdentityView: View {
     @EnvironmentObject var walletManager: PlatformWalletManager
     @EnvironmentObject var platformState: AppState
 
-    /// Called when the user taps "View" on the success state.
-    /// Carries the newly created identity id back to the parent
-    /// (typically `IdentitiesContentView`), which is expected to
-    /// (a) dismiss this sheet and (b) push `IdentityDetailView`
-    /// in its own `NavigationStack`. Empty default makes the view
-    /// usable in places that don't need post-create navigation.
-    var onViewIdentity: (Data) -> Void = { _ in }
-
     /// Default number of Platform identity authentication keys to
     /// register in this first-pass flow. First key is MASTER, the
     /// rest are HIGH. Advanced override is intentionally not exposed
@@ -125,57 +117,41 @@ struct CreateIdentityView: View {
     /// the submit section swaps to a success banner and auto-dismiss.
     @State private var createdIdentityId: Data? = nil
 
-    /// Active registration controller for the Core-funded path
-    /// while the registration is in flight. Set in
-    /// `submitCoreFunded`; drives the pushed
-    /// `RegistrationProgressView` destination. Cleared on
-    /// terminal phase by `observeController`.
+    /// Active registration controller for the Core-funded path.
+    /// Stored only so `submitCoreFunded` has a local reference
+    /// after spawning it; the canonical lifetime owner is
+    /// `walletManager.registrationCoordinator`, which keeps the
+    /// controller available to the "Pending Registrations" row
+    /// on the Identities tab after this sheet dismisses.
     @State private var activeController: IdentityRegistrationController? = nil
-
-    /// Toggle for the pushed registration-progress destination.
-    /// `submit()` sets this to `true` once the coordinator has
-    /// spawned a controller; the dedicated screen then owns the
-    /// rest of the user flow (progress steps + success / error +
-    /// "View Identity" navigation).
-    @State private var showProgressDestination: Bool = false
 
     var body: some View {
         NavigationStack {
             Form {
-                sourceWalletSection
-                fundingSection
-                amountSection
-                identityIndexSection
-                if canSubmit {
-                    submitSection
+                if let controller = activeController {
+                    // While registration is in flight (or has just
+                    // reached a terminal phase), swap the entire
+                    // form for the 5-step progress section + the
+                    // terminal banner (success "Done" / failure
+                    // error). The form's input sections would be
+                    // noise at this point — the user has already
+                    // committed; the controller lives on
+                    // `walletManager.registrationCoordinator` and
+                    // continues to run if this sheet is dismissed.
+                    RegistrationProgressSection(controller: controller)
+                    terminalSection(for: controller)
+                } else {
+                    sourceWalletSection
+                    fundingSection
+                    amountSection
+                    identityIndexSection
+                    if canSubmit {
+                        submitSection
+                    }
                 }
             }
             .navigationTitle("Create Identity")
             .navigationBarTitleDisplayMode(.inline)
-            .navigationDestination(isPresented: $showProgressDestination) {
-                // Standalone progress screen for the spawned
-                // controller. Owns the 5-step progress UI and the
-                // terminal success / failure sections. The "View"
-                // button on success closes the sheet AND tells
-                // the parent which identity to navigate to via
-                // `onViewIdentity`.
-                if let controller = activeController {
-                    RegistrationProgressView(
-                        controller: controller,
-                        onViewIdentity: { identityId in
-                            // Tell the parent first (it stores
-                            // the id and triggers its own
-                            // navigation), then dismiss the
-                            // sheet. SwiftUI processes the state
-                            // update before the dismissal
-                            // animation completes, so the parent
-                            // is already primed to push.
-                            onViewIdentity(identityId)
-                            dismiss()
-                        }
-                    )
-                }
-            }
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") { dismiss() }
@@ -189,6 +165,62 @@ struct CreateIdentityView: View {
                     dismissButton: .default(Text("OK"))
                 )
             }
+        }
+    }
+
+    /// Inline terminal banner that appears under the progress
+    /// section once the controller has reached `.completed` or
+    /// `.failed`. On success, shows the new identity id + a
+    /// "Done" button that dismisses the sheet (the new identity
+    /// appears in the Identities tab's `@Query` automatically).
+    /// On failure, shows the error message inline.
+    @ViewBuilder
+    private func terminalSection(for controller: IdentityRegistrationController) -> some View {
+        switch controller.phase {
+        case .completed(let identityId):
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Identity created", systemImage: "checkmark.seal.fill")
+                        .foregroundColor(.green)
+                        .font(.headline)
+                    Text(identityId.toBase58String())
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .textSelection(.enabled)
+                    Button {
+                        // User acknowledged success — drop the
+                        // controller from the coordinator's map so
+                        // the "Pending Registrations" row on the
+                        // Identities tab clears immediately
+                        // (otherwise it lingers ~30 s until the
+                        // post-completion retention sweep runs).
+                        walletManager.registrationCoordinator.dismiss(
+                            walletId: controller.walletId,
+                            identityIndex: controller.identityIndex
+                        )
+                        dismiss()
+                    } label: {
+                        Text("Done")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .padding(.top, 4)
+                }
+            }
+        case .failed(let message):
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Registration failed", systemImage: "xmark.octagon.fill")
+                        .foregroundColor(.red)
+                        .font(.headline)
+                    Text(message)
+                        .font(.callout)
+                        .foregroundColor(.primary)
+                        .textSelection(.enabled)
+                }
+            }
+        default:
+            EmptyView()
         }
     }
 
@@ -668,13 +700,14 @@ struct CreateIdentityView: View {
             }
         )
 
-        // Capture the controller for the pushed
-        // `RegistrationProgressView` destination, then trigger the
-        // navigation. The destination owns the progress UI + the
-        // success/failure terminal state from here on; this view
-        // becomes a no-op until the user pops back.
+        // Stash the controller; setting it flips the body to the
+        // inline progress + terminal section in place of the
+        // form. The controller's canonical lifetime owner is
+        // `walletManager.registrationCoordinator` — if the user
+        // dismisses the sheet mid-flight, the same controller is
+        // reachable via the "Pending Registrations" row on the
+        // Identities tab.
         self.activeController = controller
-        self.showProgressDestination = true
 
         // Observe phase transitions to mirror onto this view's
         // local success / error state. The controller stays in the
