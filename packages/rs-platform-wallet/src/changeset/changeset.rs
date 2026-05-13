@@ -136,13 +136,10 @@ pub struct CoreChangeSet {
     /// the same flush both pushing the same gap-limit boundary
     /// collapse to one entry.
     ///
-    /// `#[serde(skip)]`: `key_wallet_manager::DerivedAddress` has no
-    /// serde derive upstream and there's no `key-wallet-manager/serde`
-    /// feature to activate. Persisters that need the breadcrumb write
-    /// it to a dedicated typed table (see
-    /// `rs-platform-wallet-sqlite::schema::core_state`) rather than
-    /// serialising the parent changeset wholesale, so a `skip` here
-    /// has no functional cost.
+    /// `#[serde(skip)]` because `key_wallet_manager::DerivedAddress` has
+    /// no serde derive upstream and no `key-wallet-manager/serde` feature
+    /// exists. Persisters store this breadcrumb in a dedicated typed
+    /// table (e.g. `rs-platform-wallet-sqlite::schema::core_state`).
     #[cfg_attr(feature = "serde", serde(skip))]
     pub addresses_derived: Vec<key_wallet_manager::DerivedAddress>,
 }

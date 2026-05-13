@@ -1,18 +1,13 @@
-//! `serde::with` adapters for upstream types that don't (yet) derive
-//! their own `Serialize`/`Deserialize`.
-//!
-//! Compiled only when the crate's `serde` feature is on (see the
-//! `#[cfg(feature = "serde")]` gate on the `pub mod` line in
-//! `changeset/mod.rs`).
+//! `serde::with` adapters for upstream types lacking their own
+//! `Serialize`/`Deserialize` derives.
 
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// Adapter for `AssetLockFundingType` (upstream has no serde derive).
 ///
-/// Encodes each variant as a stable u8 tag — same tag space the
-/// hand-rolled `BlobWriter` used before the serde swap, kept for
-/// forward/backward compatibility of on-disk blobs.
+/// Each variant is encoded as a stable `u8` tag so on-disk blobs remain
+/// forward/backward compatible across releases.
 pub mod asset_lock_funding_type {
     use super::*;
 
