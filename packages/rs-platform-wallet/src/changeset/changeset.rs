@@ -135,12 +135,6 @@ pub struct CoreChangeSet {
     /// upstream `project_derived_addresses` uses, so two records in
     /// the same flush both pushing the same gap-limit boundary
     /// collapse to one entry.
-    ///
-    /// `#[serde(skip)]` because `key_wallet_manager::DerivedAddress` has
-    /// no serde derive upstream and no `key-wallet-manager/serde` feature
-    /// exists. Persisters store this breadcrumb in a dedicated typed
-    /// table (e.g. `rs-platform-wallet-sqlite::schema::core_state`).
-    #[cfg_attr(feature = "serde", serde(skip))]
     pub addresses_derived: Vec<key_wallet_manager::DerivedAddress>,
 }
 
@@ -709,10 +703,6 @@ pub struct AssetLockEntry {
     /// BIP44 account index that funded this asset lock (UTXO source).
     pub account_index: u32,
     /// Which funding account to derive the one-time key from.
-    #[cfg_attr(
-        feature = "serde",
-        serde(with = "crate::changeset::serde_adapters::asset_lock_funding_type")
-    )]
     pub funding_type: AssetLockFundingType,
     /// Identity index used during creation.
     pub identity_index: u32,
