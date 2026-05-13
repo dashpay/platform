@@ -14,41 +14,75 @@ fn is_unsupported_feature_error(error: &ConsensusError) -> bool {
     )
 }
 
-/// Filter `UnsupportedFeatureError` entries out of a structure-validation
-/// result and convert any remaining errors into [`Error`].
+/// Convert a structure-validation result into [`Error`], with one special
+/// case for [`UnsupportedFeatureError`].
 ///
-/// `UnsupportedFeatureError` only signals that structure validation is not yet
-/// implemented for that state transition kind, so it must never mask a real
-/// validation failure. If the result becomes empty after filtering we treat it
-/// as a no-op pass.
-fn map_validation_result(result: SimpleConsensusValidationResult) -> Result<(), Error> {
+/// `UnsupportedFeatureError` has *two* meanings in DPP:
+///
+/// 1. **"Structure validation is not implemented for this state transition
+///    kind"** — e.g. identity-based STs return a result that is *entirely*
+///    `UnsupportedFeatureError` entries. In this case we treat the result
+///    as a no-op pass so the prepare APIs can sign and broadcast these STs
+///    even though their structure check is a stub.
+/// 2. **"A specific feature inside an otherwise-validated ST is not
+///    supported on this platform version"** — in this case the result
+///    mixes `UnsupportedFeatureError` entries with real validation
+///    failures. Here the unsupported entries are *not* placeholders: they
+///    are legitimate rejections that explain why a particular sub-feature
+///    is unavailable, and silently dropping them would discard
+///    user-visible diagnostic information.
+///
+/// To honor both meanings we only treat the "all errors are unsupported"
+/// case as `Ok`. Once *any* non-unsupported error is present we surface
+/// the result via the existing `From<SimpleConsensusValidationResult> for
+/// Error` conversion — which keeps the first error as a *typed*
+/// `ConsensusError` so callers can pattern-match on it. To avoid the
+/// conversion picking an `UnsupportedFeatureError` placeholder when a
+/// real failure is also present, we first reorder the error list so the
+/// first non-`UnsupportedFeatureError` entry is primary.
+fn map_validation_result(mut result: SimpleConsensusValidationResult) -> Result<(), Error> {
     if result.is_valid() {
         return Ok(());
     }
 
-    let real_errors: Vec<ConsensusError> = result
-        .errors
-        .into_iter()
-        .filter(|e| !is_unsupported_feature_error(e))
-        .collect();
-
-    if real_errors.is_empty() {
-        Ok(())
-    } else {
-        Err(SimpleConsensusValidationResult::new_with_errors(real_errors).into())
+    if result.errors.iter().all(is_unsupported_feature_error) {
+        return Ok(());
     }
+
+    // Mixed `UnsupportedFeatureError` + real-error case. The default
+    // `From<SimpleConsensusValidationResult> for Error` conversion keeps
+    // the *first* error as a typed `ConsensusError`. Stable-partition the
+    // list so real failures come first, ensuring the typed error returned
+    // is the most actionable one and not an `UnsupportedFeatureError`
+    // placeholder. We deliberately use the existing `From` conversion so
+    // the returned `Error` preserves the typed `ConsensusError` variant
+    // for downstream pattern-matching, instead of being flattened into a
+    // `ProtocolError::Generic` string.
+    result.errors.sort_by_key(|e| {
+        if is_unsupported_feature_error(e) {
+            1
+        } else {
+            0
+        }
+    });
+    Err(Error::from(result))
 }
 
 /// Ensures a state transition passes structure validation before broadcasting.
 ///
-/// Note: `UnsupportedFeatureError` is allowed to pass through, as it indicates
-/// that structure validation is not implemented for that state transition type
-/// (e.g., identity-based state transitions). The platform will still perform
-/// validation during execution.
+/// `UnsupportedFeatureError` has two meanings in DPP — see
+/// [`map_validation_result`] for the full discussion. In short:
 ///
-/// When the result mixes `UnsupportedFeatureError`s with other errors, the
-/// unsupported variants are filtered out so the surfaced error is always a
-/// real validation problem rather than a "not implemented" placeholder.
+/// * an all-unsupported result is treated as `Ok` because DPP uses that
+///   shape as a "structure validation is not implemented for this state
+///   transition kind" sentinel (e.g. identity-based STs). The platform
+///   will still perform validation during execution.
+/// * a result that mixes `UnsupportedFeatureError` with real errors is
+///   surfaced as an `Err` via the existing
+///   `From<SimpleConsensusValidationResult> for Error` conversion, with
+///   the real failures reordered first so the returned typed
+///   `ConsensusError` is the actionable one (not an
+///   `UnsupportedFeatureError` placeholder).
 pub fn ensure_valid_state_transition_structure(
     state_transition: &StateTransition,
     platform_version: &PlatformVersion,
@@ -94,19 +128,61 @@ mod tests {
         assert!(format!("{err}").contains("bad value"));
     }
 
-    /// When errors mix unsupported with real ones, the real one wins —
-    /// without this filtering, the first-error conversion could surface the
-    /// UnsupportedFeatureError and incorrectly let the transition through.
+    /// When errors mix unsupported with real ones we return an `Err`
+    /// via the existing `From<SimpleConsensusValidationResult> for Error`
+    /// conversion, with real failures reordered first so the typed
+    /// `ConsensusError` returned is the actionable one — not an
+    /// `UnsupportedFeatureError` placeholder.
     #[test]
-    fn mixed_errors_skip_unsupported_and_return_real_error() {
+    fn mixed_errors_promote_real_error_to_primary_typed_error() {
         let result = SimpleConsensusValidationResult::new_with_errors(vec![
             unsupported_error(),
             value_error("real failure"),
         ]);
-        let err = map_validation_result(result).expect_err("expected real error");
+        let err = map_validation_result(result).expect_err("expected error");
+        let rendered = format!("{err}");
         assert!(
-            format!("{err}").contains("real failure"),
-            "expected real-failure message, got: {err}"
+            rendered.contains("real failure"),
+            "expected real-failure message, got: {rendered}"
         );
+
+        // The conversion must preserve the typed `ConsensusError` variant
+        // (a `ValueError` here) rather than wrapping the rendered text in
+        // a `ProtocolError::Generic`. Pattern-matching on the typed
+        // variant is what downstream callers rely on.
+        match err {
+            Error::Protocol(dpp::ProtocolError::ConsensusError(boxed)) => match *boxed {
+                ConsensusError::BasicError(BasicError::ValueError(_)) => {}
+                other => panic!("expected ValueError typed variant, got: {other:?}"),
+            },
+            other => panic!("expected typed ConsensusError, got: {other:?}"),
+        }
+    }
+
+    /// Real errors are reordered to the front even when they appear after
+    /// `UnsupportedFeatureError` entries in the input list, so the typed
+    /// `ConsensusError` returned by the `From` conversion is always the
+    /// actionable failure, never an unsupported-feature placeholder.
+    #[test]
+    fn mixed_errors_reorder_real_failure_before_unsupported() {
+        let result = SimpleConsensusValidationResult::new_with_errors(vec![
+            unsupported_error(),
+            unsupported_error(),
+            value_error("primary failure"),
+            unsupported_error(),
+        ]);
+        let err = map_validation_result(result).expect_err("expected error");
+        match err {
+            Error::Protocol(dpp::ProtocolError::ConsensusError(boxed)) => match *boxed {
+                ConsensusError::BasicError(BasicError::ValueError(ref ve)) => {
+                    assert!(
+                        ve.to_string().contains("primary failure"),
+                        "expected primary failure, got: {ve}"
+                    );
+                }
+                other => panic!("expected ValueError typed variant, got: {other:?}"),
+            },
+            other => panic!("expected typed ConsensusError, got: {other:?}"),
+        }
     }
 }

@@ -69,13 +69,45 @@
 //! separate entropy value, you must now either let the `Document`
 //! constructor derive both together (its default behavior) or call
 //! `Document.generateId(...)` with the same entropy you intend to use.
+//!
+//! ## Trusted wasm-dpp2 producers: `identityKey` and `signer`
+//!
+//! Both the prepare and one-shot APIs deliberately accept `identityKey`
+//! and `signer` only as their real wasm-dpp2 class instances and read
+//! them through `IdentityPublicKeyWasm::try_from_options` /
+//! `IdentitySignerWasm::try_from_options`. Those conversions trust the
+//! wasm-bindgen `__wbg_ptr` field on the value.
+//!
+//! This is an intentional carve-out from the structural-extraction
+//! hardening applied to `document` / `paymentTokenContractId` / etc.,
+//! because:
+//!
+//! * `IdentitySigner` is an opaque handle that owns key material plus
+//!   the in-Rust signing-callback state. There is no public JS field
+//!   surface to reconstruct it from — by design, callers must not have
+//!   direct access to the raw private key bytes. Any "structural"
+//!   extraction would have to invent a new producer API for the signer,
+//!   which would be a strictly weaker security boundary than just
+//!   refusing non-wasm-dpp2 inputs.
+//! * `IdentityPublicKey` is conceptually copyable, but it is only ever
+//!   produced inside the SDK (e.g. fetched from Platform, parsed from a
+//!   contract, derived from the signer) and immediately handed back to
+//!   the SDK for the same call. It never crosses an untrusted boundary
+//!   in the way `document` does (which callers freely build from
+//!   JSON/object literals).
+//!
+//! Callers must therefore pass wasm-dpp2 class instances produced by
+//! this SDK (or wasm-dpp2 directly). Passing a forged JS object with a
+//! spoofed `__wbg_ptr` is out of scope of this API's safety guarantees;
+//! the structural extraction applied elsewhere closes that hole only on
+//! the inputs that legitimately accept plain-object shapes.
 
 use crate::error::WasmSdkError;
 use crate::sdk::WasmSdk;
 use crate::settings::PutSettingsInput;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::data_contract::document_type::DocumentType;
-use dash_sdk::dpp::document::{Document, DocumentV0Getters, INITIAL_REVISION};
+use dash_sdk::dpp::document::{Document, DocumentV0, DocumentV0Getters, INITIAL_REVISION};
 use dash_sdk::dpp::fee::Credits;
 use dash_sdk::dpp::identity::IdentityPublicKey;
 use dash_sdk::dpp::platform_value::Identifier;
@@ -99,8 +131,9 @@ use wasm_dpp2::state_transitions::batch::token_payment_info::{
     TokenPaymentInfoOptionsJs, TokenPaymentInfoWasm,
 };
 use wasm_dpp2::utils::{
-    get_class_type, try_from_options_optional, try_from_options_with, try_to_string, try_to_u64,
-    IntoWasm, JsValueExt,
+    get_class_type, try_from_options_optional, try_from_options_optional_with,
+    try_from_options_with, try_to_fixed_bytes, try_to_string, try_to_u32, try_to_u64, JsValueExt,
+    ToSerdeJSONExt,
 };
 use wasm_dpp2::IdentitySignerWasm;
 use wasm_dpp2::StateTransitionWasm;
@@ -168,21 +201,26 @@ fn try_from_options_optional_token_payment_info(
     // values. A forged object can spoof the public `__type` getter/string,
     // but it cannot force us to dereference an arbitrary wasm pointer when
     // we only copy public fields into a fresh options bag.
+    // Both shapes funnel through a fresh options bag built from safe,
+    // structural reads. In particular, `paymentTokenContractId` is read
+    // via `extract_optional_identifier_property` and re-attached as a
+    // raw byte array, never forwarded as the original `JsValue`. That
+    // closes the same `__wbg_ptr`-trust hole `extract_identifier_property`
+    // protects against: a forged object can spoof a public `__type` /
+    // `toString` / `toJSON` surface, but it cannot smuggle an arbitrary
+    // wasm pointer into the eventual `TokenPaymentInfoWasm::constructor`
+    // parse because we only ever forward extracted bytes.
     let class_type = get_class_type(&token_payment_info_value)
         .map_err(|err| WasmSdkError::invalid_argument(err.to_string()))?;
-    let token_payment_info = match class_type.as_str() {
-        "TokenPaymentInfo" => TokenPaymentInfoWasm::constructor(
-            token_payment_info_options_from_public_fields(&token_payment_info_value)?,
-        )
-        .map_err(|err| WasmSdkError::invalid_argument(err.to_string()))?,
+    let options = match class_type.as_str() {
+        "TokenPaymentInfo" | "" => {
+            token_payment_info_options_from_public_fields(&token_payment_info_value)?
+        }
         // Plain object path: no `__type` getter is set up, so
         // `get_class_type` returns `Ok("")` (empty string default in
         // `JsValue::as_string().unwrap_or_default()`). Treat the empty
-        // string the same as "no class marker present".
-        "" => TokenPaymentInfoWasm::constructor(
-            token_payment_info_value.unchecked_into::<TokenPaymentInfoOptionsJs>(),
-        )
-        .map_err(|err| WasmSdkError::invalid_argument(err.to_string()))?,
+        // string the same as "no class marker present". Any other
+        // class marker is rejected below.
         other => {
             return Err(WasmSdkError::invalid_argument(format!(
                 "tokenPaymentInfo must be a plain DocumentTokenPaymentInfo options object \
@@ -190,6 +228,8 @@ fn try_from_options_optional_token_payment_info(
             )));
         }
     };
+    let token_payment_info = TokenPaymentInfoWasm::constructor(options)
+        .map_err(|err| WasmSdkError::invalid_argument(err.to_string()))?;
 
     Ok(Some(token_payment_info.into()))
 }
@@ -198,8 +238,33 @@ fn token_payment_info_options_from_public_fields(
     value: &JsValue,
 ) -> Result<TokenPaymentInfoOptionsJs, WasmSdkError> {
     let options = js_sys::Object::new();
+
+    // `paymentTokenContractId` is identifier-shaped and accepts class
+    // instances, byte arrays, or base58/hex strings. Run it through the
+    // safe structural extractor so a forged `Identifier`-shaped JS object
+    // cannot smuggle a raw `__wbg_ptr` through to the constructor parse.
+    if let Some(payment_token_contract_id) =
+        extract_optional_identifier_property(value, "paymentTokenContractId")?
+    {
+        let buffer: [u8; 32] = payment_token_contract_id.to_buffer();
+        let bytes = js_sys::Uint8Array::from(&buffer[..]);
+        Reflect::set(
+            &options,
+            &JsValue::from_str("paymentTokenContractId"),
+            &bytes.into(),
+        )
+        .map_err(|err| {
+            WasmSdkError::invalid_argument(format!(
+                "failed to copy tokenPaymentInfo.paymentTokenContractId: {}",
+                err.error_message()
+            ))
+        })?;
+    }
+
+    // The remaining fields are primitives / enums — copying them
+    // structurally is safe because none of them feed into a
+    // `__wbg_ptr`-trusting conversion path.
     for field in [
-        "paymentTokenContractId",
         "tokenContractPosition",
         "minimumTokenCost",
         "maximumTokenCost",
@@ -304,8 +369,11 @@ impl WasmSdk {
         &self,
         options: DocumentCreateOptionsJs,
     ) -> Result<(), WasmSdkError> {
-        // Extract document from options
-        let document_wasm = DocumentWasm::try_from_options(&options, "document")?;
+        // Extract document via public/structural JS fields only — never
+        // the wasm-bindgen pointer. See `extract_prepare_document` for
+        // the security rationale; the one-shot create path applies the
+        // same hardening as the prepare path.
+        let document_wasm = extract_prepare_document(&options)?;
         let document: Document = document_wasm.clone().into();
 
         ensure_document_create_revision(document.revision(), "documentReplace")?;
@@ -447,8 +515,11 @@ impl WasmSdk {
         &self,
         options: DocumentReplaceOptionsJs,
     ) -> Result<(), WasmSdkError> {
-        // Extract document from options
-        let document_wasm = DocumentWasm::try_from_options(&options, "document")?;
+        // Extract document via public/structural JS fields only — never
+        // the wasm-bindgen pointer. See `extract_prepare_document` for
+        // the security rationale; the one-shot replace path applies the
+        // same hardening as the prepare path.
+        let document_wasm = extract_prepare_document(&options)?;
         let document: Document = document_wasm.clone().into();
 
         ensure_document_replace_revision(document.revision(), "documentCreate")?;
@@ -567,43 +638,11 @@ impl WasmSdk {
         &self,
         options: DocumentDeleteOptionsJs,
     ) -> Result<(), WasmSdkError> {
-        // Extract document field - can be either a Document instance or plain object
-        let document_js = js_sys::Reflect::get(&options, &JsValue::from_str("document"))
-            .map_err(|_| WasmSdkError::invalid_argument("document is required"))?;
-
-        if document_js.is_undefined() || document_js.is_null() {
-            return Err(WasmSdkError::invalid_argument("document is required"));
-        }
-
-        // Check if it's a Document instance or a plain object with fields
-        let (document_id, owner_id, contract_id, document_type_name): (
-            Identifier,
-            Identifier,
-            Identifier,
-            String,
-        ) = if get_class_type(&document_js).ok().as_deref() == Some("Document") {
-            // It's a Document instance - extract fields from it
-            let doc: DocumentWasm = document_js
-                .to_wasm::<DocumentWasm>("Document")
-                .map(|boxed| (*boxed).clone())?;
-            let doc_inner: Document = doc.clone().into();
-            (
-                doc.id().into(),
-                doc_inner.owner_id(),
-                doc.data_contract_id().into(),
-                doc.document_type_name(),
-            )
-        } else {
-            // It's a plain object - extract individual fields
-            (
-                IdentifierWasm::try_from_options(&document_js, "id")?.into(),
-                IdentifierWasm::try_from_options(&document_js, "ownerId")?.into(),
-                IdentifierWasm::try_from_options(&document_js, "dataContractId")?.into(),
-                try_from_options_with(&document_js, "documentTypeName", |v| {
-                    try_to_string(v, "documentTypeName")
-                })?,
-            )
-        };
+        // Extract the four delete identifiers via public/structural JS
+        // fields only — never the wasm-bindgen pointer. See
+        // `extract_delete_identifiers` for the security rationale.
+        let (document_id, owner_id, contract_id, document_type_name) =
+            extract_delete_identifiers(&options)?;
 
         // Extract identity key from options
         let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
@@ -677,9 +716,26 @@ export interface PrepareDocumentCreateOptions {
    * entropy explicitly, keep them consistent.
    */
   document: Document;
-  /** The identity public key to use for signing. */
+  /**
+   * The identity public key to use for signing.
+   *
+   * Must be a wasm-dpp2 `IdentityPublicKey` instance produced by this SDK
+   * (e.g. fetched from Platform or derived from the signer). This field
+   * is read via the trusted wasm-bindgen handle and is **not** validated
+   * structurally — see the module-level "Trusted wasm-dpp2 producers"
+   * note for why this carve-out exists.
+   */
   identityKey: IdentityPublicKey;
-  /** Signer containing the private key for the identity key. */
+  /**
+   * Signer containing the private key for the identity key.
+   *
+   * Must be a wasm-dpp2 `IdentitySigner` instance. `IdentitySigner` is
+   * an opaque handle that owns private key material and signing-callback
+   * state, so it has no structural JS-field shape that could be
+   * safely reconstructed; this input is therefore intentionally trusted
+   * via its wasm-bindgen handle. See the module-level "Trusted wasm-dpp2
+   * producers" note for the full rationale.
+   */
   signer: IdentitySigner;
   /** Optional token payment agreement for document types with tokenCost.create. */
   tokenPaymentInfo?: DocumentTokenPaymentInfo;
@@ -722,8 +778,10 @@ impl WasmSdk {
         &self,
         options: PrepareDocumentCreateOptionsJs,
     ) -> Result<StateTransitionWasm, WasmSdkError> {
-        // Extract document from options
-        let document_wasm = DocumentWasm::try_from_options(&options, "document")?;
+        // Extract document via public/structural JS fields only — never the
+        // wasm-bindgen pointer. See `extract_prepare_document` for the
+        // security rationale.
+        let document_wasm = extract_prepare_document(&options)?;
         let document: Document = document_wasm.clone().into();
 
         ensure_document_create_revision(document.revision(), "prepareDocumentReplace")?;
@@ -811,9 +869,26 @@ const PREPARE_DOCUMENT_REPLACE_OPTIONS_TS: &'static str = r#"
 export interface PrepareDocumentReplaceOptions {
   /** The document with updated data (same ID, incremented revision). */
   document: Document;
-  /** The identity public key to use for signing. */
+  /**
+   * The identity public key to use for signing.
+   *
+   * Must be a wasm-dpp2 `IdentityPublicKey` instance produced by this SDK
+   * (e.g. fetched from Platform or derived from the signer). This field
+   * is read via the trusted wasm-bindgen handle and is **not** validated
+   * structurally — see the module-level "Trusted wasm-dpp2 producers"
+   * note for why this carve-out exists.
+   */
   identityKey: IdentityPublicKey;
-  /** Signer containing the private key for the identity key. */
+  /**
+   * Signer containing the private key for the identity key.
+   *
+   * Must be a wasm-dpp2 `IdentitySigner` instance. `IdentitySigner` is
+   * an opaque handle that owns private key material and signing-callback
+   * state, so it has no structural JS-field shape that could be
+   * safely reconstructed; this input is therefore intentionally trusted
+   * via its wasm-bindgen handle. See the module-level "Trusted wasm-dpp2
+   * producers" note for the full rationale.
+   */
   signer: IdentitySigner;
   /** Optional token payment agreement for document types with tokenCost.replace. */
   tokenPaymentInfo?: DocumentTokenPaymentInfo;
@@ -849,8 +924,10 @@ impl WasmSdk {
         &self,
         options: PrepareDocumentReplaceOptionsJs,
     ) -> Result<StateTransitionWasm, WasmSdkError> {
-        // Extract document from options
-        let document_wasm = DocumentWasm::try_from_options(&options, "document")?;
+        // Extract document via public/structural JS fields only — never the
+        // wasm-bindgen pointer. See `extract_prepare_document` for the
+        // security rationale.
+        let document_wasm = extract_prepare_document(&options)?;
         let document: Document = document_wasm.clone().into();
 
         ensure_document_replace_revision(document.revision(), "prepareDocumentCreate")?;
@@ -918,9 +995,26 @@ export interface PrepareDocumentDeleteOptions {
     dataContractId: IdentifierLike;
     documentTypeName: string;
   };
-  /** The identity public key to use for signing. */
+  /**
+   * The identity public key to use for signing.
+   *
+   * Must be a wasm-dpp2 `IdentityPublicKey` instance produced by this SDK
+   * (e.g. fetched from Platform or derived from the signer). This field
+   * is read via the trusted wasm-bindgen handle and is **not** validated
+   * structurally — see the module-level "Trusted wasm-dpp2 producers"
+   * note for why this carve-out exists.
+   */
   identityKey: IdentityPublicKey;
-  /** Signer containing the private key for the identity key. */
+  /**
+   * Signer containing the private key for the identity key.
+   *
+   * Must be a wasm-dpp2 `IdentitySigner` instance. `IdentitySigner` is
+   * an opaque handle that owns private key material and signing-callback
+   * state, so it has no structural JS-field shape that could be
+   * safely reconstructed; this input is therefore intentionally trusted
+   * via its wasm-bindgen handle. See the module-level "Trusted wasm-dpp2
+   * producers" note for the full rationale.
+   */
   signer: IdentitySigner;
   /** Optional token payment agreement for document types with tokenCost.delete. */
   tokenPaymentInfo?: DocumentTokenPaymentInfo;
@@ -956,41 +1050,11 @@ impl WasmSdk {
         &self,
         options: PrepareDocumentDeleteOptionsJs,
     ) -> Result<StateTransitionWasm, WasmSdkError> {
-        // Extract document field - can be either a Document instance or plain object
-        let document_js = js_sys::Reflect::get(&options, &JsValue::from_str("document"))
-            .map_err(|_| WasmSdkError::invalid_argument("document is required"))?;
-
-        if document_js.is_undefined() || document_js.is_null() {
-            return Err(WasmSdkError::invalid_argument("document is required"));
-        }
-
-        // Check if it's a Document instance or a plain object with fields
-        let (document_id, owner_id, contract_id, document_type_name): (
-            Identifier,
-            Identifier,
-            Identifier,
-            String,
-        ) = if get_class_type(&document_js).ok().as_deref() == Some("Document") {
-            let doc: DocumentWasm = document_js
-                .to_wasm::<DocumentWasm>("Document")
-                .map(|boxed| (*boxed).clone())?;
-            let doc_inner: Document = doc.clone().into();
-            (
-                doc.id().into(),
-                doc_inner.owner_id(),
-                doc.data_contract_id().into(),
-                doc.document_type_name(),
-            )
-        } else {
-            (
-                IdentifierWasm::try_from_options(&document_js, "id")?.into(),
-                IdentifierWasm::try_from_options(&document_js, "ownerId")?.into(),
-                IdentifierWasm::try_from_options(&document_js, "dataContractId")?.into(),
-                try_from_options_with(&document_js, "documentTypeName", |v| {
-                    try_to_string(v, "documentTypeName")
-                })?,
-            )
-        };
+        // Extract the four delete identifiers via public/structural JS
+        // fields only — never the wasm-bindgen pointer. See
+        // `extract_delete_identifiers` for the security rationale.
+        let (document_id, owner_id, contract_id, document_type_name) =
+            extract_delete_identifiers(&options)?;
 
         // Extract identity key from options
         let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
@@ -1111,8 +1175,10 @@ impl WasmSdk {
         &self,
         options: DocumentTransferOptionsJs,
     ) -> Result<(), WasmSdkError> {
-        // Extract document from options
-        let document_wasm = DocumentWasm::try_from_options(&options, "document")?;
+        // Extract document via public/structural JS fields only — never
+        // the wasm-bindgen pointer. See `extract_prepare_document` for
+        // the security rationale.
+        let document_wasm = extract_prepare_document(&options)?;
         let document: Document = document_wasm.clone().into();
 
         // Get metadata from document
@@ -1241,8 +1307,10 @@ impl WasmSdk {
         &self,
         options: DocumentPurchaseOptionsJs,
     ) -> Result<(), WasmSdkError> {
-        // Extract document from options
-        let document_wasm = DocumentWasm::try_from_options(&options, "document")?;
+        // Extract document via public/structural JS fields only — never
+        // the wasm-bindgen pointer. See `extract_prepare_document` for
+        // the security rationale.
+        let document_wasm = extract_prepare_document(&options)?;
         let document: Document = document_wasm.clone().into();
 
         // Get metadata from document
@@ -1361,8 +1429,10 @@ impl WasmSdk {
         &self,
         options: DocumentSetPriceOptionsJs,
     ) -> Result<(), WasmSdkError> {
-        // Extract document from options
-        let document_wasm = DocumentWasm::try_from_options(&options, "document")?;
+        // Extract document via public/structural JS fields only — never
+        // the wasm-bindgen pointer. See `extract_prepare_document` for
+        // the security rationale.
+        let document_wasm = extract_prepare_document(&options)?;
         let document: Document = document_wasm.clone().into();
 
         // Get metadata from document
@@ -1410,6 +1480,292 @@ impl WasmSdk {
 // ============================================================================
 // Helper Functions
 // ============================================================================
+
+/// Extract an identifier-shaped property from a JS object using only
+/// public/structural JS reads, never the wasm-bindgen `__wbg_ptr` field.
+///
+/// `IdentifierWasm::try_from(&JsValue)` (and therefore
+/// `IdentifierWasm::try_from_options`) falls through to
+/// `to_wasm::<IdentifierWasm>("Identifier")` whenever the input "looks like"
+/// an `Identifier` class instance, which dereferences the wasm-bindgen
+/// `__wbg_ptr` field as a Rust pointer. A forged JS object can advertise
+/// `__type === "Identifier"` while handing us an arbitrary numeric
+/// `__wbg_ptr`, so trusting that pointer on untrusted inputs is unsound —
+/// the same rationale that motivates `extract_prepare_document` /
+/// `extract_delete_identifiers`.
+///
+/// Accepted public shapes:
+///   * a Base58 / hex string (via `IdentifierWasm::try_from(&str)`),
+///   * a `Uint8Array` or `Array` of bytes (via `IdentifierWasm::try_from(&[u8])`),
+///   * an `Identifier` class instance — read via its **public** JS methods
+///     (`toBytes()`, then `toString()` / `toJSON()`), never via `__wbg_ptr`.
+fn extract_identifier_property(
+    container: &JsValue,
+    property_name: &str,
+) -> Result<Identifier, WasmSdkError> {
+    let value = Reflect::get(container, &JsValue::from_str(property_name)).map_err(|err| {
+        WasmSdkError::invalid_argument(format!(
+            "failed to read '{}' from options: {:?}",
+            property_name, err
+        ))
+    })?;
+
+    if value.is_undefined() || value.is_null() {
+        return Err(WasmSdkError::invalid_argument(format!(
+            "'{}' is required",
+            property_name
+        )));
+    }
+
+    // String: Base58 or hex.
+    if let Some(s) = value.as_string() {
+        return identifier_from_str(&s, property_name);
+    }
+
+    // Uint8Array / typed-array byte source.
+    if value.is_instance_of::<js_sys::Uint8Array>() {
+        let bytes = js_sys::Uint8Array::from(value.clone()).to_vec();
+        return identifier_from_bytes(&bytes, property_name);
+    }
+
+    // Plain JS array of byte-like numbers.
+    if js_sys::Array::is_array(&value) {
+        let bytes = js_sys::Uint8Array::from(value.clone()).to_vec();
+        return identifier_from_bytes(&bytes, property_name);
+    }
+
+    // Class-instance case: read via *public* JS methods only. We deliberately
+    // do not look at `__type` / `__wbg_ptr`. `toBytes()` is not present on
+    // `Object.prototype`, so it serves as a clean discriminator for the
+    // real `Identifier` class instance shape; we fall back to
+    // `toString()` / `toJSON()` (both yield the base58 form on real
+    // `Identifier` instances).
+    if value.is_object() {
+        if let Some(bytes) = call_no_arg_method_returning_uint8array(&value, "toBytes") {
+            return identifier_from_bytes(&bytes, property_name);
+        }
+        if let Some(s) = call_no_arg_method_returning_string(&value, "toString") {
+            // Skip the unhelpful default `Object.prototype.toString` result
+            // ("[object Object]"), which is never a valid identifier anyway
+            // but produces a confusing parse error if we let it through.
+            if !s.starts_with('[') {
+                return identifier_from_str(&s, property_name);
+            }
+        }
+        if let Some(s) = call_no_arg_method_returning_string(&value, "toJSON") {
+            return identifier_from_str(&s, property_name);
+        }
+    }
+
+    Err(WasmSdkError::invalid_argument(format!(
+        "'{}' must be an Identifier, Uint8Array, array, or base58/hex string",
+        property_name
+    )))
+}
+
+/// Same structural extraction as [`extract_identifier_property`], but
+/// returns `Ok(None)` if the property is missing/`undefined`/`null`
+/// instead of erroring. Use for genuinely optional identifier fields like
+/// `creatorId` and `paymentTokenContractId` so a missing value is not
+/// conflated with a malformed one.
+fn extract_optional_identifier_property(
+    container: &JsValue,
+    property_name: &str,
+) -> Result<Option<Identifier>, WasmSdkError> {
+    let value = Reflect::get(container, &JsValue::from_str(property_name)).map_err(|err| {
+        WasmSdkError::invalid_argument(format!(
+            "failed to read '{}' from options: {:?}",
+            property_name, err
+        ))
+    })?;
+
+    if value.is_undefined() || value.is_null() {
+        return Ok(None);
+    }
+
+    extract_identifier_property(container, property_name).map(Some)
+}
+
+fn identifier_from_str(s: &str, property_name: &str) -> Result<Identifier, WasmSdkError> {
+    IdentifierWasm::try_from(s)
+        .map(Into::into)
+        .map_err(|err| WasmSdkError::invalid_argument(format!("'{}': {}", property_name, err)))
+}
+
+fn identifier_from_bytes(bytes: &[u8], property_name: &str) -> Result<Identifier, WasmSdkError> {
+    IdentifierWasm::try_from(bytes)
+        .map(Into::into)
+        .map_err(|err| WasmSdkError::invalid_argument(format!("'{}': {}", property_name, err)))
+}
+
+fn call_no_arg_method_returning_uint8array(obj: &JsValue, method: &str) -> Option<Vec<u8>> {
+    let func = Reflect::get(obj, &JsValue::from_str(method)).ok()?;
+    if !func.is_function() {
+        return None;
+    }
+    let func: js_sys::Function = func.unchecked_into();
+    let ret = func.call0(obj).ok()?;
+    if ret.is_undefined() || ret.is_null() {
+        return None;
+    }
+    ret.dyn_into::<js_sys::Uint8Array>()
+        .ok()
+        .map(|arr| arr.to_vec())
+}
+
+fn call_no_arg_method_returning_string(obj: &JsValue, method: &str) -> Option<String> {
+    let func = Reflect::get(obj, &JsValue::from_str(method)).ok()?;
+    if !func.is_function() {
+        return None;
+    }
+    let func: js_sys::Function = func.unchecked_into();
+    func.call0(obj).ok()?.as_string()
+}
+
+/// Extract the four identifiers needed to build a document delete transition
+/// (`id`, `ownerId`, `dataContractId`, `documentTypeName`) from the `document`
+/// field of a delete-options object.
+///
+/// We accept *both* a `wasm-dpp2` `Document` class instance and a plain
+/// `{ id, ownerId, dataContractId, documentTypeName }` options bag — but the
+/// extraction itself reads only the public JS getters/fields on the value.
+/// We deliberately do **not** call `DocumentWasm::try_from` /
+/// `to_wasm::<DocumentWasm>("Document")` here: those paths read the
+/// wasm-bindgen `__wbg_ptr` field and dereference it as a Rust pointer. A
+/// forged JS object can advertise `__type === "Document"` but still hand us
+/// an arbitrary numeric `__wbg_ptr`, so trusting the pointer on untrusted
+/// inputs is unsound. Using only `id`, `ownerId`, `dataContractId`, and
+/// `documentTypeName` (which `Document` exposes as ordinary
+/// `#[wasm_bindgen(getter = ...)]` accessors) keeps the read structural and
+/// safe for both shapes.
+fn extract_delete_identifiers(
+    options: &JsValue,
+) -> Result<(Identifier, Identifier, Identifier, String), WasmSdkError> {
+    let document_js = js_sys::Reflect::get(options, &JsValue::from_str("document"))
+        .map_err(|_| WasmSdkError::invalid_argument("document is required"))?;
+
+    if document_js.is_undefined() || document_js.is_null() {
+        return Err(WasmSdkError::invalid_argument("document is required"));
+    }
+
+    let document_id = extract_identifier_property(&document_js, "id")?;
+    let owner_id = extract_identifier_property(&document_js, "ownerId")?;
+    let contract_id = extract_identifier_property(&document_js, "dataContractId")?;
+    let document_type_name = try_from_options_with(&document_js, "documentTypeName", |v| {
+        try_to_string(v, "documentTypeName")
+    })?;
+
+    Ok((document_id, owner_id, contract_id, document_type_name))
+}
+
+/// Extract a `DocumentWasm` from the `document` field of a prepare-options
+/// object via *public/structural JS reads only*, building a fresh `Document`
+/// in Rust from those reads.
+///
+/// `prepareDocumentCreate` / `prepareDocumentReplace` accept either:
+///   * a `wasm-dpp2` `Document` class instance (whose getters return
+///     `IdentifierWasm`, `bigint`, `Uint8Array`, …), or
+///   * a plain `{ id, ownerId, dataContractId, documentTypeName, properties,
+///     revision?, entropy?, createdAt?, … }` options bag.
+///
+/// We deliberately do **not** call `DocumentWasm::try_from` /
+/// `to_wasm::<DocumentWasm>("Document")` here: those paths read the
+/// wasm-bindgen `__wbg_ptr` field on the value and dereference it as a Rust
+/// pointer. A forged JS object can advertise `__type === "Document"` but
+/// still hand us an arbitrary numeric `__wbg_ptr`, so trusting that pointer
+/// on untrusted inputs is unsound. Real `Document` instances expose every
+/// field below via ordinary `#[wasm_bindgen(getter = ...)]` accessors, so
+/// `Reflect::get` works the same way for both shapes — but the bytes we
+/// build the `Document` from are always derived from the public surface,
+/// never from a caller-supplied pointer.
+fn extract_prepare_document(options: &JsValue) -> Result<DocumentWasm, WasmSdkError> {
+    let document_js = Reflect::get(options, &JsValue::from_str("document"))
+        .map_err(|_| WasmSdkError::invalid_argument("document is required"))?;
+
+    if document_js.is_undefined() || document_js.is_null() {
+        return Err(WasmSdkError::invalid_argument("document is required"));
+    }
+
+    let id = extract_identifier_property(&document_js, "id")?;
+    let owner_id = extract_identifier_property(&document_js, "ownerId")?;
+    let contract_id = extract_identifier_property(&document_js, "dataContractId")?;
+    let document_type_name = try_from_options_with(&document_js, "documentTypeName", |v| {
+        try_to_string(v, "documentTypeName")
+    })?;
+    let properties = try_from_options_with(&document_js, "properties", |v| {
+        v.with_serde_to_platform_value_map()
+    })?;
+
+    let revision =
+        try_from_options_optional_with(&document_js, "revision", |v| try_to_u64(v, "revision"))?;
+
+    let entropy = try_from_options_optional_with(&document_js, "entropy", |v| {
+        try_to_fixed_bytes::<32>(v.clone(), "entropy")
+    })?;
+
+    let created_at =
+        try_from_options_optional_with(&document_js, "createdAt", |v| try_to_u64(v, "createdAt"))?;
+    let updated_at =
+        try_from_options_optional_with(&document_js, "updatedAt", |v| try_to_u64(v, "updatedAt"))?;
+    let transferred_at = try_from_options_optional_with(&document_js, "transferredAt", |v| {
+        try_to_u64(v, "transferredAt")
+    })?;
+    let created_at_block_height =
+        try_from_options_optional_with(&document_js, "createdAtBlockHeight", |v| {
+            try_to_u64(v, "createdAtBlockHeight")
+        })?;
+    let updated_at_block_height =
+        try_from_options_optional_with(&document_js, "updatedAtBlockHeight", |v| {
+            try_to_u64(v, "updatedAtBlockHeight")
+        })?;
+    let transferred_at_block_height =
+        try_from_options_optional_with(&document_js, "transferredAtBlockHeight", |v| {
+            try_to_u64(v, "transferredAtBlockHeight")
+        })?;
+    let created_at_core_block_height =
+        try_from_options_optional_with(&document_js, "createdAtCoreBlockHeight", |v| {
+            try_to_u32(v, "createdAtCoreBlockHeight")
+        })?;
+    let updated_at_core_block_height =
+        try_from_options_optional_with(&document_js, "updatedAtCoreBlockHeight", |v| {
+            try_to_u32(v, "updatedAtCoreBlockHeight")
+        })?;
+    let transferred_at_core_block_height =
+        try_from_options_optional_with(&document_js, "transferredAtCoreBlockHeight", |v| {
+            try_to_u32(v, "transferredAtCoreBlockHeight")
+        })?;
+
+    // `creatorId` is optional and read structurally. On a real
+    // `wasm-dpp2` `Document` instance it comes from the public
+    // `creatorId` getter; on plain-object inputs callers can pass it
+    // explicitly. Missing / null / undefined yields `None`, matching the
+    // `DocumentWasm` constructor's default.
+    let creator_id = extract_optional_identifier_property(&document_js, "creatorId")?;
+
+    let document = Document::V0(DocumentV0 {
+        id,
+        owner_id,
+        properties,
+        revision,
+        created_at,
+        updated_at,
+        transferred_at,
+        created_at_block_height,
+        updated_at_block_height,
+        transferred_at_block_height,
+        created_at_core_block_height,
+        updated_at_core_block_height,
+        transferred_at_core_block_height,
+        creator_id,
+    });
+
+    Ok(DocumentWasm::new(
+        document,
+        contract_id,
+        document_type_name,
+        entropy,
+    ))
+}
 
 /// Fast-fail verification that `document.id` matches the v0 document-id
 /// derivation for `(contract_id, owner_id, document_type_name, entropy)`.

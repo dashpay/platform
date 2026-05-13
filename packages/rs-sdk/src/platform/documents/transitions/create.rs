@@ -123,19 +123,12 @@ impl DocumentCreateTransitionBuilder {
     /// # Returns
     ///
     /// * `Self` - The updated builder
-    pub fn with_settings(mut self, mut settings: PutSettings) -> Self {
-        if self.user_fee_increase.is_none() {
-            self.user_fee_increase = settings.user_fee_increase;
-        }
-        if self.state_transition_creation_options.is_none() {
-            self.state_transition_creation_options = settings.state_transition_creation_options;
-        }
-        // Strip the fee/creation-options fields from the stored settings so
-        // the dedicated builder fields are the sole source of truth at
-        // sign time. The remainder of `settings` flows through unchanged.
-        settings.user_fee_increase = None;
-        settings.state_transition_creation_options = None;
-        self.settings = Some(settings);
+    pub fn with_settings(mut self, settings: PutSettings) -> Self {
+        let stored = settings.split_dedicated_fields(
+            &mut self.user_fee_increase,
+            &mut self.state_transition_creation_options,
+        );
+        self.settings = Some(stored);
         self
     }
 

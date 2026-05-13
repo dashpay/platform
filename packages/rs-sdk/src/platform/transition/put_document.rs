@@ -122,6 +122,17 @@ pub(crate) fn ensure_revision_for_replace(revision: Option<u64>) -> Result<(), E
 /// branch internally on platform version) — grep for `derive_document_id_v0`
 /// **and** `generate_document_id_v0` to catch every call site that needs to
 /// migrate together.
+///
+/// **TODO (consensus / platform-version migration):** when a new
+/// document-id derivation is introduced via a consensus or platform-version
+/// bump, this helper and every `generate_document_id_v0` call site (the
+/// strict create-path id check, the legacy entropy fallback, the wasm-sdk
+/// fast-path id check, and the Rust SDK tests) must move to a
+/// platform-version-aware dispatch in lockstep. The current v0-only pin
+/// is a deliberate choice — the strict create path rejects mismatches with
+/// `Error::InvalidArgument`, so once a v1 derivation ships, native callers
+/// that have hand-derived ids with the old formula will start failing here
+/// until they migrate.
 fn derive_document_id_v0(
     document_type: DocumentTypeRef<'_>,
     owner_id: &Identifier,

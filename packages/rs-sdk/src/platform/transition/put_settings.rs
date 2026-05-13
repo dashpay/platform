@@ -27,3 +27,40 @@ impl From<PutSettings> for RequestSettings {
         settings.request_settings
     }
 }
+
+impl PutSettings {
+    /// Split a [`PutSettings`] into the two dedicated builder fields
+    /// (`user_fee_increase`, `state_transition_creation_options`) and the
+    /// remainder of [`PutSettings`] with those two fields cleared.
+    ///
+    /// Used by the document `with_settings` implementations on the create,
+    /// replace, and delete builders so each builder shares one implementation
+    /// of the "explicit dedicated setters always win" contract:
+    ///
+    /// * if the builder's dedicated `user_fee_increase` /
+    ///   `state_transition_creation_options` field is **already set**
+    ///   (`Some(_)`), keep it — `with_settings` must not clobber an
+    ///   explicit setter, regardless of call order.
+    /// * otherwise, move the corresponding field out of `settings` into
+    ///   the dedicated field.
+    /// * in both cases, the returned `PutSettings` has both fields zeroed
+    ///   so the dedicated builder fields are the sole source of truth at
+    ///   sign time. Every other [`PutSettings`] field (timeouts, retry
+    ///   behavior, nonce stale time, etc.) is preserved unchanged for
+    ///   nonce allocation and broadcast.
+    pub fn split_dedicated_fields(
+        mut self,
+        dedicated_user_fee_increase: &mut Option<UserFeeIncrease>,
+        dedicated_state_transition_creation_options: &mut Option<StateTransitionCreationOptions>,
+    ) -> Self {
+        if dedicated_user_fee_increase.is_none() {
+            *dedicated_user_fee_increase = self.user_fee_increase;
+        }
+        if dedicated_state_transition_creation_options.is_none() {
+            *dedicated_state_transition_creation_options = self.state_transition_creation_options;
+        }
+        self.user_fee_increase = None;
+        self.state_transition_creation_options = None;
+        self
+    }
+}

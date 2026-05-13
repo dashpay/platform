@@ -343,6 +343,15 @@ impl DocumentWasm {
         self.document_type_name.clone()
     }
 
+    /// Optional creator identity. Present on documents from contracts whose
+    /// document type retains the original creator's identifier; `None` for
+    /// fresh documents built from the `Document` constructor (which does
+    /// not set `creator_id`).
+    #[wasm_bindgen(getter = creatorId)]
+    pub fn creator_id(&self) -> Option<IdentifierWasm> {
+        self.document.creator_id().map(Into::into)
+    }
+
     #[wasm_bindgen(setter=id)]
     pub fn set_id(&mut self, id: IdentifierLikeJs) -> WasmDppResult<()> {
         self.document.set_id(id.try_into()?);

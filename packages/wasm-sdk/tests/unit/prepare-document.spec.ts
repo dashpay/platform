@@ -135,10 +135,41 @@ describe('prepareDocument* validation', function describePrepareDocumentValidati
       }
     });
 
+    it('accepts a plain-object document and applies the same validation', async () => {
+      // Regression test for the safe structural extraction path. The
+      // prepare API must accept a plain `{...}` document shape *without*
+      // dereferencing wasm-bindgen internals — but it must still enforce
+      // the same revision guard a real `Document` instance hits. Hand the
+      // SDK a plain object with revision 2 and assert it routes to the
+      // revision guard, not the `__wbg_ptr` fast path.
+      const { signer, identityKey } = buildSigner();
+      const document = {
+        id: DUMMY_ID,
+        ownerId: DUMMY_ID_2,
+        dataContractId: DUMMY_ID,
+        documentTypeName: 'note',
+        properties: { message: 'hello' },
+        revision: 2,
+        entropy: new Uint8Array(32),
+      };
+
+      try {
+        await client.prepareDocumentCreate({ document, identityKey, signer });
+        expect.fail('expected prepareDocumentCreate to reject revision > 1');
+      } catch (e) {
+        expect(e).to.be.instanceOf(sdk.WasmSdkError);
+        expect(e.name).to.equal('InvalidArgument');
+        expect(e.message).to.match(/revision/i);
+        expect(e.message).to.match(/prepareDocumentReplace/);
+      }
+    });
+
     it('rejects a document with revision 0 (would silently be a replace)', async () => {
-      // `build_document_create_or_replace_transition` routes any `revision != INITIAL_REVISION`
-      // to the replace branch, so `revision = 0` must be rejected too — otherwise it would
-      // silently produce a replace transition instead of a create.
+      // Revision 0 is invalid for *both* create and replace, so the shared
+      // rejection message must not point users at the sibling API (which
+      // would also reject). It must say "revision 0 is invalid for both
+      // create and replace" so callers see the always-invalid value
+      // explicitly instead of being routed in a loop.
       const { signer, identityKey } = buildSigner();
       const document = buildDocument({ revision: 0 });
 
@@ -148,8 +179,9 @@ describe('prepareDocument* validation', function describePrepareDocumentValidati
       } catch (e) {
         expect(e).to.be.instanceOf(sdk.WasmSdkError);
         expect(e.name).to.equal('InvalidArgument');
-        expect(e.message).to.match(/revision/i);
-        expect(e.message).to.match(/prepareDocumentReplace/);
+        expect(e.message).to.match(/revision 0 is invalid for both create and replace/);
+        expect(e.message).to.not.match(/prepareDocumentReplace/);
+        expect(e.message).to.not.match(/prepareDocumentCreate/);
       }
     });
   });
@@ -173,12 +205,46 @@ describe('prepareDocument* validation', function describePrepareDocumentValidati
     });
 
     it('rejects a document with revision 0', async () => {
+      // Revision 0 is invalid for *both* create and replace, so the shared
+      // rejection message must not point users at the sibling API (which
+      // would also reject). It must say "revision 0 is invalid for both
+      // create and replace" so callers see the always-invalid value
+      // explicitly instead of being routed in a loop.
       const { signer, identityKey } = buildSigner();
       const document = buildDocument({ revision: 0 });
 
       try {
         await client.prepareDocumentReplace({ document, identityKey, signer });
         expect.fail('expected prepareDocumentReplace to reject revision 0');
+      } catch (e) {
+        expect(e).to.be.instanceOf(sdk.WasmSdkError);
+        expect(e.name).to.equal('InvalidArgument');
+        expect(e.message).to.match(/revision 0 is invalid for both create and replace/);
+        expect(e.message).to.not.match(/prepareDocumentCreate/);
+        expect(e.message).to.not.match(/prepareDocumentReplace/);
+      }
+    });
+
+    it('accepts a plain-object document and applies the same validation', async () => {
+      // Regression test for the safe structural extraction path. The
+      // prepare API must accept a plain `{...}` document shape *without*
+      // dereferencing wasm-bindgen internals — but it must still enforce
+      // the same revision guard a real `Document` instance hits. Hand the
+      // SDK a plain object with revision 1 and assert it routes to the
+      // replace revision guard.
+      const { signer, identityKey } = buildSigner();
+      const document = {
+        id: DUMMY_ID,
+        ownerId: DUMMY_ID_2,
+        dataContractId: DUMMY_ID,
+        documentTypeName: 'note',
+        properties: { message: 'hello' },
+        revision: 1,
+      };
+
+      try {
+        await client.prepareDocumentReplace({ document, identityKey, signer });
+        expect.fail('expected prepareDocumentReplace to reject revision 1');
       } catch (e) {
         expect(e).to.be.instanceOf(sdk.WasmSdkError);
         expect(e.name).to.equal('InvalidArgument');
@@ -335,6 +401,11 @@ describe('prepareDocument* validation', function describePrepareDocumentValidati
 
   describe('documentCreate()/documentReplace()', () => {
     it('documentCreate rejects a document with revision 0', async () => {
+      // Revision 0 is invalid for *both* create and replace, so the shared
+      // rejection message must not point users at the sibling API (which
+      // would also reject). It must say "revision 0 is invalid for both
+      // create and replace" so callers see the always-invalid value
+      // explicitly instead of being routed in a loop.
       const { signer, identityKey } = buildSigner();
       const document = buildDocument({ revision: 0 });
 
@@ -344,8 +415,9 @@ describe('prepareDocument* validation', function describePrepareDocumentValidati
       } catch (e) {
         expect(e).to.be.instanceOf(sdk.WasmSdkError);
         expect(e.name).to.equal('InvalidArgument');
-        expect(e.message).to.match(/revision/i);
-        expect(e.message).to.match(/documentReplace/);
+        expect(e.message).to.match(/revision 0 is invalid for both create and replace/);
+        expect(e.message).to.not.match(/documentCreate/);
+        expect(e.message).to.not.match(/documentReplace/);
       }
     });
 
