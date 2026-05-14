@@ -72,6 +72,8 @@ assert_cmd = "2"
 predicates = "3"
 static_assertions = "1"
 filetime = "0.2"
+tracing-test = { version = "0.2", features = ["no-env-filter"] }
+serial_test = "3"
 platform-wallet-storage = { path = ".", features = ["sqlite", "cli", "test-helpers"] }
 
 [features]

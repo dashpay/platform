@@ -204,6 +204,21 @@ pub enum WalletStorageError {
     LoadIncomplete {
         unimplemented: &'static [&'static str],
     },
+
+    /// Flush failed transiently (e.g. `SQLITE_BUSY` / `SQLITE_LOCKED`)
+    /// for `wallet_id`. The buffered changeset has been restored — the
+    /// next `flush(wallet_id)` will retry the same data merged with
+    /// anything stored in between. Callers should back off and retry
+    /// rather than dropping state.
+    #[error(
+        "flush failed transiently for wallet {}; buffer preserved for retry",
+        hex::encode(wallet_id)
+    )]
+    FlushRetryable {
+        wallet_id: [u8; 32],
+        #[source]
+        source: rusqlite::Error,
+    },
 }
 
 /// Deprecated alias preserved for one cycle. Switch downstream
@@ -246,6 +261,94 @@ impl WalletStorageError {
     /// (e.g. an outpoint column that isn't 36 bytes).
     pub(crate) fn blob_decode(reason: &'static str) -> Self {
         Self::BlobDecode { reason }
+    }
+
+    /// `true` when the underlying failure is safe to retry — the
+    /// caller should preserve in-flight state and call again. Today
+    /// only `SQLITE_BUSY` / `SQLITE_LOCKED` (raw or wrapped via
+    /// [`Self::FlushRetryable`]) qualify; every other variant is
+    /// fatal.
+    ///
+    /// The match is intentionally wildcard-free: `WalletStorageError`
+    /// MUST NOT gain `#[non_exhaustive]`, otherwise adding a future
+    /// variant would skip this gate (it'd silently fall into a
+    /// catch-all instead of forcing the author to classify it).
+    pub fn is_transient(&self) -> bool {
+        use rusqlite::ErrorCode;
+        match self {
+            Self::Sqlite(rusqlite::Error::SqliteFailure(e, _)) => {
+                matches!(e.code, ErrorCode::DatabaseBusy | ErrorCode::DatabaseLocked)
+            }
+            Self::FlushRetryable { .. } => true,
+            // Every other rusqlite variant — non-`SqliteFailure` (e.g.
+            // `ToSqlConversionFailure`, `InvalidColumnIndex`) — is a
+            // logic bug, not a contention failure.
+            Self::Sqlite(_) => false,
+            Self::Io(_)
+            | Self::Migration(_)
+            | Self::MigrationDirty { .. }
+            | Self::IntegrityCheckFailed { .. }
+            | Self::IntegrityCheckRunFailed { .. }
+            | Self::SourceOpenFailed { .. }
+            | Self::SchemaHistoryMissing
+            | Self::SchemaVersionUnsupported { .. }
+            | Self::AutoBackupDisabled { .. }
+            | Self::AutoBackupDirUnwritable { .. }
+            | Self::WalletNotFound { .. }
+            | Self::LockPoisoned
+            | Self::RestoreDestinationLocked
+            | Self::InvalidWalletIdHex { .. }
+            | Self::InvalidWalletIdLength { .. }
+            | Self::ConfigInvalid { .. }
+            | Self::BincodeEncode { .. }
+            | Self::BincodeDecode { .. }
+            | Self::BlobDecode { .. }
+            | Self::HashDecode { .. }
+            | Self::ConsensusCodec { .. }
+            | Self::BackupDestinationExists { .. }
+            | Self::IntegerOverflow { .. }
+            | Self::LoadIncomplete { .. } => false,
+        }
+    }
+
+    /// Short, lowercase, snake-case tag for tracing fields. One tag
+    /// per variant family — readers grep for these in production
+    /// logs.
+    pub fn error_kind_str(&self) -> &'static str {
+        use rusqlite::ErrorCode;
+        match self {
+            Self::Sqlite(rusqlite::Error::SqliteFailure(e, _)) => match e.code {
+                ErrorCode::DatabaseBusy => "sqlite_busy",
+                ErrorCode::DatabaseLocked => "sqlite_locked",
+                _ => "sqlite_other",
+            },
+            Self::Sqlite(_) => "sqlite_other",
+            Self::FlushRetryable { .. } => "flush_retryable",
+            Self::Io(_) => "io",
+            Self::Migration(_) => "migration",
+            Self::MigrationDirty { .. } => "migration_dirty",
+            Self::IntegrityCheckFailed { .. } => "integrity_check_failed",
+            Self::IntegrityCheckRunFailed { .. } => "integrity_check_run_failed",
+            Self::SourceOpenFailed { .. } => "source_open_failed",
+            Self::SchemaHistoryMissing => "schema_history_missing",
+            Self::SchemaVersionUnsupported { .. } => "schema_version_unsupported",
+            Self::AutoBackupDisabled { .. } => "auto_backup_disabled",
+            Self::AutoBackupDirUnwritable { .. } => "auto_backup_dir_unwritable",
+            Self::WalletNotFound { .. } => "wallet_not_found",
+            Self::LockPoisoned => "lock_poisoned",
+            Self::RestoreDestinationLocked => "restore_destination_locked",
+            Self::InvalidWalletIdHex { .. } => "invalid_wallet_id_hex",
+            Self::InvalidWalletIdLength { .. } => "invalid_wallet_id_length",
+            Self::ConfigInvalid { .. } => "config_invalid",
+            Self::BincodeEncode { .. } => "bincode_encode",
+            Self::BincodeDecode { .. } => "bincode_decode",
+            Self::BlobDecode { .. } => "blob_decode",
+            Self::HashDecode { .. } => "hash_decode",
+            Self::ConsensusCodec { .. } => "consensus_codec",
+            Self::BackupDestinationExists { .. } => "backup_destination_exists",
+            Self::IntegerOverflow { .. } => "integer_overflow",
+            Self::LoadIncomplete { .. } => "load_incomplete",
+        }
     }
 }
 

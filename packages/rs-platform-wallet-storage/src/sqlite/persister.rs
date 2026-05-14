@@ -85,6 +85,12 @@ pub struct SqlitePersister {
     // the same WAL-mode file is the planned follow-up.
     conn: Arc<Mutex<Connection>>,
     buffer: Buffer,
+    /// Test-only one-shot injector for `flush_inner`. Lives on the
+    /// struct so `force_next_flush_to_fail` can survive across `&self`
+    /// calls. Production builds keep the slot but never write to it
+    /// (no public setter outside `#[cfg(any(test, feature = "test-helpers"))]`).
+    #[cfg(any(test, feature = "test-helpers"))]
+    primed_flush_error: Mutex<Option<WalletStorageError>>,
 }
 
 impl SqlitePersister {
@@ -151,6 +157,8 @@ impl SqlitePersister {
             config,
             conn: Arc::new(Mutex::new(conn)),
             buffer: Buffer::new(),
+            #[cfg(any(test, feature = "test-helpers"))]
+            primed_flush_error: Mutex::new(None),
         })
     }
 
@@ -417,47 +425,62 @@ impl SqlitePersister {
     fn flush_inner(&self, wallet_id: &WalletId) -> Result<(), PersistenceError> {
         let cs = self
             .buffer
-            .drain(wallet_id)
+            .take_for_flush(wallet_id)
             .map_err(PersistenceError::from)?;
         let Some(cs) = cs else { return Ok(()) };
-        let mut conn = self.conn().map_err(PersistenceError::from)?;
-        let tx = conn
-            .transaction()
-            .map_err(WalletStorageError::from)
-            .map_err(PersistenceError::from)?;
+
+        // Test-only injector: surface a primed failure without ever
+        // touching SQL so take/restore semantics are exercised end-to-end.
+        #[cfg(any(test, feature = "test-helpers"))]
+        if let Some(injected) = self.consume_primed_flush_error() {
+            return self.handle_flush_error(wallet_id, cs, injected);
+        }
+
+        match self.write_changeset_in_one_tx(wallet_id, &cs) {
+            Ok(()) => Ok(()),
+            Err(e) => self.handle_flush_error(wallet_id, cs, e),
+        }
+    }
+
+    /// Apply every populated sub-changeset under one transaction and
+    /// commit. Returned `Err` is the per-area / commit failure verbatim
+    /// — classification + buffer restore happen one level up.
+    fn write_changeset_in_one_tx(
+        &self,
+        wallet_id: &WalletId,
+        cs: &PlatformWalletChangeSet,
+    ) -> Result<(), WalletStorageError> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
         if let Some(meta) = cs.wallet_metadata.as_ref() {
-            schema::wallet_meta::upsert(&tx, wallet_id, meta).map_err(PersistenceError::from)?;
+            schema::wallet_meta::upsert(&tx, wallet_id, meta)?;
         }
         if !cs.account_registrations.is_empty() {
-            schema::accounts::apply_registrations(&tx, wallet_id, &cs.account_registrations)
-                .map_err(PersistenceError::from)?;
+            schema::accounts::apply_registrations(&tx, wallet_id, &cs.account_registrations)?;
         }
         if !cs.account_address_pools.is_empty() {
-            schema::accounts::apply_pools(&tx, wallet_id, &cs.account_address_pools)
-                .map_err(PersistenceError::from)?;
+            schema::accounts::apply_pools(&tx, wallet_id, &cs.account_address_pools)?;
         }
         if let Some(core) = cs.core.as_ref() {
-            schema::core_state::apply(&tx, wallet_id, core).map_err(PersistenceError::from)?;
+            schema::core_state::apply(&tx, wallet_id, core)?;
         }
         if let Some(identities) = cs.identities.as_ref() {
-            schema::identities::apply(&tx, wallet_id, identities)
-                .map_err(PersistenceError::from)?;
+            schema::identities::apply(&tx, wallet_id, identities)?;
         }
         if let Some(keys) = cs.identity_keys.as_ref() {
-            schema::identity_keys::apply(&tx, wallet_id, keys).map_err(PersistenceError::from)?;
+            schema::identity_keys::apply(&tx, wallet_id, keys)?;
         }
         if let Some(contacts) = cs.contacts.as_ref() {
-            schema::contacts::apply(&tx, wallet_id, contacts).map_err(PersistenceError::from)?;
+            schema::contacts::apply(&tx, wallet_id, contacts)?;
         }
         if let Some(addrs) = cs.platform_addresses.as_ref() {
-            schema::platform_addrs::apply(&tx, wallet_id, addrs).map_err(PersistenceError::from)?;
+            schema::platform_addrs::apply(&tx, wallet_id, addrs)?;
         }
         if let Some(locks) = cs.asset_locks.as_ref() {
-            schema::asset_locks::apply(&tx, wallet_id, locks).map_err(PersistenceError::from)?;
+            schema::asset_locks::apply(&tx, wallet_id, locks)?;
         }
         if let Some(balances) = cs.token_balances.as_ref() {
-            schema::token_balances::apply(&tx, wallet_id, balances)
-                .map_err(PersistenceError::from)?;
+            schema::token_balances::apply(&tx, wallet_id, balances)?;
         }
         if cs.dashpay_profiles.is_some() || cs.dashpay_payments_overlay.is_some() {
             schema::dashpay::apply(
@@ -465,13 +488,86 @@ impl SqlitePersister {
                 wallet_id,
                 cs.dashpay_profiles.as_ref(),
                 cs.dashpay_payments_overlay.as_ref(),
-            )
-            .map_err(PersistenceError::from)?;
+            )?;
         }
-        tx.commit()
-            .map_err(WalletStorageError::from)
-            .map_err(PersistenceError::from)?;
+        tx.commit()?;
         Ok(())
+    }
+
+    /// Classify the failure: transient errors restore the buffer and
+    /// surface as `FlushRetryable`; everything else drops the
+    /// changeset and returns the original variant.
+    fn handle_flush_error(
+        &self,
+        wallet_id: &WalletId,
+        cs: PlatformWalletChangeSet,
+        err: WalletStorageError,
+    ) -> Result<(), PersistenceError> {
+        let field_count = cs.populated_field_count();
+        let kind = err.error_kind_str();
+        if err.is_transient() {
+            // Restore on a best-effort basis: a poisoned mutex during
+            // restore is itself reportable, but we still want the
+            // original transient signal at the top of the chain.
+            let _ = self.buffer.restore(*wallet_id, cs);
+            // Narrow the error to its rusqlite source per D-9 — only
+            // `Sqlite(SqliteFailure(BUSY|LOCKED, _))` qualifies for
+            // surfacing as `FlushRetryable`.
+            let source = match err {
+                WalletStorageError::Sqlite(rusq) => rusq,
+                WalletStorageError::FlushRetryable { source, .. } => source,
+                other => {
+                    // Defensive: classifier said "transient" but source
+                    // isn't rusqlite. Surface unwrapped — better than
+                    // lying about the source type.
+                    tracing::warn!(
+                        wallet_id = %hex::encode(wallet_id),
+                        error_kind = kind,
+                        restored_field_count = field_count,
+                        "transient classification with non-sqlite source — propagating raw"
+                    );
+                    return Err(PersistenceError::from(other));
+                }
+            };
+            tracing::warn!(
+                wallet_id = %hex::encode(wallet_id),
+                error_kind = kind,
+                restored_field_count = field_count,
+                "flush failed transiently — buffer restored for retry"
+            );
+            Err(PersistenceError::from(WalletStorageError::FlushRetryable {
+                wallet_id: *wallet_id,
+                source,
+            }))
+        } else {
+            tracing::error!(
+                wallet_id = %hex::encode(wallet_id),
+                error_kind = kind,
+                dropped_field_count = field_count,
+                "flush failed fatally — buffer wiped"
+            );
+            // `cs` dropped here.
+            drop(cs);
+            Err(PersistenceError::from(err))
+        }
+    }
+
+    /// Test-only: arm a one-shot injection consumed by the next
+    /// `flush_inner`. Higher-level than `FailingConnection`; useful
+    /// when the test doesn't care which SQL error fires, only how the
+    /// wrapper reacts.
+    #[doc(hidden)]
+    #[cfg(any(test, feature = "test-helpers"))]
+    pub fn force_next_flush_to_fail(&self, err: WalletStorageError) {
+        *self.primed_flush_error.lock().expect("primed_flush_error") = Some(err);
+    }
+
+    #[cfg(any(test, feature = "test-helpers"))]
+    fn consume_primed_flush_error(&self) -> Option<WalletStorageError> {
+        self.primed_flush_error
+            .lock()
+            .expect("primed_flush_error")
+            .take()
     }
 }
 
