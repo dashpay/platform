@@ -314,6 +314,14 @@ fn document_count_worst_case(c: &mut Criterion) {
     // integration test.
     report_group_by_matrix(&fixture, platform_version);
 
+    // Dump the actual proof bytes (hex) for every `group_by = []`
+    // case so reviewers can inspect what grovedb is signing for
+    // each shape. The total / point-lookup / range-aggregate
+    // primitives all produce different byte layouts; the hex view
+    // lets a reader correlate sizes with structure without rebuilding
+    // a separate verifier harness.
+    dump_aggregate_proofs(&fixture, platform_version);
+
     let mut group = c.benchmark_group("document_count_worst_case");
     group.sample_size(10);
     group.throughput(criterion::Throughput::Elements(fixture.row_count));
@@ -769,6 +777,103 @@ fn report_group_by_matrix(fixture: &CountBenchFixture, platform_version: &Platfo
             pr = prove_result,
             pa = case.platform_allowed,
         );
+    }
+}
+
+/// Dump the actual grovedb proof bytes (hex) for every
+/// `group_by = []` (Aggregate) prove case. Each proof's byte layout
+/// is determined by which grovedb primitive the drive dispatcher
+/// routes to:
+///
+/// - `(empty)` → primary-key CountTree proof at the doctype's `[0]`
+///   child (`documentsCountable: true` fast path; the proof is
+///   merk-path to a single CountTree element).
+/// - `field == X` → `point_lookup_count_path_query` against the
+///   covering countable index; the proof is a merk-path to either
+///   `[..., last_value, 0]` (normal countable) or `[..., last_value]`
+///   (rangeCountable, post-optimization).
+/// - `field IN [...]` → same `point_lookup_count_path_query` shape
+///   but with one outer `Key` per In value, so the proof carries
+///   one merk-path per resolved branch.
+/// - `range_field > floor` → `aggregate_count_path_query` against
+///   the rangeCountable terminator's property-name `ProvableCountTree`;
+///   the proof is an `AggregateCountOnRange` primitive that signs
+///   a single u64.
+///
+/// Hex is emitted 64 hex chars per line (32 bytes per row) so the
+/// output is grep-able and the rows align with merk-tree node
+/// boundaries on most layouts.
+fn dump_aggregate_proofs(fixture: &CountBenchFixture, platform_version: &PlatformVersion) {
+    let brands_2 = brands_n(2);
+    let colors_2 = first_n_color_values(2);
+    let mid_brand = brand_label(BRAND_COUNT / 2);
+    let mid_color = color_label(color_count_for_rows(fixture.row_count) / 2);
+    let range_floor = Value::Text(fixture.range_floor.clone());
+
+    let clause = |field: &str, op: &str, value: Value| -> Value {
+        Value::Array(vec![
+            Value::Text(field.to_string()),
+            Value::Text(op.to_string()),
+            value,
+        ])
+    };
+
+    let cases: Vec<(&'static str, Value)> = vec![
+        ("[] / where=(empty)", Value::Null),
+        (
+            "[] / where=brand==X",
+            Value::Array(vec![clause("brand", "==", Value::Text(mid_brand.clone()))]),
+        ),
+        (
+            "[] / where=color==X",
+            Value::Array(vec![clause("color", "==", Value::Text(mid_color.clone()))]),
+        ),
+        (
+            "[] / where=brand==X AND color==Y",
+            Value::Array(vec![
+                clause("brand", "==", Value::Text(mid_brand.clone())),
+                clause("color", "==", Value::Text(mid_color.clone())),
+            ]),
+        ),
+        (
+            "[] / where=brand IN[2]",
+            Value::Array(vec![clause("brand", "in", Value::Array(brands_2.clone()))]),
+        ),
+        (
+            "[] / where=color IN[2]",
+            Value::Array(vec![clause("color", "in", Value::Array(colors_2.clone()))]),
+        ),
+        (
+            "[] / where=color > floor",
+            Value::Array(vec![clause("color", ">", range_floor.clone())]),
+        ),
+    ];
+
+    for (label, raw_where) in cases {
+        let request = count_request(
+            fixture,
+            raw_where,
+            Value::Null,
+            CountMode::Aggregate,
+            None,
+            true,
+        );
+        let proof =
+            match fixture
+                .drive
+                .execute_document_count_request(request, None, platform_version)
+            {
+                Ok(DocumentCountResponse::Proof(p)) => p,
+                other => {
+                    eprintln!("[proof-bytes] {label} → unexpected non-Proof response: {other:?}");
+                    continue;
+                }
+            };
+        eprintln!("[proof-bytes] {label} ({} bytes)", proof.len());
+        for chunk in proof.chunks(32) {
+            let hex: String = chunk.iter().map(|b| format!("{:02x}", b)).collect();
+            eprintln!("[proof-bytes]   {hex}");
+        }
     }
 }
 
