@@ -909,19 +909,17 @@ mod tests {
 
     #[test]
     fn is_nonce_class_error_rejects_no_selectable_inputs() {
-        // NoSelectableInputs is the closest "insufficient funds"-shape
+        // OnlyOutputAddressesFunded is the closest "insufficient funds"-shape
         // error in this codebase and must NOT be classified as
         // nonce-class — retrying it would just churn against the
         // same empty input pool.
-        let err = PlatformWalletError::NoSelectableInputs {
+        let err = PlatformWalletError::OnlyOutputAddressesFunded {
             funded_outputs: vec![],
-            sub_min_count: 0,
-            sub_min_aggregate: 0,
             min_input_amount: 0,
         };
         assert!(
             !is_nonce_class_error(&err),
-            "NoSelectableInputs must NOT be classified as nonce-class"
+            "OnlyOutputAddressesFunded must NOT be classified as nonce-class"
         );
     }
 
