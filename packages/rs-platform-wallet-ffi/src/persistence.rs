@@ -2262,6 +2262,16 @@ fn build_unused_asset_locks(
         let funding_type = funding_type_from_u8(spec.funding_type)?;
         let status = status_from_u8(spec.status)?;
 
+        // Skip `Consumed` rows. The Swift persister keeps them for
+        // historical UI lookups (transactions list → locked amount),
+        // but the in-memory `tracked_asset_locks` map is for
+        // still-actionable locks only — a consumed lock has no proof
+        // worth waiting on and adding it back to memory at every
+        // load would defeat the point of marking it terminal.
+        if matches!(status, platform_wallet::AssetLockStatus::Consumed) {
+            continue;
+        }
+
         let tracked = platform_wallet::TrackedAssetLock {
             out_point,
             transaction,
@@ -2310,6 +2320,7 @@ fn status_from_u8(b: u8) -> Result<platform_wallet::AssetLockStatus, Persistence
         1 => AssetLockStatus::Broadcast,
         2 => AssetLockStatus::InstantSendLocked,
         3 => AssetLockStatus::ChainLocked,
+        4 => AssetLockStatus::Consumed,
         other => {
             return Err(PersistenceError::from(format!(
                 "tracked asset lock: unknown status discriminant {}",

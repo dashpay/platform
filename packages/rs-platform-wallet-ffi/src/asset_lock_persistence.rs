@@ -169,5 +169,6 @@ fn status_to_u8(status: &AssetLockStatus) -> u8 {
         AssetLockStatus::Broadcast => 1,
         AssetLockStatus::InstantSendLocked => 2,
         AssetLockStatus::ChainLocked => 3,
+        AssetLockStatus::Consumed => 4,
     }
 }

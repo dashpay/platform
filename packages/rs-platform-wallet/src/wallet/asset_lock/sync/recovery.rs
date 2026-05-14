@@ -261,6 +261,19 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 self.validate_or_upgrade_proof(proof, account_index, out_point)
                     .await?
             }
+            AssetLockStatus::Consumed => {
+                // Terminal — the asset lock was already burned by a
+                // successful identity registration / top-up. We
+                // should never reach this arm in practice (the
+                // `tracked_asset_locks` map drops Consumed entries
+                // and the load path filters them out), but the
+                // exhaustive match needs an arm. Treat as a wallet-
+                // state mismatch rather than panicking.
+                return Err(PlatformWalletError::AssetLockProofWait(format!(
+                    "Asset lock {} is already Consumed — nothing to resume",
+                    out_point
+                )));
+            }
         };
 
         // 3. Advance status and attach proof.

@@ -39,7 +39,7 @@
 //!    [`crate::error::is_instant_lock_proof_invalid`]. Same recovery:
 //!    upgrade to ChainLock and retry.
 //!
-//! Both paths share the same outpoint-keyed cleanup (`remove_asset_lock`)
+//! Both paths share the same outpoint-keyed cleanup (`consume_asset_lock`)
 //! once Platform finally accepts the registration / top-up.
 
 use std::collections::BTreeMap;
@@ -557,7 +557,13 @@ impl IdentityWallet {
         // lifecycle (`FromWalletBalance` / `FromExistingAssetLock`);
         // `UseAssetLock` is `None` and skipped.
         if let Some(out_point) = tracked_out_point {
-            self.asset_locks.remove_asset_lock(&out_point).await;
+            if let Err(e) = self.asset_locks.consume_asset_lock(&out_point).await {
+                tracing::warn!(
+                    outpoint = %out_point,
+                    error = %e,
+                    "consume_asset_lock failed after successful Platform submit"
+                );
+            }
         }
 
         Ok(identity)
@@ -713,7 +719,13 @@ impl IdentityWallet {
             }
         }
         if let Some(out_point) = tracked_out_point {
-            self.asset_locks.remove_asset_lock(&out_point).await;
+            if let Err(e) = self.asset_locks.consume_asset_lock(&out_point).await {
+                tracing::warn!(
+                    outpoint = %out_point,
+                    error = %e,
+                    "consume_asset_lock failed after successful Platform submit"
+                );
+            }
         }
 
         Ok(new_balance)
