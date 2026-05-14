@@ -92,13 +92,18 @@ Three layout facts to internalize before reading the queries:
 
 ## How To Read The Proofs
 
-Every example below has the same three sections:
+Every example below has two sections:
 
-1. **Path query** — the spec the prover hands GroveDB. `path` is the list of subtree segments to descend through (the proof carries merk-path bytes for each of these); `query items` is what to select once at the bottom; `subquery items` (when present) descends one more layer.
-2. **Verified element** — what `GroveDB::verify_query` (or `verify_aggregate_count_query` for the range primitive) returns after walking the proof bytes. The `count_value_or_default` field on a `CountTree` element is what the count surface ultimately surfaces to the caller.
-3. **Diagram** — the path the proof walks through the layout. Blue arrows trace the descent; the cyan node is the verified element; faded gray nodes show context.
+1. **Verbatim `display_proofs` output** — the bench harness in [`document_count_worst_case.rs`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/benches/document_count_worst_case.rs)'s `display_proofs` helper runs each query through the dispatcher, reconstructs the same `PathQuery` the prover used, feeds the proof bytes through `GroveDb::verify_query` (or `verify_aggregate_count_query` for the range primitive), and prints both the prover-side spec (`path` + `query items` + optional `subquery items`) and the verified payload (`root_hash` + element list or aggregate count). The blocks below are that output with the `[proof]` prefix stripped. Re-run the bench to reproduce the bytes exactly.
+2. **Diagram** — the path the proof walks through the layout. Blue arrows trace the descent; the cyan node is the verified element; faded gray nodes show context.
 
-All proof-size numbers come from running the bench against a 100 000-row fixture; see [`document_count_worst_case.rs`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/benches/document_count_worst_case.rs)'s `report_proof_sizes` / `display_proofs` / `report_group_by_matrix` helpers.
+A few decoding conventions to keep in mind when reading the displayed proofs:
+
+- **`"@"`** in the path is the printable rendering of byte `0x40`, the `RootTree::DataContractDocuments` prefix. The bench's `display_segment` helper renders single printable ASCII bytes as quoted strings and falls back to hex otherwise.
+- **`0x4ed22624…(32 bytes)`** is the truncated rendering of the bench's 32-byte contract id; the trailing `…(N bytes)` always means "this segment has N bytes total, here are the first eight".
+- **`debug: …`** on each `CountTree` element is grovedb's `Element::Debug` output. The leading `count_tree:` / `provable_count_tree:` confirms the variant; `[hex: …, str: …]` is the stored value slot (a continuation pointer for byBrand's `brand_*` value trees, or the `[0]` lowest-key marker for byColor's leaf trees); the bare integer after that is the committed `count_value`.
+
+All proof-size numbers come from running the bench against a 100 000-row fixture.
 
 ## Query 1 — Unfiltered Total Count
 
@@ -108,22 +113,23 @@ where   = (empty)
 prove   = true
 ```
 
-**Path query** (primary-key CountTree fast path; no index walk needed):
+Verbatim output from the bench's `display_proofs` helper (primary-key CountTree fast path; no index walk needed):
 
 ```text
-path:         ["@", contract_id, 0x01, "widget"]
-query items:  [Key(0x00)]
+[] / where=(empty) (585 bytes)
+  path:
+    "@"
+    0x4ed22624752972af...(32 bytes)
+    0x01
+    "widget"
+  query items: [Key(0x00)]
+  verified:
+    root_hash: 0x62ee7348f4d28dd9d7cf86a6c725fa8276cfd446f6007a6000fb0e1dfefa6468
+    elements (1):
+      path: ["@", 0x4ed22624752972af...(32 bytes), 0x01, "widget"]
+      key:  0x00
+      element: CountTree { count_value_or_default: 100000, debug: count_tree: [hex: 00000000..00000000] 100000 }
 ```
-
-**Verified element:**
-
-```text
-path:        ["@", contract_id, 0x01, "widget"]
-key:         0x00
-element:     CountTree { count_value_or_default: 100000 }
-```
-
-**Proof size:** 585 B.
 
 The descent stops at the doctype's primary-key tree — the green node at the top of the layout. Because `documentsCountable: true` upgraded that tree to a `CountTree`, the count is one O(1) read.
 
@@ -150,24 +156,26 @@ where   = brand == "brand_050"
 prove   = true
 ```
 
-**Path query:**
-
 ```text
-path:         ["@", contract_id, 0x01, "widget", "brand"]
-query items:  [Key("brand_050")]
+[] / where=brand==X (1041 bytes)
+  path:
+    "@"
+    0x4ed22624752972af...(32 bytes)
+    0x01
+    "widget"
+    "brand"
+  query items: [Key("brand_050")]
+  verified:
+    root_hash: 0x62ee7348f4d28dd9d7cf86a6c725fa8276cfd446f6007a6000fb0e1dfefa6468
+    elements (1):
+      path: ["@", 0x4ed22624752972af...(32 bytes), 0x01, "widget", "brand"]
+      key:  "brand_050"
+      element: CountTree { count_value_or_default: 1000, debug: count_tree: [hex: 636f6c6f72, str: color] 1000[hex: 000000, str:    ] }
 ```
-
-**Verified element:**
-
-```text
-path:        ["@", contract_id, 0x01, "widget", "brand"]
-key:         "brand_050"
-element:     CountTree { count_value_or_default: 1000 }
-```
-
-**Proof size:** 1 041 B.
 
 `brand_050` is itself a `CountTree` — every countable terminator's value tree carries the doc count directly, with sibling continuations wrapped `NonCounted` so they don't pollute the parent. The proof shape is the same as the rangeCountable case below, even though `byBrand` doesn't opt into `rangeCountable: true`. `rangeCountable` is the orthogonal opt-in for `AggregateCountOnRange` (Query 7), not for proof-size shape.
+
+The `debug:` field's `[hex: 636f6c6f72, str: color]` is the CountTree's stored value-slot: it points at the `color` continuation child (`byBrandColor`'s prefix-extension). That child is `NonCounted`-wrapped at the storage layer so it contributes `0` to this CountTree's `count_value` — leaving the count equal to the byBrand `[0]`-bucket's 1 000 refs exactly.
 
 ```mermaid
 flowchart TB
@@ -198,24 +206,26 @@ where   = color == "color_00000500"
 prove   = true
 ```
 
-**Path query:**
-
 ```text
-path:         ["@", contract_id, 0x01, "widget", "color"]
-query items:  [Key("color_00000500")]
+[] / where=color==X (1327 bytes)
+  path:
+    "@"
+    0x4ed22624752972af...(32 bytes)
+    0x01
+    "widget"
+    "color"
+  query items: [Key("color_00000500")]
+  verified:
+    root_hash: 0x62ee7348f4d28dd9d7cf86a6c725fa8276cfd446f6007a6000fb0e1dfefa6468
+    elements (1):
+      path: ["@", 0x4ed22624752972af...(32 bytes), 0x01, "widget", "color"]
+      key:  "color_00000500"
+      element: CountTree { count_value_or_default: 100, debug: count_tree: [hex: 00, str:  ] 100[hex: 000000, str:    ] }
 ```
 
-**Verified element:**
+Structurally identical to Query 2 — only the property name and the count differ. The intermediate `widget/color` tree is a `ProvableCountTree` here (vs `NormalTree` for `byBrand`), but the *proof* doesn't care about that: it descends through the property-name tree and surfaces the value-tree CountTree at the bottom. The `ProvableCountTree` upgrade matters for Query 7 (range aggregate), not for point lookup.
 
-```text
-path:        ["@", contract_id, 0x01, "widget", "color"]
-key:         "color_00000500"
-element:     CountTree { count_value_or_default: 100 }
-```
-
-**Proof size:** 1 327 B.
-
-Structurally identical to Query 2 — only the property name and the count-tree depth differ. The intermediate `widget/color` tree is a `ProvableCountTree` here (vs `NormalTree` for `byBrand`), but the *proof* doesn't care about that: it descends through the property-name tree and surfaces the value-tree CountTree at the bottom. The `ProvableCountTree` upgrade matters for Query 7 (range aggregate), not for point lookup.
+Note the `debug:` field on this CountTree differs from Query 2's: here it's `[hex: 00, str:  ]` — the value slot points at the `[0]` ref-bucket child, and there's no continuation (byColor is single-property, so nothing branches off this value tree).
 
 ```mermaid
 flowchart TB
@@ -245,24 +255,26 @@ where   = brand == "brand_050" AND color == "color_00000500"
 prove   = true
 ```
 
-**Path query:**
-
 ```text
-path:         ["@", contract_id, 0x01, "widget", "brand", "brand_050", "color"]
-query items:  [Key("color_00000500")]
+[] / where=brand==X AND color==Y (1911 bytes)
+  path:
+    "@"
+    0x4ed22624752972af...(32 bytes)
+    0x01
+    "widget"
+    "brand"
+    "brand_050"
+    "color"
+  query items: [Key("color_00000500")]
+  verified:
+    root_hash: 0x62ee7348f4d28dd9d7cf86a6c725fa8276cfd446f6007a6000fb0e1dfefa6468
+    elements (1):
+      path: ["@", 0x4ed22624752972af...(32 bytes), 0x01, "widget", "brand", "brand_050", "color"]
+      key:  "color_00000500"
+      element: CountTree { count_value_or_default: 1, debug: count_tree: [hex: 00, str:  ] 1[hex: 000000, str:    ] }
 ```
 
-**Verified element:**
-
-```text
-path:        ["@", contract_id, 0x01, "widget", "brand", "brand_050", "color"]
-key:         "color_00000500"
-element:     CountTree { count_value_or_default: 1 }
-```
-
-**Proof size:** 1 911 B.
-
-The proof descends through `byBrandColor`'s prefix value tree (`brand_050`) into its continuation (`color`, the `NonCounted`-wrapped subtree shown earlier) and resolves at the terminator value tree `color_00000500`. The count is `1` because the bench's fixture has exactly one document per `(brand, color)` pair.
+The proof descends through `byBrandColor`'s prefix value tree (`brand_050`) into its continuation (`color`, the `NonCounted`-wrapped subtree shown in the layout diagram) and resolves at the terminator value tree `color_00000500`. The count is `1` because the bench's fixture has exactly one document per `(brand, color)` pair.
 
 ```mermaid
 flowchart TB
@@ -296,28 +308,27 @@ where   = brand IN ["brand_000", "brand_001"]
 prove   = true
 ```
 
-**Path query:**
-
 ```text
-path:         ["@", contract_id, 0x01, "widget", "brand"]
-query items:  [Key("brand_000"), Key("brand_001")]
+[] / where=brand IN[2] (1102 bytes)
+  path:
+    "@"
+    0x4ed22624752972af...(32 bytes)
+    0x01
+    "widget"
+    "brand"
+  query items: [Key("brand_000"), Key("brand_001")]
+  verified:
+    root_hash: 0x62ee7348f4d28dd9d7cf86a6c725fa8276cfd446f6007a6000fb0e1dfefa6468
+    elements (2):
+      path: ["@", 0x4ed22624752972af...(32 bytes), 0x01, "widget", "brand"]
+      key:  "brand_000"
+      element: CountTree { count_value_or_default: 1000, debug: count_tree: [hex: 636f6c6f72, str: color] 1000[hex: 000000, str:    ] }
+      path: ["@", 0x4ed22624752972af...(32 bytes), 0x01, "widget", "brand"]
+      key:  "brand_001"
+      element: CountTree { count_value_or_default: 1000, debug: count_tree: [hex: 636f6c6f72, str: color] 1000[hex: 000000, str:    ] }
 ```
 
-**Verified elements** (one per In value, returned in lex-asc order):
-
-```text
-path:        ["@", contract_id, 0x01, "widget", "brand"]
-key:         "brand_000"
-element:     CountTree { count_value_or_default: 1000 }
-
-path:        ["@", contract_id, 0x01, "widget", "brand"]
-key:         "brand_001"
-element:     CountTree { count_value_or_default: 1000 }
-```
-
-**Proof size:** 1 102 B.
-
-The outer query enumerates `Key(in_value)` items at the property-name subtree; each resolved element is itself a value-tree `CountTree`. No subquery is set — the In values' value trees *are* the count-bearing elements. The verifier reads the per-In value from `grove_key` (rather than from `path[base_path_len]`, which is how it would for a trailing-Equal compound). The caller sums the two `count_value_or_default` reads (or surfaces them as per-group entries if `group_by = ["brand"]`).
+The outer query enumerates `Key(in_value)` items at the property-name subtree; each resolved element is itself a value-tree `CountTree`. No subquery is set — the In values' value trees *are* the count-bearing elements. Both verified elements share the same parent `path` (the byBrand property-name subtree) and are distinguished by their `key` (the serialized In value); the verifier reads the per-In value from `grove_key` rather than from `path[base_path_len]` (which is how it would for a trailing-Equal compound shape). The caller sums the two `count_value_or_default` reads, or surfaces them as per-group entries when `group_by = ["brand"]`.
 
 ```mermaid
 flowchart TB
@@ -349,28 +360,27 @@ where   = color IN ["color_00000000", "color_00000001"]
 prove   = true
 ```
 
-**Path query:**
-
 ```text
-path:         ["@", contract_id, 0x01, "widget", "color"]
-query items:  [Key("color_00000000"), Key("color_00000001")]
+[] / where=color IN[2] (1381 bytes)
+  path:
+    "@"
+    0x4ed22624752972af...(32 bytes)
+    0x01
+    "widget"
+    "color"
+  query items: [Key("color_00000000"), Key("color_00000001")]
+  verified:
+    root_hash: 0x62ee7348f4d28dd9d7cf86a6c725fa8276cfd446f6007a6000fb0e1dfefa6468
+    elements (2):
+      path: ["@", 0x4ed22624752972af...(32 bytes), 0x01, "widget", "color"]
+      key:  "color_00000000"
+      element: CountTree { count_value_or_default: 100, debug: count_tree: [hex: 00, str:  ] 100[hex: 000000, str:    ] }
+      path: ["@", 0x4ed22624752972af...(32 bytes), 0x01, "widget", "color"]
+      key:  "color_00000001"
+      element: CountTree { count_value_or_default: 100, debug: count_tree: [hex: 00, str:  ] 100[hex: 000000, str:    ] }
 ```
 
-**Verified elements:**
-
-```text
-path:        ["@", contract_id, 0x01, "widget", "color"]
-key:         "color_00000000"
-element:     CountTree { count_value_or_default: 100 }
-
-path:        ["@", contract_id, 0x01, "widget", "color"]
-key:         "color_00000001"
-element:     CountTree { count_value_or_default: 100 }
-```
-
-**Proof size:** 1 381 B.
-
-Same query shape as Query 5 — outer `Key`-per-In-value, no subquery, per-In `CountTree`s resolved at the bottom. The difference vs Query 5 is the *property-name* tree above is a `ProvableCountTree` instead of `NormalTree`. That doesn't change the proof's structural shape, but it does mean a future `color > X` range query against this property has a fast path Query 5's `brand` doesn't.
+Same query shape as Query 5 — outer `Key`-per-In-value, no subquery, per-In `CountTree`s resolved at the bottom. The differences vs Query 5 are mechanical: the property-name tree above is a `ProvableCountTree` instead of `NormalTree` (no impact on the point-lookup proof shape — visible at the storage layer, not in the verified payload), and each value-tree CountTree's `debug:` shows `[hex: 00, str:  ]` (no continuation child — byColor is single-property) instead of byBrand's `[hex: 636f6c6f72, str: color]` continuation pointer. The `ProvableCountTree` upgrade matters for Query 7, not here.
 
 ```mermaid
 flowchart TB
@@ -402,25 +412,25 @@ where   = color > "color_00000500"
 prove   = true
 ```
 
-**Path query** (different primitive — note the `AggregateCountOnRange` query item):
-
 ```text
-path:         ["@", contract_id, 0x01, "widget", "color"]
-query items:  [AggregateCountOnRange([RangeAfter("color_00000500"..)])]
+[] / where=color > floor (2072 bytes)
+  path:
+    "@"
+    0x4ed22624752972af...(32 bytes)
+    0x01
+    "widget"
+    "color"
+  query items: [AggregateCountOnRange([RangeAfter("color_00000500"..)])]
+  verified:
+    root_hash: 0x62ee7348f4d28dd9d7cf86a6c725fa8276cfd446f6007a6000fb0e1dfefa6468
+    count: 49900
 ```
 
-**Verified payload** (different verifier — `GroveDb::verify_aggregate_count_query` returns a single `u64`, not an element list):
+This is the only query of the seven that uses a different GroveDB primitive — note the `verified:` block has `count: 49900` instead of an `elements (...)` list. `GroveDb::verify_aggregate_count_query` (the verifier dispatched for this primitive) returns a single `u64` plus the root hash; there's no per-element output to walk.
 
-```text
-root_hash:   0x62ee7348f4d28dd9d7cf86a6c725fa8276cfd446f6007a6000fb0e1dfefa6468
-count:       49900
-```
+Mechanically, `AggregateCountOnRange` walks the boundary of the requested range over `widget/color`'s `ProvableCountTree` and sums the per-node counts already committed inside that tree. The proof bytes carry the boundary merk path and the running total; everything in between is folded into the pre-committed sub-counts.
 
-**Proof size:** 2 072 B.
-
-This is the only query of the seven that uses a different GroveDB primitive. Instead of resolving N specific keys, `AggregateCountOnRange` walks the boundary of the requested range over `widget/color`'s `ProvableCountTree` and sums the per-node counts already committed inside that tree. The proof carries the boundary merk path and the running total; the verifier returns just the count.
-
-The reason this works *only* with `rangeCountable: true` (Query 5's `byBrand` couldn't do the equivalent) is that `widget/color` is a `ProvableCountTree` — its internal merk nodes carry running counts. `widget/brand` is a plain `NormalTree`; it would have to enumerate every brand and sum their counts (which is what `brand IN [...]` does, but for an unbounded range that's not a feasible proof shape).
+The reason this works *only* with `rangeCountable: true` (Query 5's `byBrand` couldn't do the equivalent) is that `widget/color` is a `ProvableCountTree` — its internal merk nodes carry running counts. `widget/brand` is a plain `NormalTree`; it would have to enumerate every brand and sum their counts (which is what `brand IN [...]` does in Query 5, but for an unbounded range that's not a feasible proof shape).
 
 ```mermaid
 flowchart TB
