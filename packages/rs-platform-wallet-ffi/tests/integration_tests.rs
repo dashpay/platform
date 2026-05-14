@@ -50,7 +50,6 @@ fn test_wallet_from_mnemonic() {
         let result = platform_wallet_info_create_from_mnemonic(
             Network::Testnet.into(),
             mnemonic.as_ptr(),
-            std::ptr::null(),
             &mut handle,
         );
 
@@ -266,7 +265,6 @@ fn test_full_workflow() {
         let result = platform_wallet_info_create_from_mnemonic(
             Network::Testnet.into(),
             mnemonic.as_ptr(),
-            std::ptr::null(),
             &mut wallet_handle,
         );
         assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
