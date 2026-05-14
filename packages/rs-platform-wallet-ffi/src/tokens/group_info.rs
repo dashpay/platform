@@ -94,7 +94,7 @@ mod tests {
     fn test_decode_other_signer_null_action_id() {
         unsafe {
             let result = decode_group_info(2, 0, std::ptr::null(), false);
-            assert!(matches!(result, Err(_)), "expected Err(NullPointer)");
+            assert!(result.is_err(), "expected Err(NullPointer)");
         }
     }
 
@@ -120,7 +120,7 @@ mod tests {
     fn test_decode_invalid_kind() {
         unsafe {
             let result = decode_group_info(99, 0, std::ptr::null(), false);
-            assert!(matches!(result, Err(_)), "expected Err(InvalidParameter)");
+            assert!(result.is_err(), "expected Err(InvalidParameter)");
         }
     }
 }
