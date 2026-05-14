@@ -19,6 +19,52 @@ structured so a future `SecretStore` (currently sketched in
   safe under a concurrent writer.
 - **No private-key material.** See [`SECRETS.md`](./SECRETS.md).
 - `Send + Sync`; usable behind `Arc<dyn PlatformWalletPersistence>`.
+- Writers use `prepare_cached` so each INSERT/UPDATE is parsed once
+  per `Connection` lifetime; subsequent flushes hit the cache.
+
+## Flush semantics
+
+`flush()` and `Immediate`-mode `store()` succeed-or-restore: on a
+transient SQLite failure (`SQLITE_BUSY` / `SQLITE_LOCKED`) the
+buffered changeset is merged back into the per-wallet buffer (LWW
+with anything `store()`-d during the failed transaction) and the
+call returns a `PersistenceError::Backend(_)` whose payload contains
+the marker `flush failed transiently`. **Retry the call** — do not
+discard state. Fatal failures (integrity check, encode error, mutex
+poison, …) drop the buffer and surface verbatim.
+
+The full classification lives on
+[`WalletStorageError::is_transient`](src/sqlite/error.rs); the
+boundary mapping into `PersistenceError::Backend(String)` flattens
+the `Display` chain so operators can grep for variant names + hex
+wallet ids in production logs.
+
+## load() reconstruction
+
+`SqlitePersister::load()` populates `ClientStartState` with every
+sub-area that has a wired-up reader today:
+
+| Slot | Reader | Status |
+|---|---|---|
+| `platform_addresses` | `schema::platform_addrs::load_state` | covered |
+| `identities`         | `schema::identities::load_state`     | covered |
+| `contacts`           | `schema::contacts::load_state`       | covered |
+| `asset_locks`        | `schema::asset_locks::load_state`    | covered |
+| `wallets`            | — | empty pending upstream `Wallet::from_persisted` |
+
+`ClientStartState` is `#[non_exhaustive]` — initialise via
+`Default::default()` and overwrite individual slots; do not
+exhaustively destructure. A future slot addition is non-breaking for
+callers that respect the marker.
+
+Each reader skips per-row decode failures (corruption tolerance):
+the call still returns `Ok(state)` with the partial result, every
+skipped row emits a structured `tracing::warn!` with `wallet_id` +
+`table` + `error`, and the load summary log carries a
+`skipped_rows` counter alongside `wallets_seen`,
+`addresses_loaded`, `identities_loaded`, `contacts_loaded`,
+`asset_locks_loaded`, `wallets_rehydrated`, and
+`wallets_pending_rehydration`.
 
 ## Library usage
 
