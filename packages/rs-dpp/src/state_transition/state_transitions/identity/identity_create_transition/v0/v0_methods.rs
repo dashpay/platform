@@ -9,6 +9,8 @@ use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGetter
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
+use crate::identity::state_transition::AssetLockProved;
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::Identity;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::KeyType::ECDSA_HASH160;

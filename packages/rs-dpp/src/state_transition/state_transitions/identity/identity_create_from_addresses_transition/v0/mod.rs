@@ -507,6 +507,179 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "state-transition-signing")]
+    #[tokio::test]
+    async fn try_from_inputs_with_signer_rejects_bad_identity_public_key_signature_locally() {
+        use crate::address_funds::{AddressFundsFeeStrategyStep, AddressWitness, PlatformAddress};
+        use crate::consensus::signature::SignatureError;
+        use crate::consensus::ConsensusError;
+        use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use crate::identity::signer::Signer;
+        use crate::identity::v0::IdentityV0;
+        use crate::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+        use crate::prelude::Identifier;
+        use crate::state_transition::identity_create_from_addresses_transition::methods::IdentityCreateFromAddressesTransitionMethodsV0;
+        use crate::version::PlatformVersion;
+        use async_trait::async_trait;
+        use dashcore::secp256k1::{PublicKey as RawPublicKey, Secp256k1, SecretKey};
+        use std::collections::BTreeMap;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        #[derive(Debug)]
+        struct WrongIdentityKeySigner {
+            wrong_secret_key: SecretKey,
+        }
+
+        #[async_trait]
+        impl Signer<IdentityPublicKey> for WrongIdentityKeySigner {
+            async fn sign(
+                &self,
+                _key: &IdentityPublicKey,
+                data: &[u8],
+            ) -> Result<BinaryData, ProtocolError> {
+                Ok(BinaryData::new(
+                    dashcore::signer::sign(data, &self.wrong_secret_key.secret_bytes())
+                        .expect("wrong-key signing should succeed")
+                        .to_vec(),
+                ))
+            }
+
+            async fn sign_create_witness(
+                &self,
+                _key: &IdentityPublicKey,
+                _data: &[u8],
+            ) -> Result<AddressWitness, ProtocolError> {
+                panic!("identity public key signer should not create address witnesses")
+            }
+
+            fn can_sign_with(&self, _key: &IdentityPublicKey) -> bool {
+                true
+            }
+        }
+
+        #[derive(Debug, Default)]
+        struct RecordingAddressSigner {
+            sign_create_witness_calls: AtomicUsize,
+        }
+
+        #[async_trait]
+        impl Signer<PlatformAddress> for RecordingAddressSigner {
+            async fn sign(
+                &self,
+                _key: &PlatformAddress,
+                _data: &[u8],
+            ) -> Result<BinaryData, ProtocolError> {
+                Err(ProtocolError::Generic(
+                    "address signer should not be called before PoP verification".to_string(),
+                ))
+            }
+
+            async fn sign_create_witness(
+                &self,
+                _key: &PlatformAddress,
+                _data: &[u8],
+            ) -> Result<AddressWitness, ProtocolError> {
+                self.sign_create_witness_calls
+                    .fetch_add(1, Ordering::SeqCst);
+                Err(ProtocolError::Generic(
+                    "address signer should not be called before PoP verification".to_string(),
+                ))
+            }
+
+            fn can_sign_with(&self, _key: &PlatformAddress) -> bool {
+                true
+            }
+        }
+
+        let secp = Secp256k1::new();
+        let correct_secret_key =
+            SecretKey::from_slice(&[1u8; 32]).expect("valid identity secret key");
+        let wrong_secret_key =
+            SecretKey::from_slice(&[2u8; 32]).expect("valid alternate secret key");
+        let correct_public_key = RawPublicKey::from_secret_key(&secp, &correct_secret_key);
+
+        let identity: Identity = IdentityV0 {
+            id: Identifier::default(),
+            public_keys: BTreeMap::from([(
+                0,
+                IdentityPublicKeyV0 {
+                    id: 0,
+                    purpose: Purpose::AUTHENTICATION,
+                    security_level: SecurityLevel::MASTER,
+                    contract_bounds: None,
+                    key_type: KeyType::ECDSA_SECP256K1,
+                    read_only: false,
+                    data: BinaryData::new(correct_public_key.serialize().to_vec()),
+                    disabled_at: None,
+                }
+                .into(),
+            )]),
+            balance: 0,
+            revision: 0,
+        }
+        .into();
+
+        let platform_version = PlatformVersion::latest();
+        let min_input = platform_version
+            .dpp
+            .state_transitions
+            .address_funds
+            .min_input_amount;
+        let min_funding = platform_version
+            .dpp
+            .state_transitions
+            .address_funds
+            .min_identity_funding_amount;
+        let mut inputs = BTreeMap::new();
+        inputs.insert(
+            PlatformAddress::P2pkh([1u8; 20]),
+            (1u32, min_input.max(min_funding) * 2),
+        );
+
+        let identity_public_key_signer = WrongIdentityKeySigner { wrong_secret_key };
+        let address_signer = RecordingAddressSigner::default();
+
+        let result = IdentityCreateFromAddressesTransitionV0::try_from_inputs_with_signer(
+            &identity,
+            inputs,
+            None,
+            vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+            &identity_public_key_signer,
+            &address_signer,
+            0,
+            platform_version,
+        )
+        .await;
+
+        assert_eq!(
+            address_signer
+                .sign_create_witness_calls
+                .load(Ordering::SeqCst),
+            0,
+            "address signer should not be reached when PoP self-check fails"
+        );
+
+        match result {
+            Err(ProtocolError::ConsensusError(boxed)) => match *boxed {
+                ConsensusError::SignatureError(SignatureError::BasicECDSAError(_)) => {}
+                other => panic!("expected SignatureError(BasicECDSAError), got {:?}", other),
+            },
+            Err(ProtocolError::ConsensusErrors(errors)) => {
+                assert_eq!(errors.len(), 1, "expected a single consensus error");
+                assert!(matches!(
+                    errors.as_slice(),
+                    [ConsensusError::SignatureError(
+                        SignatureError::BasicECDSAError(_)
+                    )]
+                ));
+            }
+            other => panic!(
+                "expected ConsensusError/ConsensusErrors with BasicECDSAError, got {:?}",
+                other
+            ),
+        }
+    }
+
     #[tokio::test]
     async fn try_from_inputs_with_signer_returns_not_active_before_structure_validation() {
         use crate::address_funds::AddressFundsFeeStrategyStep;
@@ -540,7 +713,9 @@ mod tests {
                 _key: &IdentityPublicKey,
                 _data: &[u8],
             ) -> Result<AddressWitness, ProtocolError> {
-                panic!("sign_create_witness should not run when protocol gating rejects the constructor")
+                panic!(
+                    "sign_create_witness should not run when protocol gating rejects the constructor"
+                )
             }
 
             fn can_sign_with(&self, _key: &IdentityPublicKey) -> bool {
@@ -566,7 +741,9 @@ mod tests {
                 _key: &PlatformAddress,
                 _data: &[u8],
             ) -> Result<AddressWitness, ProtocolError> {
-                panic!("sign_create_witness should not run when protocol gating rejects the constructor")
+                panic!(
+                    "sign_create_witness should not run when protocol gating rejects the constructor"
+                )
             }
 
             fn can_sign_with(&self, _key: &PlatformAddress) -> bool {

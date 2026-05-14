@@ -496,7 +496,7 @@ mod test {
         }
         .into();
 
-        let result = IdentityCreateTransitionV0::try_from_identity_with_signer(
+        let result = IdentityCreateTransitionV0::try_from_identity_with_signer_and_private_key(
             &identity,
             chain_proof(),
             &[0u8; 32],
@@ -628,7 +628,7 @@ mod test {
         }
         .into();
 
-        let result = IdentityCreateTransitionV0::try_from_identity_with_signer(
+        let result = IdentityCreateTransitionV0::try_from_identity_with_signer_and_private_key(
             &identity,
             instant_asset_lock_proof_fixture(Some(correct_private_key), None),
             &wrong_private_key.inner.secret_bytes(),
@@ -644,5 +644,142 @@ mod test {
             "unexpected result: {:?}",
             result
         );
+    }
+
+    #[cfg(feature = "state-transition-signing")]
+    #[tokio::test]
+    async fn try_from_identity_with_signer_rejects_bad_identity_public_key_signature_locally() {
+        use crate::address_funds::AddressWitness;
+        use crate::consensus::signature::SignatureError;
+        use crate::consensus::ConsensusError;
+        use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use crate::identity::signer::Signer;
+        use crate::identity::v0::IdentityV0;
+        use crate::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+        use crate::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
+        use crate::version::PlatformVersion;
+        use crate::{BlsModule, ProtocolError, PublicKeyValidationError};
+        use async_trait::async_trait;
+        use dashcore::secp256k1::{PublicKey as RawPublicKey, Secp256k1, SecretKey};
+        use std::collections::BTreeMap;
+
+        #[derive(Debug)]
+        struct WrongIdentityKeySigner {
+            wrong_secret_key: SecretKey,
+        }
+
+        #[async_trait]
+        impl Signer<IdentityPublicKey> for WrongIdentityKeySigner {
+            async fn sign(
+                &self,
+                _key: &IdentityPublicKey,
+                data: &[u8],
+            ) -> Result<BinaryData, ProtocolError> {
+                Ok(BinaryData::new(
+                    dashcore::signer::sign(data, &self.wrong_secret_key.secret_bytes())
+                        .expect("wrong-key signing should succeed")
+                        .to_vec(),
+                ))
+            }
+
+            async fn sign_create_witness(
+                &self,
+                _key: &IdentityPublicKey,
+                _data: &[u8],
+            ) -> Result<AddressWitness, ProtocolError> {
+                panic!("identity public key signer should not create address witnesses")
+            }
+
+            fn can_sign_with(&self, _key: &IdentityPublicKey) -> bool {
+                true
+            }
+        }
+
+        struct UnreachableBls;
+
+        impl BlsModule for UnreachableBls {
+            fn validate_public_key(&self, _pk: &[u8]) -> Result<(), PublicKeyValidationError> {
+                panic!("UnreachableBls::validate_public_key must not be called");
+            }
+
+            fn verify_signature(
+                &self,
+                _signature: &[u8],
+                _data: &[u8],
+                _public_key: &[u8],
+            ) -> Result<bool, ProtocolError> {
+                panic!("UnreachableBls::verify_signature must not be called");
+            }
+
+            fn private_key_to_public_key(
+                &self,
+                _private_key: &[u8],
+            ) -> Result<Vec<u8>, ProtocolError> {
+                panic!("UnreachableBls::private_key_to_public_key must not be called");
+            }
+
+            fn sign(&self, _data: &[u8], _private_key: &[u8]) -> Result<Vec<u8>, ProtocolError> {
+                panic!("UnreachableBls::sign must not be called");
+            }
+        }
+
+        let secp = Secp256k1::new();
+        let correct_secret_key =
+            SecretKey::from_slice(&[1u8; 32]).expect("valid identity secret key");
+        let wrong_secret_key =
+            SecretKey::from_slice(&[2u8; 32]).expect("valid alternate secret key");
+        let correct_public_key = RawPublicKey::from_secret_key(&secp, &correct_secret_key);
+
+        let identity: Identity = IdentityV0 {
+            id: Identifier::default(),
+            public_keys: BTreeMap::from([(
+                0,
+                IdentityPublicKeyV0 {
+                    id: 0,
+                    purpose: Purpose::AUTHENTICATION,
+                    security_level: SecurityLevel::MASTER,
+                    contract_bounds: None,
+                    key_type: KeyType::ECDSA_SECP256K1,
+                    read_only: false,
+                    data: BinaryData::new(correct_public_key.serialize().to_vec()),
+                    disabled_at: None,
+                }
+                .into(),
+            )]),
+            balance: 0,
+            revision: 0,
+        }
+        .into();
+
+        let result = IdentityCreateTransitionV0::try_from_identity_with_signer_and_private_key(
+            &identity,
+            chain_proof(),
+            &[3u8; 32],
+            &WrongIdentityKeySigner { wrong_secret_key },
+            &UnreachableBls,
+            0,
+            PlatformVersion::latest(),
+        )
+        .await;
+
+        match result {
+            Err(ProtocolError::ConsensusError(boxed)) => match *boxed {
+                ConsensusError::SignatureError(SignatureError::BasicECDSAError(_)) => {}
+                other => panic!("expected SignatureError(BasicECDSAError), got {:?}", other),
+            },
+            Err(ProtocolError::ConsensusErrors(errors)) => {
+                assert_eq!(errors.len(), 1, "expected a single consensus error");
+                assert!(matches!(
+                    errors.as_slice(),
+                    [ConsensusError::SignatureError(
+                        SignatureError::BasicECDSAError(_)
+                    )]
+                ));
+            }
+            other => panic!(
+                "expected ConsensusError/ConsensusErrors with BasicECDSAError, got {:?}",
+                other
+            ),
+        }
     }
 }
