@@ -277,6 +277,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let crate::changeset::ClientStartState {
             mut platform_addresses,
             wallets: _,
+            ..
         } = match platform_wallet.load_persisted() {
             Ok(state) => state,
             Err(e) => {
