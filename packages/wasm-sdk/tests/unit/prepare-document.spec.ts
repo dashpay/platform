@@ -12,6 +12,7 @@ import init, * as sdk from '../../dist/sdk.compressed.js';
  * The WasmSdk is constructed via `WasmSdkBuilder.testnet().build()`, which
  * does not require a live platform — we expect every call here to reject
  * before any `get_or_fetch_contract` call runs.
+ *
  */
 
 const DUMMY_ID = '11111111111111111111111111111111';
@@ -47,6 +48,17 @@ function buildDocument(overrides: Record<string, unknown> = {}) {
     ownerId: DUMMY_ID_2,
     ...overrides,
   });
+}
+
+function forgeWasmLike<T extends Record<string, unknown>>(type: string, value: T): T & {
+  __type: string;
+  __wbg_ptr: number;
+} {
+  return {
+    ...value,
+    __type: type,
+    __wbg_ptr: 0xdeadbeef,
+  };
 }
 
 describe('prepareDocument* validation', function describePrepareDocumentValidation() {
@@ -135,32 +147,29 @@ describe('prepareDocument* validation', function describePrepareDocumentValidati
       }
     });
 
-    it('accepts a plain-object document and applies the same validation', async () => {
-      // Regression test for the safe structural extraction path. The
-      // prepare API must accept a plain `{...}` document shape *without*
-      // dereferencing wasm-bindgen internals — but it must still enforce
-      // the same revision guard a real `Document` instance hits. Hand the
-      // SDK a plain object with revision 2 and assert it routes to the
-      // revision guard, not the `__wbg_ptr` fast path.
+    it('rejects a forged Document-shaped object via the normal id/entropy validation path', async () => {
+      // Regression test for the safe structural extraction path. A forged
+      // public object that spoofs `__type` / `__wbg_ptr` must still be
+      // treated structurally and hit the normal create validation path,
+      // not a wasm pointer conversion fast path.
       const { signer, identityKey } = buildSigner();
-      const document = {
+      const document = forgeWasmLike('Document', {
         id: DUMMY_ID,
         ownerId: DUMMY_ID_2,
         dataContractId: DUMMY_ID,
         documentTypeName: 'note',
         properties: { message: 'hello' },
-        revision: 2,
+        revision: 1,
         entropy: new Uint8Array(32),
-      };
+      });
 
       try {
         await client.prepareDocumentCreate({ document, identityKey, signer });
-        expect.fail('expected prepareDocumentCreate to reject revision > 1');
+        expect.fail('expected prepareDocumentCreate to reject mismatched id/entropy');
       } catch (e) {
         expect(e).to.be.instanceOf(sdk.WasmSdkError);
         expect(e.name).to.equal('InvalidArgument');
-        expect(e.message).to.match(/revision/i);
-        expect(e.message).to.match(/prepareDocumentReplace/);
+        expect(e.message).to.match(/does not match/i);
       }
     });
 
@@ -225,22 +234,20 @@ describe('prepareDocument* validation', function describePrepareDocumentValidati
       }
     });
 
-    it('accepts a plain-object document and applies the same validation', async () => {
-      // Regression test for the safe structural extraction path. The
-      // prepare API must accept a plain `{...}` document shape *without*
-      // dereferencing wasm-bindgen internals — but it must still enforce
-      // the same revision guard a real `Document` instance hits. Hand the
-      // SDK a plain object with revision 1 and assert it routes to the
-      // replace revision guard.
+    it('rejects a forged Document-shaped object via the normal revision validation path', async () => {
+      // Regression test for the safe structural extraction path. A forged
+      // public object that spoofs `__type` / `__wbg_ptr` must still be
+      // treated structurally and hit the replace revision guard, not a
+      // wasm pointer conversion fast path.
       const { signer, identityKey } = buildSigner();
-      const document = {
+      const document = forgeWasmLike('Document', {
         id: DUMMY_ID,
         ownerId: DUMMY_ID_2,
         dataContractId: DUMMY_ID,
         documentTypeName: 'note',
         properties: { message: 'hello' },
         revision: 1,
-      };
+      });
 
       try {
         await client.prepareDocumentReplace({ document, identityKey, signer });
@@ -296,16 +303,16 @@ describe('prepareDocument* validation', function describePrepareDocumentValidati
       }
     });
 
-    it('rejects a plain object with no id', async () => {
+    it('rejects a forged Document-shaped object with no id', async () => {
       const { signer, identityKey } = buildSigner();
 
       try {
         await client.prepareDocumentDelete({
-          document: {
+          document: forgeWasmLike('Document', {
             ownerId: DUMMY_ID_2,
             dataContractId: DUMMY_ID,
             documentTypeName: 'note',
-          },
+          }),
           identityKey,
           signer,
         });
@@ -317,16 +324,16 @@ describe('prepareDocument* validation', function describePrepareDocumentValidati
       }
     });
 
-    it('rejects a plain object with no ownerId', async () => {
+    it('rejects a forged Document-shaped object with no ownerId', async () => {
       const { signer, identityKey } = buildSigner();
 
       try {
         await client.prepareDocumentDelete({
-          document: {
+          document: forgeWasmLike('Document', {
             id: DUMMY_ID,
             dataContractId: DUMMY_ID,
             documentTypeName: 'note',
-          },
+          }),
           identityKey,
           signer,
         });
@@ -338,16 +345,16 @@ describe('prepareDocument* validation', function describePrepareDocumentValidati
       }
     });
 
-    it('rejects a plain object with no dataContractId', async () => {
+    it('rejects a forged Document-shaped object with no dataContractId', async () => {
       const { signer, identityKey } = buildSigner();
 
       try {
         await client.prepareDocumentDelete({
-          document: {
+          document: forgeWasmLike('Document', {
             id: DUMMY_ID,
             ownerId: DUMMY_ID_2,
             documentTypeName: 'note',
-          },
+          }),
           identityKey,
           signer,
         });
@@ -359,16 +366,16 @@ describe('prepareDocument* validation', function describePrepareDocumentValidati
       }
     });
 
-    it('rejects a plain object with no documentTypeName', async () => {
+    it('rejects a forged Document-shaped object with no documentTypeName', async () => {
       const { signer, identityKey } = buildSigner();
 
       try {
         await client.prepareDocumentDelete({
-          document: {
+          document: forgeWasmLike('Document', {
             id: DUMMY_ID,
             ownerId: DUMMY_ID_2,
             dataContractId: DUMMY_ID,
-          },
+          }),
           identityKey,
           signer,
         });
@@ -395,6 +402,32 @@ describe('prepareDocument* validation', function describePrepareDocumentValidati
         expect(e).to.be.instanceOf(sdk.WasmSdkError);
         expect(e.name).to.equal('InvalidArgument');
         expect(e.message).to.match(/identityKey/i);
+      }
+    });
+
+    it('rejects a forged TokenPaymentInfo-shaped object before contract fetch', async () => {
+      const { signer, identityKey } = buildSigner();
+
+      try {
+        await client.prepareDocumentDelete({
+          document: {
+            id: DUMMY_ID,
+            ownerId: DUMMY_ID_2,
+            dataContractId: DUMMY_ID,
+            documentTypeName: 'note',
+          },
+          identityKey,
+          signer,
+          tokenPaymentInfo: forgeWasmLike('TokenPaymentInfo', {
+            tokenContractPosition: 0,
+            paymentTokenContractId: {},
+          }),
+        });
+        expect.fail('expected prepareDocumentDelete to reject invalid tokenPaymentInfo');
+      } catch (e) {
+        expect(e).to.be.instanceOf(sdk.WasmSdkError);
+        expect(e.name).to.equal('InvalidArgument');
+        expect(e.message).to.match(/tokenPaymentInfo|paymentTokenContractId|identifier/i);
       }
     });
   });

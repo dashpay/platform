@@ -28,9 +28,9 @@ pub struct DocumentReplaceTransitionBuilder {
     pub document_type_name: String,
     pub document: Document,
     pub token_payment_info: Option<TokenPaymentInfo>,
-    pub settings: Option<PutSettings>,
-    pub user_fee_increase: Option<UserFeeIncrease>,
-    pub state_transition_creation_options: Option<StateTransitionCreationOptions>,
+    settings: Option<PutSettings>,
+    user_fee_increase: Option<UserFeeIncrease>,
+    state_transition_creation_options: Option<StateTransitionCreationOptions>,
     /// Tracks whether [`Self::user_fee_increase`] was last set by an
     /// explicit [`Self::with_user_fee_increase`] call (as opposed to being
     /// extracted from a [`Self::with_settings`] call). See the create
@@ -83,6 +83,21 @@ impl DocumentReplaceTransitionBuilder {
     pub fn with_token_payment_info(mut self, token_payment_info: TokenPaymentInfo) -> Self {
         self.token_payment_info = Some(token_payment_info);
         self
+    }
+
+    /// Returns the stored non-dedicated put settings, if any.
+    pub fn settings(&self) -> Option<PutSettings> {
+        self.settings
+    }
+
+    /// Returns the effective dedicated user fee increase, if any.
+    pub fn user_fee_increase(&self) -> Option<UserFeeIncrease> {
+        self.user_fee_increase
+    }
+
+    /// Returns the effective dedicated creation options, if any.
+    pub fn state_transition_creation_options(&self) -> Option<StateTransitionCreationOptions> {
+        self.state_transition_creation_options
     }
 
     /// Adds a user fee increase to the document replace transition.

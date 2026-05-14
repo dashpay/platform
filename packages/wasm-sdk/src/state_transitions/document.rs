@@ -417,6 +417,7 @@ impl WasmSdk {
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
 
+        let token_payment_info = try_from_options_optional_token_payment_info(&options)?;
         // Fetch the data contract (using cache)
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
@@ -426,7 +427,6 @@ impl WasmSdk {
         // Extract settings from options
         let settings =
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
-        let token_payment_info = try_from_options_optional_token_payment_info(&options)?;
 
         // Use PutDocument trait for creation
         document
@@ -537,6 +537,7 @@ impl WasmSdk {
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
 
+        let token_payment_info = try_from_options_optional_token_payment_info(&options)?;
         // Fetch the data contract (using cache)
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
@@ -546,7 +547,6 @@ impl WasmSdk {
         // Extract settings from options
         let settings =
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
-        let token_payment_info = try_from_options_optional_token_payment_info(&options)?;
 
         // Use PutDocument trait for replacement (revision > INITIAL_REVISION triggers replace)
         document
@@ -653,13 +653,13 @@ impl WasmSdk {
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
 
+        let token_payment_info = try_from_options_optional_token_payment_info(&options)?;
         // Fetch the data contract (using cache)
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Extract settings from options
         let settings =
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
-        let token_payment_info = try_from_options_optional_token_payment_info(&options)?;
 
         // Build and execute delete transition using DocumentDeleteTransitionBuilder
         let builder = DocumentDeleteTransitionBuilder::new(
@@ -826,6 +826,7 @@ impl WasmSdk {
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
 
+        let token_payment_info = try_from_options_optional_token_payment_info(&options)?;
         // Fetch the data contract (using cache)
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
@@ -835,7 +836,6 @@ impl WasmSdk {
         // Extract settings from options
         let settings =
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
-        let token_payment_info = try_from_options_optional_token_payment_info(&options)?;
 
         // Build, sign, and structurally validate the state transition without
         // broadcasting it. Local pre-broadcast failures are rolled back inside
@@ -946,6 +946,7 @@ impl WasmSdk {
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
 
+        let token_payment_info = try_from_options_optional_token_payment_info(&options)?;
         // Fetch the data contract (using cache)
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
@@ -955,7 +956,6 @@ impl WasmSdk {
         // Extract settings from options
         let settings =
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
-        let token_payment_info = try_from_options_optional_token_payment_info(&options)?;
 
         // Build, sign, and structurally validate the state transition without
         // broadcasting it. Local pre-broadcast failures are rolled back inside
@@ -1066,13 +1066,13 @@ impl WasmSdk {
         // Extract signer from options
         let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
 
+        let token_payment_info = try_from_options_optional_token_payment_info(&options)?;
         // Fetch the data contract (using cache)
         let data_contract = self.get_or_fetch_contract(contract_id).await?;
 
         // Extract settings from options
         let settings =
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
-        let token_payment_info = try_from_options_optional_token_payment_info(&options)?;
 
         // Build the delete transition using the builder's sign method (which does NOT broadcast)
         let builder = DocumentDeleteTransitionBuilder::new(
