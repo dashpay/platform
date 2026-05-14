@@ -70,6 +70,97 @@ fn status_str(s: &AssetLockStatus) -> &'static str {
     }
 }
 
+/// Per-wallet asset-lock slice as returned by [`load_state`] —
+/// outer-keyed by `account_index`, inner-keyed by outpoint.
+pub type AssetLocksByAccount = BTreeMap<u32, BTreeMap<OutPoint, TrackedAssetLock>>;
+
+/// Build the per-wallet asset-lock slice for [`ClientStartState`].
+/// Wraps [`list_active`] and tracks a corruption-skipped count for
+/// the `load()` summary log.
+pub fn load_state(
+    conn: &Connection,
+    wallet_id: &WalletId,
+) -> Result<(AssetLocksByAccount, usize), WalletStorageError> {
+    // `list_active` already iterates every row; corruption tolerance
+    // sits inside the iteration today (see the per-row decode below).
+    // Mirror the (state, skipped) shape so callers can fold this
+    // reader into the summary the same way as identities/contacts.
+    let mut stmt = conn.prepare(
+        "SELECT outpoint, account_index, lifecycle_blob \
+         FROM asset_locks WHERE wallet_id = ?1",
+    )?;
+    let rows = stmt.query_map(params![wallet_id.as_slice()], |row| {
+        let op_bytes: Vec<u8> = row.get(0)?;
+        let account_index: i64 = row.get(1)?;
+        let blob_bytes: Vec<u8> = row.get(2)?;
+        Ok((op_bytes, account_index, blob_bytes))
+    })?;
+    let mut out: BTreeMap<u32, BTreeMap<OutPoint, TrackedAssetLock>> = BTreeMap::new();
+    let mut skipped = 0usize;
+    for r in rows {
+        let (op_bytes, account_index, blob_bytes) = match r {
+            Ok(t) => t,
+            Err(e) => {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    table = "asset_locks",
+                    error = %e,
+                    "skipping unreadable asset_locks row"
+                );
+                skipped += 1;
+                continue;
+            }
+        };
+        let outpoint = match blob::decode_outpoint(&op_bytes) {
+            Ok(o) => o,
+            Err(e) => {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    table = "asset_locks",
+                    error = %e,
+                    "skipping undecodable asset_locks outpoint"
+                );
+                skipped += 1;
+                continue;
+            }
+        };
+        let entry: AssetLockEntry = match blob::decode(&blob_bytes) {
+            Ok(e) => e,
+            Err(e) => {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    table = "asset_locks",
+                    error = %e,
+                    "skipping undecodable asset_locks blob"
+                );
+                skipped += 1;
+                continue;
+            }
+        };
+        let tracked = TrackedAssetLock {
+            out_point: entry.out_point,
+            transaction: entry.transaction,
+            account_index: entry.account_index,
+            funding_type: entry.funding_type,
+            identity_index: entry.identity_index,
+            amount: entry.amount_duffs,
+            status: entry.status,
+            proof: entry.proof,
+        };
+        let account_index = match u32::try_from(account_index) {
+            Ok(v) => v,
+            Err(_) => {
+                skipped += 1;
+                continue;
+            }
+        };
+        out.entry(account_index)
+            .or_default()
+            .insert(outpoint, tracked);
+    }
+    Ok((out, skipped))
+}
+
 /// Return non-`Used` asset locks per wallet, bucketed by account
 /// index. Every status variant the changeset writes is considered
 /// "active": consumed locks leave via [`AssetLockChangeSet::removed`].

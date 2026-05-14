@@ -592,39 +592,98 @@ impl PlatformWalletPersistence for SqlitePersister {
 
     /// Load every wallet's start-state from disk.
     ///
-    /// **Partial reconstruction caveat.** Today the implementation
-    /// populates `ClientStartState::platform_addresses` and leaves
-    /// `ClientStartState::wallets` empty — the latter requires an
-    /// upstream `Wallet::from_persisted` constructor that doesn't
-    /// exist yet. The data IS persisted in the SQLite schema and is
-    /// recoverable via direct queries; only the rehydrated
-    /// `(Wallet, ManagedWalletInfo)` pair is unavailable.
+    /// Populates `platform_addresses`, `identities`, `contacts`, and
+    /// `asset_locks` per wallet. `wallets` stays empty pending an
+    /// upstream `key_wallet::Wallet::from_persisted` constructor —
+    /// the count of wallets that *would* be rehydrated is surfaced as
+    /// the structured field `wallets_pending_rehydration` on the
+    /// `tracing::info!` summary.
     ///
-    /// Callers needing the partial-completion signal as a typed
-    /// value should call `inspect_counts` after a successful `load`
-    /// — non-zero counts in non-empty start-state buckets indicate
-    /// the sub-area is persisted but not yet reconstructed. The
-    /// `LOAD_UNIMPLEMENTED` constant names the affected
-    /// `ClientStartState` field paths.
+    /// Corruption tolerance: rows that fail to decode are skipped
+    /// individually (the per-area reader logs a `WARN` with
+    /// `wallet_id` + `table` + `error`); the call still returns
+    /// `Ok(state)` carrying everything that *did* decode. A
+    /// `skipped_rows` counter on the summary log surfaces the count.
     ///
-    /// A `tracing::warn!` is emitted on every `load` call until the
-    /// reconstruction lands.
+    /// ```text
+    /// // Canonical mock setup for tests:
+    /// // let p = WalletPersister::new([0u8; 32], Arc::new(NoPlatformPersistence));
+    /// ```
     fn load(&self) -> Result<ClientStartState, PersistenceError> {
         let conn = self.conn().map_err(PersistenceError::from)?;
         let mut state = ClientStartState::default();
+        let mut wallets_seen: usize = 0;
+        let mut addresses_loaded: usize = 0;
+        let mut identities_loaded: usize = 0;
+        let mut contacts_loaded: usize = 0;
+        let mut asset_locks_loaded: usize = 0;
+        let mut skipped_rows: usize = 0;
         for wallet_id in schema::wallet_meta::list_ids(&conn).map_err(PersistenceError::from)? {
+            wallets_seen += 1;
+
             let addrs = schema::platform_addrs::load_state(&conn, &wallet_id)
                 .map_err(PersistenceError::from)?;
             let count = schema::platform_addrs::count_per_wallet(&conn, &wallet_id)
                 .map_err(PersistenceError::from)?;
             if count > 0 || addrs.sync_height > 0 || addrs.sync_timestamp > 0 {
+                addresses_loaded += count;
                 state.platform_addresses.insert(wallet_id, addrs);
             }
+
+            let (identities_state, ident_skipped) =
+                schema::identities::load_state(&conn, &wallet_id)
+                    .map_err(PersistenceError::from)?;
+            skipped_rows += ident_skipped;
+            let ident_total: usize = identities_state.out_of_wallet_identities.len()
+                + identities_state
+                    .wallet_identities
+                    .values()
+                    .map(|m| m.len())
+                    .sum::<usize>();
+            if ident_total > 0 {
+                identities_loaded += ident_total;
+                state.identities.insert(wallet_id, identities_state);
+            }
+
+            let (contacts_state, contacts_skipped) =
+                schema::contacts::load_state(&conn, &wallet_id).map_err(PersistenceError::from)?;
+            skipped_rows += contacts_skipped;
+            let contacts_total = contacts_state.sent_requests.len()
+                + contacts_state.incoming_requests.len()
+                + contacts_state.established.len();
+            if contacts_total > 0 {
+                contacts_loaded += contacts_total;
+                state.contacts.insert(wallet_id, contacts_state);
+            }
+
+            let (asset_locks_state, asset_skipped) =
+                schema::asset_locks::load_state(&conn, &wallet_id)
+                    .map_err(PersistenceError::from)?;
+            skipped_rows += asset_skipped;
+            let asset_total: usize = asset_locks_state.values().map(|m| m.len()).sum();
+            if asset_total > 0 {
+                asset_locks_loaded += asset_total;
+                state.asset_locks.insert(wallet_id, asset_locks_state);
+            }
         }
-        tracing::warn!(
-            unimplemented = ?LOAD_UNIMPLEMENTED,
-            "load() returned a partial ClientStartState — see SqlitePersister::load rustdoc"
+        tracing::info!(
+            wallets_seen,
+            addresses_loaded,
+            identities_loaded,
+            contacts_loaded,
+            asset_locks_loaded,
+            wallets_rehydrated = 0usize,
+            wallets_pending_rehydration = wallets_seen,
+            skipped_rows,
+            "load() summary"
         );
+        if skipped_rows > 0 {
+            tracing::warn!(
+                skipped_rows,
+                unimplemented = ?LOAD_UNIMPLEMENTED,
+                "load() returned a partial ClientStartState — corrupt rows skipped"
+            );
+        }
         Ok(state)
     }
 
