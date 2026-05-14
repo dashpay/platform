@@ -142,12 +142,56 @@ fn validate_and_route(
     request_v1: &GetDocumentsRequestV1,
     where_clauses: &[WhereClause],
 ) -> Result<RoutingDecision, QueryError> {
+    // An unknown integer here is malformed wire input (a
+    // discriminant the `Select` proto enum doesn't define), NOT a
+    // future capability — there's no future protocol value that
+    // would map a garbage integer to a valid behavior. Use
+    // `InvalidArgument` so clients can distinguish "garbage in this
+    // field" from `not_yet_implemented`'s "valid request shape, just
+    // not wired yet" contract (see [`not_yet_implemented`] above).
     let select = Select::try_from(request_v1.select).map_err(|_| {
-        not_yet_implemented(&format!(
-            "select value {} (not in the Select enum)",
-            request_v1.select
+        QueryError::InvalidArgument(format!(
+            "select value {} is not a valid `Select` enum discriminant \
+             (expected {} = DOCUMENTS or {} = COUNT)",
+            request_v1.select,
+            Select::Documents as i32,
+            Select::Count as i32,
         ))
     })?;
+
+    // Centralized `limit: Some(0)` rejection.
+    //
+    // `limit` is `optional uint32` on the wire, so `Some(0)` is a
+    // distinct value any raw-gRPC/WASM/FFI caller can encode. Three
+    // legacy behaviors collide on this value across the v1 dispatch
+    // surface:
+    // - `SELECT DOCUMENTS` would `unwrap_or(0)` and forward to v0,
+    //   where `limit=0` is the v0-uint32 sentinel for "use server
+    //   default" — accept-as-default.
+    // - `SELECT COUNT` with `mode ∈ {Aggregate, GroupByIn}` would
+    //   reject via the `is_some()` check below — reject-as-invalid.
+    // - `SELECT COUNT` with `mode ∈ {GroupByRange, GroupByCompound}`
+    //   would pass `Some(0)` through to drive, which honors it as a
+    //   zero-cap walk — accept-as-zero.
+    //
+    // Three semantics for the same wire bytes is bad contract. The
+    // v1 wire's whole point of switching to `optional uint32` was
+    // to make "unset" explicit (`None`), so `Some(0)` only makes
+    // sense as an *explicit* zero — and a zero-cap query returns
+    // no useful information regardless of mode. Reject it uniformly
+    // at the validation boundary so callers see a single,
+    // mode-independent contract: `None` for "use server default",
+    // `Some(N > 0)` for an explicit cap, `Some(0)` is invalid.
+    if request_v1.limit == Some(0) {
+        return Err(QueryError::Query(QuerySyntaxError::InvalidLimit(
+            "limit = 0 is not a valid wire value on the v1 \
+             `optional uint32` field; omit `limit` (None) to use the \
+             server's default, or pass a positive integer for an \
+             explicit cap (a zero-cap query is structurally \
+             meaningless regardless of SELECT mode)"
+                .to_string(),
+        )));
+    }
 
     if !request_v1.having.is_empty() {
         return Err(not_yet_implemented("HAVING clause"));
@@ -355,8 +399,11 @@ impl<C> Platform<C> {
             RequestV1Start::StartAt(b) => RequestV0Start::StartAt(b),
         });
         // `limit` is `optional uint32` on v1 vs unwrapped `uint32`
-        // (default 0) on v0. Unset on v1 → 0 on v0 (v0 reads `0`
-        // as "use the server's `default_query_limit`").
+        // (default 0) on v0. `None` on v1 → 0 on v0 (v0 reads `0`
+        // as "use the server's `default_query_limit`"). `Some(0)`
+        // can't reach here — `validate_and_route` rejects it for
+        // every SELECT mode so the v1 contract is uniform; only
+        // `None` or `Some(N > 0)` survive.
         let request_v0 = GetDocumentsRequestV0 {
             data_contract_id: request_v1.data_contract_id,
             document_type: request_v1.document_type,

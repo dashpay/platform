@@ -227,6 +227,51 @@ unsafe fn build_base_query(
     Ok(query)
 }
 
+/// Decode the C ABI `limit: i64` per the
+/// [`dash_sdk_document_count`] contract:
+///
+/// - `-1` → SDK's `0` "unset" sentinel (maps to `None` on the V1
+///   wire, asking the server to apply its default).
+/// - `> 0` → explicit cap, returned as `u32`.
+/// - `0` → rejected ([`FFIError::InternalError`]). The v1 wire
+///   rejects `Some(0)` uniformly across SELECT modes (see proto
+///   docs); the FFI surfaces the same rejection at decode time
+///   instead of relaying through the SDK's `0`-as-unset
+///   internal sentinel, where it would silently mean "use
+///   server default" and contradict the `-1 = default` contract.
+/// - `< -1` → rejected. Any negative value other than the
+///   explicit `-1` sentinel is malformed input; the previous
+///   lenient decode mapped `-2`, `-100`, etc. all to "use
+///   server default", which masked caller bugs (uninitialized
+///   memory, arithmetic underflow). Single-valued per input is
+///   the FFI contract.
+/// - `> u32::MAX` → rejected (overflow).
+///
+/// Extracted from the call site so the decode can be unit-
+/// tested directly without standing up an SDK / data contract /
+/// runtime — see the bottom-of-module tests.
+fn decode_ffi_limit(limit: i64) -> Result<u32, FFIError> {
+    match limit {
+        -1 => Ok(0), // SDK-internal "unset" sentinel; maps to `None` on the V1 wire.
+        n if n < -1 => Err(FFIError::InternalError(format!(
+            "limit {} is invalid; use -1 for server default or a positive \
+             integer for an explicit cap",
+            n
+        ))),
+        0 => Err(FFIError::InternalError(
+            "limit 0 is invalid; use -1 for server default or a positive \
+             integer for an explicit cap (zero-cap query is structurally \
+             meaningless and is rejected on the v1 wire as well)"
+                .to_string(),
+        )),
+        n if n > u32::MAX as i64 => Err(FFIError::InternalError(format!(
+            "limit {} exceeds u32::MAX",
+            n
+        ))),
+        n => Ok(n as u32),
+    }
+}
+
 /// Count documents matching a query.
 ///
 /// Returns a JSON string of shape
@@ -273,15 +318,29 @@ unsafe fn build_base_query(
 ///   unconditionally for prove/no-proof parity. Null or empty →
 ///   no orderBy (ascending default for split-mode entry
 ///   direction).
-/// - `limit`: `-1` = use server default
-///   (`default_query_limit` on no-proof paths,
-///   `crate::config::DEFAULT_QUERY_LIMIT` on the prove-distinct
-///   path — the compile-time constant the SDK verifier reads,
-///   so proof bytes stay deterministic across operators). `≥ 0`
-///   = explicit cap (clamped to `max_query_limit` on no-proof
-///   paths, rejected with `InvalidLimit` if too large on the
-///   prove-distinct path — silent clamping would invisibly break
-///   verification).
+/// - `limit`: sentinel-encoded `int64` on the C ABI.
+///   - `-1`: use server default
+///     (`default_query_limit` on no-proof paths,
+///     `crate::config::DEFAULT_QUERY_LIMIT` on the prove-distinct
+///     path — the compile-time constant the SDK verifier reads,
+///     so proof bytes stay deterministic across operators).
+///   - `> 0`: explicit cap (clamped to `max_query_limit` on
+///     no-proof paths, rejected with `InvalidLimit` if too large
+///     on the prove-distinct path — silent clamping would
+///     invisibly break verification).
+///   - `0`: **rejected with `InvalidParameter`** at the FFI
+///     boundary. The v1 wire's `optional uint32 limit` rejects
+///     `Some(0)` uniformly across SELECT modes (see proto
+///     docs); the FFI surfaces that contract at decode time
+///     rather than relaying the value through the SDK's
+///     `0`-as-unset internal sentinel where it would silently
+///     mean "use server default" — that would contradict the
+///     `-1 = default` contract documented here.
+///   - `< -1`: **rejected with `InvalidParameter`**. Any
+///     negative value other than the explicit `-1` sentinel is
+///     malformed input; clients shouldn't expect it to be
+///     normalized to `-1` because that hides bugs in caller
+///     code that miscomputes negative values.
 ///
 /// # Safety
 /// - `sdk_handle` and `data_contract_handle` must be valid, non-null pointers.
@@ -313,21 +372,7 @@ pub unsafe extern "C" fn dash_sdk_document_count(
     let result: Result<String, FFIError> = wrapper.runtime.block_on(async {
         let base_query = build_base_query(data_contract, document_type, where_json, order_by_json)?;
 
-        // Sentinel decoding for the C ABI. `-1` means "unset; use
-        // server-side default". The DocumentQuery `limit` field is
-        // a `u32` with `0` as its "unset" sentinel (translated to
-        // `None` on the V1 wire's `optional uint32`), so the FFI
-        // `-1` maps to `0`.
-        let limit_u32: u32 = if limit < 0 {
-            0
-        } else if limit > u32::MAX as i64 {
-            return Err(FFIError::InternalError(format!(
-                "limit {} exceeds u32::MAX",
-                limit
-            )));
-        } else {
-            limit as u32
-        };
+        let limit_u32 = decode_ffi_limit(limit)?;
 
         // `group_by_json` mirrors the wire's `repeated string`
         // field one-to-one. No FFI-side translation: callers ask
@@ -370,5 +415,129 @@ pub unsafe extern "C" fn dash_sdk_document_count(
             )),
         },
         Err(e) => DashSDKResult::error(e.into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Unit tests for the C ABI `limit: i64` decode contract.
+    //!
+    //! The decode is extracted into [`decode_ffi_limit`] so these
+    //! tests don't need to stand up an SDK / data contract /
+    //! runtime to pin the per-input behavior — every test below
+    //! exercises a single sentinel category and asserts the exact
+    //! mapping the docstring on [`dash_sdk_document_count`]
+    //! promises.
+
+    use super::*;
+
+    /// `-1` is the documented "use server default" sentinel.
+    /// Maps to the SDK's internal `0` unset sentinel (translated
+    /// to `None` on the V1 wire).
+    #[test]
+    fn decode_ffi_limit_minus_one_is_unset_sentinel() {
+        assert_eq!(
+            decode_ffi_limit(-1).expect("`-1` must decode to the unset sentinel"),
+            0,
+            "the FFI's `-1` sentinel must map to the SDK's `0` unset \
+             sentinel; any other value would silently change the wire \
+             representation"
+        );
+    }
+
+    /// `0` is invalid at the FFI boundary — the v1 wire rejects
+    /// `Some(0)` uniformly across SELECT modes, and the FFI
+    /// surfaces that rejection at decode time instead of relaying
+    /// through the SDK's `0`-as-unset internal sentinel (where
+    /// it would silently mean "use server default" and
+    /// contradict the `-1 = default` contract).
+    ///
+    /// This is the load-bearing test for the new tightening — a
+    /// regression that re-collapses `0` into the unset sentinel
+    /// (e.g. someone reverts to `if limit < 0 { 0 }`) would mask
+    /// caller bugs that pass uninitialized memory.
+    #[test]
+    fn decode_ffi_limit_zero_is_rejected() {
+        let err = decode_ffi_limit(0).expect_err("`0` must be rejected at the FFI boundary");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("limit 0 is invalid"),
+            "expected explicit `limit 0 is invalid` rejection; got: {}",
+            msg
+        );
+        assert!(
+            msg.contains("-1") && msg.contains("positive"),
+            "rejection message must point callers at the valid alternatives \
+             (-1 for default, positive for explicit cap); got: {}",
+            msg
+        );
+    }
+
+    /// Any negative value other than `-1` is malformed input.
+    /// The previous lenient decode mapped `-2`, `-100`, ... all
+    /// to `0` (i.e. "use server default"), which masked caller
+    /// bugs from arithmetic underflow or uninitialized memory.
+    #[test]
+    fn decode_ffi_limit_negative_other_than_minus_one_is_rejected() {
+        for bad in [-2i64, -100, i64::MIN] {
+            // `.err().unwrap_or_else(|| panic!(...))` rather than
+            // `.expect_err(&format!(...))` — the latter trips
+            // clippy::expect_fun_call (CI runs `-D warnings`).
+            let err = decode_ffi_limit(bad)
+                .err()
+                .unwrap_or_else(|| panic!("`{}` must be rejected (not -1)", bad));
+            let msg = err.to_string();
+            assert!(
+                msg.contains(&bad.to_string()),
+                "rejection message for `{}` must include the offending \
+                 value so callers can locate the bug; got: {}",
+                bad,
+                msg
+            );
+            assert!(
+                msg.contains("-1") && msg.contains("positive"),
+                "rejection message for `{}` must direct callers to the \
+                 valid alternatives; got: {}",
+                bad,
+                msg
+            );
+        }
+    }
+
+    /// `> 0` decodes verbatim as `u32`.
+    #[test]
+    fn decode_ffi_limit_positive_decodes_verbatim() {
+        // Edge values + a typical caller-provided cap.
+        for n in [1i64, 50, 1000, u32::MAX as i64] {
+            // `.unwrap_or_else(|e| panic!(...))` rather than
+            // `.expect(&format!(...))` — same clippy::expect_fun_call
+            // rationale as the negative test above.
+            let decoded = decode_ffi_limit(n)
+                .unwrap_or_else(|e| panic!("`{}` must decode to {} but errored: {}", n, n, e));
+            assert_eq!(
+                decoded, n as u32,
+                "positive `{}` must decode unchanged; any normalization \
+                 would silently shift the explicit cap callers requested",
+                n
+            );
+        }
+    }
+
+    /// Values exceeding `u32::MAX` overflow the wire field and
+    /// are rejected. Distinct from the `< -1` rejection so
+    /// callers can locate overflow bugs vs. malformed-negative
+    /// bugs from the error message.
+    #[test]
+    fn decode_ffi_limit_over_u32_max_is_rejected() {
+        let too_big = u32::MAX as i64 + 1;
+        let err = decode_ffi_limit(too_big)
+            .expect_err("values > u32::MAX must be rejected to prevent silent truncation");
+        let msg = err.to_string();
+        assert!(
+            msg.contains(&too_big.to_string()) && msg.contains("u32::MAX"),
+            "overflow-rejection message must name both the offending value \
+             AND the limit so callers can fix their caps; got: {}",
+            msg
+        );
     }
 }

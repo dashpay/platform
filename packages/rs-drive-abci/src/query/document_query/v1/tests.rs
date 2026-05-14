@@ -60,6 +60,170 @@ fn reject_having_non_empty() {
     assert_not_yet_implemented(validate_and_route_for_tests(&request, &[]), "HAVING clause");
 }
 
+/// Unknown `Select` enum discriminants (e.g. `42`) are malformed
+/// wire input, not future capability. The handler must classify
+/// them as [`QueryError::InvalidArgument`] — `not_yet_implemented`
+/// carries the contract "valid request shape, caller can keep it
+/// unchanged when capability lands" which is wrong for garbage
+/// enum discriminants (no future protocol value would make `42`
+/// meaningful for `Select`).
+///
+/// Pins the discriminator so a future refactor that re-collapses
+/// the two error classes back together (e.g. someone replaces the
+/// `InvalidArgument` with `not_yet_implemented` for "consistency"
+/// with the surrounding HAVING/GROUP BY rejections) fails loudly
+/// rather than silently masking malformed inputs.
+#[test]
+fn reject_unknown_select_enum_value_as_invalid_argument() {
+    let request = GetDocumentsRequestV1 {
+        // Neither 0 (DOCUMENTS) nor 1 (COUNT); a discriminant
+        // outside the `Select` enum's defined set.
+        select: 42,
+        ..empty_v1_request()
+    };
+    match validate_and_route_for_tests(&request, &[]) {
+        Err(QueryError::InvalidArgument(msg)) => {
+            assert!(
+                msg.contains("42") && msg.contains("Select"),
+                "expected invalid-discriminant message naming the value and the \
+                 enum, got: {}",
+                msg
+            );
+        }
+        Err(QueryError::Query(QuerySyntaxError::Unsupported(msg))) => panic!(
+            "expected InvalidArgument for unknown Select discriminant; got \
+             not_yet_implemented(\"{}\"). The two error classes carry different \
+             contracts (malformed input vs. future capability) and must not be \
+             collapsed.",
+            msg
+        ),
+        other => panic!("expected InvalidArgument, got {:?}", other),
+    }
+}
+
+/// `limit: Some(0)` is invalid on the v1 `optional uint32 limit`
+/// field across **every** SELECT mode. The legacy ambiguity (where
+/// the same wire bytes meant "use server default" in DOCUMENTS
+/// mode but `InvalidLimit` in some COUNT modes) is fixed by a
+/// uniform rejection at the validation boundary.
+///
+/// Pins the contract end-to-end across:
+/// - `SELECT DOCUMENTS` (previously `unwrap_or(0)` into v0 sentinel).
+/// - `SELECT COUNT, group_by=[]` (previously rejected via
+///   `is_some()` but with a mode-specific message).
+/// - `SELECT COUNT, group_by=[in_field]` (same).
+/// - `SELECT COUNT, group_by=[range_field]` (previously
+///   accepted-as-zero).
+/// - `SELECT COUNT, group_by=[in_field, range_field]` (same).
+///
+/// All five modes must return `QuerySyntaxError::InvalidLimit`
+/// with the centralized message — not five different rejection
+/// reasons.
+#[test]
+fn reject_limit_some_zero_uniformly_across_select_modes() {
+    let in_clauses = || {
+        vec![WhereClause {
+            field: "brand".to_string(),
+            operator: WhereOperator::In,
+            value: platform_value!(["acme", "contoso"]),
+        }]
+    };
+    let range_clauses = || {
+        vec![WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: platform_value!("blue"),
+        }]
+    };
+    let in_and_range_clauses = || {
+        vec![
+            WhereClause {
+                field: "brand".to_string(),
+                operator: WhereOperator::In,
+                value: platform_value!(["acme", "contoso"]),
+            },
+            WhereClause {
+                field: "color".to_string(),
+                operator: WhereOperator::GreaterThan,
+                value: platform_value!("blue"),
+            },
+        ]
+    };
+
+    // (test_label, request_builder, where_clauses)
+    let cases: Vec<(&str, GetDocumentsRequestV1, Vec<WhereClause>)> = vec![
+        (
+            "SELECT DOCUMENTS, group_by=[]",
+            GetDocumentsRequestV1 {
+                select: V1Select::Documents as i32,
+                limit: Some(0),
+                ..empty_v1_request()
+            },
+            Vec::new(),
+        ),
+        (
+            "SELECT COUNT, group_by=[] (Aggregate) with In clause",
+            GetDocumentsRequestV1 {
+                select: V1Select::Count as i32,
+                limit: Some(0),
+                ..empty_v1_request()
+            },
+            in_clauses(),
+        ),
+        (
+            "SELECT COUNT, group_by=[in_field] (GroupByIn)",
+            GetDocumentsRequestV1 {
+                select: V1Select::Count as i32,
+                group_by: vec!["brand".to_string()],
+                limit: Some(0),
+                ..empty_v1_request()
+            },
+            in_clauses(),
+        ),
+        (
+            "SELECT COUNT, group_by=[range_field] (GroupByRange)",
+            GetDocumentsRequestV1 {
+                select: V1Select::Count as i32,
+                group_by: vec!["color".to_string()],
+                limit: Some(0),
+                ..empty_v1_request()
+            },
+            range_clauses(),
+        ),
+        (
+            "SELECT COUNT, group_by=[in_field, range_field] (GroupByCompound)",
+            GetDocumentsRequestV1 {
+                select: V1Select::Count as i32,
+                group_by: vec!["brand".to_string(), "color".to_string()],
+                limit: Some(0),
+                ..empty_v1_request()
+            },
+            in_and_range_clauses(),
+        ),
+    ];
+
+    for (label, request, where_clauses) in cases {
+        match validate_and_route_for_tests(&request, &where_clauses) {
+            Err(QueryError::Query(QuerySyntaxError::InvalidLimit(msg))) => {
+                assert!(
+                    msg.contains("limit = 0") && msg.contains("v1"),
+                    "[{}] expected centralized `limit = 0` rejection message, \
+                     got: {}",
+                    label,
+                    msg
+                );
+            }
+            other => panic!(
+                "[{}] expected QuerySyntaxError::InvalidLimit for limit=Some(0); \
+                 got {:?}. If this case now accepts Some(0) the v1 contract is \
+                 no longer uniform — every wire-visible `Some(0)` must be \
+                 rejected at the validation boundary.",
+                label, other
+            ),
+        }
+    }
+}
+
 #[test]
 fn reject_group_by_with_documents() {
     let request = GetDocumentsRequestV1 {

@@ -689,6 +689,17 @@ message GetDocumentsRequest {
     bytes where = 3;            // CBOR-encoded where clauses (same shape as v0)
     bytes order_by = 4;         // CBOR-encoded order_by clauses (same shape as v0)
     // Maximum number of rows to return.
+    //
+    // **Wire semantics on the `optional uint32` field**: `None`
+    // (unset) requests the server's default; `Some(N)` with `N > 0`
+    // requests an explicit cap of `N`. `Some(0)` is **rejected with
+    // `InvalidLimit` across every SELECT mode** — zero-cap is
+    // structurally meaningless and the legacy v0 `uint32`-with-0-as-
+    // sentinel mapping doesn't extend to `optional uint32` (the
+    // whole point of switching is that `None` carries "unset"
+    // explicitly). Callers must send `None` for "use server default."
+    //
+    // Per-mode behavior of `Some(N > 0)`:
     //   - `select=DOCUMENTS`: matched-document cap (same as v0).
     //   - `select=COUNT, group_by=[]`: **rejected with `InvalidLimit`
     //     when set**. Aggregate count is a single row by construction
