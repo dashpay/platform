@@ -79,10 +79,14 @@ pub enum PlatformWalletFFIResultCode {
     /// Reserved code — currently unused. Kept to preserve numeric ABI for
     /// downstream consumers that compiled against this enum.
     ErrorArithmeticOverflow = 13,
-    /// Auto-select had no candidate inputs: every funded address was either
-    /// a destination output or below `min_input_amount`. Caller must rotate
-    /// to a fresh receive address, raise sub-min balances above the floor,
-    /// or fall back to `InputSelection::Explicit`.
+    /// Auto-select had no candidate inputs. Covers all three "can't-select-inputs"
+    /// wallet variants: `NoSpendableInputs` (account has nothing spendable),
+    /// `OnlyOutputAddressesFunded` (every funded address is also a destination),
+    /// and `OnlyDustInputs` (every funded address is below `min_input_amount`).
+    /// The typed Display rendering survives via the result message so callers
+    /// can distinguish the underlying cause. Caller must rotate to a fresh
+    /// receive address, consolidate sub-min balances, or fall back to
+    /// `InputSelection::Explicit`.
     ErrorNoSelectableInputs = 14,
 
     NotFound = 98, // Used exclusively for all the Option that are retuned as errors
@@ -170,7 +174,9 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
         // assigned a dedicated code yet — those still carry the
         // typed Display rendering as the message.
         let code = match &error {
-            PlatformWalletError::NoSelectableInputs { .. } => {
+            PlatformWalletError::NoSpendableInputs { .. }
+            | PlatformWalletError::OnlyOutputAddressesFunded { .. }
+            | PlatformWalletError::OnlyDustInputs { .. } => {
                 PlatformWalletFFIResultCode::ErrorNoSelectableInputs
             }
             _ => PlatformWalletFFIResultCode::ErrorUnknown,
@@ -396,17 +402,19 @@ mod tests {
         assert!(!r.message.is_null());
     }
 
-    /// `NoSelectableInputs` maps to its dedicated FFI code (not flattened
-    /// to `ErrorUnknown`), and the typed Display rendering — including the
-    /// offending addresses — survives across the boundary.
+    /// The three "can't-select-inputs" wallet variants (`NoSpendableInputs`,
+    /// `OnlyOutputAddressesFunded`, `OnlyDustInputs`) all map to the dedicated
+    /// `ErrorNoSelectableInputs` FFI code rather than flattening to
+    /// `ErrorUnknown`, and the typed Display rendering survives across the
+    /// boundary so callers can distinguish the underlying cause from the
+    /// message string.
     #[test]
     fn no_selectable_inputs_maps_to_dedicated_code() {
-        use dpp::address_funds::PlatformAddress;
-        let err = PlatformWalletError::NoSelectableInputs {
-            funded_outputs: vec![PlatformAddress::P2pkh([0xAB; 20])],
-            sub_min_count: 0,
-            sub_min_aggregate: 0,
-            min_input_amount: 1_000,
+        use key_wallet::account::StandardAccountType;
+        let err = PlatformWalletError::NoSpendableInputs {
+            account_type: StandardAccountType::BIP44Account,
+            account_index: 0,
+            context: "wallet empty in test".to_string(),
         };
         let rendered = err.to_string();
         let result: PlatformWalletFFIResult = err.into();
@@ -420,7 +428,7 @@ mod tests {
             .into_owned();
         assert_eq!(msg, rendered);
         assert!(
-            msg.contains("funded_outputs"),
+            msg.contains("no spendable inputs"),
             "Display payload must survive: {msg}"
         );
     }
