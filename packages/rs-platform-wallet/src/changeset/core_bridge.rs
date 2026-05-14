@@ -195,17 +195,35 @@ async fn build_core_changeset(
             synced_height: Some(*height),
             ..CoreChangeSet::default()
         },
-        WalletEvent::TransactionsChainlocked { .. } => {
+        WalletEvent::TransactionsChainlocked { chain_lock, .. } => {
             // The wallet has already promoted the matching records from
             // `InBlock` to `InChainLockedBlock` by the time this event
             // fires (upstream `WalletManager::process_chain_lock` mutates
-            // the in-memory map before emitting). Our poll loop reads
-            // record.context.is_chain_locked() directly, so no
-            // additional CoreChangeSet projection is needed here today;
-            // a future enhancement could persist the
-            // `WalletMetadata::last_applied_chain_lock` for crash
-            // recovery, but it's out of scope for the current PR.
-            CoreChangeSet::default()
+            // the in-memory map before emitting); our poll loop reads
+            // `record.context.is_chain_locked()` directly so we don't
+            // mirror per-record promotions here.
+            //
+            // What we DO persist is the wallet's global
+            // `metadata.last_applied_chain_lock` advance. Without this
+            // roundtrip, the metadata starts as `None` on every restart
+            // and the asset-lock-resume CL-from-metadata fallback in
+            // `proof.rs` can't fire until SPV re-applies a fresh
+            // ChainLock — wasted latency that the persister-roundtrip
+            // collapses to ~zero. SPV persists its own `best_chainlock`
+            // independently; this is the symmetric wallet-side
+            // persistence, not a re-application.
+            //
+            // Caveat: the upstream `apply_chain_lock` only emits this
+            // event when `per_account` is non-empty (records were
+            // promoted). A CL that advanced the wallet's metadata but
+            // had nothing to promote is invisible here — accepted
+            // limitation, addressed in practice because the very
+            // first CL that does promote records (typical on an
+            // actively-syncing wallet) persists the current height.
+            CoreChangeSet {
+                last_applied_chain_lock: Some(chain_lock.clone()),
+                ..CoreChangeSet::default()
+            }
         }
     }
 }
@@ -335,5 +353,6 @@ impl CoreChangeSet {
             && self.instant_locks_for_non_final_records.is_empty()
             && self.last_processed_height.is_none()
             && self.synced_height.is_none()
+            && self.last_applied_chain_lock.is_none()
     }
 }

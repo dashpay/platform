@@ -435,6 +435,21 @@ pub struct WalletRestoreEntryFFI {
     /// unresolved asset locks.
     pub unresolved_asset_lock_tx_records: *const UnresolvedAssetLockTxRecordFFI,
     pub unresolved_asset_lock_tx_records_count: usize,
+    /// Bincode-serialised
+    /// `dashcore::ephemerealdata::chain_lock::ChainLock`
+    /// (`bincode::config::standard()`) carrying the persisted
+    /// `WalletMetadata::last_applied_chain_lock` from the last
+    /// session. `null` / `0` when no chainlock was ever persisted
+    /// (fresh wallet, or wallet that hasn't observed a chainlock
+    /// since the metadata-persist feature shipped). When present,
+    /// `build_wallet_start_state` decodes and stamps it into
+    /// `wallet_info.metadata.last_applied_chain_lock` before the
+    /// wallet enters the manager — so the asset-lock-resume
+    /// CL-from-metadata fallback in `proof.rs` can fire on
+    /// catch-up tasks at app launch without waiting for SPV to
+    /// re-apply a fresh chainlock.
+    pub last_applied_chain_lock_bytes: *const u8,
+    pub last_applied_chain_lock_bytes_len: usize,
 }
 
 // SAFETY: Pointers are Swift-owned and lifetime-scoped to the callback.

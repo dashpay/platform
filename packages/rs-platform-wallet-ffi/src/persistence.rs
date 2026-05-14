@@ -1773,6 +1773,52 @@ fn build_wallet_start_state(
         wallet_info.metadata.last_synced = Some(entry.last_synced);
     }
 
+    // Persisted `last_applied_chain_lock` — bincode-decoded from the
+    // bytes Swift handed back. Restoring this before the wallet
+    // enters the manager means the asset-lock-resume CL-from-metadata
+    // fallback (`proof.rs`) can fire immediately at app launch on
+    // any tracked lock whose funding block height is `<= cl.block_height`,
+    // without waiting for SPV to re-apply a fresh CL. SPV persists
+    // its own `best_chainlock` independently; this is the symmetric
+    // wallet-side restore.
+    //
+    // Decode failure is treated as miss: malformed bytes here are
+    // either a serialisation-shape regression in upstream `ChainLock`
+    // or a corrupted SwiftData row — neither is recoverable in-flight,
+    // so log at `warn` (so the operator sees it) and continue with
+    // `metadata.last_applied_chain_lock = None`. The next fresh
+    // chainlock arrival will overwrite the field with a valid value
+    // and the failure window for the metadata fallback is the SPV
+    // catch-up latency, same as if the column had been empty.
+    if !entry.last_applied_chain_lock_bytes.is_null()
+        && entry.last_applied_chain_lock_bytes_len > 0
+    {
+        let cl_slice = unsafe {
+            slice::from_raw_parts(
+                entry.last_applied_chain_lock_bytes,
+                entry.last_applied_chain_lock_bytes_len,
+            )
+        };
+        match dpp::bincode::decode_from_slice::<
+            dashcore::ephemerealdata::chain_lock::ChainLock,
+            _,
+        >(cl_slice, dpp::bincode::config::standard())
+        {
+            Ok((cl, _)) => {
+                wallet_info.metadata.last_applied_chain_lock = Some(cl);
+            }
+            Err(e) => {
+                tracing::warn!(
+                    wallet_id = %hex::encode(entry.wallet_id),
+                    error = %e,
+                    "load: failed to decode persisted last_applied_chain_lock; \
+                     metadata.last_applied_chain_lock left as None — the \
+                     next fresh CLSig will repopulate"
+                );
+            }
+        }
+    }
+
     // Persisted unspent UTXOs → funds-bearing accounts. Keys-only and
     // PlatformPayment variants are skipped: the former never carry
     // UTXOs, the latter route through `PlatformAddressSyncStartState`.

@@ -352,6 +352,25 @@ public class PlatformWalletPersistenceHandler {
                 wallet.lastUpdated = Date()
             }
 
+            // Persisted `last_applied_chain_lock` — bincode bytes
+            // from the FFI carry the wallet's
+            // `WalletMetadata::last_applied_chain_lock` snapshot for
+            // restart roundtrip. Stored as opaque `Data` (decoded on
+            // the Rust load side); SPV persists its own
+            // `best_chainlock` independently so this column is the
+            // wallet-side mirror, not a duplicate of SPV state.
+            // Pre-feature rows / wallets that have never observed a
+            // ChainLock carry `null` from Rust and stay `nil` here.
+            if cs.last_applied_chain_lock_bytes_len > 0,
+               let clPtr = cs.last_applied_chain_lock_bytes {
+                let bytes = Data(
+                    bytes: clPtr,
+                    count: Int(cs.last_applied_chain_lock_bytes_len)
+                )
+                wallet.lastAppliedChainLockBytes = bytes
+                wallet.lastUpdated = Date()
+            }
+
             // Balance delta — Rust still emits per-round deltas, but the
             // PersistentWallet `balance*` fields they used to update were
             // removed (canonical source is now the in-memory account
@@ -2527,6 +2546,30 @@ public class PlatformWalletPersistenceHandler {
             entry.synced_height = w.syncedHeight
             entry.last_processed_height = w.syncedHeight
             entry.last_synced = w.lastSynced
+
+            // Persisted `last_applied_chain_lock` bincode bytes from
+            // the previous session. Rust's `build_wallet_start_state`
+            // decodes these and stamps `wallet_info.metadata.
+            // last_applied_chain_lock`, so the asset-lock-resume
+            // CL-from-metadata fallback in `proof.rs` can fire on
+            // catch-up tasks at app launch without waiting for SPV
+            // to re-apply a fresh chainlock. Wallets that have
+            // never observed a chainlock (fresh creations,
+            // pre-feature rows) carry `nil` here and the FFI fields
+            // stay null / zero — Rust load falls back to leaving
+            // `metadata.last_applied_chain_lock = None`.
+            if let clBytes = w.lastAppliedChainLockBytes, !clBytes.isEmpty {
+                let buffer = UnsafeMutablePointer<UInt8>.allocate(
+                    capacity: clBytes.count
+                )
+                clBytes.copyBytes(to: buffer, count: clBytes.count)
+                allocation.scalarBuffers.append((buffer, clBytes.count))
+                entry.last_applied_chain_lock_bytes = UnsafePointer(buffer)
+                entry.last_applied_chain_lock_bytes_len = UInt(clBytes.count)
+            } else {
+                entry.last_applied_chain_lock_bytes = nil
+                entry.last_applied_chain_lock_bytes_len = 0
+            }
 
             // Persisted unspent UTXOs for this wallet. The SPV inbound
             // path writes `PersistentTxo` rows and flips `isSpent`

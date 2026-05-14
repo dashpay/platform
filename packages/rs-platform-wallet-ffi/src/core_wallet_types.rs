@@ -177,6 +177,17 @@ pub struct WalletChangeSetFFI {
     pub balance: BalanceChangeSetFFI,
     pub accounts: *mut AccountChangeSetFFI,
     pub accounts_count: usize,
+    /// Bincode-serialised `dashcore::ephemerealdata::chain_lock::ChainLock`
+    /// (`bincode::config::standard()`) representing the wallet's
+    /// `metadata.last_applied_chain_lock` after this round. `null` /
+    /// `0` length when this changeset didn't advance the chainlock
+    /// watermark. Persister writes the bytes to a dedicated SwiftData
+    /// column on `PersistentWallet` so the wallet's CL metadata
+    /// survives app restarts (otherwise it starts as `None` every
+    /// launch and the asset-lock-resume CL-from-metadata fallback in
+    /// `proof.rs` can't fire until SPV re-applies a fresh CL).
+    pub last_applied_chain_lock_bytes: *mut u8,
+    pub last_applied_chain_lock_bytes_len: usize,
 }
 
 // ---------------------------------------------------------------------------
@@ -343,6 +354,35 @@ impl WalletChangeSetFFI {
         }
 
         let accounts_count = ffi_accounts.len();
+
+        // Bincode-serialise `last_applied_chain_lock` if present.
+        // `ChainLock` derives `Encode` under upstream's `bincode`
+        // feature; `bincode::encode_to_vec` cannot fail for plain
+        // POD-shaped types, so a serialisation error here would
+        // indicate an upstream `ChainLock` derive regression — fall
+        // back to null and log so the persister round still
+        // succeeds for the rest of the changeset.
+        let (last_applied_chain_lock_bytes, last_applied_chain_lock_bytes_len) =
+            match cs.last_applied_chain_lock.as_ref() {
+                Some(cl) => match dpp::bincode::encode_to_vec(cl, dpp::bincode::config::standard())
+                {
+                    Ok(bytes) => {
+                        let len = bytes.len();
+                        let boxed = bytes.into_boxed_slice();
+                        (Box::into_raw(boxed) as *mut u8, len)
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            error = %e,
+                            "Failed to bincode-encode last_applied_chain_lock; \
+                             persister round will skip the watermark for this batch"
+                        );
+                        (std::ptr::null_mut(), 0)
+                    }
+                },
+                None => (std::ptr::null_mut(), 0),
+            };
+
         WalletChangeSetFFI {
             has_chain,
             chain,
@@ -350,6 +390,8 @@ impl WalletChangeSetFFI {
             balance,
             accounts: vec_to_ptr(ffi_accounts),
             accounts_count,
+            last_applied_chain_lock_bytes,
+            last_applied_chain_lock_bytes_len,
         }
     }
 }
@@ -878,6 +920,21 @@ fn vec_to_ptr_u8(v: Vec<u8>, _len: usize) -> *mut u8 {
 /// Must only be called once per changeset.
 pub unsafe fn free_wallet_changeset_ffi(cs: &WalletChangeSetFFI) {
     use std::ffi::CString;
+
+    // Top-level chain-lock bytes free path runs regardless of
+    // whether the changeset carried any account-level deltas — a
+    // round that ONLY advances the watermark (chain-lock arm with
+    // empty per_account on the WalletEvent side wouldn't fire, but
+    // a coalesced round may still resolve down to "just the CL"
+    // after `is_empty_no_records` filters out the other arms) must
+    // still release the heap allocation we made in `from_changeset`.
+    if !cs.last_applied_chain_lock_bytes.is_null() && cs.last_applied_chain_lock_bytes_len > 0 {
+        drop(Vec::from_raw_parts(
+            cs.last_applied_chain_lock_bytes,
+            cs.last_applied_chain_lock_bytes_len,
+            cs.last_applied_chain_lock_bytes_len,
+        ));
+    }
 
     if cs.accounts.is_null() || cs.accounts_count == 0 {
         return;
