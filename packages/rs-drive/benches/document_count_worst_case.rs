@@ -336,6 +336,11 @@ fn document_count_worst_case(c: &mut Criterion) {
     // the proof's *meaning* legible without staring at hex.
     display_proofs(&fixture, platform_version);
 
+    // Decoded display of every `group_by` proof shape in the Count
+    // Index Group By Examples chapter (G3..G6). G1/G2 omitted —
+    // their bytes are identical to chapter 29's Q5/Q6.
+    display_group_by_proofs(&fixture, platform_version);
+
     // Empirical probe of the value-tree element type for the two
     // single-property index terminators in the bench's contract
     // (`byBrand` is just `countable`, `byColor` is `rangeCountable`).
@@ -481,6 +486,158 @@ fn document_count_worst_case(c: &mut Criterion) {
         );
     });
 
+    // Per-query timing for the 7 chapter queries (no group_by). Each
+    // case exercises the same proof shape documented in
+    // `book/src/drive/count-index-examples.md` so reviewers can quote
+    // wall-clock timings alongside the proof-size and complexity
+    // columns in the chapter's overview table.
+    let mid_brand = brand_label(BRAND_COUNT / 2);
+    let mid_color = color_label(color_count_for_rows(fixture.row_count) / 2);
+    let brands_2 = brands_n(2);
+    let colors_2 = first_n_color_values(2);
+    let clause = |field: &str, op: &str, value: Value| -> Value {
+        Value::Array(vec![
+            Value::Text(field.to_string()),
+            Value::Text(op.to_string()),
+            value,
+        ])
+    };
+
+    let chapter_queries: Vec<(&str, Value)> = vec![
+        ("query_1_empty_total_count", Value::Null),
+        (
+            "query_2_brand_eq",
+            Value::Array(vec![clause("brand", "==", Value::Text(mid_brand.clone()))]),
+        ),
+        (
+            "query_3_color_eq",
+            Value::Array(vec![clause("color", "==", Value::Text(mid_color.clone()))]),
+        ),
+        (
+            "query_4_brand_eq_and_color_eq",
+            Value::Array(vec![
+                clause("brand", "==", Value::Text(mid_brand.clone())),
+                clause("color", "==", Value::Text(mid_color.clone())),
+            ]),
+        ),
+        (
+            "query_5_brand_in_2",
+            Value::Array(vec![clause("brand", "in", Value::Array(brands_2.clone()))]),
+        ),
+        (
+            "query_6_color_in_2",
+            Value::Array(vec![clause("color", "in", Value::Array(colors_2.clone()))]),
+        ),
+        (
+            "query_7_color_gt_floor",
+            Value::Array(vec![clause("color", ">", broad_range_floor.clone())]),
+        ),
+        (
+            "query_8_brand_eq_and_color_gt_floor",
+            Value::Array(vec![
+                clause("brand", "==", Value::Text(mid_brand.clone())),
+                clause("color", ">", broad_range_floor.clone()),
+            ]),
+        ),
+    ];
+
+    for (name, raw_where) in chapter_queries {
+        group.bench_function(name, |b| {
+            b.iter_batched(
+                || {
+                    count_request(
+                        &fixture,
+                        raw_where.clone(),
+                        Value::Null,
+                        CountMode::Aggregate,
+                        None,
+                        true,
+                    )
+                },
+                |request| match fixture
+                    .drive
+                    .execute_document_count_request(request, None, platform_version)
+                    .expect("expected proof response for chapter query")
+                {
+                    DocumentCountResponse::Proof(proof) => black_box(proof),
+                    response => panic!("expected proof response, got {response:?}"),
+                },
+                BatchSize::SmallInput,
+            );
+        });
+    }
+
+    // Per-query timing for the Count Index Group By Examples chapter
+    // (G1 through G6). Each case exercises one of the documented
+    // group_by shapes so the chapter's overview table can quote
+    // wall-clock timings alongside proof-size and complexity columns.
+    let brands_100 = brands_n(BRAND_COUNT);
+    let groupby_chapter_queries: Vec<(&str, Value, CountMode, Option<u32>)> = vec![
+        (
+            "query_g1_brand_in_grouped_by_brand",
+            Value::Array(vec![clause("brand", "in", Value::Array(brands_2.clone()))]),
+            CountMode::GroupByIn,
+            None,
+        ),
+        (
+            "query_g2_color_in_grouped_by_color",
+            Value::Array(vec![clause("color", "in", Value::Array(colors_2.clone()))]),
+            CountMode::GroupByIn,
+            None,
+        ),
+        (
+            "query_g3_brand_in_color_eq_grouped_by_brand",
+            Value::Array(vec![
+                clause("brand", "in", Value::Array(brands_2.clone())),
+                clause("color", "==", Value::Text(mid_color.clone())),
+            ]),
+            CountMode::GroupByIn,
+            None,
+        ),
+        (
+            "query_g4_color_gt_grouped_by_color",
+            Value::Array(vec![clause("color", ">", broad_range_floor.clone())]),
+            CountMode::GroupByRange,
+            None,
+        ),
+        (
+            "query_g5_brand_in_color_gt_grouped_by_brand_color",
+            Value::Array(vec![
+                clause("brand", "in", Value::Array(brands_2.clone())),
+                clause("color", ">", broad_range_floor.clone()),
+            ]),
+            CountMode::GroupByCompound,
+            None,
+        ),
+        (
+            "query_g6_brand_in_100_grouped_by_brand",
+            Value::Array(vec![clause(
+                "brand",
+                "in",
+                Value::Array(brands_100.clone()),
+            )]),
+            CountMode::GroupByIn,
+            None,
+        ),
+    ];
+
+    for (name, raw_where, mode, limit) in groupby_chapter_queries {
+        group.bench_function(name, |b| {
+            b.iter_batched(
+                || count_request(&fixture, raw_where.clone(), Value::Null, mode, limit, true),
+                |request| match fixture
+                    .drive
+                    .execute_document_count_request(request, None, platform_version)
+                    .expect("expected proof response for group_by chapter query")
+                {
+                    DocumentCountResponse::Proof(proof) => black_box(proof),
+                    response => panic!("expected proof response, got {response:?}"),
+                },
+                BatchSize::SmallInput,
+            );
+        });
+    }
+
     group.finish();
 }
 
@@ -608,6 +765,12 @@ fn report_group_by_matrix(fixture: &CountBenchFixture, platform_version: &Platfo
             clause("color", "==", Value::Text(mid_color.clone())),
         ])
     };
+    let where_brand_eq_color_gt = || {
+        Value::Array(vec![
+            clause("brand", "==", Value::Text(mid_brand.clone())),
+            clause("color", ">", range_floor.clone()),
+        ])
+    };
 
     // (label, group_by-as-the-caller-would-spell-it, where description,
     //  raw where Value, CountMode used by drive, limit override,
@@ -675,6 +838,13 @@ fn report_group_by_matrix(fixture: &CountBenchFixture, platform_version: &Platfo
             label: "[] / where=color > floor",
             platform_allowed: "yes (AggregateCountOnRange)",
             raw_where: where_color_gt(),
+            mode: CountMode::Aggregate,
+            limit: None,
+        },
+        MatrixCase {
+            label: "[] / where=brand==X AND color > floor",
+            platform_allowed: "yes (AggregateCountOnRange on byBrandColor terminator)",
+            raw_where: where_brand_eq_color_gt(),
             mode: CountMode::Aggregate,
             limit: None,
         },
@@ -1082,6 +1252,26 @@ fn display_proofs(fixture: &CountBenchFixture, platform_version: &PlatformVersio
             }],
             shape: Shape::AggregateRange,
         },
+        DisplayCase {
+            label: "[] / where=brand==X AND color > floor",
+            raw_where: Value::Array(vec![
+                clause("brand", "==", Value::Text(mid_brand.clone())),
+                clause("color", ">", range_floor.clone()),
+            ]),
+            structured: vec![
+                WhereClause {
+                    field: "brand".to_string(),
+                    operator: WhereOperator::Equal,
+                    value: Value::Text(mid_brand.clone()),
+                },
+                WhereClause {
+                    field: "color".to_string(),
+                    operator: WhereOperator::GreaterThan,
+                    value: range_floor.clone(),
+                },
+            ],
+            shape: Shape::AggregateRange,
+        },
     ];
 
     for case in cases {
@@ -1241,6 +1431,105 @@ fn display_proofs(fixture: &CountBenchFixture, platform_version: &PlatformVersio
                 }
             }
             Err(e) => eprintln!("[proof]   proof-display decode error: {e:?}"),
+        }
+    }
+}
+
+/// Companion to `display_proofs` for the Count Index Group By
+/// Examples chapter (G1..G6). Captures the structured proof bytes
+/// the dispatcher emits for each `group_by` shape, decodes them
+/// through `GroveDBProof::Display`, and tags the output with a
+/// `[gproof]` prefix so the chapter's regex extraction stays
+/// unambiguous.
+///
+/// G1 and G2 are intentionally omitted: their proof bytes are
+/// byte-identical to chapter 29's Q5 / Q6 (a property the dispatcher
+/// preserves because `CountMode::GroupByIn` over a single `In` clause
+/// resolves to the same `point_lookup_count_path_query` as
+/// `CountMode::Aggregate` does — the SDK just zips the elements with
+/// the In values instead of summing). The chapter references the
+/// existing Q5 / Q6 displays rather than emitting duplicate bytes.
+fn display_group_by_proofs(fixture: &CountBenchFixture, platform_version: &PlatformVersion) {
+    let mid_brand = brand_label(BRAND_COUNT / 2);
+    let mid_color = color_label(color_count_for_rows(fixture.row_count) / 2);
+    let brands_2 = brands_n(2);
+    let brands_100 = brands_n(BRAND_COUNT);
+    let range_floor = Value::Text(fixture.range_floor.clone());
+
+    let clause = |field: &str, op: &str, value: Value| -> Value {
+        Value::Array(vec![
+            Value::Text(field.to_string()),
+            Value::Text(op.to_string()),
+            value,
+        ])
+    };
+
+    let cases: Vec<(&str, Value, CountMode, Option<u32>)> = vec![
+        (
+            "G3 [brand] / where=brand IN[2] AND color==Y",
+            Value::Array(vec![
+                clause("brand", "in", Value::Array(brands_2.clone())),
+                clause("color", "==", Value::Text(mid_color.clone())),
+            ]),
+            CountMode::GroupByIn,
+            None,
+        ),
+        (
+            "G4 [color] / where=color > floor",
+            Value::Array(vec![clause("color", ">", range_floor.clone())]),
+            CountMode::GroupByRange,
+            None,
+        ),
+        (
+            "G5 [brand, color] / where=brand IN[2] AND color > floor",
+            Value::Array(vec![
+                clause("brand", "in", Value::Array(brands_2.clone())),
+                clause("color", ">", range_floor.clone()),
+            ]),
+            CountMode::GroupByCompound,
+            None,
+        ),
+        (
+            "G6 [brand] / where=brand IN[100]",
+            Value::Array(vec![clause(
+                "brand",
+                "in",
+                Value::Array(brands_100.clone()),
+            )]),
+            CountMode::GroupByIn,
+            None,
+        ),
+    ];
+
+    let _ = mid_brand;
+    let bincode_config = bincode::config::standard()
+        .with_big_endian()
+        .with_no_limit();
+
+    for (label, raw_where, mode, limit) in cases {
+        let request = count_request(fixture, raw_where, Value::Null, mode, limit, true);
+        let proof =
+            match fixture
+                .drive
+                .execute_document_count_request(request, None, platform_version)
+            {
+                Ok(DocumentCountResponse::Proof(p)) => p,
+                other => {
+                    eprintln!("[gproof] {label} → unexpected non-Proof response: {other:?}");
+                    continue;
+                }
+            };
+
+        eprintln!("[gproof] {label} ({sz} bytes)", sz = proof.len());
+
+        match bincode::decode_from_slice::<GroveDBProof, _>(&proof, bincode_config) {
+            Ok((grovedb_proof, _)) => {
+                eprintln!("[gproof]   proof-display:");
+                for line in format!("{grovedb_proof}").lines() {
+                    eprintln!("[gproof]     {line}");
+                }
+            }
+            Err(e) => eprintln!("[gproof]   proof-display decode error: {e:?}"),
         }
     }
 }
