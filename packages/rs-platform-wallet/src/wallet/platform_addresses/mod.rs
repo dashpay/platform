@@ -13,6 +13,16 @@ mod transfer;
 mod wallet;
 mod withdrawal;
 
+/// Saturating sum over `Credits` (== `u64`) — total credit supply is far
+/// below `u64::MAX`, so saturation is unreachable in practice but the policy
+/// keeps debug-build panics off the table.
+pub(crate) fn saturating_sum_credits<I>(iter: I) -> Credits
+where
+    I: IntoIterator<Item = Credits>,
+{
+    iter.into_iter().fold(0u64, Credits::saturating_add)
+}
+
 pub use provider::{
     PerAccountPlatformAddressState, PerWalletPlatformAddressState, PlatformAddressTag,
 };
