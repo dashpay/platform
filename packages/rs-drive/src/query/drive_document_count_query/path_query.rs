@@ -485,9 +485,8 @@ impl DriveDocumentCountQuery<'_> {
 
     /// Build the grovedb `PathQuery` for a point-lookup count proof
     /// against a `countable: true` index. Returns one element per
-    /// covered branch — the `CountTree` element at
-    /// `[..., last_field, last_value, 0]` whose `count_value` is the
-    /// per-branch document count.
+    /// covered branch whose `count_value` is the per-branch document
+    /// count.
     ///
     /// Shared between the server-side prove path
     /// ([`Self::execute_point_lookup_count_with_proof`]) and the
@@ -495,6 +494,33 @@ impl DriveDocumentCountQuery<'_> {
     /// ([`Self::verify_point_lookup_count_proof`]). Both sides must
     /// produce the *exact same* `PathQuery` for the merk-root
     /// recomputation to match.
+    ///
+    /// ## Two terminator shapes depending on `range_countable`
+    ///
+    /// The proof's terminal element is at one of two layers, picked
+    /// from [`Index::range_countable`]:
+    ///
+    /// - **Normal `countable: true`** (NOT `range_countable`): the
+    ///   terminator's value tree is a `NormalTree`, and the doc-count
+    ///   `CountTree` sits inside it at the conventional `[0]` child.
+    ///   Proof targets `[..., last_field, last_value, 0]`.
+    /// - **`range_countable: true`**: the terminator's value tree is
+    ///   itself a `CountTree` (continuation property-name subtrees
+    ///   sit beneath as `Element::NonCounted` so they don't pollute
+    ///   the parent count — see `add_indices_for_index_level_for_contract_operations_v0`).
+    ///   The value tree's own `count_value_or_default()` already IS
+    ///   the per-branch doc count, so the proof targets the value
+    ///   tree directly at `[..., last_field, last_value]` and saves
+    ///   one merk-path layer per covered branch.
+    ///
+    /// Concretely the optimization replaces a trailing `Key([0])`
+    /// with `Key(last_value)` against `[..., last_field]` (Equal-
+    /// only, no In) — or against the In-bearing prop's property-name
+    /// subtree (In on terminator) — or replaces the trailing pair in
+    /// `set_subquery_path` (In on prefix + trailing Equals that reach
+    /// the terminator). The query shape stays in the same Query/
+    /// subquery topology so byte-equality across prover and verifier
+    /// is preserved by construction.
     ///
     /// ## Shape support
     ///
@@ -529,23 +555,31 @@ impl DriveDocumentCountQuery<'_> {
     /// route through this single builder, so they accept the same
     /// query shapes by construction.
     ///
-    /// Output shapes:
-    /// - **Equal-only, fully covered**: flat path query at
-    ///   `[..., last_field, last_value]` with a single `Key([0])`
-    ///   item. Returns one element (the CountTree).
+    /// Output shapes (`countable` / `range_countable` differ only in
+    /// whether the trailing `Key([0])` is replaced by `Key(last_value)`):
+    /// - **Equal-only, fully covered**:
+    ///   - `countable`: path `[..., last_field, last_value]`, single `Key([0])`.
+    ///   - `range_countable`: path `[..., last_field]`, single
+    ///     `Key(last_value)`.
     /// - **Equal prefix + `In` (any position) [+ trailing Equals]**:
     ///   compound query with `base_path` ending at the In-bearing
-    ///   property's property-name subtree (so any Equal clauses
-    ///   *before* the In are baked into `base_path`); outer Query
-    ///   has one `Key` per In value (sorted lex-asc for prove/no-
-    ///   proof parity and pushed-limit safety — same convention as
-    ///   [`Self::distinct_count_path_query`]). `set_subquery_path`
-    ///   carries the post-In Equal clauses' `(prop_name,
-    ///   serialized_value)` pairs in index order, and the subquery's
-    ///   `Key([0])` picks off the CountTree at the resolved leaf
-    ///   under each matched In branch. Same `set_subquery_path` +
-    ///   `set_subquery` mechanism as [`Self::distinct_count_path_query`]
-    ///   uses for compound In-on-prefix range counts.
+    ///   property's property-name subtree (Equal clauses before the
+    ///   In are baked into `base_path`); outer Query has one `Key`
+    ///   per In value (sorted lex-asc for prove/no-proof parity and
+    ///   pushed-limit safety — same convention as
+    ///   [`Self::distinct_count_path_query`]).
+    ///   - **In on terminator**:
+    ///     - `countable`: subquery `Key([0])` under each In value's
+    ///       value tree (`set_subquery_path` unset).
+    ///     - `range_countable`: outer `Key`s already point at the
+    ///       CountTree value trees themselves; no subquery is set.
+    ///   - **In on a prefix + trailing Equals reaching the
+    ///     terminator**: `set_subquery_path` carries the post-In
+    ///     Equal `(name, value)` pairs in index order:
+    ///     - `countable`: full pairs, subquery `Key([0])`.
+    ///     - `range_countable`: last pair's `value` is hoisted out as
+    ///       the subquery's single `Key(value)`; `set_subquery_path`
+    ///       ends at the terminator's property-name segment.
     ///
     /// ## Errors
     ///
@@ -554,6 +588,8 @@ impl DriveDocumentCountQuery<'_> {
     /// - More than one `In` clause
     /// - Any non-`Equal` / non-`In` operator (defense-in-depth; mode
     ///   detection already filters these out)
+    ///
+    /// [`Index::range_countable`]: dpp::data_contract::document_type::index::Index::range_countable
     pub fn point_lookup_count_path_query(
         &self,
         platform_version: &PlatformVersion,
@@ -580,7 +616,10 @@ impl DriveDocumentCountQuery<'_> {
         // `set_subquery_path` — i.e., the descent under each matched
         // In value walks `[trailing_field_1, trailing_value_1, ...,
         // trailing_field_n, trailing_value_n]` before the
-        // `Key([0])` subquery picks off the CountTree leaf.
+        // selector subquery (either `Key([0])` for normal countable
+        // or a `Key(terminator_value)` lift for range_countable —
+        // see the post-loop selector decision below) picks off the
+        // count-bearing element.
         //
         // No position restriction on the In clause: any index
         // position works because the count path doesn't have the
@@ -668,18 +707,54 @@ impl DriveDocumentCountQuery<'_> {
             }
         }
 
-        // CountTree storage convention: the count lives at the `[0]`
-        // child of the value tree. See the book's "Count Trees and
-        // Provable Counts" chapter for the layout.
+        // Whether the terminator's value tree is itself a CountTree
+        // (i.e. carries the per-branch doc count directly) vs. a
+        // NormalTree whose `[0]` child is the CountTree. Drives
+        // the selector-element decision below.
+        //
+        // The loop above already enforces full coverage of every
+        // index property, so the terminator is always proven; this
+        // flag is the only differentiator between the two output
+        // shapes.
+        let range_countable_terminator = self.index.range_countable;
+
+        // CountTree storage convention for non-range_countable
+        // indexes: the count lives at the `[0]` child of the value
+        // tree. See the book's "Count Trees and Provable Counts"
+        // chapter for the layout.
         const COUNT_TREE_KEY: u8 = 0;
 
         match in_outer_keys {
             None => {
-                // Equal-only, fully covered. `base_path` ends at
-                // `[..., last_field, last_value]`; query asks for the
-                // single key `[0]` (the CountTree element).
+                // Equal-only, fully covered.
+                //
+                // - normal countable: `base_path` ends at
+                //   `[..., last_field, last_value]`; query asks for
+                //   the single key `[0]` (the CountTree under the
+                //   value tree).
+                // - `range_countable`: peel the trailing `last_value`
+                //   off `base_path` and use it as the query's Key.
+                //   The resolved element is the value tree itself
+                //   (a CountTree), and its `count_value_or_default()`
+                //   is the per-branch count — one merk layer shorter
+                //   per resolved branch than the `[0]` shape.
                 let mut query = Query::new();
-                query.insert_key(vec![COUNT_TREE_KEY]);
+                if range_countable_terminator {
+                    // The Equal loop always pushes (name, value) per
+                    // prop, so `base_path` has at least the trailing
+                    // serialized `last_value` to lift. The expect()
+                    // here would fire only if the loop above changed
+                    // its push contract — a load-bearing invariant
+                    // checked by every test in this module that
+                    // routes through this builder.
+                    let last_value = base_path.pop().expect(
+                        "Equal-only loop pushes (name, value) per prop; \
+                         base_path must hold the terminator's serialized value",
+                    );
+                    query.insert_key(last_value);
+                } else {
+                    query.insert_key(vec![COUNT_TREE_KEY]);
+                }
                 Ok(PathQuery::new(
                     base_path,
                     SizedQuery::new(query, None, None),
@@ -689,30 +764,72 @@ impl DriveDocumentCountQuery<'_> {
                 // Compound shape. `base_path` ends at the In-bearing
                 // property's property-name subtree; the outer Query
                 // enumerates serialized In values; the subquery
-                // descends to the CountTree element under each
-                // matched In value.
+                // (when present) descends from each matched In value
+                // to the count-bearing element.
                 //
                 // `subquery_path_extension` carries 0..N segments,
                 // one `(prop_name, serialized_value)` pair per Equal
                 // clause that sits *after* the In in the index
-                // ordering:
-                // - **In on last property**: `subquery_path_extension`
-                //   is empty; subquery's `Key([0])` runs directly
-                //   under each In value's value tree.
-                // - **In with any number of trailing Equals**:
-                //   `set_subquery_path` consumes those segments so
-                //   the subquery descends through them before grabbing
-                //   the `Key([0])` CountTree at the resolved leaf.
+                // ordering. The exact subquery topology depends on
+                // both whether trailing Equals exist AND whether the
+                // terminator is range_countable; see the inline
+                // branches below.
                 let mut outer_query = Query::new();
                 for key in keys {
                     outer_query.insert_key(key);
                 }
-                let mut subquery = Query::new();
-                subquery.insert_key(vec![COUNT_TREE_KEY]);
-                if !subquery_path_extension.is_empty() {
+
+                if subquery_path_extension.is_empty() {
+                    // **In on the terminator** (no trailing Equals).
+                    if range_countable_terminator {
+                        // Outer `Key`s already point at the terminator
+                        // value trees, which are themselves CountTrees.
+                        // No subquery is needed — grovedb returns one
+                        // element per matched outer Key.
+                    } else {
+                        // Normal countable: descend one more layer
+                        // under each matched In value's NormalTree
+                        // value tree to grab the `Key([0])` CountTree
+                        // child.
+                        let mut subquery = Query::new();
+                        subquery.insert_key(vec![COUNT_TREE_KEY]);
+                        outer_query.set_subquery(subquery);
+                    }
+                } else {
+                    // **In on a prefix + trailing Equals** that
+                    // collectively reach the terminator.
+                    let mut subquery = Query::new();
+                    if range_countable_terminator {
+                        // The terminator's serialized value is the
+                        // last element pushed into
+                        // `subquery_path_extension` (the trailing-
+                        // Equal loop pushes `[name, value, ...,
+                        // termname, termval]`). Lift `termval` out
+                        // as the subquery's Key so the descent stops
+                        // at the terminator's property-name subtree
+                        // and the subquery resolves the CountTree
+                        // value tree directly. `subquery_path_extension`
+                        // is left at an odd length on purpose — it
+                        // ends with the terminator's `name` segment,
+                        // exactly where the subquery's `Key(termval)`
+                        // picks up.
+                        let termval = subquery_path_extension.pop().expect(
+                            "trailing-Equal loop pushes (name, value) pairs; \
+                             non-empty extension's tail must be the terminator's \
+                             serialized value",
+                        );
+                        subquery.insert_key(termval);
+                    } else {
+                        // Normal countable: subquery descends to the
+                        // `Key([0])` CountTree at the resolved leaf,
+                        // with the full `(name, value)` pairs of the
+                        // trailing Equals consumed by
+                        // `set_subquery_path`.
+                        subquery.insert_key(vec![COUNT_TREE_KEY]);
+                    }
                     outer_query.set_subquery_path(subquery_path_extension);
+                    outer_query.set_subquery(subquery);
                 }
-                outer_query.set_subquery(subquery);
 
                 // `SizedQuery::new(_, None, None)` is intentional —
                 // PointLookupProof always returns ALL In branches.
