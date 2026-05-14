@@ -8,6 +8,8 @@ presumably enumerate the joy of doing it.
 
 ## Changelog
 
+- **v3.1-dev (2026-05-14, Found-008 spec correction)** — AL-001 / Found-008: spec drift corrected. Bug confirmed platform-internal (not upstream rust-dashcore). Filed dashpay/platform#3641 with full repro + root-cause. Verified PR #3634 does NOT fix this — it fixes a different "no events at all" bug (FFI knob), while Found-008 is the "events arrive but get dropped in the race window" bug. AL-001 will continue to fail under N concurrent asset-lock builds until #3641 lands.
+
 - **v3.1-dev (2026-05-14 triage, post-v47)** — three reclassifications, one upstream issue filed, two spec-drift fixes:
   - PA-003 reclassified `green` → `red-real-fail (test-bug)`. Root cause: the five-marker pre-funding loop (`pa_003_fee_scaling.rs:146-166`) writes `address_funds` storage rows for each future `dests[i]` before the 5-output transfer runs. Chain-time fee (Drive's `validate_fees_of_event/v0/mod.rs:195` driving the cost off real drive ops, not the static `state_transition_min_fees` floor) therefore pays a cheap UPDATE per 5-output recipient while the 1-output transfer pays the one-time CREATE; observed Δfee ≈ 536k matches one absent create. The asserted "more bytes ⇒ larger fee" invariant silently bakes in a "no pre-existing outputs" assumption that the marker-derivation trick violates. No production regression — the test contract is misformulated for the chosen address-derivation strategy.
   - PA-005b spec drift resolved → truth is `blocked`. Both prior `PASS` claims (detailed body at line ~534 and changelog "PR #3609 merged" entry) were stale: they landed in PR #3609 / commit `5c6baabd8f` on 2026-05-11 without re-running PA-005b against the QA-002 setup hook (`consume_platform_address_index_zero`, `wallet_factory.rs:1106-1140`) that had landed seven days earlier on 2026-05-04 (commit `94902be73b`). The failure is a three-way contract mismatch: QA-002's hook marks index 0 used while the DIP-17 platform-payment pool eagerly generates indices `0..=19` in `AddressPool::new` (rust-dashcore pinned rev `53130869e5`, `address_pool.rs:351-368`), and the headroom helper at `framework/gap_limit.rs:188-207` measures fresh-past-`highest_generated` rather than any-unused-below-ceiling — so `available` is permanently 1 from the first call regardless of the request. Test-side defect, not production.
@@ -211,7 +213,7 @@ Status legend: **green** = test file present, body has real assertions, runnable
 | CR-002 | Core wallet receive address derivation | P1 | not implemented | M |
 | CR-003 | Asset-lock-funded identity registration (full path) | P2 | green | L |
 | CR-004 | Legacy BIP32 account: balance + UTXO state updates after spend | P1 | red-by-design — Layer 1 (next_unused idempotency) fixed at `1c4c8a76f4`; Layer 2 is the genuine dash-evo-tool#845 pin (post-broadcast UTXO-mutation not clearing BIP-32 spent inputs); fails deterministically until upstream fix lands | M |
-| AL-001 | Concurrent asset-lock builds from same wallet | P1 | red-real-fail (shifted-failure-mode) — coin-selection race closed by `403d29c3c8` + PR #3585 `OutpointReservations`; current failure is `FinalityTimeout` at `:299` (task 1 IS-lock wakeup missed); blocked on Found-008 (`LockNotifyHandler::notify_waiters` in `dash-spv`); identical fingerprint v48/v49/v50 | L |
+| AL-001 | Concurrent asset-lock builds from same wallet | P1 | red-real-fail (shifted-failure-mode) — coin-selection race closed by `403d29c3c8` + PR #3585 `OutpointReservations`; current failure is `FinalityTimeout` at `:299` (task 1 IS-lock wakeup missed); blocked on Found-008 (`LockNotifyHandler::notify_waiters` at `packages/rs-platform-wallet/src/wallet/asset_lock/lock_notify_handler.rs:30`, tracked: dashpay/platform#3641); identical fingerprint v48/v49/v50 | L |
 | CT-001 | Document put: deploy a fixture data contract | P1 | not implemented | M |
 | CT-002 | Document put / replace lifecycle | P2 | not implemented | M |
 | CT-003 | Contract update (add document type) | P2 | not implemented | M |
@@ -242,7 +244,7 @@ Status legend: **green** = test file present, body has real assertions, runnable
 | Found-005 | `register_from_addresses` / `top_up_from_addresses` discard SDK-returned address balances and nonces | P2 | not implemented | M |
 | Found-006 | `top_up_identity_with_funding` requires pre-created `IdentityTopUp { registration_index }` HD slot; absence yields confusing "not found" error | P2 | red-by-design — test file present; fails deterministically until `CreditOutputFunding` gains `top_up_index` (upstream `key-wallet`) | S |
 | Found-007 | `PlatformAddressSyncManager::start` lacks a generation guard so a fast `start()` → `stop()` → `start()` can spawn parallel sync threads | P2 | not implemented | M |
-| Found-008 | `LockNotifyHandler` uses `notify_waiters()` so a lock event arriving in the check / wait gap of `wait_for_proof` is dropped | P2 | red-by-design — inverted pin: Cargo PASS = bug confirmed = intentionally RED until `LockNotifyHandler` migrates off `notify_waiters()` | M |
+| Found-008 | `LockNotifyHandler` uses `notify_waiters()` so a lock event arriving in the check / wait gap of `wait_for_proof` is dropped (tracked: dashpay/platform#3641) | P2 | red-by-design — inverted pin: Cargo PASS = bug confirmed = intentionally RED until `LockNotifyHandler` migrates off `notify_waiters()` | M |
 | Found-009 | wallet-event adapter swallows `RecvError::Lagged` events without compensating recovery | P2 | not implemented | M |
 | Found-010 | `PlatformAddressChangeSet::apply` ignores `funds.nonce` so persister-only nonce state can drift behind balance | P2 | not implemented | S |
 | Found-011 | `IdentityChangeSet::merge` documents commutativity but `insert + tombstone` for the same key resolves to "removed" regardless of submission order | P2 | not implemented | S |
@@ -1542,9 +1544,9 @@ This section covers primitive-level correctness of `AssetLockManager` — the in
 #### AL-001 — Concurrent asset-lock builds from same wallet
 
 - **Priority**: P1
-- **Status**: red-real-fail (shifted-failure-mode) — failure fingerprint `FinalityTimeout(<txid>)` at `al_001_concurrent_asset_lock_builds.rs:299` (task 1). Identical across v48, v49, v50 — no run-to-run drift. Blocked on Found-008 (upstream `rust-dashcore`).
+- **Status**: red-real-fail (shifted-failure-mode) — failure fingerprint `FinalityTimeout(<txid>)` at `al_001_concurrent_asset_lock_builds.rs:299` (task 1). Identical across v48, v49, v50 — no run-to-run drift. Blocked on Found-008 (platform-internal — tracked at dashpay/platform#3641).
 - **Failure site**: `tests/e2e/cases/al_001_concurrent_asset_lock_builds.rs:299` — the `wait_for_asset_lock` / IS-lock poll on task 1's broadcast transaction.
-- **Upstream blocker**: Found-008 (`LockNotifyHandler::notify_waiters` in `dash-spv`; see detail section below).
+- **Blocker**: Found-008 (`LockNotifyHandler::notify_waiters` at `packages/rs-platform-wallet/src/wallet/asset_lock/lock_notify_handler.rs:30`; see detail section below).
 - **Wallet feature exercised**: `wallet/asset_lock/manager.rs::AssetLockManager` (concurrent-build path); transitively `wallet/asset_lock/build.rs::build_asset_lock_transaction` and `wallet/asset_lock/build.rs::create_funded_asset_lock_proof`. Driver: `wallet/identity/network/top_up.rs::top_up_identity_with_funding`.
 - **DET parallel**: None — DET does not drive concurrent asset-lock builds from a single wallet.
 - **Historical failure mode (coin-selection race — now closed)**:
@@ -1556,12 +1558,12 @@ This section covers primitive-level correctness of `AssetLockManager` — the in
   2. Task 1's asset-lock transaction broadcasts to mempool.
   3. Task 1 waits for the IS-lock (`InstantSend`) notification confirming quorum acceptance.
   4. The IS-lock event arrives at `LockNotifyHandler` but task 1's wait future never wakes. It times out at `FinalityTimeout`.
-  - Root cause: `LockNotifyHandler::notify_waiters()` (in `dash-spv`, `rust-dashcore`) calls `tokio::sync::Notify::notify_waiters()`. That method signals all currently-registered waiters but does NOT store a permit for waiters that register after the signal fires. If the IS-lock event arrives in the narrow window before task 1's wait future registers with the handler, the wakeup is permanently lost. There is no second IS-lock event for the same transaction.
+  - Root cause: `LockNotifyHandler::notify_waiters()` (in `packages/rs-platform-wallet/src/wallet/asset_lock/lock_notify_handler.rs:30`) calls `tokio::sync::Notify::notify_waiters()`. That method signals all currently-registered waiters but does NOT store a permit for waiters that register after the signal fires. If the IS-lock event arrives in the narrow window before task 1's wait future registers with the handler, the wakeup is permanently lost. There is no second IS-lock event for the same transaction.
   - This is **Found-008** — see the Found-008 detail section for the full spec.
-- **Upstream fix path** (in `rust-dashcore` / `dash-spv`, NOT in this repo):
+- **Fix path** (in this repo — at `packages/rs-platform-wallet/src/wallet/asset_lock/lock_notify_handler.rs:30` and/or `packages/rs-platform-wallet/src/wallet/asset_lock/sync/proof.rs:367-418`):
   - **Option A** (minimal): change `Notify::notify_waiters()` → `Notify::notify_one()`. `notify_one` stores a pending permit when no waiter is currently registered; the next `notified().await` claim it immediately without waiting for a new event.
   - **Option B** (thorough): replace `Notify` with a `tokio::sync::broadcast` channel that retains the event for late subscribers within a bounded window.
-  - After the upstream fix lands and the `rust-dashcore` rev is bumped in `Cargo.toml`, AL-001 should turn green without any test-side changes.
+  - After the fix lands (tracked at dashpay/platform#3641), AL-001 should turn green without any test-side changes.
 - **Preconditions**:
   - CR-001 (SPV ready).
   - Core-funded test wallet. Suggested `N = 2` concurrent tasks (as implemented), per-lock amount `100_000_000` duffs (0.001 DASH); Core funding floor ≈ 500_000_000 duffs (5 DASH testnet). Same `PLATFORM_WALLET_E2E_BANK_CORE_GATE` env gate as CR-003.
@@ -1599,7 +1601,7 @@ This section covers primitive-level correctness of `AssetLockManager` — the in
   - No `tracked_asset_locks` entry in `Failed` state.
   - No UTXO double-spend: input sets of the N asset-lock transactions are pairwise disjoint.
 - **Why AL-001 stays in the spec**:
-  - When the Found-008 upstream fix lands, AL-001 turns green with zero test-side changes. Acts as the canary.
+  - When the Found-008 fix lands (dashpay/platform#3641), AL-001 turns green with zero test-side changes. Acts as the canary.
   - Documents the historical coin-selection race surface: if a future refactor accidentally reopens the UTXO double-spend window, AL-001 will fail in a different way and flag it before production code is affected.
 - **Negative variants (defer to follow-up AL-* cases)**:
   - `N >> available_utxos`: assert graceful `Wallet::InsufficientFunds`, not a double-spend.
@@ -1611,7 +1613,7 @@ This section covers primitive-level correctness of `AssetLockManager` — the in
   - Requires `PLATFORM_WALLET_E2E_BANK_CORE_GATE` (same as CR-003, default-on, 900 s deadline).
 - **Harness extensions required**: same as CR-003 — `setup_with_core_funded_test_wallet`, `wait_for_asset_lock`; plus Wave A identity setup helpers (ID-001).
 - **Estimated complexity**: L (~300 LOC including multi-identity setup + concurrent orchestration + multi-assertion validation).
-- **Rationale**: `AssetLockManager` is critical-path code that every asset-lock-funded registration and top-up goes through, and it has never been exercised under concurrent load in a green test. CR-003's sequential single-build path does not validate the manager's locking, UTXO-reservation, or proof-correlation logic under concurrent callers. Any app driving concurrent top-ups or multi-identity registrations hits this path in production. AL-001 pins the contract those applications depend on, and documents both the historical UTXO-race surface (now closed) and the remaining IS-lock wakeup gap (Found-008, upstream).
+- **Rationale**: `AssetLockManager` is critical-path code that every asset-lock-funded registration and top-up goes through, and it has never been exercised under concurrent load in a green test. CR-003's sequential single-build path does not validate the manager's locking, UTXO-reservation, or proof-correlation logic under concurrent callers. Any app driving concurrent top-ups or multi-identity registrations hits this path in production. AL-001 pins the contract those applications depend on, and documents both the historical UTXO-race surface (now closed) and the remaining IS-lock wakeup gap (Found-008, platform-internal — dashpay/platform#3641).
 
 ### Contracts (CT)
 
@@ -2120,6 +2122,7 @@ becomes a test failure rather than a silent drift.
 #### Found-008 — `LockNotifyHandler` uses `notify_waiters()` so a lock event arriving in the check / wait gap of `wait_for_proof` is dropped
 - **Priority**: P2 (bug pin — failure is the proof)
 - **Wallet feature exercised**: `wallet/asset_lock/lock_notify_handler.rs:30` (`notify_waiters()`); `wallet/asset_lock/sync/proof.rs:287-337` (`wait_for_proof`'s check-then-await loop).
+- **Tracking issue**: dashpay/platform#3641
 - **Suspected bug**: `LockNotifyHandler::on_sync_event` calls `Notify::notify_waiters()`, which wakes only currently-registered waiters and produces no permit. `wait_for_proof` runs a check-then-await loop: read state under a read lock, drop the lock, then call `lock_notify.notified().await`. If a lock event fires in the gap between the state check and the registration of the next `notified()` future, no waiter is currently registered, the notification is discarded, and the waiter sleeps until the next event or the timeout.
 - **Preconditions**: SPV emits exactly one `InstantLockReceived` for the watched outpoint at a precise moment.
 - **Scenario**:
@@ -2136,6 +2139,7 @@ becomes a test failure rather than a silent drift.
 - **Actual** (current code): a single missed notification stalls the waiter.
 - **Severity**: HIGH (asset-lock proof flow is on the critical path of identity registration / top-up; a stalled wait surfaces as long timeouts followed by spurious "asset lock expired" errors)
 - **Upstream scope**: Confirmed purely downstream — no upstream `key-wallet` involvement. (`grep -rn 'Notify\|notify_waiters\|notify_one' key-wallet/src/` returned zero hits, audited at SHA `d6dd5da`.)
+- **Not fixed by PR #3634**: PR #3634's commit `885a1be3` removed the `masternodeSyncEnabled=false` FFI knob, fixing a DIFFERENT bug (IS/CL events never reaching `LockNotifyHandler` at all when SPV managers were disabled). The Found-008 race surface — events that DO reach `LockNotifyHandler` but are dropped during `wait_for_proof`'s check/await window — is unchanged by #3634. Verified by diff inspection: `lock_notify_handler.rs:30` and the `wait_for_proof` loop in `proof.rs` are not modified.
 - **Harness extensions required**: a test handle on `LockNotifyHandler` (it's already constructed with an `Arc<Notify>`); a way to drive the handler synchronously with a controlled state mutation. The wait-for-proof check uses `wallet_manager`, so the test must mutate the tracked record's `TransactionContext` before re-driving the handler.
 - **Estimated complexity**: M
 - **Rationale**: This is the textbook `Notify` footgun — `notify_waiters` doesn't store a permit, so check-then-await is a missed-wakeup. The asset-lock flow is exactly the place where one missed wakeup turns a 5-second proof wait into a 5-minute hang.
