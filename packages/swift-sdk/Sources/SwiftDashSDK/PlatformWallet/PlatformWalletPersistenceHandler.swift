@@ -1643,18 +1643,10 @@ public class PlatformWalletPersistenceHandler {
             return nil
         }
 
-        // 3. Mnemonic UTF-8 bytes → 64-byte BIP39 seed.
-        let seed: Data
-        do {
-            seed = try Mnemonic.toSeed(mnemonicUTF8Bytes: mnemonicUTF8Bytes)
-        } catch {
-            print("⚠️ deriveAndStoreIdentityKey: mnemonic-to-seed failed: \(error.localizedDescription)")
-            return nil
-        }
-
-        // 4. Build the DIP-9 authentication path. The string form
+        // 3. Build the DIP-9 authentication path. The string form
         //    doubles as the keychain account suffix so the explorer
-        //    can render it.
+        //    can render it, and is the path fed to the derivation
+        //    call below.
         let derivationPath: String
         do {
             derivationPath = try KeyDerivation.getIdentityAuthenticationPath(
@@ -1667,30 +1659,50 @@ public class PlatformWalletPersistenceHandler {
             return nil
         }
 
-        // 5. Derive the 32-byte scalar via the FFI bridge. The
-        //    bridge writes into a caller-provided buffer; we zero
-        //    the scratch `Data` on the way out for hygiene (the
-        //    keychain item is the real home for the bytes).
+        // 4. Mnemonic + path → 32-byte ECDSA scalar in one FFI call.
+        //    Mnemonic stays raw UTF-8 bytes (never a Swift `String`) and
+        //    is scrubbed after; the chain-code buffer is required by the
+        //    FFI but discarded.
+        var mnemonicCBytes = mnemonicUTF8Bytes
+        guard !mnemonicCBytes.contains(0) else {
+            mnemonicCBytes.resetBytes(in: 0..<mnemonicCBytes.count)
+            print("⚠️ deriveAndStoreIdentityKey: mnemonic bytes contain NUL")
+            return nil
+        }
+        mnemonicCBytes.append(0)
+        defer { mnemonicCBytes.resetBytes(in: 0..<mnemonicCBytes.count) }
+
         var privateKey = Data(count: 32)
-        let rc: Int32 = privateKey.withUnsafeMutableBytes { pkBytes -> Int32 in
-            guard let pkPtr = pkBytes.bindMemory(to: UInt8.self).baseAddress else { return -1 }
-            return seed.withUnsafeBytes { seedBytes -> Int32 in
-                guard let seedPtr = seedBytes.bindMemory(to: UInt8.self).baseAddress else {
-                    return -1
-                }
-                return derivationPath.withCString { pathCStr in
-                    key_wallet_derive_private_key_from_seed(seedPtr, pathCStr, pkPtr)
+        var chainCode = Data(count: 32)
+        defer { chainCode.resetBytes(in: 0..<chainCode.count) }
+
+        let deriveResult: PlatformWalletFFIResult = mnemonicCBytes.withUnsafeBytes {
+            (mnemonicRaw: UnsafeRawBufferPointer) -> PlatformWalletFFIResult in
+            let mnemonicCStr = mnemonicRaw.bindMemory(to: CChar.self).baseAddress
+            return derivationPath.withCString { pathCStr in
+                privateKey.withUnsafeMutableBytes { pkRaw in
+                    chainCode.withUnsafeMutableBytes { ccRaw in
+                        platform_wallet_derive_ext_priv_key_from_mnemonic(
+                            mnemonicCStr,
+                            nil,
+                            network.ffiValue,
+                            pathCStr,
+                            pkRaw.bindMemory(to: UInt8.self).baseAddress,
+                            ccRaw.bindMemory(to: UInt8.self).baseAddress,
+                            nil
+                        )
+                    }
                 }
             }
         }
-        guard rc == 0 else {
-            print("⚠️ deriveAndStoreIdentityKey: FFI derive failed (rc=\(rc))")
-            // Zero out any partial write before returning.
+        let ffi = PlatformWalletResult(deriveResult)
+        guard ffi.isSuccess else {
+            print("⚠️ deriveAndStoreIdentityKey: FFI derive failed: \(ffi.message ?? "<no detail>")")
             privateKey.resetBytes(in: 0..<privateKey.count)
             return nil
         }
 
-        // 6. Stash in the keychain. `KeychainManager.shared` is the
+        // 5. Stash in the keychain. `KeychainManager.shared` is the
         //    single app-wide instance backed by
         //    `org.dashfoundation.wallet`.
         let metadata = KeychainManager.IdentityPrivateKeyMetadata(
@@ -1712,7 +1724,7 @@ public class PlatformWalletPersistenceHandler {
             metadata: metadata
         )
 
-        // 7. Scrub the local copy regardless of outcome.
+        // 6. Scrub the local copy regardless of outcome.
         privateKey.resetBytes(in: 0..<privateKey.count)
 
         if account == nil {

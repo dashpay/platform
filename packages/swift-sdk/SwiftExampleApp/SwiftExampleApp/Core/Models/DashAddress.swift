@@ -1,4 +1,5 @@
 import Foundation
+import DashSDKFFI
 import SwiftDashSDK
 
 enum DashAddressType: Equatable {
@@ -49,8 +50,7 @@ struct DashAddress {
         }
 
         // 2. Try Core address — validate via Rust FFI (Base58Check + network)
-        let keyWalletNetwork: Network = (network == .mainnet) ? .mainnet : .testnet
-        if Address.validate(input, network: keyWalletNetwork),
+        if validateCoreAddress(input, network: network),
            let script = coreAddressToOutputScript(input) {
             return DashAddress(type: .core(script), displayString: input)
         }
@@ -81,9 +81,16 @@ struct DashAddress {
         return Bech32m.encode(hrp: hrp, data: rawBytes)
     }
 
+    /// Validate a Core address for `network` via the Rust FFI.
+    private static func validateCoreAddress(_ address: String, network: Network) -> Bool {
+        address.withCString { cstr in
+            platform_wallet_address_validate(cstr, network.ffiValue)
+        }
+    }
+
     /// Convert a base58check Core address to P2PKH output script.
     ///
-    /// Caller must validate the address first via `Address.validate()` (Rust FFI)
+    /// Caller must validate the address first via `validateCoreAddress(_:network:)` (Rust FFI)
     /// which handles Base58Check decoding, checksum verification, and network matching.
     /// This method only extracts the pubkey hash and builds the script.
     static func coreAddressToOutputScript(_ address: String) -> Data? {

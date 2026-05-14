@@ -46,16 +46,6 @@ class PlatformWalletTests: XCTestCase {
         XCTAssertNotNil(wallet, "Wallet should be created from mnemonic with passphrase")
     }
 
-    func testMnemonicToSeedFromUTF8BytesMatchesStringPath() throws {
-        let fromString = try Mnemonic.toSeed(mnemonic: testMnemonic, passphrase: "test123")
-        let fromBytes = try Mnemonic.toSeed(
-            mnemonicUTF8Bytes: Data(testMnemonic.utf8),
-            passphrase: "test123"
-        )
-
-        XCTAssertEqual(fromBytes, fromString, "Byte-based mnemonic derivation should match the existing string path")
-    }
-
     // MARK: - Identity Manager Tests
 
     func testGetIdentityManager() throws {

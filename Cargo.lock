@@ -3799,28 +3799,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "key-wallet-ffi"
-version = "0.42.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=53130869e5b9343ae59016323e5e5269e717a8fd#53130869e5b9343ae59016323e5e5269e717a8fd"
-dependencies = [
- "cbindgen 0.29.2",
- "dash-network",
- "dashcore",
- "hex",
- "key-wallet",
- "key-wallet-manager",
- "libc",
- "secp256k1",
- "tokio",
-]
-
-[[package]]
 name = "key-wallet-manager"
 version = "0.42.0"
 source = "git+https://github.com/dashpay/rust-dashcore?rev=53130869e5b9343ae59016323e5e5269e717a8fd#53130869e5b9343ae59016323e5e5269e717a8fd"
 dependencies = [
  "async-trait",
- "bincode",
  "dashcore",
  "key-wallet",
  "rayon",
@@ -5912,7 +5895,6 @@ name = "rs-unified-sdk-ffi"
 version = "3.1.0-dev.1"
 dependencies = [
  "dash-network",
- "key-wallet-ffi",
  "platform-wallet-ffi",
  "rs-sdk-ffi",
 ]
