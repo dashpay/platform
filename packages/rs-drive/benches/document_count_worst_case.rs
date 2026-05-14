@@ -1144,9 +1144,19 @@ fn display_query_items(items: &[grovedb::QueryItem]) -> String {
     format!("[{}]", pieces.join(", "))
 }
 
-/// Pretty-print a verified grovedb `Element` focusing on the
-/// count_value (the only field that matters for count proofs).
-/// Full Debug for context is appended.
+/// Pretty-print a verified grovedb `Element`.
+///
+/// Distinguishes every count-bearing variant explicitly
+/// (`CountTree` / `ProvableCountTree` / `CountSumTree` /
+/// `ProvableCountSumTree` / `SumTree`) so a reader can tell which
+/// tree shape signed the count without re-inspecting the bench
+/// fixture's `primary_key_tree_type` plumbing. Also emits the
+/// element's full `Debug` representation under `[proof]   debug:`
+/// so the variant tag (e.g. `CountTree(None, 100000, None)` vs.
+/// `ProvableCountTree(None, 100000, None)`) is unambiguous on
+/// inspection — the variant choice drives whether the parent
+/// `ProvableCountTree`/`CountTree` boundary signs the count and
+/// matters for which verifier primitive applies upstream.
 fn display_element(elem: Option<&grovedb::Element>) -> String {
     use grovedb::Element;
     match elem {
@@ -1155,14 +1165,19 @@ fn display_element(elem: Option<&grovedb::Element>) -> String {
             let count = e.count_value_or_default();
             let kind = match e {
                 Element::CountTree(_, _, _) => "CountTree",
+                Element::ProvableCountTree(_, _, _) => "ProvableCountTree",
                 Element::SumTree(_, _, _) => "SumTree",
                 Element::CountSumTree(_, _, _, _) => "CountSumTree",
+                Element::ProvableCountSumTree(_, _, _, _) => "ProvableCountSumTree",
                 Element::Tree(_, _) => "Tree",
                 Element::Item(_, _) => "Item",
                 Element::Reference(_, _, _) => "Reference",
-                _ => "(other)",
+                _ => "(other-variant)",
             };
-            format!("{kind} {{ count_value_or_default: {count} }}")
+            format!(
+                "{kind} {{ count_value_or_default: {count}, debug: {:?} }}",
+                e
+            )
         }
     }
 }
