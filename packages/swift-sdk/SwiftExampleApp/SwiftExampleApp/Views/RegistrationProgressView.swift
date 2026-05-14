@@ -189,25 +189,35 @@ struct RegistrationProgressSection: View {
     }
 
     /// True when step 3 ("Waiting for InstantSend proof") should
-    /// appear "skipped" — i.e. the lock came back ChainLock-locked
-    /// (statusRaw == 3) so no IS proof was ever observed. Two paths
-    /// arrive at statusRaw == 3 without a successful IS round:
+    /// appear "skipped" — i.e. no IS proof was observed during the
+    /// step-3 window. Symmetric to `step4WasSkipped`: that one fires
+    /// when `statusRaw == 2` (IS-locked, CL fallback never needed);
+    /// this one fires in every other "moved past step 3" case.
     ///
-    /// 1. IS timed out at 300s and `upgrade_to_chain_lock_proof` ran
-    ///    the CL fallback.
-    /// 2. `wait_for_proof`'s `metadata.last_applied_chain_lock`
-    ///    fallback constructed a Chain proof directly without
-    ///    attempting IS — common after a resume-from-restart where
-    ///    the wallet already holds a CL covering the funding tx's
-    ///    block height.
+    /// The qualifying terminal / intermediate states:
     ///
-    /// In both cases marking step 3 as `.done` (the bare `idx <
-    /// currentStep` path) renders a misleading "InstantSend proof
-    /// received ✅" check; `.skipped` shows the dashed pending
-    /// variant matching step 4's behaviour on the IS-success path.
+    /// - `statusRaw == 3` — CL-locked. Either IS timed out and the
+    ///   CL fallback ran, OR `wait_for_proof`'s
+    ///   `metadata.last_applied_chain_lock` fallback (the Option B
+    ///   path) built a Chain proof directly without ever attempting
+    ///   IS. Either way step 3 was bypassed.
+    /// - `statusRaw == 1` + elapsed past the IS deadline. The lock
+    ///   is still Broadcast but `broadcastSubStep` has advanced to
+    ///   step 4 (CL wait) because IS didn't materialize within
+    ///   `instantLockTimeout`. The screenshot bug — the helper text
+    ///   already says "InstantSend timed out; falling back to
+    ///   ChainLock finality (~2 min)" while step 3 silently renders
+    ///   a green ✅. The guard on `idx < currentStep` in `stepState`
+    ///   means this branch only matters when we're past step 3
+    ///   anyway, so a simple `statusRaw != 2` covers it cleanly —
+    ///   `statusRaw == 0/1` with `currentStep <= 3` never asks about
+    ///   step 3's left-behind state.
+    ///
+    /// `.skipped` renders the dashed pending icon, matching step 4's
+    /// IS-success rendering.
     private var step3WasSkipped: Bool {
         guard let lock = activeLocks.first else { return false }
-        return lock.statusRaw == 3
+        return lock.statusRaw != 2
     }
 
     private var isFailed: Bool {
