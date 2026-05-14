@@ -4,6 +4,7 @@
 //! **Spec**: `tests/e2e/TEST_SPEC.md` (§ Found bugs → Found-021).
 //! **Upstream defect site**: `key-wallet/src/managed_account/transaction_record.rs:182-184`
 //! (`TransactionRecord::update_context`: `self.context = context;`).
+//! **Tracking issue**: dashpay/rust-dashcore#763.
 //! **Pinned status**: RED-BY-DESIGN — pure unit test; pins upstream bug until fix lands.
 //!
 //! ## Bug shape
@@ -126,6 +127,7 @@ fn context_has_instant_lock(ctx: &TransactionContext) -> bool {
 #[ignore = "Found-021 bug pin — pins upstream bug at \
             key-wallet/src/managed_account/transaction_record.rs:182-184 \
             (`update_context` naive replace drops InstantLock on InBlock promotion); \
+            tracked at dashpay/rust-dashcore#763; \
             pure unit test (no harness, no network, no async); \
             run with `cargo test -- --ignored`"]
 #[test]
