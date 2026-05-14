@@ -29,6 +29,7 @@ use drive::query::{
 use drive::util::object_size_info::DocumentInfo::DocumentRefInfo;
 use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use drive::util::storage_flags::StorageFlags;
+use grovedb::operations::proof::GroveDBProof;
 use grovedb::{GroveDb, PathQuery};
 use std::borrow::Cow;
 use std::collections::BTreeMap;
@@ -1216,6 +1217,30 @@ fn display_proofs(fixture: &CountBenchFixture, platform_version: &PlatformVersio
                     Err(e) => eprintln!("[proof]   verify error: {e:?}"),
                 }
             }
+        }
+
+        // 5. Decode the proof bytes into the structured
+        //    `GroveDBProof` AST and print its Display — the same
+        //    rendering dash-evo-tool's "JSON" Proof Log mode uses
+        //    (see `src/ui/tools/proof_log_screen.rs` for the
+        //    reference implementation). This view shows the layered
+        //    merk-proof structure inside the bytes — each layer's
+        //    merk ops (Push/Parent/Child + hashes) plus the
+        //    lower-layers map to descend into. The bincode config
+        //    must match what grovedb's PathQuery proofs are
+        //    serialized with on the wire (big-endian, no length
+        //    limit) or `decode_from_slice` returns `Err`.
+        let bincode_config = bincode::config::standard()
+            .with_big_endian()
+            .with_no_limit();
+        match bincode::decode_from_slice::<GroveDBProof, _>(&proof, bincode_config) {
+            Ok((grovedb_proof, _)) => {
+                eprintln!("[proof]   proof-display:");
+                for line in format!("{}", grovedb_proof).lines() {
+                    eprintln!("[proof]     {line}");
+                }
+            }
+            Err(e) => eprintln!("[proof]   proof-display decode error: {e:?}"),
         }
     }
 }
