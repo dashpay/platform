@@ -302,6 +302,18 @@ fn document_count_worst_case(c: &mut Criterion) {
     // criterion's HTML output.
     report_proof_sizes(&fixture, &brands, &broad_range_floor, platform_version);
 
+    // Full `(group_by × where_shape)` outcome matrix at the drive
+    // layer. Surfaces which combinations:
+    // - the drive dispatcher accepts (vs rejects with a typed error)
+    // - succeed on the no-proof path
+    // - succeed on the prove path
+    // - what proof bytes the prove path emits
+    //
+    // Run once at bench setup so the matrix reflects the current
+    // optimization + dispatcher state without needing a separate
+    // integration test.
+    report_group_by_matrix(&fixture, platform_version);
+
     let mut group = c.benchmark_group("document_count_worst_case");
     group.sample_size(10);
     group.throughput(criterion::Throughput::Elements(fixture.row_count));
@@ -503,6 +515,308 @@ fn report_proof_sizes(
             other => panic!("expected Proof response for {name}, got {other:?}"),
         }
     }
+}
+
+/// Run every `(group_by × where_shape)` combination of interest
+/// through the drive count dispatcher and report whether each works
+/// on the no-proof and prove paths.
+///
+/// **Drive vs. platform layer.** This is the drive-level dispatcher
+/// (`Drive::execute_document_count_request`); the platform-level
+/// handler (`drive-abci::query_documents_v1` →
+/// `validate_and_route`) layers additional validation on top
+/// (HAVING rejection; the `group_by` field-name vs `In`/range
+/// where-clause alignment check; per-mode `limit` rejection).
+/// Where the platform layer rejects a combination the drive layer
+/// would technically accept, that's flagged in the `[matrix]`
+/// output's annotations so the table the user sees reflects the
+/// full request lifecycle.
+///
+/// Output is `[matrix] {key} = {result}` lines so callers can grep
+/// them out of the bench's stderr stream.
+fn report_group_by_matrix(fixture: &CountBenchFixture, platform_version: &PlatformVersion) {
+    let brands_2: Vec<Value> = brands_n(2);
+    let colors_2: Vec<Value> = first_n_color_values(2);
+    let mid_brand = brand_label(BRAND_COUNT / 2);
+    let mid_color = color_label(color_count_for_rows(fixture.row_count) / 2);
+    let range_floor = Value::Text(fixture.range_floor.clone());
+
+    // Compact builder for where-clause `Value::Array`s. Each inner
+    // array is `[field, op, value]` — the wire shape the drive
+    // dispatcher parses via `parse_count_where_value`.
+    let clause = |field: &str, op: &str, value: Value| -> Value {
+        Value::Array(vec![
+            Value::Text(field.to_string()),
+            Value::Text(op.to_string()),
+            value,
+        ])
+    };
+    let where_empty = || Value::Null;
+    let where_brand_in =
+        || Value::Array(vec![clause("brand", "in", Value::Array(brands_2.clone()))]);
+    let where_color_in =
+        || Value::Array(vec![clause("color", "in", Value::Array(colors_2.clone()))]);
+    let where_brand_eq =
+        || Value::Array(vec![clause("brand", "==", Value::Text(mid_brand.clone()))]);
+    let where_color_eq =
+        || Value::Array(vec![clause("color", "==", Value::Text(mid_color.clone()))]);
+    let where_brand_eq_color_eq = || {
+        Value::Array(vec![
+            clause("brand", "==", Value::Text(mid_brand.clone())),
+            clause("color", "==", Value::Text(mid_color.clone())),
+        ])
+    };
+    let where_color_gt = || Value::Array(vec![clause("color", ">", range_floor.clone())]);
+    let where_brand_in_color_gt = || {
+        Value::Array(vec![
+            clause("brand", "in", Value::Array(brands_2.clone())),
+            clause("color", ">", range_floor.clone()),
+        ])
+    };
+    let where_brand_in_color_eq = || {
+        Value::Array(vec![
+            clause("brand", "in", Value::Array(brands_2.clone())),
+            clause("color", "==", Value::Text(mid_color.clone())),
+        ])
+    };
+
+    // (label, group_by-as-the-caller-would-spell-it, where description,
+    //  raw where Value, CountMode used by drive, limit override,
+    //  platform-allowed annotation).
+    //
+    // `platform_allowed` is the verdict from `validate_and_route` (the
+    // platform-layer handler in `drive-abci`); annotated here from
+    // direct reading of `dispatch_count_v1` since the bench can't
+    // import drive-abci. Verified against the existing v1 handler
+    // tests in `packages/rs-drive-abci/src/query/document_query/v1/tests.rs`
+    // (the `reject_*` / `accept_*_routes_to_*` family).
+    struct MatrixCase {
+        label: &'static str,
+        platform_allowed: &'static str,
+        raw_where: Value,
+        mode: CountMode,
+        limit: Option<u32>,
+    }
+
+    let cases: Vec<MatrixCase> = vec![
+        // ── group_by = [] (Aggregate) ──────────────────────────────
+        MatrixCase {
+            label: "[] / where=(empty)",
+            platform_allowed: "yes (documentsCountable fast path)",
+            raw_where: where_empty(),
+            mode: CountMode::Aggregate,
+            limit: None,
+        },
+        MatrixCase {
+            label: "[] / where=brand==X",
+            platform_allowed: "yes",
+            raw_where: where_brand_eq(),
+            mode: CountMode::Aggregate,
+            limit: None,
+        },
+        MatrixCase {
+            label: "[] / where=color==X",
+            platform_allowed: "yes",
+            raw_where: where_color_eq(),
+            mode: CountMode::Aggregate,
+            limit: None,
+        },
+        MatrixCase {
+            label: "[] / where=brand==X AND color==Y",
+            platform_allowed: "yes",
+            raw_where: where_brand_eq_color_eq(),
+            mode: CountMode::Aggregate,
+            limit: None,
+        },
+        MatrixCase {
+            label: "[] / where=brand IN[2]",
+            platform_allowed: "yes (per-In aggregate fan-out)",
+            raw_where: where_brand_in(),
+            mode: CountMode::Aggregate,
+            limit: None,
+        },
+        MatrixCase {
+            label: "[] / where=color IN[2]",
+            platform_allowed: "yes (per-In aggregate fan-out)",
+            raw_where: where_color_in(),
+            mode: CountMode::Aggregate,
+            limit: None,
+        },
+        MatrixCase {
+            label: "[] / where=color > floor",
+            platform_allowed: "yes (AggregateCountOnRange)",
+            raw_where: where_color_gt(),
+            mode: CountMode::Aggregate,
+            limit: None,
+        },
+        MatrixCase {
+            label: "[] / where=brand IN[2] AND color > floor",
+            platform_allowed: "no-proof: yes / prove: no (aggregate proof can't fork)",
+            raw_where: where_brand_in_color_gt(),
+            mode: CountMode::Aggregate,
+            limit: None,
+        },
+        // ── group_by = [color] (single-field) ──────────────────────
+        MatrixCase {
+            label: "[color] / where=color IN[2]",
+            platform_allowed: "yes (GroupByIn)",
+            raw_where: where_color_in(),
+            mode: CountMode::GroupByIn,
+            limit: None,
+        },
+        MatrixCase {
+            label: "[color] / where=color > floor",
+            platform_allowed: "yes (GroupByRange — distinct-range walk)",
+            raw_where: where_color_gt(),
+            mode: CountMode::GroupByRange,
+            limit: None,
+        },
+        MatrixCase {
+            label: "[color] / where=color==X",
+            platform_allowed: "no — `color` is constrained by `==`, not `In` or range",
+            raw_where: where_color_eq(),
+            mode: CountMode::GroupByIn,
+            limit: None,
+        },
+        MatrixCase {
+            label: "[color] / where=brand IN[2] AND color > floor",
+            platform_allowed: "no — single-field GROUP BY with both `In` and range",
+            raw_where: where_brand_in_color_gt(),
+            mode: CountMode::GroupByRange,
+            limit: None,
+        },
+        // ── group_by = [brand] (single-field) ──────────────────────
+        MatrixCase {
+            label: "[brand] / where=brand IN[2]",
+            platform_allowed: "yes (GroupByIn — non-rangeCountable byBrand)",
+            raw_where: where_brand_in(),
+            mode: CountMode::GroupByIn,
+            limit: None,
+        },
+        MatrixCase {
+            label: "[brand] / where=brand IN[2] AND color==Y",
+            platform_allowed: "yes (GroupByIn — compound covers byBrandColor)",
+            raw_where: where_brand_in_color_eq(),
+            mode: CountMode::GroupByIn,
+            limit: None,
+        },
+        MatrixCase {
+            label: "[brand] / where=brand IN[2] AND color > floor",
+            platform_allowed: "no — single-field GROUP BY with both `In` and range",
+            raw_where: where_brand_in_color_gt(),
+            mode: CountMode::GroupByIn,
+            limit: None,
+        },
+        MatrixCase {
+            label: "[brand] / where=brand==X",
+            platform_allowed: "no — `brand` is `==`, not `In` or range",
+            raw_where: where_brand_eq(),
+            mode: CountMode::GroupByIn,
+            limit: None,
+        },
+        // ── group_by = [brand, color] (two-field compound) ─────────
+        MatrixCase {
+            label: "[brand, color] / where=brand IN[2] AND color > floor",
+            platform_allowed: "yes (GroupByCompound — `(In, range)` shape)",
+            raw_where: where_brand_in_color_gt(),
+            mode: CountMode::GroupByCompound,
+            limit: Some(100),
+        },
+        MatrixCase {
+            label: "[brand, color] / where=brand IN[2] AND color==Y",
+            platform_allowed: "no — `color` must be range, not `==`",
+            raw_where: where_brand_in_color_eq(),
+            mode: CountMode::GroupByCompound,
+            limit: Some(100),
+        },
+        // ── group_by = [color, brand] (reversed compound) ──────────
+        MatrixCase {
+            label: "[color, brand] / where=color IN[2] AND brand > X",
+            platform_allowed: "no — no rangeCountable index has `brand` as terminator",
+            // brand > X would need a covering rangeCountable index
+            // with brand as the terminator. The contract has none, so
+            // the picker errors at drive level too.
+            raw_where: Value::Array(vec![
+                clause("color", "in", Value::Array(colors_2.clone())),
+                clause("brand", ">", Value::Text(mid_brand.clone())),
+            ]),
+            mode: CountMode::GroupByCompound,
+            limit: Some(100),
+        },
+    ];
+
+    for case in &cases {
+        let noproof_result = drive_count_outcome(
+            fixture,
+            case.raw_where.clone(),
+            case.mode,
+            case.limit,
+            false,
+            platform_version,
+        );
+        let prove_result = drive_count_outcome(
+            fixture,
+            case.raw_where.clone(),
+            case.mode,
+            case.limit,
+            true,
+            platform_version,
+        );
+        eprintln!(
+            "[matrix] {label}\n         no-proof: {np}\n         prove:    {pr}\n         platform: {pa}",
+            label = case.label,
+            np = noproof_result,
+            pr = prove_result,
+            pa = case.platform_allowed,
+        );
+    }
+}
+
+/// Convenience helper for the matrix runner: run one count request
+/// through the drive dispatcher and format the outcome as a short
+/// string (success → describing the response shape and size; error
+/// → the truncated error message). Keeps `report_group_by_matrix`'s
+/// per-case body readable.
+fn drive_count_outcome(
+    fixture: &CountBenchFixture,
+    raw_where: Value,
+    mode: CountMode,
+    limit: Option<u32>,
+    prove: bool,
+    platform_version: &PlatformVersion,
+) -> String {
+    let request = count_request(fixture, raw_where, Value::Null, mode, limit, prove);
+    match fixture
+        .drive
+        .execute_document_count_request(request, None, platform_version)
+    {
+        Ok(DocumentCountResponse::Aggregate(c)) => format!("Aggregate({c})"),
+        Ok(DocumentCountResponse::Entries(entries)) => {
+            let summed: u64 = entries.iter().filter_map(|e| e.count).sum();
+            format!("Entries(len={}, sum={})", entries.len(), summed)
+        }
+        Ok(DocumentCountResponse::Proof(p)) => format!("Proof({} bytes)", p.len()),
+        Err(e) => {
+            let msg = e.to_string();
+            // Truncate to keep the matrix readable; the operator
+            // gist is preserved.
+            let trimmed = msg
+                .lines()
+                .next()
+                .unwrap_or(&msg)
+                .chars()
+                .take(120)
+                .collect::<String>();
+            format!("Err({trimmed})")
+        }
+    }
+}
+
+/// First N brands by label — convenience for matrix cases that need
+/// a small In array (2-3 brands) rather than the full 100 used by
+/// the criterion benches.
+fn brands_n(n: u64) -> Vec<Value> {
+    (0..n).map(|b| Value::Text(brand_label(b))).collect()
 }
 
 fn count_request<'a>(
