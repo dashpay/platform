@@ -61,10 +61,8 @@ impl IdentityWallet {
         &self,
         identity_id: &Identifier,
         funding: TopUpFundingMethod,
-        // TODO(platform-wallet): route `topup_index` through the
-        // derivation path for the top-up asset lock. Currently
-        // unused; the function derives from `identity_index`
-        // alone.
+        // TODO(platform-wallet): forward `topup_index` once
+        // `CreditOutputFunding::IdentityTopUp` carries it (dashpay/rust-dashcore#762).
         _topup_index: u32,
         settings: Option<PutSettings>,
     ) -> Result<(), PlatformWalletError> {

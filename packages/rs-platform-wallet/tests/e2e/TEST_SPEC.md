@@ -8,6 +8,13 @@ presumably enumerate the joy of doing it.
 
 ## Changelog
 
+- **v3.1-dev (2026-05-14 triage, post-v47)** — three reclassifications, one upstream issue filed, two spec-drift fixes:
+  - PA-003 reclassified `green` → `red-real-fail (test-bug)`. Root cause: the five-marker pre-funding loop (`pa_003_fee_scaling.rs:146-166`) writes `address_funds` storage rows for each future `dests[i]` before the 5-output transfer runs. Chain-time fee (Drive's `validate_fees_of_event/v0/mod.rs:195` driving the cost off real drive ops, not the static `state_transition_min_fees` floor) therefore pays a cheap UPDATE per 5-output recipient while the 1-output transfer pays the one-time CREATE; observed Δfee ≈ 536k matches one absent create. The asserted "more bytes ⇒ larger fee" invariant silently bakes in a "no pre-existing outputs" assumption that the marker-derivation trick violates. No production regression — the test contract is misformulated for the chosen address-derivation strategy.
+  - PA-005b spec drift resolved → truth is `blocked`. Both prior `PASS` claims (detailed body at line ~534 and changelog "PR #3609 merged" entry) were stale: they landed in PR #3609 / commit `5c6baabd8f` on 2026-05-11 without re-running PA-005b against the QA-002 setup hook (`consume_platform_address_index_zero`, `wallet_factory.rs:1106-1140`) that had landed seven days earlier on 2026-05-04 (commit `94902be73b`). The failure is a three-way contract mismatch: QA-002's hook marks index 0 used while the DIP-17 platform-payment pool eagerly generates indices `0..=19` in `AddressPool::new` (rust-dashcore pinned rev `53130869e5`, `address_pool.rs:351-368`), and the headroom helper at `framework/gap_limit.rs:188-207` measures fresh-past-`highest_generated` rather than any-unused-below-ceiling — so `available` is permanently 1 from the first call regardless of the request. Test-side defect, not production.
+  - PA-008b reclassified `green / IMPLEMENTED — passing` → `red-real-fail (concurrency-only)`. Isolation re-run on 2026-05-14 with `cargo test … --test-threads=1` passes in 158s; the 14-thread suite hits the canonical 120s `wait_for_balance` timeout on the first marker funding (`pa_008b_cross_wallet_funding.rs:59`, before the six-way `tokio::join!` fan-out). Suspected race in `PlatformAddressWallet::next_unused_receive_address` (`platform_addresses/wallet.rs:223-270`) vs concurrent BLAST syncs from sibling tests: a freshly derived receive address may not be promoted into the unified provider's pending set in time, so the next `sync_balances` BLAST sweep at `platform_addresses/sync.rs:24-86` returns `current=0` for the funded address indefinitely. Pinned as **Found-026** in §3 Found-bug pins.
+  - Found-006 — upstream issue filed: **dashpay/rust-dashcore#762** — *Add `top_up_index` field to `CreditOutputFunding::IdentityTopUp` (DIP-9 conformance gap)*. Wallet-side TODO in `wallet/identity/network/top_up.rs` updated to reference the issue; once it lands, drop the `_` prefix on `topup_index` and forward it through the derivation path.
+  - **Found-026** added — `PlatformAddressWallet::next_unused_receive_address` pool-cursor bump may not enqueue address into BLAST sync provider's pending set under concurrent load. P2, MEDIUM, suspected (pinned by PA-008b). Symmetric `rs-sdk`-side gap is already pinned as Found-025.
+
 - **v3.1-dev (SHA `cf9b6d2ba4`, v47 audit)** — 34 PASS / 4 FAIL on 38 tests; Wave G (tokens) complete:
   - Wave G token harness (`framework/tokens.rs`) fully implemented; all TK-001 through TK-014 test files present and running — reclassified from `blocked` to `green` (except TK-007, network flake in v47).
   - DPNS-001 file implemented and running — reclassified from `blocked` to `green`.
@@ -28,7 +35,7 @@ presumably enumerate the joy of doing it.
   - Found-024 added to Found-bug-pins matrix (P1, passing-as-regression) as the regression pin for V27-007.
 
 - **v3.1-dev (PR #3609 merged)** — TEST_SPEC reflects post-V20 state:
-  - TK-013, PA-001b, PA-005b: previously failing or blocked → PASS after fix
+  - TK-013, PA-001b: previously failing or blocked → PASS after fix. (PA-005b also recorded as PASS in this entry; that claim was stale — see the 2026-05-14 triage entry above. Truth at that time was already `blocked` because the QA-002 setup hook had landed on 2026-05-04 without a follow-up PA-005b re-run.)
   - TK-002, CR-003: stabilised
   - CR-004: failing — two test-side defects (see §3 CR-004 detail): Layer 1 (`next_unused` idempotency) fixed at `1c4c8a76f4` via `next_receive_addresses(count=2, advance=true)`; Layer 2 (dust-threshold math wrong at line 214, `dash-evo-tool#845` reference cargo-culted) pending (QA-008)
   - `bank.fund_address` now waits for chain-confirmed nonce before releasing `FUNDING_MUTEX` (DAPI replica lag — upstream issue #3611)
@@ -150,7 +157,7 @@ Status legend: **green** = test file present, body has real assertions, runnable
 | PA-001 | Multi-output platform-address transfer | P0 | green | S |
 | PA-002 | Partial-fund + change handling | P0 | green | S |
 | PA-004 | Sweep-back: drain test wallet, observe bank credit | P0 | green | S |
-| PA-003 | Fee scaling: one-output vs. five-output | P1 | green | M |
+| PA-003 | Fee scaling: one-output vs. five-output | P1 | red-real-fail (test-bug) — marker pre-funding pollutes `address_funds` rows so 5-output transfer pays cheap UPDATE while 1-output pays expensive CREATE; invariant misformulated | M |
 | PA-005 | Address rotation: gap-limit + observed-used cursor | P1 | green | M |
 | PA-006 | Replay safety: same outputs, second submission rejected | P1 | green | M |
 | PA-007 | Sync watermark idempotency | P1 | green | M |
@@ -163,7 +170,7 @@ Status legend: **green** = test file present, body has real assertions, runnable
 | PA-005b | `DEFAULT_GAP_LIMIT` triplet (19 / 20 / 21 unused) | P2 | blocked | M |
 | PA-006b | Two concurrent broadcasts of identical ST bytes | P2 | green | M |
 | PA-007b | Two concurrent `sync_balances` on one wallet | P2 | green | M |
-| PA-008b | Two `TestWallet`s × three concurrent funders each | P2 | green | M |
+| PA-008b | Two `TestWallet`s × three concurrent funders each | P2 | red-real-fail (concurrency-only) — full-suite 14-thread FAIL on first marker `wait_for_balance` (120s timeout); `--test-threads=1` isolation PASS in 158s; suspected provider-pending promotion race in `next_unused_receive_address` | M |
 | PA-008c | Observable serialisation of `FUNDING_MUTEX` | P2 | green | M |
 | PA-009 | `min_input_amount` boundary triplet for cleanup | P2 | green | M |
 | PA-011 | Workdir slot exhaustion at `MAX_SLOTS + 1` | P2 | not implemented | M |
@@ -253,9 +260,10 @@ Status legend: **green** = test file present, body has real assertions, runnable
 | Found-023 | `ManagedAccountCollection` lacks a `find_transaction_record(&Txid)` helper — every consumer rolls its own incomplete loop | P2 | not implemented | S |
 | Found-024 | `PlatformAddressWallet::transfer` writes foreign output-address balances to local ledger (no ownership check) | P1 | passing-as-regression | S |
 | Found-025 | `rs-sdk` address sync silently discards balance update when address is not yet in `pending_addresses` snapshot (TK-suite flake root cause) | P1 | red-by-design — pending upstream test-hook surface; prior pin was Found-022-style fake (asserted on a local `HashMap` the SDK never touches) and has been deleted. Retarget blocked on `rs-sdk` exposing a transport seam, inner-fn extraction, or post-phase `key_to_tag` refresh hook for `sync_address_balances` | M |
+| Found-026 | `PlatformAddressWallet::next_unused_receive_address` pool-cursor bump may not enqueue address into BLAST sync provider's pending set (concurrent-load race) | P2 | suspected — pinned by PA-008b concurrency-only failure (full-suite FAIL, `--test-threads=1` PASS); needs TRACE instrumentation at the pool-bump + provider-enqueue boundary to confirm | M |
 
 <!-- merge note: theirs' counts already reflect the expanded TK section + ID-007 (93 total; 74 baseline). cr004-spec adds the CR-004 row (P1, env-gated FAILING-by-design), so P1 and total each +1: P1: 25, baseline: 75, total: 94. Kept theirs' "post-Task #15" annotations and noted CR-004 as the env-gated entry under P1. ID-002b (P1, not implemented) added: P1: 26, baseline: 76, total: 95. AL-001 (P1, not implemented) added: P1: 27, baseline: 77, total: 96. upstream-audit adds Found-021, Found-022, Found-023 (P2, not implemented): P2 +3, Found-bug pins 18→21, total 96→99. Found-024 (P1, passing-as-regression): P1 +1, Found-bug pins 21→22, total 99→100. Found-025 (P1, not implemented): P1 +1, Found-bug pins 22→23, total 100→101. v47 audit adds Found-019, Found-020 (P2): P2 +2, Found-bug pins 23→25, total 101→103. -->
-Counts by priority: **P0: 10**, **P1: 29** (incl. CR-004 red-by-design + ID-002b + AL-001 + Found-024 + Found-025), **P2: 63** (incl. 23 P2 Found-bug pins), **DEFERRED: 1** (103 total index entries; 77 baseline + 25 Found-bug pins + 1 deferred placeholder).
+Counts by priority: **P0: 10**, **P1: 29** (incl. CR-004 red-by-design + ID-002b + AL-001 + Found-024 + Found-025), **P2: 64** (incl. 24 P2 Found-bug pins), **DEFERRED: 1** (104 total index entries; 77 baseline + 26 Found-bug pins + 1 deferred placeholder).
 
 **Status at v47 (SHA `55472a3e79`, run date 2026-05-12):**
 - 34 GREEN / 4 RED on 38 tests in `--ignored` cohort
@@ -266,7 +274,7 @@ Counts by priority: **P0: 10**, **P1: 29** (incl. CR-004 red-by-design + ID-002b
 
 **Status at HEAD (SHA `cf9b6d2ba4`, post-v47):**
 - Found-025 prior pin retargeted: the v47-era unit test asserted on a local `HashMap` (Found-022 disease) and has been deleted in favour of a documented stub. Status remains `red-by-design — pending upstream test-hook surface`; no Cargo test is emitted today. See `/tmp/marvin-redbyd-sweep.md` and the file-level docstring at `cases/found_025_address_sync_silent_discard.rs`.
-- 25 Found-bug pins total; 2 red-by-design with live Cargo tests (Found-006, Found-008), 1 red-by-design pending upstream test-hook surface (Found-025; pin deleted), 2 passing-as-regression (Found-020 resolved via spec-realignment, Found-024 V27-007 fix), 3 blocked-scaffold (Found-004, Found-012, Found-013), 17 not implemented
+- 26 Found-bug pins total; 2 red-by-design with live Cargo tests (Found-006, Found-008), 1 red-by-design pending upstream test-hook surface (Found-025; pin deleted), 2 passing-as-regression (Found-020 resolved via spec-realignment, Found-024 V27-007 fix), 3 blocked-scaffold (Found-004, Found-012, Found-013), 1 suspected concurrency-only race (Found-026, pinned by PA-008b), 17 not implemented
 
 ### Platform Addresses (PA)
 
@@ -341,7 +349,7 @@ Counts by priority: **P0: 10**, **P1: 29** (incl. CR-004 red-by-design + ID-002b
 
 #### PA-003 — Fee scaling: one-output vs. five-output transfers
 - **Priority**: P1
-- **Status**: IMPLEMENTED — passing.
+- **Status**: `red-real-fail (test-bug)` — body runs end-to-end but the line-235 invariant `assert!(fee_5 > fee_1, …)` is misformulated for the chosen address-derivation strategy. No production regression. Captured: `fee_1 = 9_554_360`, `fee_5 = 9_018_040`, Δ ≈ 536k (one absent storage-create cost).
 - **Wallet feature exercised**: `wallet/platform_addresses/transfer.rs:31`, fee-strategy `AddressFundsFeeStrategyStep::DeductFromInput(0)` from `wallet_factory.rs:210`.
 - **DET parallel**: none directly — DET tests `tc_014` lifecycle but not fee scaling explicitly.
 - **Preconditions**: bank-funded test wallet with ≥ `200_000_000`.
@@ -359,6 +367,7 @@ Counts by priority: **P0: 10**, **P1: 29** (incl. CR-004 red-by-design + ID-002b
 - **Harness extensions required**: none.
 - **Estimated complexity**: M (two transfers + bookkeeping ≈ 100-150 LoC)
 - **Rationale**: Encodes fee scaling as an asserted property. CodeRabbit fee-headroom regressions (commit `687b1f86cd`) and future fee-formula tweaks become test failures rather than silent behaviour shifts.
+- **QA-003 investigation (2026-05-14)**: Root cause is a test-bug, not a production fee-strategy regression. The marker pre-funding loop at `cases/pa_003_fee_scaling.rs:146-166` issues five sequential 1-output marker transfers of 30M each into `dests[0..5]` to advance `next_unused_address`. Side effect: each `dest_i` already has an `address_funds` storage row before the 5-output transfer runs, so those outputs become cheap UPDATE operations. The 1-output transfer's `dest_1` is brand-new and pays the one-time CREATE. Chain-time fee at `rs-drive-abci/.../validate_fees_of_event/v0/mod.rs:195` is derived from real drive operation costs (storage create/update asymmetry), not from the static `state_transition_min_fees` floor at `rs-platform-version/.../v1.rs:14-15` (`output_cost = 6_000_000`). Observed Δfee ≈ 536k ≪ the static `output_cost`, consistent with exactly one absent create on the 5-output side. The "more bytes ⇒ larger fee" invariant at line 235 silently bakes in a "no pre-existing outputs" assumption that the marker-derivation trick violates. Suggested resolution: either compare two never-funded vs two never-funded transfers (create vs create), or assert against a marker baseline rather than `fee_1`. Auto-selector input-count drift was ruled out (`build_auto_select_candidates` at `transfer.rs:399-413` is balance-descending; both transfers resolve to a single `addr_src` input). PR #3554 fee-path changes ruled out — `select_inputs_reduce_output` bails before chain fee is computed.
 
 #### PA-005 — Address rotation: gap-limit + observed-used cursor
 - **Priority**: P1
@@ -533,7 +542,7 @@ Counts by priority: **P0: 10**, **P1: 29** (incl. CR-004 red-by-design + ID-002b
 
 #### PA-005b — `DEFAULT_GAP_LIMIT` triplet (19 / 20 / 21 unused)
 - **Priority**: P2
-- **Status**: PASS — uses live `pool_gap_limit` (production `DEFAULT_GAP_LIMIT = 20`). The prior `≥ 21` precondition assertion has been dropped; the test reads `pool_gap_limit` at runtime rather than hard-coding a threshold. The prior BLOCKED status (needing `next_unused_receive_addresses(count)`) is resolved — derivation is driven via repeated `next_unused_receive_address` calls within the live gap limit.
+- **Status**: `blocked` — three-way contract mismatch between (a) the QA-002 setup hook `consume_platform_address_index_zero` (`framework/wallet_factory.rs:1106-1140`, landed 2026-05-04 in commit `94902be73b`), (b) the DIP-17 platform-payment pool's eager generation of `gap_limit` addresses inside `AddressPool::new` (upstream `key-wallet/src/managed_account/address_pool.rs:351-368` at pinned rev `53130869e5`), and (c) the headroom helper at `framework/gap_limit.rs:188-207` that measures fresh-past-`highest_generated` rather than any-unused-below-ceiling. With (a) marking index 0 used and (b) pre-filling `highest_generated=Some(19)`, the helper returns `available = 20 − 20 + 1 = 1` from the very first call — explaining the three observed panics (A: `requested:19/available:1`, B: `requested:20/available:1`, C: assertion `left=1 right=20`). Not a production bug.
 - **Wallet feature exercised**: `wallet/platform_addresses/wallet.rs:180` gap-limit enforcement at `DEFAULT_GAP_LIMIT = 20`.
 - **DET parallel**: none direct; PA-005 covers cursor rotation but not the gap-limit boundary.
 - **Preconditions**: bank-funded test wallet.
@@ -546,6 +555,12 @@ Counts by priority: **P0: 10**, **P1: 29** (incl. CR-004 red-by-design + ID-002b
 - **Harness extensions required**: a way to derive without funding (already supported via `next_unused_address` repeatedly; confirm cursor doesn't auto-park).
 - **Estimated complexity**: M
 - **Rationale**: PA-005's "21+ unused addresses" line is exploratory; PA-005b promotes it to an asserted boundary on each side of `DEFAULT_GAP_LIMIT`.
+- **QA-005b spec-drift resolution (2026-05-14)**: The prior `PASS` claim on this entry (and the matching changelog line under "PR #3609 merged") was stale. PR #3609 / commit `5c6baabd8f` (2026-05-11) recorded `PASS — uses live pool_gap_limit` without re-running the test against the QA-002 setup hook that had landed seven days earlier on 2026-05-04 (`94902be73b`, `consume_platform_address_index_zero` in `framework/wallet_factory.rs:1106-1140`). On a fresh run today all three sub-cases panic with `available: 1` — the three-way mismatch documented in the Status line above. Resolution paths (open question, not yet picked):
+  1. Short-circuit `consume_platform_address_index_zero` for pool-introspection tests like PA-005b (cleanest; keeps QA-002 contract for normal-funded tests).
+  2. Switch the helper's semantics from "fresh-past-`highest_generated`" to "any unused below ceiling" (matches the helper's name; needs audit of every caller for behavioural assumptions).
+  3. Stop the pool from eagerly generating `gap_limit` addresses in `AddressPool::new` — requires upstream key-wallet change; out of scope here.
+
+  Until one of those lands, this entry stays `blocked`. Cargo pin verified: rust-dashcore `53130869e5b9343ae59016323e5e5269e717a8fd` (`Cargo.toml:52-60`) has the eager-fill in `AddressPool::new` (the recent v0.42-dev merge into PR #761 has NOT shifted this surface).
 
 #### PA-006b — Two concurrent broadcasts of identical ST bytes
 - **Priority**: P2
@@ -586,7 +601,7 @@ Counts by priority: **P0: 10**, **P1: 29** (incl. CR-004 red-by-design + ID-002b
 
 #### PA-008b — Two `TestWallet`s × three concurrent funders each
 - **Priority**: P2
-- **Status**: IMPLEMENTED — passing.
+- **Status**: `red-real-fail (concurrency-only)` — full-suite 14-thread cohort FAILS deterministically at the first marker `wait_for_balance` (panic site `cases/pa_008b_cross_wallet_funding.rs:59`, helper `derive_three_distinct` lines 51-74, BEFORE the six-way `tokio::join!` fan-out at lines 82-89). Isolation re-run with `--test-threads=1` PASSES in 158s. Suspected root cause: `PlatformAddressWallet::next_unused_receive_address` pool-cursor bump may not enqueue the freshly derived address into the unified `provider`'s pending set in time, so concurrent BLAST syncs from sibling tests snapshot stale `pending_addresses` and never surface the new address in `result.found`. Pinned as Found-026 below.
 - **Wallet feature exercised**: `framework/bank.rs::fund_address` cross-wallet contention.
 - **DET parallel**: none.
 - **Preconditions**: bank with `≥ 70_000_000 + 6 * fund_fee` credits.
@@ -603,6 +618,7 @@ Counts by priority: **P0: 10**, **P1: 29** (incl. CR-004 red-by-design + ID-002b
 - **Harness extensions required**: helper to instantiate two independent `TestWallet`s in one harness setup.
 - **Estimated complexity**: M
 - **Rationale**: PA-008 keeps contention inside one `TestWallet`; PA-008b proves the bank's serialisation works under cross-wallet contention too — the realistic CI shape.
+- **QA-008b isolation re-run (2026-05-14)**: 14-thread suite cohort hits the canonical 120s `wait_for_balance` timeout on the very first marker funding (`fund_address` for marker-a on wallet A, P2pkh `f961...830d`, 30M credits). Captured trace: bank broadcast accepted at 09:35:18.535 (seq=30, elapsed 2.4s); `wait_for_address_nonces_chain_confirmed` cleared in 682ms via the nonce-streak heuristic at 09:35:21.883; then `wait_for_balance` polled the recipient 71 times across 120s with every poll observing `current=0`, `first_observed=Some(0)`, `any_balance_change_observed=false` — i.e., the wallet's local view of the freshly derived address never moved despite the chain-time broadcast landing. The test never reaches the six-way `tokio::join!` fan-out. The 1-thread isolation re-run (`cargo test … --test-threads=1`) PASSES in 158s — single-threaded, no sibling-test interference. PA-008 (preceding test in the same cohort) and PA-008c (parallel-safe) both passed in the same failing run, biasing the diagnosis toward "cross-test BLAST-sync interference on this wallet's freshly derived address" rather than DAPI lag or bank-funding regression. Pinned as Found-026 below for upstream investigation.
 
 #### PA-008c — Observable serialisation of `FUNDING_MUTEX`
 - **Priority**: P2
@@ -2500,6 +2516,34 @@ Location: `tests/e2e/framework/bank.rs:526-561` and `framework/wait.rs:573-650`.
 **QA-P3-003 (LOW) — one-off `path segment not found in proof layer` grovedb error logged at DEBUG instead of WARN**
 
 Location: `rs-sdk` (production side). A GroveDB path-not-found condition during proof verification is logged at DEBUG level with no proof-height or DAPI endpoint context. Should be WARN with structured fields (`proof_height`, `endpoint`, `path`). Severity LOW (observability gap, not data corruption). Not filed as a standalone Found-* entry — too low severity to warrant a regression pin; noted here so a future observability pass can pick it up.
+
+#### Found-026 — `PlatformAddressWallet::next_unused_receive_address` pool-cursor bump may not enqueue address into BLAST sync provider's pending set (concurrent-load race)
+- **Priority**: P2
+- **Severity**: MEDIUM — concurrency-only; passes deterministically under `--test-threads=1`. Would erode test signal as parallelism scales, or if production-side traffic shifts toward concurrent address-derivation + sync.
+- **Owner**: `rs-platform-wallet` (this crate). Suspected fix location: `packages/rs-platform-wallet/src/platform_addresses/wallet.rs:223-270` (`PlatformAddressWallet::next_unused_receive_address`) and its provider-enqueue boundary; possibly transport-layer in `rs-sdk` if the registration is lazy in `sync_balances`.
+- **Status**: suspected — pinned by PA-008b (`cases/pa_008b_cross_wallet_funding.rs:37`). 14-thread full-suite cohort FAILS on the first marker `wait_for_balance` (panic site `:59`); `--test-threads=1` isolation re-run on 2026-05-14 PASSES in 158s. Live Cargo reproducer is PA-008b itself; no dedicated unit pin yet — needs TRACE instrumentation at the pool-bump + provider-enqueue boundary to confirm the hypothesis.
+- **Wallet feature exercised**: `packages/rs-platform-wallet/src/platform_addresses/wallet.rs:223-270` (`PlatformAddressWallet::next_unused_receive_address`); transitively the unified `provider`'s pending-set management — promotion from `key_wallet::AddressPool::next_unused(..., add_to_state=true)` into the SDK `AddressProvider`'s `pending_addresses` snapshot consumed by BLAST sync at `platform_addresses/sync.rs:24-86`.
+- **Suspected bug**: When `next_unused_receive_address` advances the pool cursor under concurrent load, the address may not be registered with the unified `provider`'s pending set in time. Concurrent BLAST sync iterations from sibling tests then complete and report `result.found` *without* this wallet's freshly-derived address. The wallet's local `wait_for_balance` polls the (un-tracked) address state and never sees the chain-time balance even after the broadcast lands. The bank's `wait_for_address_nonces_chain_confirmed` (`framework/bank.rs:526`) cleared in 682ms in the failing run — DAPI replica lag is NOT the primary cause; this is a wallet-side address-tracking gap.
+- **Preconditions**: 14-thread test parallelism with sibling tests that also drive `sync_balances()` against shared infrastructure (DAPI / Drive); fresh derivation on the affected wallet happening inside a sibling-test sync window.
+- **Scenario** (regression-pin shape, once instrumentation lands):
+  1. Two `TestWallet`s A, B; each derives three fresh addresses via `next_unused_receive_address` under fan-out.
+  2. A sibling test is currently running its own `sync_balances()` iteration against shared DAPI.
+  3. The freshly-bumped slot on A may not be enqueued in the provider before the sibling's BLAST sync snapshots `pending_addresses`.
+  4. Bank funds the new slot; broadcast lands chain-time (nonce-confirmed in <1s).
+  5. `wait_for_balance` polls 71× across 120s; every poll observes `current=0`.
+- **Assertions** (the proof shape, once instrumented):
+  - TRACE log entry at `next_unused_receive_address`'s pool-bump line shows the new slot N being registered with the provider.
+  - A subsequent BLAST sync's `pending_addresses` snapshot contains slot N.
+  - `wait_for_balance` observes a non-zero balance on slot N within wallclock budget.
+- **Expected** (after fix): the pool-cursor bump + provider-registration is atomic w.r.t. concurrent BLAST sync snapshots, OR the provider lazily includes newly-derived slots in subsequent iterations.
+- **Actual** (current code, under 14-thread parallelism): `wait_for_balance` polls 71× across 120s, observing `current=0` every poll, `any_balance_change_observed=false` — the freshly-derived address never becomes visible in BLAST sync's view, despite the broadcast landing chain-time. Same address path used by sibling PA-008 (single-wallet, seq=29) and PA-008c (parallel-safe) both pass in the same failing run — what's structurally different is the `setup_a + setup_b` two-wallet interleave at `pa_008b_cross_wallet_funding.rs:46-47`.
+- **Harness extensions required**:
+  - TRACE instrumentation at `next_unused_receive_address`'s pool-bump line + the provider-enqueue site.
+  - A reproducer that captures the precise interleave (sibling test's `sync_balances()` window vs the wallet's bump).
+  - Optionally: a unit-level pin that drives `PlatformAddressWallet::sync_balances` immediately after a single `next_unused_receive_address` and asserts the address is in the provider's pending set.
+- **Estimated complexity**: M to investigate; fix complexity depends on whether the gap is in `rs-platform-wallet` (atomic-registration patch) or `rs-sdk` (provider lazy-refresh) — see Found-025 for the matching SDK-side surface.
+- **Rationale**: PA-008b currently surfaces this with a 120s `wait_for_balance` timeout under the full-suite 14-thread cohort, but passes solo. Without a Found-NNN pin, the suspicion lives only in TEST_SPEC.md's narrative changelog and erodes after a few months of doc rewrites. Pinning it here gives future investigators a stable reference and signals that PA-008b's flakiness has a hypothesised root cause, not just "concurrency hates us."
+- **Cross-reference**: Found-025 covers the symmetric `rs-sdk` side — `sync_address_balances` silently discarding balance updates for addresses not in the `pending_addresses` snapshot. The two pins together capture both sides of the derive-then-sync race: Found-025 is "SDK drops the update if the address isn't yet known"; Found-026 is "wallet may not register the address with the SDK in time".
 
 ---
 
