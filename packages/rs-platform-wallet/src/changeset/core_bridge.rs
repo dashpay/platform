@@ -195,6 +195,18 @@ async fn build_core_changeset(
             synced_height: Some(*height),
             ..CoreChangeSet::default()
         },
+        WalletEvent::TransactionsChainlocked { .. } => {
+            // The wallet has already promoted the matching records from
+            // `InBlock` to `InChainLockedBlock` by the time this event
+            // fires (upstream `WalletManager::process_chain_lock` mutates
+            // the in-memory map before emitting). Our poll loop reads
+            // record.context.is_chain_locked() directly, so no
+            // additional CoreChangeSet projection is needed here today;
+            // a future enhancement could persist the
+            // `WalletMetadata::last_applied_chain_lock` for crash
+            // recovery, but it's out of scope for the current PR.
+            CoreChangeSet::default()
+        }
     }
 }
 
