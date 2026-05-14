@@ -45,6 +45,8 @@ pub mod drive_dispatcher;
 pub mod execute_point_lookup;
 #[cfg(feature = "server")]
 pub mod execute_range_count;
+#[cfg(feature = "server")]
+pub mod executors;
 
 #[cfg(feature = "server")]
 pub use drive_dispatcher::{DocumentCountRequest, DocumentCountResponse};
