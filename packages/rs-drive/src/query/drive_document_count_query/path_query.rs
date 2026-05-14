@@ -164,9 +164,10 @@ impl DriveDocumentCountQuery<'_> {
     ///
     /// Shared between the server-side prove path
     /// ([`Self::execute_aggregate_count_with_proof`]) and the client-
-    /// side verify path (the SDK's `FromProof<DocumentCountQuery>` for
-    /// `DocumentCount`). Both sides must produce the *exact same*
-    /// `PathQuery` for verification to recompute the same merk root.
+    /// side verify path (the SDK's `FromProof<DocumentQuery>` for
+    /// `DocumentCount`, via the shared `verify_aggregate_count`
+    /// helper). Both sides must produce the *exact same* `PathQuery`
+    /// for verification to recompute the same merk root.
     ///
     /// Aggregate-count specifically restricts prefix props to `Equal`:
     /// grovedb's `AggregateCountOnRange` primitive wraps a *single*

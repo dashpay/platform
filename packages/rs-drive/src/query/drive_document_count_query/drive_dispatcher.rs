@@ -418,10 +418,9 @@ impl Drive {
                 // Default to ascending if the request didn't specify
                 // — matches the no-proof default. The verifier reads
                 // the same field to reconstruct the matching path
-                // query (see SDK's
-                // `FromProof<DocumentCountQuery>` for
-                // `DocumentSplitCounts`); both sides MUST land on the
-                // same `left_to_right` value or the merk-root
+                // query (see SDK's `FromProof<DocumentQuery>` impl
+                // for `DocumentSplitCounts`); both sides MUST land
+                // on the same `left_to_right` value or the merk-root
                 // recomputation fails.
                 let left_to_right = order_by_ascending;
                 Ok(DocumentCountResponse::Proof(

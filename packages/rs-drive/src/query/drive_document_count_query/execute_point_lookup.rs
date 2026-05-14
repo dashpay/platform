@@ -107,10 +107,11 @@ impl DriveDocumentCountQuery<'_> {
     /// for the exhaustive contract.
     ///
     /// Proof size is O(k × log n) where k is the number of covered
-    /// (Equal/In) branches and n is the tree depth: one merk path proof
-    /// per CountTree element, not per matching document. Replaces the
-    /// pre-this-PR materialize-and-count proof which scaled with
-    /// matching docs and was capped at `u16::MAX`.
+    /// (Equal/In) branches and n is the tree depth: one merk path
+    /// proof per CountTree element, not per matching document.
+    /// Avoids the materialize-and-count alternative used by the
+    /// regular document-query path, which scales with the number
+    /// of matching docs and is capped at `u16::MAX`.
     pub fn execute_point_lookup_count_with_proof(
         &self,
         drive: &Drive,

@@ -2145,14 +2145,13 @@ mod detect_mode_tests {
         );
     }
 
-    /// `prove = true` + `In` routes to `PointLookupProof` (the
-    /// materialize-and-count proof fallback). The SDK's
-    /// `FromProof<DocumentCountQuery>` for `DocumentSplitCounts`
-    /// then groups verified documents by the In field's serialized
-    /// value to produce per-key count entries. No proof aggregate
-    /// primitive supports per-In-value entries directly, so the
-    /// materialize path is the only correct route until grovedb
-    /// gains a per-key count proof.
+    /// `prove = true` + `In` routes to `PointLookupProof` — the
+    /// CountTree-element proof primitive. The
+    /// `point_lookup_count_path_query` builder emits one
+    /// `Element::CountTree` per matched In branch; the verifier
+    /// reads `count_value_or_default()` off each verified element
+    /// directly. No document materialization, no `u16::MAX` cap on
+    /// matching docs. Proof size is O(|In values| × log n).
     #[test]
     fn in_with_prove_routes_to_point_lookup_proof() {
         let clauses = vec![in_clause("a")];

@@ -56,12 +56,14 @@ impl DriveDocumentCountQuery<'_> {
 
     /// Classify a count query's mode from its where clauses + request flags.
     ///
-    /// This is the protocol-version-agnostic shape detection that decides
-    /// which executor (Equal/In point lookup, range walk, range proof,
-    /// materialize-and-count proof, etc.) the request maps to. The
-    /// returned [`DocumentCountMode`] discriminates among the handler's
-    /// dispatch arms; concrete pagination / index-picker inputs still
-    /// flow through the call sites separately.
+    /// This is the protocol-version-agnostic shape detection that
+    /// decides which executor (one of the six
+    /// [`DocumentCountMode`] variants — `Total` / `PerInValue` /
+    /// `RangeNoProof` / `RangeProof` / `RangeDistinctProof` /
+    /// `PointLookupProof`) the request maps to. The returned
+    /// `DocumentCountMode` discriminates among the dispatcher's
+    /// match arms; concrete pagination / index-picker inputs flow
+    /// through the call sites separately.
     ///
     /// All validation that depends only on the where clauses + flags
     /// (multiple range clauses, range mixed with `In`, distinct mode on
@@ -179,7 +181,7 @@ impl DriveDocumentCountQuery<'_> {
             // outer `Key`s + `[0]` subquery); the SDK's
             // `verify_point_lookup_count_proof` extracts
             // `count_value_or_default()` from each verified
-            // element and the `FromProof<DocumentCountQuery>`
+            // element, and the `FromProof<DocumentQuery>` impl
             // for `DocumentSplitCounts` returns them as
             // per-In-value entries. Proof size is O(|In values|
             // × log n) — no document materialization, no
