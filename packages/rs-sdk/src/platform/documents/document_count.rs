@@ -6,15 +6,14 @@
 //! `with_where(...)` clause; whatever the request shape, this
 //! impl returns a single `u64` (the aggregate count). Per-shape
 //! proof dispatch lives in
-//! [`super::count_proof_helpers::verify_aggregate_count`] so the
-//! sibling [`DocumentSplitCounts`] impl can share it for its own
-//! `group_by = []` branch.
+//! [`super::count_proof_helpers::verify_count_query`] — this
+//! impl just sums the verified entries the helper returns.
 //!
-//! [`DocumentSplitCounts`]: drive_proof_verifier::DocumentSplitCounts
+//! Empty entries (e.g. a verifier that emitted `None` for a
+//! queried-but-absent branch) contribute 0 to the sum via
+//! `filter_map(|e| e.count)`.
 
-use crate::platform::documents::count_proof_helpers::{
-    assert_select_is_count, verify_aggregate_count,
-};
+use crate::platform::documents::count_proof_helpers::{assert_select_is_count, verify_count_query};
 use crate::platform::documents::document_query::DocumentQuery;
 use crate::platform::Fetch;
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
@@ -40,9 +39,12 @@ impl FromProof<DocumentQuery> for DocumentCount {
         let request: Self::Request = request.into();
         assert_select_is_count(&request)?;
         let response: Self::Response = response.into();
-        let (count, mtd, proof) =
-            verify_aggregate_count(request, response, platform_version, provider)?;
-        Ok((count.map(DocumentCount), mtd, proof))
+        let (entries, mtd, proof) =
+            verify_count_query(request, response, platform_version, provider)?;
+        let count = entries
+            .map(|es| es.iter().filter_map(|e| e.count).sum::<u64>())
+            .map(DocumentCount);
+        Ok((count, mtd, proof))
     }
 }
 

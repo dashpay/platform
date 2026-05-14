@@ -1,14 +1,14 @@
-//! Shared helpers used by the [`DocumentCount`] and
-//! [`DocumentSplitCounts`] proof verifiers.
+//! Shared count-proof dispatch used by [`DocumentCount`] and
+//! [`DocumentSplitCounts`].
 //!
-//! Both `FromProof` impls validate the same `select` field,
-//! translate the same `u32`-with-`0`-sentinel limit into the
-//! verifier's `u16`, and — for the aggregate shapes — dispatch
-//! through the same per-shape proof verification logic. Keeping
-//! those helpers in one place removes the cross-impl delegation
-//! that lived here before: each `FromProof` impl now becomes a
-//! thin wrapper that calls [`verify_aggregate_count`] and reshapes
-//! the resulting `Option<u64>` into its own response type.
+//! Both consumers reduce to "give me a verified
+//! `Vec<SplitCountEntry>` for this `DocumentQuery`" —
+//! [`DocumentCount`] sums the entries into a single `u64`,
+//! [`DocumentSplitCounts`] passes them through. Putting the
+//! four-way proof dispatch behind one helper means the per-shape
+//! routing (which proof primitive to use, which index to pick,
+//! how to wrap the result) lives in exactly one place; the
+//! consumers become thin wrappers.
 //!
 //! [`DocumentCount`]: drive_proof_verifier::DocumentCount
 //! [`DocumentSplitCounts`]: drive_proof_verifier::DocumentSplitCounts
@@ -26,16 +26,16 @@ use dpp::{
 use drive::query::DriveDocumentCountQuery;
 use drive_proof_verifier::{
     verify_aggregate_count_proof, verify_distinct_count_proof, verify_point_lookup_count_proof,
-    verify_primary_key_count_tree_proof,
+    verify_primary_key_count_tree_proof, SplitCountEntry,
 };
 
 /// Validate that the caller-built [`DocumentQuery`] actually
 /// targets the count surface. Without this check a caller who
 /// forgets `.with_select(Select::Count)` would silently send a
-/// `Documents` request and then fail much later inside the
-/// proof verifier with an inscrutable "wrong wire shape" error;
-/// this surfaces the misuse at the SDK boundary with a clear
-/// pointer to the fix.
+/// `Documents` request and fail later inside the proof verifier
+/// with an inscrutable "wrong wire shape" error; this surfaces
+/// the misuse at the SDK boundary with a clear pointer to the
+/// fix.
 pub(super) fn assert_select_is_count(
     request: &DocumentQuery,
 ) -> Result<(), drive_proof_verifier::Error> {
@@ -68,7 +68,7 @@ pub(super) fn assert_select_is_count(
 /// representation. We `try_from` rather than truncate so a caller
 /// passing `limit > u16::MAX` fails loudly at the SDK boundary
 /// rather than silently producing a mismatched path query.
-pub(super) fn limit_to_u16_or_default(limit: u32) -> Result<u16, drive_proof_verifier::Error> {
+fn limit_to_u16_or_default(limit: u32) -> Result<u16, drive_proof_verifier::Error> {
     if limit == 0 {
         return Ok(drive::config::DEFAULT_QUERY_LIMIT);
     }
@@ -80,110 +80,42 @@ pub(super) fn limit_to_u16_or_default(limit: u32) -> Result<u16, drive_proof_ver
     })
 }
 
-/// Verify a count-shape proof and return the aggregate `u64` it
-/// commits to, plus the response metadata and proof.
+/// Verify a count-shape proof and return per-branch entries.
 ///
-/// Both `DocumentCount` and `DocumentSplitCounts` (for the
-/// aggregate `group_by = []` branch) need exactly this: a verified
-/// total count, regardless of which proof primitive the server
-/// emitted. The four sub-cases:
+/// Single source of truth for the four-way count-proof dispatch:
 ///
-/// 1. **range + non-empty `group_by`** (`GroupByRange` /
-///    `GroupByCompound`) — server emitted a `RangeDistinctProof`
-///    (per-key `KVCount` ops); verify via
-///    `verify_distinct_count_proof` and sum the per-key counts.
-///    Path-query reconstruction uses
-///    [`limit_to_u16_or_default`] anchored to
-///    `DEFAULT_QUERY_LIMIT` so proof bytes are operator-tuning-
-///    independent.
-/// 2. **range + empty `group_by`** (`Aggregate`) — server emitted
-///    a single `AggregateCountOnRange` proof; verify via
-///    `verify_aggregate_count_proof`.
-/// 3. **no range + empty where + `documents_countable`**
-///    (`Aggregate`) — server proved the doctype's primary-key
-///    CountTree element directly; verify via
-///    `verify_primary_key_count_tree_proof`.
-/// 4. **no range + covering `countable: true` index** — server
-///    proved per-branch CountTree elements; verify via
-///    `verify_point_lookup_count_proof` and sum the per-branch
-///    counts (`filter_map` drops `None` entries the verifier may
-///    emit for queried-but-absent branches — they don't
-///    contribute to the verified total).
-pub(super) fn verify_aggregate_count<'a>(
+/// 1. **range + non-empty `group_by`** → `RangeDistinctProof`.
+///    Emits one entry per distinct value via
+///    `verify_distinct_count_proof`. Path-query reconstruction
+///    uses [`limit_to_u16_or_default`] anchored to the shared
+///    `DEFAULT_QUERY_LIMIT` so proof bytes are deterministic
+///    across operators.
+/// 2. **range + empty `group_by`** → `AggregateCountOnRange`.
+///    Primitive emits a single u64; wrapped here as a single
+///    empty-key entry so callers see a uniform `Vec<...>` shape.
+/// 3. **no range + empty `where` + `documents_countable`** →
+///    primary-key CountTree fast path. `verify_primary_key_count_tree_proof`
+///    returns a `u64`; wrapped here as a single empty-key entry.
+/// 4. **no range + covering `countable: true` index** →
+///    `PointLookupProof`. `verify_point_lookup_count_proof`
+///    emits one entry per queried branch (grovedb's
+///    `(path, key, Option<Element>)` triples carry both present
+///    and absent branches via `Some`/`None`).
+///
+/// Wrapping (2) and (3) as single empty-key entries is the only
+/// shape massage this helper does — the underlying primitives
+/// genuinely emit `u64`s, and consumers ([`DocumentCount`] sums,
+/// [`DocumentSplitCounts`] passes through) want a uniform
+/// per-entry vec regardless.
+///
+/// [`DocumentCount`]: drive_proof_verifier::DocumentCount
+/// [`DocumentSplitCounts`]: drive_proof_verifier::DocumentSplitCounts
+pub(super) fn verify_count_query<'a>(
     request: DocumentQuery,
     response: GetDocumentsResponse,
     platform_version: &PlatformVersion,
     provider: &'a dyn ContextProvider,
-) -> Result<(Option<u64>, ResponseMetadata, Proof), drive_proof_verifier::Error> {
-    // Range queries arrive with a grovedb `AggregateCountOnRange`
-    // proof (when `group_by` is empty) or a `RangeDistinctProof`
-    // (per-key `KVCount` ops, when `group_by` is non-empty).
-    if request
-        .where_clauses
-        .iter()
-        .any(|wc| DriveDocumentCountQuery::is_range_operator(wc.operator))
-    {
-        let document_type = request
-            .data_contract
-            .document_type_for_name(&request.document_type_name)
-            .map_err(|e| drive_proof_verifier::Error::RequestError {
-                error: format!(
-                    "document type {} not found in contract: {}",
-                    request.document_type_name, e
-                ),
-            })?;
-        let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
-            document_type.indexes(),
-            &request.where_clauses,
-        )
-        .ok_or_else(|| drive_proof_verifier::Error::RequestError {
-            error: "range count requires a `range_countable: true` index whose last \
-                    property matches the range field"
-                .to_string(),
-        })?;
-        let count_query = DriveDocumentCountQuery {
-            document_type,
-            contract_id: request.data_contract.id().to_buffer(),
-            document_type_name: request.document_type_name.clone(),
-            index,
-            where_clauses: request.where_clauses.clone(),
-        };
-        let proof = response
-            .proof()
-            .or(Err(drive_proof_verifier::Error::NoProofInResult))?;
-        let mtd = response
-            .metadata()
-            .or(Err(drive_proof_verifier::Error::EmptyResponseMetadata))?;
-
-        if !request.group_by.is_empty() {
-            // RangeDistinctProof: per-key `KVCount` ops. Sum to
-            // collapse to a single aggregate u64.
-            let limit_u16 = limit_to_u16_or_default(request.limit)?;
-            let left_to_right = request
-                .order_by_clauses
-                .first()
-                .map(|c| c.ascending)
-                .unwrap_or(true);
-            let entries = verify_distinct_count_proof(
-                &count_query,
-                proof,
-                mtd,
-                limit_u16,
-                left_to_right,
-                platform_version,
-                provider,
-            )?;
-            let total: u64 = entries.iter().filter_map(|e| e.count).sum();
-            return Ok((Some(total), mtd.clone(), proof.clone()));
-        }
-
-        // AggregateCountOnRange: single u64 verified out.
-        let count =
-            verify_aggregate_count_proof(&count_query, proof, mtd, platform_version, provider)?;
-        return Ok((Some(count), mtd.clone(), proof.clone()));
-    }
-
-    // No range: count-tree proof primitives.
+) -> Result<(Option<Vec<SplitCountEntry>>, ResponseMetadata, Proof), drive_proof_verifier::Error> {
     let document_type = request
         .data_contract
         .document_type_for_name(&request.document_type_name)
@@ -200,8 +132,61 @@ pub(super) fn verify_aggregate_count<'a>(
         .metadata()
         .or(Err(drive_proof_verifier::Error::EmptyResponseMetadata))?;
 
-    // documents_countable fast path: empty where + the document
-    // type opts into a primary-key CountTree.
+    let has_range = request
+        .where_clauses
+        .iter()
+        .any(|wc| DriveDocumentCountQuery::is_range_operator(wc.operator));
+
+    if has_range {
+        // Range path: either RangeDistinctProof (entries) or
+        // AggregateCountOnRange (single u64 wrapped as one entry).
+        let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+            document_type.indexes(),
+            &request.where_clauses,
+        )
+        .ok_or_else(|| drive_proof_verifier::Error::RequestError {
+            error: "range count requires a `range_countable: true` index whose last \
+                    property matches the range field"
+                .to_string(),
+        })?;
+        let count_query = DriveDocumentCountQuery {
+            document_type,
+            contract_id: request.data_contract.id().to_buffer(),
+            document_type_name: request.document_type_name.clone(),
+            index,
+            where_clauses: request.where_clauses.clone(),
+        };
+
+        if !request.group_by.is_empty() {
+            let limit_u16 = limit_to_u16_or_default(request.limit)?;
+            let left_to_right = request
+                .order_by_clauses
+                .first()
+                .map(|c| c.ascending)
+                .unwrap_or(true);
+            let entries = verify_distinct_count_proof(
+                &count_query,
+                proof,
+                mtd,
+                limit_u16,
+                left_to_right,
+                platform_version,
+                provider,
+            )?;
+            return Ok((Some(entries), mtd.clone(), proof.clone()));
+        }
+
+        let count =
+            verify_aggregate_count_proof(&count_query, proof, mtd, platform_version, provider)?;
+        return Ok((
+            Some(single_empty_key_entry(count)),
+            mtd.clone(),
+            proof.clone(),
+        ));
+    }
+
+    // No range: documents_countable fast path or covering
+    // countable index.
     if request.where_clauses.is_empty() && document_type.documents_countable() {
         let contract_id = request.data_contract.id().to_buffer();
         let count = verify_primary_key_count_tree_proof(
@@ -212,13 +197,13 @@ pub(super) fn verify_aggregate_count<'a>(
             platform_version,
             provider,
         )?;
-        return Ok((Some(count), mtd.clone(), proof.clone()));
+        return Ok((
+            Some(single_empty_key_entry(count)),
+            mtd.clone(),
+            proof.clone(),
+        ));
     }
 
-    // PointLookupProof against a covering `countable: true` index.
-    // Sum the per-branch verified counts; `filter_map` drops any
-    // `None` entries the verifier emits for queried-but-absent
-    // branches — those don't contribute to the verified total.
     let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
         document_type.indexes(),
         &request.where_clauses,
@@ -238,6 +223,18 @@ pub(super) fn verify_aggregate_count<'a>(
     };
     let entries =
         verify_point_lookup_count_proof(&count_query, proof, mtd, platform_version, provider)?;
-    let total: u64 = entries.iter().filter_map(|e| e.count).sum();
-    Ok((Some(total), mtd.clone(), proof.clone()))
+    Ok((Some(entries), mtd.clone(), proof.clone()))
+}
+
+/// Wrap a single `u64` from an aggregate proof primitive
+/// (`AggregateCountOnRange` or `verify_primary_key_count_tree_proof`)
+/// as a one-element `Vec<SplitCountEntry>` so callers see a
+/// uniform shape regardless of which primitive verified the
+/// proof.
+fn single_empty_key_entry(count: u64) -> Vec<SplitCountEntry> {
+    vec![SplitCountEntry {
+        in_key: None,
+        key: Vec::new(),
+        count: Some(count),
+    }]
 }
