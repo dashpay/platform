@@ -26,6 +26,7 @@ use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::version::PlatformVersion;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::TransactionArg;
+use grovedb_costs::CostContext;
 
 /// Pagination + ordering knobs for `execute_range_count_no_proof`.
 ///
@@ -202,15 +203,20 @@ impl DriveDocumentCountQuery<'_> {
                     };
                     let path_query =
                         per_value_query.aggregate_count_path_query(platform_version)?;
-                    let count = drive
-                        .grove
-                        .query_aggregate_count(
-                            &path_query,
-                            transaction,
-                            &drive_version.grove_version,
-                        )
-                        .unwrap()
-                        .map_err(|e| Error::GroveDB(Box::new(e)))?;
+                    // Destructure the `CostContext` explicitly rather than
+                    // calling `.unwrap()` on it: `CostContext::unwrap` is
+                    // infallible (it just drops the cost field), but the
+                    // visual pattern collides with `Option/Result::unwrap`
+                    // and makes review noisier. Cost is discarded here
+                    // because the per-mode dispatcher in `drive_dispatcher`
+                    // wraps these executors with its own fee accounting —
+                    // see the module-level docstring.
+                    let CostContext { value, cost: _ } = drive.grove.query_aggregate_count(
+                        &path_query,
+                        transaction,
+                        &drive_version.grove_version,
+                    );
+                    let count = value.map_err(|e| Error::GroveDB(Box::new(e)))?;
                     total = total.saturating_add(count);
                 }
                 return Ok(vec![SplitCountEntry {
@@ -223,11 +229,13 @@ impl DriveDocumentCountQuery<'_> {
             }
             // Flat summed (no In on prefix): single aggregate read.
             let path_query = self.aggregate_count_path_query(platform_version)?;
-            let count = drive
-                .grove
-                .query_aggregate_count(&path_query, transaction, &drive_version.grove_version)
-                .unwrap()
-                .map_err(|e| Error::GroveDB(Box::new(e)))?;
+            // See In-fan-out branch above for the destructure rationale.
+            let CostContext { value, cost: _ } = drive.grove.query_aggregate_count(
+                &path_query,
+                transaction,
+                &drive_version.grove_version,
+            );
+            let count = value.map_err(|e| Error::GroveDB(Box::new(e)))?;
             return Ok(vec![SplitCountEntry {
                 in_key: None,
                 key: Vec::new(),
@@ -356,11 +364,15 @@ impl DriveDocumentCountQuery<'_> {
     ) -> Result<Vec<u8>, Error> {
         let drive_version = &platform_version.drive;
         let path_query = self.aggregate_count_path_query(platform_version)?;
-        let proof = drive
-            .grove
-            .get_proved_path_query(&path_query, None, transaction, &drive_version.grove_version)
-            .unwrap()
-            .map_err(|e| Error::GroveDB(Box::new(e)))?;
+        // Destructure rather than `.unwrap()` — see the In fan-out branch
+        // in `execute_range_count_no_proof` for rationale.
+        let CostContext { value, cost: _ } = drive.grove.get_proved_path_query(
+            &path_query,
+            None,
+            transaction,
+            &drive_version.grove_version,
+        );
+        let proof = value.map_err(|e| Error::GroveDB(Box::new(e)))?;
         Ok(proof)
     }
 
@@ -397,11 +409,15 @@ impl DriveDocumentCountQuery<'_> {
         let drive_version = &platform_version.drive;
         let path_query =
             self.distinct_count_path_query(Some(limit), left_to_right, platform_version)?;
-        let proof = drive
-            .grove
-            .get_proved_path_query(&path_query, None, transaction, &drive_version.grove_version)
-            .unwrap()
-            .map_err(|e| Error::GroveDB(Box::new(e)))?;
+        // Destructure rather than `.unwrap()` — see the In fan-out branch
+        // in `execute_range_count_no_proof` for rationale.
+        let CostContext { value, cost: _ } = drive.grove.get_proved_path_query(
+            &path_query,
+            None,
+            transaction,
+            &drive_version.grove_version,
+        );
+        let proof = value.map_err(|e| Error::GroveDB(Box::new(e)))?;
         Ok(proof)
     }
 }

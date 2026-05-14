@@ -21,6 +21,7 @@ use crate::error::Error;
 use dpp::version::PlatformVersion;
 use grovedb::query_result_type::{QueryResultElement, QueryResultType};
 use grovedb::TransactionArg;
+use grovedb_costs::CostContext;
 
 impl DriveDocumentCountQuery<'_> {
     /// Executes the count query without generating a proof.
@@ -120,11 +121,20 @@ impl DriveDocumentCountQuery<'_> {
     ) -> Result<Vec<u8>, Error> {
         let drive_version = &platform_version.drive;
         let path_query = self.point_lookup_count_path_query(platform_version)?;
-        let proof = drive
-            .grove
-            .get_proved_path_query(&path_query, None, transaction, &drive_version.grove_version)
-            .unwrap()
-            .map_err(|e| Error::GroveDB(Box::new(e)))?;
+        // Destructure the `CostContext` explicitly rather than calling
+        // `.unwrap()` on it: `CostContext::unwrap` is infallible (it just
+        // drops the cost field), but the visual pattern collides with
+        // `Option/Result::unwrap` and makes review noisier. Cost is
+        // discarded here because the per-mode dispatcher in
+        // `drive_dispatcher` wraps these executors with its own fee
+        // accounting.
+        let CostContext { value, cost: _ } = drive.grove.get_proved_path_query(
+            &path_query,
+            None,
+            transaction,
+            &drive_version.grove_version,
+        );
+        let proof = value.map_err(|e| Error::GroveDB(Box::new(e)))?;
         Ok(proof)
     }
 }

@@ -36,11 +36,6 @@ service Platform {
   rpc getDataContracts(GetDataContractsRequest)
       returns (GetDataContractsResponse);
   rpc getDocuments(GetDocumentsRequest) returns (GetDocumentsResponse);
-  // `getDocumentsCount` removed in v1: callers express counts via
-  // `getDocuments` with `version.v1.select = COUNT` (optionally
-  // with `group_by`). See `GetDocumentsRequestV1` for the unified
-  // SQL-shaped surface. The v0-count endpoint shipped briefly in
-  // #3623 and never had stable callers; v1 supersedes it entirely.
   rpc getIdentityByPublicKeyHash(GetIdentityByPublicKeyHashRequest)
       returns (GetIdentityByPublicKeyHashResponse);
   rpc getIdentityByNonUniquePublicKeyHash(
@@ -870,14 +865,6 @@ message GetDocumentsResponse {
     GetDocumentsResponseV1 v1 = 2;
   }
 }
-
-
-// `GetDocumentsCountRequest` / `GetDocumentsCountResponse` removed
-// in v1: count queries express through `GetDocumentsRequestV1` with
-// `select = COUNT`. The count wire types (`CountEntry`,
-// `CountEntries`, `CountResults`) now live nested in
-// `GetDocumentsResponseV1`. See the v1 message-level docstring
-// above for the full SQL-shaped surface.
 
 message GetIdentityByPublicKeyHashRequest {
   message GetIdentityByPublicKeyHashRequestV0 {
