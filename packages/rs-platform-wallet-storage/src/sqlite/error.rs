@@ -188,15 +188,19 @@ pub enum WalletStorageError {
         target: SafeCastTarget,
     },
 
-    /// A `load()` call succeeded but skipped some sub-areas because
-    /// their reconstruction is not yet implemented. The `unimplemented`
-    /// list names the affected `ClientStartState` field paths so
-    /// callers can decide whether to proceed.
+    /// Soft signal — currently unused as a returned error.
     ///
-    /// `load()` itself returns `Ok(ClientStartState)` and surfaces
-    /// the same information via `tracing::warn!`; this variant exists
-    /// for callers that route through trait-error propagation paths
-    /// or explicitly want partial-completion as a value.
+    /// `load()` surfaces partial-reconstruction information via
+    /// `tracing::info!` / `tracing::warn!` (see
+    /// [`crate::sqlite::persister::LOAD_UNIMPLEMENTED`]) and always
+    /// returns `Ok(ClientStartState)`. This variant is reserved for a
+    /// future `try_load() -> Result<(ClientStartState,
+    /// Vec<LoadWarning>), _>` API that will hand callers a typed value
+    /// instead of forcing them to consume `tracing` events.
+    #[deprecated(
+        since = "3.1.0-dev.1",
+        note = "load() surfaces partial reconstruction via tracing only; this variant is reserved for a future try_load() API"
+    )]
     #[error(
         "load() did not reconstruct {} sub-area(s); unimplemented: {unimplemented:?}",
         unimplemented.len()
@@ -210,8 +214,17 @@ pub enum WalletStorageError {
     /// next `flush(wallet_id)` will retry the same data merged with
     /// anything stored in between. Callers should back off and retry
     /// rather than dropping state.
+    ///
+    /// **Use exponential backoff; do NOT tight-loop on this error** —
+    /// hammering the persister at full speed turns a transient lock
+    /// contention into a hot CPU spin and delays whoever holds the
+    /// lock from releasing it.
+    ///
+    /// The variant name `FlushRetryable` is intentionally embedded in
+    /// the `Display` output so operators grepping production logs can
+    /// match on the variant directly.
     #[error(
-        "flush failed transiently for wallet {}; buffer preserved for retry",
+        "FlushRetryable: flush failed transiently for wallet {}; buffer preserved for retry",
         hex::encode(wallet_id)
     )]
     FlushRetryable {
@@ -273,6 +286,7 @@ impl WalletStorageError {
     /// MUST NOT gain `#[non_exhaustive]`, otherwise adding a future
     /// variant would skip this gate (it'd silently fall into a
     /// catch-all instead of forcing the author to classify it).
+    #[allow(deprecated)] // exhaustive match must mention LoadIncomplete
     pub fn is_transient(&self) -> bool {
         use rusqlite::ErrorCode;
         match self {
@@ -295,6 +309,14 @@ impl WalletStorageError {
             | Self::AutoBackupDisabled { .. }
             | Self::AutoBackupDirUnwritable { .. }
             | Self::WalletNotFound { .. }
+            // TODO(qa): TC-P2-008 — `LockPoisoned` is classified as
+            // fatal here, but the end-to-end mutex-poison flow has no
+            // automated test (the spec deferred it as race-prone — a
+            // panicking thread + join is hard to reproduce
+            // deterministically). Manual verification only via the
+            // table-driven test in `tests/sqlite_error_classification`.
+            // If you change this classification, re-derive
+            // `handle_flush_error`'s fatal-branch behavior to match.
             | Self::LockPoisoned
             | Self::RestoreDestinationLocked
             | Self::InvalidWalletIdHex { .. }
@@ -314,6 +336,7 @@ impl WalletStorageError {
     /// Short, lowercase, snake-case tag for tracing fields. One tag
     /// per variant family — readers grep for these in production
     /// logs.
+    #[allow(deprecated)] // exhaustive match must mention LoadIncomplete
     pub fn error_kind_str(&self) -> &'static str {
         use rusqlite::ErrorCode;
         match self {
