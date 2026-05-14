@@ -617,42 +617,33 @@ message GetDocumentsRequest {
   //
   // **Phase 1 supported shapes** (everything else rejects with a
   // typed `QuerySyntaxError::Unsupported` so callers can detect
-  // un-wired capabilities without parsing prose):
+  // un-wired capabilities without parsing prose). Bullets are
+  // kept single-line so the generated Rust doc comments don't trip
+  // rustdoc's `list_item_without_indent` lint on continuation
+  // lines.
   //
-  //   select=DOCUMENTS, group_by=[]:
-  //     any where shape v0 supports.
+  // `select=DOCUMENTS, group_by=[]`: any where shape v0 supports.
   //
-  //   select=COUNT, group_by=[]:
-  //     - empty where → `documentsCountable: true` doctype.
-  //     - `==` only → `countable: true` index covering the fields.
-  //     - one `In` → `countable: true` index covering the fields
-  //       (per-In aggregate fan-out).
-  //     - one range → `rangeCountable: true` index.
-  //     - one `In` + one range → `rangeCountable: true` compound
-  //       index (per-In aggregate fan-out on no-proof; rejected on
-  //       prove because the aggregate proof primitive can't fork).
+  // `select=COUNT, group_by=[]`:
+  // - empty where → `documentsCountable: true` doctype.
+  // - `==` only → `countable: true` index covering the fields.
+  // - one `In` → `countable: true` index covering the fields (per-In aggregate fan-out).
+  // - one range → `rangeCountable: true` index.
+  // - one `In` + one range → `rangeCountable: true` compound index (per-In aggregate fan-out on no-proof; rejected on prove because the aggregate proof primitive can't fork).
   //
-  //   select=COUNT, group_by=[g]:
-  //     - g is the In clause's field → `countable: true` index,
-  //       grouped by g (PerInValue on no-proof, CountTree element
-  //       proof per In branch on prove).
-  //     - g is the range clause's field → `rangeCountable: true`
-  //       index, grouped by g (RangeDistinct on no-proof, distinct
-  //       range proof on prove).
+  // `select=COUNT, group_by=[g]`:
+  // - g is the In clause's field → `countable: true` index, grouped by g (PerInValue on no-proof, CountTree element proof per In branch on prove).
+  // - g is the range clause's field → `rangeCountable: true` index, grouped by g (RangeDistinct on no-proof, distinct range proof on prove).
   //
-  //   select=COUNT, group_by=[a, b]:
-  //     - a is the In field AND b is the range field, in that order
-  //       → existing compound distinct shape; entries carry both
-  //       `in_key` (= a's value) and `key` (= b's value).
+  // `select=COUNT, group_by=[a, b]`:
+  // - a is the In field AND b is the range field, in that order → existing compound distinct shape; entries carry both `in_key` (= a's value) and `key` (= b's value).
   //
   // **Phase 1 rejected shapes** (return `Unsupported`):
-  //   - any non-empty `having` (always).
-  //   - `select=DOCUMENTS` with non-empty `group_by`.
-  //   - `select=COUNT` with `group_by` on a field that is not
-  //     constrained by an `In` or range where clause.
-  //   - `select=COUNT` with `group_by.len() > 2`.
-  //   - `select=COUNT` with 2-field `group_by` that does not match
-  //     the `(in_field, range_field)` shape above.
+  // - any non-empty `having` (always).
+  // - `select=DOCUMENTS` with non-empty `group_by`.
+  // - `select=COUNT` with `group_by` on a field that is not constrained by an `In` or range where clause.
+  // - `select=COUNT` with `group_by.len() > 2`.
+  // - `select=COUNT` with 2-field `group_by` that does not match the `(in_field, range_field)` shape above.
   //
   // **Absent-from-tree branches on `In`-grouped queries**: when
   // `select=COUNT, group_by=[in_field]` and an `In` value has no
@@ -661,18 +652,21 @@ message GetDocumentsRequest {
   // elements), so the wire `CountEntries.entries` list contains
   // only the In values that exist.
   //
-  // The SDK's proof decoder picks this up from grovedb's
-  // `verify_query` directly: that function enumerates every key
-  // the path query asked about and returns
-  // `(path, key, Option<Element>)` triples — `Some(element)` for
-  // present branches, `None` for absent. The drive-side
-  // verifier (`verify_point_lookup_count_proof`) propagates the
-  // `Option` onto `SplitCountEntry::count`, so SDK callers get a
-  // complete list keyed by their request's In array with
-  // `count: None` marking "queried, proof was silent." The wire
-  // `CountEntry.count` is plain `uint64` and only carries values
-  // that exist; `None` is reconstructed at verify time from the
-  // proof's path-query enumeration.
+  // The SDK's proof decoder surfaces this by **omission**, not by
+  // a sentinel `count` value: the current point-lookup path query
+  // doesn't set `absence_proofs_for_non_existing_searched_keys:
+  // true`, so grovedb's `verify_query` silently drops absent-Key
+  // branches from the verified elements stream. The drive-side
+  // verifier (`verify_point_lookup_count_proof`) therefore emits
+  // one `SplitCountEntry` per **present** In branch and the SDK
+  // wraps those into `CountEntry`. Callers that need to detect
+  // "queried but absent" diff their request's In array against
+  // the returned entries by `key` (each entry's `key` is the
+  // serialized In value, recoverable via
+  // `document_type.serialize_value_for_key(in_field, v, …)`).
+  // `SplitCountEntry::count`'s `Option<u64>` and the `None`
+  // variant exist for a future absence-proof variant; today the
+  // wire `CountEntry.count` is plain `uint64`.
   //
   // For range-grouped queries the walker only emits keys that
   // exist in the index, which IS SQL-conformant; no equivalent
