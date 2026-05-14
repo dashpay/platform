@@ -58,6 +58,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             // it (no proof was provided). Otherwise the proof we
             // already have determines the status without a lookup.
             if proof.is_none() {
+                // TODO(dashpay/platform#3642): iterate `all_funding_accounts()` instead of
+                // hard-coding BIP-44 — recovery misses CoinJoin / BIP-32 funded asset locks.
                 info.core_wallet
                     .accounts
                     .standard_bip44_accounts

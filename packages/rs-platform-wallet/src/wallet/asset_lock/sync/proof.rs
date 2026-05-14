@@ -98,6 +98,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             let info = wm
                 .get_wallet_info(&self.wallet_id)
                 .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+            // TODO(dashpay/platform#3642): iterate `all_funding_accounts()` instead of hard-coding
+            // BIP-44 — CoinJoin / legacy BIP-32 funded asset locks miss this lookup.
             info.core_wallet
                 .accounts
                 .standard_bip44_accounts
@@ -199,6 +201,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             let info = wm
                 .get_wallet_info(&self.wallet_id)
                 .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+            // TODO(dashpay/platform#3642): iterate `all_funding_accounts()` instead of hard-coding
+            // BIP-44 — CoinJoin / legacy BIP-32 funded asset locks miss this lookup.
             info.core_wallet
                 .accounts
                 .standard_bip44_accounts
@@ -297,6 +301,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             let in_memory = {
                 let wm = self.wallet_manager.read().await;
                 wm.get_wallet_info(&self.wallet_id).and_then(|info| {
+                    // TODO(dashpay/platform#3642): iterate `all_funding_accounts()` instead of
+                    // hard-coding BIP-44 — CoinJoin / BIP-32 funded locks never chain-lock here.
                     info.core_wallet
                         .accounts
                         .standard_bip44_accounts
@@ -371,6 +377,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             let in_memory = {
                 let wm = self.wallet_manager.read().await;
                 wm.get_wallet_info(&self.wallet_id).and_then(|info| {
+                    // TODO(dashpay/platform#3642): iterate `all_funding_accounts()` instead of
+                    // hard-coding BIP-44 — wait_for_proof misses CoinJoin / BIP-32 funded locks.
                     info.core_wallet
                         .accounts
                         .standard_bip44_accounts
