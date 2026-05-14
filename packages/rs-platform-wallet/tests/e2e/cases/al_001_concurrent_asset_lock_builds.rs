@@ -1,18 +1,21 @@
 //! AL-001 — Concurrent asset-lock builds from same wallet.
 //!
 //! Spec: `tests/e2e/TEST_SPEC.md` (### Asset Lock (AL) → AL-001).
-//! Pinned status: STUB — full test body implemented, `#[ignore]`-tagged
+//! Pinned status: red-real-fail — full test body implemented, `#[ignore]`-tagged
 //! behind the same `PLATFORM_WALLET_E2E_BANK_CORE_GATE` env gate
-//! CR-003 and ID-002b use. Requires bank Core (Layer-1) pre-funding
-//! large enough for N parallel asset locks + fees (~5 DASH testnet).
+//! CR-003 and ID-002b use. Fails deterministically (fingerprint identical
+//! across v48/v49/v50/v51) on Found-008 — tracked at dashpay/platform#3641.
+//! Requires bank Core (Layer-1) pre-funding large enough for N parallel
+//! asset locks + fees (~5 DASH testnet).
 //!
 //! `AssetLockManager` is critical-path code that every asset-lock-funded
 //! registration and top-up goes through, but CR-003 / ID-002b only
 //! exercise the sequential single-build happy path. AL-001 fires
 //! `N = 3` concurrent `top_up_identity_with_funding` calls (each
 //! against a DIFFERENT identity to dodge Found-006's `topup_index`
-//! routing discrepancy) so the manager's locking, UTXO-reservation,
-//! and proof-correlation logic is exercised under concurrent load.
+//! routing discrepancy — tracked upstream at dashpay/rust-dashcore#762)
+//! so the manager's locking, UTXO-reservation, and proof-correlation
+//! logic is exercised under concurrent load.
 //!
 //! Assertions:
 //! - All N tasks return `Ok(_)`.
@@ -24,13 +27,14 @@
 //!
 //! Known dependencies (documented per spec — not regression pins
 //! here):
-//! - Found-008 (`LockNotifyHandler` missed-wakeup) is on the critical
-//!   path. Under concurrent load a single IS-lock event arriving in
-//!   the check / wait gap of `wait_for_proof` can stall one of the N
-//!   waiters until the configured timeout. If AL-001 flakes red on
-//!   `FinalityTimeout`, Found-008 is the likely cause.
-//!   TODO(Found-008): tighten test once Found-008 is fixed (or remove
-//!   this note if AL-001 is consistently green for N rounds).
+//! - Found-008 (`LockNotifyHandler` missed-wakeup at `packages/rs-platform-wallet/src/wallet/asset_lock/lock_notify_handler.rs:30`) is on the critical
+//!   path. Under concurrent load an IS-lock event arriving in the
+//!   check / await gap of `wait_for_proof` (`sync/proof.rs:367-418`)
+//!   stalls one of the N waiters until the configured timeout.
+//!   AL-001 fails deterministically on `FinalityTimeout` today — fingerprint
+//!   identical across v48/v49/v50/v51. Tracked at dashpay/platform#3641.
+//!   TODO(dashpay/platform#3641): re-evaluate once the missed-wakeup
+//!   race is fixed; AL-001 should turn green with zero test-side changes.
 //! - Found-012 (account-type tunnel vision in `validate_or_upgrade_proof`)
 //!   is also on the path. If any of the N asset-lock transactions
 //!   ends up funded from a non-BIP-44 account, the test hits
@@ -40,10 +44,12 @@
 //!
 //! QA-011: AL-001 requires N+1 pre-split UTXOs on the test wallet's
 //! BIP-44 account 0 before the concurrent fan-out in step 3. Without
-//! the split, all N tasks compete for a single UTXO and N-1 fail with
-//! `Coin selection error: No UTXOs available for selection`. Step 1b
-//! self-sends the entire Core balance to N+1 fresh receive addresses
-//! so coin selection always has a dedicated candidate per task.
+//! the split, all N tasks compete for a single UTXO; with PR #3585's
+//! `OutpointReservations` in place, N-1 tasks fail fast with
+//! `NoSpendableInputs` (formerly `Coin selection error: No UTXOs available
+//! for selection` before the variant split). Step 1b self-sends the
+//! entire Core balance to N+1 fresh receive addresses so coin selection
+//! always has a dedicated candidate per task.
 
 use std::collections::HashSet;
 use std::time::Duration;
@@ -102,9 +108,10 @@ const TOP_UP_VISIBILITY_TIMEOUT: Duration = Duration::from_secs(240);
             sized for N parallel asset-locks (~5 DASH testnet). Same \
             PLATFORM_WALLET_E2E_BANK_CORE_GATE gate as CR-003 / ID-002b. \
             Step 1b pre-splits the balance into N+1 UTXOs (QA-011). \
-            May flake under concurrent load if Found-008 fires \
-            (LockNotifyHandler missed-wakeup) — see the file-level \
-            doc-comment and Found-008's spec entry."]
+            Fails deterministically under concurrent load on Found-008 \
+            (LockNotifyHandler missed-wakeup) — tracked at \
+            dashpay/platform#3641; see the file-level doc-comment and \
+            Found-008's spec entry."]
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 async fn al_001_concurrent_asset_lock_builds() {
     let _ = tracing_subscriber::fmt()

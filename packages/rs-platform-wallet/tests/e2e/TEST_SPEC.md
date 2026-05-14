@@ -1566,7 +1566,7 @@ This section covers primitive-level correctness of `AssetLockManager` — the in
   - After the fix lands (tracked at dashpay/platform#3641), AL-001 should turn green without any test-side changes.
 - **Preconditions**:
   - CR-001 (SPV ready).
-  - Core-funded test wallet. Suggested `N = 2` concurrent tasks (as implemented), per-lock amount `100_000_000` duffs (0.001 DASH); Core funding floor ≈ 500_000_000 duffs (5 DASH testnet). Same `PLATFORM_WALLET_E2E_BANK_CORE_GATE` env gate as CR-003.
+  - Core-funded test wallet. Implementation uses `N = 3` concurrent tasks, per-lock amount `100_000_000` duffs (0.001 DASH); Core funding floor ≈ 500_000_000 duffs (5 DASH testnet). Same `PLATFORM_WALLET_E2E_BANK_CORE_GATE` env gate as CR-003.
   - N pre-registered identities (each via address-funded `register_from_addresses` from the ID-001 helper). Concurrent top-ups target different identities to avoid colliding on Found-006.
 - **Scenario**:
   1. `setup_with_core_funded_test_wallet(CONCURRENT_LOCK_FUNDING_TOTAL)` lands Core funds on the test wallet.
