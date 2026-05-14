@@ -1,46 +1,52 @@
 //! Identity registration and top-up flows.
 //!
-//! ## Two-layer factoring
+//! Two public entry points — one to register, one to top up:
 //!
-//! Both registration and top-up are factored as a thin **L1 primitive**
-//! wrapping the SDK's `_with_signer` calls, and a **L2 orchestration
-//! method** that does pre-flight, funding resolution, IS→CL fallback,
-//! and IdentityManager bookkeeping.
+//! - [`register_identity_with_funding`](IdentityWallet::register_identity_with_funding)
+//! - [`top_up_identity_with_funding`](IdentityWallet::top_up_identity_with_funding)
 //!
-//! | Layer | Registration                       | Top-up                            |
-//! |-------|------------------------------------|-----------------------------------|
-//! | L1    | [`register_identity_with_signer`]  | [`top_up_identity_with_signer`]   |
-//! | L2    | [`register_identity_with_funding`] | [`top_up_identity_with_funding`]  |
+//! Each handles pre-flight, funding resolution, submission with
+//! Platform-side retries, IS→CL fallback, and IdentityManager
+//! bookkeeping. The SDK's `_with_signer` calls are issued inline
+//! at the submission site — no thin "primitive" wrappers, since
+//! a primitive that bypasses the recovery layers has no caller in
+//! this codebase. If a single-shot use case ever materialises
+//! (e.g. an external tool managing its own submission policy),
+//! factor it out then; cheaper to add a method than to maintain a
+//! dead one.
 //!
-//! [`register_identity_with_signer`]: IdentityWallet::register_identity_with_signer
-//! [`top_up_identity_with_signer`]: IdentityWallet::top_up_identity_with_signer
-//! [`register_identity_with_funding`]: IdentityWallet::register_identity_with_funding
-//! [`top_up_identity_with_funding`]: IdentityWallet::top_up_identity_with_funding
+//! ## Platform-side recovery layers
 //!
-//! The L2 methods are the canonical entry points. The L1 primitives are
-//! `pub` so callers that manage funding outside this crate (evo-tool's
-//! tasks, integration tests) can submit a pre-built proof directly.
+//! Both methods wrap the SDK submission in two retry layers, in
+//! this order:
 //!
-//! ## IS→CL fallback (the "stuck asset-lock" bug it fixes)
+//! 1. **CL-height-too-low** (`InvalidAssetLockProofCoreChainHeightError`,
+//!    consensus code 10506) — Platform's observed Core tip is briefly
+//!    behind the wallet's SPV-verified CL. Bump
+//!    `PutSettings::user_fee_increase` (changes ST signable bytes →
+//!    different ST hash → bypasses Tenderdash's 24h invalid-tx cache)
+//!    and resubmit the same proof. See
+//!    [`submit_with_cl_height_retry`].
 //!
-//! L2 covers two distinct surfaces where an IS-lock can fail:
+//! 2. **IS-lock rejection** (`InvalidInstantAssetLockProofSignatureError`)
+//!    — Drive rejected because the IS-lock signing quorum has rotated
+//!    out. Detected via [`crate::error::is_instant_lock_proof_invalid`].
+//!    Upgrade IS→CL via `upgrade_to_chain_lock_proof` and retry. The
+//!    CL retry is itself wrapped in the CL-height-too-low loop.
 //!
-//! 1. **Core-side timeout** — `create_funded_asset_lock_proof` returns
-//!    `PlatformWalletError::FinalityTimeout` because the IS-lock
-//!    didn't propagate within 300s. Detected via
-//!    [`crate::error::is_instant_lock_timeout`]. L2 calls
-//!    `upgrade_to_chain_lock_proof` to wait for a ChainLock, then
-//!    re-enters submission with the CL proof.
+//! On the funding-build side, a third recovery handles the
+//! Core-side IS timeout:
 //!
-//! 2. **Platform-side rejection** — `put_to_platform_and_wait_for_response_with_signer`
-//!    returns `InvalidInstantAssetLockProofSignatureError` (the
-//!    consensus error Drive emits when the IS-lock signing quorum has
-//!    rotated out). Detected via
-//!    [`crate::error::is_instant_lock_proof_invalid`]. Same recovery:
-//!    upgrade to ChainLock and retry.
+//! 3. **IS-lock build-time timeout** —
+//!    [`create_funded_asset_lock_proof`](crate::wallet::asset_lock::manager::AssetLockManager::create_funded_asset_lock_proof)
+//!    returns `PlatformWalletError::FinalityTimeout` because the
+//!    IS-lock didn't propagate within 300s. Resolved by re-entering
+//!    `resume_asset_lock` (which will fall through to the
+//!    `metadata.last_applied_chain_lock` fallback in `proof.rs`).
 //!
-//! Both paths share the same outpoint-keyed cleanup (`consume_asset_lock`)
-//! once Platform finally accepts the registration / top-up.
+//! All recovery paths share the same outpoint-keyed cleanup —
+//! [`consume_asset_lock`](crate::wallet::asset_lock::manager::AssetLockManager::consume_asset_lock)
+//! — once Platform finally accepts the submission.
 
 use std::collections::BTreeMap;
 use std::time::Duration;
@@ -323,107 +329,11 @@ impl IdentityWallet {
 }
 
 // ---------------------------------------------------------------------------
-// L1 primitives — pure submit, no funding/bookkeeping/fallback
+// register
 // ---------------------------------------------------------------------------
 
 impl IdentityWallet {
-    /// **L1 primitive**: submit an identity-create state transition using a
-    /// caller-supplied asset-lock proof + derivation path + signer pair.
-    ///
-    /// Builds a placeholder `Identity` from `keys_map` internally
-    /// (caller doesn't need to materialise the DPP type). The first key
-    /// (id=0) MUST be a MASTER + AUTHENTICATION key — this is enforced
-    /// here defensively so a malformed map fails fast.
-    ///
-    /// No funding resolution, no bookkeeping, no fallback. The L2
-    /// orchestrator [`register_identity_with_funding`](Self::register_identity_with_funding)
-    /// owns those concerns and calls this primitive twice (once with
-    /// the IS proof, once with the CL proof on IS→CL fallback) so the
-    /// retry is byte-identical to the first attempt.
-    ///
-    /// # Send + Sync bounds
-    ///
-    /// Both `S` and `AS` carry `Send + Sync` bounds even though this
-    /// method's body doesn't `tokio::spawn`. The bounds match the L2
-    /// orchestrator's so callers don't have to think about which layer
-    /// imposes which constraint. This unblocks future `tokio::spawn`-
-    /// driven refactors at the L2 site without a backwards-incompatible
-    /// trait-bound change here.
-    pub async fn register_identity_with_signer<S, AS>(
-        &self,
-        keys_map: BTreeMap<u32, IdentityPublicKey>,
-        asset_lock_proof: AssetLockProof,
-        asset_lock_proof_path: &DerivationPath,
-        asset_lock_signer: &AS,
-        identity_signer: &S,
-        settings: Option<PutSettings>,
-    ) -> Result<Identity, dash_sdk::Error>
-    where
-        S: Signer<IdentityPublicKey> + Send + Sync,
-        AS: ::key_wallet::signer::Signer + Send + Sync,
-    {
-        let identity = Identity::V0(IdentityV0 {
-            id: Identifier::default(),
-            public_keys: keys_map,
-            balance: 0,
-            revision: 0,
-        });
-
-        identity
-            .put_to_platform_and_wait_for_response_with_signer(
-                &self.sdk,
-                asset_lock_proof,
-                asset_lock_proof_path,
-                asset_lock_signer,
-                identity_signer,
-                settings,
-            )
-            .await
-    }
-
-    /// **L1 primitive**: submit an identity-top-up state transition
-    /// using a caller-supplied identity + asset-lock proof + derivation
-    /// path + signer.
-    ///
-    /// No funding resolution, no bookkeeping, no fallback. The L2
-    /// orchestrator [`top_up_identity_with_funding`](Self::top_up_identity_with_funding)
-    /// owns those concerns.
-    ///
-    /// Returns the post-transition credit balance.
-    ///
-    /// `Send + Sync` rationale: same as
-    /// [`register_identity_with_signer`](Self::register_identity_with_signer).
-    pub async fn top_up_identity_with_signer<AS>(
-        &self,
-        identity: &Identity,
-        asset_lock_proof: AssetLockProof,
-        asset_lock_proof_path: &DerivationPath,
-        asset_lock_signer: &AS,
-        settings: Option<PutSettings>,
-    ) -> Result<u64, dash_sdk::Error>
-    where
-        AS: ::key_wallet::signer::Signer + Send + Sync,
-    {
-        identity
-            .top_up_identity_with_signer(
-                &self.sdk,
-                asset_lock_proof,
-                asset_lock_proof_path,
-                asset_lock_signer,
-                settings.and_then(|s| s.user_fee_increase),
-                settings,
-            )
-            .await
-    }
-}
-
-// ---------------------------------------------------------------------------
-// L2 orchestrator — register
-// ---------------------------------------------------------------------------
-
-impl IdentityWallet {
-    /// **L2 orchestrator**: register a new asset-lock-funded identity
-    /// on Platform.
+    /// Register a new asset-lock-funded identity on Platform.
     ///
     /// Single entry point for every register-with-asset-lock case:
     ///
@@ -433,9 +343,11 @@ impl IdentityWallet {
     ///    that role on id=0 by convention).
     /// 2. Resolve the [`IdentityFunding`] to an asset-lock proof +
     ///    derivation path.
-    /// 3. Submit via the [L1 primitive](Self::register_identity_with_signer),
-    ///    with IS→CL fallback on **both** Core-side timeout
-    ///    (`FinalityTimeout`) and Platform-side rejection
+    /// 3. Submit via
+    ///    `Identity::put_to_platform_and_wait_for_response_with_signer`
+    ///    inside `submit_with_cl_height_retry`, with IS→CL fallback
+    ///    on **both** Core-side timeout (`FinalityTimeout`) and
+    ///    Platform-side rejection
     ///    (`InvalidInstantAssetLockProofSignatureError`).
     /// 4. On success, add the confirmed identity to the local
     ///    `IdentityManager` and record each key's derivation breadcrumb.
@@ -548,12 +460,8 @@ impl IdentityWallet {
         };
 
         // Build the placeholder identity ONCE so both the primary
-        // attempt and the IS→CL retry submit the same key set. This
-        // bypasses the L1 primitive — which takes `keys_map` by value
-        // — so the retry doesn't need a deep clone of the BTreeMap.
-        // The L1 helper exists for *single-shot* callers; L2 owns the
-        // fallback shape and inlines the SDK call to avoid the by-value
-        // ergonomics issue.
+        // attempt and the IS→CL retry submit the same key set
+        // without a `keys_map` deep clone on the retry path.
         let placeholder = Identity::V0(IdentityV0 {
             id: Identifier::default(),
             public_keys: keys_map,
@@ -676,11 +584,11 @@ impl IdentityWallet {
 }
 
 // ---------------------------------------------------------------------------
-// L2 orchestrator — top-up
+// top-up
 // ---------------------------------------------------------------------------
 
 impl IdentityWallet {
-    /// **L2 orchestrator**: top up an existing identity's credit balance.
+    /// Top up an existing identity's credit balance.
     ///
     /// Mirror of [`register_identity_with_funding`](Self::register_identity_with_funding)
     /// for top-ups:
@@ -688,9 +596,10 @@ impl IdentityWallet {
     /// 1. Look up the identity by `identity_id` in the local
     ///    `IdentityManager`. Return `IdentityNotFound` if missing.
     /// 2. Resolve the [`IdentityFunding`] to an asset-lock proof.
-    /// 3. Submit via the [L1 primitive](Self::top_up_identity_with_signer),
-    ///    with IS→CL fallback on Core-side timeout and Platform-side
-    ///    rejection (same as register).
+    /// 3. Submit via `Identity::top_up_identity_with_signer` inside
+    ///    `submit_with_cl_height_retry`, with IS→CL fallback on
+    ///    Core-side timeout and Platform-side rejection (same as
+    ///    register).
     /// 4. Persist the new credit balance + remove the tracked asset
     ///    lock.
     pub async fn top_up_identity_with_funding<AS>(
@@ -768,11 +677,12 @@ impl IdentityWallet {
         // same outpoint.
         let proof_out_point = Self::out_point_from_proof(&proof);
         let new_balance = match submit_with_cl_height_retry(settings, |s| {
-            self.top_up_identity_with_signer(
-                &identity,
+            identity.top_up_identity_with_signer(
+                &self.sdk,
                 proof.clone(),
                 &path,
                 asset_lock_signer,
+                s.as_ref().and_then(|x| x.user_fee_increase),
                 s,
             )
         })
@@ -791,11 +701,12 @@ impl IdentityWallet {
                     .upgrade_to_chain_lock_proof(&out_point, CL_FALLBACK_TIMEOUT)
                     .await?;
                 submit_with_cl_height_retry(settings, |s| {
-                    self.top_up_identity_with_signer(
-                        &identity,
+                    identity.top_up_identity_with_signer(
+                        &self.sdk,
                         chain_proof.clone(),
                         &path,
                         asset_lock_signer,
+                        s.as_ref().and_then(|x| x.user_fee_increase),
                         s,
                     )
                 })
@@ -865,9 +776,10 @@ mod tests {
     use dashcore::{OutPoint, Txid};
 
     /// Pins the IS-timeout discriminator: only `FinalityTimeout`
-    /// matches, so the L2 fallback arms route exactly the cases we
-    /// expect. Companion to `is_instant_lock_proof_invalid` (which
-    /// discriminates SDK errors at the Platform-rejection boundary).
+    /// matches, so the IS→CL fallback arms route exactly the cases
+    /// we expect. Companion to `is_instant_lock_proof_invalid`
+    /// (which discriminates SDK errors at the Platform-rejection
+    /// boundary).
     #[test]
     fn is_instant_lock_timeout_only_matches_finality_timeout() {
         let timeout = PlatformWalletError::FinalityTimeout(OutPoint {
