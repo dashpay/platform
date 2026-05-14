@@ -8,6 +8,8 @@ presumably enumerate the joy of doing it.
 
 ## Changelog
 
+- **v3.1-dev (2026-05-14, QA-901 CR-004 retarget)** — QA-901 retargets CR-004 from red-by-design (dash-evo-tool#845 pin) to passing-as-regression. TRACE run confirmed test-side dust-threshold mismatch (test assumed 2,730 duffs; upstream `transaction_builder.rs:294` uses 546). Headroom changed from 2,500 → 700; test now pins symmetric BIP-32 spent-marking via `check_core_transaction` (confirmed symmetric across TransactionRouter, ManagedAccountCollection, check_transaction_for_match, update_utxos) and the upstream sub-dust fold contract.
+
 - **v3.1-dev (2026-05-14, Found-008 spec correction)** — AL-001 / Found-008: spec drift corrected. Bug confirmed platform-internal (not upstream rust-dashcore). Filed dashpay/platform#3641 with full repro + root-cause. Verified PR #3634 does NOT fix this — it fixes a different "no events at all" bug (FFI knob), while Found-008 is the "events arrive but get dropped in the race window" bug. AL-001 will continue to fail under N concurrent asset-lock builds until #3641 lands.
 
 - **v3.1-dev (2026-05-14 triage, post-v47)** — three reclassifications, one upstream issue filed, two spec-drift fixes:
@@ -212,7 +214,7 @@ Status legend: **green** = test file present, body has real assertions, runnable
 | CR-001 | SPV mn-list sync readiness | P1 | green | M |
 | CR-002 | Core wallet receive address derivation | P1 | not implemented | M |
 | CR-003 | Asset-lock-funded identity registration (full path) | P2 | green | L |
-| CR-004 | Legacy BIP32 account: balance + UTXO state updates after spend | P1 | red-by-design — Layer 1 (next_unused idempotency) fixed at `1c4c8a76f4`; Layer 2 is the genuine dash-evo-tool#845 pin (post-broadcast UTXO-mutation not clearing BIP-32 spent inputs); fails deterministically until upstream fix lands | M |
+| CR-004 | Legacy BIP32 account: balance + UTXO state updates after spend | P1 | passing-as-regression — Layer 1 (next_unused idempotency) fixed at `1c4c8a76f4`; Layer 2 test-side dust-threshold mismatch fixed in QA-901 (2026-05-14); now pins the BIP-32 spent-marking + sub-dust-fold contract | M |
 | AL-001 | Concurrent asset-lock builds from same wallet | P1 | red-real-fail (shifted-failure-mode) — coin-selection race closed by `403d29c3c8` + PR #3585 `OutpointReservations`; current failure is `FinalityTimeout` at `:299` (task 1 IS-lock wakeup missed); blocked on Found-008 (`LockNotifyHandler::notify_waiters` at `packages/rs-platform-wallet/src/wallet/asset_lock/lock_notify_handler.rs:30`, tracked: dashpay/platform#3641); identical fingerprint v48/v49/v50 | L |
 | CT-001 | Document put: deploy a fixture data contract | P1 | not implemented | M |
 | CT-002 | Document put / replace lifecycle | P2 | not implemented | M |
@@ -265,7 +267,7 @@ Status legend: **green** = test file present, body has real assertions, runnable
 | Found-026 | `PlatformAddressWallet::next_unused_receive_address` pool-cursor bump may not enqueue address into BLAST sync provider's pending set (concurrent-load race) | P2 | suspected — pinned by PA-008b concurrency-only failure (full-suite FAIL, `--test-threads=1` PASS); needs TRACE instrumentation at the pool-bump + provider-enqueue boundary to confirm | M |
 
 <!-- merge note: theirs' counts already reflect the expanded TK section + ID-007 (93 total; 74 baseline). cr004-spec adds the CR-004 row (P1, env-gated FAILING-by-design), so P1 and total each +1: P1: 25, baseline: 75, total: 94. Kept theirs' "post-Task #15" annotations and noted CR-004 as the env-gated entry under P1. ID-002b (P1, not implemented) added: P1: 26, baseline: 76, total: 95. AL-001 (P1, not implemented) added: P1: 27, baseline: 77, total: 96. upstream-audit adds Found-021, Found-022, Found-023 (P2, not implemented): P2 +3, Found-bug pins 18→21, total 96→99. Found-024 (P1, passing-as-regression): P1 +1, Found-bug pins 21→22, total 99→100. Found-025 (P1, not implemented): P1 +1, Found-bug pins 22→23, total 100→101. v47 audit adds Found-019, Found-020 (P2): P2 +2, Found-bug pins 23→25, total 101→103. -->
-Counts by priority: **P0: 10**, **P1: 29** (incl. CR-004 red-by-design + ID-002b + AL-001 + Found-024 + Found-025), **P2: 64** (incl. 24 P2 Found-bug pins), **DEFERRED: 1** (104 total index entries; 77 baseline + 26 Found-bug pins + 1 deferred placeholder).
+Counts by priority: **P0: 10**, **P1: 29** (incl. CR-004 passing-as-regression + ID-002b + AL-001 + Found-024 + Found-025), **P2: 64** (incl. 24 P2 Found-bug pins), **DEFERRED: 1** (104 total index entries; 77 baseline + 26 Found-bug pins + 1 deferred placeholder).
 
 **Status at v47 (SHA `55472a3e79`, run date 2026-05-12):**
 - 34 GREEN / 4 RED on 38 tests in `--ignored` cohort
@@ -275,6 +277,7 @@ Counts by priority: **P0: 10**, **P1: 29** (incl. CR-004 red-by-design + ID-002b
 - V27-007 production fix shipped; PA-004b + PA-009 now green; pa\_009/c FIXED in v47
 
 **Status at HEAD (SHA `cf9b6d2ba4`, post-v47):**
+- CR-004 retargeted (QA-901, 2026-05-14): reclassified `red-by-design (dash-evo-tool#845)` → `passing-as-regression`. The deterministic failure was a test-side dust-threshold mismatch (assumed 2,730; upstream gate at `transaction_builder.rs:294` is 546). Headroom changed `2_500 → 700`; test now pins the symmetric BIP-32 spent-marking + upstream sub-dust fold contracts.
 - Found-025 prior pin retargeted: the v47-era unit test asserted on a local `HashMap` (Found-022 disease) and has been deleted in favour of a documented stub. Status remains `red-by-design — pending upstream test-hook surface`; no Cargo test is emitted today. See `/tmp/marvin-redbyd-sweep.md` and the file-level docstring at `cases/found_025_address_sync_silent_discard.rs`.
 - 26 Found-bug pins total; 2 red-by-design with live Cargo tests (Found-006, Found-008), 1 red-by-design pending upstream test-hook surface (Found-025; pin deleted), 2 passing-as-regression (Found-020 resolved via spec-realignment, Found-024 V27-007 fix), 3 blocked-scaffold (Found-004, Found-012, Found-013), 1 suspected concurrency-only race (Found-026, pinned by PA-008b), 17 not implemented
 
@@ -1484,36 +1487,36 @@ implies SPV-off is the default is incorrect.
 
 #### CR-004 — Legacy BIP32 account: balance + UTXO state updates after spend
 
-- **Priority**: P1 — open bug from upstream consumer
-- **Status**: red-by-design — Layer 1 (next_unused idempotency) fixed at `1c4c8a76f4`. Layer 2 is the genuine dash-evo-tool#845 pin: after sending all UTXOs from a BIP32 account, the post-broadcast UTXO set retains 1 spendable UTXO (the spent-marking path does not clear the entry). Test fails deterministically until the upstream production fix for #845 lands. This is intentional: the test exists specifically to surface that regression.
-- **Root cause** (from Marvin's cr_004 and QA-008 investigations, 2026-05-12): two distinct test-side defects, described below.
-- **Two layered fixes** (QA-008 investigation, 2026-05-12):
+- **Priority**: P1 — pins symmetric BIP-32 spent-marking + upstream sub-dust fold
+- **Status**: passing-as-regression — Layer 1 (next_unused idempotency) fixed at `1c4c8a76f4`; Layer 2 test-side dust-threshold mismatch fixed in QA-901 (2026-05-14). The test now pins (a) post-broadcast `check_core_transaction` correctly marks every consumed BIP-32 UTXO spent (symmetric with the BIP-44 path through TransactionRouter → ManagedAccountCollection → check_transaction_for_match → update_utxos), and (b) the upstream sub-dust fold at `transaction_builder.rs:294` (rev `5313086…`, threshold `546` duffs) prevents emitting a stray change UTXO so the send-all truly drains the account.
+- **Root cause history** (from Marvin's cr_004, QA-008, and QA-901 investigations): two distinct test-side defects, both now fixed.
+- **Two layered fixes**:
 
   **Layer 1 (fixed at `1c4c8a76f4`):** `key-wallet::AddressPool::next_unused` is **idempotent by design** — it returns the same "current unused frontier" address until something external marks that address used. The upstream unit test `address_pool.rs:test_next_unused` explicitly asserts `addr1 == addr2` on two consecutive calls to `next_unused` on a freshly seeded pool; advancement requires an intervening `mark_used`. CR-004 originally called `next_receive_address` twice on a fresh wallet WITHOUT an intervening spend and asserted the two addresses differ — inverting the documented upstream contract. Fix: use the multi-variant `next_receive_addresses(count=2, advance=true)` call (the upstream `next_unused_multiple` path via `ManagedCoreFundsAccount::next_receive_addresses`) to satisfy the idempotent-by-design contract. Ref: `key-wallet/src/managed_account/address_pool.rs:521–540` and `:1196–1214`, audited at SHA `d6dd5da`.
 
-  **Layer 2 (pending fix):** The test at line 214 asserts `bip32_count_post == 0` after sending
-  `TOTAL_FUNDING - 50_000` duffs. Input total is 2 × 50,000,000 = 100,000,000 duffs; the send
-  amount is 99,950,000 duffs; a typical Core 2-input/2-output P2PKH fee is 1,000–5,000 duffs,
-  leaving a change output of approximately 45,000–49,000 duffs — well above the P2PKH dust
-  threshold (~2,730 duffs). `key-wallet`'s `update_utxos`
-  (`managed_core_funds_account.rs:163-206`, audited at SHA `d6dd5da`) correctly inserts this
-  change UTXO as `is_trusted = true` (owned input + BIP-32 internal change address), so
-  `spendable_utxos().len()` returns 1 after the send, not 0. The test comment claiming "change
-  goes below dust" is mathematically wrong; the assertion `count == 0` is wrong. Fix: send
-  `TOTAL_FUNDING.saturating_sub(2_000)` (or similar) to force sub-dust change so the builder
-  folds it into the fee, OR assert `count <= 1` and verify the surviving UTXO's txid equals the
-  broadcast tx (proving it is change, not a stale unspent input).
+  **Layer 2 (fixed in QA-901, 2026-05-14):** The test previously asserted
+  `bip32_count_post == 0` while sending with a `2_500`-duff headroom under the false
+  belief that the upstream P2PKH dust threshold was `2_730`. TRACE re-investigation
+  confirmed the actual upstream gate at
+  `rust-dashcore/key-wallet/src/wallet/managed_wallet_info/transaction_builder.rs:294`
+  (rev `5313086…`) is `if change_amount > 546`. With observed testnet fees in
+  `[226, 500]` duffs for a 2-in/2-out P2PKH transaction, a `2_500`-duff headroom left
+  change in `[2_000, 2_274]` duffs — well above `546`, so the builder correctly
+  emitted a change UTXO and the assertion fired. Fix: headroom `2_500 → 700`. New
+  change range is `[200, 474]` duffs — fully sub-dust across the observed fee range —
+  so the builder folds it into the fee and the BIP-32 account is truly drained.
 
-  **Note on dash-evo-tool#845 reference:** The `dash-evo-tool#845` mention in the test name
-  and assertion comment is cargo-culted — Marvin's QA-008 investigation could not reproduce the
-  alleged upstream SPV UTXO regression in this codebase at the layer the test claims. The
-  spent-marking path in `key-wallet` (`managed_core_funds_account.rs:210-222`) and its routing
-  through `wallet_checker.rs` work correctly for BIP-32 accounts. The bug history may reference
-  an unrelated test in DET; the reference should be removed or qualified once the test math is
-  corrected.
+  **Note on dash-evo-tool#845 reference:** The original CR-004 framing pinned
+  dash-evo-tool#845 (stale-UTXO production bug after BIP-32 send-all). QA-901's TRACE
+  run on the 2026-05-14 codebase confirms the symmetric BIP-32 spent-marking path
+  (TransactionRouter → ManagedAccountCollection → check_transaction_for_match →
+  update_utxos) is working correctly — the deterministic failure attributed to #845
+  was actually the dust-threshold mismatch above. The test contract has been retargeted
+  to "pin the symmetric BIP-32 spent-marking + upstream sub-dust fold" — both are
+  invariants any downstream consumer (DET, SwiftExampleApp, Rust-SDK UIs) relies on.
 
 - **Wallet feature exercised**: `wallet/core/wallet.rs:54` (`CoreWallet::balance`); `wallet/core/broadcast.rs:185` (`check_core_transaction` post-broadcast state mutation on `standard_bip32_accounts`).
-- **Bug repro (upstream)**: [dashpay/dash-evo-tool#845](https://github.com/dashpay/dash-evo-tool/issues/845) — sending all funds from a legacy BIP32 account (`StandardAccountType::BIP32Account`) leaves the wallet's local UTXO set stale; a follow-up `send_to_addresses` call fails with `TransactionBuild("Coin selection error: No UTXOs available for selection")` despite the original UTXOs being long since spent on-chain. (Note: this is the stale-UTXO production bug the test was written to pin. Marvin's QA-008 investigation found no evidence of this regression in the current codebase at this layer; both failures in CR-004 are test-design issues that must be fixed before the underlying production invariant can be validly exercised.)
+- **Bug repro (upstream)**: [dashpay/dash-evo-tool#845](https://github.com/dashpay/dash-evo-tool/issues/845) — historical reference; the originally-reported "send all leaves stale UTXOs" surface on `rs-platform-wallet` does not reproduce in the current codebase per QA-008 (2026-05-12) and QA-901 (2026-05-14) TRACE runs. The symmetric BIP-32 spent-marking path works correctly. Any remaining DET-side surface lives in dash-evo-tool's own UI refresh path, outside this suite's contract surface. This test now pins the BIP-32 spent-marking + sub-dust fold contracts in `rs-platform-wallet` as a passing-as-regression guard against future drift.
 - **DET parallel**: none yet — DET is the affected consumer; this test pins the contract on the rs-platform-wallet side so a fix becomes verifiable from a single repository.
 - **Preconditions**: CR-001 + a Core-funded BIP32 legacy account (derivation path `m/44'/1'/0'`, `StandardAccountType::BIP32Account` at index `0`, stored under `wallet.accounts.standard_bip32_accounts`).
 - **Scenario**:

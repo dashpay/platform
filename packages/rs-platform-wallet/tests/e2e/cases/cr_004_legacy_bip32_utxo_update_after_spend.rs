@@ -1,20 +1,29 @@
 //! CR-004 — Legacy BIP32 account: balance + UTXO state updates after spend.
 //!
 //! Spec: `tests/e2e/TEST_SPEC.md` (### Core (CR) → CR-004).
-//! Status: FAILING-by-design — runs only via `cargo test -- --ignored`
-//! and is expected to fail until the upstream contract is fixed.
-//! Exercises the multi-variant `next_receive_addresses(count=2, advance=true)`
-//! API which forces pool advance; assertion `addr1 != addr2` is now consistent
-//! with the upstream contract (`key_wallet::AddressPool::next_unused` is
-//! idempotent by design — see upstream `address_pool.rs:1196-1214`; the
-//! multi-variant `next_unused_multiple` is the correct API for N distinct
-//! frontier addresses).
-//! Pins the post-broadcast UTXO-mutation contract on
-//! `standard_bip32_accounts` against
-//! [dashpay/dash-evo-tool#845](https://github.com/dashpay/dash-evo-tool/issues/845):
-//! a "send all" on the legacy BIP32 account must drain the local UTXO
-//! set so a follow-up `send_to_addresses` fails cleanly on empty inputs
-//! rather than reselecting phantom UTXOs.
+//! Status: passing-as-regression — runs only via `cargo test -- --ignored`
+//! (testnet + bank Core funding required).
+//!
+//! Pins two contracts:
+//! 1. The multi-variant `next_receive_addresses(count=2, advance=true)` API
+//!    advances the address pool per slot (upstream `next_unused_multiple`
+//!    path; see `key_wallet::AddressPool::next_unused` idempotency contract
+//!    at `address_pool.rs:1196-1214`).
+//! 2. Post-broadcast `check_core_transaction`
+//!    (`packages/rs-platform-wallet/src/wallet/core/broadcast.rs:252`)
+//!    marks every consumed BIP-32 input spent on the BIP-32 account
+//!    collection — symmetric with the BIP-44 path
+//!    (TransactionRouter → ManagedAccountCollection →
+//!    check_transaction_for_match → update_utxos) — AND the upstream
+//!    sub-dust fold at `transaction_builder.rs:294` (rev `5313086…`,
+//!    threshold `546` duffs) prevents emitting a stray change UTXO,
+//!    so a send-all on the BIP-32 account truly drains it.
+//!
+//! Originally framed as pinning dash-evo-tool#845; TRACE re-investigation
+//! 2026-05-14 confirmed the earlier deterministic failure was a test-side
+//! dust-threshold mismatch (assumed 2,730 duffs; upstream gate is 546).
+//! The contract this test actually pins is the symmetric BIP-32
+//! spent-marking + sub-dust fold described above.
 
 use std::time::Duration;
 
@@ -49,14 +58,13 @@ const CORE_BALANCE_TIMEOUT: Duration = Duration::from_secs(300);
 /// on stale UTXO" error path).
 const POST_DRAIN_PROBE_AMOUNT: u64 = 1_000_000;
 
-#[ignore = "CR-004 — FAILING-by-design pin for dash-evo-tool#845; runs only \
-            via `cargo test -- --ignored` and is expected to fail until the \
-            SPV/BIP32 derivation contract is fixed. Pins the post-broadcast \
-            UTXO-mutation contract on `standard_bip32_accounts`. Requires \
-            testnet + bank Core (Layer-1) pre-funding (TOTAL_FUNDING duffs + \
-            per-tx fee reserve, twice — once per UTXO). The legacy BIP32 \
-            account derivation must NOT cross-contaminate the wallet's \
-            default BIP-44 Core account UTXO set; assertions read \
+#[ignore = "CR-004 — passing-as-regression pin for symmetric BIP-32 \
+            spent-marking + sub-dust fold; runs only via \
+            `cargo test -- --ignored`. Requires testnet + bank Core \
+            (Layer-1) pre-funding (TOTAL_FUNDING duffs + per-tx fee \
+            reserve, twice — once per UTXO). The legacy BIP32 account \
+            derivation must NOT cross-contaminate the wallet's default \
+            BIP-44 Core account UTXO set; assertions read \
             `standard_bip32_accounts[0]` directly."]
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 async fn cr_004_legacy_bip32_utxo_update_after_spend() {
@@ -153,19 +161,17 @@ async fn cr_004_legacy_bip32_utxo_update_after_spend() {
 
     // Step 5: build a "send all" Core transfer via
     // `CoreWallet::send_to_addresses(StandardAccountType::BIP32Account, 0, ...)`.
-    // Headroom MUST be strictly less than (dust_threshold + min_2out_fee) =
-    // (2_730 + 226) = 2_956 duffs. We use 2_500 (≥ 230-duff safety margin)
-    // so max possible change is sub-dust across the observed testnet fee range
-    // of 226–500 duffs for a 2-in/2-out P2PKH transaction. The builder folds
-    // sub-dust change into the fee, producing a zero-change transaction and
-    // leaving the BIP-32 account with no spendable UTXOs.
     //
-    // QA-008: the original send amount (TOTAL_FUNDING - 50_000) left ~45_000
-    // duffs of change — far above dust — so the builder correctly emitted a
-    // change UTXO and `spendable_utxos` returned 1, not 0.
-    // QA-009: TOTAL_FUNDING - 2_000 left change above dust on low-fee runs.
-    // QA-016: TOTAL_FUNDING - 3_000 was arithmetically insufficient — with min
-    // observed fee ~226 duffs, max change = 3_000 - 226 = 2_774 > 2_730 dust.
+    // Subtract `700` duffs so the residual change is below the upstream
+    // `key-wallet` dust threshold (`546` duffs at
+    // `rust-dashcore/key-wallet/src/wallet/managed_wallet_info/transaction_builder.rs:294`,
+    // rev `5313086…`). With observed testnet fees in `[226, 500]` duffs for a
+    // 2-in/2-out P2PKH transaction, the change amount lands in `[200, 474]`
+    // duffs — fully sub-dust across the range. The builder folds sub-dust
+    // change into the fee, producing a zero-change transaction and leaving the
+    // BIP-32 account with no spendable UTXOs. (QA-901, 2026-05-14: prior code
+    // used `2_500`-duff headroom under the false belief that the threshold was
+    // `2_730`; TRACE confirmed the upstream gate is `546`.)
     //
     // We send to the bank's primary Core receive address so the swept duffs
     // are recoverable on teardown failure.
@@ -175,8 +181,7 @@ async fn cr_004_legacy_bip32_utxo_update_after_spend() {
         .primary_core_receive_address()
         .await
         .expect("bank.primary_core_receive_address");
-    // Subtract 2_500 duffs so the post-fee residual is sub-dust.
-    let send_all = TOTAL_FUNDING.saturating_sub(2_500);
+    let send_all = TOTAL_FUNDING.saturating_sub(700);
     let tx = s
         .test_wallet
         .platform_wallet()
@@ -199,12 +204,12 @@ async fn cr_004_legacy_bip32_utxo_update_after_spend() {
     // happened on `standard_bip32_accounts[0]`. The contract:
     //
     // - The mempool-context `check_core_transaction` call inside
-    //   `send_to_addresses` (see `wallet/core/broadcast.rs:185`) must
+    //   `send_to_addresses` (see `wallet/core/broadcast.rs:252`) must
     //   route the just-broadcast tx through the BIP-32 account
     //   collection AND mark every consumed UTXO as spent.
     // - `spendable_utxos(current_height)` on the legacy account must
-    //   return an empty set. We sent `TOTAL_FUNDING - 2_500` duffs:
-    //   max possible change = 2_500 - 226 = 2_274 < 2_730 dust threshold.
+    //   return an empty set. We sent `TOTAL_FUNDING - 700` duffs:
+    //   max possible change = `700 - 226 = 474 < 546` dust threshold.
     //   The builder folds sub-dust change into the fee, so no change UTXO
     //   is emitted and the account's spendable set is strictly empty.
     let (bip44_count_post, bip32_count_post) = utxo_counts(&s.test_wallet, 0).await;
@@ -216,19 +221,20 @@ async fn cr_004_legacy_bip32_utxo_update_after_spend() {
     );
     assert_eq!(
         bip32_count_post, 0,
-        "BIP-32 account 0 has {bip32_count_post} spendable UTXOs after send-all \
-         (dash-evo-tool#845 regression)"
+        "BIP-32 account 0 has {bip32_count_post} spendable UTXOs after \
+         send-all (post-broadcast check_core_transaction failed to mark \
+         BIP-32 inputs spent, OR the sub-dust fold at \
+         transaction_builder.rs:294 emitted a stray change output)"
     );
 
     // Step 7: re-attempt a Core transfer on the now-drained legacy
-    // account. The bug surface in DET#845 is "this fails with a
-    // coin-selection error pretending UTXOs exist"; the fix is for
-    // it to fail cleanly with a build-stage error that names the
-    // empty input set. We pin the looser contract: `Err(_)` AND the
-    // error message names "No UTXOs" / "no spendable inputs" / the
-    // word "selection" so a regression that returns `Ok(...)` (i.e.
-    // the wallet attempts to spend phantom UTXOs) flips the test
-    // immediately.
+    // account. Step 6 truly drained the account (no stray change UTXO
+    // emitted), so the build path must fail cleanly with an
+    // empty-input error rather than reselecting phantom UTXOs. We pin
+    // the looser contract: `Err(_)` AND the error message names "No
+    // UTXOs" / "no spendable inputs" / the word "selection" so a
+    // regression that returns `Ok(...)` (i.e. the wallet attempts to
+    // spend phantom UTXOs) flips the test immediately.
     let probe = s
         .test_wallet
         .platform_wallet()
@@ -259,7 +265,8 @@ async fn cr_004_legacy_bip32_utxo_update_after_spend() {
         }
         Ok(tx) => {
             panic!(
-                "drained BIP-32 account selected phantom UTXOs (dash-evo-tool#845): txid={}",
+                "drained BIP-32 account selected phantom UTXOs (post-broadcast \
+                 spent-marking regression): txid={}",
                 tx.txid()
             );
         }
