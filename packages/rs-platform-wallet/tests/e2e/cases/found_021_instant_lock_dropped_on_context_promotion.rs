@@ -2,8 +2,8 @@
 //! `InstantLock` when a transaction is promoted from `InstantSend` to `InBlock`.
 //!
 //! **Spec**: `tests/e2e/TEST_SPEC.md` (§ Found bugs → Found-021).
-//! **Upstream defect site**: `key-wallet/src/managed_account/transaction_record.rs`
-//! (`TransactionRecord::update_context`: `self.context = context`).
+//! **Upstream defect site**: `key-wallet/src/managed_account/transaction_record.rs:182-184`
+//! (`TransactionRecord::update_context`: `self.context = context;`).
 //! **Pinned status**: RED-BY-DESIGN — pure unit test; pins upstream bug until fix lands.
 //!
 //! ## Bug shape
@@ -21,6 +21,14 @@
 //! unconditionally overwritten. Any downstream consumer that reads the record
 //! after block confirmation to use the lock as proof material (e.g. to construct
 //! an `InstantAssetLockProof`) finds no lock.
+//!
+//! ## Related amplifier
+//!
+//! The production transition `InBlock(info)` → `InChainLockedBlock(info)` lives at
+//! `key-wallet/src/managed_account/managed_core_keys_account.rs:129-139`. By the
+//! time a record reaches that path, the IS-lock is already gone — it was dropped
+//! at the prior IS → InBlock hop pinned by this test. Two compounding lossy hops
+//! to chain-lock proof, both caused by `update_context`'s naive replace.
 //!
 //! ## What this test pins
 //!
@@ -116,7 +124,7 @@ fn context_has_instant_lock(ctx: &TransactionContext) -> bool {
 /// promotion; `context_has_instant_lock` (or an equivalent accessor) returns
 /// `true`. The assertion in this test must be updated alongside the fix.
 #[ignore = "Found-021 bug pin — pins upstream bug at \
-            key-wallet/src/managed_account/transaction_record.rs \
+            key-wallet/src/managed_account/transaction_record.rs:182-184 \
             (`update_context` naive replace drops InstantLock on InBlock promotion); \
             pure unit test (no harness, no network, no async); \
             run with `cargo test -- --ignored`"]
@@ -161,8 +169,8 @@ fn found_021_instant_lock_dropped_on_context_promotion() {
         context_has_instant_lock(&record.context),
         "Found-021 (RED-by-design): InstantLock was silently dropped on InBlock promotion. \
          record.context after update_context(InBlock(..)) is {:?} — the IS-lock is gone. \
-         update_context at key-wallet/src/managed_account/transaction_record.rs \
-         does `self.context = context` unconditionally, overwriting the InstantSend(lock). \
+         update_context at key-wallet/src/managed_account/transaction_record.rs:182-184 \
+         does `self.context = context;` unconditionally, overwriting the InstantSend(lock). \
          Fix: merge context on IS→InBlock: retain the lock in a dedicated field or a \
          new InBlockWithInstantLock variant. \
          See TEST_SPEC.md Found-021.",
