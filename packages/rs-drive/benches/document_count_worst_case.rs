@@ -14,6 +14,7 @@
 use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion};
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::{DataContract, DataContractFactory};
 use dpp::document::{Document, DocumentV0};
 use dpp::identifier::Identifier;
@@ -21,10 +22,14 @@ use dpp::platform_value::{platform_value, Value};
 use dpp::version::PlatformVersion;
 use drive::config::DriveConfig;
 use drive::drive::Drive;
-use drive::query::{CountMode, DocumentCountRequest, DocumentCountResponse};
+use drive::query::{
+    CountMode, DocumentCountRequest, DocumentCountResponse, DriveDocumentCountQuery, WhereClause,
+    WhereOperator,
+};
 use drive::util::object_size_info::DocumentInfo::DocumentRefInfo;
 use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use drive::util::storage_flags::StorageFlags;
+use grovedb::{GroveDb, PathQuery};
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::env;
@@ -314,13 +319,14 @@ fn document_count_worst_case(c: &mut Criterion) {
     // integration test.
     report_group_by_matrix(&fixture, platform_version);
 
-    // Dump the actual proof bytes (hex) for every `group_by = []`
-    // case so reviewers can inspect what grovedb is signing for
-    // each shape. The total / point-lookup / range-aggregate
-    // primitives all produce different byte layouts; the hex view
-    // lets a reader correlate sizes with structure without rebuilding
-    // a separate verifier harness.
-    dump_aggregate_proofs(&fixture, platform_version);
+    // Decoded display of every `group_by = []` proof: the path
+    // query that produced it (path, items, subquery) and the
+    // verified payload (root hash + count/elements). The path
+    // query is the prover-side spec and the verified payload is
+    // what `GroveDb::verify_query` / `verify_aggregate_count_query`
+    // reconstructs after walking the proof — together they make
+    // the proof's *meaning* legible without staring at hex.
+    display_proofs(&fixture, platform_version);
 
     let mut group = c.benchmark_group("document_count_worst_case");
     group.sample_size(10);
@@ -803,13 +809,34 @@ fn report_group_by_matrix(fixture: &CountBenchFixture, platform_version: &Platfo
 /// Hex is emitted 64 hex chars per line (32 bytes per row) so the
 /// output is grep-able and the rows align with merk-tree node
 /// boundaries on most layouts.
-fn dump_aggregate_proofs(fixture: &CountBenchFixture, platform_version: &PlatformVersion) {
+/// Decoded display of every `group_by = []` proof shape.
+///
+/// For each case, this:
+/// 1. Re-runs the drive dispatcher to get the proof bytes.
+/// 2. Reconstructs the **same `PathQuery`** the prover used (by
+///    calling the matching builder on `DriveDocumentCountQuery` —
+///    the single source of truth shared by prover + verifier).
+/// 3. Runs the appropriate grovedb verifier
+///    (`verify_query` for point-lookup / primary-key proofs,
+///    `verify_aggregate_count_query` for the range-aggregate
+///    primitive) and prints the verified payload.
+///
+/// The output is structured so a reader can correlate each
+/// proof's size with the path-query shape AND the merk elements
+/// the proof signs, without parsing raw merk-proof bytes.
+fn display_proofs(fixture: &CountBenchFixture, platform_version: &PlatformVersion) {
+    let document_type = fixture
+        .data_contract
+        .document_type_for_name(DOCUMENT_TYPE_NAME)
+        .expect("widget doc type");
+    let contract_id = fixture.data_contract.id().to_buffer();
     let brands_2 = brands_n(2);
     let colors_2 = first_n_color_values(2);
     let mid_brand = brand_label(BRAND_COUNT / 2);
     let mid_color = color_label(color_count_for_rows(fixture.row_count) / 2);
     let range_floor = Value::Text(fixture.range_floor.clone());
 
+    // Helper: wire-shaped where Value the dispatcher CBOR-decodes.
     let clause = |field: &str, op: &str, value: Value| -> Value {
         Value::Array(vec![
             Value::Text(field.to_string()),
@@ -818,41 +845,111 @@ fn dump_aggregate_proofs(fixture: &CountBenchFixture, platform_version: &Platfor
         ])
     };
 
-    let cases: Vec<(&'static str, Value)> = vec![
-        ("[] / where=(empty)", Value::Null),
-        (
-            "[] / where=brand==X",
-            Value::Array(vec![clause("brand", "==", Value::Text(mid_brand.clone()))]),
-        ),
-        (
-            "[] / where=color==X",
-            Value::Array(vec![clause("color", "==", Value::Text(mid_color.clone()))]),
-        ),
-        (
-            "[] / where=brand==X AND color==Y",
-            Value::Array(vec![
+    // Each case carries:
+    // - `label`: how it appears in the table
+    // - `raw_where`: wire-shaped where value passed to the dispatcher
+    // - `structured`: structured WhereClauses the verifier-side path
+    //   query builder consumes (mirrors what `parse_count_where_value`
+    //   would produce on the dispatcher side)
+    // - `shape`: which verifier primitive applies
+    enum Shape {
+        PrimaryKey,
+        PointLookup,
+        AggregateRange,
+    }
+
+    struct DisplayCase {
+        label: &'static str,
+        raw_where: Value,
+        structured: Vec<WhereClause>,
+        shape: Shape,
+    }
+
+    let cases: Vec<DisplayCase> = vec![
+        DisplayCase {
+            label: "[] / where=(empty)",
+            raw_where: Value::Null,
+            structured: vec![],
+            shape: Shape::PrimaryKey,
+        },
+        DisplayCase {
+            label: "[] / where=brand==X",
+            raw_where: Value::Array(vec![clause("brand", "==", Value::Text(mid_brand.clone()))]),
+            structured: vec![WhereClause {
+                field: "brand".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text(mid_brand.clone()),
+            }],
+            shape: Shape::PointLookup,
+        },
+        DisplayCase {
+            label: "[] / where=color==X",
+            raw_where: Value::Array(vec![clause("color", "==", Value::Text(mid_color.clone()))]),
+            structured: vec![WhereClause {
+                field: "color".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text(mid_color.clone()),
+            }],
+            shape: Shape::PointLookup,
+        },
+        DisplayCase {
+            label: "[] / where=brand==X AND color==Y",
+            raw_where: Value::Array(vec![
                 clause("brand", "==", Value::Text(mid_brand.clone())),
                 clause("color", "==", Value::Text(mid_color.clone())),
             ]),
-        ),
-        (
-            "[] / where=brand IN[2]",
-            Value::Array(vec![clause("brand", "in", Value::Array(brands_2.clone()))]),
-        ),
-        (
-            "[] / where=color IN[2]",
-            Value::Array(vec![clause("color", "in", Value::Array(colors_2.clone()))]),
-        ),
-        (
-            "[] / where=color > floor",
-            Value::Array(vec![clause("color", ">", range_floor.clone())]),
-        ),
+            structured: vec![
+                WhereClause {
+                    field: "brand".to_string(),
+                    operator: WhereOperator::Equal,
+                    value: Value::Text(mid_brand.clone()),
+                },
+                WhereClause {
+                    field: "color".to_string(),
+                    operator: WhereOperator::Equal,
+                    value: Value::Text(mid_color.clone()),
+                },
+            ],
+            shape: Shape::PointLookup,
+        },
+        DisplayCase {
+            label: "[] / where=brand IN[2]",
+            raw_where: Value::Array(vec![clause("brand", "in", Value::Array(brands_2.clone()))]),
+            structured: vec![WhereClause {
+                field: "brand".to_string(),
+                operator: WhereOperator::In,
+                value: Value::Array(brands_2.clone()),
+            }],
+            shape: Shape::PointLookup,
+        },
+        DisplayCase {
+            label: "[] / where=color IN[2]",
+            raw_where: Value::Array(vec![clause("color", "in", Value::Array(colors_2.clone()))]),
+            structured: vec![WhereClause {
+                field: "color".to_string(),
+                operator: WhereOperator::In,
+                value: Value::Array(colors_2.clone()),
+            }],
+            shape: Shape::PointLookup,
+        },
+        DisplayCase {
+            label: "[] / where=color > floor",
+            raw_where: Value::Array(vec![clause("color", ">", range_floor.clone())]),
+            structured: vec![WhereClause {
+                field: "color".to_string(),
+                operator: WhereOperator::GreaterThan,
+                value: range_floor.clone(),
+            }],
+            shape: Shape::AggregateRange,
+        },
     ];
 
-    for (label, raw_where) in cases {
+    for case in cases {
+        // 1. Get proof bytes via the drive dispatcher (the same code
+        //    path the bench measures).
         let request = count_request(
             fixture,
-            raw_where,
+            case.raw_where,
             Value::Null,
             CountMode::Aggregate,
             None,
@@ -865,16 +962,214 @@ fn dump_aggregate_proofs(fixture: &CountBenchFixture, platform_version: &Platfor
             {
                 Ok(DocumentCountResponse::Proof(p)) => p,
                 other => {
-                    eprintln!("[proof-bytes] {label} → unexpected non-Proof response: {other:?}");
+                    eprintln!(
+                        "[proof] {label} → unexpected non-Proof response: {other:?}",
+                        label = case.label
+                    );
                     continue;
                 }
             };
-        eprintln!("[proof-bytes] {label} ({} bytes)", proof.len());
-        for chunk in proof.chunks(32) {
-            let hex: String = chunk.iter().map(|b| format!("{:02x}", b)).collect();
-            eprintln!("[proof-bytes]   {hex}");
+
+        // 2. Reconstruct the path query the prover used so we can
+        //    verify with the same spec.
+        let path_query: PathQuery = match case.shape {
+            Shape::PrimaryKey => DriveDocumentCountQuery::primary_key_count_tree_path_query(
+                contract_id,
+                DOCUMENT_TYPE_NAME,
+            ),
+            Shape::PointLookup => {
+                let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+                    document_type.indexes(),
+                    &case.structured,
+                )
+                .expect("countable picker must find a covering index for the display case");
+                let query = DriveDocumentCountQuery {
+                    document_type,
+                    contract_id,
+                    document_type_name: DOCUMENT_TYPE_NAME.to_string(),
+                    index,
+                    where_clauses: case.structured.clone(),
+                };
+                query
+                    .point_lookup_count_path_query(platform_version)
+                    .expect("point-lookup builder must accept the display case's shape")
+            }
+            Shape::AggregateRange => {
+                let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+                    document_type.indexes(),
+                    &case.structured,
+                )
+                .expect("range_countable picker must find a covering index");
+                let query = DriveDocumentCountQuery {
+                    document_type,
+                    contract_id,
+                    document_type_name: DOCUMENT_TYPE_NAME.to_string(),
+                    index,
+                    where_clauses: case.structured.clone(),
+                };
+                query
+                    .aggregate_count_path_query(platform_version)
+                    .expect("aggregate-range builder must accept the display case's shape")
+            }
+        };
+
+        eprintln!(
+            "[proof] {label} ({sz} bytes)",
+            label = case.label,
+            sz = proof.len()
+        );
+
+        // 3. Print the path-query spec.
+        eprintln!("[proof]   path:");
+        for seg in &path_query.path {
+            eprintln!("[proof]     {}", display_segment(seg));
+        }
+        eprintln!(
+            "[proof]   query items: {}",
+            display_query_items(&path_query.query.query.items)
+        );
+        let sb = &path_query.query.query.default_subquery_branch;
+        if let Some(sqp) = sb.subquery_path.as_ref() {
+            let pretty: Vec<String> = sqp.iter().map(|s| display_segment(s)).collect();
+            eprintln!("[proof]   subquery_path: [{}]", pretty.join(", "));
+        }
+        if let Some(sq) = sb.subquery.as_ref() {
+            eprintln!(
+                "[proof]   subquery items: {}",
+                display_query_items(&sq.items)
+            );
+        }
+
+        // 4. Verify + print the structured payload.
+        match case.shape {
+            Shape::AggregateRange => {
+                match GroveDb::verify_aggregate_count_query(
+                    &proof,
+                    &path_query,
+                    &platform_version.drive.grove_version,
+                ) {
+                    Ok((root, count)) => {
+                        eprintln!("[proof]   verified:");
+                        eprintln!("[proof]     root_hash: 0x{}", hex_bytes(&root));
+                        eprintln!("[proof]     count: {count}");
+                    }
+                    Err(e) => eprintln!("[proof]   verify error: {e:?}"),
+                }
+            }
+            Shape::PrimaryKey | Shape::PointLookup => {
+                match GroveDb::verify_query(
+                    &proof,
+                    &path_query,
+                    &platform_version.drive.grove_version,
+                ) {
+                    Ok((root, elements)) => {
+                        eprintln!("[proof]   verified:");
+                        eprintln!("[proof]     root_hash: 0x{}", hex_bytes(&root));
+                        eprintln!("[proof]     elements ({}):", elements.len());
+                        for (path, key, elem) in elements {
+                            let path_pretty: Vec<String> =
+                                path.iter().map(|s| display_segment(s)).collect();
+                            eprintln!("[proof]       path: [{}]", path_pretty.join(", "));
+                            eprintln!("[proof]       key:  {}", display_segment(&key));
+                            eprintln!("[proof]       element: {}", display_element(elem.as_ref()));
+                        }
+                    }
+                    Err(e) => eprintln!("[proof]   verify error: {e:?}"),
+                }
+            }
         }
     }
+}
+
+/// Pretty-print a path or key segment: quoted UTF-8 if printable
+/// ASCII, hex otherwise. Long byte strings are truncated with a
+/// length suffix so the output stays scannable.
+fn display_segment(bytes: &[u8]) -> String {
+    if let Ok(s) = std::str::from_utf8(bytes) {
+        if !s.is_empty() && s.chars().all(|c| c.is_ascii_graphic() || c == ' ') {
+            return format!("{:?}", s);
+        }
+    }
+    if bytes.is_empty() {
+        return "(empty)".to_string();
+    }
+    if bytes.len() <= 16 {
+        return format!("0x{}", hex_bytes(bytes));
+    }
+    let prefix = hex_bytes(&bytes[..8]);
+    format!("0x{prefix}...({} bytes)", bytes.len())
+}
+
+/// Pretty-print a `Vec<QueryItem>` showing each `Key`/`Range` etc.
+/// with byte segments decoded the same way as `display_segment`.
+fn display_query_items(items: &[grovedb::QueryItem]) -> String {
+    use grovedb::QueryItem;
+    let pieces: Vec<String> = items
+        .iter()
+        .map(|item| match item {
+            QueryItem::Key(k) => format!("Key({})", display_segment(k)),
+            QueryItem::Range(r) => format!(
+                "Range({}..{})",
+                display_segment(&r.start),
+                display_segment(&r.end)
+            ),
+            QueryItem::RangeInclusive(r) => format!(
+                "RangeInclusive({}..={})",
+                display_segment(r.start()),
+                display_segment(r.end())
+            ),
+            QueryItem::RangeFull(_) => "RangeFull(..)".to_string(),
+            QueryItem::RangeFrom(r) => format!("RangeFrom({}..)", display_segment(&r.start)),
+            QueryItem::RangeTo(r) => format!("RangeTo(..{})", display_segment(&r.end)),
+            QueryItem::RangeToInclusive(r) => {
+                format!("RangeToInclusive(..={})", display_segment(&r.end))
+            }
+            QueryItem::RangeAfter(r) => format!("RangeAfter({}..)", display_segment(&r.start)),
+            QueryItem::RangeAfterTo(r) => format!(
+                "RangeAfterTo({}..{})",
+                display_segment(&r.start),
+                display_segment(&r.end)
+            ),
+            QueryItem::RangeAfterToInclusive(r) => format!(
+                "RangeAfterToInclusive({}..={})",
+                display_segment(r.start()),
+                display_segment(r.end())
+            ),
+            QueryItem::AggregateCountOnRange(inner) => format!(
+                "AggregateCountOnRange({})",
+                display_query_items(std::slice::from_ref(inner))
+            ),
+        })
+        .collect();
+    format!("[{}]", pieces.join(", "))
+}
+
+/// Pretty-print a verified grovedb `Element` focusing on the
+/// count_value (the only field that matters for count proofs).
+/// Full Debug for context is appended.
+fn display_element(elem: Option<&grovedb::Element>) -> String {
+    use grovedb::Element;
+    match elem {
+        None => "None (absent)".to_string(),
+        Some(e) => {
+            let count = e.count_value_or_default();
+            let kind = match e {
+                Element::CountTree(_, _, _) => "CountTree",
+                Element::SumTree(_, _, _) => "SumTree",
+                Element::CountSumTree(_, _, _, _) => "CountSumTree",
+                Element::Tree(_, _) => "Tree",
+                Element::Item(_, _) => "Item",
+                Element::Reference(_, _, _) => "Reference",
+                _ => "(other)",
+            };
+            format!("{kind} {{ count_value_or_default: {count} }}")
+        }
+    }
+}
+
+/// Compact hex helper used by `display_segment` / `display_proofs`.
+fn hex_bytes(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
 /// Convenience helper for the matrix runner: run one count request
