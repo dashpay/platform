@@ -46,7 +46,7 @@ Schema-based specifications that describe the structure and validation rules for
 their application data. The network stores, indexes, and enforces these schemas
 directly. Applications interact with the platform through structured data reads
 and writes (called **state transitions**) rather than arbitrary code execution.
-Smart contract support is planned for Platform v4.0 (targeted for mainnet in
+smart contract support is planned for Platform v4.0 (targeted for mainnet in
 2027).
 
 ### How Dash Platform compares
