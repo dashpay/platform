@@ -38,7 +38,14 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 const PROTOCOL_VERSION_V12: u32 = 12;
-const FIXTURE_SCHEMA_VERSION: u32 = 1;
+// Bumped when the on-disk fixture layout changes in a way that
+// invalidates a cached `tmp/dash-platform-document-count-bench-v{N}-rows-…`
+// directory. v2: countable-terminator value trees are now `CountTree`
+// for any countability tier (not just `range_countable`), with
+// continuations wrapped `NonCounted`. Old v1 caches were built under
+// the previous layout and need to be rebuilt to verify proofs
+// against the new code.
+const FIXTURE_SCHEMA_VERSION: u32 = 2;
 const DEFAULT_ROW_COUNT: u64 = 100_000;
 const DEFAULT_BATCH_SIZE: u64 = 10_000;
 const BRAND_COUNT: u64 = 100;
@@ -861,6 +868,67 @@ fn probe_value_tree_types(fixture: &CountBenchFixture, _platform_version: &Platf
                 elem
             ),
             Err(e) => eprintln!("[probe] {label}: widget/{prop}/{val} → grove.get error: {e:?}"),
+        }
+    }
+
+    // Probe the CHILDREN of each value tree to see how each one
+    // contributes to the parent's count_value_or_default. The
+    // byBrand value tree has children:
+    //   - `[0]` (the ref-bucket CountTree where byBrand's
+    //     references live)
+    //   - `color` (the byBrandColor continuation's property-name
+    //     tree)
+    // Are either of them wrapped in `Element::NonCounted(_)`? That
+    // determines whether a hypothetical "value tree is always a
+    // CountTree" rule would yield the correct count.
+    let child_probes: [(&'static str, &'static str, &'static str, &'static [u8]); 4] = [
+        ("byBrand /[0] ref-bucket", "brand", "brand_050", &[0u8]),
+        (
+            "byBrand /color continuation",
+            "brand",
+            "brand_050",
+            b"color",
+        ),
+        ("byColor /[0] ref-bucket", "color", "color_00000500", &[0u8]),
+        (
+            "byColor /brand continuation",
+            "color",
+            "color_00000500",
+            b"brand",
+        ),
+    ];
+    for (label, prop, val, child) in child_probes {
+        let parent_owned: Vec<Vec<u8>> = vec![
+            vec![RootTree::DataContractDocuments as u8],
+            contract_id.to_vec(),
+            vec![1u8],
+            DOCUMENT_TYPE_NAME.as_bytes().to_vec(),
+            prop.as_bytes().to_vec(),
+            val.as_bytes().to_vec(),
+        ];
+        let parent_refs: Vec<&[u8]> = parent_owned.iter().map(|v| v.as_slice()).collect();
+        match fixture
+            .drive
+            .grove
+            .get(
+                SubtreePath::from(parent_refs.as_slice()),
+                child,
+                None,
+                grove_version,
+            )
+            .unwrap()
+        {
+            Ok(elem) => eprintln!(
+                "[probe-child] {label} (child_key={}): {} {{ count_value_or_default: {}, debug: {:?} }}",
+                display_segment(child),
+                element_variant_name(&elem),
+                elem.count_value_or_default(),
+                elem
+            ),
+            Err(e) => eprintln!(
+                "[probe-child] {label} (child_key={}): grove.get error: {e:?}",
+                display_segment(child)
+            ),
         }
     }
 }

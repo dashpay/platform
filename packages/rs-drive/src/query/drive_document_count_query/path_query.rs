@@ -707,19 +707,41 @@ impl DriveDocumentCountQuery<'_> {
             }
         }
 
-        // Whether the terminator's value tree is itself a CountTree
-        // (i.e. carries the per-branch doc count directly) vs. a
-        // NormalTree whose `[0]` child is the CountTree. Drives
+        // Whether the terminator's value tree is itself a `CountTree`
+        // (carries the per-branch doc count directly) vs. a
+        // `NormalTree` whose `[0]` child is the `CountTree`. Drives
         // the selector-element decision below.
+        //
+        // The insertion side
+        // (`add_indices_for_index_level_for_contract_operations_v0`)
+        // makes the terminator value tree a `CountTree` for **any**
+        // countable index — not just `range_countable: true`. Both
+        // tiers (`Countable` and `CountableAllowingOffset`) layout
+        // the value tree the same way: a `CountTree` whose count
+        // equals the `[0]` ref-bucket's doc count (continuations
+        // wrapped `NonCounted` so they don't pollute the parent).
+        // `range_countable` only additionally upgrades the
+        // property-name tree to `ProvableCountTree` for
+        // `AggregateCountOnRange` queries — that's orthogonal to the
+        // point-lookup proof shape.
+        //
+        // So gate the optimization on `countable.is_countable()`:
+        // every countable index uses the compact shape. The picker
+        // upstream already requires the index to be countable to be
+        // selected (`find_countable_index_for_where_clauses` / the
+        // range_countable picker for range shapes), so reaching this
+        // builder with a non-countable index would be a bug — but
+        // we keep the gate explicit for clarity.
         //
         // The loop above already enforces full coverage of every
         // index property, so the terminator is always proven; this
         // flag is the only differentiator between the two output
         // shapes.
-        let range_countable_terminator = self.index.range_countable;
+        let count_tree_terminator = self.index.countable.is_countable();
 
-        // CountTree storage convention for non-range_countable
-        // indexes: the count lives at the `[0]` child of the value
+        // CountTree storage convention for non-countable indexes
+        // (defensive — picker upstream filters these out): the count
+        // lives at the `[0]` child of the value
         // tree. See the book's "Count Trees and Provable Counts"
         // chapter for the layout.
         const COUNT_TREE_KEY: u8 = 0;
@@ -739,7 +761,7 @@ impl DriveDocumentCountQuery<'_> {
                 //   is the per-branch count — one merk layer shorter
                 //   per resolved branch than the `[0]` shape.
                 let mut query = Query::new();
-                if range_countable_terminator {
+                if count_tree_terminator {
                     // The Equal loop always pushes (name, value) per
                     // prop, so `base_path` has at least the trailing
                     // serialized `last_value` to lift. The expect()
@@ -781,7 +803,7 @@ impl DriveDocumentCountQuery<'_> {
 
                 if subquery_path_extension.is_empty() {
                     // **In on the terminator** (no trailing Equals).
-                    if range_countable_terminator {
+                    if count_tree_terminator {
                         // Outer `Key`s already point at the terminator
                         // value trees, which are themselves CountTrees.
                         // No subquery is needed — grovedb returns one
@@ -799,7 +821,7 @@ impl DriveDocumentCountQuery<'_> {
                     // **In on a prefix + trailing Equals** that
                     // collectively reach the terminator.
                     let mut subquery = Query::new();
-                    if range_countable_terminator {
+                    if count_tree_terminator {
                         // The terminator's serialized value is the
                         // last element pushed into
                         // `subquery_path_extension` (the trailing-

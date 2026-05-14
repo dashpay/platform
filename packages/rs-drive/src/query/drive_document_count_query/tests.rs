@@ -3105,20 +3105,25 @@ mod range_countable_point_lookup_tests {
         assert_eq!(summed, 5);
     }
 
-    /// **Regression for normal `countable: true` (NOT rangeCountable)**.
-    /// The path query must still target `[..., "category",
-    /// serialize(value), 0]` via `Key([0])` — the value trees here
-    /// are `NormalTree` and the count lives at the `[0]` child.
+    /// **Optimization is uniform across countability tiers** — pins
+    /// that a plain `countable: true` index (NOT `rangeCountable`)
+    /// also gets the compact value-tree-direct proof shape.
     ///
-    /// This is the load-bearing inverse of the rangeCountable tests:
-    /// a regression that applied the optimization to normal
-    /// countable indexes would walk to a NormalTree and call
-    /// `count_value_or_default()` on it, which returns `1` for
-    /// `NormalTree` (per
-    /// `Element::count_value_or_default`'s per-variant contract) —
-    /// silently breaking counts.
+    /// This used to be the inverse pin (the legacy `Key([0])` shape
+    /// is preserved for non-range_countable indexes), but the
+    /// insertion side now makes the terminator value tree a
+    /// `CountTree` for any countable index — not just rangeCountable
+    /// ones — so the optimization activates uniformly. A regression
+    /// to the old layout (`NormalTree` value trees + `[0]` descent
+    /// for non-range_countable) would fail the shape assertion here
+    /// AND silently break counts at runtime (`NormalTree`'s
+    /// `count_value_or_default()` returns 1, not the doc count).
+    ///
+    /// `rangeCountable` is no longer needed for the smaller-proof
+    /// win — it's now strictly an opt-in for `AggregateCountOnRange`
+    /// (the property-name tree upgrade to `ProvableCountTree`).
     #[test]
-    fn normal_countable_path_query_still_targets_zero_child() {
+    fn plain_countable_path_query_targets_value_tree_directly() {
         let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
         let data_contract = build_by_category_normal_countable_contract();
@@ -3150,9 +3155,14 @@ mod range_countable_point_lookup_tests {
         )
         .expect("byCategory covers category=tools");
         assert!(
+            index.countable.is_countable(),
+            "fixture: byCategory must be countable (any tier) so the \
+             value-tree-direct optimization activates"
+        );
+        assert!(
             !index.range_countable,
-            "fixture: byCategory must NOT be rangeCountable for this regression \
-             test to exercise the unchanged shape"
+            "fixture: byCategory must NOT be `rangeCountable` so this test \
+             actually exercises the plain-countable arm of the generalization"
         );
         let query = DriveDocumentCountQuery {
             document_type,
@@ -3172,26 +3182,32 @@ mod range_countable_point_lookup_tests {
                 platform_version,
             )
             .expect("serialize category");
-        // Path must include the serialized value (normal-countable
-        // descent goes one layer deeper than the rangeCountable
-        // optimization).
+        // Optimized shape: path ends at the property-name segment
+        // (NOT at the serialized value), and the query item is
+        // `Key(serialized_value)`. A regression that re-introduced
+        // the `[0]` descent for plain countable would fire here.
         assert_eq!(
             path_query.path.last().expect("non-empty path"),
-            &serialized_tools,
-            "normal countable Equal-only path must end at the serialized \
-             value — `Key([0])` then picks off the CountTree under it. \
-             A regression that ended at the property-name segment would \
-             apply the rangeCountable optimization here, which is wrong: \
-             NormalTree's `count_value_or_default()` returns 1, not the \
-             doc count."
+            &b"category".to_vec(),
+            "plain `countable: true` Equal-only path must end at the \
+             property-name subtree (matching the rangeCountable shape) — \
+             the insertion side now stores the value tree as `CountTree` \
+             regardless of `range_countable`, so the optimization applies \
+             uniformly."
         );
         let items = &path_query.query.query.items;
         assert_eq!(items.len(), 1);
         assert_eq!(
             items[0],
+            QueryItem::Key(serialized_tools),
+            "selector must be `Key(serialize(value))` so the resolved \
+             element is the terminator value-tree CountTree itself"
+        );
+        assert_ne!(
+            items[0],
             QueryItem::Key(vec![0]),
-            "normal-countable selector must be Key([0]) — the optimization \
-             must not leak to indexes whose terminators are NormalTree"
+            "`Key([0])` is the legacy descent and must NOT appear here — \
+             the optimization is now active for every countable tier"
         );
 
         // Counts agree across no-proof and prove.
