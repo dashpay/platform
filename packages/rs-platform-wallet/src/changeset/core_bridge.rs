@@ -195,52 +195,19 @@ async fn build_core_changeset(
             synced_height: Some(*height),
             ..CoreChangeSet::default()
         },
-        WalletEvent::TransactionsChainlocked { per_account, .. } => {
-            // Upstream `WalletManager::apply_chain_lock` has already
-            // promoted each matching record from `InBlock` to
-            // `InChainLockedBlock` and, under the default
-            // `keep-finalized-transactions=OFF`, dropped the records
-            // from the in-memory `transactions()` map. The event
-            // payload carries the per-account txid list of net-new
-            // promotions; flatten it into the changeset so the
-            // persister can flip `context` on the matching rows.
-            //
-            // We project only the txids (not full records) because the
-            // records are gone by the time this event fires. The
-            // persisted SwiftData row already carries the correct
-            // `blockHeight` / `blockHash` / `blockTimestamp` from the
-            // previous `InBlock` upsert — the upstream promotion
-            // preserves the original `BlockInfo`, so the only column
-            // the persister has to touch is `context`.
-            CoreChangeSet {
-                chain_lock_promotions: flatten_per_account_promotions(per_account),
-                ..CoreChangeSet::default()
-            }
+        WalletEvent::TransactionsChainlocked { .. } => {
+            // The wallet has already promoted the matching records from
+            // `InBlock` to `InChainLockedBlock` by the time this event
+            // fires (upstream `WalletManager::process_chain_lock` mutates
+            // the in-memory map before emitting). Our poll loop reads
+            // record.context.is_chain_locked() directly, so no
+            // additional CoreChangeSet projection is needed here today;
+            // a future enhancement could persist the
+            // `WalletMetadata::last_applied_chain_lock` for crash
+            // recovery, but it's out of scope for the current PR.
+            CoreChangeSet::default()
         }
     }
-}
-
-/// Flatten an upstream `TransactionsChainlocked.per_account` payload
-/// into the flat txid vec the persister consumes. Account-agnostic on
-/// the Swift side because `PersistentTransaction` is keyed by txid;
-/// the per-account grouping is only meaningful inside key-wallet's
-/// in-memory transaction maps.
-///
-/// Extracted as a pure helper so the projection can be unit-tested
-/// without standing up a `WalletManager` — the rest of
-/// [`build_core_changeset`]'s machinery (the wallet-manager handle,
-/// the broadcast subscriber, etc.) is irrelevant to the chain-lock arm.
-fn flatten_per_account_promotions(
-    per_account: &std::collections::BTreeMap<
-        key_wallet::account::AccountType,
-        Vec<dashcore::Txid>,
-    >,
-) -> Vec<dashcore::Txid> {
-    let mut promotions = Vec::new();
-    for txids in per_account.values() {
-        promotions.extend(txids.iter().copied());
-    }
-    promotions
 }
 
 /// Returns `true` when the wallet's stored record for `txid` is in a
@@ -368,64 +335,5 @@ impl CoreChangeSet {
             && self.instant_locks_for_non_final_records.is_empty()
             && self.last_processed_height.is_none()
             && self.synced_height.is_none()
-            && self.chain_lock_promotions.is_empty()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    //! Bridge-projection tests. These cover the pure projection
-    //! helpers — the surrounding `spawn_wallet_event_adapter` loop is
-    //! covered by integration tests in the iOS test suite.
-
-    use super::*;
-    use dashcore::hashes::Hash;
-    use dashcore::Txid;
-    use key_wallet::account::{AccountType, StandardAccountType};
-    use std::collections::BTreeMap;
-
-    /// Fabricate a `Txid` from a single non-zero byte. Hex display
-    /// reverses internally; for test assertions we compare the raw
-    /// 32-byte value, which is what the FFI projection emits.
-    fn txid_for(byte: u8) -> Txid {
-        let mut bytes = [0u8; 32];
-        bytes[0] = byte;
-        Txid::from_byte_array(bytes)
-    }
-
-    /// Pins the contract that `TransactionsChainlocked` projects every
-    /// txid from every account into the flat `chain_lock_promotions`
-    /// list. Regression guard for the "silently drop" path that left
-    /// SwiftData rows stuck at `context = 2 (InBlock)` after a
-    /// chain-lock event — the bug was a `CoreChangeSet::default()`
-    /// return that ignored the `per_account` payload entirely.
-    #[test]
-    fn flatten_per_account_promotions_emits_every_txid() {
-        let mut per_account: BTreeMap<AccountType, Vec<Txid>> = BTreeMap::new();
-        per_account.insert(
-            AccountType::Standard {
-                index: 0,
-                standard_account_type: StandardAccountType::BIP44Account,
-            },
-            vec![txid_for(0xaa), txid_for(0xbb)],
-        );
-        per_account.insert(AccountType::IdentityRegistration, vec![txid_for(0xcc)]);
-
-        let flat = flatten_per_account_promotions(&per_account);
-
-        assert_eq!(flat.len(), 3, "every account's txids must be projected");
-        assert!(flat.contains(&txid_for(0xaa)));
-        assert!(flat.contains(&txid_for(0xbb)));
-        assert!(flat.contains(&txid_for(0xcc)));
-    }
-
-    /// Pins that an empty `per_account` map projects to an empty vec —
-    /// shouldn't ever happen upstream (the emitter omits accounts with
-    /// no promotions), but the projection must be total in any case.
-    #[test]
-    fn flatten_per_account_promotions_empty_map_yields_empty_vec() {
-        let per_account: BTreeMap<AccountType, Vec<Txid>> = BTreeMap::new();
-        let flat = flatten_per_account_promotions(&per_account);
-        assert!(flat.is_empty());
     }
 }
