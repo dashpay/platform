@@ -70,21 +70,50 @@ fn status_str(s: &AssetLockStatus) -> &'static str {
     }
 }
 
-/// Per-wallet asset-lock slice as returned by [`load_state`] —
-/// outer-keyed by `account_index`, inner-keyed by outpoint.
+/// Per-wallet asset-lock slice as returned by the readers — outer-keyed
+/// by `account_index`, inner-keyed by outpoint.
 pub type AssetLocksByAccount = BTreeMap<u32, BTreeMap<OutPoint, TrackedAssetLock>>;
 
-/// Build the per-wallet asset-lock slice for [`ClientStartState`].
-/// Wraps [`list_active`] and tracks a corruption-skipped count for
-/// the `load()` summary log.
+/// Decode one raw `(outpoint_bytes, account_index, lifecycle_blob)`
+/// tuple into the typed `(account_index, OutPoint, TrackedAssetLock)`
+/// triple that both [`list_active`] and [`load_all`] consume.
+///
+/// Hard-fail behaviour (typed error) — corruption-tolerant readers
+/// (`load_state` / `load_all`) wrap the call in a per-row skip.
+fn decode_row(
+    op_bytes: &[u8],
+    account_index: i64,
+    blob_bytes: &[u8],
+) -> Result<(u32, OutPoint, TrackedAssetLock), WalletStorageError> {
+    let outpoint = blob::decode_outpoint(op_bytes)?;
+    let entry: AssetLockEntry = blob::decode(blob_bytes)?;
+    let tracked = TrackedAssetLock {
+        out_point: entry.out_point,
+        transaction: entry.transaction,
+        account_index: entry.account_index,
+        funding_type: entry.funding_type,
+        identity_index: entry.identity_index,
+        amount: entry.amount_duffs,
+        status: entry.status,
+        proof: entry.proof,
+    };
+    let account_index =
+        u32::try_from(account_index).map_err(|_| WalletStorageError::IntegerOverflow {
+            field: "asset_locks.account_index",
+            value: account_index as u64,
+            target: crate::sqlite::util::safe_cast::SafeCastTarget::U64,
+        })?;
+    Ok((account_index, outpoint, tracked))
+}
+
+/// Build the per-wallet asset-lock slice for [`ClientStartState`] from
+/// the `asset_locks` table. Decode failures are skipped per-row (with
+/// a `tracing::warn!`); the skip count is returned so callers can
+/// surface it via the `load()` summary log.
 pub fn load_state(
     conn: &Connection,
     wallet_id: &WalletId,
 ) -> Result<(AssetLocksByAccount, usize), WalletStorageError> {
-    // `list_active` already iterates every row; corruption tolerance
-    // sits inside the iteration today (see the per-row decode below).
-    // Mirror the (state, skipped) shape so callers can fold this
-    // reader into the summary the same way as identities/contacts.
     let mut stmt = conn.prepare(
         "SELECT outpoint, account_index, lifecycle_blob \
          FROM asset_locks WHERE wallet_id = ?1",
@@ -95,7 +124,7 @@ pub fn load_state(
         let blob_bytes: Vec<u8> = row.get(2)?;
         Ok((op_bytes, account_index, blob_bytes))
     })?;
-    let mut out: BTreeMap<u32, BTreeMap<OutPoint, TrackedAssetLock>> = BTreeMap::new();
+    let mut out: AssetLocksByAccount = BTreeMap::new();
     let mut skipped = 0usize;
     for r in rows {
         let (op_bytes, account_index, blob_bytes) = match r {
@@ -111,63 +140,75 @@ pub fn load_state(
                 continue;
             }
         };
-        let outpoint = match blob::decode_outpoint(&op_bytes) {
-            Ok(o) => o,
+        match decode_row(&op_bytes, account_index, &blob_bytes) {
+            Ok((acct, outpoint, tracked)) => {
+                out.entry(acct).or_default().insert(outpoint, tracked);
+            }
             Err(e) => {
                 tracing::warn!(
                     wallet_id = %hex::encode(wallet_id),
                     table = "asset_locks",
                     error = %e,
-                    "skipping undecodable asset_locks outpoint"
+                    "skipping undecodable asset_locks row"
                 );
                 skipped += 1;
-                continue;
             }
-        };
-        let entry: AssetLockEntry = match blob::decode(&blob_bytes) {
-            Ok(e) => e,
-            Err(e) => {
-                tracing::warn!(
-                    wallet_id = %hex::encode(wallet_id),
-                    table = "asset_locks",
-                    error = %e,
-                    "skipping undecodable asset_locks blob"
-                );
-                skipped += 1;
-                continue;
-            }
-        };
-        let tracked = TrackedAssetLock {
-            out_point: entry.out_point,
-            transaction: entry.transaction,
-            account_index: entry.account_index,
-            funding_type: entry.funding_type,
-            identity_index: entry.identity_index,
-            amount: entry.amount_duffs,
-            status: entry.status,
-            proof: entry.proof,
-        };
-        let account_index = match u32::try_from(account_index) {
-            Ok(v) => v,
-            Err(_) => {
-                skipped += 1;
-                continue;
-            }
-        };
-        out.entry(account_index)
-            .or_default()
-            .insert(outpoint, tracked);
+        }
     }
     Ok((out, skipped))
+}
+
+/// Bulk reader for `load()`: ONE scan over `asset_locks`, grouped in
+/// memory by wallet id. Returns per-wallet
+/// `(AssetLocksByAccount, skipped_rows)` so the persister `load()`
+/// path is constant-query w.r.t. wallet count (FR-P4-6 — no N+1).
+pub fn load_all(
+    conn: &Connection,
+) -> Result<BTreeMap<WalletId, (AssetLocksByAccount, usize)>, WalletStorageError> {
+    let mut out: BTreeMap<WalletId, (AssetLocksByAccount, usize)> = BTreeMap::new();
+    let mut stmt = conn.prepare(
+        "SELECT wallet_id, outpoint, account_index, lifecycle_blob \
+         FROM asset_locks ORDER BY wallet_id",
+    )?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let wid_bytes: Vec<u8> = row.get(0)?;
+        let op_bytes: Vec<u8> = row.get(1)?;
+        let account_index: i64 = row.get(2)?;
+        let blob_bytes: Vec<u8> = row.get(3)?;
+        let mut wid = [0u8; 32];
+        if wid_bytes.len() == 32 {
+            wid.copy_from_slice(&wid_bytes);
+        }
+        let slot = out.entry(wid).or_insert_with(|| (BTreeMap::new(), 0));
+        match decode_row(&op_bytes, account_index, &blob_bytes) {
+            Ok((acct, outpoint, tracked)) => {
+                slot.0.entry(acct).or_default().insert(outpoint, tracked);
+            }
+            Err(e) => {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wid),
+                    table = "asset_locks",
+                    error = %e,
+                    "skipping undecodable asset_locks row"
+                );
+                slot.1 += 1;
+            }
+        }
+    }
+    Ok(out)
 }
 
 /// Return non-`Used` asset locks per wallet, bucketed by account
 /// index. Every status variant the changeset writes is considered
 /// "active": consumed locks leave via [`AssetLockChangeSet::removed`].
+///
+/// Hard-fail on the first decode error (legacy contract; corruption
+/// tolerance lives in [`load_state`] / [`load_all`]).
 pub fn list_active(
     conn: &Connection,
     wallet_id: &WalletId,
-) -> Result<BTreeMap<u32, BTreeMap<OutPoint, TrackedAssetLock>>, WalletStorageError> {
+) -> Result<AssetLocksByAccount, WalletStorageError> {
     let mut stmt = conn.prepare(
         "SELECT outpoint, account_index, lifecycle_blob \
          FROM asset_locks WHERE wallet_id = ?1",
@@ -178,30 +219,11 @@ pub fn list_active(
         let blob_bytes: Vec<u8> = row.get(2)?;
         Ok((op_bytes, account_index, blob_bytes))
     })?;
-    let mut out: BTreeMap<u32, BTreeMap<OutPoint, TrackedAssetLock>> = BTreeMap::new();
+    let mut out: AssetLocksByAccount = BTreeMap::new();
     for r in rows {
         let (op_bytes, account_index, blob_bytes) = r?;
-        let outpoint = blob::decode_outpoint(&op_bytes)?;
-        let entry: AssetLockEntry = blob::decode(&blob_bytes)?;
-        let tracked = TrackedAssetLock {
-            out_point: entry.out_point,
-            transaction: entry.transaction,
-            account_index: entry.account_index,
-            funding_type: entry.funding_type,
-            identity_index: entry.identity_index,
-            amount: entry.amount_duffs,
-            status: entry.status,
-            proof: entry.proof,
-        };
-        let account_index =
-            u32::try_from(account_index).map_err(|_| WalletStorageError::IntegerOverflow {
-                field: "asset_locks.account_index",
-                value: account_index as u64,
-                target: crate::sqlite::util::safe_cast::SafeCastTarget::U64,
-            })?;
-        out.entry(account_index)
-            .or_default()
-            .insert(outpoint, tracked);
+        let (acct, outpoint, tracked) = decode_row(&op_bytes, account_index, &blob_bytes)?;
+        out.entry(acct).or_default().insert(outpoint, tracked);
     }
     Ok(out)
 }

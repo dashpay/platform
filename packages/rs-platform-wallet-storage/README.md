@@ -76,7 +76,7 @@ use platform_wallet_storage::{SqlitePersister, SqlitePersisterConfig};
 let config = SqlitePersisterConfig::new("/tmp/wallets.db");
 let persister: Arc<dyn PlatformWalletPersistence> =
     Arc::new(SqlitePersister::open(config)?);
-# Ok::<_, platform_wallet_storage::SqlitePersisterError>(())
+# Ok::<_, platform_wallet_storage::WalletStorageError>(())
 ```
 
 The same types are also reachable via their canonical submodule path —
@@ -117,7 +117,7 @@ validation failure (e.g. corrupt backup source).
 | `sqlite` | yes | SQLite persister (`platform_wallet_storage::sqlite`) and all of its native deps (`rusqlite`, `refinery`, `dpp`, `dash-sdk`, `key-wallet`, etc.) |
 | `cli` | yes | Maintenance binary `platform-wallet-storage`. Implies `sqlite`. |
 | `secrets` | no | Reserved for the future `SecretStore` submodule. No code lands today. |
-| `test-helpers` | no | Crate-private `lock_conn_for_test` / `config_for_test` accessors. Downstream MUST NOT enable. |
+| `__test-helpers` | no | Crate-private `lock_conn_for_test` / `config_for_test` accessors. The double-underscore prefix follows Cargo's "do not enable from downstream" convention; the methods are also `#[doc(hidden)]`. |
 
 `cargo build -p platform-wallet-storage --no-default-features` builds
 the crate with neither the SQLite backend nor the CLI compiled in.

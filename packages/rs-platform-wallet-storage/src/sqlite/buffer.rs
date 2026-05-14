@@ -87,8 +87,8 @@ impl Buffer {
     /// MUST use the renamed pair so the take/restore lifecycle is
     /// explicit.
     #[deprecated(
-        since = "3.1.0-dev.2",
-        note = "use take_for_flush + restore for retry-safe semantics"
+        since = "3.1.0-dev.1",
+        note = "use take_for_flush + restore for retry-safe semantics; remove in 3.2.0"
     )]
     pub fn drain(
         &self,

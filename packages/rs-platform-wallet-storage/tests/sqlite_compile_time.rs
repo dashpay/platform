@@ -57,6 +57,36 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
         "contacts.rs",
         "SELECT owner_id, contact_id, entry_blob FROM contacts_established",
     ),
+    // Bulk `load_all` readers — single scan per table for `load()`,
+    // grouped in memory by wallet_id (FR-P4-6). Read-only by design.
+    (
+        "platform_addrs.rs",
+        "SELECT wallet_id, sync_height, sync_timestamp, last_known_recent_block",
+    ),
+    (
+        "platform_addrs.rs",
+        "SELECT wallet_id FROM platform_addresses",
+    ),
+    (
+        "identities.rs",
+        "SELECT wallet_id, identity_id, entry_blob, tombstoned",
+    ),
+    (
+        "contacts.rs",
+        "SELECT wallet_id, owner_id, recipient_id, entry_blob",
+    ),
+    (
+        "contacts.rs",
+        "SELECT wallet_id, owner_id, sender_id, entry_blob",
+    ),
+    (
+        "contacts.rs",
+        "SELECT wallet_id, owner_id, contact_id, entry_blob",
+    ),
+    (
+        "asset_locks.rs",
+        "SELECT wallet_id, outpoint, account_index, lifecycle_blob",
+    ),
 ];
 
 /// TC-P1-003: writer paths in `src/sqlite/schema/*.rs` must not call

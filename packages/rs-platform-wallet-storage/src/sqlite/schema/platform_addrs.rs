@@ -194,3 +194,74 @@ pub fn count_per_wallet(
     )?;
     Ok(usize::try_from(n).unwrap_or(usize::MAX))
 }
+
+/// One row of [`load_all`] aggregated state per wallet:
+/// `(sync_state, address_row_count)`.
+///
+/// `address_row_count` mirrors what [`count_per_wallet`] would return —
+/// folding the count into the bulk scan saves a per-wallet query.
+pub type LoadAllEntry = (PlatformAddressSyncStartState, usize);
+
+/// Bulk reader for `load()`: one scan over `platform_address_sync` +
+/// one scan over `platform_addresses`, grouped in memory by wallet id
+/// (no per-wallet round trip).
+///
+/// The two scans together cover every wallet's start-state so the
+/// persister `load()` path is constant-query w.r.t. wallet count
+/// (FR-P4-6 — no N+1).
+pub fn load_all(
+    conn: &Connection,
+) -> Result<std::collections::BTreeMap<WalletId, LoadAllEntry>, WalletStorageError> {
+    use std::collections::BTreeMap;
+
+    let mut out: BTreeMap<WalletId, LoadAllEntry> = BTreeMap::new();
+
+    // Scan 1: per-wallet sync header. ORDER BY for deterministic merge.
+    let mut sync_stmt = conn.prepare(
+        "SELECT wallet_id, sync_height, sync_timestamp, last_known_recent_block \
+         FROM platform_address_sync ORDER BY wallet_id",
+    )?;
+    let mut rows = sync_stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let wid_bytes: Vec<u8> = row.get(0)?;
+        let h: i64 = row.get(1)?;
+        let t: i64 = row.get(2)?;
+        let r: i64 = row.get(3)?;
+        let mut wid = [0u8; 32];
+        if wid_bytes.len() == 32 {
+            wid.copy_from_slice(&wid_bytes);
+        }
+        let h = safe_cast::i64_to_u64("platform_address_sync.sync_height", h)?;
+        let t = safe_cast::i64_to_u64("platform_address_sync.sync_timestamp", t)?;
+        let r = safe_cast::i64_to_u64("platform_address_sync.last_known_recent_block", r)?;
+        out.insert(
+            wid,
+            (
+                PlatformAddressSyncStartState {
+                    per_account: Default::default(),
+                    sync_height: h,
+                    sync_timestamp: t,
+                    last_known_recent_block: r,
+                },
+                0,
+            ),
+        );
+    }
+
+    // Scan 2: address rows. Bumps the count for the matching wallet.
+    let mut addr_stmt =
+        conn.prepare("SELECT wallet_id FROM platform_addresses ORDER BY wallet_id")?;
+    let mut rows = addr_stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let wid_bytes: Vec<u8> = row.get(0)?;
+        let mut wid = [0u8; 32];
+        if wid_bytes.len() == 32 {
+            wid.copy_from_slice(&wid_bytes);
+        }
+        let entry = out
+            .entry(wid)
+            .or_insert_with(|| (PlatformAddressSyncStartState::default(), 0));
+        entry.1 += 1;
+    }
+    Ok(out)
+}

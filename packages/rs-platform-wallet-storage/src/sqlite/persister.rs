@@ -21,8 +21,13 @@ use crate::sqlite::util::safe_cast;
 
 /// Sub-areas of `ClientStartState` that `load()` does not yet
 /// reconstruct (blocked on upstream `Wallet::from_persisted`).
-/// Surfaced via the [`WalletStorageError::LoadIncomplete`] variant
-/// and a `tracing::warn!` whenever `load` returns.
+///
+/// Surfaced via the structured `tracing::info!` summary on every
+/// `load()` (`wallets_pending_rehydration` field) and via a
+/// `tracing::warn!` whenever `load()` skipped any rows. Currently NOT
+/// returned via [`WalletStorageError::LoadIncomplete`] — that variant
+/// is reserved for a future `try_load()` API; today partial
+/// reconstruction is a soft signal observable through `tracing` only.
 pub(crate) const LOAD_UNIMPLEMENTED: &[&str] = &["ClientStartState::wallets"];
 
 /// Outcome of a `prune_backups` call.
@@ -88,8 +93,8 @@ pub struct SqlitePersister {
     /// Test-only one-shot injector for `flush_inner`. Lives on the
     /// struct so `force_next_flush_to_fail` can survive across `&self`
     /// calls. Production builds keep the slot but never write to it
-    /// (no public setter outside `#[cfg(any(test, feature = "test-helpers"))]`).
-    #[cfg(any(test, feature = "test-helpers"))]
+    /// (no public setter outside `#[cfg(any(test, feature = "__test-helpers"))]`).
+    #[cfg(any(test, feature = "__test-helpers"))]
     primed_flush_error: Mutex<Option<WalletStorageError>>,
 }
 
@@ -157,7 +162,7 @@ impl SqlitePersister {
             config,
             conn: Arc::new(Mutex::new(conn)),
             buffer: Buffer::new(),
-            #[cfg(any(test, feature = "test-helpers"))]
+            #[cfg(any(test, feature = "__test-helpers"))]
             primed_flush_error: Mutex::new(None),
         })
     }
@@ -394,22 +399,20 @@ impl SqlitePersister {
             .map_err(|_| WalletStorageError::LockPoisoned)
     }
 
-    // INTENTIONAL(PROJ-005): downstream cannot meaningfully enable
-    // test-helpers because the methods are
-    // `#[cfg(any(test, feature = "test-helpers"))]`; the feature
-    // exists only so this crate's own integration tests can pull
-    // themselves in via dev-deps with the feature on. Naming
-    // convention warning (Cargo convention is `__test-helpers`) is
-    // acknowledged and not adopted — see Cargo.toml.
+    // The feature is named with Cargo's `__` prefix convention to
+    // signal "not part of the public API; downstream MUST NOT enable
+    // it" (https://doc.rust-lang.org/cargo/reference/features.html).
+    // The methods themselves are `#[doc(hidden)]` so they don't show
+    // up on docs.rs even when the feature is on.
     /// Test-only: borrow the write connection.
     ///
     /// Tests use this to seed `wallet_metadata` rows directly, run
     /// SELECTs against tables that aren't part of the public surface,
     /// or probe `PRAGMA foreign_keys` / `PRAGMA journal_mode`. Gated
-    /// behind `cfg(test)` and the `test-helpers` feature — downstream
-    /// crates cannot reach it.
+    /// behind `cfg(test)` and the `__test-helpers` feature —
+    /// downstream crates MUST NOT enable it.
     #[doc(hidden)]
-    #[cfg(any(test, feature = "test-helpers"))]
+    #[cfg(any(test, feature = "__test-helpers"))]
     pub fn lock_conn_for_test(&self) -> MutexGuard<'_, Connection> {
         self.conn.lock().expect("conn mutex poisoned")
     }
@@ -417,7 +420,7 @@ impl SqlitePersister {
     /// Test-only: read the resolved config. Same visibility rules as
     /// [`lock_conn_for_test`](Self::lock_conn_for_test).
     #[doc(hidden)]
-    #[cfg(any(test, feature = "test-helpers"))]
+    #[cfg(any(test, feature = "__test-helpers"))]
     pub fn config_for_test(&self) -> &SqlitePersisterConfig {
         &self.config
     }
@@ -431,7 +434,7 @@ impl SqlitePersister {
 
         // Test-only injector: surface a primed failure without ever
         // touching SQL so take/restore semantics are exercised end-to-end.
-        #[cfg(any(test, feature = "test-helpers"))]
+        #[cfg(any(test, feature = "__test-helpers"))]
         if let Some(injected) = self.consume_primed_flush_error() {
             return self.handle_flush_error(wallet_id, cs, injected);
         }
@@ -497,6 +500,14 @@ impl SqlitePersister {
     /// Classify the failure: transient errors restore the buffer and
     /// surface as `FlushRetryable`; everything else drops the
     /// changeset and returns the original variant.
+    //
+    // TODO(qa): TC-P2-008 — the fatal branch below covers
+    // `LockPoisoned`, but no end-to-end mutex-poison test exists. The
+    // spec deferred it as race-prone (a panicking thread plus a join
+    // is hard to reproduce deterministically); manually verified via
+    // `Mutex::lock` failure injection at the typed-error layer
+    // (`tc_p2_005_is_transient_table::lock_poisoned`). Anyone touching
+    // the classification policy or this branch must reconfirm by hand.
     fn handle_flush_error(
         &self,
         wallet_id: &WalletId,
@@ -557,12 +568,12 @@ impl SqlitePersister {
     /// when the test doesn't care which SQL error fires, only how the
     /// wrapper reacts.
     #[doc(hidden)]
-    #[cfg(any(test, feature = "test-helpers"))]
+    #[cfg(any(test, feature = "__test-helpers"))]
     pub fn force_next_flush_to_fail(&self, err: WalletStorageError) {
         *self.primed_flush_error.lock().expect("primed_flush_error") = Some(err);
     }
 
-    #[cfg(any(test, feature = "test-helpers"))]
+    #[cfg(any(test, feature = "__test-helpers"))]
     fn consume_primed_flush_error(&self) -> Option<WalletStorageError> {
         self.primed_flush_error
             .lock()
@@ -605,65 +616,122 @@ impl PlatformWalletPersistence for SqlitePersister {
     /// `Ok(state)` carrying everything that *did* decode. A
     /// `skipped_rows` counter on the summary log surfaces the count.
     ///
-    /// ```text
-    /// // Canonical mock setup for tests:
-    /// // let p = WalletPersister::new([0u8; 32], Arc::new(NoPlatformPersistence));
+    /// **Query budget (FR-P4-6).** The implementation is
+    /// constant-query w.r.t. wallet count: one `SELECT` over
+    /// `wallet_metadata` for the wallet-id list, plus one bulk scan
+    /// per per-wallet table (`platform_address_sync`,
+    /// `platform_addresses`, `identities`, `contacts_sent`,
+    /// `contacts_recv`, `contacts_established`, `asset_locks`). No
+    /// per-wallet round trip.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use std::sync::Arc;
+    /// use platform_wallet::changeset::PlatformWalletPersistence;
+    /// use platform_wallet_storage::{SqlitePersister, SqlitePersisterConfig};
+    ///
+    /// # fn main() -> Result<(), platform_wallet_storage::WalletStorageError> {
+    /// // Per-test isolated path — no shared state, no real wallet data.
+    /// let dir = std::env::temp_dir().join(format!(
+    ///     "platform-wallet-storage-doctest-{}-{}",
+    ///     std::process::id(),
+    ///     std::time::SystemTime::now()
+    ///         .duration_since(std::time::UNIX_EPOCH)
+    ///         .unwrap()
+    ///         .as_nanos()
+    /// ));
+    /// std::fs::create_dir_all(&dir).unwrap();
+    /// let db_path = dir.join("wallets.db");
+    ///
+    /// let config = SqlitePersisterConfig::new(&db_path);
+    /// let persister: Arc<dyn PlatformWalletPersistence> =
+    ///     Arc::new(SqlitePersister::open(config)?);
+    ///
+    /// // Empty database → empty start-state, no error.
+    /// let state = persister.load().expect("load");
+    /// assert!(state.platform_addresses.is_empty());
+    /// assert!(state.identities.is_empty());
+    /// assert!(state.contacts.is_empty());
+    /// assert!(state.asset_locks.is_empty());
+    ///
+    /// // Cleanup — the doctest owns the directory.
+    /// drop(persister);
+    /// let _ = std::fs::remove_dir_all(&dir);
+    /// # Ok(())
+    /// # }
     /// ```
     fn load(&self) -> Result<ClientStartState, PersistenceError> {
         let conn = self.conn().map_err(PersistenceError::from)?;
         let mut state = ClientStartState::default();
-        let mut wallets_seen: usize = 0;
+
+        // Bulk readers — one scan per per-wallet table; everything
+        // grouped in memory by wallet_id. Constant query cost
+        // regardless of wallet count (FR-P4-6).
+        let wallet_ids = schema::wallet_meta::list_ids(&conn).map_err(PersistenceError::from)?;
+        let mut addrs_all =
+            schema::platform_addrs::load_all(&conn).map_err(PersistenceError::from)?;
+        let mut identities_all =
+            schema::identities::load_all(&conn).map_err(PersistenceError::from)?;
+        let mut contacts_all = schema::contacts::load_all(&conn).map_err(PersistenceError::from)?;
+        let mut asset_locks_all =
+            schema::asset_locks::load_all(&conn).map_err(PersistenceError::from)?;
+
+        let wallets_seen = wallet_ids.len();
         let mut addresses_loaded: usize = 0;
         let mut identities_loaded: usize = 0;
         let mut contacts_loaded: usize = 0;
         let mut asset_locks_loaded: usize = 0;
         let mut skipped_rows: usize = 0;
-        for wallet_id in schema::wallet_meta::list_ids(&conn).map_err(PersistenceError::from)? {
-            wallets_seen += 1;
 
-            let addrs = schema::platform_addrs::load_state(&conn, &wallet_id)
-                .map_err(PersistenceError::from)?;
-            let count = schema::platform_addrs::count_per_wallet(&conn, &wallet_id)
-                .map_err(PersistenceError::from)?;
-            if count > 0 || addrs.sync_height > 0 || addrs.sync_timestamp > 0 {
-                addresses_loaded += count;
-                state.platform_addresses.insert(wallet_id, addrs);
+        // Merge in the order: every known wallet id (so wallets with
+        // only metadata still surface), plus any extras that the area
+        // scans found but `wallet_metadata` doesn't list (defensive —
+        // FK triggers should prevent this).
+        let mut all_ids: std::collections::BTreeSet<WalletId> =
+            wallet_ids.iter().copied().collect();
+        all_ids.extend(addrs_all.keys().copied());
+        all_ids.extend(identities_all.keys().copied());
+        all_ids.extend(contacts_all.keys().copied());
+        all_ids.extend(asset_locks_all.keys().copied());
+
+        for wallet_id in all_ids {
+            if let Some((addrs, count)) = addrs_all.remove(&wallet_id) {
+                if count > 0 || addrs.sync_height > 0 || addrs.sync_timestamp > 0 {
+                    addresses_loaded += count;
+                    state.platform_addresses.insert(wallet_id, addrs);
+                }
             }
-
-            let (identities_state, ident_skipped) =
-                schema::identities::load_state(&conn, &wallet_id)
-                    .map_err(PersistenceError::from)?;
-            skipped_rows += ident_skipped;
-            let ident_total: usize = identities_state.out_of_wallet_identities.len()
-                + identities_state
-                    .wallet_identities
-                    .values()
-                    .map(|m| m.len())
-                    .sum::<usize>();
-            if ident_total > 0 {
-                identities_loaded += ident_total;
-                state.identities.insert(wallet_id, identities_state);
+            if let Some((identities_state, skipped)) = identities_all.remove(&wallet_id) {
+                skipped_rows += skipped;
+                let total: usize = identities_state.out_of_wallet_identities.len()
+                    + identities_state
+                        .wallet_identities
+                        .values()
+                        .map(|m| m.len())
+                        .sum::<usize>();
+                if total > 0 {
+                    identities_loaded += total;
+                    state.identities.insert(wallet_id, identities_state);
+                }
             }
-
-            let (contacts_state, contacts_skipped) =
-                schema::contacts::load_state(&conn, &wallet_id).map_err(PersistenceError::from)?;
-            skipped_rows += contacts_skipped;
-            let contacts_total = contacts_state.sent_requests.len()
-                + contacts_state.incoming_requests.len()
-                + contacts_state.established.len();
-            if contacts_total > 0 {
-                contacts_loaded += contacts_total;
-                state.contacts.insert(wallet_id, contacts_state);
+            if let Some((contacts_state, skipped)) = contacts_all.remove(&wallet_id) {
+                skipped_rows += skipped;
+                let total = contacts_state.sent_requests.len()
+                    + contacts_state.incoming_requests.len()
+                    + contacts_state.established.len();
+                if total > 0 {
+                    contacts_loaded += total;
+                    state.contacts.insert(wallet_id, contacts_state);
+                }
             }
-
-            let (asset_locks_state, asset_skipped) =
-                schema::asset_locks::load_state(&conn, &wallet_id)
-                    .map_err(PersistenceError::from)?;
-            skipped_rows += asset_skipped;
-            let asset_total: usize = asset_locks_state.values().map(|m| m.len()).sum();
-            if asset_total > 0 {
-                asset_locks_loaded += asset_total;
-                state.asset_locks.insert(wallet_id, asset_locks_state);
+            if let Some((asset_locks_state, skipped)) = asset_locks_all.remove(&wallet_id) {
+                skipped_rows += skipped;
+                let total: usize = asset_locks_state.values().map(|m| m.len()).sum();
+                if total > 0 {
+                    asset_locks_loaded += total;
+                    state.asset_locks.insert(wallet_id, asset_locks_state);
+                }
             }
         }
         tracing::info!(

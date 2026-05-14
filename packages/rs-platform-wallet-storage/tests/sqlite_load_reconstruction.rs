@@ -528,6 +528,86 @@ fn tc_p4_008_corruption_skipped_load_succeeds() {
     assert!(logs_contain("skipped_rows="));
 }
 
+/// TC-P4-012 (FR-P4-6): `load()` is constant-query w.r.t. wallet
+/// count. The bulk readers use one scan per per-wallet table; growing
+/// the wallet count must NOT inflate the query count.
+///
+/// Verified by enabling `sqlite3_trace_v2` on the persister's
+/// connection, counting `Stmt` events for the duration of one
+/// `load()`, and asserting the count is identical for N=1 and N=10.
+/// `serial_test::serial` because the trace counter is a process-wide
+/// `AtomicUsize` (`Connection::trace_v2`'s callback must be a `fn`,
+/// not a `Fn`).
+#[test]
+#[serial_test::serial]
+fn tc_p4_012_load_query_count_constant() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static COUNTER: AtomicUsize = AtomicUsize::new(0);
+    fn cb(ev: rusqlite::trace::TraceEvent<'_>) {
+        if let rusqlite::trace::TraceEvent::Stmt(_, _) = ev {
+            COUNTER.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    fn count_load_queries(persister: &common::SqlitePersister) -> usize {
+        // Hold the conn briefly to install the trace, then drop the
+        // guard before calling load() (load takes its own lock).
+        {
+            let conn = persister.lock_conn_for_test();
+            conn.trace_v2(
+                rusqlite::trace::TraceEventCodes::SQLITE_TRACE_STMT,
+                Some(cb),
+            );
+        }
+        COUNTER.store(0, Ordering::Relaxed);
+        persister.load().expect("load");
+        let n = COUNTER.load(Ordering::Relaxed);
+        // Disable trace so other tests don't accidentally inherit it.
+        {
+            let conn = persister.lock_conn_for_test();
+            conn.trace_v2(rusqlite::trace::TraceEventCodes::SQLITE_TRACE_STMT, None);
+        }
+        n
+    }
+
+    fn seed_wallets(persister: &common::SqlitePersister, n: usize) {
+        for i in 0..n {
+            let id = wid(0xC0 + i as u8);
+            ensure_wallet_meta(persister, &id);
+            let mut cs = PlatformWalletChangeSet::default();
+            cs.platform_addresses = Some(PlatformAddressChangeSet {
+                addresses: vec![entry(id, 0, 0, 0xA0 + i as u8)],
+                sync_height: Some(1),
+                ..Default::default()
+            });
+            persister.store(id, cs).unwrap();
+        }
+    }
+
+    let (p1, _tmp1, _path1) = fresh_persister();
+    seed_wallets(&p1, 1);
+    let count_one = count_load_queries(&p1);
+
+    let (p10, _tmp10, _path10) = fresh_persister();
+    seed_wallets(&p10, 10);
+    let count_ten = count_load_queries(&p10);
+
+    assert_eq!(
+        count_one, count_ten,
+        "load() must issue the same number of queries regardless of wallet count \
+         (N=1 → {count_one}, N=10 → {count_ten})"
+    );
+    // Sanity bound: today this is 1 (wallet_meta::list_ids) + 2 (platform_addrs:
+    // sync + addresses) + 1 (identities) + 3 (contacts_*) + 1 (asset_locks) = 8.
+    // Allow some headroom for future single-shot scans.
+    assert!(
+        count_one <= 12,
+        "load() query count {count_one} exceeds expected upper bound (12); \
+         did a per-wallet round trip leak back in?"
+    );
+}
+
 /// TC-P4-010: empty database → defaults, ZERO warnings.
 #[tracing_test::traced_test]
 #[test]

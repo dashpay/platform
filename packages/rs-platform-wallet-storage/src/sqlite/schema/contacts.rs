@@ -198,6 +198,137 @@ pub fn load_state(
     Ok((state, skipped))
 }
 
+/// Bulk reader for `load()`: three scans (one per `contacts_*`
+/// subtable), grouped in memory by wallet id. Returns per-wallet
+/// `(ContactsStartState, skipped_rows)` so the persister `load()` path
+/// is constant-query w.r.t. wallet count (FR-P4-6 — no N+1).
+pub fn load_all(
+    conn: &Connection,
+) -> Result<std::collections::BTreeMap<WalletId, (ContactsStartState, usize)>, WalletStorageError> {
+    use std::collections::BTreeMap;
+
+    let mut out: BTreeMap<WalletId, (ContactsStartState, usize)> = BTreeMap::new();
+
+    let mut sent_stmt = conn.prepare(
+        "SELECT wallet_id, owner_id, recipient_id, entry_blob \
+         FROM contacts_sent ORDER BY wallet_id",
+    )?;
+    let mut rows = sent_stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let wid_bytes: Vec<u8> = row.get(0)?;
+        let owner: Vec<u8> = row.get(1)?;
+        let recipient: Vec<u8> = row.get(2)?;
+        let payload: Vec<u8> = row.get(3)?;
+        let mut wid = [0u8; 32];
+        if wid_bytes.len() == 32 {
+            wid.copy_from_slice(&wid_bytes);
+        }
+        let slot = out
+            .entry(wid)
+            .or_insert_with(|| (ContactsStartState::default(), 0));
+        let key = match decode_pair_key(&owner, &recipient) {
+            Ok((o, r)) => SentContactRequestKey {
+                owner_id: o,
+                recipient_id: r,
+            },
+            Err(e) => {
+                warn_skip(&wid, "contacts_sent", &e);
+                slot.1 += 1;
+                continue;
+            }
+        };
+        let entry: ContactRequestEntry = match blob::decode(&payload) {
+            Ok(e) => e,
+            Err(e) => {
+                warn_skip(&wid, "contacts_sent", &e);
+                slot.1 += 1;
+                continue;
+            }
+        };
+        slot.0.sent_requests.insert(key, entry);
+    }
+
+    let mut recv_stmt = conn.prepare(
+        "SELECT wallet_id, owner_id, sender_id, entry_blob \
+         FROM contacts_recv ORDER BY wallet_id",
+    )?;
+    let mut rows = recv_stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let wid_bytes: Vec<u8> = row.get(0)?;
+        let owner: Vec<u8> = row.get(1)?;
+        let sender: Vec<u8> = row.get(2)?;
+        let payload: Vec<u8> = row.get(3)?;
+        let mut wid = [0u8; 32];
+        if wid_bytes.len() == 32 {
+            wid.copy_from_slice(&wid_bytes);
+        }
+        let slot = out
+            .entry(wid)
+            .or_insert_with(|| (ContactsStartState::default(), 0));
+        let key = match decode_pair_key(&owner, &sender) {
+            Ok((o, s)) => ReceivedContactRequestKey {
+                owner_id: o,
+                sender_id: s,
+            },
+            Err(e) => {
+                warn_skip(&wid, "contacts_recv", &e);
+                slot.1 += 1;
+                continue;
+            }
+        };
+        let entry: ContactRequestEntry = match blob::decode(&payload) {
+            Ok(e) => e,
+            Err(e) => {
+                warn_skip(&wid, "contacts_recv", &e);
+                slot.1 += 1;
+                continue;
+            }
+        };
+        slot.0.incoming_requests.insert(key, entry);
+    }
+
+    let mut est_stmt = conn.prepare(
+        "SELECT wallet_id, owner_id, contact_id, entry_blob \
+         FROM contacts_established ORDER BY wallet_id",
+    )?;
+    let mut rows = est_stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let wid_bytes: Vec<u8> = row.get(0)?;
+        let owner: Vec<u8> = row.get(1)?;
+        let contact: Vec<u8> = row.get(2)?;
+        let payload: Vec<u8> = row.get(3)?;
+        let mut wid = [0u8; 32];
+        if wid_bytes.len() == 32 {
+            wid.copy_from_slice(&wid_bytes);
+        }
+        let slot = out
+            .entry(wid)
+            .or_insert_with(|| (ContactsStartState::default(), 0));
+        let key = match decode_pair_key(&owner, &contact) {
+            Ok((o, c)) => SentContactRequestKey {
+                owner_id: o,
+                recipient_id: c,
+            },
+            Err(e) => {
+                warn_skip(&wid, "contacts_established", &e);
+                slot.1 += 1;
+                continue;
+            }
+        };
+        let value: EstablishedContact = match blob::decode(&payload) {
+            Ok(e) => e,
+            Err(e) => {
+                warn_skip(&wid, "contacts_established", &e);
+                slot.1 += 1;
+                continue;
+            }
+        };
+        slot.0.established.insert(key, value);
+    }
+
+    Ok(out)
+}
+
 fn decode_pair_key(a: &[u8], b: &[u8]) -> Result<(Identifier, Identifier), WalletStorageError> {
     let a32 = <[u8; 32]>::try_from(a)
         .map_err(|_| WalletStorageError::blob_decode("contacts.id column is not 32 bytes"))?;

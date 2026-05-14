@@ -126,6 +126,74 @@ pub fn load_state(
     Ok((state, skipped))
 }
 
+/// Bulk reader for `load()`: ONE scan over `identities`, grouped in
+/// memory by wallet id. Returns per-wallet
+/// `(IdentityManagerStartState, skipped_rows)` so the persister
+/// `load()` path is constant-query w.r.t. wallet count (FR-P4-6 — no
+/// N+1).
+pub fn load_all(
+    conn: &Connection,
+) -> Result<
+    std::collections::BTreeMap<
+        WalletId,
+        (platform_wallet::changeset::IdentityManagerStartState, usize),
+    >,
+    WalletStorageError,
+> {
+    use platform_wallet::changeset::IdentityManagerStartState;
+    use std::collections::BTreeMap;
+
+    let mut out: BTreeMap<WalletId, (IdentityManagerStartState, usize)> = BTreeMap::new();
+    let mut stmt = conn.prepare(
+        "SELECT wallet_id, identity_id, entry_blob, tombstoned FROM identities ORDER BY wallet_id",
+    )?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let wid_bytes: Vec<u8> = row.get(0)?;
+        let identity_id: Vec<u8> = row.get(1)?;
+        let payload: Vec<u8> = row.get(2)?;
+        let tombstoned: i64 = row.get(3)?;
+        let mut wid = [0u8; 32];
+        if wid_bytes.len() == 32 {
+            wid.copy_from_slice(&wid_bytes);
+        }
+        let slot = out
+            .entry(wid)
+            .or_insert_with(|| (IdentityManagerStartState::default(), 0));
+        if tombstoned != 0 {
+            continue;
+        }
+        let entry: IdentityEntry = match blob::decode(&payload) {
+            Ok(e) => e,
+            Err(e) => {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wid),
+                    table = "identities",
+                    identity_id = %hex::encode(&identity_id),
+                    error = %e,
+                    "skipping undecodable identity row"
+                );
+                slot.1 += 1;
+                continue;
+            }
+        };
+        let managed = managed_identity_from_entry(&entry, &wid);
+        match entry.identity_index {
+            Some(idx) => {
+                slot.0
+                    .wallet_identities
+                    .entry(wid)
+                    .or_default()
+                    .insert(idx, managed);
+            }
+            None => {
+                slot.0.out_of_wallet_identities.insert(entry.id, managed);
+            }
+        }
+    }
+    Ok(out)
+}
+
 /// Reconstruct a [`ManagedIdentity`] from a persisted [`IdentityEntry`]
 /// using a freshly minted V0 [`Identity`] for `(id, balance, revision)`.
 /// Live runtime fields (contacts maps, public-key derivations) are
