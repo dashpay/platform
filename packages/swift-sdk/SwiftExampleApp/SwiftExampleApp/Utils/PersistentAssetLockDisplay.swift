@@ -45,6 +45,7 @@ extension PersistentAssetLock {
         case 1: return "Broadcast"
         case 2: return "InstantSendLocked"
         case 3: return "ChainLocked"
+        case 4: return "Consumed"
         default: return "Unknown(\(statusRaw))"
         }
     }

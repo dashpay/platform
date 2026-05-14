@@ -396,37 +396,90 @@ public class PlatformWalletManager: ObservableObject {
             retainedAssetLockManagers.append(assetLockManager)
             let handle = assetLockManager.handle
 
-            for entry in pending {
-                guard let outpoint =
-                    PlatformWalletManager.decodeOutPointForCatchUp(entry.outPointHex)
-                else { continue }
-                let txid = outpoint.txid
-                let vout = outpoint.vout
-                Task.detached(priority: .background) {
-                    // Build the txid tuple inline so the Task body
-                    // captures only Sendable values (Data, Handle,
-                    // UInt32).
-                    var txidTuple: FFIByteTuple32 =
-                        (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-                         0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
-                    txid.withUnsafeBytes { buf in
-                        withUnsafeMutableBytes(of: &txidTuple) { dst in
-                            dst.copyBytes(from: buf.prefix(32))
+            // Cap concurrency to avoid saturating iOS's cooperative
+            // thread pool. Each catch-up `block_on` parks a worker
+            // thread for up to 300s; N stuck locks at launch (after a
+            // multi-identity registration interrupted by an app kill)
+            // would otherwise spawn N parallel parked threads,
+            // starving every other `Task` in the app (UI updates,
+            // SwiftData writes, network calls).
+            //
+            // `MAX_CONCURRENT_CATCH_UPS = 4` is conservative for a
+            // 4-8 worker pool typical on iPhones. The real bottleneck
+            // is per-lock SPV chainlock arrival, not the catch-up
+            // throughput — running 4 in parallel vs 50 changes nothing
+            // about how fast each individual lock resolves.
+            let outpoints: [(txid: Data, vout: UInt32)] = pending.compactMap {
+                PlatformWalletManager.decodeOutPointForCatchUp($0.outPointHex)
+            }
+            guard !outpoints.isEmpty else { continue }
+            Task.detached(priority: .background) {
+                await withTaskGroup(of: Void.self) { group in
+                    let maxConcurrent = 4
+                    var nextIndex = 0
+                    // Seed the group with up to `maxConcurrent` tasks.
+                    while nextIndex < outpoints.count && nextIndex < maxConcurrent {
+                        let (txid, vout) = outpoints[nextIndex]
+                        group.addTask {
+                            Self.runCatchUp(handle: handle, txid: txid, vout: vout)
+                        }
+                        nextIndex += 1
+                    }
+                    // As each finishes, queue the next pending entry.
+                    while await group.next() != nil {
+                        if nextIndex < outpoints.count {
+                            let (txid, vout) = outpoints[nextIndex]
+                            group.addTask {
+                                Self.runCatchUp(handle: handle, txid: txid, vout: vout)
+                            }
+                            nextIndex += 1
                         }
                     }
-                    // Timeouts and proof-wait failures are expected
-                    // during normal operation (e.g. SPV not yet
-                    // caught up to the funding block, or the
-                    // chain-lock hasn't fired yet). The FFI returns
-                    // a non-zero code in those cases — discard.
-                    // Five-minute ceiling matches the `wait_for_proof`
-                    // deadline the production resume path uses.
-                    let result = asset_lock_manager_catch_up_blocking(
-                        handle, &txidTuple, vout, 300
-                    )
-                    _ = result
                 }
             }
+        }
+    }
+
+    /// Single catch-up invocation body. Extracted from the inline
+    /// `Task.detached` so the `withTaskGroup` coordinator can call it
+    /// directly. Sendable inputs only: `Handle` is `Int64`, `Data`
+    /// captures the txid bytes, `UInt32` is trivially Sendable.
+    ///
+    /// `nonisolated` because `PlatformWalletManager` is
+    /// `@MainActor`-isolated by default and the detached task body
+    /// runs off the main actor — the FFI call is synchronous and
+    /// reads no `PlatformWalletManager` state.
+    nonisolated private static func runCatchUp(handle: Handle, txid: Data, vout: UInt32) {
+        // Build the txid tuple inline so the Task body captures only
+        // Sendable values.
+        var txidTuple: FFIByteTuple32 =
+            (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+             0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
+        txid.withUnsafeBytes { buf in
+            withUnsafeMutableBytes(of: &txidTuple) { dst in
+                dst.copyBytes(from: buf.prefix(32))
+            }
+        }
+        // Five-minute ceiling matches the `wait_for_proof` deadline
+        // the production resume path uses.
+        let result = asset_lock_manager_catch_up_blocking(
+            handle, &txidTuple, vout, 300
+        )
+        // Timeouts and proof-wait failures (catch-up
+        // `errorWalletOperation`) are expected during normal
+        // operation (SPV not yet caught up to the funding block,
+        // chain-lock hasn't fired yet) — discard.
+        // `errorInvalidHandle` is NOT expected and indicates the
+        // manager wrapper was released mid-task (lifecycle race /
+        // programmer error); log it loudly via NSLog so an operator
+        // running without `tracing` capture still sees it.
+        let code = PlatformWalletResultCode(ffi: result.code)
+        if code == .errorInvalidHandle {
+            NSLog(
+                "[catch-up] asset_lock_manager_catch_up_blocking returned errorInvalidHandle for outpoint %@:%u — wrapper released before task finished",
+                txid.map { String(format: "%02x", $0) }.joined(),
+                vout
+            )
         }
     }
 

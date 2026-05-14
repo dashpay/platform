@@ -224,12 +224,17 @@ struct IdentitiesContentView: View {
     ///
     /// Each row's trailing affordance is staged on the lock's
     /// `statusRaw`:
-    /// - `1` Broadcast: spinner + "Waiting for InstantSendLock…"
-    ///   — the lock can't fund a Platform identity until the
-    ///   masternodes sign an IS lock. SPV is running; the
-    ///   persister will flip the row to (2) when the event
-    ///   arrives, and SwiftData `@Query` re-renders the row
-    ///   into the actionable state without any extra wiring.
+    /// - `1` Broadcast: spinner + "Waiting for InstantSendLock or
+    ///   ChainLock…" — the lock can't fund a Platform identity
+    ///   until the masternodes sign either lock type. For
+    ///   freshly broadcast funding txs the IS lock typically
+    ///   arrives within seconds; for aged stuck locks (catch-up
+    ///   case) the IS quorum has rotated so only a ChainLock
+    ///   can resolve them. Either path lands as
+    ///   `statusRaw = 2` or `3`. SPV is running; the persister
+    ///   will flip the row when the event arrives, and
+    ///   SwiftData `@Query` re-renders the row into the
+    ///   actionable state without any extra wiring.
     /// - `2` / `3` InstantSendLocked / ChainLocked: Resume
     ///   button. Tapping opens `CreateIdentityView` pre-configured
     ///   for the `.unusedAssetLock` funding path with this lock
@@ -539,7 +544,7 @@ private struct ResumableRegistrationRow: View {
             HStack(spacing: 6) {
                 ProgressView()
                     .controlSize(.small)
-                Text("Waiting for InstantSendLock…")
+                Text("Waiting for InstantSendLock or ChainLock…")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }

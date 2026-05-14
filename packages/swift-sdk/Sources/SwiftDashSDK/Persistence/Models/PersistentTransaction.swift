@@ -152,6 +152,40 @@ public final class PersistentTransaction {
         }
     }
 
+    /// `true` when this transaction is a Dash Platform asset-lock
+    /// funding tx — a Layer-1 burn that mints Layer-2 credits. The
+    /// wallet's `direction` classifier reports `Internal` because the
+    /// credit output is derived from this wallet's identity-funding
+    /// account, but the *intent* is conversion to L2 credits, not
+    /// "transaction to myself."
+    ///
+    /// The persisted string is the Debug-repr of the Rust
+    /// `TransactionType` enum (`"AssetLock"` — CamelCase, no spaces).
+    /// We also accept the "Asset Lock Transaction" wire-format string
+    /// in case the persister emits the longer form on some code paths.
+    public var isAssetLock: Bool {
+        transactionType == "AssetLock" || transactionType == "Asset Lock Transaction"
+    }
+
+    /// Companion to [`isAssetLock`] — withdrawal back to L1.
+    public var isAssetUnlock: Bool {
+        transactionType == "AssetUnlock" || transactionType == "Asset Unlock Transaction"
+    }
+
+    /// Direction text for UI surfaces, overridden for asset-lock /
+    /// asset-unlock txs where the raw `Internal` direction is
+    /// misleading (the L1 DASH isn't going "to myself" — it's being
+    /// converted to / from L2 platform credits).
+    ///
+    /// Use this anywhere a human-readable "what happened" label is
+    /// needed; fall back to [`directionName`] only when the consumer
+    /// genuinely needs the raw direction (e.g. the filter dropdown).
+    public var displayDirection: String {
+        if isAssetLock { return "Asset Lock" }
+        if isAssetUnlock { return "Asset Unlock" }
+        return directionName
+    }
+
     public var formattedAmount: String {
         let dash = Double(abs(netAmount)) / 100_000_000.0
         let sign = netAmount >= 0 ? "+" : "-"

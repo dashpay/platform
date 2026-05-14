@@ -1475,7 +1475,7 @@ struct TransactionStorageDetailView: View {
         Form {
             Section("Core") {
                 FieldRow(label: "TXID", value: record.txidHex)
-                FieldRow(label: "Direction", value: record.directionName)
+                FieldRow(label: "Direction", value: record.displayDirection)
                 FieldRow(label: "Type", value: record.transactionType)
                 FieldRow(label: "Net Amount", value: record.formattedAmount)
                 if let fee = record.fee {
