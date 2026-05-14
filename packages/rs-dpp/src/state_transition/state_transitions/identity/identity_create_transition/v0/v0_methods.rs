@@ -44,18 +44,20 @@ impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransitionV0 {
         user_fee_increase: UserFeeIncrease,
         _platform_version: &PlatformVersion,
     ) -> Result<StateTransition, ProtocolError> {
-        let mut identity_create_transition = IdentityCreateTransitionV0 {
-            user_fee_increase,
-            ..Default::default()
-        };
         let public_keys = identity
             .public_keys()
             .values()
             .map(|public_key| public_key.clone().into())
             .collect();
-        identity_create_transition.set_public_keys(public_keys);
+        let identity_id = asset_lock_proof.create_identifier()?;
 
-        identity_create_transition.set_asset_lock_proof(asset_lock_proof)?;
+        let mut identity_create_transition = IdentityCreateTransitionV0 {
+            public_keys,
+            asset_lock_proof,
+            user_fee_increase,
+            identity_id,
+            ..Default::default()
+        };
 
         //todo: remove clone
         let state_transition: StateTransition = identity_create_transition.clone().into();
@@ -101,18 +103,20 @@ impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransitionV0 {
         IS: Signer<IdentityPublicKey>,
         AS: ::key_wallet::signer::Signer,
     {
-        let mut identity_create_transition = IdentityCreateTransitionV0 {
-            user_fee_increase,
-            ..Default::default()
-        };
         let public_keys = identity
             .public_keys()
             .values()
             .map(|public_key| public_key.clone().into())
             .collect();
-        identity_create_transition.set_public_keys(public_keys);
+        let identity_id = asset_lock_proof.create_identifier()?;
 
-        identity_create_transition.set_asset_lock_proof(asset_lock_proof)?;
+        let mut identity_create_transition = IdentityCreateTransitionV0 {
+            public_keys,
+            asset_lock_proof,
+            user_fee_increase,
+            identity_id,
+            ..Default::default()
+        };
 
         //todo: remove clone
         let state_transition: StateTransition = identity_create_transition.clone().into();

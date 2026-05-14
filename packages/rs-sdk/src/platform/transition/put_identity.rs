@@ -290,11 +290,22 @@ async fn put_identity_with_asset_lock_and_private_key<S: Signer<IdentityPublicKe
     signer: &S,
     settings: Option<PutSettings>,
 ) -> Result<StateTransition, Error> {
+    // Symmetric with `put_identity_with_address_funding` (line ~353):
+    // honour `PutSettings::user_fee_increase` so callers can raise the
+    // processing-fee bid AND change the ST's signable bytes. The CL-
+    // height retry path in `platform-wallet` uses this knob to bypass
+    // Tenderdash's invalid-tx hash cache on retry; without it, every
+    // retry produces an identical hash and is silently dropped.
+    let user_fee_increase = settings
+        .as_ref()
+        .and_then(|s| s.user_fee_increase)
+        .unwrap_or_default();
     let (state_transition, _) = identity
         .broadcast_request_for_new_identity_with_private_key(
             asset_lock_proof,
             asset_lock_proof_private_key,
             signer,
+            user_fee_increase,
             sdk.version(),
         )
         .await?;
@@ -318,12 +329,23 @@ where
     IS: Signer<IdentityPublicKey>,
     AS: dpp::key_wallet::signer::Signer + Send + Sync,
 {
+    // Symmetric with `put_identity_with_address_funding` (line ~353):
+    // honour `PutSettings::user_fee_increase` so callers can raise the
+    // processing-fee bid AND change the ST's signable bytes. The CL-
+    // height retry path in `platform-wallet` uses this knob to bypass
+    // Tenderdash's invalid-tx hash cache on retry; without it, every
+    // retry produces an identical hash and is silently dropped.
+    let user_fee_increase = settings
+        .as_ref()
+        .and_then(|s| s.user_fee_increase)
+        .unwrap_or_default();
     let (state_transition, _) = identity
         .broadcast_request_for_new_identity_with_signer(
             asset_lock_proof,
             asset_lock_proof_path,
             asset_lock_signer,
             identity_signer,
+            user_fee_increase,
             sdk.version(),
         )
         .await?;

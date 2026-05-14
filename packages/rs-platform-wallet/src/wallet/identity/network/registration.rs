@@ -63,7 +63,9 @@ use dash_sdk::platform::transition::put_identity::PutIdentity;
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use dash_sdk::platform::transition::top_up_identity::TopUpIdentity;
 
-use crate::error::{is_instant_lock_proof_invalid, is_instant_lock_timeout, PlatformWalletError};
+use crate::error::{
+    as_asset_lock_proof_cl_height_too_low, is_instant_lock_proof_invalid, PlatformWalletError,
+};
 use crate::wallet::identity::types::funding::IdentityFunding;
 
 use super::*;
@@ -78,6 +80,114 @@ use super::*;
 /// testnet operation. Promoted to a constant so the registration and
 /// top-up flows can't drift apart on this number.
 const CL_FALLBACK_TIMEOUT: Duration = Duration::from_secs(180);
+
+/// Delay between retries when Platform rejected with CL-height-too-low.
+/// Each retry bumps `PutSettings::user_fee_increase` so the ST hash
+/// changes (Tenderdash caches rejected ST hashes for ~24h on
+/// mainnet/testnet — `keep-invalid-txs-in-cache = true` in dashmate's
+/// tenderdash template, hardcoded at
+/// `packages/dashmate/templates/platform/drive/tenderdash/config.toml.dot:355`).
+const CL_HEIGHT_RETRY_DELAY: Duration = Duration::from_secs(15);
+
+/// Total time we'll keep retrying before surfacing the error. Sized to
+/// cover Platform's `create-empty-blocks-interval` (3m on mainnet)
+/// plus a 30s safety margin: if Platform hasn't observed the wallet's
+/// ChainLock by then, the lag is no longer routine and we need
+/// operator visibility instead of further silent retries. The
+/// rejection error carries Platform's `current_core_chain_locked_height`
+/// each round so logs name the laggard node's reported tip explicitly.
+const CL_HEIGHT_RETRY_BUDGET: Duration = Duration::from_secs(210);
+
+/// Submit a state transition with automatic retry on
+/// `InvalidAssetLockProofCoreChainHeightError` (consensus code 10506).
+///
+/// Each retry bumps `settings.user_fee_increase` so the resubmitted ST
+/// hashes differently — Tenderdash caches rejected ST hashes for ~24h
+/// on mainnet/testnet (`keep-invalid-txs-in-cache = true`), so an
+/// identical-bytes resubmit would be silently dropped before reaching
+/// Platform's CheckTx.
+///
+/// We don't pre-flight Platform's chain-lock tip — that's an unproven
+/// self-report and a malicious DAPI node could stall us indefinitely.
+/// Submit optimistically and react to Platform's deterministic CheckTx
+/// rejection. The cryptographic finality guarantee on the wallet side
+/// comes from the SPV-verified ChainLock BLS signature
+/// (`info.core_wallet.metadata.last_applied_chain_lock`) that promoted
+/// the asset-lock tx's record context to `InChainLockedBlock` before
+/// we constructed the proof.
+///
+/// Non-CL-height errors are passed through unchanged. Every rejection
+/// is logged with both the proof's claimed height and Platform's
+/// currently observed Core tip so persistent lag (>3.5min) attributes
+/// to the specific DAPI node we hit and not to a generic timeout.
+///
+/// **Cancellation:** not cancellation-safe. If the caller drops the
+/// returned future mid-sleep, the bumped `user_fee_increase` is lost
+/// and any in-flight submission whose response we never consume
+/// remains queued in Tenderdash's mempool until it commits or expires.
+/// Callers wrapping this in `tokio::select!` with a short timeout
+/// should be prepared to either retry (settings reset to original)
+/// or accept that Platform may still execute the dropped attempt.
+async fn submit_with_cl_height_retry<F, Fut, R>(
+    mut settings: Option<PutSettings>,
+    submit: F,
+) -> Result<R, dash_sdk::Error>
+where
+    F: Fn(Option<PutSettings>) -> Fut,
+    Fut: std::future::Future<Output = Result<R, dash_sdk::Error>>,
+{
+    let started = tokio::time::Instant::now();
+    let deadline = started + CL_HEIGHT_RETRY_BUDGET;
+    let mut attempt: u32 = 0;
+    loop {
+        attempt += 1;
+        match submit(settings).await {
+            Ok(r) => return Ok(r),
+            Err(e) => {
+                let Some(detail) = as_asset_lock_proof_cl_height_too_low(&e) else {
+                    return Err(e);
+                };
+                let elapsed = started.elapsed();
+                let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+                if remaining.is_zero() {
+                    tracing::error!(
+                        "Platform rejected ChainLock proof: CL height too low \
+                         (proof claimed height={}, Platform tip={}, attempt {}, \
+                         elapsed {}s) — retry budget of {}s exhausted; surfacing \
+                         error. Platform's reported tip is stuck — likely a lagging \
+                         or misbehaving DAPI node.",
+                        detail.proof_core_chain_locked_height(),
+                        detail.current_core_chain_locked_height(),
+                        attempt,
+                        elapsed.as_secs(),
+                        CL_HEIGHT_RETRY_BUDGET.as_secs(),
+                    );
+                    return Err(e);
+                }
+                let sleep_for = remaining.min(CL_HEIGHT_RETRY_DELAY);
+                tracing::warn!(
+                    "Platform rejected ChainLock proof: CL height too low \
+                     (proof claimed height={}, Platform tip={}, attempt {}, \
+                     elapsed {}s); bumping user_fee_increase and waiting {}s \
+                     before retry",
+                    detail.proof_core_chain_locked_height(),
+                    detail.current_core_chain_locked_height(),
+                    attempt,
+                    elapsed.as_secs(),
+                    sleep_for.as_secs(),
+                );
+                settings = Some(bump_user_fee_increase(settings.unwrap_or_default()));
+                tokio::time::sleep(sleep_for).await;
+            }
+        }
+    }
+}
+
+/// Bump `user_fee_increase` by 1 (saturating at `u16::MAX`).
+fn bump_user_fee_increase(mut settings: PutSettings) -> PutSettings {
+    settings.user_fee_increase = Some(settings.user_fee_increase.unwrap_or(0).saturating_add(1));
+    settings
+}
 
 // ---------------------------------------------------------------------------
 // Funding resolution (shared between register and top-up)
@@ -131,12 +241,10 @@ impl IdentityWallet {
     /// For the two variants that internally invoke `wait_for_proof`
     /// (`FromWalletBalance` and `FromExistingAssetLock`), an IS-lock
     /// that never propagates within the 300s window surfaces as
-    /// `PlatformWalletError::FinalityTimeout`. We catch that here and
-    /// return `FundingResolution::IsTimeout` with the outpoint of the
-    /// tracked-but-unproven asset lock — for `FromExistingAssetLock`
-    /// we already know it (the variant carries it directly), for
-    /// `FromWalletBalance` we recover it via
-    /// [`find_tracked_unproven_lock`](Self::find_tracked_unproven_lock).
+    /// `PlatformWalletError::FinalityTimeout(out_point)`. The variant
+    /// carries the *exact* outpoint that timed out (no
+    /// `find_tracked_unproven_lock` BTreeMap walk needed), so the
+    /// `IsTimeout` outcome is built directly from the error payload.
     async fn resolve_funding_with_is_timeout_fallback<AS>(
         &self,
         funding: IdentityFunding,
@@ -167,15 +275,11 @@ impl IdentityWallet {
                             tracked_out_point: Some(out_point),
                         }))
                     }
-                    Err(e) if is_instant_lock_timeout(&e) => {
-                        // We don't have the outpoint directly because
-                        // create_funded_asset_lock_proof consumes the
-                        // result. The asset-lock manager tracked the
-                        // lock before broadcast — find it back via
-                        // (funding_type, identity_index).
-                        let out_point = self
-                            .find_tracked_unproven_lock(funding_type, identity_index)
-                            .await?;
+                    Err(PlatformWalletError::FinalityTimeout(out_point)) => {
+                        // The exact outpoint that timed out comes from
+                        // the error payload — no `find_tracked_unproven_lock`
+                        // walk needed (which would pick BTreeMap-first
+                        // on multiple unproven locks for the same key).
                         Ok(FundingResolution::IsTimeout { out_point })
                     }
                     Err(e) => Err(e),
@@ -192,10 +296,14 @@ impl IdentityWallet {
                         path,
                         tracked_out_point: Some(out_point),
                     })),
-                    Err(e) if is_instant_lock_timeout(&e) => {
-                        // We already know the outpoint from the
-                        // variant — no need to walk the tracked map.
-                        Ok(FundingResolution::IsTimeout { out_point })
+                    Err(PlatformWalletError::FinalityTimeout(timed_out)) => {
+                        // Outpoint from the error (which equals
+                        // `out_point` from the variant in practice —
+                        // but we use the error payload for parity
+                        // with the FromWalletBalance arm).
+                        Ok(FundingResolution::IsTimeout {
+                            out_point: timed_out,
+                        })
                     }
                     Err(e) => Err(e),
                 }
@@ -453,21 +561,28 @@ impl IdentityWallet {
             revision: 0,
         });
 
-        // Step 3: submit, with Platform-side IS→CL fallback on
-        // InstantSend rejection. The retry path uses the SAME
-        // credit-output outpoint — no new asset lock built, no new
-        // funding-tx broadcast.
+        // Step 3: submit, with two layers of Platform-side fallback:
+        //   - **CL-height-too-low** (transient): bump `user_fee_increase`
+        //     and retry the same proof. See [`submit_with_cl_height_retry`].
+        //   - **IS-lock rejection** (quorum rotated): upgrade IS→CL on
+        //     the same credit-output outpoint — no new asset lock built,
+        //     no new funding-tx broadcast.
+        //
+        // Both retries share the original `placeholder` Identity; the
+        // CL-height retry also iterates inside the IS→CL fallback branch
+        // so a freshly-upgraded CL proof gets the same patience.
         let proof_out_point = Self::out_point_from_proof(&proof);
-        let identity = match placeholder
-            .put_to_platform_and_wait_for_response_with_signer(
+        let identity = match submit_with_cl_height_retry(settings, |s| {
+            placeholder.put_to_platform_and_wait_for_response_with_signer(
                 &self.sdk,
-                proof,
+                proof.clone(),
                 &path,
                 asset_lock_signer,
                 identity_signer,
-                settings,
+                s,
             )
-            .await
+        })
+        .await
         {
             Ok(identity) => identity,
             Err(e) if is_instant_lock_proof_invalid(&e) => {
@@ -481,29 +596,20 @@ impl IdentityWallet {
                     .asset_locks
                     .upgrade_to_chain_lock_proof(&out_point, CL_FALLBACK_TIMEOUT)
                     .await?;
-                placeholder
-                    .put_to_platform_and_wait_for_response_with_signer(
+                submit_with_cl_height_retry(settings, |s| {
+                    placeholder.put_to_platform_and_wait_for_response_with_signer(
                         &self.sdk,
-                        chain_proof,
+                        chain_proof.clone(),
                         &path,
                         asset_lock_signer,
                         identity_signer,
-                        settings,
+                        s,
                     )
-                    .await
-                    .map_err(|e| {
-                        PlatformWalletError::InvalidIdentityData(format!(
-                            "Failed to register identity on Platform (ChainLock retry): {}",
-                            e
-                        ))
-                    })?
+                })
+                .await
+                .map_err(PlatformWalletError::Sdk)?
             }
-            Err(e) => {
-                return Err(PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to register identity on Platform: {}",
-                    e
-                )));
-            }
+            Err(e) => return Err(PlatformWalletError::Sdk(e)),
         };
 
         // Step 4: bookkeeping — add to local IdentityManager + record
@@ -551,6 +657,11 @@ impl IdentityWallet {
         // lifecycle (`FromWalletBalance` / `FromExistingAssetLock`);
         // `UseAssetLock` is `None` and skipped.
         if let Some(out_point) = tracked_out_point {
+            // Cleanup failure here can only mean WalletNotFound
+            // (the wallet handle that just registered an identity
+            // vanished). Surface as a warn — the identity DID
+            // register successfully on Platform, so propagating the
+            // error to the caller would be misleading.
             if let Err(e) = self.asset_locks.consume_asset_lock(&out_point).await {
                 tracing::warn!(
                     outpoint = %out_point,
@@ -650,17 +761,22 @@ impl IdentityWallet {
             }
         };
 
-        // Step 3: submit. Platform-side IS→CL fallback on rejection.
+        // Step 3: submit. Two Platform-side fallback layers (matches
+        // `register_identity_with_funding`): CL-height-too-low retries
+        // bump `user_fee_increase` to bypass Tenderdash's invalid-tx
+        // cache, and IS-lock rejection triggers an IS→CL upgrade on the
+        // same outpoint.
         let proof_out_point = Self::out_point_from_proof(&proof);
-        let new_balance = match self
-            .top_up_identity_with_signer(
+        let new_balance = match submit_with_cl_height_retry(settings, |s| {
+            self.top_up_identity_with_signer(
                 &identity,
-                proof,
+                proof.clone(),
                 &path,
                 asset_lock_signer,
-                settings,
+                s,
             )
-            .await
+        })
+        .await
         {
             Ok(balance) => balance,
             Err(e) if is_instant_lock_proof_invalid(&e) => {
@@ -674,13 +790,15 @@ impl IdentityWallet {
                     .asset_locks
                     .upgrade_to_chain_lock_proof(&out_point, CL_FALLBACK_TIMEOUT)
                     .await?;
-                self.top_up_identity_with_signer(
-                    &identity,
-                    chain_proof,
-                    &path,
-                    asset_lock_signer,
-                    settings,
-                )
+                submit_with_cl_height_retry(settings, |s| {
+                    self.top_up_identity_with_signer(
+                        &identity,
+                        chain_proof.clone(),
+                        &path,
+                        asset_lock_signer,
+                        s,
+                    )
+                })
                 .await
                 .map_err(PlatformWalletError::Sdk)?
             }
@@ -707,6 +825,11 @@ impl IdentityWallet {
             }
         }
         if let Some(out_point) = tracked_out_point {
+            // Cleanup failure here can only mean WalletNotFound
+            // (the wallet handle that just registered an identity
+            // vanished). Surface as a warn — the identity DID
+            // register successfully on Platform, so propagating the
+            // error to the caller would be misleading.
             if let Err(e) = self.asset_locks.consume_asset_lock(&out_point).await {
                 tracing::warn!(
                     outpoint = %out_point,
@@ -724,55 +847,12 @@ impl IdentityWallet {
 // Helpers
 // ---------------------------------------------------------------------------
 
-impl IdentityWallet {
-    /// Look up the most-recently-tracked asset lock for
-    /// `(funding_type, identity_index)` that has no attached proof
-    /// (status `Built` or `Broadcast`).
-    ///
-    /// Used by the IS→CL Core-side timeout fallback path: when
-    /// `wait_for_proof` times out, the asset-lock manager has already
-    /// tracked the lock under its outpoint, but we lost the outpoint
-    /// along with the result. This helper recovers it from the
-    /// tracked-asset-lock map.
-    ///
-    /// Returns the outpoint of the matching lock, or an error if no
-    /// matching lock is found (which would indicate a wallet-state
-    /// mismatch — `wait_for_proof` shouldn't have returned a timeout
-    /// without first tracking the lock).
-    async fn find_tracked_unproven_lock(
-        &self,
-        funding_type: AssetLockFundingType,
-        identity_index: u32,
-    ) -> Result<OutPoint, PlatformWalletError> {
-        use crate::wallet::asset_lock::tracked::AssetLockStatus;
-
-        let wm = self.wallet_manager.read().await;
-        let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
-            PlatformWalletError::WalletNotFound(
-                "Wallet info not found in wallet manager".to_string(),
-            )
-        })?;
-        info.tracked_asset_locks
-            .iter()
-            .find(|(_, lock)| {
-                lock.funding_type == funding_type
-                    && lock.identity_index == identity_index
-                    && matches!(
-                        lock.status,
-                        AssetLockStatus::Built | AssetLockStatus::Broadcast
-                    )
-                    && lock.proof.is_none()
-            })
-            .map(|(out_point, _)| *out_point)
-            .ok_or_else(|| {
-                PlatformWalletError::AssetLockProofWait(format!(
-                    "IS-lock timeout fallback: no tracked unproven asset lock found \
-                     for funding_type={:?} identity_index={}",
-                    funding_type, identity_index
-                ))
-            })
-    }
-}
+// `find_tracked_unproven_lock` was removed when
+// `PlatformWalletError::FinalityTimeout` was widened to carry the full
+// `OutPoint` (previously only the `Txid`). The IS→CL fallback now reads
+// the outpoint directly off the error payload — no BTreeMap walk by
+// `(funding_type, identity_index)` is needed, which also closes the
+// non-determinism gap when multiple unproven locks shared that key.
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -782,7 +862,7 @@ impl IdentityWallet {
 mod tests {
     use super::*;
     use crate::error::is_instant_lock_timeout;
-    use dashcore::Txid;
+    use dashcore::{OutPoint, Txid};
 
     /// Pins the IS-timeout discriminator: only `FinalityTimeout`
     /// matches, so the L2 fallback arms route exactly the cases we
@@ -790,7 +870,10 @@ mod tests {
     /// discriminates SDK errors at the Platform-rejection boundary).
     #[test]
     fn is_instant_lock_timeout_only_matches_finality_timeout() {
-        let timeout = PlatformWalletError::FinalityTimeout(Txid::from([0u8; 32]));
+        let timeout = PlatformWalletError::FinalityTimeout(OutPoint {
+            txid: Txid::from([0u8; 32]),
+            vout: 0,
+        });
         assert!(
             is_instant_lock_timeout(&timeout),
             "FinalityTimeout must route to IS→CL fallback"

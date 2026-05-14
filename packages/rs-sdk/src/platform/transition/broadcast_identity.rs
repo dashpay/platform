@@ -12,7 +12,7 @@ use dpp::dashcore::PrivateKey;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::native_bls::NativeBlsModule;
-use dpp::prelude::{AssetLockProof, Identity};
+use dpp::prelude::{AssetLockProof, Identity, UserFeeIncrease};
 use dpp::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::state_transition::StateTransition;
@@ -99,6 +99,7 @@ pub(crate) trait BroadcastRequestForNewIdentity<T: TransportRequest, S: Signer<I
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &PrivateKey,
         signer: &S,
+        user_fee_increase: UserFeeIncrease,
         platform_version: &PlatformVersion,
     ) -> Result<(StateTransition, BroadcastStateTransitionRequest), Error>;
 
@@ -109,6 +110,15 @@ pub(crate) trait BroadcastRequestForNewIdentity<T: TransportRequest, S: Signer<I
     /// while `asset_lock_signer` produces the outer state-transition ECDSA
     /// signature for the key at `asset_lock_proof_path` — atomically
     /// deriving, signing, and zeroising inside the signer's trust boundary.
+    ///
+    /// `user_fee_increase` is the percentage multiplier the caller wants
+    /// applied to the ST's processing fee. Threading it through the
+    /// builder is load-bearing: it both affects fee accounting AND
+    /// changes the ST's signable bytes, which the upstream CL-height
+    /// retry path in `platform-wallet` relies on to bypass Tenderdash's
+    /// invalid-tx hash cache (`keep-invalid-txs-in-cache = true` in
+    /// dashmate's mainnet/testnet templates). Pass `0` for unaltered
+    /// fees.
     #[cfg(feature = "core_key_wallet")]
     #[allow(async_fn_in_trait)]
     async fn broadcast_request_for_new_identity_with_signer<AS>(
@@ -117,6 +127,7 @@ pub(crate) trait BroadcastRequestForNewIdentity<T: TransportRequest, S: Signer<I
         asset_lock_proof_path: &dpp::key_wallet::bip32::DerivationPath,
         asset_lock_signer: &AS,
         identity_signer: &S,
+        user_fee_increase: UserFeeIncrease,
         platform_version: &PlatformVersion,
     ) -> Result<(StateTransition, BroadcastStateTransitionRequest), Error>
     where
@@ -131,6 +142,7 @@ impl<S: Signer<IdentityPublicKey>>
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &PrivateKey,
         signer: &S,
+        user_fee_increase: UserFeeIncrease,
         platform_version: &PlatformVersion,
     ) -> Result<(StateTransition, BroadcastStateTransitionRequest), Error> {
         let identity_create_transition =
@@ -140,7 +152,7 @@ impl<S: Signer<IdentityPublicKey>>
                 asset_lock_proof_private_key.inner.as_ref(),
                 signer,
                 &NativeBlsModule,
-                0,
+                user_fee_increase,
                 platform_version,
             )
             .await?;
@@ -156,6 +168,7 @@ impl<S: Signer<IdentityPublicKey>>
         asset_lock_proof_path: &dpp::key_wallet::bip32::DerivationPath,
         asset_lock_signer: &AS,
         identity_signer: &S,
+        user_fee_increase: UserFeeIncrease,
         platform_version: &PlatformVersion,
     ) -> Result<(StateTransition, BroadcastStateTransitionRequest), Error>
     where
@@ -168,7 +181,7 @@ impl<S: Signer<IdentityPublicKey>>
             identity_signer,
             asset_lock_signer,
             &NativeBlsModule,
-            0,
+            user_fee_increase,
             platform_version,
         )
         .await?;

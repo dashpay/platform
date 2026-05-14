@@ -184,3 +184,59 @@ pub fn is_instant_lock_proof_invalid(error: &dash_sdk::Error) -> bool {
 pub fn is_instant_lock_timeout(error: &PlatformWalletError) -> bool {
     matches!(error, PlatformWalletError::FinalityTimeout(_))
 }
+
+/// Extract the `InvalidAssetLockProofCoreChainHeightError` (DPP
+/// consensus code 10506) from an SDK error if Platform rejected a
+/// ChainLock asset-lock proof because Platform's
+/// `last_committed_core_height` is still behind the proof's
+/// `core_chain_locked_height`.
+///
+/// Returns `Some(&error)` whenever the rejection matches, exposing
+/// `proof_core_chain_locked_height()` (what the wallet claimed) and
+/// `current_core_chain_locked_height()` (Platform's currently observed
+/// tip). The latter is what the wallet can log to attribute the lag
+/// to: small means routine race against Platform's
+/// `create-empty-blocks-interval` (3m on mainnet); large or stuck
+/// means the DAPI node we hit is genuinely behind / misbehaving.
+///
+/// Returns `None` for everything else. The check is stateless and
+/// re-evaluated on every CheckTx, so a resubmit after Platform
+/// catches up will pass — but Tenderdash's mempool caches rejected-tx
+/// hashes for ~24h on mainnet/testnet (`keep-invalid-txs-in-cache =
+/// true` in dashmate's tenderdash template), so the resubmit must
+/// carry a *different* signable-bytes hash to bypass the cache. The
+/// submission layer handles that by bumping
+/// `PutSettings::user_fee_increase` before re-issuing.
+///
+/// Companion to [`is_instant_lock_proof_invalid`]; both feed the
+/// CL-proof retry path in the identity registration / top-up flow.
+///
+/// **Coverage caveat:** only inspects the two `dash_sdk::Error`
+/// variants that today wrap consensus errors —
+/// `StateTransitionBroadcastError` (from `broadcast_and_wait`) and
+/// `Protocol(ProtocolError::ConsensusError)` (from validation). If a
+/// future SDK version surfaces the same `InvalidAssetLockProofCoreChainHeightError`
+/// through a different variant (e.g. wrapped in a transport-layer
+/// error type), the retry helper silently falls through to the "Sdk"
+/// passthrough. Re-audit this matcher whenever `dash_sdk::Error`
+/// gains new variants that can carry consensus errors.
+pub fn as_asset_lock_proof_cl_height_too_low(
+    error: &dash_sdk::Error,
+) -> Option<&dpp::consensus::basic::identity::InvalidAssetLockProofCoreChainHeightError> {
+    use dpp::consensus::basic::BasicError;
+    use dpp::consensus::ConsensusError;
+
+    let consensus_error = match error {
+        dash_sdk::Error::StateTransitionBroadcastError(broadcast_err) => {
+            broadcast_err.cause.as_ref()
+        }
+        dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(ce)) => Some(ce.as_ref()),
+        _ => None,
+    };
+    match consensus_error {
+        Some(ConsensusError::BasicError(
+            BasicError::InvalidAssetLockProofCoreChainHeightError(e),
+        )) => Some(e),
+        _ => None,
+    }
+}
