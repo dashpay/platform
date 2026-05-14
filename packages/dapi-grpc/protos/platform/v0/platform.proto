@@ -716,14 +716,22 @@ message GetDocumentsRequest {
     //     PointLookupProof shape can't represent a partial-In
     //     selection in its `SizedQuery`). Narrow the In array
     //     directly to reduce the result set.
-    //   - `select=COUNT, group_by=[range_field]` or
-    //     `group_by=[in_field, range_field]`: entries cap (per
-    //     In branch for the compound case). On prove paths this is
-    //     validate-don't-clamp — `limit > max_query_limit` returns
-    //     `InvalidLimit` rather than silent clamping (see
-    //     `RangeDistinctProof`'s contract; unset falls back to the
-    //     SDK-shared `DEFAULT_QUERY_LIMIT` compile-time constant so
-    //     proof bytes are deterministic across operators).
+    //   - `select=COUNT, group_by=[range_field]`: entries cap on
+    //     the distinct-range walk.
+    //   - `select=COUNT, group_by=[in_field, range_field]`: global
+    //     cap over the emitted `(in_key, key)` lex stream — NOT
+    //     per-In-branch. The compound walk pushes one
+    //     `SizedQuery::limit` over the combined tuple stream, so a
+    //     request with `|In| = 3` and `limit = 5` returns at most
+    //     5 entries total across all In branches (ordered by
+    //     `(in_key, key)`, direction from the first `order_by`
+    //     clause).
+    //   Both range-grouped variants share the same validate-don't-
+    //   clamp policy on prove paths — `limit > max_query_limit`
+    //   returns `InvalidLimit` rather than silent clamping (see
+    //   `RangeDistinctProof`'s contract; unset falls back to the
+    //   SDK-shared `DEFAULT_QUERY_LIMIT` compile-time constant so
+    //   proof bytes are deterministic across operators).
     optional uint32 limit = 5;
 
     // Pagination cursor. Valid only for `select=DOCUMENTS`. The

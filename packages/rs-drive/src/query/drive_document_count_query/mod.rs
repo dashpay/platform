@@ -207,7 +207,14 @@ pub enum CountMode {
     ///
     /// Where-clause invariants: exactly one `In` clause on `group_by[0]`
     /// AND exactly one range clause on `group_by[1]`.
-    /// `limit` caps entries *per In branch* (not globally).
+    /// `limit` is a **global cap on the emitted `(in_key, key)` lex
+    /// stream**, not per-In-branch. The executor pushes a single
+    /// `SizedQuery::limit` over the compound walk, so a request
+    /// with `|In| = 3` and `limit = 5` returns at most 5 entries
+    /// total across all In branches (ordered by `(in_key, key)`,
+    /// direction from the first `order_by` clause). On the prove
+    /// path it's validated-not-clamped (oversized values rejected
+    /// with `InvalidLimit`).
     GroupByCompound,
 }
 
@@ -233,7 +240,8 @@ impl CountMode {
     ///
     /// - [`Self::GroupByRange`] — bounds the number of distinct
     ///   range values returned (the range itself is unbounded).
-    /// - [`Self::GroupByCompound`] — same, applied per In branch.
+    /// - [`Self::GroupByCompound`] — global cap over the
+    ///   `(in_key, key)` lex tuple stream, not per-In-branch.
     ///
     /// The other two variants reject `limit` upstream:
     ///

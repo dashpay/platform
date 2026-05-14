@@ -141,14 +141,25 @@ pub fn verify_distinct_count_proof(
 ///
 /// ## Entry shape
 ///
-/// - **Equal-only, fully covered**: a single entry with empty `key`
-///   and `count` equal to the covered branch's CountTree
-///   `count_value`.
-/// - **Equal prefix + `In` on last property**: one entry per In
-///   value, `key = <serialized_in_value>`, `count` equal to that In
-///   value's CountTree `count_value`. Branches with zero documents
-///   are omitted from the result (callers can detect "I asked for 3
-///   In values but got entries for 2" directly).
+/// The verifier walks grovedb's
+/// `(path, key, Option<Element>)` triples and emits one
+/// [`SplitCountEntry`] per queried key — `count: Some(n)` for
+/// branches the proof materialized, `count: None` for branches
+/// grovedb's merk traversal reported as absent.
+///
+/// - **Equal-only, fully covered**: a single entry with empty
+///   `key`. `count` is `Some(n)` if the covered branch exists in
+///   the merk tree, `None` if it doesn't (an Equal-only query whose
+///   prefix has no documents at all).
+/// - **Equal prefix + `In` on last property**: one entry per
+///   queried In value, `key = <serialized_in_value>`.
+///   `count: Some(n)` for In values whose CountTree branch
+///   materialized; `count: None` for In values the proof was silent
+///   on (zero-count branches aren't stored as CountTree elements,
+///   so grovedb's merk traversal returns `None` for those).
+///   Callers can distinguish "verified branch with n docs" from
+///   "branch absent from proof" without comparing against the
+///   request's In array.
 ///
 /// ## Replaces materialize-and-count
 ///

@@ -329,7 +329,7 @@ impl FromProof<DocumentQuery> for DocumentSplitCounts {
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
         response: O,
-        _network: Network,
+        network: Network,
         platform_version: &PlatformVersion,
         provider: &'a dyn ContextProvider,
     ) -> Result<(Option<Self>, ResponseMetadata, Proof), drive_proof_verifier::Error>
@@ -338,6 +338,53 @@ impl FromProof<DocumentQuery> for DocumentSplitCounts {
     {
         let request: Self::Request = request.into();
         assert_select_is_count(&request)?;
+
+        // Aggregate mode (`select=COUNT, group_by=[]`): the SDK
+        // contract is a single-row response — one entry with empty
+        // `key` carrying the verified total. Delegate proof
+        // verification to [`DocumentCount`], which already owns
+        // the per-shape dispatch:
+        //
+        // - range + no In → `AggregateCountOnRange` aggregate proof
+        // - In (with or without range) → point-lookup, summed
+        // - empty where + `documentsCountable` → primary-key
+        //   CountTree fast path
+        //
+        // Pre-fix this path fell through to the per-group code
+        // below, which for `Aggregate + In` returned per-In
+        // entries instead of `{"": total}`, and for
+        // `Aggregate + range` errored out trying to find a
+        // `countable: true` index for a range clause that needs
+        // `rangeCountable: true`. FFI / wasm-sdk routinely hit
+        // this path because both call `DocumentSplitCounts::fetch`
+        // for every count mode.
+        if request.group_by.is_empty() {
+            // Convert the generic `O: Into<Self::Response>` to the
+            // concrete `Self::Response` here so the delegated call's
+            // type parameters resolve unambiguously (both impls
+            // share `Request = DocumentQuery` and
+            // `Response = GetDocumentsResponse`, but the outer
+            // generic `O` doesn't carry that constraint through to
+            // `DocumentCount`'s `O2: Into<DocumentCount::Response>`
+            // bound at the call site).
+            let response: Self::Response = response.into();
+            let (count, mtd, proof) =
+                <DocumentCount as FromProof<DocumentQuery>>::maybe_from_proof_with_metadata(
+                    request,
+                    response,
+                    network,
+                    platform_version,
+                    provider,
+                )?;
+            let entries = count.map(|DocumentCount(c)| {
+                vec![SplitCountEntry {
+                    in_key: None,
+                    key: Vec::new(),
+                    count: Some(c),
+                }]
+            });
+            return Ok((entries.map(DocumentSplitCounts::from_verified), mtd, proof));
+        }
 
         let has_range = request
             .where_clauses
