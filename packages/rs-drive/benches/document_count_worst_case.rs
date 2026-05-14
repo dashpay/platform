@@ -328,6 +328,13 @@ fn document_count_worst_case(c: &mut Criterion) {
     // the proof's *meaning* legible without staring at hex.
     display_proofs(&fixture, platform_version);
 
+    // Empirical probe of the value-tree element type for the two
+    // single-property index terminators in the bench's contract
+    // (`byBrand` is just `countable`, `byColor` is `rangeCountable`).
+    // Surfaces the structural asymmetry that gates the
+    // rangeCountable optimization.
+    probe_value_tree_types(&fixture, platform_version);
+
     let mut group = c.benchmark_group("document_count_worst_case");
     group.sample_size(10);
     group.throughput(criterion::Throughput::Elements(fixture.row_count));
@@ -809,6 +816,70 @@ fn report_group_by_matrix(fixture: &CountBenchFixture, platform_version: &Platfo
 /// Hex is emitted 64 hex chars per line (32 bytes per row) so the
 /// output is grep-able and the rows align with merk-tree node
 /// boundaries on most layouts.
+/// Probe what's *actually* stored at `widget/brand/brand_050` and at
+/// `widget/color/color_00000500` so a reviewer can confirm by reading
+/// the live fixture which element types the two indexes produce.
+///
+/// This is the empirical answer to "why can't `byBrand` use the same
+/// `path=[..., "brand"], Key("brand_050")` shape as `byColor`?". The
+/// shape only works when the resolved element is itself a count-bearing
+/// tree — for byBrand (just `countable`, not `rangeCountable`) the
+/// value tree is `Element::Tree` (a `NormalTree`), and
+/// `NormalTree::count_value_or_default()` returns `1`, not the doc
+/// count. The optimization is structurally gated on the index's
+/// `range_countable` flag for this exact reason.
+fn probe_value_tree_types(fixture: &CountBenchFixture, _platform_version: &PlatformVersion) {
+    use drive::drive::RootTree;
+    use grovedb_path::SubtreePath;
+
+    let contract_id = fixture.data_contract.id().to_buffer();
+    let cases: [(&'static str, &'static str, &'static str); 2] = [
+        ("byBrand", "brand", "brand_050"),
+        ("byColor", "color", "color_00000500"),
+    ];
+    let grove_version = &PlatformVersion::latest().drive.grove_version;
+
+    for (label, prop, val) in cases {
+        let parent: Vec<&[u8]> = vec![
+            &[RootTree::DataContractDocuments as u8],
+            &contract_id,
+            &[1u8],
+            DOCUMENT_TYPE_NAME.as_bytes(),
+            prop.as_bytes(),
+        ];
+        let key = val.as_bytes();
+        match fixture
+            .drive
+            .grove
+            .get(SubtreePath::from(parent.as_slice()), key, None, grove_version)
+            .unwrap()
+        {
+            Ok(elem) => eprintln!(
+                "[probe] {label}: widget/{prop}/{val} → {} {{ count_value_or_default: {}, debug: {:?} }}",
+                element_variant_name(&elem),
+                elem.count_value_or_default(),
+                elem
+            ),
+            Err(e) => eprintln!("[probe] {label}: widget/{prop}/{val} → grove.get error: {e:?}"),
+        }
+    }
+}
+
+fn element_variant_name(e: &grovedb::Element) -> &'static str {
+    use grovedb::Element;
+    match e {
+        Element::CountTree(_, _, _) => "CountTree",
+        Element::ProvableCountTree(_, _, _) => "ProvableCountTree",
+        Element::SumTree(_, _, _) => "SumTree",
+        Element::CountSumTree(_, _, _, _) => "CountSumTree",
+        Element::ProvableCountSumTree(_, _, _, _) => "ProvableCountSumTree",
+        Element::Tree(_, _) => "Tree (NormalTree)",
+        Element::Item(_, _) => "Item",
+        Element::Reference(_, _, _) => "Reference",
+        _ => "(other-variant)",
+    }
+}
+
 /// Decoded display of every `group_by = []` proof shape.
 ///
 /// For each case, this:
