@@ -34,7 +34,7 @@ use std::time::Instant;
 
 const PROTOCOL_VERSION_V12: u32 = 12;
 const FIXTURE_SCHEMA_VERSION: u32 = 1;
-const DEFAULT_ROW_COUNT: u64 = 2_000_000;
+const DEFAULT_ROW_COUNT: u64 = 100_000;
 const DEFAULT_BATCH_SIZE: u64 = 10_000;
 const BRAND_COUNT: u64 = 100;
 const DOCUMENT_TYPE_NAME: &str = "widget";
@@ -291,6 +291,17 @@ fn document_count_worst_case(c: &mut Criterion) {
     let brands = all_brand_values();
     let broad_range_floor = Value::Text(fixture.range_floor.clone());
 
+    // One-shot proof-size report. Criterion measures time, but for
+    // count-proof work the load-bearing number is bytes-per-proof —
+    // an optimization that shaves a merk layer (e.g. the
+    // rangeCountable terminator's `[0]` descent) drops proof size
+    // linearly with the number of resolved branches while leaving
+    // wall-clock per-proof time roughly unchanged on warm caches.
+    // Print sizes once at bench setup so reviewers can compare
+    // before/after numbers from the same fixture without parsing
+    // criterion's HTML output.
+    report_proof_sizes(&fixture, &brands, &broad_range_floor, platform_version);
+
     let mut group = c.benchmark_group("document_count_worst_case");
     group.sample_size(10);
     group.throughput(criterion::Throughput::Elements(fixture.row_count));
@@ -312,6 +323,40 @@ fn document_count_worst_case(c: &mut Criterion) {
                 .drive
                 .execute_document_count_request(request, None, platform_version)
                 .expect("expected group_by In proof count request")
+            {
+                DocumentCountResponse::Proof(proof) => black_box(proof),
+                response => panic!("expected proof response, got {response:?}"),
+            },
+            BatchSize::SmallInput,
+        );
+    });
+
+    // Rangecountable-terminator variant of the In-grouped proof. The
+    // contract's `byColor` index is `rangeCountable: true`, so the
+    // covering value trees are themselves CountTrees and the
+    // point-lookup builder skips the `[0]` descent (see
+    // `point_lookup_count_path_query`'s "two terminator shapes"
+    // section). Pairs with `group_by_in_proof_100_count_tree_branches`
+    // (which targets the non-range_countable `byBrand` index) to
+    // surface the optimization's per-branch byte savings.
+    let colors = first_n_color_values(BRAND_COUNT);
+    group.bench_function("group_by_color_in_proof_100_rangecountable_branches", |b| {
+        let raw_where = color_in_where_value(colors.clone());
+        b.iter_batched(
+            || {
+                count_request(
+                    &fixture,
+                    raw_where.clone(),
+                    Value::Null,
+                    CountMode::GroupByIn,
+                    None,
+                    true,
+                )
+            },
+            |request| match fixture
+                .drive
+                .execute_document_count_request(request, None, platform_version)
+                .expect("expected group_by color-In proof count request")
             {
                 DocumentCountResponse::Proof(proof) => black_box(proof),
                 response => panic!("expected proof response, got {response:?}"),
@@ -398,6 +443,68 @@ fn document_count_worst_case(c: &mut Criterion) {
     group.finish();
 }
 
+/// Run each proof-emitting shape once and print the resulting
+/// `Vec<u8>` length. No timing — Criterion handles that — but byte
+/// size is the actual win for the rangeCountable optimization, and
+/// the only way to surface it from the same fixture without ad-hoc
+/// instrumentation.
+fn report_proof_sizes(
+    fixture: &CountBenchFixture,
+    brands: &[Value],
+    broad_range_floor: &Value,
+    platform_version: &PlatformVersion,
+) {
+    let colors_100 = first_n_color_values(BRAND_COUNT);
+    let cases: [(&str, Value, Value, CountMode, Option<u32>); 3] = [
+        // Non-rangeCountable `byBrand` In-grouped proof — control.
+        (
+            "group_by_in_proof_100_count_tree_branches",
+            brand_in_where_value(brands.to_vec()),
+            Value::Null,
+            CountMode::GroupByIn,
+            None,
+        ),
+        // RangeCountable `byColor` In-grouped proof — the shape the
+        // optimization targets. Outer Keys resolve directly to the
+        // value-tree CountTrees (no `[0]` descent), so this proof is
+        // strictly smaller than the non-range_countable variant
+        // above on the same fixture.
+        (
+            "group_by_color_in_proof_100_rangecountable_branches",
+            color_in_where_value(colors_100),
+            Value::Null,
+            CountMode::GroupByIn,
+            None,
+        ),
+        (
+            "group_by_compound_in_range_proof_limit_100",
+            in_and_range_where_value(brands.to_vec(), broad_range_floor.clone()),
+            Value::Null,
+            CountMode::GroupByCompound,
+            Some(100),
+        ),
+    ];
+
+    for (name, raw_where, raw_order_by, mode, limit) in cases {
+        let request = count_request(fixture, raw_where, raw_order_by, mode, limit, true);
+        match fixture
+            .drive
+            .execute_document_count_request(request, None, platform_version)
+            .expect("expected proof response for proof-size report")
+        {
+            DocumentCountResponse::Proof(proof) => {
+                eprintln!(
+                    "[proof-size] rows={} {}: {} bytes",
+                    fixture.row_count,
+                    name,
+                    proof.len()
+                );
+            }
+            other => panic!("expected Proof response for {name}, got {other:?}"),
+        }
+    }
+}
+
 fn count_request<'a>(
     fixture: &'a CountBenchFixture,
     raw_where_value: Value,
@@ -429,6 +536,26 @@ fn brand_in_where_value(brands: Vec<Value>) -> Value {
         Value::Text("in".to_string()),
         Value::Array(brands),
     ])])
+}
+
+fn color_in_where_value(colors: Vec<Value>) -> Value {
+    Value::Array(vec![Value::Array(vec![
+        Value::Text("color".to_string()),
+        Value::Text("in".to_string()),
+        Value::Array(colors),
+    ])])
+}
+
+/// First N colors in lex order — same naming convention as
+/// `populate_fixture` (`color_NNNNNNNN`), which guarantees these
+/// values exist in the fixture so the proof actually resolves
+/// 100 present branches (not absent ones, which would be omitted
+/// from the proof's emitted-elements stream and shrink the proof
+/// trivially).
+fn first_n_color_values(n: u64) -> Vec<Value> {
+    (0..n)
+        .map(|color| Value::Text(color_label(color)))
+        .collect()
 }
 
 fn in_and_range_where_value(brands: Vec<Value>, range_floor: Value) -> Value {
