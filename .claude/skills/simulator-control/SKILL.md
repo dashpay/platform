@@ -252,6 +252,20 @@ If `idb connect` hangs, clear stale companion processes: `pkill -f idb_companion
 - **Status-bar override for clean screenshots**: `xcrun simctl status_bar booted override --time "9:41"` and `xcrun simctl status_bar booted clear` to reset.
 - **Don't tap on a screen the user is mid-interaction with** unless you've confirmed it's safe — they may lose form state. Snapshot first, ask second on anything destructive.
 - **Cross-process SwiftData writes are unsafe** while the app holds the SQLite connection — readonly queries only.
+- **Tab-bar buttons aren't always exposed in `describe-all`.** SwiftUI bottom `TabView` items often render as a parent `Group { AXLabel: "Tab Bar" }` with no per-tab children in the flat tree. Use `describe-point` at the tab's expected coordinates instead — it returns the `AXRadioButton` with `subrole: AXTabButton` and the right label. Then tap by that frame.
+- **`head -c N` truncates JSON output mid-document** — `idb ui describe-all` produces a single JSON array; piping through `head` for inspection chops it and breaks `json.loads`. Save the full output to a file first (`idb ui describe-all > /tmp/tree.json`), then parse from the file.
+- **Env vars don't propagate into `python3 -c '...'`** the way they do into `bash`. Use a heredoc form instead:
+  ```bash
+  python3 << 'PY'
+  import os
+  label = os.environ.get('LABEL', 'default')
+  PY
+  ```
+  Or pass values via `--env` flags / command args. The `LABEL=... python3 -c "..."` form looks right but Python sees an empty environ when invoked through some shells.
+- **`status` is a readonly variable in zsh.** When writing polling loops that read a status code into a shell variable, name it anything else (`stat`, `current`, `value`). The harness's bash exec uses zsh-compatible semantics for some built-ins.
+- **For long-running polls, use `run_in_background: true`** on the Bash tool, OR wrap in a `Monitor`-friendly `until` loop. Chaining `sleep 30 && cat ...` calls is blocked by the harness — it's enforcing the "don't sleep-loop, use background tasks" rule.
+- **App launch can succeed at the OSLog level but the simulator display can still show home screen** if the app was already running in the background, the Simulator window is not focused, or the post-launch foregrounding race didn't fire. If `xcrun simctl launch` returns a PID but screenshot shows home, run `launch` a second time — the second call typically brings it to front.
+- **`xcrun simctl spawn booted log stream --predicate ...` does NOT capture Rust `tracing::*` output unless the app explicitly wires tracing into OSLog.** If your app uses `tracing-subscriber::fmt()` (the default) the logs go to stderr inside the app process, not to OSLog, so the log stream won't see them. To see Rust traces, the app needs a `tracing-oslog` (or equivalent) layer. Without one, you can still observe Rust-side state via SwiftData and behavior via screenshots.
 
 ## What this skill does NOT do
 
