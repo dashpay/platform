@@ -120,21 +120,18 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 ))
             })?;
 
-        let is_chain_locked = matches!(record.context, TransactionContext::InChainLockedBlock(_));
-        let height = record.height().unwrap_or(0);
-
-        if is_chain_locked && height > 0 {
-            let platform_height = self.get_platform_core_chain_locked_height().await?;
-
-            if height <= platform_height {
+        // Local SPV-verified ChainLock is the only signal we trust.
+        // Skipping a Platform-tip pre-flight: it's an unproven self-
+        // report and a malicious DAPI could stall us forever; the
+        // submission layer handles the CL-height race by retrying with
+        // a bumped `user_fee_increase` if Platform's tip lags ours.
+        if matches!(record.context, TransactionContext::InChainLockedBlock(_)) {
+            if let Some(height) = record.height() {
                 tracing::debug!(
-                    "Upgrading IS-lock proof to ChainLock proof for tx {} \
-                     (height={}, platform_cl_height={})",
+                    "Upgrading IS-lock proof to ChainLock proof for tx {} (height={})",
                     out_point.txid,
                     height,
-                    platform_height,
                 );
-
                 return Ok(dpp::prelude::AssetLockProof::Chain(ChainAssetLockProof {
                     core_chain_locked_height: height,
                     out_point: *out_point,
@@ -143,19 +140,6 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         }
 
         Ok(proof)
-    }
-
-    /// Fetch Platform's current `core_chain_locked_height` by querying the
-    /// latest epoch info with metadata.
-    async fn get_platform_core_chain_locked_height(&self) -> Result<u32, PlatformWalletError> {
-        use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
-        use dpp::block::extended_epoch_info::ExtendedEpochInfo;
-
-        let (_epoch, metadata) = ExtendedEpochInfo::fetch_current_with_metadata(&self.sdk)
-            .await
-            .map_err(PlatformWalletError::Sdk)?;
-
-        Ok(metadata.core_chain_locked_height)
     }
 
     /// Upgrade an IS-lock proof to a ChainLock proof after a Platform
@@ -243,30 +227,21 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             }
         };
 
-        // Wait for Platform to verify the block height.
-        let platform_height = self.get_platform_core_chain_locked_height().await?;
-
-        if height > platform_height {
-            // Platform hasn't verified this block yet. Poll until it does
-            // (ChainLock propagation to Platform is typically fast).
-            tracing::info!(
-                "TX {} at height {} but Platform at height {}, waiting...",
-                txid,
-                height,
-                platform_height
-            );
-            // TODO: Poll Platform height until it catches up, for now return error.
-            return Err(PlatformWalletError::AssetLockExpired(format!(
-                "Transaction {} is at height {} but Platform has only verified up to height {}",
-                txid, height, platform_height
-            )));
-        }
-
+        // Build the proof at the wallet's SPV-verified ChainLock height.
+        // We DON'T consult Platform's self-reported `core_chain_locked_height`
+        // here — that metadata is unproven and a malicious DAPI node could
+        // stall us indefinitely. If Platform's CL tip is briefly behind
+        // ours at submission time (race window up to
+        // `create-empty-blocks-interval`, ~3m on mainnet), the caller's
+        // submission layer (`registration.rs`) detects the resulting
+        // `InvalidAssetLockProofCoreChainHeightError` (code 10506) and
+        // retries with a fresh ST (bumped `user_fee_increase`) to bypass
+        // Tenderdash's invalid-tx cache (`keep-invalid-txs-in-cache = true`
+        // on mainnet/testnet).
         tracing::info!(
-            "Building ChainLock proof for tx {} (height={}, platform_cl_height={})",
+            "Building ChainLock proof for tx {} (height={}, SPV-verified locally)",
             txid,
             height,
-            platform_height,
         );
 
         Ok(dpp::prelude::AssetLockProof::Chain(ChainAssetLockProof {
@@ -290,6 +265,21 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         let deadline = tokio::time::Instant::now() + timeout;
 
         loop {
+            // Arm the `Notify` future BEFORE the state check, closing
+            // the missed-wakeup race in dashpay/platform#3641
+            // (Found-008): `notify_waiters()` only wakes already-
+            // registered waiters and does NOT store a permit, so a
+            // CL/IS event arriving in the gap between "no proof yet"
+            // and the `.await` below would be discarded and we'd
+            // sleep until `FinalityTimeout`. Calling `enable()` on
+            // the pinned `Notified` future registers this waiter
+            // first; any subsequent `notify_waiters()` is captured
+            // and the `await` either completes immediately or, if
+            // the event fires after, wakes us up normally.
+            let notified = self.lock_notify.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+
             // Check — might have been updated by SPV sync. Falls back
             // to the persister so a chainlock that arrived between
             // polls (and was evicted from the in-memory map) is still
@@ -316,14 +306,16 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 
             let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
             if remaining.is_zero() {
-                return Err(PlatformWalletError::FinalityTimeout(out_point.txid));
+                return Err(PlatformWalletError::FinalityTimeout(*out_point));
             }
 
-            // Wait for a lock event notification or timeout.
+            // Wait for a lock event notification or timeout. The
+            // `notified` future is the one we armed above, so any
+            // CL/IS event since then is already buffered into it.
             tokio::select! {
-                _ = self.lock_notify.notified() => continue,
+                _ = &mut notified => continue,
                 _ = tokio::time::sleep(remaining) => {
-                    return Err(PlatformWalletError::FinalityTimeout(out_point.txid));
+                    return Err(PlatformWalletError::FinalityTimeout(*out_point));
                 }
             }
         }
@@ -347,7 +339,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
         use key_wallet::transaction_checking::TransactionContext;
 
+        tracing::info!(outpoint = %out_point, ?timeout, "wait_for_proof: entered");
         let deadline = tokio::time::Instant::now() + timeout;
+        let mut iter: u32 = 0;
 
         // Read account_index and transaction from the tracked lock.
         let (account_index, tracked_tx) = {
@@ -365,6 +359,49 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         };
 
         loop {
+            iter += 1;
+            // Arm the `Notify` future BEFORE the state check, closing
+            // the missed-wakeup race in dashpay/platform#3641
+            // (Found-008): `notify_waiters()` only wakes already-
+            // registered waiters and does NOT store a permit, so an
+            // IS/CL event arriving in the gap between "no proof yet"
+            // and the `.await` below would be discarded and we'd
+            // sleep until `FinalityTimeout`. Calling `enable()` on
+            // the pinned `Notified` future registers this waiter
+            // first; any subsequent `notify_waiters()` is captured
+            // and the `await` either completes immediately or, if
+            // the event fires after, wakes us up normally.
+            let notified = self.lock_notify.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+
+            // Snapshot the wallet's global CL state for diagnostics.
+            let (wallet_cl_height, in_memory_tx_ctx, in_memory_tx_height) = {
+                let wm = self.wallet_manager.read().await;
+                let info = wm.get_wallet_info(&self.wallet_id);
+                let cl_h = info
+                    .as_ref()
+                    .and_then(|i| i.core_wallet.metadata.last_applied_chain_lock.as_ref())
+                    .map(|cl| cl.block_height);
+                let rec = info.as_ref().and_then(|i| {
+                    i.core_wallet
+                        .accounts
+                        .standard_bip44_accounts
+                        .get(&account_index)
+                        .and_then(|a| a.transactions().get(&out_point.txid))
+                });
+                let ctx = rec.map(|r| format!("{:?}", r.context));
+                let h = rec.and_then(|r| r.height());
+                (cl_h, ctx, h)
+            };
+            tracing::debug!(
+                outpoint = %out_point,
+                iter,
+                wallet_cl_height = ?wallet_cl_height,
+                in_memory_tx_ctx = ?in_memory_tx_ctx,
+                in_memory_tx_height = ?in_memory_tx_height,
+                "wait_for_proof: iteration"
+            );
             // Check the transaction record context for finality. Falls
             // back to the persister so a chainlocked record evicted
             // from the in-memory map is still observed.
@@ -393,26 +430,109 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     }
                     TransactionContext::InChainLockedBlock(_) => {
                         if let Some(height) = record.height() {
+                            // SPV-verified ChainLock BLS signature already
+                            // promoted this record's context — local
+                            // finality is cryptographically established.
+                            // We don't pre-flight Platform here; the
+                            // submission layer handles the CL-height race
+                            // by retrying with a bumped `user_fee_increase`
+                            // when Platform's tip is briefly behind ours.
                             return Ok(dpp::prelude::AssetLockProof::Chain(ChainAssetLockProof {
                                 core_chain_locked_height: height,
                                 out_point: *out_point,
                             }));
                         }
                     }
-                    _ => {}
+                    _ => {
+                        // Per-record context isn't `InChainLockedBlock`
+                        // yet, but the wallet's global
+                        // `last_applied_chain_lock` may already cover
+                        // this record's block height — e.g. on
+                        // app-launch catch-up, when a record is
+                        // re-injected into the in-memory map at its
+                        // persisted `InBlock` context, after the CL
+                        // event that would have promoted it has already
+                        // fired and passed. The wallet's metadata holds
+                        // the BLS-verified ChainLock from that earlier
+                        // event, so we can build a Chain proof directly
+                        // — same cryptographic guarantee as the
+                        // `InChainLockedBlock` arm above.
+                        //
+                        // Chain-id check: refuse the fallback if the
+                        // wallet's declared network doesn't match the
+                        // SDK's. A persisted `last_applied_chain_lock`
+                        // from a different network (config drift /
+                        // restore-from-backup gone wrong) would have
+                        // us building a proof against the wrong chain;
+                        // Platform would reject with 10506 and the
+                        // submission layer would burn its full retry
+                        // budget on impossible-to-satisfy bumps.
+                        if let Some(height) = record.height() {
+                            let (wallet_cl_height, wallet_network) = {
+                                let wm = self.wallet_manager.read().await;
+                                let info = wm.get_wallet_info(&self.wallet_id);
+                                let cl_h = info
+                                    .as_ref()
+                                    .and_then(|i| {
+                                        i.core_wallet.metadata.last_applied_chain_lock.as_ref()
+                                    })
+                                    .map(|cl| cl.block_height);
+                                let net = info.map(|i| {
+                                    use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+                                    i.network()
+                                });
+                                (cl_h, net)
+                            };
+                            let networks_match =
+                                matches!(wallet_network, Some(n) if n == self.sdk.network);
+                            if matches!(wallet_cl_height, Some(h) if h >= height)
+                                && networks_match
+                            {
+                                tracing::info!(
+                                    "Building ChainLock proof for tx {} from wallet's \
+                                     last_applied_chain_lock (record at height={}, \
+                                     wallet_cl={}) — per-record promotion missed by \
+                                     SPV catch-up cascade",
+                                    out_point.txid,
+                                    height,
+                                    wallet_cl_height.unwrap_or(0),
+                                );
+                                return Ok(dpp::prelude::AssetLockProof::Chain(
+                                    ChainAssetLockProof {
+                                        core_chain_locked_height: height,
+                                        out_point: *out_point,
+                                    },
+                                ));
+                            } else if matches!(wallet_cl_height, Some(h) if h >= height)
+                                && !networks_match
+                            {
+                                tracing::error!(
+                                    sdk_network = ?self.sdk.network,
+                                    wallet_network = ?wallet_network,
+                                    outpoint = %out_point,
+                                    "wait_for_proof: REFUSING to build CL proof from \
+                                     wallet_cl_height fallback — wallet's declared \
+                                     network does not match the SDK's. Persisted \
+                                     state likely loaded into the wrong network."
+                                );
+                            }
+                        }
+                    }
                 }
             }
 
             let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
             if remaining.is_zero() {
-                return Err(PlatformWalletError::FinalityTimeout(out_point.txid));
+                return Err(PlatformWalletError::FinalityTimeout(*out_point));
             }
 
-            // Wait for a lock event notification or timeout.
+            // Wait for a lock event notification or timeout. The
+            // `notified` future is the one we armed above, so any
+            // IS/CL event since then is already buffered into it.
             tokio::select! {
-                _ = self.lock_notify.notified() => continue,
+                _ = &mut notified => continue,
                 _ = tokio::time::sleep(remaining) => {
-                    return Err(PlatformWalletError::FinalityTimeout(out_point.txid));
+                    return Err(PlatformWalletError::FinalityTimeout(*out_point));
                 }
             }
         }

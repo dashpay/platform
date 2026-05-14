@@ -211,18 +211,33 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         out_point: &OutPoint,
         timeout: Duration,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath), PlatformWalletError> {
+        tracing::info!(outpoint = %out_point, ?timeout, "resume_asset_lock: entered");
+
         // 1. Look up the tracked lock — snapshot the fields we need.
         let (tx, status, existing_proof, account_index) = {
             let wm = self.wallet_manager.read().await;
             let info = wm
                 .get_wallet_info(&self.wallet_id)
                 .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+            let tracked_count = info.tracked_asset_locks.len();
             let lock = info.tracked_asset_locks.get(out_point).ok_or_else(|| {
+                tracing::warn!(
+                    outpoint = %out_point,
+                    tracked_count,
+                    "resume_asset_lock: asset lock not in tracked_asset_locks map"
+                );
                 PlatformWalletError::AssetLockProofWait(format!(
                     "Asset lock {} is not tracked",
                     out_point
                 ))
             })?;
+            tracing::info!(
+                outpoint = %out_point,
+                status = ?lock.status,
+                has_proof = lock.proof.is_some(),
+                account_index = lock.account_index,
+                "resume_asset_lock: lock looked up"
+            );
             (
                 lock.transaction.clone(),
                 lock.status.clone(),

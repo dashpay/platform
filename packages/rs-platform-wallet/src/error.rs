@@ -96,8 +96,14 @@ pub enum PlatformWalletError {
     #[error("Token operation failed: {0}")]
     TokenError(String),
 
-    #[error("Timed out waiting for finality proof for transaction {0}")]
-    FinalityTimeout(dashcore::Txid),
+    #[error("Timed out waiting for finality proof for outpoint {0}")]
+    /// IS-lock did not propagate within `wait_for_proof`'s deadline.
+    /// Carries the outpoint (not just the txid) so the caller can
+    /// drive the IS→CL upgrade flow without re-walking the
+    /// tracked-asset-lock map by `(funding_type, identity_index)` —
+    /// which is BTreeMap-order, non-deterministic when multiple
+    /// unproven locks share that key.
+    FinalityTimeout(dashcore::OutPoint),
 
     #[error("Asset lock proof expired (IS proof too old, CL not yet available): {0}")]
     AssetLockExpired(String),

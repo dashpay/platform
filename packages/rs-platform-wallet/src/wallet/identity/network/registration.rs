@@ -471,13 +471,7 @@ impl IdentityWallet {
         {
             Ok(identity) => identity,
             Err(e) if is_instant_lock_proof_invalid(&e) => {
-                let out_point = proof_out_point.ok_or_else(|| {
-                    PlatformWalletError::InvalidIdentityData(format!(
-                        "IS-lock rejected by Platform but proof carried no \
-                         outpoint we could upgrade: {}",
-                        e
-                    ))
-                })?;
+                let out_point = proof_out_point;
                 tracing::warn!(
                     "IS-lock proof rejected by Platform for identity registration (tx {}), \
                      retrying with ChainLock proof",
@@ -670,13 +664,7 @@ impl IdentityWallet {
         {
             Ok(balance) => balance,
             Err(e) if is_instant_lock_proof_invalid(&e) => {
-                let out_point = proof_out_point.ok_or_else(|| {
-                    PlatformWalletError::InvalidIdentityData(format!(
-                        "IS-lock rejected by Platform but proof carried no \
-                         outpoint we could upgrade: {}",
-                        e
-                    ))
-                })?;
+                let out_point = proof_out_point;
                 tracing::warn!(
                     "IS-lock proof rejected by Platform for identity top-up (tx {}), \
                      retrying with ChainLock proof",
