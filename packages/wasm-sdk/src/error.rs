@@ -254,6 +254,10 @@ impl From<ProtocolError> for WasmSdkError {
 }
 
 impl WasmSdkError {
+    fn protocol_consensus_error_message<T: std::fmt::Display>(errors: &[T]) -> Option<String> {
+        errors.first().map(ToString::to_string)
+    }
+
     fn protocol_with_consensus_errors(
         errors: Vec<dash_sdk::dpp::consensus::ConsensusError>,
     ) -> Self {
@@ -311,11 +315,8 @@ impl WasmSdkError {
         } else {
             "ConsensusErrors"
         };
-        let message = if errors.len() == 1 {
-            errors[0].to_string()
-        } else {
-            format!("{} consensus errors", errors.len())
-        };
+        let message = Self::protocol_consensus_error_message(&errors)
+            .expect("consensus errors should be non-empty after the empty-list guard");
 
         let _ = Reflect::set(
             &details,
@@ -433,5 +434,30 @@ impl WasmSdkError {
     #[wasm_bindgen(getter)]
     pub fn details(&self) -> JsValue {
         self.details.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::WasmSdkError;
+
+    #[test]
+    fn protocol_consensus_error_message_uses_first_error() {
+        let errors = ["first error", "second error"];
+
+        assert_eq!(
+            WasmSdkError::protocol_consensus_error_message(&errors),
+            Some("first error".to_string())
+        );
+    }
+
+    #[test]
+    fn protocol_consensus_error_message_is_none_for_empty_input() {
+        let errors: [&str; 0] = [];
+
+        assert_eq!(
+            WasmSdkError::protocol_consensus_error_message(&errors),
+            None
+        );
     }
 }
