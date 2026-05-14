@@ -584,17 +584,25 @@ impl MockResponse for drive_proof_verifier::DocumentCount {
     }
 }
 
+/// Wire shape for `DocumentSplitCounts` mock round-trip:
+/// `(in_key, key, count)` triples preserving the In dimension
+/// AND the verified-vs-absent count distinction. Shared by
+/// `mock_serialize`/`mock_deserialize` below — single source of
+/// truth so the encode/decode generics align by construction,
+/// and clippy's `type_complexity` lint (CI runs with
+/// `-D warnings`) doesn't fire on the inline form.
+type DocumentSplitCountTriples = Vec<(Option<Vec<u8>>, Vec<u8>, Option<u64>)>;
+
 impl MockResponse for drive_proof_verifier::DocumentSplitCounts {
     fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
         let bincode_config = standard();
-        // Serialize as `(Option<Vec<u8>>, Vec<u8>, Option<u64>)`
-        // triples so the In dimension AND the verified-vs-absent
-        // count distinction both survive the mock roundtrip.
-        // Required for compound (`In + range + distinct`) test
-        // fixtures to keep their `in_key` values, and for
-        // GroupByIn-absent-branch fixtures to keep their `None`
-        // counts.
-        let triples: Vec<(Option<Vec<u8>>, Vec<u8>, Option<u64>)> = self
+        // Serialize as `(in_key, key, count)` triples so the In
+        // dimension AND the verified-vs-absent count distinction
+        // both survive the mock roundtrip. Required for compound
+        // (`In + range + distinct`) test fixtures to keep their
+        // `in_key` values, and for GroupByIn-absent-branch
+        // fixtures to keep their `None` counts.
+        let triples: DocumentSplitCountTriples = self
             .0
             .iter()
             .map(|e| (e.in_key.clone(), e.key.clone(), e.count))
@@ -606,11 +614,8 @@ impl MockResponse for drive_proof_verifier::DocumentSplitCounts {
     where
         Self: Sized,
     {
-        // Alias the wire triple so clippy doesn't flag the bincode
-        // generic as too complex. Same shape mock_serialize emits.
-        type DecodedTriples = Vec<(Option<Vec<u8>>, Vec<u8>, Option<u64>)>;
         let bincode_config = standard();
-        let (triples, _): (DecodedTriples, _) =
+        let (triples, _): (DocumentSplitCountTriples, _) =
             bincode::decode_from_slice(buf, bincode_config).expect("decode DocumentSplitCounts");
         let entries: Vec<drive_proof_verifier::SplitCountEntry> = triples
             .into_iter()

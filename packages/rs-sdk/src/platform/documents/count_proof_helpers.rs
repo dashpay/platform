@@ -114,11 +114,11 @@ fn limit_to_u16_or_default(limit: u32) -> Result<u16, drive_proof_verifier::Erro
 ///
 /// [`DocumentCount`]: drive_proof_verifier::DocumentCount
 /// [`DocumentSplitCounts`]: drive_proof_verifier::DocumentSplitCounts
-pub(super) fn verify_count_query<'a>(
+pub(super) fn verify_count_query(
     request: DocumentQuery,
     response: GetDocumentsResponse,
     platform_version: &PlatformVersion,
-    provider: &'a dyn ContextProvider,
+    provider: &dyn ContextProvider,
 ) -> Result<(Option<Vec<SplitCountEntry>>, ResponseMetadata, Proof), drive_proof_verifier::Error> {
     let document_type = request
         .data_contract
