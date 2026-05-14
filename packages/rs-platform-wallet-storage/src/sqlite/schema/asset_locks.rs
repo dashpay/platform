@@ -21,10 +21,8 @@ pub fn apply(
     wallet_id: &WalletId,
     cs: &AssetLockChangeSet,
 ) -> Result<(), WalletStorageError> {
-    for (op, entry) in &cs.asset_locks {
-        let op_bytes = blob::encode_outpoint(op);
-        let lifecycle_blob = blob::encode(entry)?;
-        tx.execute(
+    if !cs.asset_locks.is_empty() {
+        let mut stmt = tx.prepare_cached(
             "INSERT INTO asset_locks \
                 (wallet_id, outpoint, status, account_index, identity_index, amount_duffs, lifecycle_blob) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) \
@@ -34,7 +32,11 @@ pub fn apply(
                 identity_index = excluded.identity_index, \
                 amount_duffs = excluded.amount_duffs, \
                 lifecycle_blob = excluded.lifecycle_blob",
-            params![
+        )?;
+        for (op, entry) in &cs.asset_locks {
+            let op_bytes = blob::encode_outpoint(op);
+            let lifecycle_blob = blob::encode(entry)?;
+            stmt.execute(params![
                 wallet_id.as_slice(),
                 &op_bytes[..],
                 status_str(&entry.status),
@@ -45,15 +47,16 @@ pub fn apply(
                     entry.amount_duffs,
                 )?,
                 lifecycle_blob,
-            ],
-        )?;
+            ])?;
+        }
     }
-    for op in &cs.removed {
-        let op_bytes = blob::encode_outpoint(op);
-        tx.execute(
-            "DELETE FROM asset_locks WHERE wallet_id = ?1 AND outpoint = ?2",
-            params![wallet_id.as_slice(), &op_bytes[..]],
-        )?;
+    if !cs.removed.is_empty() {
+        let mut stmt =
+            tx.prepare_cached("DELETE FROM asset_locks WHERE wallet_id = ?1 AND outpoint = ?2")?;
+        for op in &cs.removed {
+            let op_bytes = blob::encode_outpoint(op);
+            stmt.execute(params![wallet_id.as_slice(), &op_bytes[..]])?;
+        }
     }
     Ok(())
 }

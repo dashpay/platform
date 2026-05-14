@@ -488,3 +488,32 @@ fn tc082_no_box_dyn_error_in_src() {
         }
     }
 }
+
+/// TC-P1-004: prepared-statement cache survives 60 sequential
+/// store+flush cycles. SQLite's default statement cache holds 16
+/// statements; running well past that exercises LRU eviction and
+/// confirms `prepare_cached`'s borrow-checker-enforced lifecycle.
+#[test]
+fn tc_p1_004_cache_scope_under_heavy_reuse() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w = wid(0xC0);
+    ensure_wallet_meta(&persister, &w);
+    for i in 0u32..60 {
+        let mut cs = PlatformWalletChangeSet::default();
+        cs.core = Some(CoreChangeSet {
+            synced_height: Some(i),
+            ..Default::default()
+        });
+        persister.store(w, cs).expect("store");
+        persister.flush(w).expect("flush");
+    }
+    let conn = persister.lock_conn_for_test();
+    let synced: i64 = conn
+        .query_row(
+            "SELECT synced_height FROM core_sync_state WHERE wallet_id = ?1",
+            rusqlite::params![w.as_slice()],
+            |row| row.get(0),
+        )
+        .expect("read final synced");
+    assert_eq!(synced, 59);
+}

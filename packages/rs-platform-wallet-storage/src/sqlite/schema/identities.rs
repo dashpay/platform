@@ -13,28 +13,32 @@ pub fn apply(
     wallet_id: &WalletId,
     cs: &IdentityChangeSet,
 ) -> Result<(), WalletStorageError> {
-    for (id, entry) in &cs.identities {
-        let payload = blob::encode(entry)?;
-        tx.execute(
+    if !cs.identities.is_empty() {
+        let mut stmt = tx.prepare_cached(
             "INSERT INTO identities (wallet_id, wallet_index, identity_id, entry_blob, tombstoned) \
              VALUES (?1, ?2, ?3, ?4, 0) \
              ON CONFLICT(wallet_id, identity_id) DO UPDATE SET \
                 wallet_index = excluded.wallet_index, \
                 entry_blob = excluded.entry_blob, \
                 tombstoned = 0",
-            params![
+        )?;
+        for (id, entry) in &cs.identities {
+            let payload = blob::encode(entry)?;
+            stmt.execute(params![
                 wallet_id.as_slice(),
                 entry.identity_index.map(i64::from),
                 id.as_slice(),
                 payload,
-            ],
-        )?;
+            ])?;
+        }
     }
-    for id in &cs.removed {
-        tx.execute(
+    if !cs.removed.is_empty() {
+        let mut stmt = tx.prepare_cached(
             "UPDATE identities SET tombstoned = 1 WHERE wallet_id = ?1 AND identity_id = ?2",
-            params![wallet_id.as_slice(), id.as_slice()],
         )?;
+        for id in &cs.removed {
+            stmt.execute(params![wallet_id.as_slice(), id.as_slice()])?;
+        }
     }
     Ok(())
 }

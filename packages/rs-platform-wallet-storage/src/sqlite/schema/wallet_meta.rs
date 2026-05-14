@@ -14,13 +14,13 @@ pub fn upsert(
     entry: &WalletMetadataEntry,
 ) -> Result<(), WalletStorageError> {
     let network = network_to_str(entry.network);
-    tx.execute(
+    let mut stmt = tx.prepare_cached(
         "INSERT INTO wallet_metadata (wallet_id, network, birth_height) \
          VALUES (?1, ?2, ?3) \
          ON CONFLICT(wallet_id) DO UPDATE SET network = excluded.network, \
                                               birth_height = excluded.birth_height",
-        params![wallet_id.as_slice(), network, entry.birth_height],
     )?;
+    stmt.execute(params![wallet_id.as_slice(), network, entry.birth_height])?;
     Ok(())
 }
 

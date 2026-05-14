@@ -18,120 +18,131 @@ pub fn apply(
     wallet_id: &WalletId,
     cs: &CoreChangeSet,
 ) -> Result<(), WalletStorageError> {
-    for record in &cs.records {
-        upsert_tx_record(tx, wallet_id, record)?;
-    }
-    for utxo in &cs.new_utxos {
-        upsert_utxo(tx, wallet_id, utxo, false)?;
-    }
-    for utxo in &cs.spent_utxos {
-        let op = blob::encode_outpoint(&utxo.outpoint);
-        let exists: bool = tx
-            .query_row(
-                "SELECT 1 FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
-                params![wallet_id.as_slice(), &op[..]],
-                |_| Ok(true),
-            )
-            .optional()?
-            .unwrap_or(false);
-        if exists {
-            tx.execute(
-                "UPDATE core_utxos SET spent = 1 WHERE wallet_id = ?1 AND outpoint = ?2",
-                params![wallet_id.as_slice(), &op[..]],
-            )?;
-        } else {
-            upsert_utxo(tx, wallet_id, utxo, true)?;
+    if !cs.records.is_empty() {
+        let mut stmt = tx.prepare_cached(
+            "INSERT INTO core_transactions \
+                (wallet_id, txid, height, block_hash, block_time, finalized, record_blob) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) \
+             ON CONFLICT(wallet_id, txid) DO UPDATE SET \
+                height = excluded.height, \
+                block_hash = excluded.block_hash, \
+                block_time = excluded.block_time, \
+                finalized = excluded.finalized, \
+                record_blob = excluded.record_blob",
+        )?;
+        for record in &cs.records {
+            let block_info = record.block_info();
+            let height = block_info.map(|b| i64::from(b.height()));
+            let block_hash = block_info.map(|b| AsRef::<[u8]>::as_ref(&b.block_hash()).to_vec());
+            let block_time = block_info.map(|b| i64::from(b.timestamp()));
+            let finalized = block_info.is_some();
+            let payload = blob::encode(record)?;
+            stmt.execute(params![
+                wallet_id.as_slice(),
+                AsRef::<[u8]>::as_ref(&record.txid),
+                height,
+                block_hash,
+                block_time,
+                finalized,
+                payload,
+            ])?;
         }
     }
-    for (txid, islock) in &cs.instant_locks_for_non_final_records {
-        let payload = blob::encode(islock)?;
-        tx.execute(
+    if !cs.new_utxos.is_empty() {
+        let mut stmt = tx.prepare_cached(UPSERT_UTXO_SQL)?;
+        for utxo in &cs.new_utxos {
+            execute_upsert_utxo(&mut stmt, wallet_id, utxo, false)?;
+        }
+    }
+    if !cs.spent_utxos.is_empty() {
+        let mut exists_stmt =
+            tx.prepare_cached("SELECT 1 FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2")?;
+        let mut mark_spent_stmt = tx.prepare_cached(
+            "UPDATE core_utxos SET spent = 1 WHERE wallet_id = ?1 AND outpoint = ?2",
+        )?;
+        let mut upsert_stmt = tx.prepare_cached(UPSERT_UTXO_SQL)?;
+        for utxo in &cs.spent_utxos {
+            let op = blob::encode_outpoint(&utxo.outpoint);
+            let exists: bool = exists_stmt
+                .query_row(params![wallet_id.as_slice(), &op[..]], |_| Ok(true))
+                .optional()?
+                .unwrap_or(false);
+            if exists {
+                mark_spent_stmt.execute(params![wallet_id.as_slice(), &op[..]])?;
+            } else {
+                execute_upsert_utxo(&mut upsert_stmt, wallet_id, utxo, true)?;
+            }
+        }
+    }
+    if !cs.instant_locks_for_non_final_records.is_empty() {
+        let mut stmt = tx.prepare_cached(
             "INSERT INTO core_instant_locks (wallet_id, txid, islock_blob) \
              VALUES (?1, ?2, ?3) \
              ON CONFLICT(wallet_id, txid) DO UPDATE SET islock_blob = excluded.islock_blob",
-            params![wallet_id.as_slice(), AsRef::<[u8]>::as_ref(txid), payload],
         )?;
+        for (txid, islock) in &cs.instant_locks_for_non_final_records {
+            let payload = blob::encode(islock)?;
+            stmt.execute(params![
+                wallet_id.as_slice(),
+                AsRef::<[u8]>::as_ref(txid),
+                payload
+            ])?;
+        }
     }
     if cs.last_processed_height.is_some() || cs.synced_height.is_some() {
         upsert_sync_state(tx, wallet_id, cs.last_processed_height, cs.synced_height)?;
     }
-    for da in &cs.addresses_derived {
-        let account_type = crate::sqlite::schema::accounts::account_type_db_label(&da.account_type);
-        let pool_type = crate::sqlite::schema::accounts::pool_type_db_label(&da.pool_type);
-        let address = da.address.to_string();
-        let path = format!("{}/{}", pool_type, da.derivation_index);
-        tx.execute(
+    if !cs.addresses_derived.is_empty() {
+        let mut stmt = tx.prepare_cached(
             "INSERT INTO core_derived_addresses (wallet_id, account_type, address, derivation_path, used) \
              VALUES (?1, ?2, ?3, ?4, ?5) \
              ON CONFLICT(wallet_id, account_type, address) DO UPDATE SET \
                 derivation_path = excluded.derivation_path",
-            params![wallet_id.as_slice(), account_type, address, path, false],
         )?;
+        for da in &cs.addresses_derived {
+            let account_type =
+                crate::sqlite::schema::accounts::account_type_db_label(&da.account_type);
+            let pool_type = crate::sqlite::schema::accounts::pool_type_db_label(&da.pool_type);
+            let address = da.address.to_string();
+            let path = format!("{}/{}", pool_type, da.derivation_index);
+            stmt.execute(params![
+                wallet_id.as_slice(),
+                account_type,
+                address,
+                path,
+                false
+            ])?;
+        }
     }
     Ok(())
 }
 
-fn upsert_tx_record(
-    tx: &Transaction<'_>,
-    wallet_id: &WalletId,
-    record: &TransactionRecord,
-) -> Result<(), WalletStorageError> {
-    let block_info = record.block_info();
-    let height = block_info.map(|b| i64::from(b.height()));
-    let block_hash = block_info.map(|b| AsRef::<[u8]>::as_ref(&b.block_hash()).to_vec());
-    let block_time = block_info.map(|b| i64::from(b.timestamp()));
-    let finalized = block_info.is_some();
-    let payload = blob::encode(record)?;
-    tx.execute(
-        "INSERT INTO core_transactions \
-            (wallet_id, txid, height, block_hash, block_time, finalized, record_blob) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) \
-         ON CONFLICT(wallet_id, txid) DO UPDATE SET \
-            height = excluded.height, \
-            block_hash = excluded.block_hash, \
-            block_time = excluded.block_time, \
-            finalized = excluded.finalized, \
-            record_blob = excluded.record_blob",
-        params![
-            wallet_id.as_slice(),
-            AsRef::<[u8]>::as_ref(&record.txid),
-            height,
-            block_hash,
-            block_time,
-            finalized,
-            payload,
-        ],
-    )?;
-    Ok(())
-}
+const UPSERT_UTXO_SQL: &str = "INSERT INTO core_utxos \
+        (wallet_id, outpoint, value, script, height, account_index, spent, spent_in_txid) \
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL) \
+     ON CONFLICT(wallet_id, outpoint) DO UPDATE SET \
+        value = excluded.value, \
+        script = excluded.script, \
+        height = excluded.height, \
+        account_index = excluded.account_index, \
+        spent = excluded.spent";
 
-fn upsert_utxo(
-    tx: &Transaction<'_>,
+fn execute_upsert_utxo(
+    stmt: &mut rusqlite::CachedStatement<'_>,
     wallet_id: &WalletId,
     utxo: &Utxo,
     spent: bool,
 ) -> Result<(), WalletStorageError> {
     let op = blob::encode_outpoint(&utxo.outpoint);
-    tx.execute(
-        "INSERT INTO core_utxos \
-            (wallet_id, outpoint, value, script, height, account_index, spent, spent_in_txid) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL) \
-         ON CONFLICT(wallet_id, outpoint) DO UPDATE SET \
-            value = excluded.value, \
-            script = excluded.script, \
-            height = excluded.height, \
-            account_index = excluded.account_index, \
-            spent = excluded.spent",
-        params![
-            wallet_id.as_slice(),
-            &op[..],
-            crate::sqlite::util::safe_cast::u64_to_i64("core_utxos.value", utxo.value())?,
-            utxo.txout.script_pubkey.as_bytes(),
-            i64::from(utxo.height),
-            0i64, // Utxo does not carry account_index; populated by derived-address lookup later.
-            spent,
-        ],
-    )?;
+    stmt.execute(params![
+        wallet_id.as_slice(),
+        &op[..],
+        crate::sqlite::util::safe_cast::u64_to_i64("core_utxos.value", utxo.value())?,
+        utxo.txout.script_pubkey.as_bytes(),
+        i64::from(utxo.height),
+        0i64, // Utxo does not carry account_index; populated by derived-address lookup later.
+        spent,
+    ])?;
     Ok(())
 }
 

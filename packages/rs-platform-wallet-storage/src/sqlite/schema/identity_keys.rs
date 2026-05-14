@@ -69,10 +69,8 @@ pub fn apply(
     wallet_id: &WalletId,
     cs: &IdentityKeysChangeSet,
 ) -> Result<(), WalletStorageError> {
-    for ((identity_id, key_id), entry) in &cs.upserts {
-        let wire = IdentityKeyWire::from_entry(entry)?;
-        let entry_blob = blob::encode(&wire)?;
-        tx.execute(
+    if !cs.upserts.is_empty() {
+        let mut stmt = tx.prepare_cached(
             "INSERT INTO identity_keys \
                 (wallet_id, identity_id, key_id, public_key_blob, public_key_hash, derivation_blob) \
              VALUES (?1, ?2, ?3, ?4, ?5, NULL) \
@@ -80,25 +78,31 @@ pub fn apply(
                 public_key_blob = excluded.public_key_blob, \
                 public_key_hash = excluded.public_key_hash, \
                 derivation_blob = NULL",
-            params![
+        )?;
+        for ((identity_id, key_id), entry) in &cs.upserts {
+            let wire = IdentityKeyWire::from_entry(entry)?;
+            let entry_blob = blob::encode(&wire)?;
+            stmt.execute(params![
                 wallet_id.as_slice(),
                 identity_id.as_slice(),
                 i64::from(*key_id),
                 entry_blob,
                 &entry.public_key_hash[..],
-            ],
-        )?;
+            ])?;
+        }
     }
-    for (identity_id, key_id) in &cs.removed {
-        tx.execute(
+    if !cs.removed.is_empty() {
+        let mut stmt = tx.prepare_cached(
             "DELETE FROM identity_keys \
              WHERE wallet_id = ?1 AND identity_id = ?2 AND key_id = ?3",
-            params![
+        )?;
+        for (identity_id, key_id) in &cs.removed {
+            stmt.execute(params![
                 wallet_id.as_slice(),
                 identity_id.as_slice(),
                 i64::from(*key_id),
-            ],
-        )?;
+            ])?;
+        }
     }
     Ok(())
 }

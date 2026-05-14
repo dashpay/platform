@@ -16,8 +16,8 @@ pub fn apply(
     wallet_id: &WalletId,
     cs: &PlatformAddressChangeSet,
 ) -> Result<(), WalletStorageError> {
-    for entry in &cs.addresses {
-        tx.execute(
+    if !cs.addresses.is_empty() {
+        let mut stmt = tx.prepare_cached(
             "INSERT INTO platform_addresses \
                 (wallet_id, account_index, address_index, address, balance, nonce) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
@@ -26,15 +26,17 @@ pub fn apply(
                 address_index = excluded.address_index, \
                 balance = excluded.balance, \
                 nonce = excluded.nonce",
-            params![
+        )?;
+        for entry in &cs.addresses {
+            stmt.execute(params![
                 wallet_id.as_slice(),
                 i64::from(entry.account_index),
                 i64::from(entry.address_index),
                 entry.address.as_bytes(),
                 safe_cast::u64_to_i64("platform_addresses.balance", entry.funds.balance)?,
                 i64::from(entry.funds.nonce),
-            ],
-        )?;
+            ])?;
+        }
     }
     if cs.sync_height.is_some()
         || cs.sync_timestamp.is_some()
