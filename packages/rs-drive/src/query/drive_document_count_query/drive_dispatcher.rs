@@ -306,18 +306,9 @@ impl Drive {
                 Ok(DocumentCountResponse::Aggregate(total))
             }
             DocumentCountMode::PerInValue => {
-                // Per-`In`-value: one entry per In value (executor
-                // emits at most |In|). Only reachable from
-                // `CountMode::Aggregate` (sum the entries) and
-                // `CountMode::GroupByIn` (return the entries) —
-                // both reject explicit `limit` upstream, so
-                // `request.limit` is always None here. |In| is
-                // structurally capped at 100 by
-                // `WhereClause::in_values()`; cap at
-                // `MAX_LIMIT_AS_FAILSAFE` instead of the operator-
-                // tunable `default_query_limit`, which would
-                // silently truncate the fan-out (and corrupt the
-                // aggregate sum) under tighter tuning.
+                // |In| ≤ 100 is the structural bound; failsafe cap
+                // keeps behavior independent of `default_query_limit`.
+                // See [`super::MAX_LIMIT_AS_FAILSAFE`].
                 let options = RangeCountOptions {
                     distinct: false, // ignored by PerInValue executor
                     limit: Some(super::MAX_LIMIT_AS_FAILSAFE),
@@ -336,20 +327,10 @@ impl Drive {
                 ))
             }
             DocumentCountMode::RangeNoProof => {
-                // Range no-proof → either aggregate (sum) or entries
-                // (per-distinct-value), based on `request.mode`.
-                // Two limit regimes here:
-                // - Aggregate: per-In fan-out, each branch doing one
-                //   `AggregateCountOnRange` read (or a single read
-                //   when no In is present). Result size is bounded
-                //   by |In| ≤ 100. Cap at `MAX_LIMIT_AS_FAILSAFE` so
-                //   the dispatcher doesn't truncate aggregate sums
-                //   under operator-tuned `default_query_limit`.
-                // - Distinct walk (GroupByRange / GroupByCompound):
-                //   range itself is unbounded, so the caller's
-                //   `limit` (or `default_query_limit` fallback,
-                //   clamped to `max_query_limit`) is the legitimate
-                //   safety cap.
+                // Aggregate → failsafe cap (per-In fan-out bounded by
+                // |In| ≤ 100); distinct walk → caller's limit with
+                // `default_query_limit` fallback since range is
+                // genuinely unbounded.
                 let effective_limit = if request.mode.is_aggregate() {
                     super::MAX_LIMIT_AS_FAILSAFE
                 } else {

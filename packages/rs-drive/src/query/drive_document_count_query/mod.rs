@@ -75,6 +75,21 @@ pub use execute_range_count::RangeCountOptions;
 /// current `WhereClause::in_values` policy. If a future code
 /// change makes it reachable, treat that as a signal to revisit
 /// the bound before raising the constant.
+///
+/// # Pattern: failsafe cap for structurally-bounded ops
+///
+/// This is the prototype of a small project convention: when an
+/// executor-level operation has a structural upper bound enforced
+/// upstream (here, `WhereClause::in_values()`'s 100-cap on the In
+/// array), pin a failsafe cap at the executor boundary that sits
+/// well above the upstream bound rather than reusing an unrelated
+/// operator-tunable limit. The failsafe never fires under the
+/// upstream constraint — it exists to (a) keep behavior
+/// independent of operator config, and (b) localize the blast
+/// radius if the upstream constraint ever loosens. Constants
+/// added under this pattern should follow the
+/// `MAX_<OPERATION>_AS_FAILSAFE` naming so the role is visible
+/// at the use site.
 #[cfg(feature = "server")]
 pub const MAX_LIMIT_AS_FAILSAFE: u32 = 1024;
 
@@ -221,38 +236,26 @@ pub enum CountMode {
 }
 
 impl CountMode {
-    /// Whether this mode produces a single aggregate u64 (vs
-    /// per-group entries). Aggregate is the `select=COUNT,
-    /// group_by=[]` shape; the three grouped variants produce
-    /// entries.
+    /// `true` for [`Self::Aggregate`] (single-row response);
+    /// `false` for the three grouped variants. See each variant's
+    /// docstring for the per-shape semantics.
     pub fn is_aggregate(self) -> bool {
         matches!(self, Self::Aggregate)
     }
 
-    /// Whether this mode requires the distinct walk on a range
-    /// clause (per-distinct-value entries via `KVCount` ops). Only
-    /// the two range-grouped variants do; aggregate and per-In
-    /// take other paths even when a range clause is present.
+    /// `true` for [`Self::GroupByRange`] and [`Self::GroupByCompound`]
+    /// — the two variants whose proof shape requires per-distinct-
+    /// value `KVCount` ops. See each variant's docstring for the
+    /// per-shape proof routing.
     pub fn requires_distinct_walk(self) -> bool {
         matches!(self, Self::GroupByRange | Self::GroupByCompound)
     }
 
-    /// Whether the caller-supplied `limit` is meaningful for this
-    /// mode. Two variants accept it:
-    ///
-    /// - [`Self::GroupByRange`] — bounds the number of distinct
-    ///   range values returned (the range itself is unbounded).
-    /// - [`Self::GroupByCompound`] — global cap over the
-    ///   `(in_key, key)` lex tuple stream, not per-In-branch.
-    ///
-    /// The other two variants reject `limit` upstream:
-    ///
-    /// - [`Self::Aggregate`] — result is a single row.
-    /// - [`Self::GroupByIn`] — result is bounded by the In array
-    ///   (capped at 100 entries by `WhereClause::in_values()`);
-    ///   silent partial truncation isn't representable on the
-    ///   PointLookupProof path, so the limit would be misleading
-    ///   either way.
+    /// `true` for [`Self::GroupByRange`] and [`Self::GroupByCompound`]
+    /// — the two variants whose result size isn't structurally
+    /// bounded. [`Self::Aggregate`] and [`Self::GroupByIn`] reject
+    /// `limit` upstream; see each variant's docstring for the
+    /// per-shape reasoning.
     pub fn accepts_limit(self) -> bool {
         matches!(self, Self::GroupByRange | Self::GroupByCompound)
     }
