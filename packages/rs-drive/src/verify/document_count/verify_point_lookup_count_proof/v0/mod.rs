@@ -25,25 +25,28 @@ impl DriveDocumentCountQuery<'_> {
     /// stays empty.
     ///
     /// `GroveDb::verify_query` returns `(path, key, Option<Element>)`
-    /// triples — `Some(element)` for keys that exist in the merk tree,
-    /// `None` for queried keys whose merk traversal terminated without
-    /// finding the CountTree element. We propagate the `Option`
-    /// directly onto [`SplitCountEntry::count`]:
+    /// triples. The path query built by
+    /// [`Self::point_lookup_count_path_query`] does NOT set
+    /// `absence_proofs_for_non_existing_searched_keys: true`, so under
+    /// the current shape:
     ///
-    /// - `Some(element)` → `Some(element.count_value_or_default())` —
-    ///   verified count for an existing branch.
-    /// - `None` (grovedb's missing-key signal) → `count: None` — the
-    ///   merk path was traversed for this In value but no CountTree
-    ///   element was there. Distinct from `Some(0)`: the path query
-    ///   doesn't set `absence_proofs_for_non_existing_searched_keys`,
-    ///   so this isn't a cryptographic "verified zero docs" — it's
-    ///   "the proof was implicit about this branch." Callers that
-    ///   want explicit zero-proof bytes should use a future variant
-    ///   that flips the flag.
+    /// - **Present branches** → `Some(element)` triples →
+    ///   `Some(element.count_value_or_default())` on the entry.
+    /// - **Absent branches** (queried In value with no CountTree
+    ///   element in the merk tree) → silently omitted from the
+    ///   elements stream. Callers detect "queried but absent" by
+    ///   diffing the request's In array against the returned entries.
+    ///   See `tests::test_point_lookup_proof_omits_absent_in_branches_from_entries`
+    ///   for the end-to-end contract pin.
     ///
-    /// Crucially, the SDK does NOT need to re-discover missing In
-    /// values by comparing the request's In array against the
-    /// verifier output — grovedb already enumerates them.
+    /// The `elem.map(...)` below preserves grovedb's `Option<Element>`
+    /// shape so a future variant that flips
+    /// `absence_proofs_for_non_existing_searched_keys: true` surfaces
+    /// absent branches as `count: None` — distinguishable from
+    /// `Some(0)` (which a zero-count branch would never produce on its
+    /// own since zero-count CountTree elements aren't materialized in
+    /// merk). Today that branch is forward-compatible code, not active
+    /// behavior.
     #[inline(always)]
     pub(super) fn verify_point_lookup_count_proof_v0(
         &self,
@@ -93,10 +96,10 @@ impl DriveDocumentCountQuery<'_> {
             };
             // Propagate grovedb's `Option<Element>` directly:
             //   `Some(element)` → `Some(count_value_or_default())`
-            //   `None`          → `None` (queried but proof was
-            //                     implicit; not the same as
-            //                     `Some(0)` since this path doesn't
-            //                     request explicit absence proofs).
+            //   `None`          → `None` (not produced by today's
+            //                     path query — see fn docstring;
+            //                     forward-compat for an absence-proof
+            //                     variant).
             // Zero-count CountTree elements aren't materialized in
             // the merk tree (a CountTree is removed when its last
             // doc is deleted), so `Some(0)` from this branch would

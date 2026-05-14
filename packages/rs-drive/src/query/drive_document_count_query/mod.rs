@@ -146,17 +146,24 @@ pub struct SplitCountEntry {
     /// - `Some(n)` with `n > 0` — verified count for an entry the
     ///   underlying data path materialized.
     /// - `Some(0)` — caller queried this branch and the executor
-    ///   confirmed zero matching documents (emitted only by the
-    ///   no-proof path, which can enumerate the In array and probe
-    ///   each branch).
-    /// - `None` — caller queried this branch but the verifier was
-    ///   silent on it. Distinguished from `Some(0)` so callers
-    ///   don't confuse "verified zero" with "proof didn't cover
-    ///   this." Emitted by the SDK's proof verifier when an In
-    ///   value in the request doesn't appear in the proof's
-    ///   CountTree elements (zero-count branches aren't stored in
-    ///   the merk tree, and the current proof shape doesn't carry
-    ///   absence proofs).
+    ///   confirmed zero matching documents. Emitted by the no-proof
+    ///   point-lookup path's aggregated total wrapper (a single
+    ///   summed entry whose value can be 0) and by the no-proof range
+    ///   executors when their walk returns nothing. Not emitted
+    ///   per-In-branch under the current shape — see `None` below.
+    /// - `None` — reserved for a future absence-proof variant. The
+    ///   current `point_lookup_count_path_query` doesn't set
+    ///   `absence_proofs_for_non_existing_searched_keys: true`, so
+    ///   absent In branches are **omitted from the verified entry
+    ///   list entirely** (grovedb's `verify_query` doesn't surface
+    ///   `(path, key, None)` triples for them). Callers that need to
+    ///   distinguish "queried but absent" diff the request's In array
+    ///   against the returned entries by key. The variant exists in
+    ///   the type signature so a future path-query change that flips
+    ///   the flag surfaces absences via `count: None` without a
+    ///   breaking struct change — distinguishable from `Some(0)`
+    ///   (which a zero-count CountTree could never produce on its own
+    ///   since zero-count CountTrees aren't materialized in merk).
     pub count: Option<u64>,
 }
 

@@ -98,9 +98,13 @@ fn limit_to_u16_or_default(limit: u32) -> Result<u16, drive_proof_verifier::Erro
 ///    returns a `u64`; wrapped here as a single empty-key entry.
 /// 4. **no range + covering `countable: true` index** →
 ///    `PointLookupProof`. `verify_point_lookup_count_proof`
-///    emits one entry per queried branch (grovedb's
-///    `(path, key, Option<Element>)` triples carry both present
-///    and absent branches via `Some`/`None`).
+///    emits one entry per **present** queried branch. Absent
+///    In values are omitted from the returned list (the current
+///    path query doesn't request absence proofs); callers that
+///    need to surface "queried but absent" diff their request's
+///    In array against the returned entries by key. See
+///    `verify_point_lookup_count_proof_v0`'s docstring for the
+///    forward-compat path to per-branch `count: None`.
 ///
 /// Wrapping (2) and (3) as single empty-key entries is the only
 /// shape massage this helper does — the underlying primitives

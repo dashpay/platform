@@ -143,23 +143,28 @@ pub fn verify_distinct_count_proof(
 ///
 /// The verifier walks grovedb's
 /// `(path, key, Option<Element>)` triples and emits one
-/// [`SplitCountEntry`] per queried key — `count: Some(n)` for
-/// branches the proof materialized, `count: None` for branches
-/// grovedb's merk traversal reported as absent.
+/// [`SplitCountEntry`] per **present** queried key. The current
+/// path-query shape does NOT set
+/// `absence_proofs_for_non_existing_searched_keys: true`, so absent
+/// branches are silently omitted from grovedb's elements stream
+/// rather than surfaced as `(path, key, None)` triples.
 ///
-/// - **Equal-only, fully covered**: a single entry with empty
-///   `key`. `count` is `Some(n)` if the covered branch exists in
-///   the merk tree, `None` if it doesn't (an Equal-only query whose
-///   prefix has no documents at all).
+/// - **Equal-only, fully covered**: zero or one entry. One entry
+///   with empty `key` and `count: Some(n)` if the covered branch
+///   exists; no entries at all if the branch is absent.
 /// - **Equal prefix + `In` on last property**: one entry per
-///   queried In value, `key = <serialized_in_value>`.
-///   `count: Some(n)` for In values whose CountTree branch
-///   materialized; `count: None` for In values the proof was silent
-///   on (zero-count branches aren't stored as CountTree elements,
-///   so grovedb's merk traversal returns `None` for those).
-///   Callers can distinguish "verified branch with n docs" from
-///   "branch absent from proof" without comparing against the
-///   request's In array.
+///   **present** queried In value, with
+///   `key = <serialized_in_value>` and `count: Some(n)`. Absent In
+///   values are omitted from the returned list. Callers that need
+///   to distinguish "verified with n docs" from "queried but
+///   absent" diff their request's In array against the returned
+///   entries by `key`.
+///
+/// The `count: Option<u64>` field's `None` variant is reserved for a
+/// future variant that flips `absence_proofs_for_non_existing_searched_keys`
+/// — see [`SplitCountEntry::count`] and
+/// [`DriveDocumentCountQuery::verify_point_lookup_count_proof`] for
+/// the forward-compat path.
 ///
 /// ## Replaces materialize-and-count
 ///

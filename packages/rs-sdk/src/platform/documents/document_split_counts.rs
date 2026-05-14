@@ -17,11 +17,14 @@
 //!   primary-key CountTree, and point-lookup-on-Equal-only paths
 //!   all collapse to this shape.
 //! - `group_by = [in_field]` (per-In entries): one entry per
-//!   queried In value. Grovedb's `verify_query` enumerates every
-//!   key the path query enumerates — `count: Some(n)` for
-//!   present branches, `count: None` for absent ones, so callers
-//!   can distinguish "verified zero docs" from "verifier was
-//!   silent."
+//!   **present** queried In value, with `count: Some(n)`. Absent
+//!   In branches are omitted from `entries` — the current
+//!   point-lookup path query doesn't request absence proofs,
+//!   so grovedb's `verify_query` surfaces only present
+//!   `(path, key, Some(Element))` triples. Callers that need to
+//!   distinguish "verified zero" from "queried but absent" diff
+//!   their request's In array against the returned entries by
+//!   `key` (each entry's `key` is `serialize_value_for_key(in_field, v)`).
 //! - `group_by = [range_field]` / `[in_field, range_field]`
 //!   (distinct walk): one entry per distinct value in the range
 //!   (compound queries: per `(in_key, key)` pair). Zero-count

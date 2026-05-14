@@ -858,6 +858,306 @@ fn test_count_query_in_on_first_of_three_with_two_trailing_equals_succeeds_on_bo
     );
 }
 
+/// Pins the **absent-In-branch ↔ missing-from-output** contract on a
+/// real grovedb proof.
+///
+/// The `point_lookup_count_path_query` builder does NOT set
+/// `absence_proofs_for_non_existing_searched_keys: true` on the outer
+/// query (see `path_query.rs`), so grovedb's `verify_query` silently
+/// omits absent-`Key` branches from the elements stream rather than
+/// emitting `(path, key, None)` triples for them. The verifier therefore
+/// emits ZERO entries for absent In values — the request's In array
+/// length is the authority on what was asked, and "queried but absent"
+/// is detected by the caller diffing the In array against the verified
+/// output (cf. [`verify_distinct_count_proof_v0`]'s docstring at the
+/// "caller can detect 'I asked for 3 In values but only got entries for
+/// 2'" comment).
+///
+/// This contract makes the `count: Option<u64>` field's `None` variant
+/// effectively unreachable on the current path-query shape — it's
+/// reserved for a future variant that flips
+/// `absence_proofs_for_non_existing_searched_keys: true`. The `elem.map(...)`
+/// branch in `verify_point_lookup_count_proof_v0` is forward-compatible
+/// code for that variant, not active behavior today.
+///
+/// Test setup: insert docs at age=30 (×3), age=40 (×2), age=50 (×1);
+/// query `age IN [30, 40, 99, 50]` against `byAge`. age=99 has no
+/// matching docs and no CountTree element materialized in the merk
+/// tree, so grovedb omits that key from the verified elements stream.
+///
+/// Pins:
+/// - **Absent branch (age=99) is silently dropped** — verified entry
+///   count is 3, not 4. Caller must diff against the In array if they
+///   want to surface absent branches. A regression that emitted a
+///   `Some(0)` entry for the absent branch would break the "absence is
+///   detected by missing entry, not by zero-count entry" contract this
+///   path's docstring documents.
+/// - **Present branches → `Some(N)` matching the no-proof totals** —
+///   30→3, 40→2, 50→1 — pins that present-branch counts round-trip
+///   through real merk proof verification correctly.
+/// - **Entry-to-In-value mapping via serialized `key`** — each entry's
+///   `key` equals `document_type.serialize_value_for_key("age", &v, …)`
+///   for its In value, so callers can demux entries back to the In
+///   array without positional assumptions (grovedb sorts by serialized
+///   key, not user-input order — see `path_query.rs:391–400`).
+///
+/// This is the test we'd need to flip the assertion in if/when the path
+/// query starts requesting absence proofs — a clear semantic anchor for
+/// the future variant.
+#[test]
+fn test_point_lookup_proof_omits_absent_in_branches_from_entries() {
+    let (drive, data_contract) = setup_drive_and_contract();
+    let platform_version = PlatformVersion::latest();
+
+    // Distinct (firstName, middleName, lastName) tuples so the unique
+    // `byFirstNameMiddleLastName` index doesn't reject any insert; the
+    // count query routes through `byAge` regardless.
+    insert_person_doc(&drive, &data_contract, [1u8; 32], "A", "M", "Smith", 30);
+    insert_person_doc(&drive, &data_contract, [2u8; 32], "B", "M", "Smith", 30);
+    insert_person_doc(&drive, &data_contract, [3u8; 32], "C", "M", "Smith", 30);
+    insert_person_doc(&drive, &data_contract, [4u8; 32], "D", "M", "Smith", 40);
+    insert_person_doc(&drive, &data_contract, [5u8; 32], "E", "M", "Smith", 40);
+    insert_person_doc(&drive, &data_contract, [6u8; 32], "F", "M", "Smith", 50);
+
+    let document_type = data_contract
+        .document_type_for_name("person")
+        .expect("expected document type");
+
+    // age IN [30, 40, 99, 50] — 99 is the absent branch. Interleaving
+    // it between present values pins that grovedb omits absent keys
+    // regardless of position, not just at the array tail.
+    let in_clause = WhereClause {
+        field: "age".to_string(),
+        operator: WhereOperator::In,
+        value: Value::Array(vec![
+            Value::U64(30),
+            Value::U64(40),
+            Value::U64(99),
+            Value::U64(50),
+        ]),
+    };
+
+    let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+        document_type.indexes(),
+        std::slice::from_ref(&in_clause),
+    )
+    .expect("expected picker to accept byAge for In on age");
+    // Sanity-pin the picker chose the single-property `byAge` index —
+    // a change here means a future picker rewrite reshaped what counts
+    // as "fully covered" for a 1-property In.
+    assert_eq!(index.properties.len(), 1);
+    assert_eq!(index.properties[0].name.as_str(), "age");
+
+    let query = DriveDocumentCountQuery {
+        document_type,
+        contract_id: data_contract.id().to_buffer(),
+        document_type_name: "person".to_string(),
+        index,
+        where_clauses: vec![in_clause],
+    };
+
+    let proof = query
+        .execute_point_lookup_count_with_proof(&drive, None, platform_version)
+        .expect("expected prove count to succeed");
+    assert!(!proof.is_empty(), "expected non-empty proof bytes");
+
+    let (_root_hash, entries) = query
+        .verify_point_lookup_count_proof(&proof, platform_version)
+        .expect("expected proof verification to succeed");
+
+    // The load-bearing assertion: grovedb's `verify_query` (without
+    // `absence_proofs_for_non_existing_searched_keys: true`) silently
+    // drops absent-Key branches from the elements stream, so the
+    // verifier emits 3 entries — one per PRESENT In value — not 4.
+    assert_eq!(
+        entries.len(),
+        3,
+        "expected one entry per PRESENT In value (absent branches \
+         are omitted, not emitted as Some(0) or None); got {} entries: \
+         {:?}",
+        entries.len(),
+        entries
+    );
+
+    // Demux entries by serialized `key` (which is what the verifier
+    // populates from `path[base_path_len]`, see
+    // `verify_point_lookup_count_proof_v0`). Same serializer the
+    // path-query builder uses for outer-Query keys, so by-construction
+    // the entry's `key` matches `serialize_value_for_key("age", v)`.
+    use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+    let document_type = data_contract
+        .document_type_for_name("person")
+        .expect("expected document type");
+    let key_for = |v: u64| -> Vec<u8> {
+        document_type
+            .serialize_value_for_key("age", &Value::U64(v), platform_version)
+            .expect("serialize age key")
+    };
+
+    let find_present = |v: u64| -> u64 {
+        let k = key_for(v);
+        let matching: Vec<_> = entries.iter().filter(|e| e.key == k).collect();
+        assert_eq!(
+            matching.len(),
+            1,
+            "expected exactly one entry for present age={}; got {}: {:?}",
+            v,
+            matching.len(),
+            matching
+        );
+        matching[0]
+            .count
+            .expect("present-branch entry must be Some(_), not None")
+    };
+
+    // Present branches: real counts, round-tripped through proof bytes.
+    assert_eq!(find_present(30), 3, "age=30 has 3 docs");
+    assert_eq!(find_present(40), 2, "age=40 has 2 docs");
+    assert_eq!(find_present(50), 1, "age=50 has 1 doc");
+
+    // Absent branch: no entry with key=serialize(99). This is the
+    // contract — absent branches are detected by the caller as "queried
+    // but missing from output", not surfaced via Some(0) or None.
+    let absent_key = key_for(99);
+    assert!(
+        !entries.iter().any(|e| e.key == absent_key),
+        "expected NO entry for absent age=99; found one in: {:?}. \
+         If this fires after a path-query change, the builder may now \
+         request absence proofs — update this test and the verifier \
+         docstrings to reflect the new contract.",
+        entries
+    );
+}
+
+/// Boundary-cap test: `|In| = 100` exactly. The 100-element cap on In
+/// arrays lives in [`WhereClause::in_values`]; existing tests cover
+/// `< 100` (the happy path) and `> 100` (the rejection case at 101,
+/// see [`test_count_query_in_operator_rejects_oversized_array`]). Off-
+/// by-one in the cap (`>= 100` vs. `> 100`) would silently reject all
+/// max-sized queries while passing every smaller test — this pins that
+/// 100 is **accepted** end-to-end through both no-proof and prove paths.
+///
+/// Setup: 100 distinct `age` values (single-property `byAge` countable
+/// index, fully covered by an In on `age` alone), with each doc's
+/// (firstName, middleName, lastName) tuple distinct so the unique
+/// 3-prop index admits all inserts. Each age has exactly one matching
+/// doc → total no-proof count = 100; per-branch prove count = 100
+/// entries × `Some(1)`.
+///
+/// Pins:
+/// - **`in_values()` accepts |In| = 100** — boundary not off-by-one.
+/// - **No-proof per-In fan-out scales to 100 branches** — one
+///   `query_aggregate_count` per In value, summed to 100.
+/// - **Prove path emits 100 verified entries** — proof reconstruction
+///   doesn't hit a hidden inner cap (e.g. a smaller `limit` baked into
+///   the path-query builder).
+/// - **All 100 entries verify with `Some(1)`** — sum equals no-proof
+///   total; per-branch shape matches. Pinning per-entry rather than
+///   just the sum catches a regression that would split the count
+///   unevenly across branches.
+#[test]
+fn test_count_query_in_operator_accepts_max_sized_array() {
+    let (drive, data_contract) = setup_drive_and_contract();
+    let platform_version = PlatformVersion::latest();
+
+    // 100 distinct ages, each with a unique (firstName, middleName,
+    // lastName) tuple so the unique 3-prop index admits all inserts.
+    // Using ages 1..=100 keeps the byAge index fully covered by a
+    // single In on `age`.
+    for i in 0u64..100 {
+        let mut id = [0u8; 32];
+        id[..2].copy_from_slice(&(i as u16).to_be_bytes());
+        // Unique firstName per doc keeps the unique 3-prop index happy
+        // regardless of any shared middle/last names.
+        let first_name = format!("P{:03}", i);
+        insert_person_doc(&drive, &data_contract, id, &first_name, "M", "Smith", i + 1);
+    }
+
+    let document_type = data_contract
+        .document_type_for_name("person")
+        .expect("expected document type");
+
+    let in_values: Vec<Value> = (1u64..=100).map(Value::U64).collect();
+    assert_eq!(in_values.len(), 100, "test setup invariant: |In| = 100");
+
+    let in_clause = WhereClause {
+        field: "age".to_string(),
+        operator: WhereOperator::In,
+        value: Value::Array(in_values),
+    };
+
+    let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+        document_type.indexes(),
+        std::slice::from_ref(&in_clause),
+    )
+    .expect("expected picker to accept byAge for In on age");
+    assert_eq!(index.properties.len(), 1);
+    assert_eq!(index.properties[0].name.as_str(), "age");
+
+    let query = DriveDocumentCountQuery {
+        document_type,
+        contract_id: data_contract.id().to_buffer(),
+        document_type_name: "person".to_string(),
+        index,
+        where_clauses: vec![in_clause],
+    };
+
+    // No-proof: per-In fan-out, summed. 100 branches × 1 doc each = 100.
+    let no_proof = query
+        .execute_no_proof(&drive, None, platform_version)
+        .expect("expected no-proof count to accept |In| = 100");
+    assert_eq!(
+        no_proof.len(),
+        1,
+        "no-proof returns single aggregated entry"
+    );
+    assert_eq!(
+        no_proof[0].count,
+        Some(100),
+        "100 distinct age branches × 1 doc each = 100"
+    );
+
+    // Prove: verifier emits one entry per PRESENT branch (all 100 are
+    // present here, so 100 entries — see
+    // `test_point_lookup_proof_omits_absent_in_branches_from_entries`
+    // for the absent-branch contract).
+    let proof = query
+        .execute_point_lookup_count_with_proof(&drive, None, platform_version)
+        .expect("expected prove count to accept |In| = 100");
+    assert!(
+        !proof.is_empty(),
+        "expected non-empty proof bytes for 100-element In array"
+    );
+
+    let (_root_hash, entries) = query
+        .verify_point_lookup_count_proof(&proof, platform_version)
+        .expect("expected proof verification to succeed for |In| = 100");
+
+    assert_eq!(
+        entries.len(),
+        100,
+        "verifier emits one entry per present In value at the 100-cap \
+         boundary; got {} entries — a smaller count means a hidden \
+         inner cap kicked in (e.g. DEFAULT_QUERY_LIMIT on the \
+         path-query builder)",
+        entries.len()
+    );
+    let summed: u64 = entries.iter().map(|e| e.count.unwrap_or(0)).sum();
+    assert_eq!(
+        summed, 100,
+        "verified per-branch counts should sum to the no-proof total"
+    );
+    // Every entry must be Some(1) — present branch with one doc.
+    // Catches a regression that splits counts unevenly (e.g. a
+    // verifier bug that double-counts one branch and zeros another).
+    assert!(
+        entries.iter().all(|e| e.count == Some(1)),
+        "each of the 100 branches has exactly one doc; expected every \
+         entry to be Some(1), got: {:?}",
+        entries
+    );
+}
+
 /// Pins the DoS-bound invariant on the compound `range + In`
 /// summed no-proof path: per-In aggregate fan-out, NOT a walk-and-
 /// sum over every matched `(in_key, key)` element. A regression
