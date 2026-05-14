@@ -11,7 +11,7 @@ use std::ffi::CStr;
 use std::os::raw::c_char;
 
 use crate::document::helpers::{
-    convert_state_transition_creation_options, convert_token_payment_info,
+    convert_state_transition_creation_options, convert_token_payment_info, map_document_sdk_error,
 };
 use crate::sdk::SDKWrapper;
 use crate::types::{
@@ -175,9 +175,7 @@ pub unsafe extern "C" fn dash_sdk_document_transfer_to_identity(
                 wrapper.sdk.version(),
             )
             .await
-            .map_err(|e| {
-                FFIError::InternalError(format!("Failed to create transfer transition: {}", e))
-            })?;
+            .map_err(|e| map_document_sdk_error(e, "Failed to create transfer transition"))?;
 
         // Serialize the state transition with bincode
         let config = bincode::config::standard();
@@ -342,9 +340,7 @@ pub unsafe extern "C" fn dash_sdk_document_transfer_to_identity_and_wait(
             .sdk
             .document_transfer(builder, identity_public_key, signer)
             .await
-            .map_err(|e| {
-                FFIError::InternalError(format!("Failed to transfer document and wait: {}", e))
-            })?;
+            .map_err(|e| map_document_sdk_error(e, "Failed to transfer document and wait"))?;
 
         let dash_sdk::platform::documents::transitions::DocumentTransferResult::Document(
             transferred_document,

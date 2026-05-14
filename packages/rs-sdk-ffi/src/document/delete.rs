@@ -13,7 +13,7 @@ use std::os::raw::c_char;
 use tracing::{debug, error, info};
 
 use crate::document::helpers::{
-    convert_state_transition_creation_options, convert_token_payment_info,
+    convert_state_transition_creation_options, convert_token_payment_info, map_document_sdk_error,
 };
 use crate::sdk::SDKWrapper;
 use crate::types::{
@@ -168,9 +168,7 @@ pub unsafe extern "C" fn dash_sdk_document_delete(
             signer,
         )
         .await
-        .map_err(|e| {
-            FFIError::InternalError(format!("Failed to create delete transition: {}", e))
-        })?;
+        .map_err(|e| map_document_sdk_error(e, "Failed to create delete transition"))?;
 
         // Serialize the state transition with bincode.
         //
@@ -371,7 +369,7 @@ pub unsafe extern "C" fn dash_sdk_document_delete_and_wait(
             .await
             .map_err(|e| {
                 error!(error = %e, key_id = identity_public_key.id(), "[DOCUMENT DELETE] SDK call failed");
-                FFIError::InternalError(format!("Failed to delete document and wait: {}", e))
+                map_document_sdk_error(e, "Failed to delete document and wait")
             })?;
 
         info!("[DOCUMENT DELETE] SDK call completed successfully");

@@ -118,7 +118,8 @@ use dash_sdk::platform::documents::transitions::{
 use dash_sdk::platform::transition::purchase_document::PurchaseDocument;
 use dash_sdk::platform::transition::put_document::{
     build_signed_document_create_transition, build_signed_document_replace_transition,
-    derive_document_id_from_parts, PutDocument,
+    derive_document_id_from_parts, ensure_revision_for_create, ensure_revision_for_replace,
+    PutDocument,
 };
 use dash_sdk::platform::transition::transfer_document::TransferDocument;
 use dash_sdk::platform::transition::update_price_of_document::UpdatePriceOfDocument;
@@ -1838,13 +1839,23 @@ fn ensure_document_id_matches_entropy_fast(
     Ok(())
 }
 
+/// Wasm-side revision guard for the document **create** path.
+///
+/// Delegates the accept/reject decision to the rs-sdk
+/// [`ensure_revision_for_create`] helper so wasm-sdk and rs-sdk cannot
+/// drift on which revisions are valid on the create path. On rejection,
+/// this function constructs wasm-specific error messages — a dedicated
+/// revision-0 wording (since `Some(0)` is invalid for *both* create and
+/// replace, pointing at the sibling API would mislead) and an API-name
+/// hint that names the wasm-sdk replace entry point.
 fn ensure_document_create_revision(
     revision: Option<u64>,
     replace_api_name: &str,
 ) -> Result<(), WasmSdkError> {
+    if ensure_revision_for_create(revision).is_ok() {
+        return Ok(());
+    }
     match revision {
-        None => Ok(()),
-        Some(rev) if rev == INITIAL_REVISION => Ok(()),
         // `Some(0)` is invalid for *both* create and replace, so do not
         // point users at the sibling API — they would just see the same
         // rejection from `ensure_document_replace_revision`. Emit a
@@ -1858,15 +1869,31 @@ fn ensure_document_create_revision(
             "Document revision is {} but create requires revision to be unset or {}. Use {} for existing documents.",
             rev, INITIAL_REVISION, replace_api_name,
         ))),
+        // `ensure_revision_for_create` accepts `None`, so the rs-sdk
+        // helper would have short-circuited above for this case.
+        None => unreachable!(
+            "ensure_revision_for_create accepts None; wasm guard reached an unreachable arm"
+        ),
     }
 }
 
+/// Wasm-side revision guard for the document **replace** path.
+///
+/// Delegates the accept/reject decision to the rs-sdk
+/// [`ensure_revision_for_replace`] helper so wasm-sdk and rs-sdk cannot
+/// drift on which revisions are valid on the replace path. On rejection,
+/// this function constructs wasm-specific error messages — a dedicated
+/// revision-0 wording (since `Some(0)` is invalid for *both* create and
+/// replace, pointing at the sibling API would mislead) and an API-name
+/// hint that names the wasm-sdk create entry point.
 fn ensure_document_replace_revision(
     revision: Option<u64>,
     create_api_name: &str,
 ) -> Result<(), WasmSdkError> {
+    if ensure_revision_for_replace(revision).is_ok() {
+        return Ok(());
+    }
     match revision {
-        Some(rev) if rev > INITIAL_REVISION => Ok(()),
         // `Some(0)` is invalid for *both* create and replace, so do not
         // point users at the sibling API — they would just see the same
         // rejection from `ensure_document_create_revision`. Emit a

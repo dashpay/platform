@@ -23,13 +23,29 @@
 //! builders so the supplied document id and entropy commit to the same
 //! value.
 //!
-//! Additionally, [`PutDocument::put_to_platform`]'s create path now
-//! locally rejects when `document_state_transition_entropy = Some(entropy)`
-//! and the derived id does not match `document.id` — the strict
-//! [`build_signed_document_create_transition`] helper that backs it
-//! enforces this id-matches-entropy check before any nonce allocation.
-//! Passing `None` still preserves the legacy auto-generate-entropy /
-//! rewrite-id behavior for callers that opt into it.
+//! # Behavior changes in this release (semver-significant)
+//!
+//! The legacy public [`PutDocument::put_to_platform`] trait method now
+//! performs two additional **local** validations on the create path, both
+//! of which run **before any identity-contract nonce is allocated** so a
+//! caller mistake cannot advance the local nonce cache past a nonce the
+//! network never observed:
+//!
+//! 1. **`Some(0)` revisions are rejected.** Revision `0` was never valid
+//!    on either the create or replace path (create requires unset /
+//!    [`INITIAL_REVISION`]; replace requires strictly greater than
+//!    [`INITIAL_REVISION`]), but the previous implementation silently
+//!    fell through to the create path. It now surfaces as
+//!    [`Error::InvalidArgument`].
+//! 2. **`Some(entropy)` is checked against `document.id`.** When the
+//!    caller supplies entropy on the create path the trait now locally
+//!    rejects (via the strict [`build_signed_document_create_transition`]
+//!    helper that backs it) if the supplied entropy does not derive
+//!    `document.id` via [`Document::generate_document_id_v0`].
+//!
+//! `document_state_transition_entropy = None` still preserves the legacy
+//! auto-generate-entropy / rewrite-id behavior for in-tree callers
+//! (e.g. `rs-platform-wallet` profile creation) that opt into it.
 //!
 //! [`build_signed_document_create_or_replace_transition`] remains public
 //! for source compatibility with downstream native callers that depended
@@ -77,7 +93,14 @@ fn ensure_revision_nonzero(revision: Option<u64>) -> Result<(), Error> {
 /// Accepts `None` and `Some(INITIAL_REVISION)`. Rejects `Some(0)` and any
 /// revision strictly greater than `INITIAL_REVISION`. This is the rs-sdk-side
 /// fail-fast equivalent of the wasm-sdk `ensureDocumentCreateRevision` guard.
-pub(crate) fn ensure_revision_for_create(revision: Option<u64>) -> Result<(), Error> {
+///
+/// Exposed publicly so out-of-tree callers (notably the wasm-sdk
+/// `prepareDocumentCreate` / `documentCreate` revision guards) can
+/// delegate acceptance to this single source of truth instead of
+/// re-implementing the matching rules. Wasm callers still own their own
+/// error messaging (API-name guidance, dedicated revision-0 wording) and
+/// only consult this function for the accept/reject decision.
+pub fn ensure_revision_for_create(revision: Option<u64>) -> Result<(), Error> {
     match revision {
         None => Ok(()),
         Some(rev) if rev == INITIAL_REVISION => Ok(()),
@@ -93,7 +116,14 @@ pub(crate) fn ensure_revision_for_create(revision: Option<u64>) -> Result<(), Er
 /// Accepts only `Some(rev)` with `rev > INITIAL_REVISION`. Rejects `None`,
 /// `Some(0)`, and `Some(INITIAL_REVISION)`. This is the rs-sdk-side fail-fast
 /// equivalent of the wasm-sdk `ensureDocumentReplaceRevision` guard.
-pub(crate) fn ensure_revision_for_replace(revision: Option<u64>) -> Result<(), Error> {
+///
+/// Exposed publicly so out-of-tree callers (notably the wasm-sdk
+/// `prepareDocumentReplace` / `documentReplace` revision guards) can
+/// delegate acceptance to this single source of truth instead of
+/// re-implementing the matching rules. Wasm callers still own their own
+/// error messaging (API-name guidance, dedicated revision-0 wording) and
+/// only consult this function for the accept/reject decision.
+pub fn ensure_revision_for_replace(revision: Option<u64>) -> Result<(), Error> {
     match revision {
         Some(rev) if rev > INITIAL_REVISION => Ok(()),
         Some(rev) => Err(Error::InvalidArgument(format!(

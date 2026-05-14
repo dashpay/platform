@@ -1,7 +1,7 @@
 //! Document replacement operations
 
 use crate::document::helpers::{
-    convert_state_transition_creation_options, convert_token_payment_info,
+    convert_state_transition_creation_options, convert_token_payment_info, map_document_sdk_error,
 };
 use crate::sdk::SDKWrapper;
 use crate::types::{
@@ -149,7 +149,7 @@ pub unsafe extern "C" fn dash_sdk_document_replace_on_platform(
             .await
             .map_err(|e| {
                 error!(error = %e, key_id = identity_public_key.id(), "[DOCUMENT REPLACE] failed to sign transition");
-                FFIError::InternalError(format!("Failed to create replace transition: {}", e))
+                map_document_sdk_error(e, "Failed to create replace transition")
             })?;
 
         debug!("[DOCUMENT REPLACE] state transition created, serializing");
@@ -357,7 +357,7 @@ pub unsafe extern "C" fn dash_sdk_document_replace_on_platform_and_wait(
                     "❌ [DOCUMENT REPLACE] Failed with key ID: {}",
                     identity_public_key.id()
                 );
-                FFIError::InternalError(format!("Failed to replace document and wait: {}", e))
+                map_document_sdk_error(e, "Failed to replace document and wait")
             })?;
 
         eprintln!("✅ [DOCUMENT REPLACE] SDK call completed successfully");

@@ -12,8 +12,27 @@ use std::ffi::CStr;
 use std::os::raw::c_char;
 
 use crate::document::helpers::{
-    convert_state_transition_creation_options, convert_token_payment_info,
+    convert_state_transition_creation_options, convert_token_payment_info, map_document_sdk_error,
 };
+
+/// Whether the FFI document put paths should route to the create builder
+/// for a given document revision.
+///
+/// Returns `true` for `None` (legacy create intent, supported by the
+/// strict rs-sdk create helper) and `Some(1)` (the
+/// [`dash_sdk::dpp::document::INITIAL_REVISION`] sentinel for a freshly
+/// minted document). Any other value routes to the replace builder.
+///
+/// Both the no-wait (`dash_sdk_document_put_to_platform`) and wait
+/// (`dash_sdk_document_put_to_platform_and_wait`) entry points share this
+/// helper so they cannot drift on revision routing — historically the
+/// no-wait path used `unwrap_or(0) == 1` and the wait path used
+/// `unwrap_or(1) == 1`, which disagreed on the `None` case and silently
+/// routed `None`-revision documents into the replace builder on the
+/// no-wait path only.
+fn is_document_create_revision(revision: Option<u64>) -> bool {
+    matches!(revision, None | Some(1))
+}
 use crate::sdk::SDKWrapper;
 use crate::types::{
     DashSDKPutSettings, DashSDKResultDataType, DashSDKStateTransitionCreationOptions,
@@ -112,8 +131,11 @@ pub unsafe extern "C" fn dash_sdk_document_put_to_platform(
             (*put_settings).user_fee_increase
         };
 
-        // Use the new DocumentCreateTransitionBuilder or DocumentReplaceTransitionBuilder
-        let state_transition = if document.revision().unwrap_or(0) == 1 {
+        // Route via the shared `is_document_create_revision` helper so the
+        // no-wait and wait paths cannot drift on revision routing. The
+        // helper treats `revision = None` as create — the legacy create
+        // intent, which the strict rs-sdk create helper also accepts.
+        let state_transition = if is_document_create_revision(document.revision()) {
             // Create transition for new documents
             let mut builder = DocumentCreateTransitionBuilder::new(
                 data_contract.clone(),
@@ -179,9 +201,7 @@ pub unsafe extern "C" fn dash_sdk_document_put_to_platform(
                 )
                 .await
         }
-        .map_err(|e| {
-            FFIError::InternalError(format!("Failed to create document transition: {}", e))
-        })?;
+        .map_err(|e| map_document_sdk_error(e, "Failed to create document transition"))?;
 
         // Serialize the state transition with bincode
         let config = bincode::config::standard();
@@ -284,8 +304,10 @@ pub unsafe extern "C" fn dash_sdk_document_put_to_platform_and_wait(
             (*put_settings).user_fee_increase
         };
 
-        // Use the new builder pattern and SDK methods
-        let confirmed_document = if document.revision().unwrap_or(1) == 1 {
+        // Use the new builder pattern and SDK methods. Routes through the
+        // shared `is_document_create_revision` helper so this wait path
+        // agrees with the no-wait path above on revision = None routing.
+        let confirmed_document = if is_document_create_revision(document.revision()) {
             // Create transition for new documents
             let mut builder = DocumentCreateTransitionBuilder::new(
                 data_contract.clone(),
@@ -314,9 +336,7 @@ pub unsafe extern "C" fn dash_sdk_document_put_to_platform_and_wait(
                 .sdk
                 .document_create(builder, identity_public_key, signer)
                 .await
-                .map_err(|e| {
-                    FFIError::InternalError(format!("Failed to create document and wait: {}", e))
-                })?;
+                .map_err(|e| map_document_sdk_error(e, "Failed to create document and wait"))?;
 
             match result {
                 dash_sdk::platform::documents::transitions::DocumentCreateResult::Document(doc) => {
@@ -351,9 +371,7 @@ pub unsafe extern "C" fn dash_sdk_document_put_to_platform_and_wait(
                 .sdk
                 .document_replace(builder, identity_public_key, signer)
                 .await
-                .map_err(|e| {
-                    FFIError::InternalError(format!("Failed to replace document and wait: {}", e))
-                })?;
+                .map_err(|e| map_document_sdk_error(e, "Failed to replace document and wait"))?;
 
             match result {
                 dash_sdk::platform::documents::transitions::DocumentReplaceResult::Document(
@@ -422,6 +440,21 @@ mod tests {
     // Helper function to create valid entropy
     fn create_valid_entropy() -> [u8; 32] {
         [42u8; 32]
+    }
+
+    /// `is_document_create_revision` must agree with the routing rules
+    /// the FFI put paths used historically: `None` and `Some(1)` are the
+    /// create branch; any other value (including `Some(0)`) is the
+    /// replace branch. Both the no-wait and wait paths route through
+    /// this helper, so this test pins the shared decision so the
+    /// previous `unwrap_or(0)` / `unwrap_or(1)` drift cannot reappear.
+    #[test]
+    fn is_document_create_revision_matches_initial_revision_and_none() {
+        assert!(super::is_document_create_revision(None));
+        assert!(super::is_document_create_revision(Some(1)));
+        assert!(!super::is_document_create_revision(Some(0)));
+        assert!(!super::is_document_create_revision(Some(2)));
+        assert!(!super::is_document_create_revision(Some(u64::MAX)));
     }
 
     #[test]

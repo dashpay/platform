@@ -1,7 +1,7 @@
 //! Document purchasing operations
 
 use crate::document::helpers::{
-    convert_state_transition_creation_options, convert_token_payment_info,
+    convert_state_transition_creation_options, convert_token_payment_info, map_document_sdk_error,
 };
 use crate::sdk::SDKWrapper;
 use crate::types::{
@@ -164,9 +164,7 @@ pub unsafe extern "C" fn dash_sdk_document_purchase(
                 wrapper.sdk.version(),
             )
             .await
-            .map_err(|e| {
-                FFIError::InternalError(format!("Failed to create purchase transition: {}", e))
-            })?;
+            .map_err(|e| map_document_sdk_error(e, "Failed to create purchase transition"))?;
 
         // Serialize the state transition with bincode
         let config = bincode::config::standard();
@@ -332,9 +330,7 @@ pub unsafe extern "C" fn dash_sdk_document_purchase_and_wait(
             .sdk
             .document_purchase(builder, identity_public_key, signer)
             .await
-            .map_err(|e| {
-                FFIError::InternalError(format!("Failed to purchase document and wait: {}", e))
-            })?;
+            .map_err(|e| map_document_sdk_error(e, "Failed to purchase document and wait"))?;
 
         let dash_sdk::platform::documents::transitions::DocumentPurchaseResult::Document(
             purchased_document,

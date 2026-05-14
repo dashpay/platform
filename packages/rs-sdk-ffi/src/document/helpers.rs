@@ -12,6 +12,26 @@ use crate::types::{
 };
 use crate::FFIError;
 
+/// Map a `dash_sdk::Error` produced by a document state-transition
+/// builder (build / sign / SDK broadcast helper) into an `FFIError`,
+/// preserving caller-supplied context for non-`InvalidArgument` variants
+/// while letting `InvalidArgument` flow through the typed
+/// `FFIError::SDKError` → `DashSDKErrorCode::InvalidParameter` branch
+/// in `error.rs`.
+///
+/// Without this routing, a typed `Error::InvalidArgument` from the new
+/// strict create/replace guards in rs-sdk would be wrapped as
+/// `FFIError::InternalError(format!("{context}: {}", e))` and surface as
+/// `DashSDKErrorCode::InternalError`, hiding the precise classification
+/// from FFI callers.
+pub(crate) fn map_document_sdk_error(e: dash_sdk::Error, context: &str) -> FFIError {
+    if matches!(e, dash_sdk::Error::InvalidArgument(_)) {
+        FFIError::SDKError(e)
+    } else {
+        FFIError::InternalError(format!("{}: {}", context, e))
+    }
+}
+
 /// Convert FFI GasFeesPaidBy to Rust enum
 ///
 /// # Safety
@@ -104,4 +124,64 @@ pub unsafe fn convert_state_transition_creation_options(
             Some(options.base_feature_version)
         },
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::DashSDKErrorCode;
+
+    /// A typed `dash_sdk::Error::InvalidArgument` from the document
+    /// builder/sign paths must flow through `FFIError::SDKError` (not
+    /// `InternalError`) so the `From<FFIError> for DashSDKError` typed
+    /// dispatch in `error.rs` can map it to
+    /// `DashSDKErrorCode::InvalidParameter`. Without this routing, the
+    /// new strict create/replace guards in rs-sdk would surface as
+    /// `InternalError` to FFI callers.
+    #[test]
+    fn map_document_sdk_error_routes_invalid_argument_to_invalid_parameter() {
+        let sdk_err = dash_sdk::Error::InvalidArgument("entropy mismatch".to_string());
+        let ffi_err = map_document_sdk_error(sdk_err, "Failed to create document transition");
+        assert!(
+            matches!(
+                ffi_err,
+                FFIError::SDKError(dash_sdk::Error::InvalidArgument(_))
+            ),
+            "InvalidArgument must pass through as FFIError::SDKError, got: {ffi_err:?}"
+        );
+
+        // End-to-end through the public `From<FFIError> for DashSDKError`
+        // conversion: the user-facing error code must be InvalidParameter,
+        // not InternalError.
+        let api_err: crate::DashSDKError = ffi_err.into();
+        assert_eq!(api_err.code, DashSDKErrorCode::InvalidParameter);
+    }
+
+    /// Non-`InvalidArgument` `dash_sdk::Error` variants must keep the
+    /// caller-supplied context prefix (e.g. "Failed to create document
+    /// transition") so existing FFI error messages are not regressed by
+    /// the typed pass-through.
+    #[test]
+    fn map_document_sdk_error_preserves_context_for_non_invalid_argument() {
+        // Use a `Protocol` variant — anything that is not
+        // `InvalidArgument`. The exact variant does not matter; what
+        // matters is that the context prefix is retained.
+        let sdk_err = dash_sdk::Error::Generic("boom".to_string());
+        let ffi_err = map_document_sdk_error(sdk_err, "Failed to create document transition");
+        match ffi_err {
+            FFIError::InternalError(msg) => {
+                assert!(
+                    msg.starts_with("Failed to create document transition:"),
+                    "expected context prefix, got: {msg}"
+                );
+                assert!(
+                    msg.contains("boom"),
+                    "expected underlying error in msg, got: {msg}"
+                );
+            }
+            other => {
+                panic!("expected FFIError::InternalError for non-InvalidArgument, got: {other:?}")
+            }
+        }
+    }
 }
