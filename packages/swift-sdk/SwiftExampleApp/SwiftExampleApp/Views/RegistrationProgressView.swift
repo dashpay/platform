@@ -154,8 +154,12 @@ struct RegistrationProgressSection: View {
                 // active.
                 return 5
             case 3:
-                // ChainLock-locked. Both step 3 and step 4 done
-                // (CL fallback path). Step 5 active.
+                // ChainLock-locked. Step 3 (IS) is skipped (no IS
+                // proof was observed — either IS timed out and CL
+                // fallback ran, or the metadata.last_applied_chain_lock
+                // path built a CL proof directly). Step 4 done.
+                // Step 5 active. The `.skipped` rendering for step
+                // 3 is driven by `step3WasSkipped`.
                 return 5
             default:
                 return 1
@@ -182,6 +186,28 @@ struct RegistrationProgressSection: View {
     private var step4WasSkipped: Bool {
         guard let lock = activeLocks.first else { return false }
         return lock.statusRaw == 2
+    }
+
+    /// True when step 3 ("Waiting for InstantSend proof") should
+    /// appear "skipped" — i.e. the lock came back ChainLock-locked
+    /// (statusRaw == 3) so no IS proof was ever observed. Two paths
+    /// arrive at statusRaw == 3 without a successful IS round:
+    ///
+    /// 1. IS timed out at 300s and `upgrade_to_chain_lock_proof` ran
+    ///    the CL fallback.
+    /// 2. `wait_for_proof`'s `metadata.last_applied_chain_lock`
+    ///    fallback constructed a Chain proof directly without
+    ///    attempting IS — common after a resume-from-restart where
+    ///    the wallet already holds a CL covering the funding tx's
+    ///    block height.
+    ///
+    /// In both cases marking step 3 as `.done` (the bare `idx <
+    /// currentStep` path) renders a misleading "InstantSend proof
+    /// received ✅" check; `.skipped` shows the dashed pending
+    /// variant matching step 4's behaviour on the IS-success path.
+    private var step3WasSkipped: Bool {
+        guard let lock = activeLocks.first else { return false }
+        return lock.statusRaw == 3
     }
 
     private var isFailed: Bool {
@@ -217,9 +243,19 @@ struct RegistrationProgressSection: View {
             return .failed
         }
         if idx < currentStep {
-            // Step 4 is the only one that can be "skipped" while
-            // a later step is active — when the IS path returned
-            // the proof and ChainLock fallback was never engaged.
+            // Steps 3 and 4 are the IS / CL halves of the proof
+            // round: exactly one of them is skipped on a successful
+            // resolution. Step 4 skipped when IS came back first
+            // (statusRaw == 2); step 3 skipped when CL did (statusRaw
+            // == 3, whether via IS-timeout fallback or the
+            // `metadata.last_applied_chain_lock` direct path). The
+            // symmetric carve-out keeps the icons honest — without
+            // it, the CL-success path renders a green "InstantSend
+            // proof received ✅" check even though no IS proof was
+            // ever observed.
+            if idx == 3 && step3WasSkipped {
+                return .skipped
+            }
             if idx == 4 && step4WasSkipped {
                 return .skipped
             }
