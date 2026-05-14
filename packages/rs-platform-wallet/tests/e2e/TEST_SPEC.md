@@ -8,6 +8,8 @@ presumably enumerate the joy of doing it.
 
 ## Changelog
 
+- **v3.1-dev (2026-05-14, Found-019 / Found-020 deletion)** — both entries removed: already-fixed pins with closed contracts. Found-019 (`SeedBackedIdentitySigner` ECDSA_HASH160 re-hash) fix landed at `tests/e2e/framework/signer.rs:148-154` in commit `59cba08af5` (PR #3563) — `identity_key_lookup` branches on `key.key_type()`, uses `key.data()` as-is for ECDSA_HASH160. Production `packages/simple-signer/src/signer.rs` does NOT have the bug shape (different storage models). Found-020 (`output_change_address` spec/impl drift) resolved via spec realignment in PR #3609 — PA-001b rewritten to match implicit-change semantics. Knowledge preserved in memcan; spec clutter dropped.
+
 - **v3.1-dev (2026-05-14, Found-012 / Found-023 unification)** — Found-012 / Found-023 unified and filed downstream: dashpay/platform#3642 (5 hard-coded BIP-44 lookups in `proof.rs` + `recovery.rs`; downstream fix via `all_funding_accounts()` iteration, no upstream change required; SPV-side tracking verified comprehensive across all account types). Cross-link `TODO(dashpay/platform#3642)` comments added at each of the 5 sites.
 
 - **v3.1-dev (2026-05-14, QA-901 CR-004 retarget)** — QA-901 retargets CR-004 from red-by-design (dash-evo-tool#845 pin) to passing-as-regression. TRACE run confirmed test-side dust-threshold mismatch (test assumed 2,730 duffs; upstream `transaction_builder.rs:294` uses 546). Headroom changed from 2,500 → 700; test now pins symmetric BIP-32 spent-marking via `check_core_transaction` (confirmed symmetric across TransactionRouter, ManagedAccountCollection, check_transaction_for_match, update_utxos) and the upstream sub-dust fold contract.
@@ -31,7 +33,6 @@ presumably enumerate the joy of doing it.
   - Found-008 reclassified `not implemented` → `red-by-design` (inverted pin: Cargo PASS = bug confirmed = intentionally RED-by-design).
   - Found-025 reclassified `not implemented` → `red-by-design — pending upstream test-hook surface`. The earlier "unit test" at `tests/e2e/cases/found_025_address_sync_silent_discard.rs` asserted on a locally-built `HashMap` that the SDK never touches (Found-022 disease per `/tmp/marvin-redbyd-sweep.md`). Pin deleted; file now a stub documenting the upstream `rs-sdk` surface (`sync_address_balances` transport seam / inner-fn extraction / `AddressProvider` refresh hook) the retarget needs.
   - Found-004, Found-012, Found-013 reclassified `not implemented` → `blocked` (test files present, `#[ignore]`d on harness extension prereq).
-  - Found-019 and Found-020 added to Found-bug-pins matrix (previously had detail sections but no matrix rows).
   - Status legend expanded: `red-by-design` and `passing-as-regression` formalized; terminology normalized.
   - v47 trajectory entry added; count line recomputed.
 
@@ -259,8 +260,6 @@ Status legend: **green** = test file present, body has real assertions, runnable
 | Found-016 | `remove_wallet` removes from `self.wallets` then `self.wallet_manager` non-atomically, leaving a window where readers see only one of the two | P2 | not implemented | M |
 | Found-017 | `register_wallet` registers wallet in memory even when persister `store` returns `Err` — vanishes on next launch | P2 | not implemented | S |
 | Found-018 | `PlatformAddressChangeSet::merge` documents fee semantics as "fee paid by the transfer that produced this changeset" but actually accumulates fees across merged changesets | P2 | not implemented | S |
-| Found-019 | `SeedBackedIdentitySigner` re-hashes `ECDSA_HASH160` keys, double-hashing the lookup so any `ECDSA_HASH160`-typed `IdentityPublicKey` silently misses | P2 | not implemented | S |
-| Found-020 | PA-001b spec/impl drift: `output_change_address` parameter never landed in production | P2 | passing-as-regression — resolved via spec realignment (PA-001b rewritten to match implicit-change semantics); retained for historical traceability | S |
 | Found-021 | `TransactionRecord::update_context` silently drops `InstantLock` state when tx transitions `InstantSend` → `InBlock` | P2 | red-by-design — pure unit test pins the merging invariant; fails deterministically until upstream `key-wallet` retains the IS-lock across `InBlock` promotion | M |
 | Found-022 | `AssetLockBuilder::build` bumps `monitor_revision` on the BIP-44 funds account before `build_asset_lock` can fail, contradicting the doc-comment "no addresses consumed on failure" guarantee | P2 | red-by-design — test forces coin-selection failure on a UTXO-less wallet, snapshots `account.monitor_revision()` before the call, and asserts it is unchanged after; fails today (bumps by 1) because `set_funding` calls `next_change_address(..., add_to_state=true)` (which always invokes `bump_monitor_revision`) before `build_signed` can fail | S |
 | Found-023 | `ManagedAccountCollection` lacks a `find_transaction_record(&Txid)` helper — every consumer rolls its own incomplete loop | P2 | not implemented; actionable fix downstream at dashpay/platform#3642 (Found-012 surface) | S |
@@ -281,7 +280,7 @@ Counts by priority: **P0: 10**, **P1: 29** (incl. CR-004 passing-as-regression +
 **Status at HEAD (SHA `cf9b6d2ba4`, post-v47):**
 - CR-004 retargeted (QA-901, 2026-05-14): reclassified `red-by-design (dash-evo-tool#845)` → `passing-as-regression`. The deterministic failure was a test-side dust-threshold mismatch (assumed 2,730; upstream gate at `transaction_builder.rs:294` is 546). Headroom changed `2_500 → 700`; test now pins the symmetric BIP-32 spent-marking + upstream sub-dust fold contracts.
 - Found-025 prior pin retargeted: the v47-era unit test asserted on a local `HashMap` (Found-022 disease) and has been deleted in favour of a documented stub. Status remains `red-by-design — pending upstream test-hook surface`; no Cargo test is emitted today. See `/tmp/marvin-redbyd-sweep.md` and the file-level docstring at `cases/found_025_address_sync_silent_discard.rs`.
-- 26 Found-bug pins total; 2 red-by-design with live Cargo tests (Found-006, Found-008), 1 red-by-design pending upstream test-hook surface (Found-025; pin deleted), 2 passing-as-regression (Found-020 resolved via spec-realignment, Found-024 V27-007 fix), 3 blocked-scaffold (Found-004, Found-012, Found-013), 1 suspected concurrency-only race (Found-026, pinned by PA-008b), 17 not implemented
+- 24 Found-bug pins total; 2 red-by-design with live Cargo tests (Found-006, Found-008), 1 red-by-design pending upstream test-hook surface (Found-025; pin deleted), 1 passing-as-regression (Found-024 V27-007 fix), 3 blocked-scaffold (Found-004, Found-012, Found-013), 1 suspected concurrency-only race (Found-026, pinned by PA-008b), 16 not implemented (Found-019/020 deleted 2026-05-14 — fixes confirmed; knowledge in memcan)
 
 ### Platform Addresses (PA)
 
@@ -478,7 +477,7 @@ Counts by priority: **P0: 10**, **P1: 29** (incl. CR-004 passing-as-regression +
 
 #### PA-001b — Transfer with implicit change: `Σ inputs == Σ outputs` canonical contract
 - **Priority**: P2
-- **Status**: PASS — spec realigned to match production semantics (Found-020 resolved via option a). `PlatformAddressWallet::transfer` has no `output_change_address` parameter; change is implicit. Sub-case A: `transfer_with_change_address(None)` — only `TRANSFER_CREDITS` are declared as outputs; the undeclared residual (`FUNDING_CREDITS - TRANSFER_CREDITS`) remains on the input address as implicit change. The Σ inputs == Σ outputs + fee invariant holds across both sub-cases.
+- **Status**: PASS — spec realigned to match production semantics in PR #3609. `PlatformAddressWallet::transfer` has no `output_change_address` parameter; change is implicit. Sub-case A: `transfer_with_change_address(None)` — only `TRANSFER_CREDITS` are declared as outputs; the undeclared residual (`FUNDING_CREDITS - TRANSFER_CREDITS`) remains on the input address as implicit change. The Σ inputs == Σ outputs + fee invariant holds across both sub-cases.
 - **Wallet feature exercised**: `wallet/platform_addresses/transfer.rs:31`; implicit-change (residual-on-input) semantics.
 - **DET parallel**: none — exercises the implicit-change contract that existing PA cases never explicitly assert.
 - **Preconditions**: bank-funded test wallet.
@@ -494,7 +493,7 @@ Counts by priority: **P0: 10**, **P1: 29** (incl. CR-004 passing-as-regression +
   - Transfer where `TRANSFER_CREDITS == FUNDING_CREDITS - fee` (exact sweep); assert residual on `addr_1` is `0 ± epsilon`.
 - **Harness extensions required**: none.
 - **Estimated complexity**: S
-- **Rationale**: Pins the implicit-change contract so "residual silently goes to a sink" regressions become visible. Found-020 spec/impl drift is resolved by this realignment.
+- **Rationale**: Pins the implicit-change contract so "residual silently goes to a sink" regressions become visible. (Prior spec/impl drift on a non-existent `output_change_address` parameter was resolved by this realignment in PR #3609; entry deleted from the Found section 2026-05-14.)
 
 #### PA-001c — Zero-credit single-output transfer
 - **Priority**: P2
@@ -2343,52 +2342,6 @@ becomes a test failure rather than a silent drift.
 - **Harness extensions required**: none — pure unit-test.
 - **Estimated complexity**: S
 - **Rationale**: Two facts in the source disagree (docstring vs merge behaviour). One of them is wrong. A test pins which.
-
-#### Found-019 — `SeedBackedIdentitySigner` re-hashes `ECDSA_HASH160` keys, double-hashing the lookup so any `ECDSA_HASH160`-typed `IdentityPublicKey` silently misses
-- **Priority**: P2 (bug pin — failure is the proof)
-- **Severity**: HIGH (signer-side correctness bug; identity-key sign / can_sign_with paths fail for one of two key types the impl claims to support)
-- **Wallet feature exercised**: `tests/e2e/framework/signer.rs:114-122` (`can_sign_with`), `tests/e2e/framework/signer.rs:128-143` (`lookup_identity_secret`).
-- **Suspected bug**: Both lookup paths compute `let pkh = ripemd160_sha256(key.data().as_slice())` and probe `inner.address_private_keys` with the result. The cache itself was populated at construction in `SimpleSigner::from_seed_for_identity` (`packages/simple-signer/src/signer.rs:235`) keyed by `ripemd160_sha256(&pubkey.serialize())` — i.e. RIPEMD160(SHA256(raw 33-byte secp256k1 pubkey)). For `KeyType::ECDSA_SECP256K1` the lookup matches: `key.data()` is the raw 33-byte pubkey, hashing it once yields the cache key. For `KeyType::ECDSA_HASH160` the lookup does NOT match: `key.data()` is already a 20-byte `ripemd160_sha256(pubkey)` per `KeyType::public_key_data_from_private_key_data` and `KeyType::default_size` (`packages/rs-dpp/src/identity/identity_public_key/key_type.rs:59,244`). The impl hashes that 20-byte hash *again*, producing `ripemd160_sha256(ripemd160_sha256(pubkey))` ≠ stored key. The match arms at lines 90 and 116 explicitly admit `ECDSA_HASH160` as supported, so the type signature lies — every call against an `ECDSA_HASH160` key returns `can_sign_with == false` and `sign(..) == Err(ProtocolError::Generic("identity key {hex} not in pre-derived gap window"))` regardless of whether the underlying secret is in the cache.
-- **Preconditions**: an `IdentityPublicKey` with `key_type == ECDSA_HASH160` whose `data` is `ripemd160_sha256(pubkey)` for a pubkey derived at one of the pre-cached gap-window slots `(identity_index, key_index ∈ 0..DEFAULT_GAP_LIMIT)`.
-- **Scenario** (pure unit test on the harness signer — no chain required):
-  1. Build a seed (e.g. `[0x42; 64]`) and `let signer = SeedBackedIdentitySigner::new(&seed, Network::Testnet, identity_index = 0)?`.
-  2. Derive the secp256k1 pubkey for `(identity_index = 0, key_index = 0)` via `derive_ecdsa_identity_auth_keypair_from_master` (the same path `from_seed_for_identity` walks).
-  3. Compute `let h160 = ripemd160_sha256(&pubkey)`.
-  4. Build two `IdentityPublicKey`s for that derivation slot:
-     - `key_secp = IdentityPublicKey::V0(IdentityPublicKeyV0 { key_type: KeyType::ECDSA_SECP256K1, data: BinaryData::new(pubkey.to_vec()), .. })`
-     - `key_h160 = IdentityPublicKey::V0(IdentityPublicKeyV0 { key_type: KeyType::ECDSA_HASH160, data: BinaryData::new(h160.to_vec()), .. })`
-  5. Probe both:
-     - `signer.can_sign_with(&key_secp)` and `signer.sign(&key_secp, b"msg").await`
-     - `signer.can_sign_with(&key_h160)` and `signer.sign(&key_h160, b"msg").await`
-- **Assertions** (the proof shape):
-  - `signer.can_sign_with(&key_secp) == true` AND `signer.sign(&key_secp, b"msg").await.is_ok()` (sanity baseline — proves the cache IS populated for this slot).
-  - `signer.can_sign_with(&key_h160) == true` AND `signer.sign(&key_h160, b"msg").await.is_ok()` (the contract — `ECDSA_HASH160` is whitelisted by both match arms, so it must round-trip).
-  - Counter-assertion if buggy (today's behaviour): `signer.can_sign_with(&key_h160) == false` AND `signer.sign(&key_h160, b"msg").await` returns `Err(ProtocolError::Generic(msg))` where `msg.contains("not in pre-derived gap window")`.
-- **Expected** (after fix): branch on `key.key_type()` before computing the cache key — for `ECDSA_HASH160` the lookup key is `key.data()` *as-is* (it's already the 20-byte hash); for `ECDSA_SECP256K1` it remains `ripemd160_sha256(key.data())`. Mirror the same fix in both `lookup_identity_secret` and `can_sign_with`. Equivalent fix: reject `ECDSA_HASH160` with a clear `unsupported key type` error and remove it from the match arms — the harness only ever produces `ECDSA_SECP256K1` keys via `derive_identity_key`, so `ECDSA_HASH160` support is currently aspirational dead code.
-- **Actual** (current code): the harness signer claims to support `ECDSA_HASH160` (match arms at signer.rs:90 and signer.rs:116) but the lookup hashes the already-hashed `data` and fails every probe. The bug never triggers in *current* harness usage because `derive_identity_key` (signer.rs:182-191) hard-codes `key_type = ECDSA_SECP256K1` — but any future test that registers an identity with a hash-typed key, or any production caller that re-uses this signer (e.g. an SDK example wired to a chain identity that was registered by another wallet with an `ECDSA_HASH160` key), trips it.
-- **Harness extensions required**: none — pure unit test on `SeedBackedIdentitySigner`. `derive_ecdsa_identity_auth_keypair_from_master` is already exposed via `platform_wallet::wallet::identity::network` (used by `derive_identity_key`).
-- **Estimated complexity**: S
-- **Rationale**: This is a "the type signature lies" bug. The match arms admit two key types; one of them silently never works. Either fix the lookup or shrink the match. Without a pin, the discrepancy survives until a real consumer hits it — and that consumer's failure mode is a confusing `not in pre-derived gap window` error on a key that demonstrably *is* in the gap window. The hash-level confusion (raw pubkey vs `ripemd160_sha256(pubkey)` vs `ripemd160_sha256(ripemd160_sha256(pubkey))`) is exactly the class of bug a pure-data unit test pins cheaply.
-
-#### Found-020 — PA-001b spec/impl drift: `output_change_address` parameter never landed in production
-- **Priority**: P2 (spec-vs-impl pin — the missing feature is the bug)
-- **Severity**: LOW (the wallet works; the spec describes a feature that does not exist, which is misleading documentation rather than a runtime bug)
-- **Wallet feature exercised**: `wallet/platform_addresses/transfer.rs:31` (`PlatformAddressWallet::transfer`); the surrounding `InputSelection` API at `wallet/platform_addresses/mod.rs:30`.
-- **Suspected bug**: TEST_SPEC.md PA-001b describes driving `transfer(...)` with an `output_change_address: Option<PlatformAddress>` argument routing residual ("change") credits either to a wallet-derived default (`None`) or to an explicit address (`Some(addr)`). That parameter does not appear anywhere in the production signature — confirmed by `grep -rn 'output_change_address\|change_address' packages/rs-platform-wallet/src/`, which surfaces only Layer-1 (core) `next_change_address_for_account` paths. The current production change-output semantics are implicit:
-  - `InputSelection::Auto`: the auto-selector consumes `Σ outputs` exactly under the post-fix `Σ inputs == Σ outputs` invariant (commits `aaf8be74ee`, `9ea9e7033c`); residual stays on the selected input addresses, no separate change output.
-  - `InputSelection::Explicit(map)`: caller declares the consumed amount per input directly; residual stays on the input.
-  Neither branch surfaces an `output_change_address` parameter.
-- **Preconditions**: none — this is a documentation / API-shape contract pin.
-- **Scenario** (test as documentation drift assertion):
-  1. Confirm by reflection (rustdoc / `syn` parse) that `PlatformAddressWallet::transfer`'s signature does NOT include an `output_change_address` parameter today.
-- **Assertions** (the proof shape, two valid resolutions):
-  - **(a) Spec realignment**: TEST_SPEC.md PA-001b is rewritten to match the implicit-change semantics above, OR removed with a deletion-note. The Found-020 entry itself can then be removed alongside.
-  - **(b) Production extension**: `PlatformAddressWallet::transfer` gains an `output_change_address: Option<PlatformAddress>` parameter wired through the auto-select path so PA-001b's two-branch behaviour becomes implementable.
-- **Expected** (after resolution): the spec and the production API agree. Either the spec describes what the wallet does, or the wallet does what the spec describes.
-- **Actual** (post-PR-#3609 state): resolved via option (a) — PA-001b is rewritten to match implicit-change semantics (see PA-001b Status). The `output_change_address` parameter drift is closed; Found-020 is retained for historical traceability only.
-- **Harness extensions required**: none — the test will be straightforward `transfer(...)` + balance assertions once the production parameter exists.
-- **Estimated complexity**: S (when unblocked).
-- **Rationale**: The spec is one of the harness's load-bearing documents — test authors trust it as a description of the production API. A spec entry that describes a non-existent parameter erodes that trust. Filing the drift as Found-020 (and surfacing it via the PA-001b status field) makes the gap visible without forcing an immediate spec rewrite — the resolution can wait for a coordinated PA-001b implementation pass.
 
 #### Found-021 — `TransactionRecord::update_context` silently drops `InstantLock` state when tx transitions `InstantSend` → `InBlock`
 - **Priority**: P2 (bug pin — failure is the proof)
