@@ -8,6 +8,7 @@
 //!   at resolved rev `5313086` — `TransactionBuilder::set_funding` calls
 //!   `funds_acc.next_change_address(..., add_to_state = true)` BEFORE
 //!   `build_signed` can run coin selection.
+//! **Tracking issue**: dashpay/rust-dashcore#764.
 //!
 //! **Pinned status**: RED-BY-DESIGN — pure unit test; pins upstream bug until fix lands.
 //!
@@ -137,6 +138,7 @@ fn bip44_account_0_monitor_revision(info: &ManagedWalletInfo) -> u64 {
             at rev 5313086 (set_funding calls next_change_address(..., add_to_state=true) \
             before build_signed; the eager call unconditionally bumps \
             monitor_revision on the funds account even when no tx is produced); \
+            tracked at dashpay/rust-dashcore#764; \
             pure unit test (no live network); \
             run with `cargo test -- --ignored`"]
 #[tokio_shared_rt::test(shared)]
