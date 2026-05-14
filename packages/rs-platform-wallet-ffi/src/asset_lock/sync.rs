@@ -8,6 +8,15 @@ use std::ffi::CString;
 use std::os::raw::c_char;
 use std::time::Duration;
 
+/// Build an `OutPoint` from a 32-byte raw txid pointer and a vout.
+///
+/// **FFI invariant:** the `txid` parameter is typed `*const [u8; 32]`,
+/// not `*const u8`. The `.expect("txid is 32 bytes")` below is sound
+/// *only* because the type system pins the length. If a future caller
+/// weakens the signature to `*const u8 + usize_len`, this panic
+/// becomes reachable across the FFI boundary and must be replaced
+/// with a fallible return. Don't relax the signature without
+/// hardening the body.
 fn parse_outpoint(txid: *const [u8; 32], vout: u32) -> dashcore::OutPoint {
     use dashcore::hashes::Hash;
     let txid_bytes = unsafe { *txid };
@@ -96,12 +105,48 @@ pub unsafe extern "C" fn asset_lock_manager_catch_up_blocking(
     let out_point = parse_outpoint(txid, vout);
     let timeout = Duration::from_secs(timeout_secs);
 
+    tracing::info!(
+        outpoint = %out_point,
+        timeout_secs,
+        "asset_lock_manager_catch_up_blocking: entered"
+    );
+
     let option = ASSET_LOCK_MANAGER_STORAGE.with_item(handle, |manager| {
         runtime().block_on(manager.resume_asset_lock(&out_point, timeout))
     });
-    let result = unwrap_option_or_return!(option);
-    let _ = unwrap_result_or_return!(result);
-    PlatformWalletFFIResult::ok()
+    let result = match option {
+        Some(r) => r,
+        None => {
+            tracing::warn!(
+                outpoint = %out_point,
+                "asset_lock_manager_catch_up_blocking: invalid manager handle"
+            );
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidHandle,
+                "Manager handle invalid".to_string(),
+            );
+        }
+    };
+    match result {
+        Ok(_) => {
+            tracing::info!(
+                outpoint = %out_point,
+                "asset_lock_manager_catch_up_blocking: resume_asset_lock succeeded"
+            );
+            PlatformWalletFFIResult::ok()
+        }
+        Err(e) => {
+            tracing::warn!(
+                outpoint = %out_point,
+                error = %e,
+                "asset_lock_manager_catch_up_blocking: resume_asset_lock failed"
+            );
+            PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
+                format!("{}", e),
+            )
+        }
+    }
 }
 
 /// Recover a tracked asset lock from a serialized transaction.
