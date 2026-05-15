@@ -271,9 +271,10 @@ pub const DEFAULT_SETUP_STEP_TIMEOUT: std::time::Duration = std::time::Duration:
 
 /// Per-test override of [`setup_with_n_identities`]'s propagation budget.
 ///
-/// Each waiter inside the per-identity loop (the local `wait_for_balance`,
-/// the strong chain-confirmed gate, and the identity-visibility gate) uses
-/// `step_timeout` independently. Raising it lets a single test (e.g.
+/// Each waiter inside the per-identity loop (the proof-verified
+/// chain-confirmed funding gate, the strong chain-confirmed gate, and the
+/// identity-visibility gate) uses `step_timeout` independently. Raising it
+/// lets a single test (e.g.
 /// TK-005's high-credit funding under contention) survive without softening
 /// the global default — keeping a tight default surfaces genuinely-stuck
 /// tests in the majority of cases.
@@ -301,7 +302,8 @@ pub async fn setup_with_per_identity_funding(
     step_timeout: std::time::Duration,
 ) -> FrameworkResult<MultiIdentitySetupGuard> {
     use super::framework::wait::{
-        wait_for_address_known_to_platform, wait_for_balance, wait_for_identity_visible_to_platform,
+        wait_for_address_balance_chain_confirmed_n, wait_for_address_known_to_platform,
+        wait_for_identity_visible_to_platform, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
     };
 
     let base = setup().await?;
@@ -341,10 +343,25 @@ pub async fn setup_with_per_identity_funding(
             .bank()
             .fund_address(&funding_addr, bank_amount)
             .await?;
-        wait_for_balance(&base.test_wallet, &funding_addr, bank_amount, step_timeout).await?;
+        // Found-025 (rs-sdk address-sync silently discards a fetched balance
+        // update when the address is not yet in `pending_addresses`) poisons
+        // the wallet's local sync map: `wait_for_balance`'s local-view
+        // precondition never reaches target under 14-thread churn, so its
+        // proof-verified hand-off never runs and the gate times out
+        // (TK-001 / TK-014, v53). Observe the funding directly via the
+        // proof-verified `AddressInfo::fetch` path — the same chain-state
+        // read the validator itself walks — bypassing the poisoned map.
+        wait_for_address_balance_chain_confirmed_n(
+            base.ctx.sdk(),
+            &funding_addr,
+            bank_amount,
+            CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+            step_timeout,
+        )
+        .await?;
 
-        // QA-802 — `wait_for_balance` already runs a 2-success chain-confirmed
-        // gate, but Marvin's TK-007 / ID-007 timeline shows the streak
+        // QA-802 — the gate above already runs a 2-success chain-confirmed
+        // check, but Marvin's TK-007 / ID-007 timeline shows the streak
         // clearing while a third Platform replica is still lagging — the
         // immediately-following `register_identity_from_addresses` lands on
         // that lagging node and panics with `AddressDoesNotExistError`.
