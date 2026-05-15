@@ -818,6 +818,33 @@ impl SetupGuard {
         if result.is_ok() {
             self.teardown_called = true;
         }
+
+        // Post-sweep Core top-up: the sweep just returned this test's
+        // funds to the bank, so this is the cheapest point to refill
+        // Layer-1 for the next pass. Below-threshold-guarded inside the
+        // helper — a no-op when the bank is already funded. Best-effort:
+        // a teardown is never failed by a refill hiccup.
+        match super::bank_rebalance::refill_core_from_platform_if_below_threshold(
+            self.ctx.bank(),
+            self.ctx.bank_identity(),
+            self.ctx.config.core_refill_threshold_duff,
+            self.ctx.config.core_refill_target_duff,
+        )
+        .await
+        {
+            Ok(0) => {}
+            Ok(refilled_duff) => tracing::info!(
+                target: "platform_wallet::e2e::wallet_factory",
+                refilled_duff,
+                "teardown: bank Core refill issued from Platform address pool"
+            ),
+            Err(err) => tracing::warn!(
+                target: "platform_wallet::e2e::wallet_factory",
+                error = %err,
+                "teardown: bank Core refill failed; continuing"
+            ),
+        }
+
         result
     }
 }

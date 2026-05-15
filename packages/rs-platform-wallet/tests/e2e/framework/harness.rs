@@ -724,6 +724,13 @@ impl E2eContext {
             ),
         }
 
+        // Preflight: the auto-refill above is best-effort. If the bank
+        // still can't fund a single full pass, every Core-touching case
+        // is doomed — fail fast with the fixed top-up address and the
+        // exact shortfall instead of burning a network slot on a
+        // guaranteed mid-pass starvation.
+        bank_rebalance::assert_core_funded_for_one_pass(&bank).await?;
+
         // Successful build — ownership of the runtime now lives on
         // the returned `E2eContext`. Clear `IN_FLIGHT_SPV` so the
         // panic hook becomes a no-op for individual *test-body*

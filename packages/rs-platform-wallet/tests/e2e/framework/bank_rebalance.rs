@@ -44,7 +44,7 @@ use super::bank::BankWallet;
 use super::bank_identity::BankIdentity;
 use super::signer::derive_identity_key;
 use super::wait::wait_for_identity_balance;
-use super::FrameworkResult;
+use super::{FrameworkError, FrameworkResult};
 
 /// Headroom kept on the bank identity after a Platform-side drain so a
 /// follow-up `transfer_credits_to_addresses` (or core-refill chain) has
@@ -57,16 +57,31 @@ const BANK_IDENTITY_DRAIN_FEE_RESERVE: Credits = 30_000_000;
 /// amounts.
 const CREDITS_PER_DUFF: u64 = 1_000;
 
+/// Measured Core spend of one full e2e pass: ~13 tDASH ≈ 1.3e9 duffs
+/// (1 DASH = 1e8 duffs). All refill sizing below is derived from this.
+const CORE_BURN_PER_FULL_PASS_DUFF: u64 = 1_300_000_000;
+
 /// Default trip line for the core-refill fallback. Below this many duffs
-/// of confirmed Core balance the harness rebalances Platform→Core at
-/// suite start so CR-* / ID-007 cases have working capital. Overrideable
-/// via [`super::config::vars::CORE_REFILL_THRESHOLD_DUFF`].
-pub const DEFAULT_CORE_REFILL_THRESHOLD_DUFF: u64 = 100_000;
+/// of confirmed Core balance the harness rebalances Platform→Core so
+/// CR-* / ID-007 cases have working capital. Sized at one full pass plus
+/// ~0.5-pass margin (~2e9 duffs ≈ 20 tDASH) so the bank is topped up
+/// before it can run dry mid-pass. Overrideable via
+/// [`super::config::vars::CORE_REFILL_THRESHOLD_DUFF`].
+pub const DEFAULT_CORE_REFILL_THRESHOLD_DUFF: u64 = 2_000_000_000;
 
 /// Default target balance (duffs) the core-refill chain aims to reach
-/// when triggered. Overrideable via
+/// when triggered. Sized at ~3.8 full passes (~5e9 duffs ≈ 50 tDASH) so
+/// a single (slow) Platform→Core withdrawal buys several passes of
+/// runway. Overrideable via
 /// [`super::config::vars::CORE_REFILL_TARGET_DUFF`].
-pub const DEFAULT_CORE_REFILL_TARGET_DUFF: u64 = 1_000_000;
+pub const DEFAULT_CORE_REFILL_TARGET_DUFF: u64 = 5_000_000_000;
+
+/// Hard floor for the setup preflight: the minimum confirmed Core
+/// balance needed to fund even a single full pass. If the bank is below
+/// this *after* the setup refill attempt, the run is doomed and the
+/// harness fails fast instead of burning a network slot on a guaranteed
+/// mid-pass starvation.
+pub const CORE_REFILL_OPERATIONAL_MIN_DUFF: u64 = CORE_BURN_PER_FULL_PASS_DUFF;
 
 /// Identity-side fee reserve added on top of the desired core-refill
 /// credit amount when topping up the bank identity. The withdrawal that
@@ -513,6 +528,42 @@ pub async fn refill_core_from_platform_if_below_threshold(
     }
 }
 
+/// Setup preflight: assert the bank can fund at least one full e2e
+/// pass. Call AFTER [`refill_core_from_platform_if_below_threshold`] at
+/// suite start — if the confirmed Core balance is still below
+/// [`CORE_REFILL_OPERATIONAL_MIN_DUFF`] the refill chain couldn't (or
+/// didn't) deliver, so abort instead of entering a run guaranteed to
+/// starve mid-pass.
+///
+/// Returns [`FrameworkError::Bank`] naming the fixed index-0 Core
+/// top-up address and the exact shortfall (needed vs available), in the
+/// same operator-actionable shape as [`BankWallet::send_core_to`]'s
+/// under-funded error.
+pub async fn assert_core_funded_for_one_pass(bank: &BankWallet) -> FrameworkResult<()> {
+    let confirmed = bank.core_balance_confirmed();
+    if confirmed >= CORE_REFILL_OPERATIONAL_MIN_DUFF {
+        return Ok(());
+    }
+
+    let top_up_addr = match bank.primary_core_receive_address().await {
+        Ok(addr) => addr.to_string(),
+        Err(err) => format!("<unresolved: {err}>"),
+    };
+    let short = CORE_REFILL_OPERATIONAL_MIN_DUFF - confirmed;
+    Err(FrameworkError::Bank(format!(
+        "Bank Core under-funded for e2e run (preflight).\n  \
+         confirmed : {confirmed} duffs\n  \
+         required  : {CORE_REFILL_OPERATIONAL_MIN_DUFF} duffs (one full pass burns ~{burn})\n  \
+         short by  : {short} duffs\n  \
+         top up at : {top_up_addr}\n\
+         \n\
+         The Platform→Core auto-refill could not raise the bank above the \
+         one-pass floor (Platform side likely empty too). Send testnet Core \
+         duffs to the fixed address above, then re-run.",
+        burn = CORE_BURN_PER_FULL_PASS_DUFF,
+    )))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -547,6 +598,35 @@ mod tests {
         assert!(
             target > threshold,
             "defaults must obey target > threshold (target={target} threshold={threshold})"
+        );
+    }
+
+    /// The refill defaults must stay anchored to the measured per-pass
+    /// burn: the trip line covers ≥1 full pass and the target buys ≥3.
+    /// A future tweak that drops these below the burn would let the
+    /// bank starve mid-run again.
+    #[test]
+    fn refill_defaults_cover_measured_burn() {
+        assert!(
+            DEFAULT_CORE_REFILL_THRESHOLD_DUFF >= CORE_BURN_PER_FULL_PASS_DUFF,
+            "threshold must cover ≥1 full pass (threshold={DEFAULT_CORE_REFILL_THRESHOLD_DUFF} \
+             burn/pass={CORE_BURN_PER_FULL_PASS_DUFF})"
+        );
+        assert!(
+            DEFAULT_CORE_REFILL_TARGET_DUFF >= CORE_BURN_PER_FULL_PASS_DUFF * 3,
+            "target must buy ≥3 full passes (target={DEFAULT_CORE_REFILL_TARGET_DUFF} \
+             burn/pass={CORE_BURN_PER_FULL_PASS_DUFF})"
+        );
+        // Preflight floor is exactly one pass: below it a run cannot
+        // finish, so failing fast is the only correct behaviour.
+        assert_eq!(
+            CORE_REFILL_OPERATIONAL_MIN_DUFF, CORE_BURN_PER_FULL_PASS_DUFF,
+            "preflight floor must equal one full pass of burn"
+        );
+        assert!(
+            DEFAULT_CORE_REFILL_THRESHOLD_DUFF >= CORE_REFILL_OPERATIONAL_MIN_DUFF,
+            "auto-refill trip line must sit at or above the hard preflight floor so \
+             a healthy run never lands in the fail-fast window"
         );
     }
 }
