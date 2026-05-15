@@ -13,7 +13,7 @@
 //!   state-transition signature. It reuses the existing
 //!   Keychain-resolver vtable so the credit-output private key never
 //!   crosses the FFI boundary as raw bytes — see
-//!   [`crate::mnemonic_resolver_core_signer::MnemonicResolverCoreSigner`].
+//!   [`rs_sdk_ffi::MnemonicResolverCoreSigner`].
 
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
@@ -29,11 +29,11 @@ use rs_sdk_ffi::{SignerHandle, VTableSigner};
 
 use crate::check_ptr;
 use crate::core_wallet_types::OutPointFFI;
-use crate::derive_and_persist_callbacks::MnemonicResolverHandle;
+use rs_sdk_ffi::MnemonicResolverHandle;
 use crate::error::*;
 use crate::handle::*;
 use crate::identity_registration_with_signer::IdentityPubkeyFFI;
-use crate::mnemonic_resolver_core_signer::MnemonicResolverCoreSigner;
+use rs_sdk_ffi::MnemonicResolverCoreSigner;
 use crate::runtime::block_on_worker;
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
 

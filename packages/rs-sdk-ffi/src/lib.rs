@@ -20,9 +20,14 @@ mod evonode;
 mod group;
 mod identity;
 mod protocol_version;
+mod mnemonic_resolver;
+mod mnemonic_resolver_core_signer;
 mod sdk;
 mod signer;
 mod signer_simple;
+
+pub use mnemonic_resolver::*;
+pub use mnemonic_resolver_core_signer::*;
 mod system;
 mod token;
 mod types;

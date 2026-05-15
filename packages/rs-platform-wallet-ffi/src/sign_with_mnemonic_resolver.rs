@@ -45,7 +45,7 @@ use dashcore::secp256k1::Secp256k1;
 use key_wallet::bip32::{DerivationPath, ExtendedPrivKey};
 use zeroize::Zeroizing;
 
-use crate::derive_and_persist_callbacks::{
+use rs_sdk_ffi::{
     mnemonic_resolver_result, MnemonicResolverHandle, MNEMONIC_RESOLVER_BUFFER_CAPACITY,
 };
 use crate::identity_keys_from_mnemonic::parse_mnemonic_any_language;
@@ -276,7 +276,7 @@ mod tests {
     unsafe extern "C" fn noop_destroy(_ctx: *mut c_void) {}
 
     fn make_resolver(
-        cb: crate::derive_and_persist_callbacks::MnemonicResolveCallback,
+        cb: rs_sdk_ffi::MnemonicResolveCallback,
     ) -> *mut MnemonicResolverHandle {
         unsafe { dash_sdk_mnemonic_resolver_create(std::ptr::null_mut(), cb, noop_destroy) }
     }

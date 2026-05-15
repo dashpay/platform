@@ -83,8 +83,10 @@ use key_wallet::bip32::{ExtendedPrivKey, ExtendedPubKey};
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::derive_and_persist_callbacks::{
-    mnemonic_resolver_result, IdentityKeyPersisterHandle, MnemonicResolverHandle, PersistKeyArgs,
-    MNEMONIC_RESOLVER_BUFFER_CAPACITY, PERSIST_KEY_SUCCESS,
+    IdentityKeyPersisterHandle, PersistKeyArgs, PERSIST_KEY_SUCCESS,
+};
+use rs_sdk_ffi::{
+    mnemonic_resolver_result, MnemonicResolverHandle, MNEMONIC_RESOLVER_BUFFER_CAPACITY,
 };
 use crate::error::*;
 use crate::identity_key_preview::IdentityKeyPreviewFFI;

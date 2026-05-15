@@ -1,9 +1,9 @@
 //! FFI bindings for CoreWallet transaction building and broadcasting.
 
-use crate::derive_and_persist_callbacks::MnemonicResolverHandle;
+use rs_sdk_ffi::MnemonicResolverHandle;
 use crate::error::*;
 use crate::handle::*;
-use crate::mnemonic_resolver_core_signer::MnemonicResolverCoreSigner;
+use rs_sdk_ffi::MnemonicResolverCoreSigner;
 use crate::runtime::runtime;
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 use std::os::raw::c_char;

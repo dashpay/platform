@@ -9,10 +9,10 @@
 //! string. Callers later hand the path back to the same resolver
 //! when consuming the asset lock on Platform.
 
-use crate::derive_and_persist_callbacks::MnemonicResolverHandle;
+use rs_sdk_ffi::MnemonicResolverHandle;
 use crate::error::*;
 use crate::handle::*;
-use crate::mnemonic_resolver_core_signer::MnemonicResolverCoreSigner;
+use rs_sdk_ffi::MnemonicResolverCoreSigner;
 use crate::runtime::runtime;
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 use std::ffi::CString;

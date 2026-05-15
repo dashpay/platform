@@ -9,7 +9,7 @@ use key_wallet::bip32::ExtendedPrivKey;
 use platform_wallet::wallet::identity::network::derive_ecdsa_identity_auth_keypair_from_master;
 use zeroize::Zeroizing;
 
-use crate::derive_and_persist_callbacks::{
+use rs_sdk_ffi::{
     mnemonic_resolver_result, MnemonicResolverHandle, MNEMONIC_RESOLVER_BUFFER_CAPACITY,
 };
 use crate::error::*;

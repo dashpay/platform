@@ -1,13 +1,14 @@
 //! Core-side ECDSA [`key_wallet::signer::Signer`] implementation that
-//! sources its private keys via the existing
-//! [`MnemonicResolverHandle`](crate::MnemonicResolverHandle) callback.
+//! sources its private keys via the
+//! [`MnemonicResolverHandle`](crate::mnemonic_resolver::MnemonicResolverHandle)
+//! callback.
 //!
-//! Same architectural intent as
-//! [`crate::dash_sdk_sign_with_mnemonic_resolver_and_path`] — keep
-//! the Swift caller out of the mnemonic-orchestration loop so the
-//! `swift-sdk/CLAUDE.md` "no mnemonic round-tripping" rule is
-//! satisfied — but exposed as a Rust-side `Signer` trait object so
-//! it can plug into key-wallet's signer-driven builders
+//! Same architectural intent as `dash_sdk_sign_with_mnemonic_resolver_and_path`
+//! (in `platform-wallet-ffi`) — keep the Swift caller out of the
+//! mnemonic-orchestration loop so the `swift-sdk/CLAUDE.md`
+//! "no mnemonic round-tripping" rule is satisfied — but exposed as
+//! a Rust-side `Signer` trait object so it can plug into key-wallet's
+//! signer-driven builders
 //! (`build_asset_lock_with_signer`, `TransactionBuilder::build_signed`)
 //! and rs-sdk's `_with_signer` state-transition methods.
 //!
@@ -46,17 +47,17 @@ use std::ffi::c_void;
 use std::os::raw::c_char;
 
 use async_trait::async_trait;
-use dashcore::secp256k1::{self, Secp256k1};
+use key_wallet::dashcore::secp256k1::{self, Secp256k1};
 use key_wallet::bip32::{DerivationPath, ExtendedPrivKey};
 use key_wallet::signer::{Signer, SignerMethod};
 use key_wallet::Network;
 use thiserror::Error;
 use zeroize::Zeroizing;
 
-use crate::derive_and_persist_callbacks::{
+use crate::mnemonic_resolver::{
     mnemonic_resolver_result, MnemonicResolverHandle, MNEMONIC_RESOLVER_BUFFER_CAPACITY,
 };
-use crate::identity_keys_from_mnemonic::parse_mnemonic_any_language;
+use crate::signer_simple::parse_mnemonic_any_language;
 
 /// Failure modes for the
 /// [`MnemonicResolverCoreSigner`](crate::mnemonic_resolver_core_signer::MnemonicResolverCoreSigner)
@@ -164,7 +165,7 @@ pub struct MnemonicResolverCoreSigner {
 // Swift-side vtable is either `@MainActor`-isolated or backed by a
 // serial dispatch queue, mirroring how `MnemonicResolverHandle`
 // itself carries `unsafe impl Send + Sync` in
-// `derive_and_persist_callbacks.rs:157-158`.
+// `crate::mnemonic_resolver`.
 //
 // We deliberately do *not* stash the pointer as `*mut
 // MnemonicResolverHandle` directly: that field would be `!Send +
@@ -184,8 +185,9 @@ impl MnemonicResolverCoreSigner {
     ///
     /// # Safety
     /// - `handle` must come from
-    ///   [`crate::dash_sdk_mnemonic_resolver_create`] and must stay
-    ///   alive for the entire lifetime of every `MnemonicResolverCoreSigner`
+    ///   [`crate::mnemonic_resolver::dash_sdk_mnemonic_resolver_create`]
+    ///   and must stay alive for the entire lifetime of every
+    ///   `MnemonicResolverCoreSigner`
     ///   value that wraps it. The signer never destroys the handle —
     ///   ownership belongs to the FFI caller that built it.
     /// - `handle` may be null; methods will fail with a resolver
@@ -338,7 +340,7 @@ impl Signer for MnemonicResolverCoreSigner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::derive_and_persist_callbacks::{
+    use crate::mnemonic_resolver::{
         dash_sdk_mnemonic_resolver_create, dash_sdk_mnemonic_resolver_destroy,
     };
     use std::str::FromStr;
@@ -377,7 +379,7 @@ mod tests {
     unsafe extern "C" fn noop_destroy(_ctx: *mut c_void) {}
 
     fn make_resolver(
-        cb: crate::derive_and_persist_callbacks::MnemonicResolveCallback,
+        cb: crate::mnemonic_resolver::MnemonicResolveCallback,
     ) -> *mut MnemonicResolverHandle {
         unsafe { dash_sdk_mnemonic_resolver_create(std::ptr::null_mut(), cb, noop_destroy) }
     }

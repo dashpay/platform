@@ -17,7 +17,7 @@ use platform_wallet::wallet::shielded::ShieldedSyncSummary;
 
 use zeroize::Zeroizing;
 
-use crate::derive_and_persist_callbacks::{
+use rs_sdk_ffi::{
     mnemonic_resolver_result, MnemonicResolverHandle, MNEMONIC_RESOLVER_BUFFER_CAPACITY,
 };
 use crate::error::*;
