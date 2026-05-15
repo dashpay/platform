@@ -671,17 +671,14 @@ impl BankWallet {
         self.wallet.state().await.birth_height()
     }
 
-    /// First BIP-44 (Core) receive address. Stable across process
-    /// runs while the address remains unused — once a UTXO lands on
-    /// it the pool advances and a subsequent call returns the next
-    /// index. Surfaced in the harness init log so the operator can
-    /// see where to send Layer-1 duffs to fund the bank.
+    /// Fixed BIP-44 (Core) receive address at account 0, external
+    /// chain, address index 0 (`m/44'/coin'/0'/0/0`). Deterministic
+    /// and stable across every process run regardless of UTXO history
+    /// — the operator funds this ONE address and every test run
+    /// reuses it. Surfaced in the harness init log so the operator
+    /// knows where to send Layer-1 duffs to fund the bank.
     pub async fn primary_core_receive_address(&self) -> FrameworkResult<dashcore::Address> {
-        self.wallet
-            .core()
-            .next_receive_address_for_account(0)
-            .await
-            .map_err(wallet_err)
+        derive_core_receive_address_at_index(&self.wallet, self.wallet.sdk().network, 0, 0).await
     }
 
     /// Send `duffs` of Layer-1 Core duffs from the bank's BIP-44
@@ -723,12 +720,7 @@ impl BankWallet {
             // the `BankWallet::load` under-funded panic so operators
             // hit the same documented format whether the bank is
             // Platform-credit or Core-duff under-funded.
-            let receive_addr = self
-                .wallet
-                .core()
-                .next_receive_address_for_account(0)
-                .await
-                .map_err(wallet_err)?;
+            let receive_addr = self.primary_core_receive_address().await?;
             return Err(FrameworkError::Bank(format!(
                 "Bank Core under-funded.\n  \
                  confirmed: {confirmed} duffs\n  \
@@ -862,6 +854,53 @@ async fn derive_platform_address_at_index(
         })?;
     let pkh = ripemd160_sha256(&pubkey.serialize());
     Ok(PlatformAddress::P2pkh(pkh))
+}
+
+/// External chain selector for the BIP-44 receive branch
+/// (`m/44'/coin'/account'/0/index`). Internal/change is `1`.
+const BIP44_EXTERNAL_CHAIN: u32 = 0;
+
+/// Derive the BIP-44 Core (Layer-1) receive address at `index` from
+/// the already-loaded `PlatformWallet`, using path
+/// `m/44'/coin_type'/account'/0/index` (external chain `0`).
+///
+/// Bank-only helper, mirroring [`derive_platform_address_at_index`]
+/// for Layer-1: pins the bank's Core top-up target to a fixed index
+/// so the operator funds ONE address and every run reuses it.
+/// `CoreWallet::next_receive_address_for_account` advances the pool's
+/// "next unused" cursor off index 0 as soon as a UTXO lands there, so
+/// the top-up address would otherwise drift run-to-run. Routes
+/// through [`key_wallet::Wallet::derive_public_key`] on the live
+/// wallet and reconstructs the P2PKH address exactly as key-wallet's
+/// own address pool does (compressed ECDSA pubkey → `Address::p2pkh`).
+async fn derive_core_receive_address_at_index(
+    wallet: &Arc<PlatformWallet>,
+    network: Network,
+    account: u32,
+    index: u32,
+) -> FrameworkResult<dashcore::Address> {
+    let account_path = AccountType::Standard {
+        index: account,
+        standard_account_type: StandardAccountType::BIP44Account,
+    }
+    .derivation_path(network)
+    .map_err(|err| FrameworkError::Bank(format!("BIP-44 account path: {err}")))?;
+    let chain = ChildNumber::from_normal_idx(BIP44_EXTERNAL_CHAIN)
+        .map_err(|err| FrameworkError::Bank(format!("invalid external chain: {err}")))?;
+    let leaf = ChildNumber::from_normal_idx(index)
+        .map_err(|err| FrameworkError::Bank(format!("invalid child index {index}: {err}")))?;
+    let leaf_path = account_path.extend([chain, leaf]);
+
+    let pubkey = wallet
+        .state()
+        .await
+        .wallet()
+        .derive_public_key(&leaf_path)
+        .map_err(|err| {
+            FrameworkError::Bank(format!("derive_public_key at index {index}: {err}"))
+        })?;
+    let dash_pubkey = dashcore::PublicKey::new(pubkey);
+    Ok(dashcore::Address::p2pkh(&dash_pubkey, network))
 }
 
 #[cfg(test)]
