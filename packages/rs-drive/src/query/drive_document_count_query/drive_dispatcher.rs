@@ -446,6 +446,16 @@ impl Drive {
                     platform_version,
                 )?,
             )),
+            DocumentCountMode::RangeAggregateCarrierProof => Ok(DocumentCountResponse::Proof(
+                self.execute_document_count_range_aggregate_carrier_proof(
+                    contract_id,
+                    request.document_type,
+                    document_type_name,
+                    where_clauses,
+                    transaction,
+                    platform_version,
+                )?,
+            )),
         }
     }
 }

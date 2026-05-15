@@ -326,4 +326,34 @@ pub enum DocumentCountMode {
     /// the merk-level `count_value` IS the result, the SDK
     /// extracts it via `verify_point_lookup_count_proof`.
     PointLookupProof,
+    /// Exactly one `In` clause + one range clause + `prove = true`
+    /// + [`CountMode::GroupByIn`] — produces a grovedb carrier
+    /// `AggregateCountOnRange` proof: one outer-key descent per
+    /// `In` value, each terminating in an ACOR boundary walk over
+    /// the per-branch range subtree. Returns one `(in_key, u64)`
+    /// pair per resolved In branch — same per-key aggregate
+    /// semantics as the no-proof per-In fan-out, just verifiable.
+    ///
+    /// Proof size is `O(|In values| · (log B + log C'))` where `B`
+    /// is the In-property's distinct-value count and `C'` is the
+    /// terminator subtree's distinct-value count. Smaller than the
+    /// alternative [`Self::RangeDistinctProof`] (which scales with
+    /// the number of distinct in-range terminator values per
+    /// branch, not per-branch log-bound boundary nodes) and
+    /// preserves per-In aggregate granularity that GROUP BY
+    /// `[in_field, range_field]` can't express.
+    ///
+    /// Path-query shape (see
+    /// [`DriveDocumentCountQuery::carrier_aggregate_count_path_query`]):
+    /// outer Keys = serialized In values; subquery_path = ranged
+    /// property name; subquery = ACOR(range). Verified via
+    /// [`grovedb::GroveDb::verify_aggregate_count_query_per_key`]
+    /// (returns `Vec<(Vec<u8>, u64)>`).
+    ///
+    /// Enabled by grovedb PR #663 ("allow AggregateCountOnRange as
+    /// carrier subquery"). Before that PR this shape was rejected
+    /// in [`Self::detect_mode`] with the message "range count
+    /// queries with an `in` clause are not supported on the
+    /// aggregate prove path".
+    RangeAggregateCarrierProof,
 }

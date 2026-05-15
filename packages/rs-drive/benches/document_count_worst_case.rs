@@ -626,6 +626,15 @@ fn document_count_worst_case(c: &mut Criterion) {
             CountMode::GroupByIn,
             None,
         ),
+        (
+            "query_g7_brand_in_color_gt_grouped_by_brand",
+            Value::Array(vec![
+                clause("brand", "in", Value::Array(brands_2.clone())),
+                clause("color", ">", broad_range_floor.clone()),
+            ]),
+            CountMode::GroupByIn,
+            None,
+        ),
     ];
 
     for (name, raw_where, mode, limit) in groupby_chapter_queries {
@@ -908,7 +917,7 @@ fn report_group_by_matrix(fixture: &CountBenchFixture, platform_version: &Platfo
         },
         MatrixCase {
             label: "[brand] / where=brand IN[2] AND color > floor",
-            platform_allowed: "no — single-field GROUP BY with both `In` and range",
+            platform_allowed: "yes (RangeAggregateCarrierProof — carrier ACOR per In branch)",
             raw_where: where_brand_in_color_gt(),
             mode: CountMode::GroupByIn,
             limit: None,
@@ -1635,6 +1644,15 @@ fn display_group_by_proofs(fixture: &CountBenchFixture, platform_version: &Platf
                 "in",
                 Value::Array(brands_100.clone()),
             )]),
+            CountMode::GroupByIn,
+            None,
+        ),
+        (
+            "G7 [brand] / where=brand IN[2] AND color > floor",
+            Value::Array(vec![
+                clause("brand", "in", Value::Array(brands_2.clone())),
+                clause("color", ">", range_floor.clone()),
+            ]),
             CountMode::GroupByIn,
             None,
         ),

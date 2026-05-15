@@ -26,6 +26,7 @@
 
 pub mod per_in_value;
 pub mod point_lookup_proof;
+pub mod range_aggregate_carrier_proof;
 pub mod range_distinct_proof;
 pub mod range_no_proof;
 pub mod range_proof;

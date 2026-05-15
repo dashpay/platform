@@ -420,4 +420,51 @@ impl DriveDocumentCountQuery<'_> {
         let proof = value.map_err(|e| Error::GroveDB(Box::new(e)))?;
         Ok(proof)
     }
+
+    /// Generates a grovedb **carrier** `AggregateCountOnRange` proof
+    /// for `In + range` queries with `group_by = [in_field]`. The
+    /// proof commits one aggregate count per resolved In branch
+    /// via grovedb's carrier-subquery composition
+    /// ([PR #663](https://github.com/dashpay/grovedb/pull/663)).
+    ///
+    /// Path query: see
+    /// [`Self::carrier_aggregate_count_path_query`].
+    ///
+    /// Trade-off vs. the alternative
+    /// [`Self::execute_distinct_count_with_proof`]
+    /// (`GroupByCompound` shape):
+    /// - **This** (carrier-ACOR): O(|In| · (log B + log C')) proof
+    ///   bytes. One commit per merk-tree boundary node per In
+    ///   branch — preserves the per-branch aggregate granularity
+    ///   that `group_by = [in_field, range_field]` can't express
+    ///   (the compound shape commits per-distinct-value-pair
+    ///   entries).
+    /// - **Alternative** (distinct compound): O(|In| · R · log C')
+    ///   where R is distinct in-range values per branch. Carries
+    ///   strictly more information (one `(in_key, range_key)`
+    ///   pair per resolved doc) at substantially larger bytes.
+    ///
+    /// Verified client-side via
+    /// [`grovedb::GroveDb::verify_aggregate_count_query_per_key`],
+    /// which returns `(RootHash, Vec<(Vec<u8>, u64)>)`.
+    pub fn execute_carrier_aggregate_count_with_proof(
+        &self,
+        drive: &Drive,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, Error> {
+        let drive_version = &platform_version.drive;
+        let path_query = self.carrier_aggregate_count_path_query(platform_version)?;
+        // Same destructure pattern as the sibling aggregate / distinct
+        // executors. `get_proved_path_query` returns `CostContext<Result>`;
+        // ignoring the cost field is the same pattern those use today.
+        let CostContext { value, cost: _ } = drive.grove.get_proved_path_query(
+            &path_query,
+            None,
+            transaction,
+            &drive_version.grove_version,
+        );
+        let proof = value.map_err(|e| Error::GroveDB(Box::new(e)))?;
+        Ok(proof)
+    }
 }

@@ -129,20 +129,36 @@ impl DriveDocumentCountQuery<'_> {
         let has_range = range_count == 1;
         let has_in = in_count == 1;
 
-        // `range + In` is only rejected on the aggregate prove path
-        // (grovedb's `AggregateCountOnRange` primitive wraps a single
-        // inner range and can't cartesian-fork over multiple In
-        // values at the merk layer — see the comment on
-        // `aggregate_count_path_query`). For distinct modes (both
-        // no-proof and prove) and for total-range-no-proof, the
-        // `distinct_count_path_query` builder handles In on prefix
-        // via grovedb's native subquery primitive.
-        if has_range && has_in && prove && !distinct {
+        // `range + In` on the prove path used to be rejected
+        // wholesale because grovedb's `AggregateCountOnRange`
+        // primitive wraps a single inner range and historically
+        // couldn't cartesian-fork. As of grovedb PR #663 it CAN
+        // appear under outer `Keys` via the carrier-subquery
+        // composition, so the rejection is now conditional:
+        // - `CountMode::GroupByIn` (single-field group_by on the
+        //   In field): routes to the new
+        //   `DocumentCountMode::RangeAggregateCarrierProof` —
+        //   produces one (in_key, u64) pair per In branch via a
+        //   carrier-ACOR PathQuery (see
+        //   [`super::path_query::carrier_aggregate_count_path_query`]).
+        // - `CountMode::GroupByRange` / `GroupByCompound` (distinct
+        //   modes): route to `RangeDistinctProof` as before.
+        // - `CountMode::Aggregate` (no group_by): still rejected.
+        //   With no group_by the caller asks for a single summed
+        //   count across all In branches, but the carrier-ACOR
+        //   primitive returns one count per branch — collapsing
+        //   that back to a single sum at the verifier requires
+        //   trusting the SDK to add them, which is exactly what
+        //   the prove path is supposed to avoid (the verifier
+        //   should get the consensus-committed answer, not
+        //   compute a derived one).
+        if has_range && has_in && prove && !distinct && !matches!(mode, CountMode::GroupByIn) {
             return Err(QuerySyntaxError::InvalidWhereClauseComponents(
                 "range count queries with an `in` clause are not supported on the \
-                 aggregate prove path; use a two-field `group_by = [in_field, \
-                 range_field]` for the compound distinct-prove path, or `prove = \
-                 false` for the no-proof variant",
+                 aggregate prove path; use `group_by = [in_field]` for the carrier \
+                 per-In-aggregate proof (one u64 per branch), `group_by = [in_field, \
+                 range_field]` for the compound distinct-prove path (per-distinct-\
+                 value entries), or `prove = false` for the no-proof variant",
             ));
         }
 
@@ -194,11 +210,14 @@ impl DriveDocumentCountQuery<'_> {
             // Equal-only fully-covered query.
             (false, false, true, _) => DocumentCountMode::PointLookupProof,
             (false, false, false, _) => DocumentCountMode::Total,
-            // (true, true, true, false) — range + In on the
-            // aggregate prove path — is rejected by the
-            // explicit early check above.
+            // Range + In + prove + !distinct: the GroupByIn case
+            // routes to the new carrier-ACOR proof shape (grovedb
+            // PR #663); the Aggregate case is rejected above.
+            (true, true, true, false) if matches!(mode, CountMode::GroupByIn) => {
+                DocumentCountMode::RangeAggregateCarrierProof
+            }
             (true, true, true, false) => {
-                unreachable!("range + In + prove + !distinct is rejected before the dispatch match")
+                unreachable!("range + In + prove + Aggregate is rejected before the dispatch match")
             }
         })
     }

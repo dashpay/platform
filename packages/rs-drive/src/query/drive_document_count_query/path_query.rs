@@ -245,6 +245,195 @@ impl DriveDocumentCountQuery<'_> {
         Ok(PathQuery::new_aggregate_count_on_range(path, query_item))
     }
 
+    /// Build the grovedb `PathQuery` for a **carrier**
+    /// `AggregateCountOnRange` proof — one outer Key per `In`
+    /// value, each terminating in an ACOR boundary walk over the
+    /// per-branch range subtree. Returns one `(in_key, u64)` pair
+    /// per resolved In branch via
+    /// [`grovedb::GroveDb::query_aggregate_count_per_key`] (no-
+    /// proof) and
+    /// [`grovedb::GroveDb::verify_aggregate_count_query_per_key`]
+    /// (verify).
+    ///
+    /// Required where-clause shape (validated upstream by
+    /// [`Self::detect_mode`] routing to
+    /// [`DocumentCountMode::RangeAggregateCarrierProof`]):
+    /// - Exactly one `In` clause on the In-property
+    /// - Exactly one range clause on the *terminator* property of
+    ///   a `range_countable: true` index whose first property is
+    ///   the In-property
+    /// - Any prefix properties between In and range must use
+    ///   `==` (mirror of [`Self::aggregate_count_path_query`]'s
+    ///   non-In prefix rule)
+    ///
+    /// Path-query structure:
+    /// - Outer path stops one level above the In-bearing property
+    ///   subtree's children (`@/doc_prefix/0x01/doctype/<In-prop>`).
+    /// - Outer Query: `Key(in_value_0)`, `Key(in_value_1)`, … in
+    ///   lex-asc serialized order (grovedb's multi-key walker
+    ///   invariant).
+    /// - `subquery_path`: the terminator property name (and any
+    ///   trailing `==` clause names between In and range, in
+    ///   index order).
+    /// - `subquery`: `Query::new_aggregate_count_on_range(range_item)`.
+    ///
+    /// Enabled by [grovedb PR #663](https://github.com/dashpay/grovedb/pull/663).
+    /// Before that PR, `AggregateCountOnRange` was required to be
+    /// the only item in its query and could not appear under a
+    /// `subquery` field — the dispatcher rejected this shape with
+    /// "range count queries with an `in` clause are not supported on
+    /// the aggregate prove path".
+    ///
+    /// Errors:
+    /// - No range where-clause / multiple range where-clauses →
+    ///   `InvalidWhereClauseComponents`
+    /// - No In where-clause → `InvalidWhereClauseComponents`
+    /// - In on a non-prefix property → `InvalidWhereClauseComponents`
+    /// - Prefix property between In and range uses non-Equal →
+    ///   `InvalidWhereClauseComponents`
+    pub fn carrier_aggregate_count_path_query(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<PathQuery, Error> {
+        let range_clause = self
+            .where_clauses
+            .iter()
+            .find(|wc| Self::is_range_operator(wc.operator))
+            .ok_or(Error::Query(
+                QuerySyntaxError::InvalidWhereClauseComponents(
+                    "carrier_aggregate_count_path_query requires a range where-clause",
+                ),
+            ))?;
+        let in_clause = self
+            .where_clauses
+            .iter()
+            .find(|wc| wc.operator == WhereOperator::In)
+            .ok_or(Error::Query(
+                QuerySyntaxError::InvalidWhereClauseComponents(
+                    "carrier_aggregate_count_path_query requires an In where-clause",
+                ),
+            ))?;
+        let range_item = self.range_clause_to_query_item(range_clause, platform_version)?;
+
+        // Walk the index properties. Everything before the In
+        // property goes into the base path as `(name, serialized_value)`
+        // pairs (must be `==`). The In property's name terminates
+        // the base path. Everything between the In and the range
+        // property goes into the subquery_path. The range property
+        // is the ACOR target.
+        let mut base_path: Vec<Vec<u8>> = vec![
+            vec![RootTree::DataContractDocuments as u8],
+            self.contract_id.to_vec(),
+            vec![1u8],
+            self.document_type_name.as_bytes().to_vec(),
+        ];
+        let mut subquery_path_extension: Vec<Vec<u8>> = vec![];
+        let mut found_in = false;
+        let prefix_and_in_props = &self.index.properties[..self.index.properties.len() - 1];
+
+        for prop in prefix_and_in_props {
+            let clause = self
+                .where_clauses
+                .iter()
+                .find(|wc| wc.field == prop.name)
+                .ok_or(
+                Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
+                    "carrier-aggregate proof: missing where clause for an index prefix property",
+                )),
+            )?;
+            match (clause.operator, found_in) {
+                (WhereOperator::Equal, false) => {
+                    // Pre-In equality prefix — extends the base path.
+                    base_path.push(prop.name.as_bytes().to_vec());
+                    base_path.push(self.document_type.serialize_value_for_key(
+                        prop.name.as_str(),
+                        &clause.value,
+                        platform_version,
+                    )?);
+                }
+                (WhereOperator::In, false) => {
+                    // In property — base path stops at its name;
+                    // outer Query's keys come from the In values
+                    // below.
+                    base_path.push(prop.name.as_bytes().to_vec());
+                    found_in = true;
+                }
+                (WhereOperator::Equal, true) => {
+                    // Post-In equality — extends the subquery path.
+                    subquery_path_extension.push(prop.name.as_bytes().to_vec());
+                    subquery_path_extension.push(self.document_type.serialize_value_for_key(
+                        prop.name.as_str(),
+                        &clause.value,
+                        platform_version,
+                    )?);
+                }
+                (WhereOperator::In, true) => {
+                    return Err(Error::Query(
+                        QuerySyntaxError::InvalidWhereClauseComponents(
+                            "carrier-aggregate proof: at most one In clause is supported \
+                         on prefix properties",
+                        ),
+                    ));
+                }
+                _ => {
+                    return Err(Error::Query(
+                        QuerySyntaxError::InvalidWhereClauseComponents(
+                            "carrier-aggregate proof: prefix properties must use `==` or `In`",
+                        ),
+                    ));
+                }
+            }
+        }
+        if !found_in {
+            return Err(Error::Query(
+                QuerySyntaxError::InvalidWhereClauseComponents(
+                    "carrier-aggregate proof: In clause must appear on a prefix property of the \
+                 chosen index",
+                ),
+            ));
+        }
+        let range_prop_name = &self
+            .index
+            .properties
+            .last()
+            .ok_or(Error::Query(
+                QuerySyntaxError::InvalidWhereClauseComponents(
+                    "range_countable index must have at least one property",
+                ),
+            ))?
+            .name;
+        subquery_path_extension.push(range_prop_name.as_bytes().to_vec());
+
+        // Build the outer Query: one Key per In value, inserted
+        // via `insert_key` so the multi-key walker sees them in
+        // lex-ascending serialized order (grovedb invariant per
+        // PR #663).
+        let in_values = in_clause.in_values().into_data_with_error()??;
+        let mut outer_query = Query::new();
+        let mut serialized_in_keys: Vec<Vec<u8>> = in_values
+            .iter()
+            .map(|v| {
+                self.document_type.serialize_value_for_key(
+                    in_clause.field.as_str(),
+                    v,
+                    platform_version,
+                )
+            })
+            .collect::<Result<_, _>>()?;
+        serialized_in_keys.sort();
+        serialized_in_keys.dedup();
+        for key in serialized_in_keys {
+            outer_query.insert_key(key);
+        }
+        outer_query.set_subquery_path(subquery_path_extension);
+        outer_query.set_subquery(Query::new_aggregate_count_on_range(range_item));
+
+        Ok(PathQuery::new(
+            base_path,
+            SizedQuery::new(outer_query, None, None),
+        ))
+    }
+
     /// Build the grovedb `PathQuery` for a *regular* range query
     /// against this count query's `range_countable` index — the
     /// distinct-counts variant. Used by:
