@@ -41,6 +41,14 @@ impl Drive {
     /// `limit` caps the outer walk for the Range-outer (G8) shape;
     /// for the In-outer (G7) shape the `|In|` array already bounds
     /// the result and `limit` is typically `None`.
+    ///
+    /// Sibling executors (`range_distinct_proof`, `range_no_proof`,
+    /// `per_in_value`) use the same `#[allow]` here — the 8-arg
+    /// boundary (contract id, doc type, doc type name, where clauses,
+    /// limit, transaction, platform version) is the established
+    /// executor signature; refactoring it into a struct would just
+    /// move the same fields one indirection away.
+    #[allow(clippy::too_many_arguments)]
     pub fn execute_document_count_range_aggregate_carrier_proof(
         &self,
         contract_id: [u8; 32],

@@ -25,6 +25,10 @@ impl DriveDocumentCountQuery<'_> {
     /// # Arguments
     /// * `proof` — raw grovedb proof bytes.
     /// * `platform_version` — selects the method version.
+    ///
+    /// The `Vec<(Vec<u8>, u64)>` payload mirrors grovedb's per-key
+    /// carrier shape — see the v0 inner method for the rationale.
+    #[allow(clippy::type_complexity)]
     pub fn verify_carrier_aggregate_count_proof(
         &self,
         proof: &[u8],

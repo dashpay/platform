@@ -22,7 +22,14 @@ impl DriveDocumentCountQuery<'_> {
     /// limit field would break the merk-root recomputation. Both
     /// sides share [`Self::carrier_aggregate_count_path_query`]
     /// for that reason.
+    ///
+    /// The `Vec<(Vec<u8>, u64)>` payload is the grovedb-native
+    /// per-key carrier shape (one serialized In-key + its
+    /// aggregate `u64`); naming it via a `type` alias would only
+    /// rebrand the same nested tuple without making the call site
+    /// clearer.
     #[inline(always)]
+    #[allow(clippy::type_complexity)]
     pub(super) fn verify_carrier_aggregate_count_proof_v0(
         &self,
         proof: &[u8],
