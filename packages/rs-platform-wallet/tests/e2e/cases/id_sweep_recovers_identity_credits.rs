@@ -26,6 +26,9 @@ use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
 
 use crate::framework::prelude::*;
+use crate::framework::wait::{
+    wait_for_address_balance_chain_confirmed_n, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+};
 
 /// Bank-funded credits the funding address starts with. Option C
 /// (DeductFromInput) delivers exactly this amount. Sized so the
@@ -92,9 +95,23 @@ async fn id_sweep_recovers_identity_credits() {
         .fund_address(&funding_addr, FUNDING_CREDITS)
         .await
         .expect("bank.fund_address");
-    wait_for_balance(&s.test_wallet, &funding_addr, FUNDING_FLOOR, STEP_TIMEOUT)
-        .await
-        .expect("funding never observed");
+    // Found-025: the rs-sdk address-sync drops a fetched balance update
+    // when the address isn't yet in `pending_addresses`, poisoning the
+    // wallet's local sync map under multi-thread churn so
+    // `wait_for_balance`'s local-view precondition never reaches target
+    // and its proof-verified hand-off never runs. Observe the funding
+    // directly via the proof-verified `AddressInfo::fetch` path —
+    // the chain-state read the validator itself walks — bypassing the
+    // poisoned map. Mirrors `setup_with_per_identity_funding`.
+    wait_for_address_balance_chain_confirmed_n(
+        s.ctx.sdk(),
+        &funding_addr,
+        FUNDING_FLOOR,
+        CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+        STEP_TIMEOUT,
+    )
+    .await
+    .expect("funding never observed");
 
     let registered = s
         .test_wallet

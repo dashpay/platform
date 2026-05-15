@@ -47,7 +47,10 @@ use platform_wallet::wallet::identity::types::funding::TopUpFundingMethod;
 use platform_wallet::PlatformWalletError;
 
 use crate::framework::prelude::*;
-use crate::framework::wait::wait_for_identity_balance;
+use crate::framework::wait::{
+    wait_for_address_balance_chain_confirmed_n, wait_for_identity_balance,
+    CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+};
 
 /// Core (Layer-1) duffs the bank delivers to the test wallet's
 /// BIP-44 account 0 prior to the asset-lock top-up. Sized to cover
@@ -129,10 +132,19 @@ async fn id_002b_asset_lock_funded_top_up() {
         .fund_address(&register_addr, REGISTRATION_FUNDING_CREDITS)
         .await
         .expect("bank.fund_address(register)");
-    wait_for_balance(
-        &s.test_wallet,
+    // Found-025: the rs-sdk address-sync drops a fetched balance update
+    // when the address isn't yet in `pending_addresses`, poisoning the
+    // wallet's local sync map under multi-thread churn so
+    // `wait_for_balance`'s local-view precondition never reaches target
+    // and its proof-verified hand-off never runs. Observe the funding
+    // directly via the proof-verified `AddressInfo::fetch` path —
+    // the chain-state read the validator itself walks — bypassing the
+    // poisoned map. Mirrors `setup_with_per_identity_funding`.
+    wait_for_address_balance_chain_confirmed_n(
+        s.ctx.sdk(),
         &register_addr,
         REGISTRATION_FUNDING_CREDITS,
+        CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
         STEP_TIMEOUT,
     )
     .await

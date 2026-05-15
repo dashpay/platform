@@ -17,7 +17,10 @@ use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
 
 use crate::framework::prelude::*;
-use crate::framework::wait::wait_for_identity_balance;
+use crate::framework::wait::{
+    wait_for_address_balance_chain_confirmed_n, wait_for_identity_balance,
+    CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+};
 
 // REGISTRATION_FUNDING: KEPT LARGER than 0.001 tDASH so the
 // post-top-up identity balance stays above `IDENTITY_SWEEP_FLOOR`
@@ -71,10 +74,19 @@ async fn id_002_top_up_identity_from_addresses() {
         .fund_address(&register_addr, REGISTER_FUNDING_CREDITS)
         .await
         .expect("bank.fund_address(register)");
-    wait_for_balance(
-        &s.test_wallet,
+    // Found-025: the rs-sdk address-sync drops a fetched balance update
+    // when the address isn't yet in `pending_addresses`, poisoning the
+    // wallet's local sync map under multi-thread churn so
+    // `wait_for_balance`'s local-view precondition never reaches target
+    // and its proof-verified hand-off never runs. Observe the funding
+    // directly via the proof-verified `AddressInfo::fetch` path —
+    // the chain-state read the validator itself walks — bypassing the
+    // poisoned map. Mirrors `setup_with_per_identity_funding`.
+    wait_for_address_balance_chain_confirmed_n(
+        s.ctx.sdk(),
         &register_addr,
         REGISTER_FUNDING_FLOOR,
+        CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
         STEP_TIMEOUT,
     )
     .await
@@ -111,10 +123,15 @@ async fn id_002_top_up_identity_from_addresses() {
         .fund_address(&top_up_addr, TOP_UP_FUNDING_CREDITS)
         .await
         .expect("bank.fund_address(top-up)");
-    wait_for_balance(
-        &s.test_wallet,
+    // Found-025: same poisoned-map hazard as the register-funding gate
+    // above — `top_up_from_addresses` re-fetches this address's
+    // balance + nonce from a round-robin DAPI replica, so gate on the
+    // proof-verified chain view rather than the local sync map.
+    wait_for_address_balance_chain_confirmed_n(
+        s.ctx.sdk(),
         &top_up_addr,
         TOP_UP_FUNDING_FLOOR,
+        CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
         STEP_TIMEOUT,
     )
     .await

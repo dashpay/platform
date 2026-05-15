@@ -65,8 +65,10 @@ use platform_wallet::wallet::identity::types::funding::TopUpFundingMethod;
 use platform_wallet::PlatformWalletError;
 
 use crate::framework::prelude::*;
-use crate::framework::wait::wait_for_core_balance;
-use crate::framework::wait::wait_for_identity_balance;
+use crate::framework::wait::{
+    wait_for_address_balance_chain_confirmed_n, wait_for_core_balance, wait_for_identity_balance,
+    CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+};
 use dash_sdk::platform::Fetch;
 
 /// Number of concurrent asset-lock builds AL-001 fires. Per spec —
@@ -233,10 +235,20 @@ async fn al_001_concurrent_asset_lock_builds() {
             .fund_address(&funding_addr, REGISTRATION_FUNDING_CREDITS)
             .await
             .expect("bank.fund_address(register)");
-        wait_for_balance(
-            &s.test_wallet,
+        // Found-025: the rs-sdk address-sync drops a fetched balance
+        // update when the address isn't yet in `pending_addresses`,
+        // poisoning the wallet's local sync map under multi-thread churn
+        // so `wait_for_balance`'s local-view precondition never reaches
+        // target and its proof-verified hand-off never runs. Observe the
+        // funding directly via the proof-verified `AddressInfo::fetch`
+        // path — the chain-state read the validator itself walks —
+        // bypassing the poisoned map. Mirrors
+        // `setup_with_per_identity_funding`.
+        wait_for_address_balance_chain_confirmed_n(
+            s.ctx.sdk(),
             &funding_addr,
             REGISTRATION_FUNDING_CREDITS,
+            CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
             STEP_TIMEOUT,
         )
         .await

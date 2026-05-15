@@ -22,7 +22,10 @@ use std::time::Duration;
 use rand::RngCore;
 
 use crate::framework::prelude::*;
-use crate::framework::wait::wait_for_dpns_name_visible;
+use crate::framework::wait::{
+    wait_for_address_balance_chain_confirmed_n, wait_for_dpns_name_visible,
+    CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+};
 
 /// Pre-fee credits committed to the new identity. KEPT LARGER than
 /// 0.001 tDASH for two reasons: (a) DPNS name registration runs a
@@ -90,9 +93,23 @@ async fn dpns_001_register_and_resolve_name() {
         .fund_address(&funding_addr, FUNDING_CREDITS)
         .await
         .expect("bank.fund_address");
-    wait_for_balance(&s.test_wallet, &funding_addr, FUNDING_FLOOR, STEP_TIMEOUT)
-        .await
-        .expect("funding never observed");
+    // Found-025: the rs-sdk address-sync drops a fetched balance update
+    // when the address isn't yet in `pending_addresses`, poisoning the
+    // wallet's local sync map under multi-thread churn so
+    // `wait_for_balance`'s local-view precondition never reaches target
+    // and its proof-verified hand-off never runs. Observe the funding
+    // directly via the proof-verified `AddressInfo::fetch` path —
+    // the chain-state read the validator itself walks — bypassing the
+    // poisoned map. Mirrors `setup_with_per_identity_funding`.
+    wait_for_address_balance_chain_confirmed_n(
+        s.ctx.sdk(),
+        &funding_addr,
+        FUNDING_FLOOR,
+        CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+        STEP_TIMEOUT,
+    )
+    .await
+    .expect("funding never observed");
 
     // 2. Register identity at DIP-9 slot 0 (Wave A helper does the
     //    placeholder identity + key derivation + on-chain wait).
