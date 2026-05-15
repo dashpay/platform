@@ -573,6 +573,7 @@ public class PlatformWalletPersistenceHandler {
         if let typeName = tx.transaction_type {
             record.transactionType = String(cString: typeName)
         }
+        record.transactionTypeKind = tx.transaction_type_kind
         record.netAmount = tx.net_amount
         record.fee = tx.has_fee ? tx.fee : nil
         if let labelPtr = tx.label {

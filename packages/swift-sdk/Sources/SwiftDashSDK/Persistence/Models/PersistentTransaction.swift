@@ -47,8 +47,26 @@ public final class PersistentTransaction {
     public var blockTimestamp: UInt32
     /// Direction: 0=incoming, 1=outgoing, 2=internal, 3=coinJoin.
     public var direction: UInt32
-    /// Transaction type name (Standard, CoinJoin, etc.).
+    /// Transaction type name (Standard, CoinJoin, etc.). Sourced
+    /// from Rust's `Debug` repr of `TransactionType` for human
+    /// display only — DO NOT use this string as a discriminant;
+    /// match on [`transactionTypeKind`] instead. The string is
+    /// not a stable wire contract (a `#[derive(Debug)]` rename on
+    /// the Rust side would silently change it).
     public var transactionType: String
+    /// Typed discriminant of Rust's
+    /// `key_wallet::transaction_checking::transaction_router::TransactionType`,
+    /// kept in lockstep with [`TransactionTypeKind`]. Use this byte
+    /// (via [`typedKind`] / [`isAssetLock`] / [`isAssetUnlock`]) to
+    /// branch on transaction kind in UI code; the parallel
+    /// [`transactionType`] string is human-readable only and not
+    /// stable.
+    ///
+    /// Sentinel `0xFF` means "pre-feature row whose discriminant
+    /// hasn't been populated yet" — SPV's next upsert round
+    /// replaces it with the real discriminant on touch. Accessors
+    /// treat the sentinel as unknown (no branch fires).
+    public var transactionTypeKind: UInt8 = 0xFF
     /// Net amount in duffs (signed: positive=received, negative=sent).
     public var netAmount: Int64
     /// Fee in duffs (nil if unknown).
@@ -152,24 +170,29 @@ public final class PersistentTransaction {
         }
     }
 
+    /// Typed view onto [`transactionTypeKind`]. `nil` only for the
+    /// `0xFF` sentinel (pre-feature row not yet re-persisted by SPV)
+    /// or for a future Rust-side variant addition Swift hasn't
+    /// learned about yet — both treated as "unknown" by the
+    /// `isAssetLock` / `isAssetUnlock` accessors so an unexpected
+    /// byte never silently fires the wrong branch.
+    public var typedKind: TransactionTypeKind? {
+        TransactionTypeKind(rawValue: transactionTypeKind)
+    }
+
     /// `true` when this transaction is a Dash Platform asset-lock
     /// funding tx — a Layer-1 burn that mints Layer-2 credits. The
     /// wallet's `direction` classifier reports `Internal` because the
     /// credit output is derived from this wallet's identity-funding
     /// account, but the *intent* is conversion to L2 credits, not
     /// "transaction to myself."
-    ///
-    /// The persisted string is the Debug-repr of the Rust
-    /// `TransactionType` enum (`"AssetLock"` — CamelCase, no spaces).
-    /// We also accept the "Asset Lock Transaction" wire-format string
-    /// in case the persister emits the longer form on some code paths.
     public var isAssetLock: Bool {
-        transactionType == "AssetLock" || transactionType == "Asset Lock Transaction"
+        typedKind == .assetLock
     }
 
     /// Companion to [`isAssetLock`] — withdrawal back to L1.
     public var isAssetUnlock: Bool {
-        transactionType == "AssetUnlock" || transactionType == "Asset Unlock Transaction"
+        typedKind == .assetUnlock
     }
 
     /// Direction text for UI surfaces, overridden for asset-lock /
@@ -191,4 +214,30 @@ public final class PersistentTransaction {
         let sign = netAmount >= 0 ? "+" : "-"
         return String(format: "%@%.8f DASH", sign, dash)
     }
+}
+
+/// Typed mirror of Rust's
+/// `key_wallet::transaction_checking::transaction_router::TransactionType`,
+/// pinned to the `u8` discriminants emitted by
+/// `transaction_type_to_u8` in `rs-platform-wallet-ffi`'s
+/// `core_wallet_types.rs`. The Rust side has a comment requiring
+/// any new variant to gain a Swift case here in the same commit;
+/// the reverse holds too (Swift is the consumer's source of truth
+/// for the discriminant byte).
+///
+/// Note: `transactionTypeKind == 0xFF` is the
+/// "pre-feature / not-populated" sentinel and is NOT a case in this
+/// enum — `TransactionTypeKind(rawValue: 0xFF)` returns `nil`, which
+/// the accessors treat as "unknown" so no branch fires falsely.
+public enum TransactionTypeKind: UInt8 {
+    case standard = 0
+    case coinJoin = 1
+    case providerRegistration = 2
+    case providerUpdateRegistrar = 3
+    case providerUpdateService = 4
+    case providerUpdateRevocation = 5
+    case assetLock = 6
+    case assetUnlock = 7
+    case coinbase = 8
+    case ignored = 9
 }
