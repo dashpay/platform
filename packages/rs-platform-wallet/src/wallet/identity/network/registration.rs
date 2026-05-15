@@ -682,7 +682,6 @@ impl IdentityWallet {
                 proof.clone(),
                 &path,
                 asset_lock_signer,
-                s.as_ref().and_then(|x| x.user_fee_increase),
                 s,
             )
         })
@@ -706,7 +705,6 @@ impl IdentityWallet {
                         chain_proof.clone(),
                         &path,
                         asset_lock_signer,
-                        s.as_ref().and_then(|x| x.user_fee_increase),
                         s,
                     )
                 })

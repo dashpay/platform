@@ -207,7 +207,6 @@ impl WasmSdk {
                 self.inner_sdk(),
                 asset_lock_proof,
                 &asset_lock_private_key,
-                None,
                 settings,
             )
             .await

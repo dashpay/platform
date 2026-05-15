@@ -69,7 +69,6 @@ pub unsafe extern "C" fn dash_sdk_identity_topup_with_instant_lock(
                 &wrapper.sdk,
                 asset_lock_proof,
                 &private_key,
-                settings.and_then(|s| s.user_fee_increase),
                 settings,
             )
             .await
@@ -143,7 +142,6 @@ pub unsafe extern "C" fn dash_sdk_identity_topup_with_instant_lock_and_wait(
                 &wrapper.sdk,
                 asset_lock_proof,
                 &private_key,
-                settings.and_then(|s| s.user_fee_increase),
                 settings,
             )
             .await

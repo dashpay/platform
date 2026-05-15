@@ -12,7 +12,9 @@ use dpp::dashcore::PrivateKey;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::native_bls::NativeBlsModule;
-use dpp::prelude::{AssetLockProof, Identity, UserFeeIncrease};
+use dpp::prelude::{AssetLockProof, Identity};
+
+use super::put_settings::PutSettings;
 use dpp::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::state_transition::StateTransition;
@@ -99,8 +101,8 @@ pub(crate) trait BroadcastRequestForNewIdentity<T: TransportRequest, S: Signer<I
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &PrivateKey,
         signer: &S,
-        user_fee_increase: UserFeeIncrease,
         platform_version: &PlatformVersion,
+        settings: Option<PutSettings>,
     ) -> Result<(StateTransition, BroadcastStateTransitionRequest), Error>;
 
     /// Signer-driven counterpart to
@@ -111,14 +113,14 @@ pub(crate) trait BroadcastRequestForNewIdentity<T: TransportRequest, S: Signer<I
     /// signature for the key at `asset_lock_proof_path` — atomically
     /// deriving, signing, and zeroising inside the signer's trust boundary.
     ///
-    /// `user_fee_increase` is the percentage multiplier the caller wants
-    /// applied to the ST's processing fee. Threading it through the
-    /// builder is load-bearing: it both affects fee accounting AND
-    /// changes the ST's signable bytes, which the upstream CL-height
-    /// retry path in `platform-wallet` relies on to bypass Tenderdash's
-    /// invalid-tx hash cache (`keep-invalid-txs-in-cache = true` in
-    /// dashmate's mainnet/testnet templates). Pass `0` for unaltered
-    /// fees.
+    /// `settings.user_fee_increase` is the percentage multiplier the
+    /// caller wants applied to the ST's processing fee. Threading it
+    /// through the builder is load-bearing: it both affects fee
+    /// accounting AND changes the ST's signable bytes, which the
+    /// upstream CL-height retry path in `platform-wallet` relies on
+    /// to bypass Tenderdash's invalid-tx hash cache
+    /// (`keep-invalid-txs-in-cache = true` in dashmate's
+    /// mainnet/testnet templates). `None` / unset = unaltered fees.
     #[cfg(feature = "core_key_wallet")]
     #[allow(async_fn_in_trait)]
     async fn broadcast_request_for_new_identity_with_signer<AS>(
@@ -127,8 +129,8 @@ pub(crate) trait BroadcastRequestForNewIdentity<T: TransportRequest, S: Signer<I
         asset_lock_proof_path: &dpp::key_wallet::bip32::DerivationPath,
         asset_lock_signer: &AS,
         identity_signer: &S,
-        user_fee_increase: UserFeeIncrease,
         platform_version: &PlatformVersion,
+        settings: Option<PutSettings>,
     ) -> Result<(StateTransition, BroadcastStateTransitionRequest), Error>
     where
         AS: dpp::key_wallet::signer::Signer + Send + Sync;
@@ -142,9 +144,10 @@ impl<S: Signer<IdentityPublicKey>>
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &PrivateKey,
         signer: &S,
-        user_fee_increase: UserFeeIncrease,
         platform_version: &PlatformVersion,
+        settings: Option<PutSettings>,
     ) -> Result<(StateTransition, BroadcastStateTransitionRequest), Error> {
+        let user_fee_increase = settings.and_then(|s| s.user_fee_increase).unwrap_or_default();
         let identity_create_transition =
             IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
                 self,
@@ -168,12 +171,13 @@ impl<S: Signer<IdentityPublicKey>>
         asset_lock_proof_path: &dpp::key_wallet::bip32::DerivationPath,
         asset_lock_signer: &AS,
         identity_signer: &S,
-        user_fee_increase: UserFeeIncrease,
         platform_version: &PlatformVersion,
+        settings: Option<PutSettings>,
     ) -> Result<(StateTransition, BroadcastStateTransitionRequest), Error>
     where
         AS: dpp::key_wallet::signer::Signer + Send + Sync,
     {
+        let user_fee_increase = settings.and_then(|s| s.user_fee_increase).unwrap_or_default();
         let identity_create_transition = IdentityCreateTransition::try_from_identity_with_signers(
             self,
             asset_lock_proof,

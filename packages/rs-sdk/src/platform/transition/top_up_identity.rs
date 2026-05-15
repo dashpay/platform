@@ -5,7 +5,7 @@ use super::waitable::Waitable;
 use crate::{Error, Sdk};
 use dpp::dashcore::PrivateKey;
 use dpp::identity::{Identity, PartialIdentity};
-use dpp::prelude::{AssetLockProof, UserFeeIncrease};
+use dpp::prelude::AssetLockProof;
 use dpp::state_transition::identity_topup_transition::methods::IdentityTopUpTransitionMethodsV0;
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 
@@ -24,7 +24,6 @@ pub trait TopUpIdentity: Waitable {
         sdk: &Sdk,
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &PrivateKey,
-        user_fee_increase: Option<UserFeeIncrease>,
         settings: Option<PutSettings>,
     ) -> Result<u64, Error>;
 
@@ -42,7 +41,6 @@ pub trait TopUpIdentity: Waitable {
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_path: &dpp::key_wallet::bip32::DerivationPath,
         asset_lock_signer: &AS,
-        user_fee_increase: Option<UserFeeIncrease>,
         settings: Option<PutSettings>,
     ) -> Result<u64, Error>
     where
@@ -56,14 +54,14 @@ impl TopUpIdentity for Identity {
         sdk: &Sdk,
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &PrivateKey,
-        user_fee_increase: Option<UserFeeIncrease>,
         settings: Option<PutSettings>,
     ) -> Result<u64, Error> {
+        let user_fee_increase = settings.and_then(|s| s.user_fee_increase).unwrap_or_default();
         let state_transition = IdentityTopUpTransition::try_from_identity_with_private_key(
             self,
             asset_lock_proof,
             asset_lock_proof_private_key.inner.as_ref(),
-            user_fee_increase.unwrap_or_default(),
+            user_fee_increase,
             sdk.version(),
             None,
         )?;
@@ -82,18 +80,18 @@ impl TopUpIdentity for Identity {
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_path: &dpp::key_wallet::bip32::DerivationPath,
         asset_lock_signer: &AS,
-        user_fee_increase: Option<UserFeeIncrease>,
         settings: Option<PutSettings>,
     ) -> Result<u64, Error>
     where
         AS: dpp::key_wallet::signer::Signer + Send + Sync,
     {
+        let user_fee_increase = settings.and_then(|s| s.user_fee_increase).unwrap_or_default();
         let state_transition = IdentityTopUpTransition::try_from_identity_with_signer(
             self,
             asset_lock_proof,
             asset_lock_proof_path,
             asset_lock_signer,
-            user_fee_increase.unwrap_or_default(),
+            user_fee_increase,
             sdk.version(),
             None,
         )
