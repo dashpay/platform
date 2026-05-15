@@ -29,6 +29,17 @@ impl PlatformAddressWallet {
     /// material — callers supply a seed-backed, hardware, or
     /// FFI-trampoline signer per their environment (iOS routes through
     /// `KeychainSigner` via `VTableSigner`).
+    ///
+    /// # Local-ledger ownership invariant (V27-007 / QA-010)
+    ///
+    /// The SDK returns post-transition states for **all** addresses touched by
+    /// the transition, including foreign output addresses the caller does not
+    /// own. Only addresses that belong to this wallet's account are written into
+    /// the local ledger; foreign addresses are silently skipped. The recipient
+    /// wallet's syncer is responsible for observing inbound credits on its own
+    /// addresses. Violating this invariant causes the source wallet's
+    /// `total_credits()` to absorb the recipient's balance, which corrupts
+    /// dust-gate checks and sweep address selection in teardown.
     pub async fn transfer<S: Signer<PlatformAddress> + Send + Sync>(
         &self,
         account_index: u32,
@@ -105,6 +116,15 @@ impl PlatformAddressWallet {
                         continue;
                     };
                     let p2pkh = PlatformP2PKHAddress::new(*hash);
+                    // V27-007 / QA-010: skip foreign output addresses.
+                    // The SDK returns post-transition state for every address in
+                    // the transition (inputs + outputs). Output addresses may
+                    // belong to a different wallet; writing their balances here
+                    // would pollute this wallet's local ledger and corrupt
+                    // `total_credits()`. See the method-level doc comment.
+                    if !account.contains_platform_address(&p2pkh) {
+                        continue;
+                    }
                     let funds = match maybe_info {
                         Some(ai) => dash_sdk::platform::address_sync::AddressFunds {
                             balance: ai.balance,

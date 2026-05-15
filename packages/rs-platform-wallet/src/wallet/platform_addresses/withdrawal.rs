@@ -128,6 +128,13 @@ impl PlatformAddressWallet {
                         continue;
                     };
                     let p2pkh = PlatformP2PKHAddress::new(*hash);
+                    // Defense-in-depth (V27-007 / QA-010): only update owned
+                    // addresses. Withdrawals send no platform output addresses,
+                    // so this guard is never expected to fire, but keeps the
+                    // local-ledger ownership invariant consistent with `transfer`.
+                    if !account.contains_platform_address(&p2pkh) {
+                        continue;
+                    }
                     let funds = match maybe_info {
                         Some(ai) => dash_sdk::platform::address_sync::AddressFunds {
                             balance: ai.balance,
