@@ -179,23 +179,15 @@ impl Debug for TenderdashStatus {
 /// before decoding Tenderdash error data.
 ///
 /// 64 KiB is comfortably above any legitimate payload. The cap bounds memory
-/// only — CBOR recursion depth is currently bounded by the Rust call stack
-/// via `catch_unwind`.
-///
-/// TODO(CMT-004): `ciborium` does not yet expose a depth-limited reader; once
-/// upstream offers one, swap `catch_unwind` for a structural depth cap.
+/// only — `ciborium`'s own recursion limit (256) bounds nesting depth and
+/// returns `RecursionLimitExceeded` rather than recursing into the stack.
 const MAX_CBOR_INPUT_SIZE: usize = 65_536;
 
-// `ciborium 0.2` `from_reader` is fully recursive; deeply nested input
-// (e.g. `a1 a1 a1 …`) blows the stack. `catch_unwind` turns the unwinding
-// panic into `None` so a hostile peer cannot abort the worker. Aborts under
-// `panic = "abort"` are not caught.
+// `ciborium` caps recursion at depth 256 and returns
+// `Error::RecursionLimitExceeded` (a normal `Err`, not a panic) for deeper
+// input, so a hostile peer cannot exhaust the stack here.
 fn decode_cbor_value(bytes: &[u8]) -> Option<ciborium::Value> {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        ciborium::de::from_reader::<ciborium::Value, _>(bytes).ok()
-    }))
-    .ok()
-    .flatten()
+    ciborium::de::from_reader::<ciborium::Value, _>(bytes).ok()
 }
 
 /// Decode a potentially unpadded base64 string used by Tenderdash error payloads.
@@ -795,18 +787,12 @@ mod tests {
     }
 
     // Pathological CBOR: 60_000 nested single-pair-map openers (`0xA1`).
-    // The recursive ciborium decoder blows the stack; the catch_unwind guard
-    // must convert the panic into None instead of aborting.
+    // `ciborium` rejects this at its depth-256 recursion limit with a normal
+    // `Err`, so the decode returns `None` without exhausting the stack.
     #[test]
-    fn decode_cbor_value_does_not_overflow_on_deep_nesting() {
+    fn decode_cbor_value_rejects_deep_nesting_without_stack_exhaustion() {
         let payload = vec![0xA1u8; 60_000];
-        let result = std::thread::Builder::new()
-            .stack_size(2 * 1024 * 1024)
-            .spawn(move || super::decode_cbor_value(&payload))
-            .expect("spawn thread")
-            .join()
-            .expect("thread did not abort");
-        assert!(result.is_none());
+        assert!(super::decode_cbor_value(&payload).is_none());
     }
 
     // -- Real-world DET log fixture tests --
