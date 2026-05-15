@@ -948,6 +948,111 @@ mod ported_v0_count_tests {
         assert_eq!(total, 5, "expected count of 5 (3 age=30 + 2 age=40)");
     }
 
+    /// `In` clause + **empty** `group_by` (= aggregate). Drive's
+    /// `detect_mode` sees `In + no range + no prove` and routes to
+    /// `DocumentCountMode::PerInValue`, which emits
+    /// `DocumentCountResponse::Entries(Vec<SplitCountEntry>)`. The
+    /// v1 handler then folds those entries back into a single
+    /// `AggregateCount(total)` at the `mode.is_aggregate()` branch
+    /// of `dispatch_count_v1` (the `saturating_add` fold over
+    /// per-In counts). This is the only response-shape
+    /// transformation the v1 handler introduces, so it deserves a
+    /// dedicated regression to lock the wire contract:
+    ///
+    /// - Wire-visible shape MUST be `AggregateCount(_)`, not the
+    ///   `Entries(_)` variant the drive executor emitted upstream.
+    ///   A regression that forgets the `mode.is_aggregate()` branch
+    ///   (or routes `select=COUNT, group_by=[]` differently in
+    ///   `validate_and_route`) would silently leak per-In rows on
+    ///   the wire — invisible to the documents-shape tests above.
+    /// - The folded total MUST equal the sum of per-In counts. A
+    ///   regression that off-by-ones the fold, picks the wrong
+    ///   accumulator, or silently picks a single branch's count
+    ///   instead would still produce an `AggregateCount` of the
+    ///   wrong magnitude.
+    ///
+    /// Pairs structurally with
+    /// [`ported_documents_count_with_in_operator`] above: same
+    /// fixture, same `where` clause, only `group_by` differs
+    /// (`["age"]` → wire `Entries`; `[]` → wire
+    /// `AggregateCount`). Together they pin both halves of the
+    /// `(group_by × PerInValue-execution)` matrix.
+    #[test]
+    fn documents_count_with_in_operator_and_empty_group_by_collapses_to_aggregate() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let platform_version = PlatformVersion::latest();
+
+        let data_contract = json_document_to_contract_with_ids(
+            "tests/supporting_files/contract/family/family-contract-countable.json",
+            None,
+            None,
+            false,
+            platform_version,
+        )
+        .expect("expected to get json based contract");
+        store_data_contract(&platform, &data_contract, version);
+
+        // Same fixture rows as `ported_documents_count_with_in_operator`
+        // (3 × age=30, 2 × age=40, 1 × age=50). The In clause matches
+        // 3+2 = 5 rows; only age=50 sits outside the In window.
+        for (id, name, age) in [
+            ([1u8; 32], "Alice", 30u64),
+            ([2u8; 32], "Bob", 30),
+            ([3u8; 32], "Carol", 30),
+            ([4u8; 32], "Dave", 40),
+            ([5u8; 32], "Eve", 40),
+            ([6u8; 32], "Frank", 50),
+        ] {
+            store_person_document(
+                &platform,
+                &data_contract,
+                id,
+                name,
+                "Smith",
+                age,
+                platform_version,
+            );
+        }
+
+        let where_clauses = vec![Value::Array(vec![
+            Value::Text("age".to_string()),
+            Value::Text("in".to_string()),
+            Value::Array(vec![Value::U64(30), Value::U64(40)]),
+        ])];
+
+        let request = count_v1_request(
+            data_contract.id().to_vec(),
+            "person",
+            serialize_where_clauses_to_cbor(where_clauses),
+            Vec::new(),
+            /* group_by = */ Vec::new(),
+            /* limit = */ None,
+            /* prove = */ false,
+        );
+
+        let result = platform
+            .query_documents_v1(request, &state, version)
+            .expect("expected query to succeed");
+        assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+
+        // Load-bearing assertion #1: wire shape is the aggregate
+        // variant, NOT the entries variant. `unwrap_aggregate`
+        // panics if `result.variant` is `Entries(_)` — which is
+        // exactly the regression we're guarding against.
+        let total = unwrap_aggregate(result.data.expect("data"));
+
+        // Load-bearing assertion #2: the folded total equals the
+        // sum of per-In counts (3 × age=30 + 2 × age=40 = 5). A
+        // wrong-accumulator regression that picks a single branch
+        // (e.g. returns 3 or 2 instead of 5) still produces an
+        // `AggregateCount` and would pass assertion #1 alone.
+        assert_eq!(
+            total, 5,
+            "expected aggregate count 5 (3 × age=30 + 2 × age=40); a value of 3 or 2 \
+             indicates the per-In fold picks a single branch instead of summing"
+        );
+    }
+
     /// Range without a `range_countable` index → picker rejection.
     /// Ported from
     /// `test_documents_count_range_without_range_countable_index_returns_clear_error`.
