@@ -480,32 +480,46 @@ impl Drive {
                 //   proof.
                 //
                 // - **Range-outer carrier (G8):** the platform
-                //   enforces a hard cap of
-                //   [`super::CARRIER_AGGREGATE_OUTER_RANGE_LIMIT`] on
-                //   how many outer-range matches the carrier walks.
-                //   The caller's `limit` is rejected outright on this
-                //   shape — the cap is part of the per-shape
-                //   structural contract so prover and verifier agree
-                //   byte-for-byte without the caller having to
-                //   coordinate a matching value.
+                //   enforces a max outer-walk cap of
+                //   [`super::MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT`]
+                //   on how many outer-range matches the carrier walks.
+                //   Caller may pass a smaller `limit` to truncate the
+                //   walk further; passing a larger one is rejected.
+                //   If the caller passes `None`, the platform default
+                //   (the cap itself) is used.
                 let has_outer_range = where_clauses
                     .iter()
                     .filter(|wc| DriveDocumentCountQuery::is_range_operator(wc.operator))
                     .count()
                     == 2;
                 let effective_limit = if has_outer_range {
-                    if request.limit.is_some() {
-                        return Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(
-                            "carrier-aggregate range-outer queries (e.g. `outer_range_field \
-                             > X AND inner_acor_field > Y` with `group_by = \
-                             [outer_range_field]`) carry a fixed platform-wide outer-walk \
-                             cap of {} entries; remove `limit` from the request — the cap \
-                             is enforced server-side to keep prover/verifier path-query \
-                             bytes deterministic across callers",
-                            super::CARRIER_AGGREGATE_OUTER_RANGE_LIMIT,
-                        ))));
+                    match request.limit {
+                        None => Some(super::MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT),
+                        Some(n) => {
+                            if n > super::MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT as u32 {
+                                return Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(
+                                    "carrier-aggregate range-outer queries (e.g. \
+                                         `outer_range_field > X AND inner_acor_field > \
+                                         Y` with `group_by = [outer_range_field]`) cap \
+                                         the outer walk at {} entries (compile-time \
+                                         constant `MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT`); \
+                                         got limit = {}. Pass a value ≤ {} or omit \
+                                         `limit` to use the default.",
+                                    super::MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT,
+                                    n,
+                                    super::MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT,
+                                ))));
+                            }
+                            if n == 0 {
+                                return Err(Error::Query(QuerySyntaxError::InvalidLimit(
+                                    "carrier-aggregate range-outer queries require limit \
+                                     ≥ 1; got limit = 0"
+                                        .to_string(),
+                                )));
+                            }
+                            Some(n as u16)
+                        }
                     }
-                    Some(super::CARRIER_AGGREGATE_OUTER_RANGE_LIMIT)
                 } else {
                     if let Some(n) = request.limit {
                         return Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(

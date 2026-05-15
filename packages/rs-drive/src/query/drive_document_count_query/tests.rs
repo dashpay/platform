@@ -2460,6 +2460,53 @@ mod detect_mode_tests {
             DocumentCountMode::PointLookupProof,
         );
     }
+
+    /// `GroupByRange + prove + two range clauses on distinct fields`
+    /// routes to `RangeAggregateCarrierProof` (the carrier-ACOR with
+    /// outer Range shape — chapter 30 G8). The dispatcher applies a
+    /// platform-wide max outer-walk cap via
+    /// [`MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT`], with caller
+    /// semantics tested at the dispatcher level.
+    #[test]
+    fn outer_range_plus_inner_range_with_prove_and_group_by_range_routes_to_carrier_proof() {
+        let clauses = vec![gt_clause("brand"), gt_clause("color")];
+        assert_eq!(
+            DriveDocumentCountQuery::detect_mode(&clauses, CountMode::GroupByRange, true).unwrap(),
+            DocumentCountMode::RangeAggregateCarrierProof,
+        );
+    }
+
+    /// Two range clauses on the SAME field are still rejected — the
+    /// "two ranges on distinct fields" carrier escape hatch requires
+    /// the ranges to be on different properties (one outer, one
+    /// terminator). Same-field two-sided ranges flatten through the
+    /// upstream parser into `between*` and arrive here as one clause.
+    #[test]
+    fn two_ranges_on_same_field_with_group_by_range_prove_still_rejected() {
+        let clauses = vec![gt_clause("color"), lt_clause("color")];
+        let err = DriveDocumentCountQuery::detect_mode(&clauses, CountMode::GroupByRange, true)
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            QuerySyntaxError::InvalidWhereClauseComponents(_)
+        ));
+    }
+
+    /// No-proof path keeps the original `range_count > 1` rejection
+    /// — the carrier escape hatch is gated on `prove = true` because
+    /// the no-proof variant doesn't have a corresponding executor
+    /// yet. (Documenting the gate so a future no-proof carrier wire-
+    /// up doesn't silently slip past `detect_mode`'s exhaustiveness.)
+    #[test]
+    fn two_ranges_no_proof_with_group_by_range_still_rejected() {
+        let clauses = vec![gt_clause("brand"), gt_clause("color")];
+        let err = DriveDocumentCountQuery::detect_mode(&clauses, CountMode::GroupByRange, false)
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            QuerySyntaxError::InvalidWhereClauseComponents(_)
+        ));
+    }
 }
 
 /// Coverage for the rangeCountable-terminator optimization on the

@@ -652,7 +652,7 @@ fn document_count_worst_case(c: &mut Criterion) {
             CountMode::GroupByRange,
             // Range-outer carrier-aggregate enforces a fixed
             // platform-wide outer-walk cap of
-            // `CARRIER_AGGREGATE_OUTER_RANGE_LIMIT` (25); the
+            // `MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT` (10); the
             // dispatcher rejects a caller-supplied `limit` on this
             // shape, so pass `None` here.
             None,
@@ -954,7 +954,7 @@ fn report_group_by_matrix(fixture: &CountBenchFixture, platform_version: &Platfo
         MatrixCase {
             label: "[brand] / where=brand > floor AND color > floor",
             platform_allowed:
-                "yes (RangeAggregateCarrierProof — carrier ACOR; platform-cap outer limit = 25)",
+                "yes (RangeAggregateCarrierProof — carrier ACOR; platform-max outer limit = 10)",
             raw_where: where_brand_gt_color_gt(),
             mode: CountMode::GroupByRange,
             limit: None,
@@ -1364,9 +1364,9 @@ fn probe_carrier_acor_range_outer(fixture: &CountBenchFixture, platform_version:
     // matches the carrier walks — each matched outer key still
     // produces a complete leaf-ACOR `u64`. The probe matches the
     // platform-wide cap defined at
-    // `CARRIER_AGGREGATE_OUTER_RANGE_LIMIT` (25), which the drive
+    // `MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT` (10), which the drive
     // dispatcher enforces on the G8 shape.
-    let outer_limit: u16 = 25;
+    let outer_limit: u16 = 10;
     let path_query = PathQuery::new(path, SizedQuery::new(carrier, Some(outer_limit), None));
 
     eprintln!(

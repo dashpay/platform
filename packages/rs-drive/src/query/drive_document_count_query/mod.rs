@@ -93,28 +93,38 @@ pub use execute_range_count::RangeCountOptions;
 #[cfg(feature = "server")]
 pub const MAX_LIMIT_AS_FAILSAFE: u32 = 1024;
 
-/// Platform-wide outer-walk cap for carrier-aggregate range-outer
-/// proofs (chapter 30 G8: `outer_range_field > X AND inner_acor_field
-/// > Y` with `group_by = [outer_range_field]` and `prove = true`).
+/// Platform-wide **maximum** outer-walk cap for carrier-aggregate
+/// range-outer proofs (chapter 30 G8: `outer_range_field > X AND
+/// inner_acor_field > Y` with `group_by = [outer_range_field]` and
+/// `prove = true`).
 ///
-/// The cap is part of the per-shape structural contract so prover
-/// and verifier agree byte-for-byte without the caller having to
-/// coordinate a matching `SizedQuery::limit` value. Callers that
-/// want fewer results narrow their where-clause range; callers that
-/// want more results must accept that they can't get them in a
-/// single proof on this shape (use repeated calls with disjoint
-/// outer-range windows instead).
+/// The cap bounds the proof size: bytes grow linearly with the
+/// number of outer matches (~1 700 B per outer key in this
+/// chapter's widget fixture; `10 × 1 700 B ≈ 17 KB` worst case).
+/// 10 keeps the worst-case proof comfortably inside Tier-1 of the
+/// visualizer's shareable-link guidance (< 20 KB).
 ///
-/// 25 was picked as a balance between proof bytes (linear in the
-/// cap; ≈ `25 × 1 700 B = 42 KB` worst case) and useful coverage
-/// for typical "top-N by an outer range" queries. The cap is
-/// hardcoded rather than operator-tunable for the same reason
-/// `RangeDistinctProof` anchors its limit fallback to
-/// `crate::config::DEFAULT_QUERY_LIMIT` (the compile-time constant)
-/// rather than `drive_config.default_query_limit` (the runtime
-/// value): proof bytes must not vary by operator config or
-/// prover/verifier agreement fails silently.
-pub const CARRIER_AGGREGATE_OUTER_RANGE_LIMIT: u16 = 25;
+/// **Caller semantics:**
+/// - `request.limit = None` → server uses `MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT`
+///   (the default).
+/// - `request.limit = Some(n)` with `n ≤ MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT`
+///   → accepted; the dispatcher passes `n` through to
+///   `SizedQuery::limit` so the prover walks exactly `n` outer matches.
+/// - `request.limit = Some(n)` with `n > MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT`
+///   → rejected with `InvalidLimit`. The cap is a hard ceiling: callers
+///   that want more results must call repeatedly with disjoint
+///   outer-range windows.
+///
+/// Why the ceiling is a hardcoded compile-time constant rather
+/// than `drive_config.max_query_limit` (the operator-tunable
+/// runtime value): on the prove path, `SizedQuery::limit` is
+/// part of the serialized `PathQuery` and feeds the merk-root
+/// reconstruction. Anchoring the ceiling to a compile-time
+/// constant guarantees prover and verifier agree on what the
+/// "default when None" value is, regardless of operator config
+/// (same rationale as `RangeDistinctProof`'s use of
+/// `crate::config::DEFAULT_QUERY_LIMIT`).
+pub const MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT: u16 = 10;
 
 #[cfg(feature = "server")]
 #[cfg(test)]
