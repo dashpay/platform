@@ -122,6 +122,25 @@ const CL_HEIGHT_RETRY_BUDGET: Duration = Duration::from_secs(210);
 /// the asset-lock tx's record context to `InChainLockedBlock` before
 /// we constructed the proof.
 ///
+/// **Trust model.** This function treats the 10506 response as
+/// authoritative — there's no client-side cryptographic proof or
+/// DAPI-quorum check on the consensus error. That trust boundary
+/// lives one layer up: a node that fabricates rejections is a
+/// malicious DAPI node, and the right defense is to stop submitting
+/// to it (DAPI client rotation / blacklisting), not to engineer
+/// around fabricated responses here. Bumping `user_fee_increase` in
+/// response to a forged 10506 can grief a user (wasted credits,
+/// slowed registration) but cannot extract value — identity fees
+/// flow to Platform validators, not DAPI nodes — so the attack is
+/// unprofitable. The bounded retry budget further caps the grief
+/// impact: at most `CL_HEIGHT_RETRY_BUDGET / CL_HEIGHT_RETRY_DELAY`
+/// bumps (~14 with the current 210s/15s pair) before the loop
+/// surfaces the error. A proper fix would require cryptographically
+/// verifiable consensus errors (a quorum signature on rejection, or
+/// validator attestation) and is tracked as future work; doing it
+/// in-place here would either re-implement DAPI client trust or
+/// require an SDK API change neither of which belong in this PR.
+///
 /// Non-CL-height errors are passed through unchanged. Every rejection
 /// is logged with both the proof's claimed height and Platform's
 /// currently observed Core tip so persistent lag (>3.5min) attributes
