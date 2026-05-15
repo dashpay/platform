@@ -183,7 +183,7 @@ Status legend: **green** = test file present, body has real assertions, runnable
 | PA-004b | Sweep dust threshold boundary triplet | P2 | green | M |
 | PA-004c | Sweep with exactly zero balance | P2 | green | S |
 | PA-005b | `DEFAULT_GAP_LIMIT` triplet (19 / 20 / 21 unused) | P2 | IMPLEMENTED — passing | M |
-| PA-006b | Two concurrent broadcasts of identical ST bytes | P2 | green | M |
+| PA-006b | Two concurrent broadcasts of identical ST bytes | P2 | red-real-fail (Found-025 family, multi-thread only) — un-swapped `wait_for_balance` at `pa_006b_concurrent_broadcast.rs:81` reads the Found-025-poisoned local sync map; deterministic 60s funding-gate timeout under documented 14-thread conditions. Single-thread PASS. Non-swap was an intentional #480 scoping decision (PA-* feed local `.balances()` asserts) — see PA-006b detail for swap-scope reassessment | M |
 | PA-007b | Two concurrent `sync_balances` on one wallet | P2 | green | M |
 | PA-008b | Two `TestWallet`s × three concurrent funders each | P2 | red-real-fail (concurrency-only) — full-suite 14-thread FAIL on first marker `wait_for_balance` (120s timeout); `--test-threads=1` isolation PASS in 158s; suspected provider-pending promotion race in `next_unused_receive_address` | M |
 | PA-008c | Observable serialisation of `FUNDING_MUTEX` | P2 | green | M |
@@ -193,11 +193,11 @@ Status legend: **green** = test file present, body has real assertions, runnable
 | PA-013 | Broadcast retry under transient DAPI 5xx | P2 | not implemented | M |
 | PA-014 | Multi-output at protocol-max output count | P2 | not implemented | M |
 | ID-001 | Register identity funded from platform addresses | P0 | green | L |
-| ID-002 | Top-up identity from platform addresses | P0 | green | M |
+| ID-002 | Top-up identity from platform addresses | P0 | red-by-design (concurrency-only) — Found-026 family: `next_unused_address()` returns a DUPLICATE of the registration funding address under 14-thread churn; deterministic panic at `id_002_top_up_identity.rs:117` after the Found-025 chain-confirmed gate clears. Single-thread PASS | M |
 | ID-002b | Asset-lock-funded top-up of existing identity | P1 | blocked — test file present; `#[ignore]`d on bank Core (Layer-1) funding prereq | L |
 | ID-003 | Identity-to-identity credit transfer | P0 | green | M |
 | ID-004 | Identity update: add and disable a key | P1 | not implemented | L |
-| ID-005 | Transfer credits from identity to platform addresses | P1 | green | M |
+| ID-005 | Transfer credits from identity to platform addresses | P1 | red-by-design (concurrency-only) — Found-026 family: `next_unused_address()` returns a DUPLICATE of the funding address under 14-thread churn; deterministic panic at `id_005_identity_to_addresses_transfer.rs:127` after the Found-025 chain-confirmed gate clears. Single-thread PASS | M |
 | ID-006 | Refresh and load identity by index | P1 | not implemented | M |
 | ID-001b | `setup_with_n_identities(N)` multi-identity helper | P1 | not implemented | M |
 | ID-001c | Non-default `StateTransitionSettings` (`wait_for_proof = false`) | P2 | not implemented | M |
@@ -244,7 +244,7 @@ Status legend: **green** = test file present, body has real assertions, runnable
 | Harness-G1a | Corrupted registry JSON: refuse to overwrite | P2 | not implemented | M |
 | Harness-G1b | Registry forward-compatible unknown field | P2 | not implemented | S |
 | Harness-G4 | Drop `wallet.transfer` future mid-flight, recover on next sync | P2 | not implemented | L |
-| Harness-ID-1 | `sweep_identities` regression: registered identities surrender credits at teardown | P0 | green | S |
+| Harness-ID-1 | `sweep_identities` regression: registered identities surrender credits at teardown | P0 | green (harness-fix QA-503: removed structurally-unobservable secondary bank-identity invariant — concurrent `bank_rebalance` core-refill legitimately tops up the bank identity; sweep correctness still pinned by the immune `swept_identity_credits` assertion) | S |
 
 #### Found-bug pins
 
@@ -578,7 +578,7 @@ Counts by priority: **P0: 10**, **P1: 29** (incl. CR-004 passing-as-regression +
 
 #### PA-006b — Two concurrent broadcasts of identical ST bytes
 - **Priority**: P2
-- **Status**: IMPLEMENTED — passing.
+- **Status**: `red-real-fail (Found-025 family, multi-thread only)`. NOT "IMPLEMENTED — passing" under documented 14-thread Found-025 conditions. Single-thread PASS. Under the documented 14-thread v-run (`/tmp/vrun-hDqJaP.txt:17588-17597`) it deterministically panics at `pa_006b_concurrent_broadcast.rs:83` — `addr_src funding never observed: wait_for_balance timed out after 60s (… last_observed=0 … any_balance_change_observed=false)`. The funding gate at `:81` uses the un-swapped `wait_for_balance`, which reads the Found-025-poisoned local sync map (`balances().get(addr)`); the preceding `Address sync: … (Found-025)` WARN lines confirm the poisoned-map condition. Per #480 the non-swap was an *intentional* scoping decision (PA-* feed local `.balances()` asserts at `:90`, so they must observe via the local map). This is the Found-025-family downstream failure that the chain-confirmed-gate swap (`0376706cb5`) deliberately did NOT cover here. The test stays genuinely RED for the real reason. No production fix; no `#[ignore]`; no weakened assert. **Swap-scope reassessment (QA-504):** pa_006b is a *concurrent_broadcast* test — the binding security invariant (no double-debit, `:on-chain` balance check) does NOT actually depend on the *funding* gate at `:81` observing through the local map; only the later `pre_balances`/`post` `.balances()` deltas do. The #480 local-`.balances()` rationale therefore plausibly does NOT hold for the *funding* `wait_for_balance` at `:81` (it gates funding observability, not a `.balances()` assertion). **Recommendation:** swap *only* the `:81` funding gate to `wait_for_address_balance_chain_confirmed_n` (chain-confirmed, Found-025-immune), leaving the post-broadcast local `.balances()` asserts untouched — this preserves #480's intent while removing the Found-025 poison from the unrelated funding precondition. NOT done here (out of this task's code scope; flagged explicitly per instruction).
 - **Wallet feature exercised**: nonce / replay-protection at the SDK / DAPI boundary.
 - **DET parallel**: none.
 - **Preconditions**: bank-funded test wallet; PA-006's `transfer_capturing_st_bytes` helper.
@@ -796,7 +796,7 @@ Counts by priority: **P0: 10**, **P1: 29** (incl. CR-004 passing-as-regression +
 
 #### ID-002 — Top-up identity from platform addresses
 - **Priority**: P0
-- **Status**: Pass — `tests/e2e/cases/id_002_top_up_identity.rs` (post-top-up identity balance fetched on-chain, fee derived from delta, second-address residual asserted).
+- **Status**: `red-by-design (concurrency-only)` — `tests/e2e/cases/id_002_top_up_identity.rs`. Single-thread PASS (post-top-up identity balance fetched on-chain, fee derived from delta, second-address residual asserted). Under the documented 14-thread v-run (`/tmp/vrun-hDqJaP.txt:9593-9596`) it deterministically panics at `id_002_top_up_identity.rs:117` with `assert_ne!(top_up_addr, register_addr)` — `left == right` (`P2pkh([173,38,125,79,…])`): `next_unused_address()` returned a DUPLICATE of the registration funding address. The Found-025 chain-confirmed funding gate (swapped on `0376706cb5`) cleared first; this is the *downstream* bug it unmasked, not a regression. The test stays genuinely RED for the real reason — the duplicate-address derivation is the proof. **Found-026 family** (same root component `PlatformAddressWallet::next_unused_*address` pool-cursor under concurrent BLAST-sync churn). Distinct observable mechanism from Found-026's documented site: PA-008b/Found-026 manifests as *enqueue-miss → balance stays 0*; here the cursor returns a *duplicate address*. Not promoted to a new Found-NNN: same component + same concurrency trigger, Found-026 itself is still `suspected`, and #496 holds all filing — over-pinning without TRACE confirmation would be premature. No production fix (production cursor race, pinned not patched).
 - **Wallet feature exercised**: `wallet/identity/network/top_up_from_addresses.rs:37`.
 - **DET parallel**: `dash-evo-tool/tests/backend-e2e/identity_tasks.rs:63` (`step_top_up_from_platform_addresses`).
 - **Preconditions**: ID-001 setup helper; identity registered with starting balance.
@@ -911,7 +911,7 @@ Counts by priority: **P0: 10**, **P1: 29** (incl. CR-004 passing-as-regression +
 
 #### ID-005 — Transfer credits from identity to platform addresses
 - **Priority**: P1
-- **Status**: Pass — `tests/e2e/cases/id_005_identity_to_addresses_transfer.rs` (pins exact destination-address gain + identity loss > amount + on-chain post-balance equals wallet-returned `Credits`).
+- **Status**: `red-by-design (concurrency-only)` — `tests/e2e/cases/id_005_identity_to_addresses_transfer.rs`. Single-thread PASS (pins exact destination-address gain + identity loss > amount + on-chain post-balance equals wallet-returned `Credits`). Under the documented 14-thread v-run (`/tmp/vrun-hDqJaP.txt:9806-9809`) it deterministically panics at `id_005_identity_to_addresses_transfer.rs:127` with `assert_ne!(dest_addr, funding_addr)` — `left == right` (`P2pkh([146,35,129,118,…])`): `next_unused_address()` returned a DUPLICATE of the funding address. The Found-025 chain-confirmed gate cleared first; this is the *downstream* bug it unmasked, not a regression. The test stays genuinely RED for the real reason — the duplicate-address derivation is the proof. **Found-026 family** (shared root component / concurrency trigger; see ID-002 status note for the same-family justification and why no new Found-NNN). No production fix (production cursor race, pinned not patched).
 - **Wallet feature exercised**: `wallet/identity/network/transfer_to_addresses.rs:66`.
 - **DET parallel**: `dash-evo-tool/tests/backend-e2e/identity_tasks.rs:291` (`step_transfer_to_addresses`).
 - **Preconditions**: ID-001 helper.
@@ -1921,6 +1921,7 @@ sane place to pin the harness contract is alongside the wallet contract.
 #### Harness-ID-1 — `sweep_identities` regression: registered identities surrender credits at teardown
 - **Priority**: P0
 - **Status**: IMPLEMENTED — passing (parallel-safe). The `bank_gain <= pre_sweep_balance` upper-bound assertion is dropped — under parallel execution, sibling test sweeps flow into the bank concurrently, making the upper bound non-deterministic. The binding assertion is the lower-bound recovery check combined with the "no registry entry after teardown" guarantee.
+- **QA-503 verdict — HARNESS test-defect, minimal harness fix applied (not a production routing bug).** The 14-thread v-run (`/tmp/vrun-hDqJaP.txt:18376-18378`) panicked at `id_sweep_recovers_identity_credits.rs:167` — `bank identity balance grew during a sweep run (pre=26455100 post=5000076455100)`. Root-caused: the primary correctness assertion (`report.swept_identity_credits >= SWEEP_GAIN_FLOOR`, `:144`) PASSED — the sweep itself worked. The panic was on a *secondary* bank-identity invariant (`post <= pre`, `:167`) added in `8ae72fd2f5` (QA-V38). The growth delta is exactly `5_000_050_000_000`, matching the concurrent harness `bank_rebalance` core-refill `top_up_from_addresses(topup_credits=5000050000000)` to the bank IDENTITY (`/tmp/vrun-hDqJaP.txt:12330` shows the bank identity at `5000076455100` mid-run). `framework/bank_rebalance.rs` (module doc lines 9-30) *intentionally and by design* tops up the bank identity as part of the core-refill chain, then drains it. The sweep did NOT credit the bank identity — a documented concurrent harness mechanism did. The secondary invariant observes a process-shared sink mutated by concurrent harness infra: it is the **identical class of structurally-unobservable flaw** that QA-V39-001 already fixed for the *primary* check (which is why the primary was reworked onto the race-immune `swept_identity_credits` return value). The test's own comment (`:156-161`) flagged this fragility. **Minimal honest fix:** removed the unobservable secondary bank-identity invariant (`:156-172`). NOT green-paint — sweep correctness remains fully pinned by the concurrency-immune `swept_identity_credits` assertion; the deleted check tested concurrent *harness* side-effects, not the sweep, exactly mirroring the documented QA-V39-001 rationale. No production source touched (none implicated).
 - **Wallet feature exercised**: `tests/e2e/framework/cleanup.rs::sweep_identities` (was a no-op stub on `feat/rs-platform-wallet-e2e-cases`; implementation lands on the identity-tests-and-sweep branch).
 - **DET parallel**: none.
 - **Preconditions**: ID-001 helper available; bank identity configured for the sweep destination (per `bank_identity` env-var contract).

@@ -18,6 +18,13 @@
 //! sibling tests' `fund_address` spends drain it during the wait
 //! window. Asserting on the sweep's own return value sidesteps the
 //! observability race entirely.
+//!
+//! QA-503 — the secondary `bank_identity post<=pre` invariant was
+//! removed for the same reason: concurrent harness `bank_rebalance`
+//! core-refill legitimately tops up the bank identity mid-run, so
+//! that sink is unobservable in isolation under parallelism. The
+//! immune `swept_identity_credits` assertion is the sole binding
+//! correctness pin.
 
 use std::time::Duration;
 
@@ -72,17 +79,6 @@ async fn id_sweep_recovers_identity_credits() {
     let s = setup().await.expect("e2e setup failed");
 
     let bank_identity_id = s.ctx.bank_identity().id;
-    // Clone the SDK handle so post-teardown fetches keep working —
-    // `SetupGuard::teardown` consumes `self`.
-    let sdk = std::sync::Arc::clone(s.ctx.sdk());
-
-    // Invariant snapshot — the bank identity should remain flat
-    // across this test (sweeps no longer pool credits on it).
-    let bank_identity_pre_balance = Identity::fetch(s.ctx.sdk(), bank_identity_id)
-        .await
-        .expect("fetch bank identity pre")
-        .expect("bank identity must be visible on chain")
-        .balance();
 
     // Register a fresh identity with comfortable headroom.
     let funding_addr = s
@@ -128,7 +124,6 @@ async fn id_sweep_recovers_identity_credits() {
         target: "platform_wallet::e2e::cases::id_sweep",
         identity_id = %registered.id,
         bank_identity_id = %bank_identity_id,
-        bank_identity_pre_balance,
         pre_sweep_balance,
         "snapshot before sweep"
     );
@@ -153,30 +148,17 @@ async fn id_sweep_recovers_identity_credits() {
         pre = pre_sweep_balance,
     );
 
-    // Bank-identity invariant: sweeps no longer pool credits on the
-    // bank identity. Fetch post-test and verify it has not grown
-    // beyond the pre snapshot. We tolerate strict equality; if some
-    // unrelated harness path tops it up, this assertion would need
-    // revisiting — surface that as a failure rather than letting it
-    // drift silently.
-    let bank_identity_post_balance = Identity::fetch(&sdk, bank_identity_id)
-        .await
-        .expect("fetch bank identity post")
-        .expect("bank identity must remain visible on chain")
-        .balance();
-    assert!(
-        bank_identity_post_balance <= bank_identity_pre_balance,
-        "bank identity balance grew during a sweep run — sweeps must \
-         target the bank ADDRESS, not the bank identity \
-         (pre={bank_identity_pre_balance} post={bank_identity_post_balance})"
-    );
-
+    // No bank-identity post<=pre invariant here: the concurrent
+    // harness `bank_rebalance` core-refill legitimately tops up the
+    // bank identity mid-run (`framework/bank_rebalance.rs` design),
+    // so that sink is structurally unobservable in isolation under
+    // parallelism — same flaw QA-V39-001 fixed for the primary check.
+    // Sweep correctness is fully pinned by the race-immune
+    // `swept_identity_credits` assertion above (QA-503, TEST_SPEC).
     tracing::info!(
         target: "platform_wallet::e2e::cases::id_sweep",
         swept_identity_credits = report.swept_identity_credits,
         broadcasts_succeeded = report.broadcasts_succeeded,
-        bank_identity_pre_balance,
-        bank_identity_post_balance,
         pre_sweep_balance,
         "sweep self-test snapshot"
     );

@@ -78,6 +78,19 @@ async fn pa_006b_concurrent_identical_broadcasts() {
         .fund_address(&addr_src, FUNDING_CREDITS)
         .await
         .expect("bank.fund_address");
+    // QA-504 / Found-025 family (multi-thread only). This funding
+    // gate uses the un-swapped `wait_for_balance`, which reads the
+    // Found-025-poisoned local sync map. Under the documented
+    // 14-thread v-run it deterministically times out here (60s,
+    // last_observed=0) — RED for the real Found-025 reason, NOT a
+    // regression. #480 left PA-* on `wait_for_balance` because their
+    // post-broadcast asserts read local `.balances()`; but this is a
+    // *concurrent_broadcast* test whose binding invariant is the
+    // on-chain no-double-debit check, so the local-map rationale is
+    // weak for *this funding precondition*. Recommended (not done
+    // here — out of code scope): swap ONLY this gate to
+    // `wait_for_address_balance_chain_confirmed_n`. See TEST_SPEC
+    // PA-006b. Do not weaken / `#[ignore]`.
     wait_for_balance(&s.test_wallet, &addr_src, FUNDING_FLOOR, STEP_TIMEOUT)
         .await
         .expect("addr_src funding never observed");

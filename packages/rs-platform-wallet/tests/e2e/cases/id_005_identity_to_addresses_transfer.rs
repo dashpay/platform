@@ -1,7 +1,10 @@
 //! ID-005 — Transfer credits from identity to platform addresses.
 //!
 //! Spec: `tests/e2e/TEST_SPEC.md` (### Identity (ID) → ID-005).
-//! Pinned status: Pass.
+//! Pinned status: red-by-design (concurrency-only) — single-thread
+//! PASS; deterministic FAIL under the documented 14-thread v-run on
+//! a Found-026-family `next_unused_address()` duplicate-derivation
+//! race (see the RED-by-design pin at the `assert_ne!` below).
 //!
 //! Registers an identity with comfortable headroom, derives a fresh
 //! destination address on the test wallet, and drives
@@ -124,6 +127,16 @@ async fn id_005_identity_to_addresses_transfer() {
         .next_unused_address()
         .await
         .expect("derive destination address");
+    // RED-by-design pin (QA-501, Found-026 family). Under the
+    // documented 14-thread v-run this `assert_ne!` deterministically
+    // panics with left == right: `next_unused_address()` returns a
+    // DUPLICATE of `funding_addr` under concurrent BLAST-sync churn
+    // on the `PlatformAddressWallet` pool cursor. The Found-025
+    // chain-confirmed funding gate (this branch) clears first, so
+    // this is the *downstream* production cursor race it unmasked —
+    // NOT a regression. The panic is the proof; the assertion stays
+    // genuine. Do not weaken / `#[ignore]` — fix the production race
+    // upstream, then this goes green. See TEST_SPEC ID-005.
     assert_ne!(
         dest_addr, funding_addr,
         "destination must differ from the funding address"

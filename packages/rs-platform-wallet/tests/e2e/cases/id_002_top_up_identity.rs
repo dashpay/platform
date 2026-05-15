@@ -1,7 +1,10 @@
 //! ID-002 — Top-up identity from platform addresses.
 //!
 //! Spec: `tests/e2e/TEST_SPEC.md` (### Identity (ID) → ID-002).
-//! Pinned status: Pass.
+//! Pinned status: red-by-design (concurrency-only) — single-thread
+//! PASS; deterministic FAIL under the documented 14-thread v-run on
+//! a Found-026-family `next_unused_address()` duplicate-derivation
+//! race (see the RED-by-design pin at the `assert_ne!` below).
 //!
 //! Registers an identity (ID-001 helper), funds a second platform
 //! address from the bank, then drives `top_up_from_addresses` and
@@ -114,6 +117,16 @@ async fn id_002_top_up_identity_from_addresses() {
         .next_unused_address()
         .await
         .expect("derive top-up address");
+    // RED-by-design pin (QA-502, Found-026 family). Under the
+    // documented 14-thread v-run this `assert_ne!` deterministically
+    // panics with left == right: `next_unused_address()` returns a
+    // DUPLICATE of `register_addr` under concurrent BLAST-sync churn
+    // on the `PlatformAddressWallet` pool cursor. The Found-025
+    // chain-confirmed funding gate (this branch) clears first, so
+    // this is the *downstream* production cursor race it unmasked —
+    // NOT a regression. The panic is the proof; the assertion stays
+    // genuine. Do not weaken / `#[ignore]` — fix the production race
+    // upstream, then this goes green. See TEST_SPEC ID-002.
     assert_ne!(
         top_up_addr, register_addr,
         "top-up address must differ from the registration funding address"
