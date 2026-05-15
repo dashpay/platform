@@ -50,10 +50,12 @@ stable enough to drive from tests. See [Future Core support](#future-core-suppor
 Tests are gated behind `#[ignore]` so a stock `cargo test` (or workspace-wide
 invocation) stays green for contributors and CI jobs that lack a funded testnet
 bank wallet, live DAPI access, and the operator `.env`. To execute the live suite
-once setup is in place, opt in explicitly with `--ignored`:
+once setup is in place, opt in explicitly with `--include-ignored` — this runs the
+**full** suite (both ignored and non-ignored cases). `--ignored` alone runs *only*
+the `#[ignore]`-attributed subset and silently skips the rest:
 
 ```bash
-cargo test --test e2e -- --ignored --nocapture
+cargo test --test e2e -- --include-ignored --nocapture
 ```
 
 If `PLATFORM_WALLET_E2E_BANK_MNEMONIC` is unset when an opt-in run starts, the

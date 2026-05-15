@@ -1557,6 +1557,7 @@ This section covers primitive-level correctness of `AssetLockManager` — the in
 
 - **Priority**: P1
 - **Status**: red-real-fail (shifted-failure-mode) — failure fingerprint `FinalityTimeout(<txid>)` at `al_001_concurrent_asset_lock_builds.rs:299` (task 1). Identical across v48, v49, v50 — no run-to-run drift. Blocked on Found-008 (platform-internal — tracked at dashpay/platform#3641).
+- **Pin coverage degraded under Core-bank depletion (v54)**: when the e2e testnet Core L1 bank is depleted, al_001 dies at the Core-funded setup gate (`:128`, "Bank Core under-funded"), not at the designed Found-008 `FinalityTimeout` (`:299`) — the Found-008 pin is env-masked. Same depletion also fails cr_003 + id_002b. Operator must top up the e2e Core bank funding address (configured for the bank harness); restores designed pin coverage.
 - **Failure site**: `tests/e2e/cases/al_001_concurrent_asset_lock_builds.rs:299` — the `wait_for_asset_lock` / IS-lock poll on task 1's broadcast transaction.
 - **Blocker**: Found-008 (`LockNotifyHandler::notify_waiters` at `packages/rs-platform-wallet/src/wallet/asset_lock/lock_notify_handler.rs:30`; see detail section below).
 - **Wallet feature exercised**: `wallet/asset_lock/manager.rs::AssetLockManager` (concurrent-build path); transitively `wallet/asset_lock/build.rs::build_asset_lock_transaction` and `wallet/asset_lock/build.rs::create_funded_asset_lock_proof`. Driver: `wallet/identity/network/top_up.rs::top_up_identity_with_funding`.
