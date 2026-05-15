@@ -68,6 +68,7 @@ pub mod xpub_render;
 
 // Re-exports
 pub use asset_lock::*;
+pub use asset_lock_persistence::*;
 pub use contact::*;
 pub use contact_persistence::*;
 pub use contact_request::*;
@@ -91,6 +92,7 @@ pub use identity_key_preview::*;
 pub use identity_keys_from_mnemonic::*;
 pub use identity_manager::*;
 pub use identity_persistence::*;
+pub use identity_registration::*;
 pub use identity_registration_funded_with_signer::*;
 pub use identity_registration_with_signer::*;
 pub use identity_sync::*;
