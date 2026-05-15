@@ -14,7 +14,8 @@ pub use {
 
 #[cfg(feature = "server")]
 pub use drive_document_count_query::{
-    DocumentCountRequest, DocumentCountResponse, RangeCountOptions,
+    CountMode, DocumentCountRequest, DocumentCountResponse, RangeCountOptions,
+    MAX_LIMIT_AS_FAILSAFE,
 };
 // Imports available when either "server" or "verify" features are enabled
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -655,14 +656,14 @@ impl<'a> DriveDocumentQuery<'a> {
                                     WhereClause::from_components(clauses_components)
                                 } else {
                                     Err(Error::Query(QuerySyntaxError::InvalidFormatWhereClause(
-                                        "where clause must be an array",
+                                        "where clause must be an array".to_string(),
                                     )))
                                 }
                             })
                             .collect::<Result<Vec<WhereClause>, Error>>()
                     } else {
                         Err(Error::Query(QuerySyntaxError::InvalidFormatWhereClause(
-                            "where clause must be an array",
+                            "where clause must be an array".to_string(),
                         )))
                     }
                 })?;
@@ -783,13 +784,13 @@ impl<'a> DriveDocumentQuery<'a> {
                         WhereClause::from_components(clauses_components)
                     } else {
                         Err(Error::Query(QuerySyntaxError::InvalidFormatWhereClause(
-                            "where clause must be an array",
+                            "where clause must be an array".to_string(),
                         )))
                     }
                 })
                 .collect::<Result<Vec<WhereClause>, Error>>(),
             _ => Err(Error::Query(QuerySyntaxError::InvalidFormatWhereClause(
-                "where clause must be an array",
+                "where clause must be an array".to_string(),
             ))),
         }?;
 

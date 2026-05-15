@@ -21,6 +21,7 @@ use crate::error::Error;
 use dpp::version::PlatformVersion;
 use grovedb::query_result_type::{QueryResultElement, QueryResultType};
 use grovedb::TransactionArg;
+use grovedb_costs::CostContext;
 
 impl DriveDocumentCountQuery<'_> {
     /// Executes the count query without generating a proof.
@@ -83,7 +84,11 @@ impl DriveDocumentCountQuery<'_> {
         Ok(vec![SplitCountEntry {
             in_key: None,
             key: vec![],
-            count,
+            // Point-lookup executor summed verified CountTree
+            // counts to produce this; the count is explicit, hence
+            // `Some(_)` (possibly `Some(0)` if every covered branch
+            // was empty or absent).
+            count: Some(count),
         }])
     }
 
@@ -103,10 +108,11 @@ impl DriveDocumentCountQuery<'_> {
     /// for the exhaustive contract.
     ///
     /// Proof size is O(k × log n) where k is the number of covered
-    /// (Equal/In) branches and n is the tree depth: one merk path proof
-    /// per CountTree element, not per matching document. Replaces the
-    /// pre-this-PR materialize-and-count proof which scaled with
-    /// matching docs and was capped at `u16::MAX`.
+    /// (Equal/In) branches and n is the tree depth: one merk path
+    /// proof per CountTree element, not per matching document.
+    /// Avoids the materialize-and-count alternative used by the
+    /// regular document-query path, which scales with the number
+    /// of matching docs and is capped at `u16::MAX`.
     pub fn execute_point_lookup_count_with_proof(
         &self,
         drive: &Drive,
@@ -115,11 +121,20 @@ impl DriveDocumentCountQuery<'_> {
     ) -> Result<Vec<u8>, Error> {
         let drive_version = &platform_version.drive;
         let path_query = self.point_lookup_count_path_query(platform_version)?;
-        let proof = drive
-            .grove
-            .get_proved_path_query(&path_query, None, transaction, &drive_version.grove_version)
-            .unwrap()
-            .map_err(|e| Error::GroveDB(Box::new(e)))?;
+        // Destructure the `CostContext` explicitly rather than calling
+        // `.unwrap()` on it: `CostContext::unwrap` is infallible (it just
+        // drops the cost field), but the visual pattern collides with
+        // `Option/Result::unwrap` and makes review noisier. Cost is
+        // discarded here because the per-mode dispatcher in
+        // `drive_dispatcher` wraps these executors with its own fee
+        // accounting.
+        let CostContext { value, cost: _ } = drive.grove.get_proved_path_query(
+            &path_query,
+            None,
+            transaction,
+            &drive_version.grove_version,
+        );
+        let proof = value.map_err(|e| Error::GroveDB(Box::new(e)))?;
         Ok(proof)
     }
 }
