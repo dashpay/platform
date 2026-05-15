@@ -19,6 +19,9 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use crate::framework::prelude::*;
+use crate::framework::wait::{
+    wait_for_address_balance_chain_confirmed_n, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+};
 use dpp::address_funds::PlatformAddress;
 use key_wallet::managed_account::platform_address::PlatformP2PKHAddress;
 use platform_wallet::wallet::platform_addresses::{InputSelection, PlatformAddressWallet};
@@ -61,9 +64,18 @@ async fn pa_001b_change_address_branch_subcase_a() {
         .fund_address(&addr_1, FUNDING_CREDITS)
         .await
         .expect("bank.fund_address addr_1");
-    wait_for_balance(&s.test_wallet, &addr_1, FUNDING_FLOOR, STEP_TIMEOUT)
-        .await
-        .expect("addr_1 funding never observed");
+    // Funding precondition gated on the proof-verified chain view
+    // (Found-025-immune): a stale local-map 0 would hang this before
+    // the transfer that consumes addr_1 as an explicit input.
+    wait_for_address_balance_chain_confirmed_n(
+        s.ctx.sdk(),
+        &addr_1,
+        FUNDING_FLOOR,
+        CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+        STEP_TIMEOUT,
+    )
+    .await
+    .expect("addr_1 funding never observed");
 
     let addr_2 = s
         .test_wallet
@@ -136,9 +148,18 @@ async fn pa_001b_change_address_branch_subcase_b() {
         .fund_address(&src, FUNDING_CREDITS)
         .await
         .expect("bank.fund_address src");
-    wait_for_balance(&s.test_wallet, &src, FUNDING_FLOOR, STEP_TIMEOUT)
-        .await
-        .expect("src funding never observed");
+    // Funding precondition gated on the proof-verified chain view
+    // (Found-025-immune): a stale local-map 0 would hang this before
+    // the transfer that fully spends src as an explicit input.
+    wait_for_address_balance_chain_confirmed_n(
+        s.ctx.sdk(),
+        &src,
+        FUNDING_FLOOR,
+        CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+        STEP_TIMEOUT,
+    )
+    .await
+    .expect("src funding never observed");
 
     // QA-V25-003 — `next_unused_receive_address` parks on the lowest
     // unused index until something marks it used (PA-005 invariant,

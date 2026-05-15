@@ -21,6 +21,9 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use crate::framework::prelude::*;
+use crate::framework::wait::{
+    wait_for_address_balance_chain_confirmed_n, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+};
 
 /// Gross credits the bank submits when funding `addr_1`. Bank uses
 /// `[ReduceOutput(0)]`; addr_1 receives `FUNDING_CREDITS − bank_fee`.
@@ -54,9 +57,18 @@ async fn pa_001c_zero_credit_single_output() {
         .fund_address(&addr_1, FUNDING_CREDITS)
         .await
         .expect("bank.fund_address");
-    wait_for_balance(&s.test_wallet, &addr_1, FUNDING_FLOOR, STEP_TIMEOUT)
-        .await
-        .expect("addr_1 funding never observed");
+    // Funding precondition gated on the proof-verified chain view
+    // (Found-025-immune): a stale local-map 0 would hang this before
+    // the zero-credit transfer that consumes addr_1's funding.
+    wait_for_address_balance_chain_confirmed_n(
+        s.ctx.sdk(),
+        &addr_1,
+        FUNDING_FLOOR,
+        CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+        STEP_TIMEOUT,
+    )
+    .await
+    .expect("addr_1 funding never observed");
 
     s.test_wallet.sync_balances().await.expect("pre-tx sync");
     let pre_balances = s.test_wallet.balances().await;

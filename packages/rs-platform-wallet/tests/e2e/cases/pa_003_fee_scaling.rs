@@ -46,6 +46,9 @@ use std::time::Duration;
 use dpp::address_funds::PlatformAddress;
 
 use crate::framework::prelude::*;
+use crate::framework::wait::{
+    wait_for_address_balance_chain_confirmed_n, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+};
 
 /// Gross credits the bank submits when funding the source address.
 /// Bank uses `[DeductFromInput(0)]`; the source receives
@@ -135,9 +138,18 @@ async fn pa_003_fee_scaling() {
         .fund_address(&addr_src, FUNDING_CREDITS)
         .await
         .expect("bank.fund_address");
-    wait_for_balance(&s.test_wallet, &addr_src, FUNDING_FLOOR, STEP_TIMEOUT)
-        .await
-        .expect("addr_src funding never observed");
+    // Funding precondition gated on the proof-verified chain view
+    // (Found-025-immune): a stale local-map 0 would hang this before
+    // the marker / explicit-input transfers that consume addr_src.
+    wait_for_address_balance_chain_confirmed_n(
+        s.ctx.sdk(),
+        &addr_src,
+        FUNDING_FLOOR,
+        CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+        STEP_TIMEOUT,
+    )
+    .await
+    .expect("addr_src funding never observed");
 
     // ---- 1-output transfer: derive `dest_1`, pre-marker it, then ----
     // ---- transfer from `addr_src` only and capture the real fee. ----

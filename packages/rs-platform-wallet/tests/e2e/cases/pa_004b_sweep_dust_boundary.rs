@@ -57,6 +57,9 @@ use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 
 use crate::framework::cleanup::cleanup_dust_gate;
 use crate::framework::prelude::*;
+use crate::framework::wait::{
+    wait_for_address_balance_chain_confirmed_n, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+};
 
 /// Gross credits the bank submits when funding `addr_1`. Sized well
 /// above the chain-time fee (~`15_000_000`) so the trim transfer's
@@ -122,9 +125,18 @@ async fn pa_004b_sweep_below_dust_gate_no_broadcast() {
         .fund_address(&addr_1, FUNDING_CREDITS)
         .await
         .expect("bank.fund_address");
-    wait_for_balance(&s.test_wallet, &addr_1, FUNDING_FLOOR, STEP_TIMEOUT)
-        .await
-        .expect("addr_1 funding never observed");
+    // Funding precondition gated on the proof-verified chain view
+    // (Found-025-immune): a stale local-map 0 would hang this before
+    // the trim transfer that consumes addr_1's funding.
+    wait_for_address_balance_chain_confirmed_n(
+        s.ctx.sdk(),
+        &addr_1,
+        FUNDING_FLOOR,
+        CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+        STEP_TIMEOUT,
+    )
+    .await
+    .expect("addr_1 funding never observed");
 
     // Refresh and snapshot the precise post-fund balance — needed for
     // the trim's auto-select sizing.

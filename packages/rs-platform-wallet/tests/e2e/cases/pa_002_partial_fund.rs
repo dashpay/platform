@@ -31,6 +31,9 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use crate::framework::prelude::*;
+use crate::framework::wait::{
+    wait_for_address_balance_chain_confirmed_n, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+};
 
 // Sized to dodge platform #3040 — `AddressFundsTransferTransition::
 // calculate_min_required_fee` returns the static
@@ -106,11 +109,18 @@ async fn pa_002_partial_fund_change() {
         .expect("bank.fund_address");
 
     // Bank uses `[DeductFromInput(0)]`: addr_1 receives FUNDING_CREDITS
-    // exactly. Wait on the safety floor; the exact-amount assertion
-    // follows after the test wallet syncs.
-    wait_for_balance(&s.test_wallet, &addr_1, FUNDING_FLOOR, STEP_TIMEOUT)
-        .await
-        .expect("addr_1 funding never observed");
+    // exactly. Gate on the proof-verified chain view (Found-025-immune):
+    // a stale local-map 0 would hang this before the self-transfer that
+    // consumes addr_1. The exact-amount assertion follows the sync.
+    wait_for_address_balance_chain_confirmed_n(
+        s.ctx.sdk(),
+        &addr_1,
+        FUNDING_FLOOR,
+        CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+        STEP_TIMEOUT,
+    )
+    .await
+    .expect("addr_1 funding never observed");
 
     let addr_2 = s
         .test_wallet

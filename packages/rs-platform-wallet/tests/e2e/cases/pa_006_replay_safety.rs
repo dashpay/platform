@@ -29,6 +29,9 @@ use dpp::serialization::PlatformDeserializable;
 use dpp::state_transition::StateTransition;
 
 use crate::framework::prelude::*;
+use crate::framework::wait::{
+    wait_for_address_balance_chain_confirmed_n, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+};
 
 /// Gross credits the bank submits when funding `addr_src`. Bank uses
 /// `[ReduceOutput(0)]`; addr_src receives `FUNDING_CREDITS − bank_fee`.
@@ -72,9 +75,19 @@ async fn pa_006_replay_safety() {
         .fund_address(&addr_src, FUNDING_CREDITS)
         .await
         .expect("bank.fund_address");
-    wait_for_balance(&s.test_wallet, &addr_src, FUNDING_FLOOR, STEP_TIMEOUT)
-        .await
-        .expect("addr_src funding never observed");
+    // Funding precondition gated on the proof-verified chain view
+    // (Found-025-immune): a stale local-map 0 would hang this before
+    // the dual-build transfer that consumes addr_src as an explicit
+    // input.
+    wait_for_address_balance_chain_confirmed_n(
+        s.ctx.sdk(),
+        &addr_src,
+        FUNDING_FLOOR,
+        CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+        STEP_TIMEOUT,
+    )
+    .await
+    .expect("addr_src funding never observed");
 
     // Capture pre-broadcast snapshot of addr_src so we can verify
     // a failed re-broadcast leaves the wallet's view unchanged.

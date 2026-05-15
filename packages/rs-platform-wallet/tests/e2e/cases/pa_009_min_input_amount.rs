@@ -67,6 +67,9 @@ use dpp::version::PlatformVersion;
 
 use crate::framework::cleanup::cleanup_dust_gate;
 use crate::framework::prelude::*;
+use crate::framework::wait::{
+    wait_for_address_balance_chain_confirmed_n, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+};
 
 /// Gross credits the bank submits when funding `addr_1`. Same shape
 /// as PA-004b; sized well above chain-time fee (~`15_000_000`) so
@@ -168,9 +171,19 @@ async fn pa_009_min_input_amount_subcase_c() {
         .fund_address(&addr_1, FUNDING_CREDITS)
         .await
         .expect("bank.fund_address");
-    wait_for_balance(&s.test_wallet, &addr_1, FUNDING_FLOOR, STEP_TIMEOUT)
-        .await
-        .expect("addr_1 funding never observed");
+    // Funding precondition gated on the proof-verified chain view
+    // (Found-025-immune): a stale local-map 0 would hang this before
+    // the trim transfer that consumes addr_1's funding. Mirrors the
+    // post-teardown chain read this case already uses below.
+    wait_for_address_balance_chain_confirmed_n(
+        s.ctx.sdk(),
+        &addr_1,
+        FUNDING_FLOOR,
+        CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+        STEP_TIMEOUT,
+    )
+    .await
+    .expect("addr_1 funding never observed");
 
     s.test_wallet
         .sync_balances()
