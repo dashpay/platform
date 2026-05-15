@@ -383,38 +383,43 @@
              responseClass:[GetDocumentsResponse class]];
 }
 
-#pragma mark getDocumentsCount(GetDocumentsCountRequest) returns (GetDocumentsCountResponse)
-
-- (void)getDocumentsCountWithRequest:(GetDocumentsCountRequest *)request handler:(void(^)(GetDocumentsCountResponse *_Nullable response, NSError *_Nullable error))handler{
-  [[self RPCTogetDocumentsCountWithRequest:request handler:handler] start];
-}
-// Returns a not-yet-started RPC object.
-- (GRPCProtoCall *)RPCTogetDocumentsCountWithRequest:(GetDocumentsCountRequest *)request handler:(void(^)(GetDocumentsCountResponse *_Nullable response, NSError *_Nullable error))handler{
-  return [self RPCToMethod:@"getDocumentsCount"
-            requestsWriter:[GRXWriter writerWithValue:request]
-             responseClass:[GetDocumentsCountResponse class]
-        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
-}
-- (GRPCUnaryProtoCall *)getDocumentsCountWithMessage:(GetDocumentsCountRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
-  return [self RPCToMethod:@"getDocumentsCount"
-                   message:message
-           responseHandler:handler
-               callOptions:callOptions
-             responseClass:[GetDocumentsCountResponse class]];
-}
-
 #pragma mark getIdentityByPublicKeyHash(GetIdentityByPublicKeyHashRequest) returns (GetIdentityByPublicKeyHashResponse)
 
+/**
+ * `getDocumentsCount` removed in v1: callers express counts via
+ * `getDocuments` with `version.v1.select = COUNT` (optionally
+ * with `group_by`). See `GetDocumentsRequestV1` for the unified
+ * SQL-shaped surface. The v0-count endpoint shipped briefly in
+ * #3623 and never had stable callers; v1 supersedes it entirely.
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
 - (void)getIdentityByPublicKeyHashWithRequest:(GetIdentityByPublicKeyHashRequest *)request handler:(void(^)(GetIdentityByPublicKeyHashResponse *_Nullable response, NSError *_Nullable error))handler{
   [[self RPCTogetIdentityByPublicKeyHashWithRequest:request handler:handler] start];
 }
 // Returns a not-yet-started RPC object.
+/**
+ * `getDocumentsCount` removed in v1: callers express counts via
+ * `getDocuments` with `version.v1.select = COUNT` (optionally
+ * with `group_by`). See `GetDocumentsRequestV1` for the unified
+ * SQL-shaped surface. The v0-count endpoint shipped briefly in
+ * #3623 and never had stable callers; v1 supersedes it entirely.
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
 - (GRPCProtoCall *)RPCTogetIdentityByPublicKeyHashWithRequest:(GetIdentityByPublicKeyHashRequest *)request handler:(void(^)(GetIdentityByPublicKeyHashResponse *_Nullable response, NSError *_Nullable error))handler{
   return [self RPCToMethod:@"getIdentityByPublicKeyHash"
             requestsWriter:[GRXWriter writerWithValue:request]
              responseClass:[GetIdentityByPublicKeyHashResponse class]
         responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
 }
+/**
+ * `getDocumentsCount` removed in v1: callers express counts via
+ * `getDocuments` with `version.v1.select = COUNT` (optionally
+ * with `group_by`). See `GetDocumentsRequestV1` for the unified
+ * SQL-shaped surface. The v0-count endpoint shipped briefly in
+ * #3623 and never had stable callers; v1 supersedes it entirely.
+ */
 - (GRPCUnaryProtoCall *)getIdentityByPublicKeyHashWithMessage:(GetIdentityByPublicKeyHashRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
   return [self RPCToMethod:@"getIdentityByPublicKeyHash"
                    message:message

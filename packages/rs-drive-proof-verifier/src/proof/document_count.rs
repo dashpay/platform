@@ -1,7 +1,7 @@
 use crate::error::MapGroveDbError;
 use crate::verify::verify_tenderdash_proof;
 use crate::{ContextProvider, Error, FromProof};
-use dapi_grpc::platform::v0::{GetDocumentsCountResponse, Proof, ResponseMetadata};
+use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::dashcore::Network;
 use dpp::version::PlatformVersion;
@@ -17,7 +17,7 @@ where
     Q::Error: std::fmt::Display,
 {
     type Request = Q;
-    type Response = GetDocumentsCountResponse;
+    type Response = GetDocumentsResponse;
 
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
@@ -141,14 +141,30 @@ pub fn verify_distinct_count_proof(
 ///
 /// ## Entry shape
 ///
-/// - **Equal-only, fully covered**: a single entry with empty `key`
-///   and `count` equal to the covered branch's CountTree
-///   `count_value`.
-/// - **Equal prefix + `In` on last property**: one entry per In
-///   value, `key = <serialized_in_value>`, `count` equal to that In
-///   value's CountTree `count_value`. Branches with zero documents
-///   are omitted from the result (callers can detect "I asked for 3
-///   In values but got entries for 2" directly).
+/// The verifier walks grovedb's
+/// `(path, key, Option<Element>)` triples and emits one
+/// [`SplitCountEntry`] per **present** queried key. The current
+/// path-query shape does NOT set
+/// `absence_proofs_for_non_existing_searched_keys: true`, so absent
+/// branches are silently omitted from grovedb's elements stream
+/// rather than surfaced as `(path, key, None)` triples.
+///
+/// - **Equal-only, fully covered**: zero or one entry. One entry
+///   with empty `key` and `count: Some(n)` if the covered branch
+///   exists; no entries at all if the branch is absent.
+/// - **Equal prefix + `In` on last property**: one entry per
+///   **present** queried In value, with
+///   `key = <serialized_in_value>` and `count: Some(n)`. Absent In
+///   values are omitted from the returned list. Callers that need
+///   to distinguish "verified with n docs" from "queried but
+///   absent" diff their request's In array against the returned
+///   entries by `key`.
+///
+/// The `count: Option<u64>` field's `None` variant is reserved for a
+/// future variant that flips `absence_proofs_for_non_existing_searched_keys`
+/// — see [`SplitCountEntry::count`] and
+/// [`DriveDocumentCountQuery::verify_point_lookup_count_proof`] for
+/// the forward-compat path.
 ///
 /// ## Replaces materialize-and-count
 ///
@@ -276,18 +292,18 @@ mod tests {
         let a = SplitCountEntry {
             in_key: Some(b"acme".to_vec()),
             key: b"red".to_vec(),
-            count: 42,
+            count: Some(42),
         };
         let b = a.clone();
         assert_eq!(a, b);
         assert_eq!(a.in_key.as_deref(), Some(b"acme".as_slice()));
         assert_eq!(a.key, b"red".to_vec());
-        assert_eq!(a.count, 42);
+        assert_eq!(a.count, Some(42));
 
         let flat = SplitCountEntry {
             in_key: None,
             key: b"green".to_vec(),
-            count: 7,
+            count: Some(7),
         };
         assert!(flat.in_key.is_none());
 
@@ -302,7 +318,10 @@ mod tests {
             ..a.clone()
         };
         assert_ne!(a, different_key);
-        let different_count = SplitCountEntry { count: 99, ..a };
+        let different_count = SplitCountEntry {
+            count: Some(99),
+            ..a
+        };
         assert_ne!(b, different_count);
     }
 

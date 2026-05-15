@@ -26,6 +26,7 @@ use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::version::PlatformVersion;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::TransactionArg;
+use grovedb_costs::CostContext;
 
 /// Pagination + ordering knobs for `execute_range_count_no_proof`.
 ///
@@ -202,34 +203,45 @@ impl DriveDocumentCountQuery<'_> {
                     };
                     let path_query =
                         per_value_query.aggregate_count_path_query(platform_version)?;
-                    let count = drive
-                        .grove
-                        .query_aggregate_count(
-                            &path_query,
-                            transaction,
-                            &drive_version.grove_version,
-                        )
-                        .unwrap()
-                        .map_err(|e| Error::GroveDB(Box::new(e)))?;
+                    // Destructure the `CostContext` explicitly rather than
+                    // calling `.unwrap()` on it: `CostContext::unwrap` is
+                    // infallible (it just drops the cost field), but the
+                    // visual pattern collides with `Option/Result::unwrap`
+                    // and makes review noisier. Cost is discarded here
+                    // because the per-mode dispatcher in `drive_dispatcher`
+                    // wraps these executors with its own fee accounting —
+                    // see the module-level docstring.
+                    let CostContext { value, cost: _ } = drive.grove.query_aggregate_count(
+                        &path_query,
+                        transaction,
+                        &drive_version.grove_version,
+                    );
+                    let count = value.map_err(|e| Error::GroveDB(Box::new(e)))?;
                     total = total.saturating_add(count);
                 }
                 return Ok(vec![SplitCountEntry {
                     in_key: None,
                     key: Vec::new(),
-                    count: total,
+                    // Range-summed total derived from the executor's
+                    // per-In aggregate fan-out — verified count.
+                    count: Some(total),
                 }]);
             }
             // Flat summed (no In on prefix): single aggregate read.
             let path_query = self.aggregate_count_path_query(platform_version)?;
-            let count = drive
-                .grove
-                .query_aggregate_count(&path_query, transaction, &drive_version.grove_version)
-                .unwrap()
-                .map_err(|e| Error::GroveDB(Box::new(e)))?;
+            // See In-fan-out branch above for the destructure rationale.
+            let CostContext { value, cost: _ } = drive.grove.query_aggregate_count(
+                &path_query,
+                transaction,
+                &drive_version.grove_version,
+            );
+            let count = value.map_err(|e| Error::GroveDB(Box::new(e)))?;
             return Ok(vec![SplitCountEntry {
                 in_key: None,
                 key: Vec::new(),
-                count,
+                // Single `AggregateCountOnRange` read — explicit
+                // verified count.
+                count: Some(count),
             }]);
         }
 
@@ -306,7 +318,13 @@ impl DriveDocumentCountQuery<'_> {
             } else {
                 None
             };
-            entries.push(SplitCountEntry { in_key, key, count });
+            // Distinct-walk emits one entry per distinct value
+            // with its verified count; always `Some(_)`.
+            entries.push(SplitCountEntry {
+                in_key,
+                key,
+                count: Some(count),
+            });
         }
 
         // Distinct mode: grovedb already emitted entries in the
@@ -346,11 +364,15 @@ impl DriveDocumentCountQuery<'_> {
     ) -> Result<Vec<u8>, Error> {
         let drive_version = &platform_version.drive;
         let path_query = self.aggregate_count_path_query(platform_version)?;
-        let proof = drive
-            .grove
-            .get_proved_path_query(&path_query, None, transaction, &drive_version.grove_version)
-            .unwrap()
-            .map_err(|e| Error::GroveDB(Box::new(e)))?;
+        // Destructure rather than `.unwrap()` — see the In fan-out branch
+        // in `execute_range_count_no_proof` for rationale.
+        let CostContext { value, cost: _ } = drive.grove.get_proved_path_query(
+            &path_query,
+            None,
+            transaction,
+            &drive_version.grove_version,
+        );
+        let proof = value.map_err(|e| Error::GroveDB(Box::new(e)))?;
         Ok(proof)
     }
 
@@ -387,11 +409,63 @@ impl DriveDocumentCountQuery<'_> {
         let drive_version = &platform_version.drive;
         let path_query =
             self.distinct_count_path_query(Some(limit), left_to_right, platform_version)?;
-        let proof = drive
-            .grove
-            .get_proved_path_query(&path_query, None, transaction, &drive_version.grove_version)
-            .unwrap()
-            .map_err(|e| Error::GroveDB(Box::new(e)))?;
+        // Destructure rather than `.unwrap()` — see the In fan-out branch
+        // in `execute_range_count_no_proof` for rationale.
+        let CostContext { value, cost: _ } = drive.grove.get_proved_path_query(
+            &path_query,
+            None,
+            transaction,
+            &drive_version.grove_version,
+        );
+        let proof = value.map_err(|e| Error::GroveDB(Box::new(e)))?;
+        Ok(proof)
+    }
+
+    /// Generates a grovedb **carrier** `AggregateCountOnRange` proof
+    /// for `In + range` queries with `group_by = [in_field]`. The
+    /// proof commits one aggregate count per resolved In branch
+    /// via grovedb's carrier-subquery composition
+    /// ([PR #663](https://github.com/dashpay/grovedb/pull/663)).
+    ///
+    /// Path query: see
+    /// [`Self::carrier_aggregate_count_path_query`].
+    ///
+    /// Trade-off vs. the alternative
+    /// [`Self::execute_distinct_count_with_proof`]
+    /// (`GroupByCompound` shape):
+    /// - **This** (carrier-ACOR): O(|In| · (log B + log C')) proof
+    ///   bytes. One commit per merk-tree boundary node per In
+    ///   branch — preserves the per-branch aggregate granularity
+    ///   that `group_by = [in_field, range_field]` can't express
+    ///   (the compound shape commits per-distinct-value-pair
+    ///   entries).
+    /// - **Alternative** (distinct compound): O(|In| · R · log C')
+    ///   where R is distinct in-range values per branch. Carries
+    ///   strictly more information (one `(in_key, range_key)`
+    ///   pair per resolved doc) at substantially larger bytes.
+    ///
+    /// Verified client-side via
+    /// [`grovedb::GroveDb::verify_aggregate_count_query_per_key`],
+    /// which returns `(RootHash, Vec<(Vec<u8>, u64)>)`.
+    pub fn execute_carrier_aggregate_count_with_proof(
+        &self,
+        drive: &Drive,
+        limit: Option<u16>,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, Error> {
+        let drive_version = &platform_version.drive;
+        let path_query = self.carrier_aggregate_count_path_query(limit, platform_version)?;
+        // Same destructure pattern as the sibling aggregate / distinct
+        // executors. `get_proved_path_query` returns `CostContext<Result>`;
+        // ignoring the cost field is the same pattern those use today.
+        let CostContext { value, cost: _ } = drive.grove.get_proved_path_query(
+            &path_query,
+            None,
+            transaction,
+            &drive_version.grove_version,
+        );
+        let proof = value.map_err(|e| Error::GroveDB(Box::new(e)))?;
         Ok(proof)
     }
 }

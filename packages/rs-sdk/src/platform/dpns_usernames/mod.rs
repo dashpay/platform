@@ -381,6 +381,7 @@ impl Sdk {
 
         // Query for existing domain with this label
         let query = DocumentQuery {
+            select: dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::Select::Documents,
             data_contract: dpns_contract,
             document_type_name: "domain".to_string(),
             where_clauses: vec![
@@ -395,6 +396,8 @@ impl Sdk {
                     value: Value::Text(normalized_label),
                 },
             ],
+            group_by: vec![],
+            having: vec![],
             order_by_clauses: vec![],
             limit: 1,
             start: None,
@@ -447,6 +450,7 @@ impl Sdk {
 
         // Query for domain with this label
         let query = DocumentQuery {
+            select: dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::Select::Documents,
             data_contract: dpns_contract,
             document_type_name: "domain".to_string(),
             where_clauses: vec![
@@ -461,6 +465,8 @@ impl Sdk {
                     value: Value::Text(normalized_label),
                 },
             ],
+            group_by: vec![],
+            having: vec![],
             order_by_clauses: vec![],
             limit: 1,
             start: None,
