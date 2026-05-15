@@ -348,6 +348,13 @@ fn document_count_worst_case(c: &mut Criterion) {
     // rangeCountable optimization.
     probe_value_tree_types(&fixture, platform_version);
 
+    // Smoke test for grovedb PR #663's carrier-ACOR feature against
+    // this bench's widget fixture. Exercises the proof shape that
+    // would unblock chapter 30 G7 (`brand IN[...] AND color > floor`
+    // with `group_by = [brand]`) at the grovedb layer, before drive
+    // wires it through.
+    probe_carrier_acor(&fixture, platform_version);
+
     let mut group = c.benchmark_group("document_count_worst_case");
     group.sample_size(10);
     group.throughput(criterion::Throughput::Elements(fixture.row_count));
@@ -1101,6 +1108,138 @@ fn probe_value_tree_types(fixture: &CountBenchFixture, _platform_version: &Platf
                 display_segment(child)
             ),
         }
+    }
+}
+
+/// Smoke test for the carrier-ACOR feature shipped in
+/// [grovedb PR #663](https://github.com/dashpay/grovedb/pull/663).
+///
+/// Exercises the new `Query::set_subquery(Query::new_aggregate_count_on_range(...))`
+/// composition against this bench's widget fixture: builds a `PathQuery` rooted
+/// at `widget/brand` with two outer `In` keys (brand_000 + brand_001) and an
+/// `AggregateCountOnRange` subquery on each brand's `color` subtree
+/// (`color > "color_00000500"`).
+///
+/// This is the proof shape that would unblock chapter 30 G7 — `brand IN[...] AND
+/// color > floor` grouped by `[brand]` — once drive wires it through. The probe
+/// runs three separate operations against grovedb to confirm round-trip parity:
+///
+/// 1. **No-proof:** `query_aggregate_count_per_key` reads the raw counts.
+/// 2. **Prove:** `prove_query` emits the carrier proof bytes.
+/// 3. **Verify:** `verify_aggregate_count_query_per_key` reconstructs the
+///    counts from the proof and confirms the root hash matches the parent
+///    grovedb state.
+///
+/// Expected payload for this fixture (1 doc per `(brand, color)` pair, 1 000
+/// colors per brand, range `color > "color_00000500"`):
+///
+/// ```text
+/// [("brand_000", 499), ("brand_001", 499)]
+/// ```
+///
+/// Printed under `[carrier-acor]` so reviewers can grep deterministically.
+fn probe_carrier_acor(fixture: &CountBenchFixture, platform_version: &PlatformVersion) {
+    use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+    use drive::drive::RootTree;
+    use grovedb::{Query, QueryItem, SizedQuery};
+
+    let grove_version = &platform_version.drive.grove_version;
+    let contract_id = fixture.data_contract.id().to_buffer();
+    let document_type = fixture
+        .data_contract
+        .document_type_for_name(DOCUMENT_TYPE_NAME)
+        .expect("widget doc type");
+
+    // Serialize the In keys (brand_000, brand_001) the same way drive's
+    // index machinery would so the keys round-trip against the on-disk
+    // byBrand subtree.
+    let brand_keys: Vec<Vec<u8>> = (0..2)
+        .map(|i| {
+            document_type
+                .serialize_value_for_key("brand", &Value::Text(brand_label(i)), platform_version)
+                .expect("expected to serialize brand")
+        })
+        .collect();
+
+    // Serialize the range floor (color_00000500) for the inner ACOR item.
+    let range_floor_key = document_type
+        .serialize_value_for_key(
+            "color",
+            &Value::Text(fixture.range_floor.clone()),
+            platform_version,
+        )
+        .expect("expected to serialize range floor");
+
+    // Build the carrier query — outer Keys for the brands, subquery_path
+    // descending into each brand's `color` subtree, subquery as the
+    // ACOR over `color > range_floor`. Insert via `insert_key` so the
+    // multi-key walker sees the keys in lex-ascending order (grovedb
+    // PR #663's invariant).
+    let mut carrier: Query = Query::new();
+    for k in &brand_keys {
+        carrier.insert_key(k.clone());
+    }
+    carrier.set_subquery_path(vec![b"color".to_vec()]);
+    carrier.set_subquery(Query::new_aggregate_count_on_range(QueryItem::RangeAfter(
+        range_floor_key..,
+    )));
+
+    let path: Vec<Vec<u8>> = vec![
+        vec![RootTree::DataContractDocuments as u8],
+        contract_id.to_vec(),
+        vec![1u8],
+        DOCUMENT_TYPE_NAME.as_bytes().to_vec(),
+        b"brand".to_vec(),
+    ];
+    let path_query = PathQuery::new(path, SizedQuery::new(carrier, None, None));
+
+    eprintln!(
+        "[carrier-acor] probing: widget/brand IN [brand_000, brand_001] subquery_path=color subquery=AggregateCountOnRange(RangeAfter(color_00000500..))"
+    );
+
+    // 1. No-proof: raw query.
+    match fixture
+        .drive
+        .grove
+        .query_aggregate_count_per_key(&path_query, None, grove_version)
+        .unwrap()
+    {
+        Ok(entries) => {
+            eprintln!("[carrier-acor] no-proof entries ({}):", entries.len());
+            for (k, c) in &entries {
+                eprintln!("[carrier-acor]   ({}, {})", display_segment(k), c);
+            }
+        }
+        Err(e) => eprintln!("[carrier-acor] no-proof error: {e:?}"),
+    }
+
+    // 2. Prove: get the carrier-ACOR proof bytes.
+    let proof = match fixture
+        .drive
+        .grove
+        .prove_query(&path_query, None, grove_version)
+        .unwrap()
+    {
+        Ok(p) => {
+            eprintln!("[carrier-acor] proof bytes: {} B", p.len());
+            p
+        }
+        Err(e) => {
+            eprintln!("[carrier-acor] prove_query error: {e:?}");
+            return;
+        }
+    };
+
+    // 3. Verify the proof and confirm we get the same per-key counts back.
+    match GroveDb::verify_aggregate_count_query_per_key(&proof, &path_query, grove_version) {
+        Ok((root, entries)) => {
+            eprintln!("[carrier-acor] verified root_hash: 0x{}", hex_bytes(&root));
+            eprintln!("[carrier-acor] verified entries ({}):", entries.len());
+            for (k, c) in &entries {
+                eprintln!("[carrier-acor]   ({}, {})", display_segment(k), c);
+            }
+        }
+        Err(e) => eprintln!("[carrier-acor] verify error: {e:?}"),
     }
 }
 
