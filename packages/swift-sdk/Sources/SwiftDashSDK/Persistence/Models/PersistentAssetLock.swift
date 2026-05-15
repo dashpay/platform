@@ -143,8 +143,21 @@ extension PersistentAssetLock {
         precondition(rawBytes.count == 36, "outpoint must be 36 bytes")
         let txid = rawBytes.prefix(32)
         let voutBytes = rawBytes.suffix(4)
-        let vout = voutBytes.withUnsafeBytes { raw in
-            raw.load(as: UInt32.self).littleEndian
+        // Byte-copy through a local `UInt32` rather than calling
+        // `raw.load(as: UInt32.self)` directly: `Data.suffix(4)`'s
+        // `withUnsafeBytes` hands us a pointer into the underlying
+        // storage, whose alignment Swift's `Data` does NOT guarantee
+        // for `UInt32` (4-byte). On ARM64 a misaligned load traps;
+        // copying the four bytes into an aligned local sidesteps the
+        // requirement. Matches the same pattern used elsewhere in
+        // this SDK (`PlatformWalletManager.runCatchUp`,
+        // `ManagedAssetLockManager`) for FFI byte-array decoding.
+        let vout = voutBytes.withUnsafeBytes { raw -> UInt32 in
+            var value: UInt32 = 0
+            withUnsafeMutableBytes(of: &value) { dst in
+                dst.copyBytes(from: raw.prefix(MemoryLayout<UInt32>.size))
+            }
+            return UInt32(littleEndian: value)
         }
         let txidHex = txid.reversed().map { String(format: "%02x", $0) }.joined()
         return "\(txidHex):\(vout)"
