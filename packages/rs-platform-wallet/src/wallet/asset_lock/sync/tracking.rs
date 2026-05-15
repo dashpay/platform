@@ -51,31 +51,53 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// Distinguishes three outcomes via the result:
     ///
     /// - `Ok(changeset)` with a populated `asset_locks` entry — the
-    ///   lock was tracked and is now `Consumed`. The changeset upserts
-    ///   the persisted row with `statusRaw=4` for historical lookup.
+    ///   lock was tracked and is now `Consumed`. The changeset has
+    ///   ALREADY been queued for persistence before return; the value
+    ///   is surfaced for tests / future internal callers that want to
+    ///   inspect the diff.
     /// - `Ok(empty changeset)` — the lock was not tracked (already
-    ///   consumed by a prior call, or never present). Idempotent.
+    ///   consumed by a prior call, or never present). Idempotent;
+    ///   nothing queued.
     /// - `Err(WalletNotFound)` — the wallet id is unknown to the
     ///   manager. Always a programmer error / stale handle.
+    ///
+    /// **Why queue internally** (unlike `track_asset_lock` /
+    /// `advance_asset_lock_status`, which return a changeset and let
+    /// the caller queue it): `queue_asset_lock_changeset` is
+    /// `pub(super)` to the `asset_lock` module, so the only callers
+    /// of `consume_asset_lock` — the identity registration and
+    /// top-up flows in `wallet/identity/network/registration.rs` —
+    /// can't queue the changeset themselves. The other mutators are
+    /// only called from inside `asset_lock/build.rs`, which IS in
+    /// the module and queues at the call site. Queueing here closes
+    /// the gap without widening the `pub(super)` visibility.
     pub(crate) async fn consume_asset_lock(
         &self,
         out_point: &OutPoint,
     ) -> Result<AssetLockChangeSet, PlatformWalletError> {
-        let mut wm = self.wallet_manager.write().await;
-        let info = wm
-            .get_wallet_info_mut(&self.wallet_id)
-            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
-        let mut cs = AssetLockChangeSet::default();
-        if let Some(mut entry) = info.tracked_asset_locks.remove(out_point) {
-            entry.status = AssetLockStatus::Consumed;
-            entry.proof = None; // one-shot — never relevant after consumption
-            cs.asset_locks.insert(*out_point, (&entry).into());
-        } else {
-            tracing::warn!(
-                outpoint = %out_point,
-                "consume_asset_lock: outpoint not tracked — already consumed or never present"
-            );
-        }
+        // Build the changeset under the write lock, then release the
+        // lock before queueing — `queue_asset_lock_changeset` calls
+        // the persister synchronously and we don't want to hold the
+        // wallet-manager write lock across that.
+        let cs = {
+            let mut wm = self.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
+                PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id))
+            })?;
+            let mut cs = AssetLockChangeSet::default();
+            if let Some(mut entry) = info.tracked_asset_locks.remove(out_point) {
+                entry.status = AssetLockStatus::Consumed;
+                entry.proof = None; // one-shot — never relevant after consumption
+                cs.asset_locks.insert(*out_point, (&entry).into());
+            } else {
+                tracing::warn!(
+                    outpoint = %out_point,
+                    "consume_asset_lock: outpoint not tracked — already consumed or never present"
+                );
+            }
+            cs
+        };
+        self.queue_asset_lock_changeset(cs.clone());
         Ok(cs)
     }
 
