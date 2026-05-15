@@ -38,6 +38,9 @@ use dpp::serialization::PlatformDeserializable;
 use dpp::state_transition::StateTransition;
 
 use crate::framework::prelude::*;
+use crate::framework::wait::{
+    wait_for_address_balance_chain_confirmed_n, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+};
 
 /// Gross credits the bank submits when funding `addr_src`.
 const FUNDING_CREDITS: u64 = 100_000_000;
@@ -78,22 +81,20 @@ async fn pa_006b_concurrent_identical_broadcasts() {
         .fund_address(&addr_src, FUNDING_CREDITS)
         .await
         .expect("bank.fund_address");
-    // QA-504 / Found-025 family (multi-thread only). This funding
-    // gate uses the un-swapped `wait_for_balance`, which reads the
-    // Found-025-poisoned local sync map. Under the documented
-    // 14-thread v-run it deterministically times out here (60s,
-    // last_observed=0) — RED for the real Found-025 reason, NOT a
-    // regression. #480 left PA-* on `wait_for_balance` because their
-    // post-broadcast asserts read local `.balances()`; but this is a
-    // *concurrent_broadcast* test whose binding invariant is the
-    // on-chain no-double-debit check, so the local-map rationale is
-    // weak for *this funding precondition*. Recommended (not done
-    // here — out of code scope): swap ONLY this gate to
-    // `wait_for_address_balance_chain_confirmed_n`. See TEST_SPEC
-    // PA-006b. Do not weaken / `#[ignore]`.
-    wait_for_balance(&s.test_wallet, &addr_src, FUNDING_FLOOR, STEP_TIMEOUT)
-        .await
-        .expect("addr_src funding never observed");
+    // Funding precondition gated on the proof-verified chain view
+    // (Found-025-immune), not the local sync map. #480 keeps PA-*
+    // post-broadcast asserts on `.balances()`; this is only a
+    // funding precondition, not a `.balances()` assertion, so the
+    // local-map rationale does not apply here (QA-504).
+    wait_for_address_balance_chain_confirmed_n(
+        s.ctx.sdk(),
+        &addr_src,
+        FUNDING_FLOOR,
+        CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+        STEP_TIMEOUT,
+    )
+    .await
+    .expect("addr_src funding never observed");
 
     s.test_wallet
         .sync_balances()
