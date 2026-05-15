@@ -110,6 +110,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V5: DriveAbciValidationVersions =
                 state: 0,
                 revision: 0,
                 transform_into_action: 0,
+                failed_per_transition_action: 0,
                 data_triggers: DriveAbciValidationDataTriggerAndBindingVersions {
                     bindings: 0,
                     triggers: DriveAbciValidationDataTriggerVersions {
