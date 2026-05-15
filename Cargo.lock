@@ -4881,7 +4881,6 @@ name = "platform-wallet-ffi"
 version = "2.1.1"
 dependencies = [
  "anyhow",
- "async-trait",
  "bincode",
  "bs58",
  "cbindgen 0.27.0",
@@ -4898,7 +4897,6 @@ dependencies = [
  "rs-sdk-ffi",
  "serde_json",
  "tempfile",
- "thiserror 2.0.18",
  "tokio",
  "tracing",
  "zeroize",
