@@ -308,31 +308,29 @@ impl Signer for MnemonicResolverCoreSigner {
         let secret_bytes = self.derive_priv(path)?;
         let secp = Secp256k1::new();
         // `SecretKey::from_slice` validates the 32-byte scalar is a
-        // legitimate field element. The slice borrow is dropped at
-        // the end of this block; `secret_bytes` is then zeroed when
-        // it falls out of scope.
-        let secret = secp256k1::SecretKey::from_slice(secret_bytes.as_ref())
+        // legitimate field element.
+        let mut secret = secp256k1::SecretKey::from_slice(secret_bytes.as_ref())
             .map_err(|e| MnemonicResolverSignerError::InvalidScalar(e.to_string()))?;
         let msg = secp256k1::Message::from_digest(sighash);
         let signature = secp.sign_ecdsa(&msg, &secret);
         let pubkey = secp256k1::PublicKey::from_secret_key(&secp, &secret);
-        // `secp256k1::SecretKey` is `Copy` (a thin wrapper over a
-        // 32-byte buffer) and doesn't itself zero on drop — but the
-        // backing buffer here came from `secret_bytes`
-        // (a `Zeroizing<[u8; 32]>`), which IS wiped when it falls
-        // out of scope below. The `secret` binding is forgotten by
-        // letting it go out of scope; no explicit `drop` needed.
-        let _ = secret;
+        // Wipe the SecretKey-owned scalar before it drops. `Zeroizing<[u8;32]>`
+        // covers `secret_bytes`; `SecretKey::from_slice` allocated a separate
+        // 32-byte copy that needs its own wipe.
+        secret.non_secure_erase();
         Ok((signature, pubkey))
     }
 
     async fn public_key(&self, path: &DerivationPath) -> Result<secp256k1::PublicKey, Self::Error> {
         let secret_bytes = self.derive_priv(path)?;
         let secp = Secp256k1::new();
-        let secret = secp256k1::SecretKey::from_slice(secret_bytes.as_ref())
+        let mut secret = secp256k1::SecretKey::from_slice(secret_bytes.as_ref())
             .map_err(|e| MnemonicResolverSignerError::InvalidScalar(e.to_string()))?;
         let pubkey = secp256k1::PublicKey::from_secret_key(&secp, &secret);
-        let _ = secret;
+        // Wipe the SecretKey-owned scalar before it drops. `Zeroizing<[u8;32]>`
+        // covers `secret_bytes`; `SecretKey::from_slice` allocated a separate
+        // 32-byte copy that needs its own wipe.
+        secret.non_secure_erase();
         Ok(pubkey)
     }
 }
