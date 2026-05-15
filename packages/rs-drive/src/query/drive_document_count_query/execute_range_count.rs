@@ -450,11 +450,12 @@ impl DriveDocumentCountQuery<'_> {
     pub fn execute_carrier_aggregate_count_with_proof(
         &self,
         drive: &Drive,
+        limit: Option<u16>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
         let drive_version = &platform_version.drive;
-        let path_query = self.carrier_aggregate_count_path_query(platform_version)?;
+        let path_query = self.carrier_aggregate_count_path_query(limit, platform_version)?;
         // Same destructure pattern as the sibling aggregate / distinct
         // executors. `get_proved_path_query` returns `CostContext<Result>`;
         // ignoring the cost field is the same pattern those use today.

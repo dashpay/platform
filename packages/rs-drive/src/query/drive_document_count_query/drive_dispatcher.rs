@@ -196,7 +196,23 @@ fn where_clauses_from_value(value: &dpp::platform_value::Value) -> Result<Vec<Wh
     // The returned triple is discarded; we only care about the
     // validation errors — see this function's docstring for the
     // catalog of rejections this enables on the count endpoint.
-    let _ = WhereClause::group_clauses(&clauses)?;
+    //
+    // Exception: `MultipleRangeClauses` is intentionally tolerated
+    // here. The regular-query parser rejects two ranges on
+    // different fields wholesale (its callers expect
+    // `(equal_clauses, in_clause, range_clause)` triples), but the
+    // count-query path accepts the carrier-aggregate shape
+    // (`outer_range + inner_ACOR_range` on different fields, e.g.
+    // G8). Structural validation for that shape lives in
+    // [`DriveDocumentCountQuery::detect_mode`] (which knows about
+    // `CountMode::GroupByRange`-with-two-ranges and routes to
+    // `DocumentCountMode::RangeAggregateCarrierProof`); replicating
+    // it here would be redundant.
+    match WhereClause::group_clauses(&clauses) {
+        Ok(_) => {}
+        Err(Error::Query(QuerySyntaxError::MultipleRangeClauses(_))) => {}
+        Err(e) => return Err(e),
+    }
     Ok(clauses)
 }
 
@@ -446,16 +462,41 @@ impl Drive {
                     platform_version,
                 )?,
             )),
-            DocumentCountMode::RangeAggregateCarrierProof => Ok(DocumentCountResponse::Proof(
-                self.execute_document_count_range_aggregate_carrier_proof(
-                    contract_id,
-                    request.document_type,
-                    document_type_name,
-                    where_clauses,
-                    transaction,
-                    platform_version,
-                )?,
-            )),
+            DocumentCountMode::RangeAggregateCarrierProof => {
+                // Validate-don't-clamp limit policy on the prove path
+                // (same rationale as `RangeDistinctProof` above): the
+                // verifier reconstructs the SizedQuery's `limit` byte-
+                // identically, so silent clamping would invisibly
+                // break verification. `limit` is meaningful only for
+                // the outer-Range carrier shape (G8); for the
+                // outer-In shape (G7) the caller's |In| already
+                // bounds the result and `limit` is typically unset.
+                let effective_limit = match request.limit {
+                    Some(n) => {
+                        if n > request.drive_config.max_query_limit as u32 {
+                            return Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(
+                                "limit {} exceeds max_query_limit {} on the prove + carrier-\
+                                 aggregate path; reduce the requested limit or omit it for the \
+                                 In-outer shape",
+                                n, request.drive_config.max_query_limit
+                            ))));
+                        }
+                        Some(n as u16)
+                    }
+                    None => None,
+                };
+                Ok(DocumentCountResponse::Proof(
+                    self.execute_document_count_range_aggregate_carrier_proof(
+                        contract_id,
+                        request.document_type,
+                        document_type_name,
+                        where_clauses,
+                        effective_limit,
+                        transaction,
+                        platform_version,
+                    )?,
+                ))
+            }
         }
     }
 }

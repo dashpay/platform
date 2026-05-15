@@ -293,106 +293,23 @@ impl DriveDocumentCountQuery<'_> {
     ///   `InvalidWhereClauseComponents`
     pub fn carrier_aggregate_count_path_query(
         &self,
+        limit: Option<u16>,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
-        let range_clause = self
-            .where_clauses
-            .iter()
-            .find(|wc| Self::is_range_operator(wc.operator))
-            .ok_or(Error::Query(
-                QuerySyntaxError::InvalidWhereClauseComponents(
-                    "carrier_aggregate_count_path_query requires a range where-clause",
-                ),
-            ))?;
-        let in_clause = self
-            .where_clauses
-            .iter()
-            .find(|wc| wc.operator == WhereOperator::In)
-            .ok_or(Error::Query(
-                QuerySyntaxError::InvalidWhereClauseComponents(
-                    "carrier_aggregate_count_path_query requires an In where-clause",
-                ),
-            ))?;
-        let range_item = self.range_clause_to_query_item(range_clause, platform_version)?;
-
-        // Walk the index properties. Everything before the In
-        // property goes into the base path as `(name, serialized_value)`
-        // pairs (must be `==`). The In property's name terminates
-        // the base path. Everything between the In and the range
-        // property goes into the subquery_path. The range property
-        // is the ACOR target.
-        let mut base_path: Vec<Vec<u8>> = vec![
-            vec![RootTree::DataContractDocuments as u8],
-            self.contract_id.to_vec(),
-            vec![1u8],
-            self.document_type_name.as_bytes().to_vec(),
-        ];
-        let mut subquery_path_extension: Vec<Vec<u8>> = vec![];
-        let mut found_in = false;
-        let prefix_and_in_props = &self.index.properties[..self.index.properties.len() - 1];
-
-        for prop in prefix_and_in_props {
-            let clause = self
-                .where_clauses
-                .iter()
-                .find(|wc| wc.field == prop.name)
-                .ok_or(
-                Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
-                    "carrier-aggregate proof: missing where clause for an index prefix property",
-                )),
-            )?;
-            match (clause.operator, found_in) {
-                (WhereOperator::Equal, false) => {
-                    // Pre-In equality prefix — extends the base path.
-                    base_path.push(prop.name.as_bytes().to_vec());
-                    base_path.push(self.document_type.serialize_value_for_key(
-                        prop.name.as_str(),
-                        &clause.value,
-                        platform_version,
-                    )?);
-                }
-                (WhereOperator::In, false) => {
-                    // In property — base path stops at its name;
-                    // outer Query's keys come from the In values
-                    // below.
-                    base_path.push(prop.name.as_bytes().to_vec());
-                    found_in = true;
-                }
-                (WhereOperator::Equal, true) => {
-                    // Post-In equality — extends the subquery path.
-                    subquery_path_extension.push(prop.name.as_bytes().to_vec());
-                    subquery_path_extension.push(self.document_type.serialize_value_for_key(
-                        prop.name.as_str(),
-                        &clause.value,
-                        platform_version,
-                    )?);
-                }
-                (WhereOperator::In, true) => {
-                    return Err(Error::Query(
-                        QuerySyntaxError::InvalidWhereClauseComponents(
-                            "carrier-aggregate proof: at most one In clause is supported \
-                         on prefix properties",
-                        ),
-                    ));
-                }
-                _ => {
-                    return Err(Error::Query(
-                        QuerySyntaxError::InvalidWhereClauseComponents(
-                            "carrier-aggregate proof: prefix properties must use `==` or `In`",
-                        ),
-                    ));
-                }
-            }
-        }
-        if !found_in {
-            return Err(Error::Query(
-                QuerySyntaxError::InvalidWhereClauseComponents(
-                    "carrier-aggregate proof: In clause must appear on a prefix property of the \
-                 chosen index",
-                ),
-            ));
-        }
-        let range_prop_name = &self
+        // The terminator property (last in the index) carries the
+        // ACOR target range. The "carrier" property — the one whose
+        // clause becomes the outer Query items — is either:
+        // - An `In` clause (G7 shape: one Key per In value)
+        // - A range clause on a prefix prop (G8 shape: one QueryItem
+        //   bounding the outer range, with `SizedQuery::limit` capping
+        //   how many outer matches the carrier walks — see
+        //   [grovedb PR #664](https://github.com/dashpay/grovedb/pull/664))
+        //
+        // The terminator's clause must be a range and is converted to
+        // the inner ACOR `QueryItem`. Any properties between the
+        // carrier and the terminator must use `==` and extend the
+        // subquery_path.
+        let terminator_prop_name = &self
             .index
             .properties
             .last()
@@ -402,35 +319,142 @@ impl DriveDocumentCountQuery<'_> {
                 ),
             ))?
             .name;
-        subquery_path_extension.push(range_prop_name.as_bytes().to_vec());
-
-        // Build the outer Query: one Key per In value, inserted
-        // via `insert_key` so the multi-key walker sees them in
-        // lex-ascending serialized order (grovedb invariant per
-        // PR #663).
-        let in_values = in_clause.in_values().into_data_with_error()??;
-        let mut outer_query = Query::new();
-        let mut serialized_in_keys: Vec<Vec<u8>> = in_values
+        let terminator_clause = self
+            .where_clauses
             .iter()
-            .map(|v| {
-                self.document_type.serialize_value_for_key(
-                    in_clause.field.as_str(),
-                    v,
-                    platform_version,
-                )
-            })
-            .collect::<Result<_, _>>()?;
-        serialized_in_keys.sort();
-        serialized_in_keys.dedup();
-        for key in serialized_in_keys {
-            outer_query.insert_key(key);
+            .find(|wc| wc.field == *terminator_prop_name && Self::is_range_operator(wc.operator))
+            .ok_or(Error::Query(
+                QuerySyntaxError::InvalidWhereClauseComponents(
+                    "carrier_aggregate_count_path_query requires a range where-clause on the \
+                     terminator property of the chosen index",
+                ),
+            ))?;
+        let inner_range_item =
+            self.range_clause_to_query_item(terminator_clause, platform_version)?;
+
+        let mut base_path: Vec<Vec<u8>> = vec![
+            vec![RootTree::DataContractDocuments as u8],
+            self.contract_id.to_vec(),
+            vec![1u8],
+            self.document_type_name.as_bytes().to_vec(),
+        ];
+        let mut subquery_path_extension: Vec<Vec<u8>> = vec![];
+
+        // Carrier clause state: either `None` (not seen yet, still on
+        // the `==`-prefix run), `Some(In)` (G7), or `Some(Range)` (G8).
+        enum Carrier {
+            Pending,
+            In(WhereClause),
+            Range(WhereClause),
+        }
+        let mut carrier = Carrier::Pending;
+        let prefix_and_carrier_props = &self.index.properties[..self.index.properties.len() - 1];
+
+        for prop in prefix_and_carrier_props {
+            let clause = self
+                .where_clauses
+                .iter()
+                .find(|wc| wc.field == prop.name)
+                .ok_or(
+                Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
+                    "carrier-aggregate proof: missing where clause for an index prefix property",
+                )),
+            )?;
+            match (&carrier, clause.operator) {
+                (Carrier::Pending, WhereOperator::Equal) => {
+                    base_path.push(prop.name.as_bytes().to_vec());
+                    base_path.push(self.document_type.serialize_value_for_key(
+                        prop.name.as_str(),
+                        &clause.value,
+                        platform_version,
+                    )?);
+                }
+                (Carrier::Pending, WhereOperator::In) => {
+                    base_path.push(prop.name.as_bytes().to_vec());
+                    carrier = Carrier::In(clause.clone());
+                }
+                (Carrier::Pending, op) if Self::is_range_operator(op) => {
+                    base_path.push(prop.name.as_bytes().to_vec());
+                    carrier = Carrier::Range(clause.clone());
+                }
+                (Carrier::In(_) | Carrier::Range(_), WhereOperator::Equal) => {
+                    subquery_path_extension.push(prop.name.as_bytes().to_vec());
+                    subquery_path_extension.push(self.document_type.serialize_value_for_key(
+                        prop.name.as_str(),
+                        &clause.value,
+                        platform_version,
+                    )?);
+                }
+                (Carrier::In(_) | Carrier::Range(_), _) => {
+                    return Err(Error::Query(
+                        QuerySyntaxError::InvalidWhereClauseComponents(
+                            "carrier-aggregate proof: at most one carrier clause (In or range) \
+                         is supported on prefix properties; subsequent prefix clauses must \
+                         use `==`",
+                        ),
+                    ));
+                }
+                _ => {
+                    return Err(Error::Query(
+                        QuerySyntaxError::InvalidWhereClauseComponents(
+                            "carrier-aggregate proof: prefix property operator unsupported",
+                        ),
+                    ));
+                }
+            }
+        }
+        subquery_path_extension.push(terminator_prop_name.as_bytes().to_vec());
+
+        let mut outer_query = Query::new();
+        match carrier {
+            Carrier::Pending => {
+                return Err(Error::Query(
+                    QuerySyntaxError::InvalidWhereClauseComponents(
+                        "carrier-aggregate proof: an In or range clause must appear on a prefix \
+                     property of the chosen index to act as the carrier dimension",
+                    ),
+                ));
+            }
+            Carrier::In(in_clause) => {
+                // Build one Key per In value, sorted lex-ascending
+                // (grovedb's multi-key walker invariant per PR #663).
+                let in_values = in_clause.in_values().into_data_with_error()??;
+                let mut serialized_in_keys: Vec<Vec<u8>> = in_values
+                    .iter()
+                    .map(|v| {
+                        self.document_type.serialize_value_for_key(
+                            in_clause.field.as_str(),
+                            v,
+                            platform_version,
+                        )
+                    })
+                    .collect::<Result<_, _>>()?;
+                serialized_in_keys.sort();
+                serialized_in_keys.dedup();
+                for key in serialized_in_keys {
+                    outer_query.insert_key(key);
+                }
+            }
+            Carrier::Range(range_clause) => {
+                // Single QueryItem bounding the outer range. The
+                // carrier walks this range and emits one `(key, u64)`
+                // pair per matched outer key.
+                let outer_range_item =
+                    self.range_clause_to_query_item(&range_clause, platform_version)?;
+                outer_query.items.push(outer_range_item);
+            }
         }
         outer_query.set_subquery_path(subquery_path_extension);
-        outer_query.set_subquery(Query::new_aggregate_count_on_range(range_item));
+        outer_query.set_subquery(Query::new_aggregate_count_on_range(inner_range_item));
 
+        // `SizedQuery::limit` is permitted on carriers as of grovedb
+        // PR #664; for In-outer carriers the |IN| array already
+        // bounds the result so `limit` is typically `None`, but for
+        // Range-outer carriers `limit` caps the outer walk and is
+        // load-bearing for proof bytes.
         Ok(PathQuery::new(
             base_path,
-            SizedQuery::new(outer_query, None, None),
+            SizedQuery::new(outer_query, limit, None),
         ))
     }
 

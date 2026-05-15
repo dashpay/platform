@@ -643,6 +643,15 @@ fn document_count_worst_case(c: &mut Criterion) {
             CountMode::GroupByIn,
             None,
         ),
+        (
+            "query_g8_brand_gt_color_gt_grouped_by_brand_limit_20",
+            Value::Array(vec![
+                clause("brand", ">", Value::Text(brand_label(BRAND_COUNT / 2))),
+                clause("color", ">", broad_range_floor.clone()),
+            ]),
+            CountMode::GroupByRange,
+            Some(20),
+        ),
     ];
 
     for (name, raw_where, mode, limit) in groupby_chapter_queries {
@@ -795,6 +804,13 @@ fn report_group_by_matrix(fixture: &CountBenchFixture, platform_version: &Platfo
             clause("color", ">", range_floor.clone()),
         ])
     };
+    let brand_floor = Value::Text(brand_label(BRAND_COUNT / 2));
+    let where_brand_gt_color_gt = || {
+        Value::Array(vec![
+            clause("brand", ">", brand_floor.clone()),
+            clause("color", ">", range_floor.clone()),
+        ])
+    };
 
     // (label, group_by-as-the-caller-would-spell-it, where description,
     //  raw where Value, CountMode used by drive, limit override,
@@ -929,6 +945,14 @@ fn report_group_by_matrix(fixture: &CountBenchFixture, platform_version: &Platfo
             raw_where: where_brand_in_color_gt(),
             mode: CountMode::GroupByIn,
             limit: None,
+        },
+        MatrixCase {
+            label: "[brand] / where=brand > floor AND color > floor (limit 20)",
+            platform_allowed:
+                "yes (RangeAggregateCarrierProof — carrier ACOR with outer Range + SizedQuery limit)",
+            raw_where: where_brand_gt_color_gt(),
+            mode: CountMode::GroupByRange,
+            limit: Some(20),
         },
         MatrixCase {
             label: "[brand] / where=brand==X",
@@ -1327,22 +1351,19 @@ fn probe_carrier_acor_range_outer(fixture: &CountBenchFixture, platform_version:
         DOCUMENT_TYPE_NAME.as_bytes().to_vec(),
         b"brand".to_vec(),
     ];
-    // Grovedb's `validate_carrier_aggregate_count_on_range` rejects
-    // `SizedQuery::limit` and `SizedQuery::offset` for *any* query
-    // containing an `AggregateCountOnRange` (carrier or leaf) — see
-    // the test `validate_carrier_aggregate_count_rejects_sized_query_limit`
-    // in grovedb's tests. So we walk the full outer range here; if
-    // the resulting proof is too big, that's a signal we'd need a
-    // grovedb-level extension allowing carrier-with-limit, or a
-    // drive-level workaround (e.g. compute an explicit upper bound
-    // for the outer Range from the requested limit before the
-    // carrier walk).
-    let path_query = PathQuery::new(path, SizedQuery::new(carrier, None, None));
+    // `SizedQuery::limit` on carrier-ACOR is now permitted per
+    // [grovedb PR #664](https://github.com/dashpay/grovedb/pull/664)
+    // (the follow-up to PR #663 that split the leaf-strict vs
+    // carrier-permissive validators on `SizedQuery::limit` /
+    // `SizedQuery::offset`). The limit caps the number of outer-key
+    // matches the carrier walks — each matched outer key still
+    // produces a complete leaf-ACOR `u64`.
+    let outer_limit: u16 = 20;
+    let path_query = PathQuery::new(path, SizedQuery::new(carrier, Some(outer_limit), None));
 
     eprintln!(
-        "[carrier-acor-range] probing: widget/brand RangeAfter(brand_050..) (no limit — \
-         grovedb rejects SizedQuery::limit on ACOR-bearing queries) subquery_path=color \
-         subquery=AggregateCountOnRange(RangeAfter(color_00000500..))"
+        "[carrier-acor-range] probing: widget/brand RangeAfter(brand_050..) limit={outer_limit} \
+         subquery_path=color subquery=AggregateCountOnRange(RangeAfter(color_00000500..))"
     );
 
     // 1. No-proof.
@@ -1797,6 +1818,15 @@ fn display_group_by_proofs(fixture: &CountBenchFixture, platform_version: &Platf
             ]),
             CountMode::GroupByIn,
             None,
+        ),
+        (
+            "G8 [brand] / where=brand > floor AND color > floor (limit 20)",
+            Value::Array(vec![
+                clause("brand", ">", Value::Text(brand_label(BRAND_COUNT / 2))),
+                clause("color", ">", range_floor.clone()),
+            ]),
+            CountMode::GroupByRange,
+            Some(20),
         ),
     ];
 

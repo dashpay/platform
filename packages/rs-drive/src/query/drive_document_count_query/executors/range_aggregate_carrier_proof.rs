@@ -1,16 +1,25 @@
 //! Carrier-ACOR proof executor for
 //! [`super::super::DocumentCountMode::RangeAggregateCarrierProof`]
-//! dispatch — `prove = true` count queries with both an `In`
-//! clause and a range clause, where the caller asks for one
-//! aggregate per In branch via `group_by = [in_field]`.
+//! dispatch — `prove = true` count queries where the caller asks
+//! for one aggregate per outer-key branch via
+//! `group_by = [outer_field]`. The outer dimension is either:
 //!
-//! Uses grovedb's carrier-subquery composition (introduced in
-//! [PR #663](https://github.com/dashpay/grovedb/pull/663)): one
-//! outer Key per In value, each terminating in an
-//! `AggregateCountOnRange` subquery over the per-branch range
-//! subtree. Returns proof bytes that the client verifies via
+//! - An `In` clause on the index's first property (G7 shape —
+//!   `brand IN[...] AND color > floor`). One Key per In value.
+//! - A range clause on the index's first property (G8 shape —
+//!   `brand > X AND color > floor`, optional `limit`). Single
+//!   QueryItem bounding the outer walk; `SizedQuery::limit` caps
+//!   how many outer matches the carrier walks before stopping.
+//!
+//! Uses grovedb's carrier-subquery composition introduced in
+//! [PR #663](https://github.com/dashpay/grovedb/pull/663) and
+//! extended in [PR #664](https://github.com/dashpay/grovedb/pull/664)
+//! (the latter relaxed the `SizedQuery::limit` rejection for
+//! carriers, which is what unblocks the G8 outer-range shape with
+//! a useful upper bound). Returns proof bytes that the client
+//! verifies via
 //! [`grovedb::GroveDb::verify_aggregate_count_query_per_key`],
-//! producing `Vec<(in_key, u64)>` — same per-key aggregate
+//! producing `Vec<(outer_key, u64)>` — same per-key aggregate
 //! semantics as the no-proof per-In fan-out, just verifiable.
 
 use super::super::super::conditions::WhereClause;
@@ -24,16 +33,21 @@ use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
-    /// Carrier-ACOR proof for `In + range` with
-    /// `group_by = [in_field]`. Returns proof bytes that the
-    /// client verifies via
+    /// Carrier-ACOR proof for `(In OR outer Range) + inner range`
+    /// with `group_by = [outer_field]`. Returns proof bytes that
+    /// the client verifies via
     /// [`grovedb::GroveDb::verify_aggregate_count_query_per_key`].
+    ///
+    /// `limit` caps the outer walk for the Range-outer (G8) shape;
+    /// for the In-outer (G7) shape the `|In|` array already bounds
+    /// the result and `limit` is typically `None`.
     pub fn execute_document_count_range_aggregate_carrier_proof(
         &self,
         contract_id: [u8; 32],
         document_type: DocumentTypeRef,
         document_type_name: String,
         where_clauses: Vec<WhereClause>,
+        limit: Option<u16>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
@@ -44,7 +58,8 @@ impl Drive {
         .ok_or_else(|| {
             Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
                 "carrier-aggregate count requires a `range_countable: true` index whose first \
-                 property matches the In field and last property matches the range field"
+                 property carries the outer In or range clause and whose last property \
+                 carries the inner ACOR range clause"
                     .to_string(),
             ))
         })?;
@@ -55,6 +70,11 @@ impl Drive {
             index,
             where_clauses,
         };
-        count_query.execute_carrier_aggregate_count_with_proof(self, transaction, platform_version)
+        count_query.execute_carrier_aggregate_count_with_proof(
+            self,
+            limit,
+            transaction,
+            platform_version,
+        )
     }
 }

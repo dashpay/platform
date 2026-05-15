@@ -113,11 +113,40 @@ impl DriveDocumentCountQuery<'_> {
             .filter(|wc| wc.operator == WhereOperator::In)
             .count();
 
+        // `range_count > 1` is rejected for every shape EXCEPT the
+        // carrier-ACOR with outer range (G8): when the caller asks
+        // for `GroupByRange` + `prove = true` and there are exactly
+        // two range clauses on different fields (one on the index's
+        // first property — the carrier — and one on the terminator —
+        // the inner ACOR), grovedb's carrier-subquery composition
+        // ([PR #663](https://github.com/dashpay/grovedb/pull/663)
+        // shipped the carrier shape; [PR #664](https://github.com/dashpay/grovedb/pull/664)
+        // permits `SizedQuery::limit` on it) makes this a well-formed
+        // single-proof shape. The two ranges must be on distinct
+        // fields — combining two-sided ranges on the same field still
+        // routes through `between*` as before.
         if range_count > 1 {
-            return Err(QuerySyntaxError::InvalidWhereClauseComponents(
-                "count query supports at most one range where-clause; combine \
-                 two-sided ranges via `between*` instead of separate `>` / `<` clauses",
-            ));
+            let two_ranges_on_distinct_fields = where_clauses
+                .iter()
+                .filter(|wc| Self::is_range_operator(wc.operator))
+                .map(|wc| wc.field.as_str())
+                .collect::<std::collections::BTreeSet<_>>()
+                .len()
+                == range_count;
+            if !(prove
+                && matches!(mode, CountMode::GroupByRange)
+                && range_count == 2
+                && in_count == 0
+                && two_ranges_on_distinct_fields)
+            {
+                return Err(QuerySyntaxError::InvalidWhereClauseComponents(
+                    "count query supports at most one range where-clause; combine \
+                     two-sided ranges via `between*` instead of separate `>` / `<` \
+                     clauses, or use `group_by = [outer_range_field]` with `prove = \
+                     true` for the carrier-aggregate shape with one outer range and \
+                     one inner ACOR range on a different field",
+                ));
+            }
         }
         if in_count > 1 {
             return Err(QuerySyntaxError::InvalidWhereClauseComponents(
@@ -162,12 +191,25 @@ impl DriveDocumentCountQuery<'_> {
             ));
         }
 
-        if distinct && !has_range {
+        if distinct && !has_range && range_count != 2 {
             return Err(QuerySyntaxError::InvalidWhereClauseComponents(
                 "GROUP BY on a range field requires a range where-clause; the \
                  range field must appear in `where` for the distinct walk to \
                  have a window to iterate over",
             ));
+        }
+
+        // G8 short-circuit: `GroupByRange + prove` with exactly two
+        // range clauses on distinct fields routes to the carrier
+        // ACOR shape. One range becomes the outer dimension of the
+        // carrier walk; the other range becomes the inner ACOR
+        // target. `SizedQuery::limit` caps the outer walk (per
+        // [grovedb PR #664](https://github.com/dashpay/grovedb/pull/664)).
+        // The validity of "which range is the outer / which is the
+        // inner" depends on the picked index — checked in the
+        // path-query builder against the index's property order.
+        if prove && matches!(mode, CountMode::GroupByRange) && range_count == 2 && in_count == 0 {
+            return Ok(DocumentCountMode::RangeAggregateCarrierProof);
         }
 
         Ok(match (has_range, has_in, prove, distinct) {
