@@ -644,13 +644,18 @@ fn document_count_worst_case(c: &mut Criterion) {
             None,
         ),
         (
-            "query_g8_brand_gt_color_gt_grouped_by_brand_limit_20",
+            "query_g8_brand_gt_color_gt_grouped_by_brand",
             Value::Array(vec![
                 clause("brand", ">", Value::Text(brand_label(BRAND_COUNT / 2))),
                 clause("color", ">", broad_range_floor.clone()),
             ]),
             CountMode::GroupByRange,
-            Some(20),
+            // Range-outer carrier-aggregate enforces a fixed
+            // platform-wide outer-walk cap of
+            // `CARRIER_AGGREGATE_OUTER_RANGE_LIMIT` (25); the
+            // dispatcher rejects a caller-supplied `limit` on this
+            // shape, so pass `None` here.
+            None,
         ),
     ];
 
@@ -947,12 +952,12 @@ fn report_group_by_matrix(fixture: &CountBenchFixture, platform_version: &Platfo
             limit: None,
         },
         MatrixCase {
-            label: "[brand] / where=brand > floor AND color > floor (limit 20)",
+            label: "[brand] / where=brand > floor AND color > floor",
             platform_allowed:
-                "yes (RangeAggregateCarrierProof — carrier ACOR with outer Range + SizedQuery limit)",
+                "yes (RangeAggregateCarrierProof — carrier ACOR; platform-cap outer limit = 25)",
             raw_where: where_brand_gt_color_gt(),
             mode: CountMode::GroupByRange,
-            limit: Some(20),
+            limit: None,
         },
         MatrixCase {
             label: "[brand] / where=brand==X",
@@ -1357,8 +1362,11 @@ fn probe_carrier_acor_range_outer(fixture: &CountBenchFixture, platform_version:
     // carrier-permissive validators on `SizedQuery::limit` /
     // `SizedQuery::offset`). The limit caps the number of outer-key
     // matches the carrier walks — each matched outer key still
-    // produces a complete leaf-ACOR `u64`.
-    let outer_limit: u16 = 20;
+    // produces a complete leaf-ACOR `u64`. The probe matches the
+    // platform-wide cap defined at
+    // `CARRIER_AGGREGATE_OUTER_RANGE_LIMIT` (25), which the drive
+    // dispatcher enforces on the G8 shape.
+    let outer_limit: u16 = 25;
     let path_query = PathQuery::new(path, SizedQuery::new(carrier, Some(outer_limit), None));
 
     eprintln!(
@@ -1820,13 +1828,13 @@ fn display_group_by_proofs(fixture: &CountBenchFixture, platform_version: &Platf
             None,
         ),
         (
-            "G8 [brand] / where=brand > floor AND color > floor (limit 20)",
+            "G8 [brand] / where=brand > floor AND color > floor",
             Value::Array(vec![
                 clause("brand", ">", Value::Text(brand_label(BRAND_COUNT / 2))),
                 clause("color", ">", range_floor.clone()),
             ]),
             CountMode::GroupByRange,
-            Some(20),
+            None,
         ),
     ];
 

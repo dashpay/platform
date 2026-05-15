@@ -467,23 +467,55 @@ impl Drive {
                 // (same rationale as `RangeDistinctProof` above): the
                 // verifier reconstructs the SizedQuery's `limit` byte-
                 // identically, so silent clamping would invisibly
-                // break verification. `limit` is meaningful only for
-                // the outer-Range carrier shape (G8); for the
-                // outer-In shape (G7) the caller's |In| already
-                // bounds the result and `limit` is typically unset.
-                let effective_limit = match request.limit {
-                    Some(n) => {
-                        if n > request.drive_config.max_query_limit as u32 {
-                            return Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(
-                                "limit {} exceeds max_query_limit {} on the prove + carrier-\
-                                 aggregate path; reduce the requested limit or omit it for the \
-                                 In-outer shape",
-                                n, request.drive_config.max_query_limit
-                            ))));
-                        }
-                        Some(n as u16)
+                // break verification.
+                //
+                // Two shape-dependent rules apply here:
+                //
+                // - **In-outer carrier (G7):** the caller's `|In|`
+                //   already bounds the result. `SizedQuery::limit`
+                //   stays `None`; if the caller passed a non-`None`
+                //   `limit`, reject — there's no use case for a sub-
+                //   `|In|` limit on this path, and accepting it would
+                //   silently change which In-branches appear in the
+                //   proof.
+                //
+                // - **Range-outer carrier (G8):** the platform
+                //   enforces a hard cap of
+                //   [`super::CARRIER_AGGREGATE_OUTER_RANGE_LIMIT`] on
+                //   how many outer-range matches the carrier walks.
+                //   The caller's `limit` is rejected outright on this
+                //   shape — the cap is part of the per-shape
+                //   structural contract so prover and verifier agree
+                //   byte-for-byte without the caller having to
+                //   coordinate a matching value.
+                let has_outer_range = where_clauses
+                    .iter()
+                    .filter(|wc| DriveDocumentCountQuery::is_range_operator(wc.operator))
+                    .count()
+                    == 2;
+                let effective_limit = if has_outer_range {
+                    if request.limit.is_some() {
+                        return Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(
+                            "carrier-aggregate range-outer queries (e.g. `outer_range_field \
+                             > X AND inner_acor_field > Y` with `group_by = \
+                             [outer_range_field]`) carry a fixed platform-wide outer-walk \
+                             cap of {} entries; remove `limit` from the request — the cap \
+                             is enforced server-side to keep prover/verifier path-query \
+                             bytes deterministic across callers",
+                            super::CARRIER_AGGREGATE_OUTER_RANGE_LIMIT,
+                        ))));
                     }
-                    None => None,
+                    Some(super::CARRIER_AGGREGATE_OUTER_RANGE_LIMIT)
+                } else {
+                    if let Some(n) = request.limit {
+                        return Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(
+                            "carrier-aggregate In-outer queries (e.g. `outer_in_field IN \
+                             [...] AND inner_acor_field > Y` with `group_by = \
+                             [outer_in_field]`) don't accept `limit` — the In array's \
+                             length already bounds the result. Got limit = {n}.",
+                        ))));
+                    }
+                    None
                 };
                 Ok(DocumentCountResponse::Proof(
                     self.execute_document_count_range_aggregate_carrier_proof(
