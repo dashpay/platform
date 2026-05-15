@@ -54,18 +54,6 @@ bs58 = "0.5"
 # Zeroize intermediate key material crossing the FFI boundary.
 zeroize = { version = "1", features = ["derive"] }
 
-# Needed for the `#[async_trait]` macro on
-# `MnemonicResolverCoreSigner`'s `Signer` impl. The upstream
-# `key_wallet::signer::Signer` trait is `#[async_trait]`-shaped, so
-# our impl has to match the same desugaring for the lifetimes to line up.
-async-trait = "0.1"
-
-# `MnemonicResolverSignerError` uses `#[derive(thiserror::Error)]` so
-# every resolver-side failure mode is a typed enum variant rather than
-# a free-form String. Surfaces clean discriminants to callers (FFI +
-# rs-dpp's `sign_with_signer` → `ProtocolError::ExternalSignerError`).
-thiserror = "2.0"
-
 [dev-dependencies]
 tempfile = "3.8"
 dpp = { path = "../rs-dpp", features = ["fixtures-and-mocks"] }
