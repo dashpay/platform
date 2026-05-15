@@ -294,6 +294,7 @@ impl DriveDocumentCountQuery<'_> {
     pub fn carrier_aggregate_count_path_query(
         &self,
         limit: Option<u16>,
+        left_to_right: bool,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
         // The terminator property (last in the index) carries the
@@ -405,7 +406,7 @@ impl DriveDocumentCountQuery<'_> {
         }
         subquery_path_extension.push(terminator_prop_name.as_bytes().to_vec());
 
-        let mut outer_query = Query::new();
+        let mut outer_query = Query::new_with_direction(left_to_right);
         match carrier {
             Carrier::Pending => {
                 return Err(Error::Query(

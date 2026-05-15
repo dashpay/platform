@@ -762,19 +762,6 @@ impl<'a> DriveDocumentQuery<'a> {
         document_type: DocumentTypeRef<'a>,
         config: &DriveConfig,
     ) -> Result<Self, Error> {
-        let limit = maybe_limit
-            .map_or(Some(config.default_query_limit), |limit_value| {
-                if limit_value == 0 || limit_value > config.default_query_limit {
-                    None
-                } else {
-                    Some(limit_value)
-                }
-            })
-            .ok_or(Error::Query(QuerySyntaxError::InvalidLimit(format!(
-                "limit greater than max limit {}",
-                config.max_query_limit
-            ))))?;
-
         let all_where_clauses: Vec<WhereClause> = match where_clause {
             Value::Null => Ok(vec![]),
             Value::Array(clauses) => clauses
@@ -794,10 +781,8 @@ impl<'a> DriveDocumentQuery<'a> {
             ))),
         }?;
 
-        let internal_clauses = InternalClauses::extract_from_clauses(all_where_clauses)?;
-
-        let order_by: IndexMap<String, OrderClause> = order_by
-            .map_or(vec![], |id_cbor| {
+        let order_by_clauses: Vec<OrderClause> = order_by
+            .map(|id_cbor| {
                 if let Value::Array(clauses) = id_cbor {
                     clauses
                         .iter()
@@ -810,12 +795,75 @@ impl<'a> DriveDocumentQuery<'a> {
                         })
                         .collect()
                 } else {
-                    vec![]
+                    Vec::new()
                 }
             })
-            .iter()
-            .map(|order_clause| Ok((order_clause.field.clone(), order_clause.to_owned())))
-            .collect::<Result<IndexMap<String, OrderClause>, Error>>()?;
+            .unwrap_or_default();
+
+        Self::from_typed_clauses(
+            all_where_clauses,
+            order_by_clauses,
+            maybe_limit,
+            start_at,
+            start_at_included,
+            block_time_ms,
+            contract,
+            document_type,
+            config,
+        )
+    }
+
+    /// Build a `DriveDocumentQuery` from already-structured where /
+    /// order_by clauses. This is the typed-input twin of
+    /// [`Self::from_decomposed_values`] — same downstream shape, just
+    /// without the `Value::Array(...)` parse step.
+    ///
+    /// Used by the v1 `getDocuments` ABCI handler whose wire format
+    /// carries `repeated WhereClause` / `repeated OrderClause`
+    /// natively (no CBOR envelope). The v0 path keeps using
+    /// `from_decomposed_values` so its CBOR-decoded inputs flow
+    /// through the existing `WhereClause::from_components` parser
+    /// for shape validation; the typed path expects that validation
+    /// (or the equivalent proto→drive conversion) to have run
+    /// upstream.
+    ///
+    /// Limit semantics mirror `from_decomposed_values`:
+    /// `maybe_limit = None` or `Some(0)` falls back to
+    /// `config.default_query_limit`; `Some(N)` with `N >
+    /// config.default_query_limit` is rejected as
+    /// `QuerySyntaxError::InvalidLimit`.
+    #[cfg(any(feature = "server", feature = "verify"))]
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_typed_clauses(
+        where_clauses: Vec<WhereClause>,
+        order_by_clauses: Vec<OrderClause>,
+        maybe_limit: Option<u16>,
+        start_at: Option<[u8; 32]>,
+        start_at_included: bool,
+        block_time_ms: Option<u64>,
+        contract: &'a DataContract,
+        document_type: DocumentTypeRef<'a>,
+        config: &DriveConfig,
+    ) -> Result<Self, Error> {
+        let limit = maybe_limit
+            .map_or(Some(config.default_query_limit), |limit_value| {
+                if limit_value == 0 || limit_value > config.default_query_limit {
+                    None
+                } else {
+                    Some(limit_value)
+                }
+            })
+            .ok_or(Error::Query(QuerySyntaxError::InvalidLimit(format!(
+                "limit greater than max limit {}",
+                config.max_query_limit
+            ))))?;
+
+        let internal_clauses = InternalClauses::extract_from_clauses(where_clauses)?;
+
+        let order_by: IndexMap<String, OrderClause> = order_by_clauses
+            .into_iter()
+            .map(|c| (c.field.clone(), c))
+            .collect();
 
         Ok(DriveDocumentQuery {
             contract,

@@ -33,6 +33,7 @@ impl DriveDocumentCountQuery<'_> {
         &self,
         proof: &[u8],
         limit: Option<u16>,
+        left_to_right: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Vec<(Vec<u8>, u64)>), Error> {
         match platform_version
@@ -42,7 +43,12 @@ impl DriveDocumentCountQuery<'_> {
             .document_count
             .verify_carrier_aggregate_count_proof
         {
-            0 => self.verify_carrier_aggregate_count_proof_v0(proof, limit, platform_version),
+            0 => self.verify_carrier_aggregate_count_proof_v0(
+                proof,
+                limit,
+                left_to_right,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "DriveDocumentCountQuery::verify_carrier_aggregate_count_proof".to_string(),
                 known_versions: vec![0],
