@@ -64,9 +64,11 @@ public final class PersistentAssetLock {
     public var amountDuffs: Int64
 
     /// Discriminant of [`AssetLockStatus`]:
-    /// 0 = Built, 1 = Broadcast, 2 = InstantSendLocked, 3 = ChainLocked.
-    /// Stored as `Int` so `#Predicate` can match raw values directly
-    /// (the progress bar compares against 0/1/2/3).
+    /// 0 = Built, 1 = Broadcast, 2 = InstantSendLocked, 3 = ChainLocked,
+    /// 4 = Consumed. Stored as `Int` so `#Predicate` can match raw
+    /// values directly (the progress bar compares against 0/1/2/3 and
+    /// the resumable-locks filter against 4 to hide already-spent
+    /// rows).
     public var statusRaw: Int
 
     /// Bincode-encoded `AssetLockProof` (`dpp::bincode::config::standard()`).

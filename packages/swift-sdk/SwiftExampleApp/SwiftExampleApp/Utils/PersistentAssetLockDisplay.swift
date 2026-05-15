@@ -19,11 +19,14 @@ import SwiftDashSDK
 /// conformer (including `FakeAssetLockRow` in tests).
 extension AssetLockResumeRow {
     /// `true` when the lock has a usable IS-lock or chain-lock
-    /// proof. Only these locks can fund a Platform identity right
-    /// now; the Resumable Registrations row's Resume button gates
-    /// on this. Built (0) and Broadcast (1) have no signed proof
-    /// yet — submitting them would fail at the Platform layer.
-    var canFundIdentity: Bool { statusRaw >= 2 }
+    /// proof AND has not yet been consumed. Only these locks can
+    /// fund a Platform identity; the Resumable Registrations row's
+    /// Resume button gates on this. Built (0) and Broadcast (1)
+    /// have no signed proof yet — submitting them would fail at the
+    /// Platform layer. Consumed (4) was already used to fund an
+    /// identity and cannot be reused; the persisted row survives
+    /// only for historical lookup.
+    var canFundIdentity: Bool { statusRaw == 2 || statusRaw == 3 }
 
     /// `true` when the lock should be surfaced on the Resumable
     /// Registrations section at all. Lower bar than `canFundIdentity`

@@ -38,12 +38,22 @@ public final class ManagedAssetLockManager: @unchecked Sendable {
         case assetLockShieldedAddressTopUp = 5
     }
 
-    /// Status of a tracked asset lock.
+    /// Status of a tracked asset lock. Mirrors the Rust-side
+    /// `AssetLockStatus` enum in `rs-platform-wallet`; any new case
+    /// added here must land in lockstep with the Rust variant so the
+    /// FFI round-trip stays unambiguous.
     public enum AssetLockStatus: UInt32 {
         case built = 0
         case broadcast = 1
         case instantSendLocked = 2
         case chainLocked = 3
+        /// Terminal state set by `consume_asset_lock` after a
+        /// successful identity registration or top-up. The persisted
+        /// row is retained for historical lookup (e.g. the
+        /// Transactions list mapping a funding tx back to its
+        /// locked amount); a Consumed lock cannot fund another
+        /// identity.
+        case consumed = 4
     }
 
     /// A tracked asset lock.
