@@ -3,7 +3,7 @@
 //! Implements [`WalletInfoInterface`], [`WalletTransactionChecker`], and
 //! [`ManagedAccountOperations`] by delegating to the inner `ManagedWalletInfo`.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use async_trait::async_trait;
 use dashcore::ephemerealdata::chain_lock::ChainLock;
@@ -18,7 +18,9 @@ use key_wallet::transaction_checking::account_checker::TransactionCheckResult;
 use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::transaction_checking::WalletTransactionChecker;
 use key_wallet::wallet::managed_wallet_info::managed_account_operations::ManagedAccountOperations;
-use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+use key_wallet::wallet::managed_wallet_info::wallet_info_interface::{
+    ApplyChainLockOutcome, WalletInfoInterface,
+};
 use key_wallet::wallet::managed_wallet_info::TransactionRecord;
 use key_wallet::{Network, Utxo, Wallet, WalletCoreBalance};
 
@@ -176,17 +178,18 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.core_wallet.last_applied_chain_lock()
     }
 
-    fn apply_chain_lock(&mut self, chain_lock: ChainLock) -> BTreeMap<AccountType, Vec<Txid>> {
+    fn apply_chain_lock(&mut self, chain_lock: ChainLock) -> ApplyChainLockOutcome {
         let cl_height = chain_lock.block_height;
-        let per_account = self.core_wallet.apply_chain_lock(chain_lock);
-        let total_promoted: usize = per_account.values().map(|v| v.len()).sum();
+        let outcome = self.core_wallet.apply_chain_lock(chain_lock);
+        let total_promoted: usize = outcome.locked_transactions.values().map(|v| v.len()).sum();
         tracing::debug!(
             cl_height,
             total_promoted,
-            accounts_with_promotions = per_account.len(),
+            accounts_with_promotions = outcome.locked_transactions.len(),
+            metadata_advanced = outcome.metadata_advanced,
             "apply_chain_lock delegated"
         );
-        per_account
+        outcome
     }
 }
 

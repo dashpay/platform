@@ -1625,7 +1625,10 @@ fn build_address_pools_from_derived(
             owned_strings.push(path_c);
 
             pool_entries.push(CoreAddressEntryFFI {
-                public_key: d.public_key,
+                // Upstream `DerivedAddress::public_key` is now a
+                // `dashcore::PublicKey`; compressed serialization
+                // is the 33-byte form our FFI expects.
+                public_key: d.public_key.inner.serialize(),
                 has_public_key: true,
                 pool_type_tag: pool_tag,
                 address_index: d.derivation_index,

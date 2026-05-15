@@ -195,7 +195,7 @@ async fn build_core_changeset(
             synced_height: Some(*height),
             ..CoreChangeSet::default()
         },
-        WalletEvent::TransactionsChainlocked { chain_lock, .. } => {
+        WalletEvent::ChainLockProcessed { chain_lock, .. } => {
             // The wallet has already promoted the matching records from
             // `InBlock` to `InChainLockedBlock` by the time this event
             // fires (upstream `WalletManager::process_chain_lock` mutates
@@ -213,13 +213,13 @@ async fn build_core_changeset(
             // independently; this is the symmetric wallet-side
             // persistence, not a re-application.
             //
-            // Caveat: the upstream `apply_chain_lock` only emits this
-            // event when `per_account` is non-empty (records were
-            // promoted). A CL that advanced the wallet's metadata but
-            // had nothing to promote is invisible here — accepted
-            // limitation, addressed in practice because the very
-            // first CL that does promote records (typical on an
-            // actively-syncing wallet) persists the current height.
+            // `ChainLockProcessed` fires every time the wallet's
+            // `last_applied_chain_lock` advances (dashpay/rust-dashcore#769),
+            // even when no record was promoted — so a quiescent wallet's
+            // boundary advance is no longer invisible to this bridge.
+            // The earlier `TransactionsChainlocked`-only signal had a
+            // gap on the "metadata advanced but per-account empty"
+            // path; the new event closes it deterministically.
             CoreChangeSet {
                 last_applied_chain_lock: Some(chain_lock.clone()),
                 ..CoreChangeSet::default()

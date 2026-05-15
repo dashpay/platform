@@ -139,7 +139,7 @@ pub struct CoreChangeSet {
 
     /// Highest chainlock the wallet has applied (mirrors
     /// `WalletMetadata::last_applied_chain_lock`). Populated by the
-    /// `TransactionsChainlocked` bridge arm so the persister can
+    /// `ChainLockProcessed` bridge arm so the persister can
     /// roundtrip this field across app restarts — without persisting
     /// it, `metadata.last_applied_chain_lock` starts as `None` on
     /// every load and the asset-lock-resume metadata fallback

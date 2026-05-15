@@ -49,15 +49,15 @@ members = [
 ]
 
 [workspace.dependencies]
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "5297d61ac13b4bdfc85aef683e3c46e0597e6741" }
-dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "5297d61ac13b4bdfc85aef683e3c46e0597e6741" }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "5297d61ac13b4bdfc85aef683e3c46e0597e6741" }
-dash-spv-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "5297d61ac13b4bdfc85aef683e3c46e0597e6741" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "5297d61ac13b4bdfc85aef683e3c46e0597e6741" }
-key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "5297d61ac13b4bdfc85aef683e3c46e0597e6741" }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "5297d61ac13b4bdfc85aef683e3c46e0597e6741" }
-dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "5297d61ac13b4bdfc85aef683e3c46e0597e6741" }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "5297d61ac13b4bdfc85aef683e3c46e0597e6741" }
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "cfb01fa751951b628a7272558e93278348b2cd1f" }
+dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "cfb01fa751951b628a7272558e93278348b2cd1f" }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "cfb01fa751951b628a7272558e93278348b2cd1f" }
+dash-spv-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "cfb01fa751951b628a7272558e93278348b2cd1f" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "cfb01fa751951b628a7272558e93278348b2cd1f" }
+key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "cfb01fa751951b628a7272558e93278348b2cd1f" }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "cfb01fa751951b628a7272558e93278348b2cd1f" }
+dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "cfb01fa751951b628a7272558e93278348b2cd1f" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "cfb01fa751951b628a7272558e93278348b2cd1f" }
 
 # Optimize heavy crypto crates even in dev/test builds so that
 # Halo 2 proof generation and verification run at near-release speed.
