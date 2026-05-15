@@ -122,12 +122,6 @@ async fn al_001_concurrent_asset_lock_builds() {
         .with_test_writer()
         .try_init();
 
-    // TODO(env): al_001's Found-008 pin is env-masked when the e2e testnet Core L1
-    // bank is depleted — al_001 then dies here at the Core-funded setup gate, not at
-    // the designed Found-008 FinalityTimeout further down. The Core bank funding
-    // address is the one configured for the e2e bank harness (see tests/.env / the
-    // bank framework); operator must top it up. Specific address is being verified
-    // separately. Observed v54: depleted bank also fails cr_003 + id_002b.
     // Step 1: Core-funded test wallet sized for N parallel locks.
     let s = crate::framework::setup_with_core_funded_test_wallet(CONCURRENT_LOCK_FUNDING_TOTAL)
         .await
