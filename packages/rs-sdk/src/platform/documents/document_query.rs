@@ -50,6 +50,17 @@ pub struct DocumentQuery {
     /// `group_by`) or per-group entries (non-empty `group_by`).
     /// Defaults to `Documents` so callers that don't opt into the
     /// count surface get plain document fetch semantics.
+    ///
+    /// `#[serde(default)]` here (and on `group_by` / `having`
+    /// below) is wire-format-compat for mock vectors captured
+    /// before the SQL-shaped surface was added: `Select::default()
+    /// == Select::Documents` (the proto-generated enum's 0-value
+    /// variant), `Vec` and `Vec<u8>` default to empty — together
+    /// those mean an old fixture without these fields
+    /// deserializes to the documents-fetch shape it was originally
+    /// captured under. New fixtures should serialize the fields
+    /// explicitly.
+    #[cfg_attr(feature = "mocks", serde(default))]
     pub select: Select,
     /// Data contract
     pub data_contract: Arc<DataContract>,
@@ -61,6 +72,7 @@ pub struct DocumentQuery {
     /// no explicit grouping (aggregate count for `select=Count`).
     /// Only meaningful when `select=Count`; non-empty with
     /// `select=Documents` is rejected by the server as unsupported.
+    #[cfg_attr(feature = "mocks", serde(default))]
     pub group_by: Vec<String>,
     /// SQL `HAVING` clauses, CBOR-encoded the same way as
     /// `where_clauses`. Non-empty values are rejected by the
@@ -69,6 +81,7 @@ pub struct DocumentQuery {
     /// implemented")`. The wire field is reserved so the SDK
     /// can encode `HAVING` once the server gains support, without
     /// another version bump.
+    #[cfg_attr(feature = "mocks", serde(default))]
     pub having: Vec<u8>,
     /// `order_by` clauses for the query
     pub order_by_clauses: Vec<OrderClause>,
