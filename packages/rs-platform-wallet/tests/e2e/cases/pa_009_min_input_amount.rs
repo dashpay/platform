@@ -17,13 +17,16 @@
 //!   against an upstream bump that sets `min_input_amount = 0` and
 //!   silently disables the gate.
 //! - `pa_009_min_input_amount_subcase_c` — with a wallet total below
-//!   the gate, teardown returns `Ok` and no broadcast is attempted
-//!   (asserted via on-chain balance ≠ 0 after teardown).
+//!   the gate, teardown returns `Ok` and no broadcast is attempted,
+//!   asserted by a proof-verified on-chain read of `addr_1` showing
+//!   the residual still equals `TARGET_RESIDUAL` (an abandoned sweep
+//!   leaves the dust untouched on chain).
 //!
 //! Sub-cases A and B are pure assertions on the active `PlatformVersion`
-//! and run cheaply without bank funding or chain machinery. Only sub-case
-//! C exercises the on-chain trim+teardown path and is `#[ignore]`-tagged
-//! pending QA-014 (re-derive sync gap-limit issue).
+//! and run cheaply without bank funding or chain machinery. Sub-case C
+//! exercises the on-chain trim+teardown path and reads the post-teardown
+//! balance straight from the chain via the same proof-verified
+//! `AddressInfo::fetch` gate the funding step already uses.
 //!
 //! ## Why not the spec's literal triplet
 //!
@@ -46,17 +49,21 @@
 //! ## Approach (sub-case C)
 //!
 //! Same Option-A trim pattern as PA-004b — fund, partial-drain to
-//! a deterministic residual far below the gate, teardown, observe
-//! that no broadcast happened. Distinct test-wallet from PA-004b
+//! a deterministic residual far below the gate, teardown, then read
+//! `addr_1` directly from the chain through the proof-verified
+//! `AddressInfo::fetch` gate (`wait_for_address_balance_chain_confirmed`)
+//! and assert the residual is still exactly `TARGET_RESIDUAL`: the
+//! gate abandoned the sub-`min_input` dust, so no sweep transition
+//! moved it. Reading the chain directly — rather than re-deriving the
+//! gone wallet and trusting its recent-zone sync watermark — keeps the
+//! post-condition deterministic. Distinct test-wallet from PA-004b
 //! (each `setup` returns a fresh wallet) so the registry / manager
 //! state of one cannot leak into the other.
 
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use dash_sdk::platform::address_sync::AddressSyncConfig;
 use dpp::version::PlatformVersion;
-use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 
 use crate::framework::cleanup::cleanup_dust_gate;
 use crate::framework::prelude::*;
@@ -123,21 +130,15 @@ async fn pa_009_min_input_amount_subcase_b() {
     );
 }
 
-// TODO(QA-014): re-derive sync returns 0 for addr_1 post-teardown. V27-007
-// is fixed; teardown correctly abandons dust. The failure is in the
-// post-teardown re-derive+sync path: `create_wallet_from_seed_bytes` with
-// `WalletAccountCreationOptions::Default` likely doesn't scan addr_1 (gap
-// limit not wide enough). Investigation pending.
 #[tokio_shared_rt::test(shared)]
-#[ignore = "FAILING — re-derive sync returns 0 for addr_1 post-teardown; \
-            investigation pending (QA-014). V27-007 is fixed; blocking issue \
-            is harness gap-limit in the post-teardown re-derive path."]
+#[ignore = "PA-009 sub-case C — requires bank-funded network; exercises \
+            below-gate teardown with a proof-verified on-chain read-back; \
+            run with `cargo test -- --ignored`"]
 async fn pa_009_min_input_amount_subcase_c() {
     // Sub-case C: below-gate teardown leaves on-chain balance intact.
     // Funds addr_1, trims to TARGET_RESIDUAL via auto-select transfer,
-    // tears down, then re-derives the wallet to read on-chain balance
-    // straight from the network (cached state of the gone TestWallet
-    // is bypassed).
+    // tears down, then reads addr_1 directly from the chain via the
+    // proof-verified AddressInfo::fetch gate.
     init_test_logging();
 
     let version = PlatformVersion::latest();
@@ -156,8 +157,6 @@ async fn pa_009_min_input_amount_subcase_c() {
     let s = setup().await.expect("e2e setup failed");
     let ctx = s.ctx;
     let test_wallet_id = s.test_wallet.id();
-    let seed_bytes = s.test_wallet.seed_bytes();
-    let network = ctx.bank().network();
 
     // ---- Step 1: bank-fund addr_1. ----
     let addr_1 = s
@@ -249,36 +248,19 @@ async fn pa_009_min_input_amount_subcase_c() {
         "PA-009: registry must drop the test wallet entry on successful below-gate teardown"
     );
 
-    let post_sweep = ctx
-        .manager()
-        .create_wallet_from_seed_bytes(
-            network,
-            seed_bytes,
-            WalletAccountCreationOptions::Default,
-            None,
-        )
-        .await
-        .expect("re-derive post-sweep view of test wallet");
-    post_sweep.platform().initialize().await;
-    // Use full_rescan_after_time_s=0 — forces a full historical scan.
-    // sync_balances(None) on a fresh re-derived wallet anchors the "recent
-    // zone" query at current chain tip; if addr_1's balance was committed
-    // below the recent window, sync returns empty and skips the compacted
-    // scan. See QA-014 investigation /tmp/qa-014-pa-009-rederive-sync-gap.md.
-    post_sweep
-        .platform()
-        .sync_balances(Some(AddressSyncConfig {
-            full_rescan_after_time_s: 0,
-            ..AddressSyncConfig::default()
-        }))
-        .await
-        .expect("post-sweep sync");
-    let post_sweep_balances = post_sweep.platform().addresses_with_balances().await;
-    let addr_1_post = post_sweep_balances
-        .iter()
-        .find(|(a, _)| a == &addr_1)
-        .map(|(_, b)| *b)
-        .unwrap_or(0);
+    // Read addr_1 straight from the chain via the proof-verified
+    // `AddressInfo::fetch` gate (the same path the funding step used
+    // successfully above). The dust was below `min_input_amount`, so
+    // teardown abandoned it and no sweep transition moved it — the
+    // residual must still be visible on chain at exactly TARGET_RESIDUAL.
+    let addr_1_post =
+        wait_for_address_balance_chain_confirmed(ctx.sdk(), &addr_1, TARGET_RESIDUAL, STEP_TIMEOUT)
+            .await
+            .expect(
+                "PA-009: addr_1 residual must remain chain-visible after a below-gate \
+         teardown — a swept dust would drop it to 0 and this gate would time out, \
+         proving a sweep transition was wrongly broadcast",
+            );
 
     tracing::info!(
         target: "platform_wallet::e2e::cases::pa_009",
@@ -294,12 +276,4 @@ async fn pa_009_min_input_amount_subcase_c() {
          The cleanup gate (sourced from PlatformVersion's min_input_amount) gated \
          the sweep correctly."
     );
-
-    if let Err(err) = ctx.manager().remove_wallet(&test_wallet_id).await {
-        tracing::debug!(
-            target: "platform_wallet::e2e::cases::pa_009",
-            error = %err,
-            "post-teardown unregister of re-derived wallet failed (best-effort)"
-        );
-    }
 }
