@@ -8,6 +8,8 @@ presumably enumerate the joy of doing it.
 
 ## Changelog
 
+- **v3.1-dev (2026-05-15, PA-003 fee-scaling re-pin)** — PA-003 → `green`: measures the real chain-time fee via pre/post balance accounting under single-input isolation, with symmetric pre-markers so both shapes hit address-funds UPDATE ops (no CREATE skew); restored `fee_5>fee_1`, sub-linear `fee_5<fee_1*5`, and `FEE_DELTA_CEILING` guards. `addr_src` funding sized to cover the six markers plus both measured transfers.
+
 - **v3.1-dev (2026-05-14, Found-019 / Found-020 deletion)** — both entries removed: already-fixed pins with closed contracts. Found-019 (`SeedBackedIdentitySigner` ECDSA_HASH160 re-hash) fix landed at `tests/e2e/framework/signer.rs:148-154` in commit `59cba08af5` (PR #3563) — `identity_key_lookup` branches on `key.key_type()`, uses `key.data()` as-is for ECDSA_HASH160. Production `packages/simple-signer/src/signer.rs` does NOT have the bug shape (different storage models). Found-020 (`output_change_address` spec/impl drift) resolved via spec realignment in PR #3609 — PA-001b rewritten to match implicit-change semantics. Knowledge preserved in memcan; spec clutter dropped.
 
 - **v3.1-dev (2026-05-14, Found-012 / Found-023 unification)** — Found-012 / Found-023 unified and filed downstream: dashpay/platform#3642 (5 hard-coded BIP-44 lookups in `proof.rs` + `recovery.rs`; downstream fix via `all_funding_accounts()` iteration, no upstream change required; SPV-side tracking verified comprehensive across all account types). Cross-link `TODO(dashpay/platform#3642)` comments added at each of the 5 sites.
@@ -164,7 +166,7 @@ Status legend: **green** = test file present, body has real assertions, runnable
 | PA-001 | Multi-output platform-address transfer | P0 | green | S |
 | PA-002 | Partial-fund + change handling | P0 | green | S |
 | PA-004 | Sweep-back: drain test wallet, observe bank credit | P0 | green | S |
-| PA-003 | Fee scaling: one-output vs. five-output | P1 | red-real-fail (test-bug) — marker pre-funding pollutes `address_funds` rows so 5-output transfer pays cheap UPDATE while 1-output pays expensive CREATE; invariant misformulated | M |
+| PA-003 | Fee scaling: one-output vs. five-output | P1 | green — real chain-time fee under single-input isolation; symmetric pre-markers put both shapes on address-funds UPDATE ops; strict + sub-linear + ceiling guards | M |
 | PA-005 | Address rotation: gap-limit + observed-used cursor | P1 | green | M |
 | PA-006 | Replay safety: same outputs, second submission rejected | P1 | green | M |
 | PA-007 | Sync watermark idempotency | P1 | green | M |
@@ -355,7 +357,7 @@ Counts by priority: **P0: 10**, **P1: 29** (incl. CR-004 passing-as-regression +
 
 #### PA-003 — Fee scaling: one-output vs. five-output transfers
 - **Priority**: P1
-- **Status**: `red-real-fail (test-bug)` — body runs end-to-end but the line-235 invariant `assert!(fee_5 > fee_1, …)` is misformulated for the chosen address-derivation strategy. No production regression. Captured: `fee_1 = 9_554_360`, `fee_5 = 9_018_040`, Δ ≈ 536k (one absent storage-create cost).
+- **Status**: `green` — measures the real chain-time fee (`Σ gross outputs − Σ destination balance deltas`) for two self-transfers that draw inputs exclusively from one source address. Every destination, including the 1-output `dest_1`, is pre-markered so both shapes hit address-funds UPDATE ops — output count is the sole varied factor. Asserts `fee_5 > fee_1`, sub-linear `fee_5 < 5 × fee_1`, and the `FEE_DELTA_CEILING` linear-schedule tripwire.
 - **Wallet feature exercised**: `wallet/platform_addresses/transfer.rs:31`, fee-strategy `AddressFundsFeeStrategyStep::DeductFromInput(0)` from `wallet_factory.rs:210`.
 - **DET parallel**: none directly — DET tests `tc_014` lifecycle but not fee scaling explicitly.
 - **Preconditions**: bank-funded test wallet with ≥ `200_000_000`.

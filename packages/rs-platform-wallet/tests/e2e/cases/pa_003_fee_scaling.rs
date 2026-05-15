@@ -2,24 +2,48 @@
 //! Spec: `tests/e2e/TEST_SPEC.md` §3 "Platform Addresses (PA)" → PA-003.
 //! Priority: P1.
 //!
-//! Encodes fee scaling as an asserted property rather than a magic number.
-//! Two self-transfers from a single funded source address:
+//! Encodes fee scaling as an asserted property rather than a magic
+//! number. From a single funded source address `addr_src` the wallet
+//! issues two self-transfers, both drawing their inputs **exclusively
+//! from `addr_src`** (`InputSelection::Explicit`):
 //!   1. One destination output → record `fee_1`.
 //!   2. Five destination outputs → record `fee_5`.
 //!
-//! The default `[ReduceOutput(0)]` fee strategy charges the chain-time
-//! fee against the lex-smallest output, so the per-test "fee" is simply
-//! the gross-minus-net delta on that output. We assert the property:
-//! `fee_5 > fee_1` (more outputs → bigger transition → bigger fee) and
-//! `fee_5 < 5 * fee_1` (sub-linear — outputs share input/header bytes).
+//! `fee_N` is the **real chain-time fee** the broadcast transition
+//! actually paid: under `[ReduceOutput(0)]` the encoded transition
+//! balances pre-fee (`Σ inputs == Σ outputs`) and Drive charges the
+//! entire chain-time fee against `output[0]` at execution. The only
+//! credits the wallet loses are that fee, so
+//! `real_fee = Σ gross outputs − Σ(destination balance deltas)`
+//! (the canonical Dash `Σ inputs − Σ outputs`). This is the same
+//! accounting PA-001 uses for `multi_fee`, applied symmetrically to
+//! both shapes.
 //!
-//! Why bumped output amounts: each `[ReduceOutput(0)]` output[0] must
-//! clear the empirical chain-time fee (~15M for 1in/1out, ~20M for
-//! 1in/2out and probably higher for 1in/5out). We size every output
-//! at `OUTPUT_AMOUNT` (above 1in/5out's expected fee) to dodge #3040.
+//! Both transfers select the *same single input address* and the
+//! *same per-output gross*. Every measured destination is pre-markered
+//! (a small prior transfer establishes its address-funds record)
+//! BEFORE its measured transfer, so both the 1-output and 5-output
+//! measured transfers hit address-funds **UPDATE** storage ops — never
+//! a one-off CREATE on the first credit to a virgin address. Output
+//! count is therefore the genuine sole varied factor. The 5-output
+//! transition serializes four extra P2PKH outputs (~28 bytes each)
+//! plus four extra output-storage UPDATE operations, so its chain-time
+//! storage+processing cost is strictly higher than the 1-output one.
+//! We assert `fee_5 > fee_1` and an explicit sub-linear ceiling (the
+//! four extra outputs share the input bytes, header, and signature, so
+//! the fee must not scale linearly with output count).
+//!
+//! `OUTPUT_AMOUNT` is sized far above the static min-fee floor (the
+//! `calculate_min_required_fee`-too-low gap tracked at
+//! dashpay/platform#3040, ~15M chain-time for 1in/1out): both
+//! transitions land well above the floor, so the floor cannot tie the
+//! two shapes and the per-output term genuinely dominates the
+//! comparison.
 
 use std::collections::BTreeMap;
 use std::time::Duration;
+
+use dpp::address_funds::PlatformAddress;
 
 use crate::framework::prelude::*;
 
@@ -27,40 +51,65 @@ use crate::framework::prelude::*;
 /// Bank uses `[DeductFromInput(0)]`; the source receives
 /// `FUNDING_CREDITS` exactly (the bank's input absorbs its own fee).
 ///
-/// Sizing rationale (QA-V28-303): the auto-selector excludes any
-/// address that already appears in the destination set, so the
-/// 5-output transfer can only draw from `addr_src` plus `dest_1`.
-/// Setup drains `addr_src` by `OUTPUT_AMOUNT` (1-out transfer) +
-/// `5 × marker_amount` (the five marker transfers used to advance
-/// the unused-address cursor), leaving roughly
-/// `FUNDING_CREDITS − 50M − 150M = 200M` on `addr_src`. `dest_1`
-/// holds at most `OUTPUT_AMOUNT − fee_1 ≈ 35M`. Together that's
-/// ~235M of candidate input — short of the 250M required by the
-/// 5-output transfer (5 × `OUTPUT_AMOUNT`). With `FUNDING_CREDITS =
-/// 400M` (the prior value) the test failed deterministically with
-/// "available 240,524,980 credits, required 250,000,000". Pre-fund
-/// 500M so post-setup `addr_src` retains ≥300M, yielding ≥335M of
-/// reachable candidate balance with comfortable headroom.
-const FUNDING_CREDITS: u64 = 500_000_000;
+/// Sizing covers every credit `addr_src` must pay before the 5-output
+/// measured transfer runs: 6 pre-marker transfers (`dest_1` + 5
+/// `dests`) at `MARKER_AMOUNT` gross each (`6 × 30M = 180M`, auto-select
+/// may draw every marker off `addr_src`), plus the 1-output transfer's
+/// gross (`50M`), plus the 5-output transfer's gross (`5 × 50M = 250M`)
+/// — `480M` total outflow. Chain-time fees are absorbed by `output[0]`
+/// under the `Σ inputs == Σ outputs` invariant, not an extra `addr_src`
+/// debit. `700M` leaves ~`220M` headroom so `addr_src` still holds ≥
+/// the 5-output transfer's `250M` input when its explicit-input
+/// transition is built.
+const FUNDING_CREDITS: u64 = 700_000_000;
 
-/// Lower bound on the source's post-fee balance before the test
+/// Lower bound on the source's post-fund balance before the test
 /// proceeds. Bank uses `[DeductFromInput(0)]`, so `addr_src` should
 /// receive `FUNDING_CREDITS` exactly; the floor leaves a small
 /// allowance for any reconciliation drift.
-const FUNDING_FLOOR: u64 = 450_000_000;
+const FUNDING_FLOOR: u64 = 650_000_000;
 
 /// Per-output gross credit amount used in BOTH the 1-output and the
 /// 5-output transfer, so the only variable between the two is the
-/// output count. Sized well above the empirical 1in/5out chain-time
-/// fee (the lex-smallest output absorbs the entire fee).
+/// output count. Sized well above the #3040 static min-fee floor so
+/// both transitions clear it and the floor cannot tie the two shapes.
 const OUTPUT_AMOUNT: u64 = 50_000_000;
 
-/// Lower bound on the lex-smallest output's post-fee delta. A
-/// non-zero floor keeps the wait deterministic.
+/// Per-marker gross. One marker advances the receive-address cursor
+/// and establishes each destination's address-funds record so the
+/// measured transfer hits an UPDATE (not a one-off CREATE). Above the
+/// empirical 1in/1out chain-time fee (~15M) so the marker output lands
+/// with an observable post-fee balance.
+const MARKER_AMOUNT: u64 = 30_000_000;
+
+/// Lower bound on a destination's post-transfer balance. A non-zero
+/// floor keeps the `wait_for_balance` polls deterministic.
 const OUTPUT_FLOOR: u64 = 1_000_000;
 
 /// Per-step deadline for balance observations.
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Real chain-time fee of a single self-transfer that drew its inputs
+/// only from `addr_src`. Under `[ReduceOutput(0)]` the encoded
+/// transition balances pre-fee, so the wallet's only credit loss is
+/// the chain-time fee Drive charged against `output[0]`. It surfaces
+/// as the shortfall of the destination deltas against the gross sum:
+/// `fee = Σ gross outputs − Σ(post − pre) over destinations`.
+fn real_fee(
+    pre: &BTreeMap<PlatformAddress, u64>,
+    post: &BTreeMap<PlatformAddress, u64>,
+    dests: &[PlatformAddress],
+    gross_per_output: u64,
+) -> u64 {
+    let mut total_delta = 0u64;
+    for d in dests {
+        let before = pre.get(d).copied().unwrap_or(0);
+        let after = post.get(d).copied().unwrap_or(0);
+        total_delta = total_delta.saturating_add(after.saturating_sub(before));
+    }
+    let gross = gross_per_output.saturating_mul(dests.len() as u64);
+    gross.saturating_sub(total_delta)
+}
 
 #[tokio_shared_rt::test(shared)]
 async fn pa_003_fee_scaling() {
@@ -90,7 +139,8 @@ async fn pa_003_fee_scaling() {
         .await
         .expect("addr_src funding never observed");
 
-    // ---- 1-output transfer: derive `dest_1`, transfer, capture fee ----
+    // ---- 1-output transfer: derive `dest_1`, pre-marker it, then ----
+    // ---- transfer from `addr_src` only and capture the real fee. ----
     let dest_1 = s
         .test_wallet
         .next_unused_address()
@@ -98,67 +148,65 @@ async fn pa_003_fee_scaling() {
         .expect("derive dest_1");
     assert_ne!(addr_src, dest_1, "dest_1 must differ from addr_src");
 
-    let outputs_1: BTreeMap<_, _> = std::iter::once((dest_1, OUTPUT_AMOUNT)).collect();
+    // Pre-marker `dest_1` so its measured transfer hits an address-funds
+    // UPDATE — symmetric with the five pre-markered destinations below.
+    // Without this the 1-output measured transfer would pay a one-off
+    // CREATE on `dest_1`'s first credit, inflating `fee_1` for a reason
+    // unrelated to output count and biasing `fee_5 > fee_1`.
+    let marker_1: BTreeMap<_, _> = std::iter::once((dest_1, MARKER_AMOUNT)).collect();
     s.test_wallet
-        .transfer(outputs_1)
+        .transfer(marker_1)
+        .await
+        .expect("dest_1 marker transfer");
+    wait_for_balance(&s.test_wallet, &dest_1, OUTPUT_FLOOR, STEP_TIMEOUT)
+        .await
+        .expect("dest_1 marker never observed");
+
+    s.test_wallet.sync_balances().await.expect("pre-1-out sync");
+    let pre_1 = s.test_wallet.balances().await;
+
+    // Explicit single-address input: the 1-output transfer draws only
+    // from `addr_src`, matching the 5-output transfer's input set so
+    // output count is the only varied factor. The map value is the
+    // contribution `addr_src` must cover — the transfer's gross
+    // (`OUTPUT_AMOUNT`), which `addr_src` always holds post-markers.
+    let outputs_1: BTreeMap<_, _> = std::iter::once((dest_1, OUTPUT_AMOUNT)).collect();
+    let inputs_1: BTreeMap<_, _> = std::iter::once((addr_src, OUTPUT_AMOUNT)).collect();
+    s.test_wallet
+        .transfer_with_inputs(outputs_1, inputs_1)
         .await
         .expect("1-output transfer");
     wait_for_balance(&s.test_wallet, &dest_1, OUTPUT_FLOOR, STEP_TIMEOUT)
         .await
         .expect("dest_1 transfer never observed");
 
-    // Sync, snapshot dest_1, derive fee_1 = gross − net.
     s.test_wallet
         .sync_balances()
         .await
         .expect("post-1-out sync");
-    let bal_after_1 = s.test_wallet.balances().await;
-    let dest_1_net = bal_after_1.get(&dest_1).copied().unwrap_or(0);
-    assert!(
-        dest_1_net < OUTPUT_AMOUNT,
-        "dest_1 must hold less than gross OUTPUT_AMOUNT after fee deduction; got {dest_1_net}"
-    );
-    let fee_1 = OUTPUT_AMOUNT.saturating_sub(dest_1_net);
+    let post_1 = s.test_wallet.balances().await;
+    let fee_1 = real_fee(&pre_1, &post_1, &[dest_1], OUTPUT_AMOUNT);
 
-    // ---- 5-output transfer: derive five fresh destinations. ----
-    // `next_unused_address` parks until the prior is observed-used; the
-    // 1-output transfer above marked dest_1 used, so each new
-    // derivation should advance the cursor. We mark each new dest used
-    // by including it in the multi-output transfer below — but we need
-    // fresh distinct addresses NOW. The cursor only advances on
-    // observed-used (i.e. on next sync); however, after a single
-    // transfer's sync, dest_1 is marked, so the next derive returns a
-    // fresh address. To get five distinct ones we'd need each to be
-    // observed-used in turn. Instead, we derive them in one shot using
-    // a small "marker" trick: we issue a single multi-output transfer
-    // to all five, where the cursor only advances after the sync
-    // following that broadcast. Because we don't yet have all five
-    // addresses, we instead drive five sequential 1-output marker
-    // transfers — but that defeats the test point.
-    //
-    // Simpler path: derive all five sequentially via small marker
-    // transfers from `addr_src`. Each marker is `MARKER_AMOUNT` >
-    // chain-time fee so the post-marker balance triggers the cursor's
-    // observed-used advance. This is expensive — we burn five extra
-    // transfers and 5×fee — but it's the deterministic path.
-    //
-    // We size `FUNDING_CREDITS` to absorb that overhead.
+    // ---- Derive five distinct destinations. `next_unused_address`
+    // parks the cursor until the prior address is observed-used, so
+    // each derivation needs a small marker transfer to advance it
+    // (the established PA-001 "prep transfer" pattern). The marker also
+    // establishes each destination's address-funds record so the
+    // measured 5-output transfer hits UPDATE storage ops — symmetric
+    // with the pre-markered `dest_1`. Markers do not affect the
+    // measured fees: `real_fee` nets post against a pre snapshot. ----
     let mut dests = Vec::with_capacity(5);
-    let marker_amount: u64 = 30_000_000; // > 1in/1out fee (~15M)
     for i in 0..5 {
         let d = s
             .test_wallet
             .next_unused_address()
             .await
             .unwrap_or_else(|err| panic!("derive dest_{i}: {err:?}"));
-        // Mark used via a 1-output marker transfer; small enough to
-        // not blow the budget but above 1in/1out chain-time fee.
-        let marker_outputs: BTreeMap<_, _> = std::iter::once((d, marker_amount)).collect();
+        let marker_outputs: BTreeMap<_, _> = std::iter::once((d, MARKER_AMOUNT)).collect();
         s.test_wallet
             .transfer(marker_outputs)
             .await
             .unwrap_or_else(|err| panic!("marker transfer for dest_{i}: {err:?}"));
-        // Wait for the marker to settle on `d` so the cursor advances.
         wait_for_balance(&s.test_wallet, &d, OUTPUT_FLOOR, STEP_TIMEOUT)
             .await
             .unwrap_or_else(|err| panic!("dest_{i} marker never observed: {err:?}"));
@@ -170,27 +218,29 @@ async fn pa_003_fee_scaling() {
         }
     }
 
-    // Capture pre-multi balances on each dest so the per-dest delta
-    // is computed against the marker remainder (not against zero).
-    s.test_wallet.sync_balances().await.expect("pre-multi sync");
-    let pre_multi = s.test_wallet.balances().await;
-    let pre_per_dest: Vec<u64> = dests
-        .iter()
-        .map(|d| pre_multi.get(d).copied().unwrap_or(0))
-        .collect();
+    // ---- 5-output transfer: same explicit single-address input set
+    // (`addr_src` only) and same per-output gross as the 1-output
+    // transfer. Output count is the only deliberately varied factor. ----
+    s.test_wallet.sync_balances().await.expect("pre-5-out sync");
+    let pre_5 = s.test_wallet.balances().await;
 
-    // ---- 5-output transfer ----
+    // Explicit input weight is this transfer's gross (`5 ×
+    // OUTPUT_AMOUNT`) — what `addr_src` must contribute. `FUNDING_CREDITS`
+    // headroom guarantees `addr_src` still holds ≥ this after all six
+    // markers and the 1-output transfer.
+    let gross_5 = OUTPUT_AMOUNT.saturating_mul(5);
     let outputs_5: BTreeMap<_, _> = dests.iter().map(|d| (*d, OUTPUT_AMOUNT)).collect();
+    let inputs_5: BTreeMap<_, _> = std::iter::once((addr_src, gross_5)).collect();
     s.test_wallet
-        .transfer(outputs_5)
+        .transfer_with_inputs(outputs_5, inputs_5)
         .await
         .expect("5-output transfer");
 
     // Wait on the LEX-LARGEST destination — `[ReduceOutput(0)]` only
-    // deducts from output[0] (lex-smallest), so the lex-largest
-    // arrives at gross + pre exactly.
+    // deducts the fee from output[0] (lex-smallest), so the lex-largest
+    // arrives at its pre balance + gross exactly.
     let lex_largest = *dests.iter().max().expect("dests non-empty");
-    let lex_largest_pre = pre_per_dest[dests.iter().position(|d| d == &lex_largest).unwrap()];
+    let lex_largest_pre = pre_5.get(&lex_largest).copied().unwrap_or(0);
     wait_for_balance(
         &s.test_wallet,
         &lex_largest,
@@ -203,67 +253,61 @@ async fn pa_003_fee_scaling() {
     s.test_wallet
         .sync_balances()
         .await
-        .expect("post-multi sync");
-    let post_multi = s.test_wallet.balances().await;
-
-    // Per-dest deltas: lex-smallest absorbs fee, the rest arrive at
-    // gross. Sum of deltas == 5 × OUTPUT_AMOUNT − fee_5.
-    let mut total_delta = 0u64;
-    for (d, pre) in dests.iter().zip(pre_per_dest.iter()) {
-        let post = post_multi.get(d).copied().unwrap_or(0);
-        let delta = post.saturating_sub(*pre);
-        total_delta = total_delta.saturating_add(delta);
-    }
-    let gross_5 = OUTPUT_AMOUNT.saturating_mul(5);
-    assert!(
-        total_delta < gross_5,
-        "5-output total_delta ({total_delta}) must be < gross ({gross_5})"
-    );
-    let fee_5 = gross_5.saturating_sub(total_delta);
+        .expect("post-5-out sync");
+    let post_5 = s.test_wallet.balances().await;
+    let fee_5 = real_fee(&pre_5, &post_5, &dests, OUTPUT_AMOUNT);
 
     tracing::info!(
         target: "platform_wallet::e2e::cases::pa_003",
         fee_1,
         fee_5,
         ratio_5_over_1 = ?(fee_5 as f64 / fee_1 as f64),
-        "fee scaling snapshot"
+        "fee scaling snapshot (real chain-time fees)"
     );
 
     // ---- PA-003 contract assertions ----
     assert!(fee_1 > 0, "1-output fee must be positive; got {fee_1}");
     assert!(fee_5 > 0, "5-output fee must be positive; got {fee_5}");
+    // Both transfers draw inputs from the same single address
+    // (`addr_src`) with the same per-output gross, so output count is
+    // the only varied factor. Both grosses are far above the #3040
+    // static min-fee floor (~15M), so neither transition lands on the
+    // floor and the floor cannot tie the two shapes. The 5-output
+    // transition serializes four extra P2PKH outputs (~28 bytes each)
+    // plus four extra output-storage operations, so its chain-time
+    // storage+processing cost is strictly higher. More outputs ⇒
+    // strictly more fee.
     assert!(
         fee_5 > fee_1,
-        "5-output fee must exceed 1-output fee (more bytes → larger fee); \
+        "5-output real chain-time fee must exceed 1-output's (four extra \
+         outputs ⇒ strictly more storage+processing cost); \
          fee_1={fee_1}, fee_5={fee_5}"
     );
-    // Sub-linear: outputs share inputs and headers, so 5× outputs
-    // does NOT mean 5× fee. The strict bound surfaces a regression
-    // where the fee strategy starts charging per-output linearly.
+    // Sub-linear: the four extra outputs share the transition's input
+    // bytes, header, and signature, so 5× outputs does NOT mean 5× fee.
+    // This bound surfaces a regression where the fee schedule starts
+    // charging per-output linearly.
     assert!(
         fee_5 < fee_1.saturating_mul(5),
         "5-output fee ({fee_5}) must be sub-linear in output count \
          (1-output fee {fee_1} × 5 = {})",
         fee_1.saturating_mul(5)
     );
-    // Spec PA-003 documents a "fee_5 − fee_1 < 1_000_000" regression
-    // guard, with the rationale that outputs share input bytes so the
-    // marginal cost of four extra outputs should be modest. Today
-    // (with platform issue #3040 in play) the empirical chain-time
-    // fee for 1in/5out lands ~5–10M above 1in/1out — the literal
-    // 1_000_000 bound would fire on every run. We pin the looser
-    // `FEE_DELTA_CEILING` so the regression-guard intent (catch a
-    // fee schedule that turns linear in output count) is preserved
-    // while leaving headroom for the chain-time gap. Tighten this
-    // constant deliberately once #3040 is resolved.
+    // Explicit linear-fee-schedule tripwire (spec PA-003 regression
+    // guard). With both measured transfers hitting UPDATE storage ops,
+    // four extra P2PKH outputs add a bounded marginal cost. A schedule
+    // that turned per-output linear would push `fee_5 − fee_1` well
+    // past this ceiling. The ceiling is loose enough to absorb the
+    // #3040 chain-time gap; tighten it deliberately once #3040 is
+    // resolved.
     const FEE_DELTA_CEILING: u64 = 25_000_000;
     let fee_delta = fee_5.saturating_sub(fee_1);
     assert!(
         fee_delta < FEE_DELTA_CEILING,
         "5-output fee minus 1-output fee ({fee_delta}) exceeds the \
-         regression-guard ceiling ({FEE_DELTA_CEILING}); either the fee \
-         schedule shifted significantly or four extra outputs are being \
-         charged near-linearly — investigate before bumping this bound"
+         regression-guard ceiling ({FEE_DELTA_CEILING}); the fee \
+         schedule shifted significantly or four extra outputs are \
+         being charged near-linearly — investigate before bumping"
     );
 
     s.teardown().await.expect("teardown");
