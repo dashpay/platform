@@ -74,17 +74,6 @@ public class PlatformWalletManager: ObservableObject {
     /// Background task that polls SPV progress.
     private var progressPollTask: Task<Void, Never>?
 
-    /// `ManagedAssetLockManager` instances retained while their
-    /// detached catch-up tasks run. Each wrapper's `deinit`
-    /// invalidates the underlying FFI handle, which would crash the
-    /// in-flight `asset_lock_manager_catch_up_blocking` call — so we
-    /// hold the wrappers here for the duration of a batch. Replaced
-    /// (and the previous batch released) on each
-    /// `catchUpStuckAssetLocks` invocation, by which time the prior
-    /// batch's tasks have either resolved or hit their five-minute
-    /// timeout.
-    private var retainedAssetLockManagers: [ManagedAssetLockManager] = []
-
     // MARK: - Init
 
     /// Empty init for `@StateObject` usage. Call [`configure`] before
@@ -357,29 +346,28 @@ public class PlatformWalletManager: ObservableObject {
     /// invoke this directly to retry whatever was still pending.
     public func catchUpStuckAssetLocks(wallets: [ManagedPlatformWallet]) {
         guard let persistenceHandler = persistenceHandler else { return }
-        // Release the previous batch's manager wrappers now that we
-        // know their tasks have either completed or timed out (any
-        // task still running past the 300s timeout is misbehaving
-        // and the bound is on the Rust side anyway). Without this
-        // the array would grow unboundedly across foregroundings.
-        retainedAssetLockManagers.removeAll(keepingCapacity: true)
         for wallet in wallets {
             let walletId = wallet.walletId
             let locks = persistenceHandler.loadCachedAssetLocks(walletId: walletId)
             let pending = locks.filter { $0.statusRaw < 2 }
             if pending.isEmpty { continue }
 
-            // Snapshot the asset-lock manager handle ON the main
-            // actor (where `wallet` lives). The `ManagedAssetLockManager`
-            // class isn't `Sendable` (its `deinit` calls
-            // `asset_lock_manager_destroy`), so the detached Task
-            // captures the bare `Handle` value (an `Int64`) and
-            // calls the FFI directly. Lifetime: stash the manager
-            // wrapper on `retainedAssetLockManagers` so its `deinit`
-            // (which would invalidate the handle) waits for the
-            // tasks to complete; the wrapper is dropped on the next
-            // call to `catchUpStuckAssetLocks` or on manager
-            // shutdown, whichever comes first.
+            // Snapshot the asset-lock manager wrapper ON the main
+            // actor (where `wallet` lives), then hand the wrapper
+            // itself — not just its bare `Handle` — to the detached
+            // tasks. Each task's capture is a retain on the wrapper,
+            // so `deinit` (which calls `asset_lock_manager_destroy`
+            // and invalidates the FFI handle) can't fire until the
+            // last in-flight catch-up task drops its retain. That
+            // closes the lifetime race where a follow-up
+            // `catchUpStuckAssetLocks` call (e.g. on
+            // app-foreground / network-reconnect) used to destroy
+            // the previous batch's handles mid-FFI-call.
+            //
+            // `ManagedAssetLockManager` is `@unchecked Sendable`
+            // (immutable `let handle`, no shared mutable state, deinit
+            // runs exactly once via ARC), so capturing it across
+            // task boundaries is safe.
             let assetLockManager: ManagedAssetLockManager
             do {
                 assetLockManager = try wallet.assetLockManager()
@@ -387,14 +375,6 @@ public class PlatformWalletManager: ObservableObject {
                 self.lastError = error
                 continue
             }
-            // The previous batch's manager wrappers (if any) are
-            // dropped here — their tasks have either completed
-            // (success path persisted via the changeset) or hit the
-            // 300s timeout long ago. The replacement keeps the
-            // current batch's handles alive for the duration of the
-            // new tasks.
-            retainedAssetLockManagers.append(assetLockManager)
-            let handle = assetLockManager.handle
 
             // Cap concurrency to avoid saturating iOS's cooperative
             // thread pool. Each catch-up `block_on` parks a worker
@@ -418,10 +398,16 @@ public class PlatformWalletManager: ObservableObject {
                     let maxConcurrent = 4
                     var nextIndex = 0
                     // Seed the group with up to `maxConcurrent` tasks.
+                    // Each `group.addTask` closure captures
+                    // `assetLockManager` — that retain keeps the
+                    // wrapper alive for the duration of the FFI call,
+                    // independently of the outer detached task and
+                    // independently of any future
+                    // `catchUpStuckAssetLocks` invocation.
                     while nextIndex < outpoints.count && nextIndex < maxConcurrent {
                         let (txid, vout) = outpoints[nextIndex]
                         group.addTask {
-                            Self.runCatchUp(handle: handle, txid: txid, vout: vout)
+                            Self.runCatchUp(assetLockManager: assetLockManager, txid: txid, vout: vout)
                         }
                         nextIndex += 1
                     }
@@ -430,7 +416,7 @@ public class PlatformWalletManager: ObservableObject {
                         if nextIndex < outpoints.count {
                             let (txid, vout) = outpoints[nextIndex]
                             group.addTask {
-                                Self.runCatchUp(handle: handle, txid: txid, vout: vout)
+                                Self.runCatchUp(assetLockManager: assetLockManager, txid: txid, vout: vout)
                             }
                             nextIndex += 1
                         }
@@ -442,14 +428,18 @@ public class PlatformWalletManager: ObservableObject {
 
     /// Single catch-up invocation body. Extracted from the inline
     /// `Task.detached` so the `withTaskGroup` coordinator can call it
-    /// directly. Sendable inputs only: `Handle` is `Int64`, `Data`
-    /// captures the txid bytes, `UInt32` is trivially Sendable.
+    /// directly. The `assetLockManager` parameter is captured by each
+    /// task closure — the task's retain on the wrapper guarantees the
+    /// FFI handle (read via `assetLockManager.handle`) stays valid
+    /// for the entire `asset_lock_manager_catch_up_blocking` call,
+    /// even if a follow-up `catchUpStuckAssetLocks` invocation
+    /// replaces the manager-wide reference midway through.
     ///
     /// `nonisolated` because `PlatformWalletManager` is
     /// `@MainActor`-isolated by default and the detached task body
     /// runs off the main actor — the FFI call is synchronous and
     /// reads no `PlatformWalletManager` state.
-    nonisolated private static func runCatchUp(handle: Handle, txid: Data, vout: UInt32) {
+    nonisolated private static func runCatchUp(assetLockManager: ManagedAssetLockManager, txid: Data, vout: UInt32) {
         // Build the txid tuple inline so the Task body captures only
         // Sendable values.
         var txidTuple: FFIByteTuple32 =
@@ -463,20 +453,21 @@ public class PlatformWalletManager: ObservableObject {
         // Five-minute ceiling matches the `wait_for_proof` deadline
         // the production resume path uses.
         let result = asset_lock_manager_catch_up_blocking(
-            handle, &txidTuple, vout, 300
+            assetLockManager.handle, &txidTuple, vout, 300
         )
         // Timeouts and proof-wait failures (catch-up
         // `errorWalletOperation`) are expected during normal
         // operation (SPV not yet caught up to the funding block,
         // chain-lock hasn't fired yet) — discard.
-        // `errorInvalidHandle` is NOT expected and indicates the
-        // manager wrapper was released mid-task (lifecycle race /
-        // programmer error); log it loudly via NSLog so an operator
-        // running without `tracing` capture still sees it.
+        // `errorInvalidHandle` is NOT expected: each task retains its
+        // own `assetLockManager` wrapper, so the handle is guaranteed
+        // valid for the duration of this call. If it surfaces, log it
+        // loudly via NSLog so an operator running without `tracing`
+        // capture still sees the programmer error.
         let code = PlatformWalletResultCode(ffi: result.code)
         if code == .errorInvalidHandle {
             NSLog(
-                "[catch-up] asset_lock_manager_catch_up_blocking returned errorInvalidHandle for outpoint %@:%u — wrapper released before task finished",
+                "[catch-up] asset_lock_manager_catch_up_blocking returned errorInvalidHandle for outpoint %@:%u — handle invalid despite task-owned wrapper retain",
                 txid.map { String(format: "%02x", $0) }.joined(),
                 vout
             )

@@ -4,7 +4,18 @@ import DashSDKFFI
 /// Asset lock lifecycle manager for building, broadcasting, and tracking asset locks.
 ///
 /// Obtained via `ManagedPlatformWallet.assetLockManager()`.
-public class ManagedAssetLockManager {
+///
+/// `@unchecked Sendable` is safe here: the wrapper holds a single
+/// immutable `let handle: Handle` (an `Int64`, trivially Sendable) and
+/// no other state. `deinit` calls `asset_lock_manager_destroy` exactly
+/// once when the last retain drops — Swift's reference counting
+/// guarantees no concurrent dispatch into `deinit`, so background
+/// catch-up tasks can hold their own retain on this wrapper across
+/// `Task` boundaries without a lifetime race.
+///
+/// `final` is required because subclasses could add mutable state and
+/// invalidate the Sendable claim.
+public final class ManagedAssetLockManager: @unchecked Sendable {
     let handle: Handle
 
     init(handle: Handle) {
