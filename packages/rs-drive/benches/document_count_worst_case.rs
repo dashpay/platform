@@ -355,6 +355,14 @@ fn document_count_worst_case(c: &mut Criterion) {
     // wires it through.
     probe_carrier_acor(&fixture, platform_version);
 
+    // Outer-Range carrier-ACOR feasibility probe — the natural
+    // extension of G7 from `outer In` to `outer Range`, with an
+    // explicit SizedQuery limit on the outer walk. Drive doesn't
+    // wire this through yet (mode_detection rejects 2 range clauses
+    // up front); this probe is a feasibility check at the grovedb
+    // layer.
+    probe_carrier_acor_range_outer(&fixture, platform_version);
+
     let mut group = c.benchmark_group("document_count_worst_case");
     group.sample_size(10);
     group.throughput(criterion::Throughput::Elements(fixture.row_count));
@@ -1249,6 +1257,140 @@ fn probe_carrier_acor(fixture: &CountBenchFixture, platform_version: &PlatformVe
             }
         }
         Err(e) => eprintln!("[carrier-acor] verify error: {e:?}"),
+    }
+}
+
+/// Companion to [`probe_carrier_acor`] that exercises the
+/// *outer-Range* variant of grovedb's carrier-ACOR feature
+/// ([PR #663](https://github.com/dashpay/grovedb/pull/663)'s
+/// `validate_carrier_aggregate_count_accepts_range_outer_items`).
+///
+/// Constructs a carrier PathQuery whose outer dimension walks a
+/// **range** of In-property values (brand `> "brand_050"`) capped
+/// at 20 results, with the same per-brand ACOR subquery over
+/// `color > "color_00000500"`. Prints the per-brand aggregate
+/// counts under `[carrier-acor-range]` so reviewers can grep
+/// deterministically.
+///
+/// Expected output for this fixture (1 doc per `(brand, color)`
+/// pair, 100 brands, 1 000 colors per brand, limit 20):
+/// 20 entries for `brand_051` … `brand_070`, each carrying
+/// `count = 499` (every brand has 499 colors `> "color_00000500"`).
+///
+/// This is the proof shape that would unblock "Q8 with a range
+/// outer + ACOR inner, limit 20" — the natural extension of G7
+/// from `outer In` to `outer Range`. Drive doesn't wire this
+/// through yet; this probe is a feasibility check against the
+/// existing grovedb plumbing.
+fn probe_carrier_acor_range_outer(fixture: &CountBenchFixture, platform_version: &PlatformVersion) {
+    use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+    use drive::drive::RootTree;
+    use grovedb::{Query, QueryItem, SizedQuery};
+
+    let grove_version = &platform_version.drive.grove_version;
+    let contract_id = fixture.data_contract.id().to_buffer();
+    let document_type = fixture
+        .data_contract
+        .document_type_for_name(DOCUMENT_TYPE_NAME)
+        .expect("widget doc type");
+
+    // Serialize the range floor for the OUTER dimension (brand > "brand_050").
+    let brand_floor_key = document_type
+        .serialize_value_for_key(
+            "brand",
+            &Value::Text(brand_label(BRAND_COUNT / 2)),
+            platform_version,
+        )
+        .expect("expected to serialize outer brand floor");
+    // Serialize the range floor for the INNER ACOR (color > "color_00000500").
+    let color_floor_key = document_type
+        .serialize_value_for_key(
+            "color",
+            &Value::Text(fixture.range_floor.clone()),
+            platform_version,
+        )
+        .expect("expected to serialize inner color floor");
+
+    let mut carrier: Query = Query::new();
+    carrier
+        .items
+        .push(QueryItem::RangeAfter(brand_floor_key.clone()..));
+    carrier.set_subquery_path(vec![b"color".to_vec()]);
+    carrier.set_subquery(Query::new_aggregate_count_on_range(QueryItem::RangeAfter(
+        color_floor_key..,
+    )));
+
+    let path: Vec<Vec<u8>> = vec![
+        vec![RootTree::DataContractDocuments as u8],
+        contract_id.to_vec(),
+        vec![1u8],
+        DOCUMENT_TYPE_NAME.as_bytes().to_vec(),
+        b"brand".to_vec(),
+    ];
+    // Grovedb's `validate_carrier_aggregate_count_on_range` rejects
+    // `SizedQuery::limit` and `SizedQuery::offset` for *any* query
+    // containing an `AggregateCountOnRange` (carrier or leaf) — see
+    // the test `validate_carrier_aggregate_count_rejects_sized_query_limit`
+    // in grovedb's tests. So we walk the full outer range here; if
+    // the resulting proof is too big, that's a signal we'd need a
+    // grovedb-level extension allowing carrier-with-limit, or a
+    // drive-level workaround (e.g. compute an explicit upper bound
+    // for the outer Range from the requested limit before the
+    // carrier walk).
+    let path_query = PathQuery::new(path, SizedQuery::new(carrier, None, None));
+
+    eprintln!(
+        "[carrier-acor-range] probing: widget/brand RangeAfter(brand_050..) (no limit — \
+         grovedb rejects SizedQuery::limit on ACOR-bearing queries) subquery_path=color \
+         subquery=AggregateCountOnRange(RangeAfter(color_00000500..))"
+    );
+
+    // 1. No-proof.
+    match fixture
+        .drive
+        .grove
+        .query_aggregate_count_per_key(&path_query, None, grove_version)
+        .unwrap()
+    {
+        Ok(entries) => {
+            eprintln!("[carrier-acor-range] no-proof entries ({}):", entries.len());
+            for (k, c) in &entries {
+                eprintln!("[carrier-acor-range]   ({}, {})", display_segment(k), c);
+            }
+        }
+        Err(e) => eprintln!("[carrier-acor-range] no-proof error: {e:?}"),
+    }
+
+    // 2. Prove.
+    let proof = match fixture
+        .drive
+        .grove
+        .prove_query(&path_query, None, grove_version)
+        .unwrap()
+    {
+        Ok(p) => {
+            eprintln!("[carrier-acor-range] proof bytes: {} B", p.len());
+            p
+        }
+        Err(e) => {
+            eprintln!("[carrier-acor-range] prove_query error: {e:?}");
+            return;
+        }
+    };
+
+    // 3. Verify.
+    match GroveDb::verify_aggregate_count_query_per_key(&proof, &path_query, grove_version) {
+        Ok((root, entries)) => {
+            eprintln!(
+                "[carrier-acor-range] verified root_hash: 0x{}",
+                hex_bytes(&root)
+            );
+            eprintln!("[carrier-acor-range] verified entries ({}):", entries.len());
+            for (k, c) in &entries {
+                eprintln!("[carrier-acor-range]   ({}, {})", display_segment(k), c);
+            }
+        }
+        Err(e) => eprintln!("[carrier-acor-range] verify error: {e:?}"),
     }
 }
 
