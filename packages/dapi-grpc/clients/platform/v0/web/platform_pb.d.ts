@@ -2410,6 +2410,11 @@ export namespace GetDocumentsRequest {
     getField(): string;
     setField(value: string): void;
 
+    hasN(): boolean;
+    clearN(): void;
+    getN(): string;
+    setN(value: string): void;
+
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): HavingAggregate.AsObject;
     static toObject(includeInstance: boolean, msg: HavingAggregate): HavingAggregate.AsObject;
@@ -2424,6 +2429,7 @@ export namespace GetDocumentsRequest {
     export type AsObject = {
       pb_function: GetDocumentsRequest.HavingAggregate.FunctionMap[keyof GetDocumentsRequest.HavingAggregate.FunctionMap],
       field: string,
+      n: string,
     }
 
     export interface FunctionMap {
@@ -2477,6 +2483,11 @@ export namespace GetDocumentsRequest {
       GREATER_THAN_OR_EQUALS: 3;
       LESS_THAN: 4;
       LESS_THAN_OR_EQUALS: 5;
+      BETWEEN: 6;
+      BETWEEN_EXCLUDE_BOUNDS: 7;
+      BETWEEN_EXCLUDE_LEFT: 8;
+      BETWEEN_EXCLUDE_RIGHT: 9;
+      IN: 10;
     }
 
     export const Operator: OperatorMap;

@@ -591,6 +591,7 @@ fn having_aggregate_to_proto(aggregate: HavingAggregate) -> ProtoHavingAggregate
     ProtoHavingAggregate {
         function: having_function_to_proto(aggregate.function) as i32,
         field: aggregate.field,
+        n: aggregate.n,
     }
 }
 
@@ -614,6 +615,11 @@ fn having_operator_to_proto(op: HavingOperator) -> having_clause::Operator {
         HavingOperator::GreaterThanOrEquals => having_clause::Operator::GreaterThanOrEquals,
         HavingOperator::LessThan => having_clause::Operator::LessThan,
         HavingOperator::LessThanOrEquals => having_clause::Operator::LessThanOrEquals,
+        HavingOperator::Between => having_clause::Operator::Between,
+        HavingOperator::BetweenExcludeBounds => having_clause::Operator::BetweenExcludeBounds,
+        HavingOperator::BetweenExcludeLeft => having_clause::Operator::BetweenExcludeLeft,
+        HavingOperator::BetweenExcludeRight => having_clause::Operator::BetweenExcludeRight,
+        HavingOperator::In => having_clause::Operator::In,
     }
 }
 

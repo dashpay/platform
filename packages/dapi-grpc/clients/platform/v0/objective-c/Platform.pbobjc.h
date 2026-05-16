@@ -432,6 +432,11 @@ typedef GPB_ENUM(GetDocumentsRequest_HavingClause_Operator) {
   GetDocumentsRequest_HavingClause_Operator_GreaterThanOrEquals = 3,
   GetDocumentsRequest_HavingClause_Operator_LessThan = 4,
   GetDocumentsRequest_HavingClause_Operator_LessThanOrEquals = 5,
+  GetDocumentsRequest_HavingClause_Operator_Between = 6,
+  GetDocumentsRequest_HavingClause_Operator_BetweenExcludeBounds = 7,
+  GetDocumentsRequest_HavingClause_Operator_BetweenExcludeLeft = 8,
+  GetDocumentsRequest_HavingClause_Operator_BetweenExcludeRight = 9,
+  GetDocumentsRequest_HavingClause_Operator_In = 10,
 };
 
 GPBEnumDescriptor *GetDocumentsRequest_HavingClause_Operator_EnumDescriptor(void);
@@ -2566,6 +2571,7 @@ void SetGetDocumentsRequest_WhereClause_Operator_p_RawValue(GetDocumentsRequest_
 typedef GPB_ENUM(GetDocumentsRequest_HavingAggregate_FieldNumber) {
   GetDocumentsRequest_HavingAggregate_FieldNumber_Function = 1,
   GetDocumentsRequest_HavingAggregate_FieldNumber_Field = 2,
+  GetDocumentsRequest_HavingAggregate_FieldNumber_N = 3,
 };
 
 /**
@@ -2576,11 +2582,13 @@ typedef GPB_ENUM(GetDocumentsRequest_HavingAggregate_FieldNumber) {
  *   non-empty `field` means `COUNT(field)` (count of non-null
  *   values of `field` in the group).
  * - `SUM` / `AVG` / `MIN` / `MAX`: `field` is required.
- * - `TOP` / `BOTTOM`: N-th-element aggregates. `TOP(field)`
- *   against a right operand of `N` evaluates to "the N-th
- *   largest value of `field` in the group"; `BOTTOM(field)` is
- *   the symmetric N-th-smallest. The `N` argument lives in
- *   `HavingClause.value`, not here.
+ * - `TOP` / `BOTTOM`: N-th-element aggregates. `TOP(field, N)`
+ *   evaluates to "the N-th largest value of `field` in the
+ *   group"; `BOTTOM(field, N)` is the symmetric N-th-smallest.
+ *   `N` lives in the `n` field below (1-indexed); the
+ *   `HavingClause.value` slot stays free for the comparison
+ *   target so all operators (scalar comparison, `IN`,
+ *   `BETWEEN*`) work uniformly with these functions.
  **/
 GPB_FINAL @interface GetDocumentsRequest_HavingAggregate : GPBMessage
 
@@ -2592,6 +2600,17 @@ GPB_FINAL @interface GetDocumentsRequest_HavingAggregate : GPBMessage
  **/
 @property(nonatomic, readwrite, copy, null_resettable) NSString *field;
 
+/**
+ * N-th rank for `TOP` / `BOTTOM` (1-indexed: `n=1` is the
+ * largest / smallest element). Required for those two
+ * functions; must be unset for the others. The wire allows
+ * setting it on any function for forward compatibility, but
+ * evaluation rejects an `n` on `COUNT`/`SUM`/`AVG`/`MIN`/`MAX`
+ * as a malformed aggregate.
+ **/
+@property(nonatomic, readwrite) uint64_t n;
+
+@property(nonatomic, readwrite) BOOL hasN;
 @end
 
 /**
@@ -2621,16 +2640,13 @@ typedef GPB_ENUM(GetDocumentsRequest_HavingClause_FieldNumber) {
  * entries. `HAVING COUNT(*) > 5 AND SUM(amount) > 100` is two
  * `HavingClause` rows, not a tree.
  *
- * HAVING uses scalar comparison only — `IN` / `BETWEEN` /
- * `STARTS_WITH` from `WhereOperator` have no natural meaning
- * against a single aggregate result, so the operator set is
- * narrower.
- *
- * The right-side `value` slot carries either the comparison
- * target (for `SUM` / `AVG` / `MIN` / `MAX` / `COUNT`) or the
- * `N` argument (for `TOP` / `BOTTOM`). The wire shape uses the
- * same `DocumentFieldValue` envelope for both so the SDK
- * builders don't need a separate path.
+ * The operator set mirrors `WhereOperator` minus `STARTS_WITH`
+ * (prefix matching has no natural meaning against a scalar
+ * aggregate result, even a string-typed one). `BETWEEN*` and
+ * `IN` operand semantics match `WhereOperator`: `BETWEEN*`
+ * expects a 2-element `DocumentFieldValue.list` carrying
+ * `[lower, upper]`, and `IN` expects a `list` of candidate
+ * values.
  **/
 GPB_FINAL @interface GetDocumentsRequest_HavingClause : GPBMessage
 

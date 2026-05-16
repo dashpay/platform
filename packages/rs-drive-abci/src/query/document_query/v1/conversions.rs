@@ -183,7 +183,7 @@ fn having_function_from_proto(function: i32) -> Result<HavingAggregateFunction, 
 fn having_operator_from_proto(operator: i32) -> Result<HavingOperator, QueryError> {
     let proto = having_clause::Operator::try_from(operator).map_err(|_| {
         QueryError::InvalidArgument(format!(
-            "unknown HavingClause.Operator discriminant: {} (valid values: 0..=5, see \
+            "unknown HavingClause.Operator discriminant: {} (valid values: 0..=10, see \
              `get_documents_request::having_clause::Operator`)",
             operator
         ))
@@ -195,20 +195,27 @@ fn having_operator_from_proto(operator: i32) -> Result<HavingOperator, QueryErro
         having_clause::Operator::GreaterThanOrEquals => HavingOperator::GreaterThanOrEquals,
         having_clause::Operator::LessThan => HavingOperator::LessThan,
         having_clause::Operator::LessThanOrEquals => HavingOperator::LessThanOrEquals,
+        having_clause::Operator::Between => HavingOperator::Between,
+        having_clause::Operator::BetweenExcludeBounds => HavingOperator::BetweenExcludeBounds,
+        having_clause::Operator::BetweenExcludeLeft => HavingOperator::BetweenExcludeLeft,
+        having_clause::Operator::BetweenExcludeRight => HavingOperator::BetweenExcludeRight,
+        having_clause::Operator::In => HavingOperator::In,
     })
 }
 
-/// Map a wire [`ProtoHavingAggregate`] onto drive's [`HavingAggregate`].
-/// The aggregate-function ↔ field consistency check (e.g. `field`
-/// must be non-empty for `SUM`/`AVG`/`MIN`/`MAX`/`TOP`/`BOTTOM`)
-/// runs inside the executor when HAVING evaluation lands; the
-/// converter only enforces that the proto shape is well-formed.
+/// Map a wire [`ProtoHavingAggregate`] onto drive's
+/// [`HavingAggregate`]. The aggregate-function ↔ field / `n`
+/// consistency check (e.g. `field` required for everything except
+/// `Count`, `n` required for `Top` / `Bottom`) runs inside the
+/// executor when HAVING evaluation lands; the converter only
+/// enforces that the proto shape is well-formed.
 fn having_aggregate_from_proto(
     aggregate: ProtoHavingAggregate,
 ) -> Result<HavingAggregate, QueryError> {
     Ok(HavingAggregate {
         function: having_function_from_proto(aggregate.function)?,
         field: aggregate.field,
+        n: aggregate.n,
     })
 }
 
@@ -233,8 +240,9 @@ pub(super) fn having_clause_from_proto(
     let value = clause.value.ok_or_else(|| {
         QueryError::InvalidArgument(
             "HavingClause has no value set; every clause must carry a concrete \
-             right-hand `DocumentFieldValue` (the `N` argument for `TOP`/`BOTTOM`, \
-             or the comparison target for the other aggregates)"
+             right-hand `DocumentFieldValue` (the comparison target — for \
+             `Between*` a 2-element list, for `In` a list of candidates, \
+             otherwise a scalar)"
                 .to_string(),
         )
     })?;

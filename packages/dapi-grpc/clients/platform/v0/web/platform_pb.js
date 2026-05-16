@@ -25338,7 +25338,8 @@ proto.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate.prototype.to
 proto.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate.toObject = function(includeInstance, msg) {
   var f, obj = {
     pb_function: jspb.Message.getFieldWithDefault(msg, 1, 0),
-    field: jspb.Message.getFieldWithDefault(msg, 2, "")
+    field: jspb.Message.getFieldWithDefault(msg, 2, ""),
+    n: jspb.Message.getFieldWithDefault(msg, 3, "0")
   };
 
   if (includeInstance) {
@@ -25383,6 +25384,10 @@ proto.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate.deserializeB
       var value = /** @type {string} */ (reader.readString());
       msg.setField(value);
       break;
+    case 3:
+      var value = /** @type {string} */ (reader.readUint64String());
+      msg.setN(value);
+      break;
     default:
       reader.skipField();
       break;
@@ -25423,6 +25428,13 @@ proto.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate.serializeBin
   if (f.length > 0) {
     writer.writeString(
       2,
+      f
+    );
+  }
+  f = /** @type {string} */ (jspb.Message.getField(message, 3));
+  if (f != null) {
+    writer.writeUint64String(
+      3,
       f
     );
   }
@@ -25475,6 +25487,42 @@ proto.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate.prototype.ge
  */
 proto.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate.prototype.setField = function(value) {
   return jspb.Message.setProto3StringField(this, 2, value);
+};
+
+
+/**
+ * optional uint64 n = 3;
+ * @return {string}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate.prototype.getN = function() {
+  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 3, "0"));
+};
+
+
+/**
+ * @param {string} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate.prototype.setN = function(value) {
+  return jspb.Message.setField(this, 3, value);
+};
+
+
+/**
+ * Clears the field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate.prototype.clearN = function() {
+  return jspb.Message.setField(this, 3, undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate.prototype.hasN = function() {
+  return jspb.Message.getField(this, 3) != null;
 };
 
 
@@ -25627,7 +25675,12 @@ proto.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause.Operator = {
   GREATER_THAN: 2,
   GREATER_THAN_OR_EQUALS: 3,
   LESS_THAN: 4,
-  LESS_THAN_OR_EQUALS: 5
+  LESS_THAN_OR_EQUALS: 5,
+  BETWEEN: 6,
+  BETWEEN_EXCLUDE_BOUNDS: 7,
+  BETWEEN_EXCLUDE_LEFT: 8,
+  BETWEEN_EXCLUDE_RIGHT: 9,
+  IN: 10
 };
 
 /**

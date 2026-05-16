@@ -1,14 +1,14 @@
 //! `HAVING` clause types for the v1 `getDocuments` count surface.
 //!
-//! HAVING differs from WHERE in two ways the type system needs to
-//! reflect:
-//! - The left-hand operand is an **aggregate** over the group
-//!   (`COUNT(*)`, `SUM(field)`, `AVG(field)`, `MIN`/`MAX`, `TOP`/
-//!   `BOTTOM` for N-th-element selection), not a raw row field.
-//! - The operator set is narrower than `WhereOperator`. Aggregate
-//!   results are scalars (or N-th-element selections), so `IN` /
-//!   `BETWEEN` / `STARTS_WITH` have no natural meaning here —
-//!   HAVING only supports the six scalar comparisons.
+//! HAVING differs from WHERE in one structural way the type system
+//! needs to reflect: the left-hand operand is an **aggregate** over
+//! the group (`COUNT(*)`, `SUM(field)`, `AVG(field)`, `MIN`/`MAX`,
+//! `TOP`/`BOTTOM` for N-th-element selection) rather than a raw
+//! row field. The operator set is the same as `WhereOperator`
+//! minus `STARTS_WITH` (prefix matching has no meaning on a
+//! scalar aggregate result, even one that's a string): scalar
+//! comparison, `IN`, and all four `BETWEEN*` variants all carry
+//! through.
 //!
 //! Multi-clause HAVING (`HAVING COUNT(*) > 5 AND SUM(amount) > 100`)
 //! is expressed by repeating [`HavingClause`] at the request
@@ -32,23 +32,24 @@ use serde::{Deserialize, Serialize};
 /// Aggregate function applied to a group on the left side of a
 /// [`HavingClause`].
 ///
-/// **Field semantics by function**:
-/// - [`Self::Count`]: empty `field` on the enclosing
-///   [`HavingAggregate`] means `COUNT(*)` (group cardinality);
-///   non-empty `field` means `COUNT(field)` (count of non-null
-///   values of `field` in the group).
+/// **Field semantics by function** (refer to
+/// [`HavingAggregate::field`]):
+/// - [`Self::Count`]: empty `field` means `COUNT(*)` (group
+///   cardinality); non-empty `field` means `COUNT(field)` (count
+///   of non-null values of `field` in the group).
 /// - [`Self::Sum`] / [`Self::Avg`] / [`Self::Min`] / [`Self::Max`]:
-///   `field` is required. Numeric-typed fields only — the server
-///   rejects with a typed error on string / bytes targets when
+///   `field` is required. Numeric-typed fields only for `Sum` /
+///   `Avg`; comparable types for `Min` / `Max`. The server rejects
+///   with a typed error on incompatible field types when
 ///   evaluation lands.
 /// - [`Self::Top`] / [`Self::Bottom`]: N-th-element aggregates.
-///   `Top(field)` against right-operand `N` evaluates to "the N-th
-///   largest value of `field` in the group"; `Bottom(field)` is
-///   the symmetric N-th-smallest. The `N` argument lives in the
-///   `HavingClause.value` slot, not here, so a single
-///   `HavingAggregate` is enough to express both `field` and
-///   `function`. Useful for "at least N members above threshold"
-///   without an explicit fan-out via `ORDER BY` + `LIMIT`.
+///   `Top(field)` evaluates to "the N-th largest value of `field`
+///   in the group", and `Bottom(field)` is the symmetric
+///   N-th-smallest. The `N` argument lives in
+///   [`HavingAggregate::n`] (1-indexed); the `HavingClause.value`
+///   slot stays free for the comparison target so all operators
+///   (`=`, range, `IN`, `BETWEEN*`) work uniformly with these
+///   functions.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum HavingAggregateFunction {
@@ -63,18 +64,17 @@ pub enum HavingAggregateFunction {
     Min,
     /// `MAX(field)`. Comparable field required.
     Max,
-    /// `TOP(field)` — N-th-largest value of `field` in the group;
-    /// `N` comes from `HavingClause.value`.
+    /// `TOP(field, N)` — N-th-largest value of `field` in the
+    /// group. `N` lives in [`HavingAggregate::n`] (1-indexed).
     Top,
-    /// `BOTTOM(field)` — N-th-smallest value of `field` in the
-    /// group; `N` comes from `HavingClause.value`.
+    /// `BOTTOM(field, N)` — N-th-smallest value of `field` in the
+    /// group. `N` lives in [`HavingAggregate::n`] (1-indexed).
     Bottom,
 }
 
-/// Aggregate operand `(<function>, <field>)` for the left side of
-/// a [`HavingClause`]. See [`HavingAggregateFunction`] for the
-/// per-function `field` semantics (in particular: `field` is empty
-/// only for `COUNT(*)`).
+/// Aggregate operand for the left side of a [`HavingClause`]. See
+/// [`HavingAggregateFunction`] for the per-function `field` /
+/// `n` requirements.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct HavingAggregate {
@@ -83,14 +83,21 @@ pub struct HavingAggregate {
     /// The field the aggregate is applied to. Empty only when
     /// `function == Count` (to express `COUNT(*)`).
     pub field: String,
+    /// N-th rank for [`HavingAggregateFunction::Top`] /
+    /// [`HavingAggregateFunction::Bottom`] (1-indexed: `n=1` is
+    /// the largest / smallest element). Required for those two
+    /// functions; must be `None` for the others (the wire still
+    /// allows it for forward-compatibility, but evaluation
+    /// rejects it as a malformed aggregate).
+    pub n: Option<u64>,
 }
 
-/// Comparison operator for a [`HavingClause`]. Narrower than
-/// `WhereOperator` because HAVING evaluates against scalar
-/// aggregate results — `IN` / `BETWEEN` / `STARTS_WITH` have no
-/// natural meaning against a single aggregate value, and would
-/// require redefining the operand shape to a list / range tuple
-/// without any current semantic backing.
+/// Comparison operator for a [`HavingClause`]. Mirrors
+/// [`crate::query::WhereOperator`] minus `STARTS_WITH` (prefix
+/// matching has no natural meaning against a scalar aggregate
+/// result, even a string-typed one). `BETWEEN*` operand semantics
+/// match `WhereOperator`: a 2-element list `[lower, upper]`; `IN`
+/// expects a list of candidate values.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum HavingOperator {
@@ -106,6 +113,21 @@ pub enum HavingOperator {
     LessThan,
     /// `aggregate <= value`.
     LessThanOrEquals,
+    /// `aggregate BETWEEN lower AND upper` (inclusive on both
+    /// ends). `value` must be a 2-element list `[lower, upper]`.
+    Between,
+    /// `aggregate > lower AND aggregate < upper` (exclusive on
+    /// both ends). `value` shape same as `Between`.
+    BetweenExcludeBounds,
+    /// `aggregate > lower AND aggregate <= upper` (exclusive on
+    /// the left bound only). `value` shape same as `Between`.
+    BetweenExcludeLeft,
+    /// `aggregate >= lower AND aggregate < upper` (exclusive on
+    /// the right bound only). `value` shape same as `Between`.
+    BetweenExcludeRight,
+    /// `aggregate IN (v1, v2, …)`. `value` must be a list of
+    /// candidate values matching the aggregate's result type.
+    In,
 }
 
 /// Single `HAVING <aggregate> <op> <value>` clause.
@@ -119,22 +141,20 @@ pub enum HavingOperator {
 /// would land as an additional wire shape (e.g. a `HavingGroup`
 /// message with a logical-op tag) rather than overloading this
 /// type.
-///
-/// The `value` slot holds the right-hand operand. For
-/// [`HavingAggregateFunction::Top`] / [`HavingAggregateFunction::Bottom`]
-/// this is the `N` argument (a positive integer); for all other
-/// functions it's the comparison target.
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct HavingClause {
-    /// Left-side aggregate operand.
+    /// Left-side aggregate operand. For `TOP` / `BOTTOM` the
+    /// N-th-rank argument lives on the aggregate's `n` field, not
+    /// here — `value` is reserved for the comparison target.
     pub aggregate: HavingAggregate,
     /// Comparison operator.
     pub operator: HavingOperator,
-    /// Right-side scalar value. For `TOP` / `BOTTOM` aggregates,
-    /// this is the `N` argument (positive integer); for other
-    /// aggregates it's the comparison target whose type must match
-    /// the aggregate's result type (numeric for `SUM`/`AVG`/`COUNT`,
-    /// the field's indexed type for `MIN`/`MAX`).
+    /// Right-side operand. Shape depends on `operator`:
+    /// scalar comparison operators expect a scalar value whose
+    /// type matches the aggregate's result type (numeric for
+    /// `SUM`/`AVG`/`COUNT`, the field's type for `MIN` / `MAX` /
+    /// `TOP` / `BOTTOM`); `Between*` expects a 2-element list
+    /// `[lower, upper]`; `In` expects a list of candidate values.
     pub value: Value,
 }

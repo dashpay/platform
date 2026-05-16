@@ -5467,11 +5467,13 @@ void SetGetDocumentsRequest_WhereClause_Operator_p_RawValue(GetDocumentsRequest_
 
 @dynamic function;
 @dynamic field;
+@dynamic hasN, n;
 
 typedef struct GetDocumentsRequest_HavingAggregate__storage_ {
   uint32_t _has_storage_[1];
   GetDocumentsRequest_HavingAggregate_Function function;
   NSString *field;
+  uint64_t n;
 } GetDocumentsRequest_HavingAggregate__storage_;
 
 // This method is threadsafe because it is initially called
@@ -5497,6 +5499,15 @@ typedef struct GetDocumentsRequest_HavingAggregate__storage_ {
         .offset = (uint32_t)offsetof(GetDocumentsRequest_HavingAggregate__storage_, field),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeString,
+      },
+      {
+        .name = "n",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentsRequest_HavingAggregate_FieldNumber_N,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetDocumentsRequest_HavingAggregate__storage_, n),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeUInt64,
       },
     };
     GPBDescriptor *localDescriptor =
@@ -5662,7 +5673,9 @@ GPBEnumDescriptor *GetDocumentsRequest_HavingClause_Operator_EnumDescriptor(void
   if (!descriptor) {
     static const char *valueNames =
         "Equal\000NotEqual\000GreaterThan\000GreaterThanOr"
-        "Equals\000LessThan\000LessThanOrEquals\000";
+        "Equals\000LessThan\000LessThanOrEquals\000Between"
+        "\000BetweenExcludeBounds\000BetweenExcludeLeft"
+        "\000BetweenExcludeRight\000In\000";
     static const int32_t values[] = {
         GetDocumentsRequest_HavingClause_Operator_Equal,
         GetDocumentsRequest_HavingClause_Operator_NotEqual,
@@ -5670,6 +5683,11 @@ GPBEnumDescriptor *GetDocumentsRequest_HavingClause_Operator_EnumDescriptor(void
         GetDocumentsRequest_HavingClause_Operator_GreaterThanOrEquals,
         GetDocumentsRequest_HavingClause_Operator_LessThan,
         GetDocumentsRequest_HavingClause_Operator_LessThanOrEquals,
+        GetDocumentsRequest_HavingClause_Operator_Between,
+        GetDocumentsRequest_HavingClause_Operator_BetweenExcludeBounds,
+        GetDocumentsRequest_HavingClause_Operator_BetweenExcludeLeft,
+        GetDocumentsRequest_HavingClause_Operator_BetweenExcludeRight,
+        GetDocumentsRequest_HavingClause_Operator_In,
     };
     GPBEnumDescriptor *worker =
         [GPBEnumDescriptor allocDescriptorForName:GPBNSStringifySymbol(GetDocumentsRequest_HavingClause_Operator)
@@ -5693,6 +5711,11 @@ BOOL GetDocumentsRequest_HavingClause_Operator_IsValidValue(int32_t value__) {
     case GetDocumentsRequest_HavingClause_Operator_GreaterThanOrEquals:
     case GetDocumentsRequest_HavingClause_Operator_LessThan:
     case GetDocumentsRequest_HavingClause_Operator_LessThanOrEquals:
+    case GetDocumentsRequest_HavingClause_Operator_Between:
+    case GetDocumentsRequest_HavingClause_Operator_BetweenExcludeBounds:
+    case GetDocumentsRequest_HavingClause_Operator_BetweenExcludeLeft:
+    case GetDocumentsRequest_HavingClause_Operator_BetweenExcludeRight:
+    case GetDocumentsRequest_HavingClause_Operator_In:
       return YES;
     default:
       return NO;

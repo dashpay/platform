@@ -21063,6 +21063,7 @@ $root.org = (function() {
                              * @interface IHavingAggregate
                              * @property {org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate.Function|null} ["function"] HavingAggregate function
                              * @property {string|null} [field] HavingAggregate field
+                             * @property {number|Long|null} [n] HavingAggregate n
                              */
 
                             /**
@@ -21097,6 +21098,14 @@ $root.org = (function() {
                             HavingAggregate.prototype.field = "";
 
                             /**
+                             * HavingAggregate n.
+                             * @member {number|Long} n
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate
+                             * @instance
+                             */
+                            HavingAggregate.prototype.n = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                            /**
                              * Creates a new HavingAggregate instance using the specified properties.
                              * @function create
                              * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate
@@ -21124,6 +21133,8 @@ $root.org = (function() {
                                     writer.uint32(/* id 1, wireType 0 =*/8).int32(message["function"]);
                                 if (message.field != null && Object.hasOwnProperty.call(message, "field"))
                                     writer.uint32(/* id 2, wireType 2 =*/18).string(message.field);
+                                if (message.n != null && Object.hasOwnProperty.call(message, "n"))
+                                    writer.uint32(/* id 3, wireType 0 =*/24).uint64(message.n);
                                 return writer;
                             };
 
@@ -21163,6 +21174,9 @@ $root.org = (function() {
                                         break;
                                     case 2:
                                         message.field = reader.string();
+                                        break;
+                                    case 3:
+                                        message.n = reader.uint64();
                                         break;
                                     default:
                                         reader.skipType(tag & 7);
@@ -21215,6 +21229,9 @@ $root.org = (function() {
                                 if (message.field != null && message.hasOwnProperty("field"))
                                     if (!$util.isString(message.field))
                                         return "field: string expected";
+                                if (message.n != null && message.hasOwnProperty("n"))
+                                    if (!$util.isInteger(message.n) && !(message.n && $util.isInteger(message.n.low) && $util.isInteger(message.n.high)))
+                                        return "n: integer|Long expected";
                                 return null;
                             };
 
@@ -21262,6 +21279,15 @@ $root.org = (function() {
                                 }
                                 if (object.field != null)
                                     message.field = String(object.field);
+                                if (object.n != null)
+                                    if ($util.Long)
+                                        (message.n = $util.Long.fromValue(object.n)).unsigned = true;
+                                    else if (typeof object.n === "string")
+                                        message.n = parseInt(object.n, 10);
+                                    else if (typeof object.n === "number")
+                                        message.n = object.n;
+                                    else if (typeof object.n === "object")
+                                        message.n = new $util.LongBits(object.n.low >>> 0, object.n.high >>> 0).toNumber(true);
                                 return message;
                             };
 
@@ -21281,11 +21307,21 @@ $root.org = (function() {
                                 if (options.defaults) {
                                     object["function"] = options.enums === String ? "COUNT" : 0;
                                     object.field = "";
+                                    if ($util.Long) {
+                                        var long = new $util.Long(0, 0, true);
+                                        object.n = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                    } else
+                                        object.n = options.longs === String ? "0" : 0;
                                 }
                                 if (message["function"] != null && message.hasOwnProperty("function"))
                                     object["function"] = options.enums === String ? $root.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate.Function[message["function"]] : message["function"];
                                 if (message.field != null && message.hasOwnProperty("field"))
                                     object.field = message.field;
+                                if (message.n != null && message.hasOwnProperty("n"))
+                                    if (typeof message.n === "number")
+                                        object.n = options.longs === String ? String(message.n) : message.n;
+                                    else
+                                        object.n = options.longs === String ? $util.Long.prototype.toString.call(message.n) : options.longs === Number ? new $util.LongBits(message.n.low >>> 0, message.n.high >>> 0).toNumber(true) : message.n;
                                 return object;
                             };
 
@@ -21500,6 +21536,11 @@ $root.org = (function() {
                                     case 3:
                                     case 4:
                                     case 5:
+                                    case 6:
+                                    case 7:
+                                    case 8:
+                                    case 9:
+                                    case 10:
                                         break;
                                     }
                                 if (message.value != null && message.hasOwnProperty("value")) {
@@ -21551,6 +21592,26 @@ $root.org = (function() {
                                 case "LESS_THAN_OR_EQUALS":
                                 case 5:
                                     message.operator = 5;
+                                    break;
+                                case "BETWEEN":
+                                case 6:
+                                    message.operator = 6;
+                                    break;
+                                case "BETWEEN_EXCLUDE_BOUNDS":
+                                case 7:
+                                    message.operator = 7;
+                                    break;
+                                case "BETWEEN_EXCLUDE_LEFT":
+                                case 8:
+                                    message.operator = 8;
+                                    break;
+                                case "BETWEEN_EXCLUDE_RIGHT":
+                                case 9:
+                                    message.operator = 9;
+                                    break;
+                                case "IN":
+                                case 10:
+                                    message.operator = 10;
                                     break;
                                 }
                                 if (object.value != null) {
@@ -21609,6 +21670,11 @@ $root.org = (function() {
                              * @property {number} GREATER_THAN_OR_EQUALS=3 GREATER_THAN_OR_EQUALS value
                              * @property {number} LESS_THAN=4 LESS_THAN value
                              * @property {number} LESS_THAN_OR_EQUALS=5 LESS_THAN_OR_EQUALS value
+                             * @property {number} BETWEEN=6 BETWEEN value
+                             * @property {number} BETWEEN_EXCLUDE_BOUNDS=7 BETWEEN_EXCLUDE_BOUNDS value
+                             * @property {number} BETWEEN_EXCLUDE_LEFT=8 BETWEEN_EXCLUDE_LEFT value
+                             * @property {number} BETWEEN_EXCLUDE_RIGHT=9 BETWEEN_EXCLUDE_RIGHT value
+                             * @property {number} IN=10 IN value
                              */
                             HavingClause.Operator = (function() {
                                 var valuesById = {}, values = Object.create(valuesById);
@@ -21618,6 +21684,11 @@ $root.org = (function() {
                                 values[valuesById[3] = "GREATER_THAN_OR_EQUALS"] = 3;
                                 values[valuesById[4] = "LESS_THAN"] = 4;
                                 values[valuesById[5] = "LESS_THAN_OR_EQUALS"] = 5;
+                                values[valuesById[6] = "BETWEEN"] = 6;
+                                values[valuesById[7] = "BETWEEN_EXCLUDE_BOUNDS"] = 7;
+                                values[valuesById[8] = "BETWEEN_EXCLUDE_LEFT"] = 8;
+                                values[valuesById[9] = "BETWEEN_EXCLUDE_RIGHT"] = 9;
+                                values[valuesById[10] = "IN"] = 10;
                                 return values;
                             })();
 
