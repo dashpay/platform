@@ -539,6 +539,53 @@ fn accept_single_field_group_by_on_range_field_with_in_routes_to_range_entries()
     );
 }
 
+/// Routing decision must not depend on `where_clauses` element
+/// order when two range clauses are present. Pins the
+/// `is_range_field` / `is_in_field` membership-test contract
+/// (match-any, not match-first) so a future refactor that swaps
+/// back to a `.find(...).map(...) == Some(...)` shape fails
+/// loudly rather than re-introducing the bug.
+///
+/// Drive's executor explicitly supports the two-range
+/// `GroupByRange + prove` shape (see
+/// `outer_range_plus_inner_range_with_prove_and_group_by_range_routes_to_carrier_proof`
+/// in `rs-drive`); the router must reach it regardless of
+/// which range clause the caller wrote first.
+#[test]
+fn group_by_routing_is_independent_of_two_range_clause_order() {
+    let make_request = |where_clauses: Vec<WhereClause>| {
+        let request = GetDocumentsRequestV1 {
+            select: select_count_star(),
+            group_by: vec!["brand".to_string()],
+            ..empty_v1_request()
+        };
+        validate_and_route_for_tests(&request, &where_clauses).unwrap()
+    };
+
+    let brand_range = WhereClause {
+        field: "brand".to_string(),
+        operator: WhereOperator::GreaterThan,
+        value: platform_value!("acme"),
+    };
+    let color_range = WhereClause {
+        field: "color".to_string(),
+        operator: WhereOperator::GreaterThan,
+        value: platform_value!("blue"),
+    };
+
+    // GROUP BY brand: both orderings must route the same way.
+    assert_eq!(
+        make_request(vec![brand_range.clone(), color_range.clone()]),
+        "count_entries_via_range_field",
+        "GROUP BY brand routing must not depend on whether brand or color is first",
+    );
+    assert_eq!(
+        make_request(vec![color_range, brand_range]),
+        "count_entries_via_range_field",
+        "GROUP BY brand routing must not depend on whether brand or color is first",
+    );
+}
+
 #[test]
 fn accept_count_group_by_in_field_routes_to_in_entries() {
     let request = GetDocumentsRequestV1 {

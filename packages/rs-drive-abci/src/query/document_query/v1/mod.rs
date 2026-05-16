@@ -159,27 +159,50 @@ fn validate_and_route(
                      but today only COUNT(*) — empty `field` — is evaluated)",
                 ));
             }
-            let in_field: Option<&str> = where_clauses
-                .iter()
-                .find(|wc| wc.operator == WhereOperator::In)
-                .map(|wc| wc.field.as_str());
-            let range_field: Option<&str> = where_clauses
-                .iter()
-                .find(|wc| {
-                    matches!(
-                        wc.operator,
-                        WhereOperator::GreaterThan
-                            | WhereOperator::GreaterThanOrEquals
-                            | WhereOperator::LessThan
-                            | WhereOperator::LessThanOrEquals
-                            | WhereOperator::Between
-                            | WhereOperator::BetweenExcludeBounds
-                            | WhereOperator::BetweenExcludeLeft
-                            | WhereOperator::BetweenExcludeRight
-                            | WhereOperator::StartsWith
-                    )
-                })
-                .map(|wc| wc.field.as_str());
+            // Field-membership predicates on the request's where
+            // clauses. **Match-any, not match-first** — a request
+            // may carry two range clauses on different fields
+            // (the executor's `RangeAggregateCarrierProof` path
+            // is built for exactly that shape; see
+            // `outer_range_plus_inner_range_with_prove_and_group_by_range_routes_to_carrier_proof`
+            // in `drive/query/drive_document_count_query/tests.rs`).
+            // A `find(...).map(field).map(eq)` test against a
+            // hard-coded first range clause would make the routing
+            // decision depend on clause ordering on the wire,
+            // which is wrong — `WHERE a > x AND b > y GROUP BY a`
+            // and `WHERE b > y AND a > x GROUP BY a` must produce
+            // the same routing.
+            //
+            // For `In` the practical effect is the same because
+            // `validate_and_canonicalize_where_clauses` rejects
+            // multiple `In` clauses upstream (`MultipleInClauses`),
+            // but the `any` shape is used here too so the routing
+            // logic doesn't bake in an assumption that could go
+            // stale if that validator's contract ever relaxes.
+            let is_range_op = |op: WhereOperator| {
+                matches!(
+                    op,
+                    WhereOperator::GreaterThan
+                        | WhereOperator::GreaterThanOrEquals
+                        | WhereOperator::LessThan
+                        | WhereOperator::LessThanOrEquals
+                        | WhereOperator::Between
+                        | WhereOperator::BetweenExcludeBounds
+                        | WhereOperator::BetweenExcludeLeft
+                        | WhereOperator::BetweenExcludeRight
+                        | WhereOperator::StartsWith
+                )
+            };
+            let is_in_field = |field: &str| {
+                where_clauses
+                    .iter()
+                    .any(|wc| wc.operator == WhereOperator::In && wc.field == field)
+            };
+            let is_range_field = |field: &str| {
+                where_clauses
+                    .iter()
+                    .any(|wc| is_range_op(wc.operator) && wc.field == field)
+            };
 
             // Compute the SQL-shape mode from `(group_by, where)`
             // first; check `limit` validity against the mode after
@@ -188,11 +211,11 @@ fn validate_and_route(
             let mode = match group_by {
                 [] => CountMode::Aggregate,
                 [field] => {
-                    if Some(field.as_str()) == in_field {
-                        // Single-field GROUP BY on the `In` field
-                        // routes to `CountMode::GroupByIn`. When a
-                        // range clause is also present, drive's
-                        // [`detect_mode`] picks the right
+                    if is_in_field(field) {
+                        // Single-field GROUP BY on an `In`-constrained
+                        // field routes to `CountMode::GroupByIn`.
+                        // When a range clause is also present,
+                        // drive's [`detect_mode`] picks the right
                         // submode — `RangeAggregateCarrierProof`
                         // on the prove path (one count per In
                         // branch via the grovedb #663 carrier
@@ -203,16 +226,20 @@ fn validate_and_route(
                         // caller-stated GROUP BY shape, so no
                         // additional gating here is needed.
                         CountMode::GroupByIn
-                    } else if Some(field.as_str()) == range_field {
+                    } else if is_range_field(field) {
                         // Symmetric to the In branch above:
-                        // `group_by=[range_field]` with an active
-                        // `In` clause routes to
-                        // `CountMode::GroupByRange`, and drive's
-                        // [`detect_mode`] picks the right submode —
-                        // `RangeDistinctProof` on the prove path
-                        // (per-distinct-value counts with In-fanout
-                        // on the prefix) or `RangeNoProof` distinct
-                        // on the no-prove path.
+                        // `group_by=[range_field]` routes to
+                        // `CountMode::GroupByRange`. With a
+                        // *second* range clause on a different
+                        // field this drives the
+                        // `RangeAggregateCarrierProof` carrier
+                        // shape (drive's outer-range + inner-ACOR
+                        // primitive). With an `In` on a different
+                        // field it's `RangeDistinctProof` on the
+                        // prove path (per-distinct-value counts
+                        // with In-fanout on the prefix) or
+                        // `RangeNoProof` distinct on the no-prove
+                        // path.
                         CountMode::GroupByRange
                     } else {
                         return Err(not_yet_implemented(&format!(
@@ -223,7 +250,7 @@ fn validate_and_route(
                     }
                 }
                 [first, second] => {
-                    if Some(first.as_str()) == in_field && Some(second.as_str()) == range_field {
+                    if is_in_field(first) && is_range_field(second) {
                         CountMode::GroupByCompound
                     } else {
                         return Err(not_yet_implemented(
