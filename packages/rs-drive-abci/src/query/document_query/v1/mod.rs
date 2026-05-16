@@ -340,30 +340,28 @@ impl<C> Platform<C> {
         } = request_v1;
 
         // Decode the proto-typed `repeated WhereClause` / `repeated
-        // OrderClause` / `repeated HavingClause` into drive's
-        // structured forms once, up front. Both the routing
-        // decision and the downstream executor consume the typed
-        // clauses directly — no CBOR envelope on the v1 path.
+        // OrderClause` into drive's structured forms once, up
+        // front. Both the routing decision and the downstream
+        // executor consume the typed clauses directly — no CBOR
+        // envelope on the v1 path.
         //
-        // `having_clauses_from_proto` runs even though the server
-        // rejects non-empty HAVING wholesale: wire-malformed
-        // HavingClauses (bad function/operator discriminant,
-        // missing aggregate or value) surface as
-        // `InvalidArgument` here, not as the generic "not yet
-        // implemented" rejection — matching the contract the
-        // where-clause / value-from-proto path provides. When the
-        // server gains HAVING execution, the decoded vec is
-        // already in hand and only the validate_and_route gate
-        // needs to flip.
+        // `having` is checked for non-empty before decoding rather
+        // than after: the server rejects non-empty HAVING
+        // wholesale today, so decoding the clauses just to
+        // discard them is pure overhead and the downstream
+        // dispatchers don't accept the decoded vec yet. When
+        // HAVING execution lands, the `is_empty()` short-circuit
+        // gives way to a full `having_clauses_from_proto` call
+        // that threads into the dispatchers — and at that point
+        // wire-malformed HAVING (bad discriminant, missing
+        // aggregate, …) starts surfacing as `InvalidArgument`
+        // automatically.
         let where_clauses = match conversions::where_clauses_from_proto(proto_where_clauses) {
             Ok(c) => c,
             Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
         };
         let order_by_clauses = conversions::order_clauses_from_proto(proto_order_by);
-        let having_clauses = match conversions::having_clauses_from_proto(having) {
-            Ok(c) => c,
-            Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
-        };
+        let having_non_empty = !having.is_empty();
         // Unset `select` on the wire decodes as `None` here; treat
         // that as `SelectProjection::documents()` so old fixtures /
         // callers that didn't opt into the SQL-shaped surface get
@@ -376,16 +374,11 @@ impl<C> Platform<C> {
             None => SelectProjection::documents(),
         };
 
-        let routing = match validate_and_route(
-            &select,
-            limit,
-            !having_clauses.is_empty(),
-            &group_by,
-            &where_clauses,
-        ) {
-            Ok(r) => r,
-            Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
-        };
+        let routing =
+            match validate_and_route(&select, limit, having_non_empty, &group_by, &where_clauses) {
+                Ok(r) => r,
+                Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
+            };
 
         match routing {
             RoutingDecision::Documents => self.dispatch_documents_v1(

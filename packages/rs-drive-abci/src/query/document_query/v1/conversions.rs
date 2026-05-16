@@ -156,11 +156,21 @@ pub(super) fn order_clauses_from_proto(clauses: Vec<ProtoOrderClause>) -> Vec<Or
     clauses.into_iter().map(order_clause_from_proto).collect()
 }
 
+// The `having_*_from_proto` family below is currently dead code:
+// the v1 handler short-circuits non-empty HAVING with
+// `not_yet_implemented` before decoding (see `query_documents_v1`).
+// The helpers stay in tree so HAVING execution can land with just
+// the gate-flip + a single call into `having_clauses_from_proto`;
+// no separate decoder needs to be written then. The
+// `#[allow(dead_code)]` is per-function rather than module-wide so
+// any future addition outside this family still trips the lint.
+
 /// Map a wire [`having_aggregate::Function`] discriminant onto
 /// drive's [`HavingAggregateFunction`]. Unknown discriminants are
 /// wire-level garbage (no future protocol value would map a
 /// malformed integer to a valid behavior), so they surface as
 /// [`QueryError::InvalidArgument`].
+#[allow(dead_code)]
 fn having_function_from_proto(function: i32) -> Result<HavingAggregateFunction, QueryError> {
     let proto = having_aggregate::Function::try_from(function).map_err(|_| {
         QueryError::InvalidArgument(format!(
@@ -178,6 +188,7 @@ fn having_function_from_proto(function: i32) -> Result<HavingAggregateFunction, 
 
 /// Map a wire [`having_ranking::Kind`] discriminant onto drive's
 /// [`HavingRankingKind`].
+#[allow(dead_code)]
 fn having_ranking_kind_from_proto(kind: i32) -> Result<HavingRankingKind, QueryError> {
     let proto = having_ranking::Kind::try_from(kind).map_err(|_| {
         QueryError::InvalidArgument(format!(
@@ -199,6 +210,7 @@ fn having_ranking_kind_from_proto(kind: i32) -> Result<HavingRankingKind, QueryE
 /// `Top` / `Bottom`, forbidden on `Min` / `Max`) runs inside the
 /// evaluator when HAVING execution lands; this converter only
 /// enforces that the proto shape is well-formed.
+#[allow(dead_code)]
 fn having_ranking_from_proto(ranking: ProtoHavingRanking) -> Result<HavingRanking, QueryError> {
     Ok(HavingRanking {
         kind: having_ranking_kind_from_proto(ranking.kind)?,
@@ -209,6 +221,7 @@ fn having_ranking_from_proto(ranking: ProtoHavingRanking) -> Result<HavingRankin
 /// Map a wire [`having_clause::Operator`] discriminant onto
 /// drive's [`HavingOperator`]. Same error contract as
 /// [`having_function_from_proto`].
+#[allow(dead_code)]
 fn having_operator_from_proto(operator: i32) -> Result<HavingOperator, QueryError> {
     let proto = having_clause::Operator::try_from(operator).map_err(|_| {
         QueryError::InvalidArgument(format!(
@@ -238,6 +251,7 @@ fn having_operator_from_proto(operator: i32) -> Result<HavingOperator, QueryErro
 /// `Count`) runs inside the evaluator when HAVING execution
 /// lands; the converter only enforces that the proto shape is
 /// well-formed.
+#[allow(dead_code)]
 fn having_aggregate_from_proto(
     aggregate: ProtoHavingAggregate,
 ) -> Result<HavingAggregate, QueryError> {
@@ -254,6 +268,7 @@ fn having_aggregate_from_proto(
 /// operator, or ranking kind; missing aggregate; missing right
 /// operand (oneof unset on the wire); inner value-shape failures
 /// on the literal-value branch.
+#[allow(dead_code)]
 pub(super) fn having_clause_from_proto(
     clause: ProtoHavingClause,
 ) -> Result<HavingClause, QueryError> {
@@ -290,6 +305,7 @@ pub(super) fn having_clause_from_proto(
 /// Plural form of [`having_clause_from_proto`] for the request-
 /// level `repeated HavingClause` field. Returns an error on the
 /// first malformed clause.
+#[allow(dead_code)]
 pub(super) fn having_clauses_from_proto(
     clauses: Vec<ProtoHavingClause>,
 ) -> Result<Vec<HavingClause>, QueryError> {

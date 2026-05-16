@@ -32,7 +32,6 @@
 use std::sync::Arc;
 
 use super::common::{mock_data_contract, mock_document_type};
-use drive::query::SelectProjection;
 use dash_sdk::{
     platform::{documents::document_query::DocumentQuery, Fetch},
     Sdk,
@@ -41,6 +40,7 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::platform_value::Value;
 use drive::query::conditions::{WhereClause, WhereOperator};
 use drive::query::ordering::OrderClause;
+use drive::query::SelectProjection;
 use drive_proof_verifier::{DocumentCount, DocumentSplitCounts, SplitCountEntry};
 
 #[tokio::test]

@@ -739,16 +739,14 @@ fn value_to_proto(value: Value) -> Result<ProtoDocumentFieldValue, Error> {
                     .collect::<Result<Vec<_>, _>>()?,
             })
         }
-        Value::Map(_) | Value::EnumU8(_) | Value::EnumString(_) => {
-            return Err(Error::Protocol(dpp::ProtocolError::EncodingError(format!(
-                "Value variant has no `DocumentFieldValue` wire-format counterpart: {value:?}"
-            ))));
-        }
+        // Catches both `Value::Map(_)` / `Value::EnumU8(_)` /
+        // `Value::EnumString(_)` (no wire-format counterpart for
+        // these shapes in a WhereClause operand) and any
+        // future-added variant — `dpp::platform_value::Value` is
+        // `#[non_exhaustive]`, so the SDK fails loudly rather
+        // than silently dropping data the moment upstream adds a
+        // variant we don't yet know how to encode.
         _ => {
-            // `dpp::platform_value::Value` is `#[non_exhaustive]`;
-            // any new variant added upstream surfaces as a wire-
-            // boundary error here so the SDK fails loudly rather
-            // than silently dropping data.
             return Err(Error::Protocol(dpp::ProtocolError::EncodingError(format!(
                 "Value variant has no `DocumentFieldValue` wire-format counterpart: {value:?}"
             ))));
