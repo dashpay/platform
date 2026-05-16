@@ -28,7 +28,6 @@ thiserror = "2.0.17"
 tokio = { version = "1.40", features = ["macros", "time"] }
 tokio-util = { version = "0.7.12" }
 async-trait = { version = "0.1.83" }
-ciborium = { version = "0.2.2" }
 serde = { version = "1.0.219", default-features = false, features = [
   "rc",
 ], optional = true }
