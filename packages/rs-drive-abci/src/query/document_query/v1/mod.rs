@@ -325,9 +325,22 @@ enum RoutingDecision {
 }
 
 /// Test-only: expose the routing decision for unit tests without
-/// needing a full `Platform` setup. Mirrors the
-/// `validate_and_route` argument shape so tests can drive it
-/// directly with constructed field values.
+/// needing a full `Platform` setup. Mirrors **both the rejection
+/// messages and the gate ordering** of [`Platform::query_documents_v1`]
+/// so a test that pins a first-fail message also pins the order
+/// gates fire in, not just which gate eventually fires.
+///
+/// Sequence (same as the real handler at
+/// [`Platform::query_documents_v1`]):
+/// 1. `offset.is_some()` → `not_yet_implemented("OFFSET …")`
+/// 2. `where_clauses_from_proto` → propagate `InvalidArgument` /
+///    `Unsupported` decode errors
+/// 3. `order_clauses_from_proto` → propagate aggregate-target
+///    rejection / `InvalidArgument` decode errors
+/// 4. `selects.len() > 1` → `not_yet_implemented("multi-projection …")`
+/// 5. `select_from_proto` (first element, or default documents)
+/// 6. [`validate_and_route`] — which itself runs `limit == Some(0)`
+///    → `having_non_empty` → per-function gates → mode pick.
 ///
 /// Treats an unset `select` (proto-default) the same way the
 /// handler does — as `SelectProjection::documents()`.
@@ -336,15 +349,25 @@ pub(super) fn validate_and_route_for_tests(
     request_v1: &GetDocumentsRequestV1,
     where_clauses: &[WhereClause],
 ) -> Result<&'static str, QueryError> {
-    // OFFSET pagination is rejected before routing — mirror the
-    // handler's gate here so tests can pin the contract.
+    // 1. OFFSET pagination — rejected before any decoding.
     if request_v1.offset.is_some() {
         return Err(not_yet_implemented(
             "OFFSET pagination (use cursor pagination via `start_after` / \
              `start_at` instead)",
         ));
     }
-    // Multi-projection SELECT is rejected before routing.
+    // 2. WHERE decoding — wire-malformed shapes (unknown operator
+    //    discriminant, nested `DocumentFieldValue.list` beyond
+    //    depth 1, …) reject as `InvalidArgument`. Runs even
+    //    though the caller passes a separate pre-decoded
+    //    `where_clauses` slice for the routing decision, because
+    //    the depth-cap and similar decode-time contracts aren't
+    //    exercisable otherwise.
+    conversions::where_clauses_from_proto(request_v1.where_clauses.clone())?;
+    // 3. ORDER BY decoding — aggregate-target reject as
+    //    `Unsupported("ORDER BY on aggregate keys …")`.
+    conversions::order_clauses_from_proto(request_v1.order_by.clone())?;
+    // 4. Multi-projection SELECT rejection.
     if request_v1.selects.len() > 1 {
         return Err(not_yet_implemented(
             "multi-projection SELECT (the wire accepts `repeated Select` so \
@@ -355,20 +378,7 @@ pub(super) fn validate_and_route_for_tests(
              lands)",
         ));
     }
-    // ORDER BY decoding can fail when the wire carries an
-    // aggregate-target (rejected as `not_yet_implemented`); mirror
-    // the handler's behavior so order-by-aggregate tests pin
-    // through the test helper too.
-    conversions::order_clauses_from_proto(request_v1.order_by.clone())?;
-    // WHERE decoding can fail on wire-malformed input (unknown
-    // operator discriminant, nested `DocumentFieldValue.list`
-    // beyond depth 1, …). Run the decoder against the proto
-    // `where_clauses` field even though the caller passes a
-    // separate decoded `where_clauses` slice for the routing
-    // decision — without this mirror the depth-cap and other
-    // decode-time contracts aren't exercised through the test
-    // helper.
-    conversions::where_clauses_from_proto(request_v1.where_clauses.clone())?;
+    // 5. Decode the single Select (or default to documents).
     let select = request_v1
         .selects
         .first()
@@ -376,6 +386,8 @@ pub(super) fn validate_and_route_for_tests(
         .map(conversions::select_from_proto)
         .transpose()?
         .unwrap_or_else(SelectProjection::documents);
+    // 6. `validate_and_route` runs the inner `limit` / `having` /
+    //    per-function gates.
     validate_and_route(
         &select,
         request_v1.limit,

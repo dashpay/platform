@@ -328,6 +328,52 @@ fn reject_order_by_aggregate_target() {
     );
 }
 
+/// `validate_and_route_for_tests` must mirror the real
+/// handler's gate ordering, not just its rejection messages, so
+/// a request that hits multiple gates fails on the same one in
+/// tests as in production.
+///
+/// Real-handler order:
+/// `offset → where_clauses decode → order_by decode → selects.len > 1 → select decode → validate_and_route`.
+///
+/// This test builds a request that is *both* multi-projection
+/// AND carries an aggregate-target order_by; the order_by gate
+/// must fire first (matches the real handler), not the
+/// multi-projection one.
+#[test]
+fn validate_and_route_for_tests_matches_real_handler_gate_order() {
+    let request = GetDocumentsRequestV1 {
+        // Multi-projection: would trip `selects.len > 1` gate.
+        selects: vec![
+            V1Select {
+                function: v1_select::Function::Count as i32,
+                field: String::new(),
+            },
+            V1Select {
+                function: v1_select::Function::Sum as i32,
+                field: "amount".to_string(),
+            },
+        ],
+        // ORDER BY on aggregate: trips order_by decode (earlier
+        // in the sequence than `selects.len > 1`).
+        order_by: vec![ProtoOrderClause {
+            target: Some(order_clause::Target::Aggregate(ProtoHavingAggregate {
+                function: having_aggregate::Function::Count as i32,
+                field: String::new(),
+            })),
+            ascending: false,
+        }],
+        ..empty_v1_request()
+    };
+    // Real handler decodes order_by before checking
+    // `selects.len > 1`, so the order-by-aggregate rejection
+    // must surface first.
+    assert_not_yet_implemented(
+        validate_and_route_for_tests(&request, &[]),
+        "ORDER BY on aggregate keys",
+    );
+}
+
 /// `value_from_proto`'s recursion-depth cap is the only
 /// structural defense against deeply-nested wire payloads on the
 /// v1 surface before schema validation runs. Pin the contract
