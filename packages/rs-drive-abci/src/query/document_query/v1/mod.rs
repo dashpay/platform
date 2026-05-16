@@ -138,22 +138,18 @@ fn validate_and_route(
             }
             Ok(RoutingDecision::Documents)
         }
-        SelectFunction::Sum => {
-            return Err(not_yet_implemented(
-                "SELECT SUM (the wire surface accepts SUM(field) so callers \
-                 can encode it ahead of server support landing, but the \
-                 server doesn't yet evaluate numeric aggregates other than \
-                 COUNT)",
-            ));
-        }
-        SelectFunction::Avg => {
-            return Err(not_yet_implemented(
-                "SELECT AVG (the wire surface accepts AVG(field) so callers \
-                 can encode it ahead of server support landing, but the \
-                 server doesn't yet evaluate numeric aggregates other than \
-                 COUNT)",
-            ));
-        }
+        SelectFunction::Sum => Err(not_yet_implemented(
+            "SELECT SUM (the wire surface accepts SUM(field) so callers \
+             can encode it ahead of server support landing, but the \
+             server doesn't yet evaluate numeric aggregates other than \
+             COUNT)",
+        )),
+        SelectFunction::Avg => Err(not_yet_implemented(
+            "SELECT AVG (the wire surface accepts AVG(field) so callers \
+             can encode it ahead of server support landing, but the \
+             server doesn't yet evaluate numeric aggregates other than \
+             COUNT)",
+        )),
         SelectFunction::Count => {
             if !select.field.is_empty() {
                 return Err(not_yet_implemented(
