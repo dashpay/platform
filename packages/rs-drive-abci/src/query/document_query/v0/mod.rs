@@ -100,14 +100,14 @@ impl<C> Platform<C> {
                     .iter()
                     .map(|oc| match oc {
                         Value::Array(components) => OrderClause::from_components(components)
-                            .map_err(|e| {
-                                QueryError::Query(QuerySyntaxError::InvalidFormatWhereClause(
-                                    format!("invalid order_by clause components: {e}"),
+                            .map_err(|_| {
+                                QueryError::Query(QuerySyntaxError::InvalidOrderByProperties(
+                                    "invalid order_by clause components",
                                 ))
                             }),
                         _ => Err(QueryError::Query(
-                            QuerySyntaxError::InvalidFormatWhereClause(
-                                "order_by clause must be an array".to_string(),
+                            QuerySyntaxError::InvalidOrderByProperties(
+                                "order_by clause must be an array",
                             ),
                         )),
                     })
@@ -116,9 +116,7 @@ impl<C> Platform<C> {
             }
             _ => {
                 return Ok(QueryValidationResult::new_with_error(QueryError::Query(
-                    QuerySyntaxError::InvalidFormatWhereClause(
-                        "order_by must be an array".to_string(),
-                    ),
+                    QuerySyntaxError::InvalidOrderByProperties("order_by must be an array"),
                 )));
             }
         };

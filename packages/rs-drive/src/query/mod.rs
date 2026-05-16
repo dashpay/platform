@@ -797,20 +797,20 @@ impl<'a> DriveDocumentQuery<'a> {
                 .iter()
                 .map(|order_clause| match order_clause {
                     Value::Array(components) => {
-                        OrderClause::from_components(components).map_err(|e| {
-                            Error::Query(QuerySyntaxError::InvalidFormatWhereClause(format!(
-                                "invalid order_by clause components: {e}"
-                            )))
+                        OrderClause::from_components(components).map_err(|_| {
+                            Error::Query(QuerySyntaxError::InvalidOrderByProperties(
+                                "invalid order_by clause components",
+                            ))
                         })
                     }
-                    _ => Err(Error::Query(QuerySyntaxError::InvalidFormatWhereClause(
-                        "order_by clause must be an array".to_string(),
+                    _ => Err(Error::Query(QuerySyntaxError::InvalidOrderByProperties(
+                        "order_by clause must be an array",
                     ))),
                 })
                 .collect::<Result<Vec<_>, _>>()?,
             Some(_) => {
-                return Err(Error::Query(QuerySyntaxError::InvalidFormatWhereClause(
-                    "order_by must be an array".to_string(),
+                return Err(Error::Query(QuerySyntaxError::InvalidOrderByProperties(
+                    "order_by must be an array",
                 )));
             }
         };
