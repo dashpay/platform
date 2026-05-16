@@ -150,6 +150,20 @@ fn validate_and_route(
              server doesn't yet evaluate numeric aggregates other than \
              COUNT)",
         )),
+        SelectFunction::Min => Err(not_yet_implemented(
+            "SELECT MIN (the wire surface accepts MIN(field) so callers \
+             can encode it ahead of server support landing, but the \
+             server doesn't yet evaluate per-group MIN; semantically \
+             distinct from `HavingRanking::Min` which is a cross-group \
+             ranking primitive)",
+        )),
+        SelectFunction::Max => Err(not_yet_implemented(
+            "SELECT MAX (the wire surface accepts MAX(field) so callers \
+             can encode it ahead of server support landing, but the \
+             server doesn't yet evaluate per-group MAX; semantically \
+             distinct from `HavingRanking::Max` which is a cross-group \
+             ranking primitive)",
+        )),
         SelectFunction::Count => {
             if !select.field.is_empty() {
                 return Err(not_yet_implemented(
@@ -322,10 +336,35 @@ pub(super) fn validate_and_route_for_tests(
     request_v1: &GetDocumentsRequestV1,
     where_clauses: &[WhereClause],
 ) -> Result<&'static str, QueryError> {
+    // OFFSET pagination is rejected before routing — mirror the
+    // handler's gate here so tests can pin the contract.
+    if request_v1.offset.is_some() {
+        return Err(not_yet_implemented(
+            "OFFSET pagination (use cursor pagination via `start_after` / \
+             `start_at` instead)",
+        ));
+    }
+    // Multi-projection SELECT is rejected before routing.
+    if request_v1.selects.len() > 1 {
+        return Err(not_yet_implemented(
+            "multi-projection SELECT (the wire accepts `repeated Select` so \
+             callers can encode `SELECT COUNT(*), SUM(amount), AVG(rating)` \
+             ahead of server support landing, but today only single-projection \
+             requests are evaluated; the response shape will gain a parallel \
+             `repeated AggregateValue values` field when multi-projection \
+             lands)",
+        ));
+    }
+    // ORDER BY decoding can fail when the wire carries an
+    // aggregate-target (rejected as `not_yet_implemented`); mirror
+    // the handler's behavior so order-by-aggregate tests pin
+    // through the test helper too.
+    conversions::order_clauses_from_proto(request_v1.order_by.clone())?;
     let select = request_v1
-        .select
-        .clone()
-        .map(|s| conversions::select_from_proto(s))
+        .selects
+        .first()
+        .cloned()
+        .map(conversions::select_from_proto)
         .transpose()?
         .unwrap_or_else(SelectProjection::documents);
     validate_and_route(
@@ -361,10 +400,23 @@ impl<C> Platform<C> {
             limit,
             start,
             prove,
-            select,
+            selects: proto_selects,
             group_by,
             having,
+            offset,
         } = request_v1;
+
+        // OFFSET pagination is not yet implemented — cursor
+        // pagination via `start_after` / `start_at` is the
+        // supported path today. Reject any non-None offset
+        // before doing further work; same `not_yet_implemented`
+        // contract as HAVING / SUM / AVG.
+        if offset.is_some() {
+            return Ok(QueryValidationResult::new_with_error(not_yet_implemented(
+                "OFFSET pagination (use cursor pagination via `start_after` / \
+                 `start_at` instead)",
+            )));
+        }
 
         // Decode the proto-typed `repeated WhereClause` / `repeated
         // OrderClause` into drive's structured forms once, up
@@ -387,13 +439,30 @@ impl<C> Platform<C> {
             Ok(c) => c,
             Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
         };
-        let order_by_clauses = conversions::order_clauses_from_proto(proto_order_by);
+        let order_by_clauses = match conversions::order_clauses_from_proto(proto_order_by) {
+            Ok(c) => c,
+            Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
+        };
         let having_non_empty = !having.is_empty();
-        // Unset `select` on the wire decodes as `None` here; treat
-        // that as `SelectProjection::documents()` so old fixtures /
-        // callers that didn't opt into the SQL-shaped surface get
-        // plain document-fetch semantics.
-        let select = match select {
+
+        // `selects` is `repeated Select` on the wire. Empty
+        // list → default-construct a `documents()` projection
+        // (keeps v0-style callers that don't opt into SELECT on
+        // the documents path). `len > 1` is wire-only today —
+        // multi-projection routing + response shape are deferred
+        // to a follow-up; reject here with the standard
+        // `not_yet_implemented` contract.
+        if proto_selects.len() > 1 {
+            return Ok(QueryValidationResult::new_with_error(not_yet_implemented(
+                "multi-projection SELECT (the wire accepts `repeated Select` so \
+                 callers can encode `SELECT COUNT(*), SUM(amount), AVG(rating)` \
+                 ahead of server support landing, but today only single-projection \
+                 requests are evaluated; the response shape will gain a parallel \
+                 `repeated AggregateValue values` field when multi-projection \
+                 lands)",
+            )));
+        }
+        let select = match proto_selects.into_iter().next() {
             Some(s) => match conversions::select_from_proto(s) {
                 Ok(s) => s,
                 Err(e) => return Ok(QueryValidationResult::new_with_error(e)),

@@ -49,6 +49,17 @@ pub enum SelectFunction {
     /// `f64`. Currently always rejected with "not yet
     /// implemented".
     Avg,
+    /// `MIN(field)` — smallest value of `field` in each group
+    /// (or across all matching rows when `group_by` is empty).
+    /// Required field. Currently always rejected with "not yet
+    /// implemented"; **semantically distinct** from
+    /// [`crate::query::HavingRankingKind::Min`] which is a
+    /// cross-group ranking primitive on the HAVING right side.
+    Min,
+    /// `MAX(field)` — symmetric to [`Self::Min`] for the largest
+    /// value. Same not-yet-implemented contract; same caveat
+    /// versus [`crate::query::HavingRankingKind::Max`].
+    Max,
 }
 
 /// `(function, field)` projection. The `field` semantics depend
@@ -107,6 +118,22 @@ impl SelectProjection {
     pub fn avg(field: impl Into<String>) -> Self {
         Self {
             function: SelectFunction::Avg,
+            field: field.into(),
+        }
+    }
+
+    /// `MIN(field)` — per-group / global minimum.
+    pub fn min(field: impl Into<String>) -> Self {
+        Self {
+            function: SelectFunction::Min,
+            field: field.into(),
+        }
+    }
+
+    /// `MAX(field)` — per-group / global maximum.
+    pub fn max(field: impl Into<String>) -> Self {
+        Self {
+            function: SelectFunction::Max,
             field: field.into(),
         }
     }

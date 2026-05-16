@@ -30,10 +30,11 @@ use crate::error::query::QueryError;
 use dapi_grpc::platform::v0::get_documents_request::{
     document_field_value,
     get_documents_request_v1::{select, Select as ProtoSelect},
-    having_aggregate, having_clause, having_ranking, DocumentFieldValue as ProtoDocumentFieldValue,
-    HavingAggregate as ProtoHavingAggregate, HavingClause as ProtoHavingClause,
-    HavingRanking as ProtoHavingRanking, OrderClause as ProtoOrderClause,
-    WhereClause as ProtoWhereClause, WhereOperator as ProtoWhereOperator,
+    having_aggregate, having_clause, having_ranking, order_clause,
+    DocumentFieldValue as ProtoDocumentFieldValue, HavingAggregate as ProtoHavingAggregate,
+    HavingClause as ProtoHavingClause, HavingRanking as ProtoHavingRanking,
+    OrderClause as ProtoOrderClause, WhereClause as ProtoWhereClause,
+    WhereOperator as ProtoWhereOperator,
 };
 use dpp::platform_value::Value;
 use drive::query::{
@@ -141,18 +142,36 @@ pub(super) fn where_clauses_from_proto(
 }
 
 /// Map a wire [`ProtoOrderClause`] onto drive's [`OrderClause`].
-/// 1:1 field copy — both sides carry the same `(field, ascending)`
-/// pair.
-pub(super) fn order_clause_from_proto(clause: ProtoOrderClause) -> OrderClause {
-    OrderClause {
-        field: clause.field,
-        ascending: clause.ascending,
+///
+/// The `target` oneof currently has two variants on the wire:
+/// `field` (plain column name — evaluated today) and `aggregate`
+/// (aggregate function applied to a field — wire-only, rejected
+/// at routing time with `Unsupported("ORDER BY on aggregate …")`).
+/// Unset (`None`) is rejected as malformed wire input.
+pub(super) fn order_clause_from_proto(clause: ProtoOrderClause) -> Result<OrderClause, QueryError> {
+    let ascending = clause.ascending;
+    match clause.target {
+        Some(order_clause::Target::Field(field)) => Ok(OrderClause { field, ascending }),
+        Some(order_clause::Target::Aggregate(_)) => Err(QueryError::Query(
+            drive::error::query::QuerySyntaxError::Unsupported(
+                "ORDER BY on aggregate keys is not yet implemented".to_string(),
+            ),
+        )),
+        None => Err(QueryError::InvalidArgument(
+            "OrderClause has no target set; every clause must carry either a \
+             `field` (plain column name) or an `aggregate` (aggregate-function \
+             ordering target)"
+                .to_string(),
+        )),
     }
 }
 
 /// Plural form of [`order_clause_from_proto`] for the request-level
-/// `repeated OrderClause` field.
-pub(super) fn order_clauses_from_proto(clauses: Vec<ProtoOrderClause>) -> Vec<OrderClause> {
+/// `repeated OrderClause` field. Returns the first error
+/// encountered.
+pub(super) fn order_clauses_from_proto(
+    clauses: Vec<ProtoOrderClause>,
+) -> Result<Vec<OrderClause>, QueryError> {
     clauses.into_iter().map(order_clause_from_proto).collect()
 }
 
@@ -320,7 +339,7 @@ pub(super) fn having_clauses_from_proto(
 fn select_function_from_proto(function: i32) -> Result<SelectFunction, QueryError> {
     let proto = select::Function::try_from(function).map_err(|_| {
         QueryError::InvalidArgument(format!(
-            "unknown Select.Function discriminant: {} (valid values: 0..=3, see \
+            "unknown Select.Function discriminant: {} (valid values: 0..=5, see \
              `get_documents_request::get_documents_request_v1::select::Function`)",
             function
         ))
@@ -330,6 +349,8 @@ fn select_function_from_proto(function: i32) -> Result<SelectFunction, QueryErro
         select::Function::Count => SelectFunction::Count,
         select::Function::Sum => SelectFunction::Sum,
         select::Function::Avg => SelectFunction::Avg,
+        select::Function::Min => SelectFunction::Min,
+        select::Function::Max => SelectFunction::Max,
     })
 }
 

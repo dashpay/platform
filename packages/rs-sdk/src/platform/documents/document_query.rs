@@ -10,7 +10,7 @@ use dapi_grpc::platform::v0::{
         document_field_value,
         get_documents_request_v0::Start,
         get_documents_request_v1::{select, Select as ProtoSelect, Start as V1Start},
-        having_aggregate, having_clause, having_ranking,
+        having_aggregate, having_clause, having_ranking, order_clause,
         DocumentFieldValue as ProtoDocumentFieldValue, GetDocumentsRequestV1,
         HavingAggregate as ProtoHavingAggregate, HavingClause as ProtoHavingClause,
         HavingRanking as ProtoHavingRanking, OrderClause as ProtoOrderClause,
@@ -424,9 +424,18 @@ impl TryFrom<DocumentQuery> for platform_proto::GetDocumentsRequest {
                 // are disabled.
                 prove: true,
                 start: start_v1,
-                select: Some(select_to_proto(select)),
+                // `repeated Select selects` on the wire — single
+                // projection wraps in a one-element vec; the SDK's
+                // `DocumentQuery` carries a single
+                // `SelectProjection` because multi-projection is
+                // wire-only today.
+                selects: vec![select_to_proto(select)],
                 group_by,
                 having,
+                // `offset` is wire-reserved for future row-based
+                // pagination; the SDK doesn't surface it yet, so
+                // we always emit `None` here.
+                offset: None,
             })),
         })
     }
@@ -579,8 +588,13 @@ fn where_clause_to_proto(clause: WhereClause) -> Result<ProtoWhereClause, Error>
 }
 
 fn order_clause_to_proto(clause: OrderClause) -> ProtoOrderClause {
+    // Drive's `OrderClause` carries a plain `field: String` —
+    // emit the field-target variant of the wire's `target` oneof.
+    // The aggregate-target variant (`ORDER BY COUNT(*)`) is
+    // wire-only today; when drive's `OrderClause` gains an
+    // aggregate target the SDK gets a parallel builder.
     ProtoOrderClause {
-        field: clause.field,
+        target: Some(order_clause::Target::Field(clause.field)),
         ascending: clause.ascending,
     }
 }
@@ -652,6 +666,8 @@ fn select_function_to_proto(function: SelectFunction) -> select::Function {
         SelectFunction::Count => select::Function::Count,
         SelectFunction::Sum => select::Function::Sum,
         SelectFunction::Avg => select::Function::Avg,
+        SelectFunction::Min => select::Function::Min,
+        SelectFunction::Max => select::Function::Max,
     }
 }
 
