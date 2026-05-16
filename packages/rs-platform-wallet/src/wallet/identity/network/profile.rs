@@ -155,7 +155,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 
         // Build query: profile documents WHERE $ownerId = identity_id.
         let query = dash_sdk::platform::DocumentQuery {
-            select: dash_sdk::dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::Select::Documents,
+            select: dash_sdk::drive::query::SelectProjection::documents(),
             data_contract: Arc::clone(dashpay_contract),
             document_type_name: "profile".to_string(),
             where_clauses: vec![WhereClause {
@@ -428,7 +428,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             use dpp::platform_value::platform_value;
 
             let query = dash_sdk::platform::DocumentQuery {
-                select: dash_sdk::dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::Select::Documents,
+                select: dash_sdk::drive::query::SelectProjection::documents(),
                 data_contract: Arc::clone(&dashpay_contract),
                 document_type_name: "profile".to_string(),
                 where_clauses: vec![WhereClause {

@@ -9,7 +9,7 @@ use dapi_grpc::platform::v0::{
     get_documents_request::{
         document_field_value,
         get_documents_request_v0::Start,
-        get_documents_request_v1::{Select, Start as V1Start},
+        get_documents_request_v1::{select, Select as ProtoSelect, Start as V1Start},
         having_aggregate, having_clause, having_ranking,
         DocumentFieldValue as ProtoDocumentFieldValue, GetDocumentsRequestV1,
         HavingAggregate as ProtoHavingAggregate, HavingClause as ProtoHavingClause,
@@ -33,7 +33,7 @@ use dpp::{
 use drive::query::{
     DriveDocumentQuery, HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator,
     HavingRanking, HavingRankingKind, HavingRightOperand, InternalClauses, OrderClause,
-    WhereClause, WhereOperator,
+    SelectFunction, SelectProjection, WhereClause, WhereOperator,
 };
 use drive_proof_verifier::{types::Documents, FromProof};
 use rs_dapi_client::transport::{
@@ -53,23 +53,24 @@ use crate::platform::Fetch;
 #[derive(Debug, Clone, PartialEq, dash_platform_macros::Mockable)]
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub struct DocumentQuery {
-    /// SQL-shaped `SELECT` projection. `Documents` returns matched
-    /// rows; `Count` returns either a single aggregate (empty
-    /// `group_by`) or per-group entries (non-empty `group_by`).
-    /// Defaults to `Documents` so callers that don't opt into the
-    /// count surface get plain document fetch semantics.
+    /// SQL-shaped `SELECT` projection — `(function, field)` pair.
+    /// `Documents` returns matched rows; `Count` / `Sum` / `Avg`
+    /// return either a single aggregate (empty `group_by`) or
+    /// per-group entries (non-empty `group_by`). Defaults to
+    /// `SelectProjection::documents()` so callers that don't opt
+    /// into the SQL-shaped surface get plain document-fetch
+    /// semantics.
     ///
     /// `#[serde(default)]` here (and on `group_by` / `having`
     /// below) is wire-format-compat for mock vectors captured
-    /// before the SQL-shaped surface was added: `Select::default()
-    /// == Select::Documents` (the proto-generated enum's 0-value
-    /// variant), `Vec` and `Vec<u8>` default to empty — together
-    /// those mean an old fixture without these fields
-    /// deserializes to the documents-fetch shape it was originally
-    /// captured under. New fixtures should serialize the fields
-    /// explicitly.
+    /// before the SQL-shaped surface was added: default
+    /// `SelectProjection` is `documents()`, `Vec` defaults to
+    /// empty — together those mean an old fixture without these
+    /// fields deserializes to the documents-fetch shape it was
+    /// originally captured under. New fixtures should serialize
+    /// the fields explicitly.
     #[cfg_attr(feature = "mocks", serde(default))]
-    pub select: Select,
+    pub select: SelectProjection,
     /// Data contract
     pub data_contract: Arc<DataContract>,
     /// Document type for the data contract
@@ -121,7 +122,7 @@ impl DocumentQuery {
             .map_err(ProtocolError::DataContractError)?;
 
         Ok(Self {
-            select: Select::Documents,
+            select: SelectProjection::documents(),
             data_contract: Arc::clone(&contract),
             document_type_name: document_type_name.to_string(),
             where_clauses: vec![],
@@ -188,14 +189,22 @@ impl DocumentQuery {
 
     /// Set the SQL-shaped `SELECT` projection.
     ///
-    /// - [`Select::Documents`] (the default) returns matched
-    ///   rows via `Document::fetch_many` and friends.
-    /// - [`Select::Count`] switches to the count surface:
-    ///   pair it with [`DocumentCount::fetch`] for a single
-    ///   aggregate (empty `group_by`) or
-    ///   [`DocumentSplitCounts::fetch`] for per-group entries
-    ///   (non-empty `group_by`).
-    pub fn with_select(mut self, select: Select) -> Self {
+    /// Construct the [`SelectProjection`] via its helpers:
+    /// [`SelectProjection::documents`] (the default — matched
+    /// rows), [`SelectProjection::count_star`] for `COUNT(*)`,
+    /// [`SelectProjection::count_field`] for `COUNT(field)`,
+    /// [`SelectProjection::sum`] for `SUM(field)`,
+    /// [`SelectProjection::avg`] for `AVG(field)`. Pair the
+    /// count/sum/avg projections with [`DocumentCount::fetch`]
+    /// (single aggregate, empty `group_by`) or
+    /// [`DocumentSplitCounts::fetch`] (per-group entries,
+    /// non-empty `group_by`).
+    ///
+    /// `SUM` / `AVG` and `COUNT(field)` are accepted by the SDK
+    /// but the server rejects them today with `Unsupported("…
+    /// is not yet implemented")` — the surface is shipped first
+    /// and execution lands later.
+    pub fn with_select(mut self, select: SelectProjection) -> Self {
         self.select = select;
         self
     }
@@ -204,8 +213,9 @@ impl DocumentQuery {
     ///
     /// Convenience wrapper around [`Self::with_group_by_fields`].
     /// Replaces any previously set `group_by`. Pair with
-    /// [`Self::with_select`]`(Select::Count)` for the per-group
-    /// entries shape.
+    /// [`Self::with_select`] (e.g.
+    /// `with_select(SelectProjection::count_star())`) for the
+    /// per-group entries shape.
     pub fn with_group_by<S: Into<String>>(mut self, field: S) -> Self {
         self.group_by = vec![field.into()];
         self
@@ -414,7 +424,7 @@ impl TryFrom<DocumentQuery> for platform_proto::GetDocumentsRequest {
                 // are disabled.
                 prove: true,
                 start: start_v1,
-                select: select as i32,
+                select: Some(select_to_proto(select)),
                 group_by,
                 having,
             })),
@@ -443,7 +453,7 @@ impl<'a> From<&'a DriveDocumentQuery<'a>> for DocumentQuery {
             // `DriveDocumentQuery` has no SELECT/GROUP BY/HAVING
             // concept — it's a documents-only query. Default to the
             // v1 documents shape.
-            select: Select::Documents,
+            select: SelectProjection::documents(),
             data_contract: Arc::new(data_contract),
             document_type_name: document_type_name.to_string(),
             where_clauses,
@@ -477,7 +487,7 @@ impl<'a> From<DriveDocumentQuery<'a>> for DocumentQuery {
             // `DriveDocumentQuery` has no SELECT/GROUP BY/HAVING
             // concept — it's a documents-only query. Default to the
             // v1 documents shape.
-            select: Select::Documents,
+            select: SelectProjection::documents(),
             data_contract: Arc::new(data_contract),
             document_type_name: document_type_name.to_string(),
             where_clauses,
@@ -622,6 +632,26 @@ fn having_ranking_kind_to_proto(kind: HavingRankingKind) -> having_ranking::Kind
         HavingRankingKind::Max => having_ranking::Kind::Max,
         HavingRankingKind::Top => having_ranking::Kind::Top,
         HavingRankingKind::Bottom => having_ranking::Kind::Bottom,
+    }
+}
+
+/// Convert a drive [`SelectProjection`] into its wire-format
+/// proto counterpart. Inverse of `rs-drive-abci`'s
+/// `select_from_proto`. Always succeeds — every
+/// `SelectFunction` discriminant has a 1:1 wire counterpart.
+fn select_to_proto(select: SelectProjection) -> ProtoSelect {
+    ProtoSelect {
+        function: select_function_to_proto(select.function) as i32,
+        field: select.field,
+    }
+}
+
+fn select_function_to_proto(function: SelectFunction) -> select::Function {
+    match function {
+        SelectFunction::Documents => select::Function::Documents,
+        SelectFunction::Count => select::Function::Count,
+        SelectFunction::Sum => select::Function::Sum,
+        SelectFunction::Avg => select::Function::Avg,
     }
 }
 

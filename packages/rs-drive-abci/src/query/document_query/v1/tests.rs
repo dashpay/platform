@@ -12,7 +12,7 @@
 use super::*;
 use crate::query::tests::{setup_platform, store_data_contract, store_document};
 use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::{
-    Select as V1Select, Start as V1Start,
+    select as v1_select, Select as V1Select, Start as V1Start,
 };
 use dapi_grpc::platform::v0::get_documents_request::{
     document_field_value, having_aggregate, having_clause,
@@ -108,6 +108,24 @@ fn hc(
     }
 }
 
+/// Build a proto `Select { function, field }` with empty `field`.
+/// `select_documents()` / `select_count_star()` are the common
+/// per-test shortcuts.
+fn select_with(function: v1_select::Function) -> Option<V1Select> {
+    Some(V1Select {
+        function: function as i32,
+        field: String::new(),
+    })
+}
+
+fn select_documents() -> Option<V1Select> {
+    select_with(v1_select::Function::Documents)
+}
+
+fn select_count_star() -> Option<V1Select> {
+    select_with(v1_select::Function::Count)
+}
+
 fn empty_v1_request() -> GetDocumentsRequestV1 {
     GetDocumentsRequestV1 {
         data_contract_id: vec![0u8; 32],
@@ -117,7 +135,7 @@ fn empty_v1_request() -> GetDocumentsRequestV1 {
         limit: None,
         start: None,
         prove: false,
-        select: V1Select::Documents as i32,
+        select: select_documents(),
         group_by: Vec::new(),
         having: Vec::new(),
     }
@@ -158,13 +176,13 @@ fn reject_having_non_empty() {
     assert_not_yet_implemented(validate_and_route_for_tests(&request, &[]), "HAVING clause");
 }
 
-/// Unknown `Select` enum discriminants (e.g. `42`) are malformed
+/// Unknown `Select.Function` discriminants (e.g. `42`) are malformed
 /// wire input, not future capability. The handler must classify
 /// them as [`QueryError::InvalidArgument`] — `not_yet_implemented`
 /// carries the contract "valid request shape, caller can keep it
 /// unchanged when capability lands" which is wrong for garbage
 /// enum discriminants (no future protocol value would make `42`
-/// meaningful for `Select`).
+/// meaningful for `Select.Function`).
 ///
 /// Pins the discriminator so a future refactor that re-collapses
 /// the two error classes back together (e.g. someone replaces the
@@ -175,8 +193,11 @@ fn reject_having_non_empty() {
 fn reject_unknown_select_enum_value_as_invalid_argument() {
     let request = GetDocumentsRequestV1 {
         // Neither 0 (DOCUMENTS) nor 1 (COUNT); a discriminant
-        // outside the `Select` enum's defined set.
-        select: 42,
+        // outside the `Select.Function` enum's defined set.
+        select: Some(V1Select {
+            function: 42,
+            field: String::new(),
+        }),
         ..empty_v1_request()
     };
     match validate_and_route_for_tests(&request, &[]) {
@@ -189,7 +210,7 @@ fn reject_unknown_select_enum_value_as_invalid_argument() {
             );
         }
         Err(QueryError::Query(QuerySyntaxError::Unsupported(msg))) => panic!(
-            "expected InvalidArgument for unknown Select discriminant; got \
+            "expected InvalidArgument for unknown Select.Function discriminant; got \
              not_yet_implemented(\"{}\"). The two error classes carry different \
              contracts (malformed input vs. future capability) and must not be \
              collapsed.",
@@ -253,7 +274,7 @@ fn reject_limit_some_zero_uniformly_across_select_modes() {
         (
             "SELECT DOCUMENTS, group_by=[]",
             GetDocumentsRequestV1 {
-                select: V1Select::Documents as i32,
+                select: select_documents(),
                 limit: Some(0),
                 ..empty_v1_request()
             },
@@ -262,7 +283,7 @@ fn reject_limit_some_zero_uniformly_across_select_modes() {
         (
             "SELECT COUNT, group_by=[] (Aggregate) with In clause",
             GetDocumentsRequestV1 {
-                select: V1Select::Count as i32,
+                select: select_count_star(),
                 limit: Some(0),
                 ..empty_v1_request()
             },
@@ -271,7 +292,7 @@ fn reject_limit_some_zero_uniformly_across_select_modes() {
         (
             "SELECT COUNT, group_by=[in_field] (GroupByIn)",
             GetDocumentsRequestV1 {
-                select: V1Select::Count as i32,
+                select: select_count_star(),
                 group_by: vec!["brand".to_string()],
                 limit: Some(0),
                 ..empty_v1_request()
@@ -281,7 +302,7 @@ fn reject_limit_some_zero_uniformly_across_select_modes() {
         (
             "SELECT COUNT, group_by=[range_field] (GroupByRange)",
             GetDocumentsRequestV1 {
-                select: V1Select::Count as i32,
+                select: select_count_star(),
                 group_by: vec!["color".to_string()],
                 limit: Some(0),
                 ..empty_v1_request()
@@ -291,7 +312,7 @@ fn reject_limit_some_zero_uniformly_across_select_modes() {
         (
             "SELECT COUNT, group_by=[in_field, range_field] (GroupByCompound)",
             GetDocumentsRequestV1 {
-                select: V1Select::Count as i32,
+                select: select_count_star(),
                 group_by: vec!["brand".to_string(), "color".to_string()],
                 limit: Some(0),
                 ..empty_v1_request()
@@ -325,7 +346,7 @@ fn reject_limit_some_zero_uniformly_across_select_modes() {
 #[test]
 fn reject_group_by_with_documents() {
     let request = GetDocumentsRequestV1 {
-        select: V1Select::Documents as i32,
+        select: select_documents(),
         group_by: vec!["color".to_string()],
         ..empty_v1_request()
     };
@@ -338,7 +359,7 @@ fn reject_group_by_with_documents() {
 #[test]
 fn reject_group_by_field_not_in_where_clauses() {
     let request = GetDocumentsRequestV1 {
-        select: V1Select::Count as i32,
+        select: select_count_star(),
         group_by: vec!["color".to_string()],
         ..empty_v1_request()
     };
@@ -351,7 +372,7 @@ fn reject_group_by_field_not_in_where_clauses() {
 #[test]
 fn reject_group_by_more_than_two_fields() {
     let request = GetDocumentsRequestV1 {
-        select: V1Select::Count as i32,
+        select: select_count_star(),
         group_by: vec!["a".to_string(), "b".to_string(), "c".to_string()],
         ..empty_v1_request()
     };
@@ -364,7 +385,7 @@ fn reject_group_by_more_than_two_fields() {
 #[test]
 fn reject_two_field_group_by_outside_compound_shape() {
     let request = GetDocumentsRequestV1 {
-        select: V1Select::Count as i32,
+        select: select_count_star(),
         group_by: vec!["color".to_string(), "brand".to_string()],
         ..empty_v1_request()
     };
@@ -389,7 +410,7 @@ fn reject_two_field_group_by_outside_compound_shape() {
 #[test]
 fn accept_count_with_empty_group_by_routes_to_aggregate() {
     let request = GetDocumentsRequestV1 {
-        select: V1Select::Count as i32,
+        select: select_count_star(),
         ..empty_v1_request()
     };
     assert_eq!(
@@ -404,7 +425,7 @@ fn reject_count_aggregate_with_limit() {
     // meaningless and previously caused Drive's per-In fan-out
     // to honor it and return a partial sum disguised as a total.
     let request = GetDocumentsRequestV1 {
-        select: V1Select::Count as i32,
+        select: select_count_star(),
         limit: Some(1),
         ..empty_v1_request()
     };
@@ -435,7 +456,7 @@ fn reject_count_group_by_in_with_limit() {
     // before reaching the path-query builder. Reject upstream
     // to make the contract explicit.
     let request = GetDocumentsRequestV1 {
-        select: V1Select::Count as i32,
+        select: select_count_star(),
         group_by: vec!["age".to_string()],
         limit: Some(1),
         ..empty_v1_request()
@@ -465,7 +486,7 @@ fn accept_single_field_group_by_on_in_field_with_range_routes_to_in_entries() {
     // both produce entries that line up with the caller's
     // single-field GROUP BY shape.
     let request = GetDocumentsRequestV1 {
-        select: V1Select::Count as i32,
+        select: select_count_star(),
         group_by: vec!["brand".to_string()],
         ..empty_v1_request()
     };
@@ -496,7 +517,7 @@ fn accept_single_field_group_by_on_range_field_with_in_routes_to_range_entries()
     // prove path or `RangeNoProof` distinct on the no-prove
     // path.
     let request = GetDocumentsRequestV1 {
-        select: V1Select::Count as i32,
+        select: select_count_star(),
         group_by: vec!["color".to_string()],
         ..empty_v1_request()
     };
@@ -521,7 +542,7 @@ fn accept_single_field_group_by_on_range_field_with_in_routes_to_range_entries()
 #[test]
 fn accept_count_group_by_in_field_routes_to_in_entries() {
     let request = GetDocumentsRequestV1 {
-        select: V1Select::Count as i32,
+        select: select_count_star(),
         group_by: vec!["brand".to_string()],
         ..empty_v1_request()
     };
@@ -539,7 +560,7 @@ fn accept_count_group_by_in_field_routes_to_in_entries() {
 #[test]
 fn accept_count_group_by_range_field_routes_to_range_entries() {
     let request = GetDocumentsRequestV1 {
-        select: V1Select::Count as i32,
+        select: select_count_star(),
         group_by: vec!["color".to_string()],
         ..empty_v1_request()
     };
@@ -557,7 +578,7 @@ fn accept_count_group_by_range_field_routes_to_range_entries() {
 #[test]
 fn accept_count_group_by_compound_routes_to_compound_entries() {
     let request = GetDocumentsRequestV1 {
-        select: V1Select::Count as i32,
+        select: select_count_star(),
         group_by: vec!["brand".to_string(), "color".to_string()],
         ..empty_v1_request()
     };
@@ -652,7 +673,7 @@ fn e2e_documents_select_matches_v0() {
         limit: None,
         start: None,
         prove: false,
-        select: V1Select::Documents as i32,
+        select: select_documents(),
         group_by: Vec::new(),
         having: Vec::new(),
     };
@@ -682,7 +703,7 @@ fn e2e_having_rejection_surfaces_in_response() {
         limit: None,
         start: None,
         prove: false,
-        select: V1Select::Count as i32,
+        select: select_count_star(),
         group_by: Vec::new(),
         having: vec![hc(
             having_aggregate::Function::Sum,
@@ -721,7 +742,7 @@ fn reject_start_with_select_count() {
         limit: None,
         start: Some(V1Start::StartAfter(vec![1u8; 32])),
         prove: false,
-        select: V1Select::Count as i32,
+        select: select_count_star(),
         group_by: Vec::new(),
         having: Vec::new(),
     };
@@ -762,7 +783,7 @@ mod ported_v0_count_tests {
     // so the inner module sees `validate_and_route_for_tests`,
     // `GetDocumentsRequestV1`, etc. directly.
     use super::super::*;
-    use super::{oc, wc};
+    use super::{oc, select_count_star, select_documents, wc};
     use crate::query::tests::{setup_platform, store_data_contract, store_document};
     use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::Select as V1Select;
     use dapi_grpc::platform::v0::get_documents_request::{
@@ -878,7 +899,7 @@ mod ported_v0_count_tests {
             limit,
             start: None,
             prove,
-            select: V1Select::Count as i32,
+            select: select_count_star(),
             group_by,
             having: Vec::new(),
         }

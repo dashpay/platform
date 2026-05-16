@@ -121,6 +121,7 @@ GPBObjCClassDeclaration(GetDocumentsRequest_DocumentFieldValue);
 GPBObjCClassDeclaration(GetDocumentsRequest_DocumentFieldValue_ValueList);
 GPBObjCClassDeclaration(GetDocumentsRequest_GetDocumentsRequestV0);
 GPBObjCClassDeclaration(GetDocumentsRequest_GetDocumentsRequestV1);
+GPBObjCClassDeclaration(GetDocumentsRequest_GetDocumentsRequestV1_Select);
 GPBObjCClassDeclaration(GetDocumentsRequest_HavingAggregate);
 GPBObjCClassDeclaration(GetDocumentsRequest_HavingClause);
 GPBObjCClassDeclaration(GetDocumentsRequest_HavingRanking);
@@ -6038,20 +6039,20 @@ void GetDocumentsRequest_GetDocumentsRequestV0_ClearStartOneOfCase(GetDocumentsR
 @dynamic startAfter;
 @dynamic startAt;
 @dynamic prove;
-@dynamic select;
+@dynamic hasSelect, select;
 @dynamic groupByArray, groupByArray_Count;
 @dynamic havingArray, havingArray_Count;
 
 typedef struct GetDocumentsRequest_GetDocumentsRequestV1__storage_ {
   uint32_t _has_storage_[2];
   uint32_t limit;
-  GetDocumentsRequest_GetDocumentsRequestV1_Select select;
   NSData *dataContractId;
   NSString *documentType;
   NSMutableArray *whereClausesArray;
   NSMutableArray *orderByArray;
   NSData *startAfter;
   NSData *startAt;
+  GetDocumentsRequest_GetDocumentsRequestV1_Select *select;
   NSMutableArray *groupByArray;
   NSMutableArray *havingArray;
 } GetDocumentsRequest_GetDocumentsRequestV1__storage_;
@@ -6136,12 +6137,12 @@ typedef struct GetDocumentsRequest_GetDocumentsRequestV1__storage_ {
       },
       {
         .name = "select",
-        .dataTypeSpecific.enumDescFunc = GetDocumentsRequest_GetDocumentsRequestV1_Select_EnumDescriptor,
+        .dataTypeSpecific.clazz = GPBObjCClass(GetDocumentsRequest_GetDocumentsRequestV1_Select),
         .number = GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_Select,
         .hasIndex = 5,
         .offset = (uint32_t)offsetof(GetDocumentsRequest_GetDocumentsRequestV1__storage_, select),
-        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldHasEnumDescriptor | GPBFieldClearHasIvarOnZero),
-        .dataType = GPBDataTypeEnum,
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
       },
       {
         .name = "groupByArray",
@@ -6187,40 +6188,99 @@ typedef struct GetDocumentsRequest_GetDocumentsRequestV1__storage_ {
 
 @end
 
-int32_t GetDocumentsRequest_GetDocumentsRequestV1_Select_RawValue(GetDocumentsRequest_GetDocumentsRequestV1 *message) {
-  GPBDescriptor *descriptor = [GetDocumentsRequest_GetDocumentsRequestV1 descriptor];
-  GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_Select];
-  return GPBGetMessageRawEnumField(message, field);
-}
-
-void SetGetDocumentsRequest_GetDocumentsRequestV1_Select_RawValue(GetDocumentsRequest_GetDocumentsRequestV1 *message, int32_t value) {
-  GPBDescriptor *descriptor = [GetDocumentsRequest_GetDocumentsRequestV1 descriptor];
-  GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_Select];
-  GPBSetMessageRawEnumField(message, field, value);
-}
-
 void GetDocumentsRequest_GetDocumentsRequestV1_ClearStartOneOfCase(GetDocumentsRequest_GetDocumentsRequestV1 *message) {
   GPBDescriptor *descriptor = [GetDocumentsRequest_GetDocumentsRequestV1 descriptor];
   GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
   GPBClearOneof(message, oneof);
 }
-#pragma mark - Enum GetDocumentsRequest_GetDocumentsRequestV1_Select
+#pragma mark - GetDocumentsRequest_GetDocumentsRequestV1_Select
 
-GPBEnumDescriptor *GetDocumentsRequest_GetDocumentsRequestV1_Select_EnumDescriptor(void) {
+@implementation GetDocumentsRequest_GetDocumentsRequestV1_Select
+
+@dynamic function;
+@dynamic field;
+
+typedef struct GetDocumentsRequest_GetDocumentsRequestV1_Select__storage_ {
+  uint32_t _has_storage_[1];
+  GetDocumentsRequest_GetDocumentsRequestV1_Select_Function function;
+  NSString *field;
+} GetDocumentsRequest_GetDocumentsRequestV1_Select__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "function",
+        .dataTypeSpecific.enumDescFunc = GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_EnumDescriptor,
+        .number = GetDocumentsRequest_GetDocumentsRequestV1_Select_FieldNumber_Function,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetDocumentsRequest_GetDocumentsRequestV1_Select__storage_, function),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldHasEnumDescriptor | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeEnum,
+      },
+      {
+        .name = "field",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentsRequest_GetDocumentsRequestV1_Select_FieldNumber_Field,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetDocumentsRequest_GetDocumentsRequestV1_Select__storage_, field),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeString,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetDocumentsRequest_GetDocumentsRequestV1_Select class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetDocumentsRequest_GetDocumentsRequestV1_Select__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetDocumentsRequest_GetDocumentsRequestV1)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+int32_t GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_RawValue(GetDocumentsRequest_GetDocumentsRequestV1_Select *message) {
+  GPBDescriptor *descriptor = [GetDocumentsRequest_GetDocumentsRequestV1_Select descriptor];
+  GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetDocumentsRequest_GetDocumentsRequestV1_Select_FieldNumber_Function];
+  return GPBGetMessageRawEnumField(message, field);
+}
+
+void SetGetDocumentsRequest_GetDocumentsRequestV1_Select_Function_RawValue(GetDocumentsRequest_GetDocumentsRequestV1_Select *message, int32_t value) {
+  GPBDescriptor *descriptor = [GetDocumentsRequest_GetDocumentsRequestV1_Select descriptor];
+  GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetDocumentsRequest_GetDocumentsRequestV1_Select_FieldNumber_Function];
+  GPBSetMessageRawEnumField(message, field, value);
+}
+
+#pragma mark - Enum GetDocumentsRequest_GetDocumentsRequestV1_Select_Function
+
+GPBEnumDescriptor *GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_EnumDescriptor(void) {
   static _Atomic(GPBEnumDescriptor*) descriptor = nil;
   if (!descriptor) {
     static const char *valueNames =
-        "Documents\000Count\000";
+        "Documents\000Count\000Sum\000Avg\000";
     static const int32_t values[] = {
-        GetDocumentsRequest_GetDocumentsRequestV1_Select_Documents,
-        GetDocumentsRequest_GetDocumentsRequestV1_Select_Count,
+        GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_Documents,
+        GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_Count,
+        GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_Sum,
+        GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_Avg,
     };
     GPBEnumDescriptor *worker =
-        [GPBEnumDescriptor allocDescriptorForName:GPBNSStringifySymbol(GetDocumentsRequest_GetDocumentsRequestV1_Select)
+        [GPBEnumDescriptor allocDescriptorForName:GPBNSStringifySymbol(GetDocumentsRequest_GetDocumentsRequestV1_Select_Function)
                                        valueNames:valueNames
                                            values:values
                                             count:(uint32_t)(sizeof(values) / sizeof(int32_t))
-                                     enumVerifier:GetDocumentsRequest_GetDocumentsRequestV1_Select_IsValidValue];
+                                     enumVerifier:GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_IsValidValue];
     GPBEnumDescriptor *expected = nil;
     if (!atomic_compare_exchange_strong(&descriptor, &expected, worker)) {
       [worker release];
@@ -6229,10 +6289,12 @@ GPBEnumDescriptor *GetDocumentsRequest_GetDocumentsRequestV1_Select_EnumDescript
   return descriptor;
 }
 
-BOOL GetDocumentsRequest_GetDocumentsRequestV1_Select_IsValidValue(int32_t value__) {
+BOOL GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_IsValidValue(int32_t value__) {
   switch (value__) {
-    case GetDocumentsRequest_GetDocumentsRequestV1_Select_Documents:
-    case GetDocumentsRequest_GetDocumentsRequestV1_Select_Count:
+    case GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_Documents:
+    case GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_Count:
+    case GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_Sum:
+    case GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_Avg:
       return YES;
     default:
       return NO;

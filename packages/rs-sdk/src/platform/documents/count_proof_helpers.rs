@@ -14,7 +14,6 @@
 //! [`DocumentSplitCounts`]: drive_proof_verifier::DocumentSplitCounts
 
 use crate::platform::documents::document_query::DocumentQuery;
-use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::Select;
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dash_context_provider::ContextProvider;
@@ -23,7 +22,7 @@ use dpp::{
     data_contract::accessors::v0::DataContractV0Getters,
     data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters},
 };
-use drive::query::DriveDocumentCountQuery;
+use drive::query::{DriveDocumentCountQuery, SelectFunction};
 use drive_proof_verifier::{
     verify_aggregate_count_proof, verify_distinct_count_proof, verify_point_lookup_count_proof,
     verify_primary_key_count_tree_proof, SplitCountEntry,
@@ -31,19 +30,20 @@ use drive_proof_verifier::{
 
 /// Validate that the caller-built [`DocumentQuery`] actually
 /// targets the count surface. Without this check a caller who
-/// forgets `.with_select(Select::Count)` would silently send a
-/// `Documents` request and fail later inside the proof verifier
-/// with an inscrutable "wrong wire shape" error; this surfaces
-/// the misuse at the SDK boundary with a clear pointer to the
-/// fix.
+/// forgets `.with_select(SelectProjection::count_star())` would
+/// silently send a `Documents` request and fail later inside the
+/// proof verifier with an inscrutable "wrong wire shape" error;
+/// this surfaces the misuse at the SDK boundary with a clear
+/// pointer to the fix.
 pub(super) fn assert_select_is_count(
     request: &DocumentQuery,
 ) -> Result<(), drive_proof_verifier::Error> {
-    if request.select != Select::Count {
+    if request.select.function != SelectFunction::Count {
         return Err(drive_proof_verifier::Error::RequestError {
             error: format!(
-                "DocumentCount / DocumentSplitCounts require `select = Count`, got {:?}. \
-                 Call `.with_select(Select::Count)` on the DocumentQuery before fetching.",
+                "DocumentCount / DocumentSplitCounts require `select.function = Count`, \
+                 got {:?}. Call `.with_select(SelectProjection::count_star())` (or \
+                 `count_field(...)`) on the DocumentQuery before fetching.",
                 request.select
             ),
         });

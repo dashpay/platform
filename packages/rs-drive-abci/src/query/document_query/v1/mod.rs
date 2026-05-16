@@ -35,9 +35,7 @@ use crate::platform_types::platform_state::PlatformState;
 use crate::query::response_metadata::CheckpointUsed;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v0::Start as RequestV0Start;
-use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::{
-    Select, Start as RequestV1Start,
-};
+use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::Start as RequestV1Start;
 use dapi_grpc::platform::v0::get_documents_request::GetDocumentsRequestV1;
 use dapi_grpc::platform::v0::get_documents_response::get_documents_response_v1::{
     count_results, result_data, CountEntries, CountEntry, CountResults, Documents, ResultData,
@@ -52,8 +50,8 @@ use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::error::query::QuerySyntaxError;
 use drive::query::{
-    CountMode, DocumentCountRequest, DocumentCountResponse, OrderClause, SplitCountEntry,
-    WhereClause, WhereOperator,
+    CountMode, DocumentCountRequest, DocumentCountResponse, OrderClause, SelectFunction,
+    SelectProjection, SplitCountEntry, WhereClause, WhereOperator,
 };
 use drive::util::grove_operations::GroveDBToUse;
 
@@ -77,29 +75,12 @@ fn not_yet_implemented(feature: &str) -> QueryError {
 /// dispatch to the documents-fetch path or the count path, and
 /// which response shape to produce.
 fn validate_and_route(
-    select_discriminant: i32,
+    select: &SelectProjection,
     limit: Option<u32>,
     having_non_empty: bool,
     group_by: &[String],
     where_clauses: &[WhereClause],
 ) -> Result<RoutingDecision, QueryError> {
-    // An unknown integer here is malformed wire input (a
-    // discriminant the `Select` proto enum doesn't define), NOT a
-    // future capability — there's no future protocol value that
-    // would map a garbage integer to a valid behavior. Use
-    // `InvalidArgument` so clients can distinguish "garbage in this
-    // field" from `not_yet_implemented`'s "valid request shape, just
-    // not wired yet" contract (see [`not_yet_implemented`] above).
-    let select = Select::try_from(select_discriminant).map_err(|_| {
-        QueryError::InvalidArgument(format!(
-            "select value {} is not a valid `Select` enum discriminant \
-             (expected {} = DOCUMENTS or {} = COUNT)",
-            select_discriminant,
-            Select::Documents as i32,
-            Select::Count as i32,
-        ))
-    })?;
-
     // Centralized `limit: Some(0)` rejection.
     //
     // `limit` is `optional uint32` on the wire, so `Some(0)` is a
@@ -138,8 +119,16 @@ fn validate_and_route(
         return Err(not_yet_implemented("HAVING clause"));
     }
 
-    match select {
-        Select::Documents => {
+    match select.function {
+        SelectFunction::Documents => {
+            if !select.field.is_empty() {
+                return Err(QueryError::InvalidArgument(format!(
+                    "SELECT DOCUMENTS does not accept a projection field; \
+                     got field='{}' (omit the field for plain document fetch, \
+                     or use SELECT COUNT / SUM / AVG to project a value)",
+                    select.field
+                )));
+            }
             if !group_by.is_empty() {
                 return Err(not_yet_implemented(
                     "GROUP BY with SELECT DOCUMENTS (use SELECT COUNT with GROUP BY \
@@ -149,7 +138,31 @@ fn validate_and_route(
             }
             Ok(RoutingDecision::Documents)
         }
-        Select::Count => {
+        SelectFunction::Sum => {
+            return Err(not_yet_implemented(
+                "SELECT SUM (the wire surface accepts SUM(field) so callers \
+                 can encode it ahead of server support landing, but the \
+                 server doesn't yet evaluate numeric aggregates other than \
+                 COUNT)",
+            ));
+        }
+        SelectFunction::Avg => {
+            return Err(not_yet_implemented(
+                "SELECT AVG (the wire surface accepts AVG(field) so callers \
+                 can encode it ahead of server support landing, but the \
+                 server doesn't yet evaluate numeric aggregates other than \
+                 COUNT)",
+            ));
+        }
+        SelectFunction::Count => {
+            if !select.field.is_empty() {
+                return Err(not_yet_implemented(
+                    "SELECT COUNT(field) — counting non-null values of a \
+                     specific field (the wire surface accepts the field so \
+                     callers can encode it ahead of server support landing, \
+                     but today only COUNT(*) — empty `field` — is evaluated)",
+                ));
+            }
             let in_field: Option<&str> = where_clauses
                 .iter()
                 .find(|wc| wc.operator == WhereOperator::In)
@@ -278,13 +291,22 @@ enum RoutingDecision {
 /// needing a full `Platform` setup. Mirrors the
 /// `validate_and_route` argument shape so tests can drive it
 /// directly with constructed field values.
+///
+/// Treats an unset `select` (proto-default) the same way the
+/// handler does — as `SelectProjection::documents()`.
 #[cfg(test)]
 pub(super) fn validate_and_route_for_tests(
     request_v1: &GetDocumentsRequestV1,
     where_clauses: &[WhereClause],
 ) -> Result<&'static str, QueryError> {
+    let select = request_v1
+        .select
+        .clone()
+        .map(|s| conversions::select_from_proto(s))
+        .transpose()?
+        .unwrap_or_else(SelectProjection::documents);
     validate_and_route(
-        request_v1.select,
+        &select,
         request_v1.limit,
         !request_v1.having.is_empty(),
         &request_v1.group_by,
@@ -346,9 +368,20 @@ impl<C> Platform<C> {
             Ok(c) => c,
             Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
         };
+        // Unset `select` on the wire decodes as `None` here; treat
+        // that as `SelectProjection::documents()` so old fixtures /
+        // callers that didn't opt into the SQL-shaped surface get
+        // plain document-fetch semantics.
+        let select = match select {
+            Some(s) => match conversions::select_from_proto(s) {
+                Ok(s) => s,
+                Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
+            },
+            None => SelectProjection::documents(),
+        };
 
         let routing = match validate_and_route(
-            select,
+            &select,
             limit,
             !having_clauses.is_empty(),
             &group_by,

@@ -870,14 +870,43 @@ message GetDocumentsRequest {
   // the caller has no explicit "expected keys" list to compare
   // against.
   message GetDocumentsRequestV1 {
-    // Projection over the matched row set. Determines whether the
-    // response carries documents or count results.
-    enum Select {
-      // Return matched documents. `group_by` must be empty.
-      DOCUMENTS = 0;
-      // Return a count — single aggregate when `group_by` is empty,
-      // per-group entries when `group_by` names a field.
-      COUNT = 1;
+    // Projection over the matched row set. `(function, field)`
+    // pair — analogous to `HavingAggregate`'s shape but with an
+    // additional `DOCUMENTS` variant for the row-fetch path.
+    //
+    // Determines what the response carries:
+    // - `DOCUMENTS`: `ResultData.documents` (matched rows;
+    //   `field` must be empty).
+    // - `COUNT`: `ResultData.counts` carrying row counts. Empty
+    //   `field` is `COUNT(*)` (group cardinality); non-empty is
+    //   `COUNT(field)` (non-null `field` values).
+    // - `SUM` / `AVG`: `ResultData` carrying numeric
+    //   aggregate(s); `field` is required and must be a
+    //   numeric-typed schema field.
+    //
+    // Single-aggregate vs per-group response shape comes from
+    // `group_by` (empty → single, non-empty → per-group entries) —
+    // same rule as today's `COUNT` routing.
+    //
+    // **Server capability today**: only `DOCUMENTS` and
+    // `COUNT(*)` (empty `field`) are evaluated. `SUM` / `AVG`
+    // and `COUNT(field)` are wire-stable but rejected at routing
+    // time with `Unsupported("… is not yet implemented")` so the
+    // surface is shipped first and execution lands later without
+    // another version bump.
+    message Select {
+      enum Function {
+        DOCUMENTS = 0;
+        COUNT = 1;
+        SUM = 2;
+        AVG = 3;
+      }
+      Function function = 1;
+      // Field the projection function is applied to. See the
+      // message-level docstring for the per-function requirement
+      // (empty for `DOCUMENTS`, optional for `COUNT`, required for
+      // `SUM` / `AVG`).
+      string field = 2;
     }
 
     bytes data_contract_id = 1; // The data contract owning the documents
@@ -951,8 +980,9 @@ message GetDocumentsRequest {
 
     bool prove = 8; // Request a grovedb proof instead of raw rows
 
-    // SQL `SELECT` projection. Default `DOCUMENTS` keeps v0 semantics
-    // for callers that just want documents back.
+    // SQL `SELECT` projection. Unset (= default-constructed
+    // `Select` with `function = DOCUMENTS, field = ""`) keeps v0
+    // semantics for callers that just want documents back.
     Select select = 9;
 
     // SQL `GROUP BY` field names, in left-to-right order. Empty =

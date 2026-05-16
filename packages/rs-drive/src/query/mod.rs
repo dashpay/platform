@@ -10,6 +10,7 @@ pub use {
         HavingRankingKind, HavingRightOperand,
     },
     ordering::OrderClause,
+    projection::{SelectFunction, SelectProjection},
     single_document_drive_query::SingleDocumentDriveQuery,
     single_document_drive_query::SingleDocumentDriveQueryContestedStatus,
     vote_polls_by_end_date_query::VotePollsByEndDateDriveQuery,
@@ -84,6 +85,8 @@ mod defaults;
 pub mod having;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod ordering;
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod projection;
 #[cfg(any(feature = "server", feature = "verify"))]
 mod single_document_drive_query;
 

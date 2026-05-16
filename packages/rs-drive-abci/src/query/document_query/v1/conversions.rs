@@ -28,16 +28,18 @@
 
 use crate::error::query::QueryError;
 use dapi_grpc::platform::v0::get_documents_request::{
-    document_field_value, having_aggregate, having_clause, having_ranking,
-    DocumentFieldValue as ProtoDocumentFieldValue, HavingAggregate as ProtoHavingAggregate,
-    HavingClause as ProtoHavingClause, HavingRanking as ProtoHavingRanking,
-    OrderClause as ProtoOrderClause, WhereClause as ProtoWhereClause,
-    WhereOperator as ProtoWhereOperator,
+    document_field_value,
+    get_documents_request_v1::{select, Select as ProtoSelect},
+    having_aggregate, having_clause, having_ranking, DocumentFieldValue as ProtoDocumentFieldValue,
+    HavingAggregate as ProtoHavingAggregate, HavingClause as ProtoHavingClause,
+    HavingRanking as ProtoHavingRanking, OrderClause as ProtoOrderClause,
+    WhereClause as ProtoWhereClause, WhereOperator as ProtoWhereOperator,
 };
 use dpp::platform_value::Value;
 use drive::query::{
     HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator, HavingRanking,
-    HavingRankingKind, HavingRightOperand, OrderClause, WhereClause, WhereOperator,
+    HavingRankingKind, HavingRightOperand, OrderClause, SelectFunction, SelectProjection,
+    WhereClause, WhereOperator,
 };
 
 /// Map a wire-level [`ProtoWhereOperator`] discriminant onto
@@ -292,4 +294,42 @@ pub(super) fn having_clauses_from_proto(
     clauses: Vec<ProtoHavingClause>,
 ) -> Result<Vec<HavingClause>, QueryError> {
     clauses.into_iter().map(having_clause_from_proto).collect()
+}
+
+/// Map a wire [`select::Function`] discriminant onto drive's
+/// [`SelectFunction`]. Unknown discriminants are wire-level
+/// garbage (no future protocol value would map a malformed
+/// integer to a valid behavior), so they surface as
+/// [`QueryError::InvalidArgument`].
+fn select_function_from_proto(function: i32) -> Result<SelectFunction, QueryError> {
+    let proto = select::Function::try_from(function).map_err(|_| {
+        QueryError::InvalidArgument(format!(
+            "unknown Select.Function discriminant: {} (valid values: 0..=3, see \
+             `get_documents_request::get_documents_request_v1::select::Function`)",
+            function
+        ))
+    })?;
+    Ok(match proto {
+        select::Function::Documents => SelectFunction::Documents,
+        select::Function::Count => SelectFunction::Count,
+        select::Function::Sum => SelectFunction::Sum,
+        select::Function::Avg => SelectFunction::Avg,
+    })
+}
+
+/// Map a wire [`ProtoSelect`] onto drive's [`SelectProjection`].
+/// An unset `select` field on the request decodes as the proto-
+/// default `Select { function: DOCUMENTS, field: "" }`, which
+/// maps to [`SelectProjection::documents()`] — keeps callers that
+/// don't set the field on the v0-style document-fetch path.
+///
+/// Per-function field constraints (e.g. `DOCUMENTS` must have
+/// empty `field`, `SUM`/`AVG` require non-empty) are checked at
+/// routing time in `validate_and_route`, not here, so the
+/// converter only enforces well-formed proto.
+pub(super) fn select_from_proto(select: ProtoSelect) -> Result<SelectProjection, QueryError> {
+    Ok(SelectProjection {
+        function: select_function_from_proto(select.function)?,
+        field: select.field,
+    })
 }

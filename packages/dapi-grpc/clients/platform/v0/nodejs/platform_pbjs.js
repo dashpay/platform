@@ -22066,7 +22066,7 @@ $root.org = (function() {
                              * @property {Uint8Array|null} [startAfter] GetDocumentsRequestV1 startAfter
                              * @property {Uint8Array|null} [startAt] GetDocumentsRequestV1 startAt
                              * @property {boolean|null} [prove] GetDocumentsRequestV1 prove
-                             * @property {org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select|null} [select] GetDocumentsRequestV1 select
+                             * @property {org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.ISelect|null} [select] GetDocumentsRequestV1 select
                              * @property {Array.<string>|null} [groupBy] GetDocumentsRequestV1 groupBy
                              * @property {Array.<org.dash.platform.dapi.v0.GetDocumentsRequest.IHavingClause>|null} [having] GetDocumentsRequestV1 having
                              */
@@ -22156,11 +22156,11 @@ $root.org = (function() {
 
                             /**
                              * GetDocumentsRequestV1 select.
-                             * @member {org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select} select
+                             * @member {org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.ISelect|null|undefined} select
                              * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1
                              * @instance
                              */
-                            GetDocumentsRequestV1.prototype.select = 0;
+                            GetDocumentsRequestV1.prototype.select = null;
 
                             /**
                              * GetDocumentsRequestV1 groupBy.
@@ -22235,7 +22235,7 @@ $root.org = (function() {
                                 if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
                                     writer.uint32(/* id 8, wireType 0 =*/64).bool(message.prove);
                                 if (message.select != null && Object.hasOwnProperty.call(message, "select"))
-                                    writer.uint32(/* id 9, wireType 0 =*/72).int32(message.select);
+                                    $root.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select.encode(message.select, writer.uint32(/* id 9, wireType 2 =*/74).fork()).ldelim();
                                 if (message.groupBy != null && message.groupBy.length)
                                     for (var i = 0; i < message.groupBy.length; ++i)
                                         writer.uint32(/* id 10, wireType 2 =*/82).string(message.groupBy[i]);
@@ -22305,7 +22305,7 @@ $root.org = (function() {
                                         message.prove = reader.bool();
                                         break;
                                     case 9:
-                                        message.select = reader.int32();
+                                        message.select = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select.decode(reader, reader.uint32());
                                         break;
                                     case 10:
                                         if (!(message.groupBy && message.groupBy.length))
@@ -22395,14 +22395,11 @@ $root.org = (function() {
                                 if (message.prove != null && message.hasOwnProperty("prove"))
                                     if (typeof message.prove !== "boolean")
                                         return "prove: boolean expected";
-                                if (message.select != null && message.hasOwnProperty("select"))
-                                    switch (message.select) {
-                                    default:
-                                        return "select: enum value expected";
-                                    case 0:
-                                    case 1:
-                                        break;
-                                    }
+                                if (message.select != null && message.hasOwnProperty("select")) {
+                                    var error = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select.verify(message.select);
+                                    if (error)
+                                        return "select." + error;
+                                }
                                 if (message.groupBy != null && message.hasOwnProperty("groupBy")) {
                                     if (!Array.isArray(message.groupBy))
                                         return "groupBy: array expected";
@@ -22475,15 +22472,10 @@ $root.org = (function() {
                                         message.startAt = object.startAt;
                                 if (object.prove != null)
                                     message.prove = Boolean(object.prove);
-                                switch (object.select) {
-                                case "DOCUMENTS":
-                                case 0:
-                                    message.select = 0;
-                                    break;
-                                case "COUNT":
-                                case 1:
-                                    message.select = 1;
-                                    break;
+                                if (object.select != null) {
+                                    if (typeof object.select !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.select: object expected");
+                                    message.select = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select.fromObject(object.select);
                                 }
                                 if (object.groupBy) {
                                     if (!Array.isArray(object.groupBy))
@@ -22535,7 +22527,7 @@ $root.org = (function() {
                                     object.documentType = "";
                                     object.limit = 0;
                                     object.prove = false;
-                                    object.select = options.enums === String ? "DOCUMENTS" : 0;
+                                    object.select = null;
                                 }
                                 if (message.dataContractId != null && message.hasOwnProperty("dataContractId"))
                                     object.dataContractId = options.bytes === String ? $util.base64.encode(message.dataContractId, 0, message.dataContractId.length) : options.bytes === Array ? Array.prototype.slice.call(message.dataContractId) : message.dataContractId;
@@ -22566,7 +22558,7 @@ $root.org = (function() {
                                 if (message.prove != null && message.hasOwnProperty("prove"))
                                     object.prove = message.prove;
                                 if (message.select != null && message.hasOwnProperty("select"))
-                                    object.select = options.enums === String ? $root.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select[message.select] : message.select;
+                                    object.select = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select.toObject(message.select, options);
                                 if (message.groupBy && message.groupBy.length) {
                                     object.groupBy = [];
                                     for (var j = 0; j < message.groupBy.length; ++j)
@@ -22591,18 +22583,255 @@ $root.org = (function() {
                                 return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
                             };
 
-                            /**
-                             * Select enum.
-                             * @name org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select
-                             * @enum {number}
-                             * @property {number} DOCUMENTS=0 DOCUMENTS value
-                             * @property {number} COUNT=1 COUNT value
-                             */
                             GetDocumentsRequestV1.Select = (function() {
-                                var valuesById = {}, values = Object.create(valuesById);
-                                values[valuesById[0] = "DOCUMENTS"] = 0;
-                                values[valuesById[1] = "COUNT"] = 1;
-                                return values;
+
+                                /**
+                                 * Properties of a Select.
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1
+                                 * @interface ISelect
+                                 * @property {org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select.Function|null} ["function"] Select function
+                                 * @property {string|null} [field] Select field
+                                 */
+
+                                /**
+                                 * Constructs a new Select.
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1
+                                 * @classdesc Represents a Select.
+                                 * @implements ISelect
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.ISelect=} [properties] Properties to set
+                                 */
+                                function Select(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * Select function.
+                                 * @member {org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select.Function} function
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select
+                                 * @instance
+                                 */
+                                Select.prototype["function"] = 0;
+
+                                /**
+                                 * Select field.
+                                 * @member {string} field
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select
+                                 * @instance
+                                 */
+                                Select.prototype.field = "";
+
+                                /**
+                                 * Creates a new Select instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.ISelect=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select} Select instance
+                                 */
+                                Select.create = function create(properties) {
+                                    return new Select(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified Select message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.ISelect} message Select message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Select.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message["function"] != null && Object.hasOwnProperty.call(message, "function"))
+                                        writer.uint32(/* id 1, wireType 0 =*/8).int32(message["function"]);
+                                    if (message.field != null && Object.hasOwnProperty.call(message, "field"))
+                                        writer.uint32(/* id 2, wireType 2 =*/18).string(message.field);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified Select message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.ISelect} message Select message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                Select.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a Select message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select} Select
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Select.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message["function"] = reader.int32();
+                                            break;
+                                        case 2:
+                                            message.field = reader.string();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a Select message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select} Select
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                Select.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a Select message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                Select.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message["function"] != null && message.hasOwnProperty("function"))
+                                        switch (message["function"]) {
+                                        default:
+                                            return "function: enum value expected";
+                                        case 0:
+                                        case 1:
+                                        case 2:
+                                        case 3:
+                                            break;
+                                        }
+                                    if (message.field != null && message.hasOwnProperty("field"))
+                                        if (!$util.isString(message.field))
+                                            return "field: string expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a Select message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select} Select
+                                 */
+                                Select.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select();
+                                    switch (object["function"]) {
+                                    case "DOCUMENTS":
+                                    case 0:
+                                        message["function"] = 0;
+                                        break;
+                                    case "COUNT":
+                                    case 1:
+                                        message["function"] = 1;
+                                        break;
+                                    case "SUM":
+                                    case 2:
+                                        message["function"] = 2;
+                                        break;
+                                    case "AVG":
+                                    case 3:
+                                        message["function"] = 3;
+                                        break;
+                                    }
+                                    if (object.field != null)
+                                        message.field = String(object.field);
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a Select message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select} message Select
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                Select.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        object["function"] = options.enums === String ? "DOCUMENTS" : 0;
+                                        object.field = "";
+                                    }
+                                    if (message["function"] != null && message.hasOwnProperty("function"))
+                                        object["function"] = options.enums === String ? $root.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select.Function[message["function"]] : message["function"];
+                                    if (message.field != null && message.hasOwnProperty("field"))
+                                        object.field = message.field;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this Select to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                Select.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                /**
+                                 * Function enum.
+                                 * @name org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select.Function
+                                 * @enum {number}
+                                 * @property {number} DOCUMENTS=0 DOCUMENTS value
+                                 * @property {number} COUNT=1 COUNT value
+                                 * @property {number} SUM=2 SUM value
+                                 * @property {number} AVG=3 AVG value
+                                 */
+                                Select.Function = (function() {
+                                    var valuesById = {}, values = Object.create(valuesById);
+                                    values[valuesById[0] = "DOCUMENTS"] = 0;
+                                    values[valuesById[1] = "COUNT"] = 1;
+                                    values[valuesById[2] = "SUM"] = 2;
+                                    values[valuesById[3] = "AVG"] = 3;
+                                    return values;
+                                })();
+
+                                return Select;
                             })();
 
                             return GetDocumentsRequestV1;

@@ -94,6 +94,7 @@ CF_EXTERN_C_BEGIN
 @class GetDocumentsRequest_DocumentFieldValue_ValueList;
 @class GetDocumentsRequest_GetDocumentsRequestV0;
 @class GetDocumentsRequest_GetDocumentsRequestV1;
+@class GetDocumentsRequest_GetDocumentsRequestV1_Select;
 @class GetDocumentsRequest_HavingAggregate;
 @class GetDocumentsRequest_HavingClause;
 @class GetDocumentsRequest_HavingRanking;
@@ -467,36 +468,28 @@ GPBEnumDescriptor *GetDocumentsRequest_HavingClause_Operator_EnumDescriptor(void
  **/
 BOOL GetDocumentsRequest_HavingClause_Operator_IsValidValue(int32_t value);
 
-#pragma mark - Enum GetDocumentsRequest_GetDocumentsRequestV1_Select
+#pragma mark - Enum GetDocumentsRequest_GetDocumentsRequestV1_Select_Function
 
-/**
- * Projection over the matched row set. Determines whether the
- * response carries documents or count results.
- **/
-typedef GPB_ENUM(GetDocumentsRequest_GetDocumentsRequestV1_Select) {
+typedef GPB_ENUM(GetDocumentsRequest_GetDocumentsRequestV1_Select_Function) {
   /**
    * Value used if any message's field encounters a value that is not defined
    * by this enum. The message will also have C functions to get/set the rawValue
    * of the field.
    **/
-  GetDocumentsRequest_GetDocumentsRequestV1_Select_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
-  /** Return matched documents. `group_by` must be empty. */
-  GetDocumentsRequest_GetDocumentsRequestV1_Select_Documents = 0,
-
-  /**
-   * Return a count — single aggregate when `group_by` is empty,
-   * per-group entries when `group_by` names a field.
-   **/
-  GetDocumentsRequest_GetDocumentsRequestV1_Select_Count = 1,
+  GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
+  GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_Documents = 0,
+  GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_Count = 1,
+  GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_Sum = 2,
+  GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_Avg = 3,
 };
 
-GPBEnumDescriptor *GetDocumentsRequest_GetDocumentsRequestV1_Select_EnumDescriptor(void);
+GPBEnumDescriptor *GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_EnumDescriptor(void);
 
 /**
  * Checks to see if the given value is defined by the enum or was not known at
  * the time this source was generated.
  **/
-BOOL GetDocumentsRequest_GetDocumentsRequestV1_Select_IsValidValue(int32_t value);
+BOOL GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_IsValidValue(int32_t value);
 
 #pragma mark - Enum GetContestedResourceVoteStateRequest_GetContestedResourceVoteStateRequestV0_ResultType
 
@@ -3031,10 +3024,13 @@ GPB_FINAL @interface GetDocumentsRequest_GetDocumentsRequestV1 : GPBMessage
 @property(nonatomic, readwrite) BOOL prove;
 
 /**
- * SQL `SELECT` projection. Default `DOCUMENTS` keeps v0 semantics
- * for callers that just want documents back.
+ * SQL `SELECT` projection. Unset (= default-constructed
+ * `Select` with `function = DOCUMENTS, field = ""`) keeps v0
+ * semantics for callers that just want documents back.
  **/
-@property(nonatomic, readwrite) GetDocumentsRequest_GetDocumentsRequestV1_Select select;
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsRequest_GetDocumentsRequestV1_Select *select;
+/** Test to see if @c select has been set. */
+@property(nonatomic, readwrite) BOOL hasSelect;
 
 /**
  * SQL `GROUP BY` field names, in left-to-right order. Empty =
@@ -3070,21 +3066,68 @@ GPB_FINAL @interface GetDocumentsRequest_GetDocumentsRequestV1 : GPBMessage
 @end
 
 /**
- * Fetches the raw value of a @c GetDocumentsRequest_GetDocumentsRequestV1's @c select property, even
- * if the value was not defined by the enum at the time the code was generated.
- **/
-int32_t GetDocumentsRequest_GetDocumentsRequestV1_Select_RawValue(GetDocumentsRequest_GetDocumentsRequestV1 *message);
-/**
- * Sets the raw value of an @c GetDocumentsRequest_GetDocumentsRequestV1's @c select property, allowing
- * it to be set to a value that was not defined by the enum at the time the code
- * was generated.
- **/
-void SetGetDocumentsRequest_GetDocumentsRequestV1_Select_RawValue(GetDocumentsRequest_GetDocumentsRequestV1 *message, int32_t value);
-
-/**
  * Clears whatever value was set for the oneof 'start'.
  **/
 void GetDocumentsRequest_GetDocumentsRequestV1_ClearStartOneOfCase(GetDocumentsRequest_GetDocumentsRequestV1 *message);
+
+#pragma mark - GetDocumentsRequest_GetDocumentsRequestV1_Select
+
+typedef GPB_ENUM(GetDocumentsRequest_GetDocumentsRequestV1_Select_FieldNumber) {
+  GetDocumentsRequest_GetDocumentsRequestV1_Select_FieldNumber_Function = 1,
+  GetDocumentsRequest_GetDocumentsRequestV1_Select_FieldNumber_Field = 2,
+};
+
+/**
+ * Projection over the matched row set. `(function, field)`
+ * pair — analogous to `HavingAggregate`'s shape but with an
+ * additional `DOCUMENTS` variant for the row-fetch path.
+ *
+ * Determines what the response carries:
+ * - `DOCUMENTS`: `ResultData.documents` (matched rows;
+ *   `field` must be empty).
+ * - `COUNT`: `ResultData.counts` carrying row counts. Empty
+ *   `field` is `COUNT(*)` (group cardinality); non-empty is
+ *   `COUNT(field)` (non-null `field` values).
+ * - `SUM` / `AVG`: `ResultData` carrying numeric
+ *   aggregate(s); `field` is required and must be a
+ *   numeric-typed schema field.
+ *
+ * Single-aggregate vs per-group response shape comes from
+ * `group_by` (empty → single, non-empty → per-group entries) —
+ * same rule as today's `COUNT` routing.
+ *
+ * **Server capability today**: only `DOCUMENTS` and
+ * `COUNT(*)` (empty `field`) are evaluated. `SUM` / `AVG`
+ * and `COUNT(field)` are wire-stable but rejected at routing
+ * time with `Unsupported("… is not yet implemented")` so the
+ * surface is shipped first and execution lands later without
+ * another version bump.
+ **/
+GPB_FINAL @interface GetDocumentsRequest_GetDocumentsRequestV1_Select : GPBMessage
+
+@property(nonatomic, readwrite) GetDocumentsRequest_GetDocumentsRequestV1_Select_Function function;
+
+/**
+ * Field the projection function is applied to. See the
+ * message-level docstring for the per-function requirement
+ * (empty for `DOCUMENTS`, optional for `COUNT`, required for
+ * `SUM` / `AVG`).
+ **/
+@property(nonatomic, readwrite, copy, null_resettable) NSString *field;
+
+@end
+
+/**
+ * Fetches the raw value of a @c GetDocumentsRequest_GetDocumentsRequestV1_Select's @c function property, even
+ * if the value was not defined by the enum at the time the code was generated.
+ **/
+int32_t GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_RawValue(GetDocumentsRequest_GetDocumentsRequestV1_Select *message);
+/**
+ * Sets the raw value of an @c GetDocumentsRequest_GetDocumentsRequestV1_Select's @c function property, allowing
+ * it to be set to a value that was not defined by the enum at the time the code
+ * was generated.
+ **/
+void SetGetDocumentsRequest_GetDocumentsRequestV1_Select_Function_RawValue(GetDocumentsRequest_GetDocumentsRequestV1_Select *message, int32_t value);
 
 #pragma mark - GetDocumentsResponse
 

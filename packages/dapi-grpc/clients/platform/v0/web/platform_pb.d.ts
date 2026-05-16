@@ -2665,8 +2665,10 @@ export namespace GetDocumentsRequest {
     getProve(): boolean;
     setProve(value: boolean): void;
 
-    getSelect(): GetDocumentsRequest.GetDocumentsRequestV1.SelectMap[keyof GetDocumentsRequest.GetDocumentsRequestV1.SelectMap];
-    setSelect(value: GetDocumentsRequest.GetDocumentsRequestV1.SelectMap[keyof GetDocumentsRequest.GetDocumentsRequestV1.SelectMap]): void;
+    hasSelect(): boolean;
+    clearSelect(): void;
+    getSelect(): GetDocumentsRequest.GetDocumentsRequestV1.Select | undefined;
+    setSelect(value?: GetDocumentsRequest.GetDocumentsRequestV1.Select): void;
 
     clearGroupByList(): void;
     getGroupByList(): Array<string>;
@@ -2699,17 +2701,43 @@ export namespace GetDocumentsRequest {
       startAfter: Uint8Array | string,
       startAt: Uint8Array | string,
       prove: boolean,
-      select: GetDocumentsRequest.GetDocumentsRequestV1.SelectMap[keyof GetDocumentsRequest.GetDocumentsRequestV1.SelectMap],
+      select?: GetDocumentsRequest.GetDocumentsRequestV1.Select.AsObject,
       groupByList: Array<string>,
       havingList: Array<GetDocumentsRequest.HavingClause.AsObject>,
     }
 
-    export interface SelectMap {
-      DOCUMENTS: 0;
-      COUNT: 1;
+    export class Select extends jspb.Message {
+      getFunction(): GetDocumentsRequest.GetDocumentsRequestV1.Select.FunctionMap[keyof GetDocumentsRequest.GetDocumentsRequestV1.Select.FunctionMap];
+      setFunction(value: GetDocumentsRequest.GetDocumentsRequestV1.Select.FunctionMap[keyof GetDocumentsRequest.GetDocumentsRequestV1.Select.FunctionMap]): void;
+
+      getField(): string;
+      setField(value: string): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): Select.AsObject;
+      static toObject(includeInstance: boolean, msg: Select): Select.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: Select, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): Select;
+      static deserializeBinaryFromReader(message: Select, reader: jspb.BinaryReader): Select;
     }
 
-    export const Select: SelectMap;
+    export namespace Select {
+      export type AsObject = {
+        pb_function: GetDocumentsRequest.GetDocumentsRequestV1.Select.FunctionMap[keyof GetDocumentsRequest.GetDocumentsRequestV1.Select.FunctionMap],
+        field: string,
+      }
+
+      export interface FunctionMap {
+        DOCUMENTS: 0;
+        COUNT: 1;
+        SUM: 2;
+        AVG: 3;
+      }
+
+      export const Function: FunctionMap;
+    }
 
     export enum StartCase {
       START_NOT_SET = 0,
