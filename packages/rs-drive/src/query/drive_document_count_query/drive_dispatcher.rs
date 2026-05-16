@@ -199,6 +199,15 @@ pub fn where_clauses_from_value(
 /// [`where_clauses_from_value`] and from the dispatcher's typed
 /// entry, [`Drive::execute_document_count_request`].
 ///
+/// Despite the name, this function is **validation-only** in the
+/// worktree's base — it does not re-shape the clauses (no
+/// `> AND <` → `between*` merge). The "canonicalize" suffix is
+/// reserved for the eventual carrier-aggregate landing where a
+/// same-field range-pair merge becomes load-bearing; on the
+/// current code path `WhereClause::group_clauses` only classifies,
+/// and the merged form is computed lazily inside the executors
+/// when an executor needs it.
+///
 /// The validator (`WhereClause::group_clauses`) rejects:
 /// - Duplicate `Equal` clauses on the same field
 ///   (`DuplicateNonGroupableClauseSameField`).

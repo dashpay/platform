@@ -2310,6 +2310,11 @@ export namespace GetDocumentsRequest {
     getList(): GetDocumentsRequest.DocumentFieldValue.ValueList | undefined;
     setList(value?: GetDocumentsRequest.DocumentFieldValue.ValueList): void;
 
+    hasNullValue(): boolean;
+    clearNullValue(): void;
+    getNullValue(): boolean;
+    setNullValue(value: boolean): void;
+
     getVariantCase(): DocumentFieldValue.VariantCase;
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): DocumentFieldValue.AsObject;
@@ -2330,6 +2335,7 @@ export namespace GetDocumentsRequest {
       text: string,
       bytesValue: Uint8Array | string,
       list?: GetDocumentsRequest.DocumentFieldValue.ValueList.AsObject,
+      nullValue: boolean,
     }
 
     export class ValueList extends jspb.Message {
@@ -2363,6 +2369,7 @@ export namespace GetDocumentsRequest {
       TEXT = 5,
       BYTES_VALUE = 6,
       LIST = 7,
+      NULL_VALUE = 8,
     }
   }
 

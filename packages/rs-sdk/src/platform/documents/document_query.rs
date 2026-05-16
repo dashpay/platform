@@ -342,37 +342,41 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
 impl TryFrom<DocumentQuery> for platform_proto::GetDocumentsRequest {
     type Error = Error;
     fn try_from(dapi_request: DocumentQuery) -> Result<Self, Self::Error> {
-        let where_clauses = dapi_request
-            .where_clauses
-            .clone()
+        // `try_from` owns `dapi_request` — destructure once and
+        // consume the owned vectors below (no `.clone()` per field).
+        let DocumentQuery {
+            select,
+            data_contract,
+            document_type_name,
+            where_clauses,
+            group_by,
+            having,
+            order_by_clauses,
+            limit,
+            start,
+        } = dapi_request;
+
+        let where_clauses = where_clauses
             .into_iter()
             .map(where_clause_to_proto)
             .collect::<Result<Vec<_>, _>>()?;
-        let order_by = dapi_request
-            .order_by_clauses
-            .clone()
+        let order_by = order_by_clauses
             .into_iter()
             .map(order_clause_to_proto)
             .collect();
-        let having = dapi_request
-            .having
-            .clone()
+        let having = having
             .into_iter()
             .map(where_clause_to_proto)
             .collect::<Result<Vec<_>, _>>()?;
         // `limit: u32` with `0` sentinel → `optional uint32` on the
         // V1 wire. `None` lets the server apply its own default;
         // explicit `0` would be a strange "return zero rows" request.
-        let limit = if dapi_request.limit == 0 {
-            None
-        } else {
-            Some(dapi_request.limit)
-        };
+        let limit = if limit == 0 { None } else { Some(limit) };
         // V0 and V1 ship separate `Start` enums even though the
         // shape is identical. Translate at the wire boundary so the
         // `DocumentQuery.start` field stays stable for callers
         // already using the V0 type.
-        let start_v1 = dapi_request.start.clone().map(|s| match s {
+        let start_v1 = start.map(|s| match s {
             Start::StartAfter(b) => V1Start::StartAfter(b),
             Start::StartAt(b) => V1Start::StartAt(b),
         });
@@ -380,8 +384,8 @@ impl TryFrom<DocumentQuery> for platform_proto::GetDocumentsRequest {
         //todo: transform this into PlatformVersionedTryFrom
         Ok(GetDocumentsRequest {
             version: Some(V1(GetDocumentsRequestV1 {
-                data_contract_id: dapi_request.data_contract.id().to_vec(),
-                document_type: dapi_request.document_type_name.clone(),
+                data_contract_id: data_contract.id().to_vec(),
+                document_type: document_type_name,
                 where_clauses,
                 order_by,
                 limit,
@@ -396,8 +400,8 @@ impl TryFrom<DocumentQuery> for platform_proto::GetDocumentsRequest {
                 // are disabled.
                 prove: true,
                 start: start_v1,
-                select: dapi_request.select as i32,
-                group_by: dapi_request.group_by.clone(),
+                select: select as i32,
+                group_by,
                 having,
             })),
         })
@@ -588,10 +592,14 @@ fn where_operator_to_proto(op: WhereOperator) -> ProtoWhereOperator {
 /// - `U128`/`I128` → `Text` (decimal string; the server decodes
 ///   against the indexed `U128`/`I128` field type)
 /// - `Array` → `List` (recursive — operand for `IN` / `BETWEEN*`)
-/// - `Null`/`Map`/`EnumU8`/`EnumString` → `Error` (no wire-format
+/// - `Null` → `NullValue(true)` (the `bool` payload is a
+///   placeholder per the proto-side comment; only the variant
+///   discriminant carries meaning)
+/// - `Map`/`EnumU8`/`EnumString` → `Error` (no wire-format
 ///   counterpart for these shapes in a WhereClause operand)
 fn value_to_proto(value: Value) -> Result<ProtoDocumentFieldValue, Error> {
     let variant = match value {
+        Value::Null => document_field_value::Variant::NullValue(true),
         Value::Bool(b) => document_field_value::Variant::BoolValue(b),
         Value::I8(i) => document_field_value::Variant::Int64Value(i as i64),
         Value::I16(i) => document_field_value::Variant::Int64Value(i as i64),
@@ -621,7 +629,7 @@ fn value_to_proto(value: Value) -> Result<ProtoDocumentFieldValue, Error> {
                     .collect::<Result<Vec<_>, _>>()?,
             })
         }
-        Value::Null | Value::Map(_) | Value::EnumU8(_) | Value::EnumString(_) => {
+        Value::Map(_) | Value::EnumU8(_) | Value::EnumString(_) => {
             return Err(Error::Protocol(dpp::ProtocolError::EncodingError(format!(
                 "Value variant has no `DocumentFieldValue` wire-format counterpart: {value:?}"
             ))));

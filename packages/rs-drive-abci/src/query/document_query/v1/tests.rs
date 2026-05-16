@@ -25,9 +25,14 @@ use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::platform_value::{platform_value, Value};
 
 /// Build a `ProtoDocumentFieldValue` from a `dpp::platform_value::Value`
-/// using the same primitive-by-primitive mapping the SDK's wire
-/// conversion uses. Keeps each test focused on the clause shape
-/// rather than per-variant proto plumbing. Mirrors
+/// for use inside this test module only. **Subset of the SDK's
+/// `value_to_proto`** — covers the primitive types these tests
+/// actually construct: `Bool` / signed + unsigned integers /
+/// `Float` / `Text` / `Bytes` / `Array` / `Null`. Variants the
+/// SDK supports but the tests don't need (`Bytes20/32/36`,
+/// `Identifier`, `U128`/`I128` → decimal text) are intentionally
+/// omitted here — a test trying to use one panics so the gap is
+/// loud rather than silent. Wider fidelity lives in the SDK at
 /// `rs-sdk/src/platform/documents/document_query.rs::value_to_proto`.
 fn pv(value: Value) -> ProtoDocumentFieldValue {
     let variant = match value {
@@ -48,6 +53,10 @@ fn pv(value: Value) -> ProtoDocumentFieldValue {
                 values: items.into_iter().map(pv).collect(),
             })
         }
+        // Picking the variant means "this operand is null"; the
+        // bool payload is a placeholder per the proto-side comment
+        // on the `null_value` field.
+        Value::Null => document_field_value::Variant::NullValue(true),
         other => panic!("pv: unsupported test-value variant {:?}", other),
     };
     ProtoDocumentFieldValue {
@@ -415,12 +424,13 @@ fn reject_count_group_by_in_with_limit() {
 }
 
 #[test]
-fn reject_single_field_group_by_on_in_field_when_range_also_constrained() {
-    // `group_by=[in_field]` looks well-formed in isolation, but
-    // the simultaneous range clause forces Drive's compound walk
-    // to emit `(in_key, key)` rows that don't match the caller's
-    // single-field grouping. Caller must spell out the compound
-    // shape explicitly with `[in_field, range_field]`.
+fn accept_single_field_group_by_on_in_field_with_range_routes_to_in_entries() {
+    // `group_by=[in_field]` with an additional range clause is
+    // valid: drive's `detect_mode` picks
+    // `RangeAggregateCarrierProof` (grovedb #663) on the prove
+    // path and `RangeNoProof` per-In-branch on the no-prove path —
+    // both produce entries that line up with the caller's
+    // single-field GROUP BY shape.
     let request = GetDocumentsRequestV1 {
         select: V1Select::Count as i32,
         group_by: vec!["brand".to_string()],
@@ -438,16 +448,20 @@ fn reject_single_field_group_by_on_in_field_when_range_also_constrained() {
             value: platform_value!("blue"),
         },
     ];
-    assert_not_yet_implemented(
-        validate_and_route_for_tests(&request, &where_clauses),
-        "single-field GROUP BY when both `In` and range clauses are present",
+    assert_eq!(
+        validate_and_route_for_tests(&request, &where_clauses).unwrap(),
+        "count_entries_via_in_field"
     );
 }
 
 #[test]
-fn reject_single_field_group_by_on_range_field_when_in_also_constrained() {
-    // Mirror of the above for the range-field branch: same
-    // compound-shape mismatch, different `group_by` entry.
+fn accept_single_field_group_by_on_range_field_with_in_routes_to_range_entries() {
+    // Mirror of the above: `group_by=[range_field]` with an
+    // active In on the prefix routes to
+    // `CountMode::GroupByRange`, and drive picks
+    // `RangeDistinctProof` (with In-fanout via subquery) on the
+    // prove path or `RangeNoProof` distinct on the no-prove
+    // path.
     let request = GetDocumentsRequestV1 {
         select: V1Select::Count as i32,
         group_by: vec!["color".to_string()],
@@ -465,9 +479,9 @@ fn reject_single_field_group_by_on_range_field_when_in_also_constrained() {
             value: platform_value!("blue"),
         },
     ];
-    assert_not_yet_implemented(
-        validate_and_route_for_tests(&request, &where_clauses),
-        "single-field GROUP BY when both `In` and range clauses are present",
+    assert_eq!(
+        validate_and_route_for_tests(&request, &where_clauses).unwrap(),
+        "count_entries_via_range_field"
     );
 }
 

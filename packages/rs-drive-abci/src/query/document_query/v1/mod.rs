@@ -181,37 +181,30 @@ fn validate_and_route(
                 [] => CountMode::Aggregate,
                 [field] => {
                     if Some(field.as_str()) == in_field {
-                        // Single-field GROUP BY on the `In` field is
-                        // only well-defined when no range clause is
-                        // also constraining the result; otherwise
-                        // Drive's compound walk emits unmerged
-                        // `(in_key, key)` entries that don't match
-                        // the caller's stated grouping. Force them
-                        // to spell out the compound shape with a
-                        // two-element `group_by`.
-                        if range_field.is_some() {
-                            return Err(not_yet_implemented(
-                                "single-field GROUP BY when both `In` and range \
-                                 clauses are present (use a two-element GROUP BY \
-                                 `[in_field, range_field]` for the compound shape, \
-                                 or drop the other constraint)",
-                            ));
-                        }
+                        // Single-field GROUP BY on the `In` field
+                        // routes to `CountMode::GroupByIn`. When a
+                        // range clause is also present, drive's
+                        // [`detect_mode`] picks the right
+                        // submode — `RangeAggregateCarrierProof`
+                        // on the prove path (one count per In
+                        // branch via the grovedb #663 carrier
+                        // primitive) or `RangeNoProof` on the
+                        // no-prove path (per-In-branch entries
+                        // from the range walk). Both produce
+                        // entries that line up with the
+                        // caller-stated GROUP BY shape, so no
+                        // additional gating here is needed.
                         CountMode::GroupByIn
                     } else if Some(field.as_str()) == range_field {
-                        // Same compound-shape concern as the In
-                        // branch above — `group_by=[range_field]`
-                        // with an active `In` clause produces
-                        // compound rows from Drive that don't match
-                        // the caller's grouping.
-                        if in_field.is_some() {
-                            return Err(not_yet_implemented(
-                                "single-field GROUP BY when both `In` and range \
-                                 clauses are present (use a two-element GROUP BY \
-                                 `[in_field, range_field]` for the compound shape, \
-                                 or drop the other constraint)",
-                            ));
-                        }
+                        // Symmetric to the In branch above:
+                        // `group_by=[range_field]` with an active
+                        // `In` clause routes to
+                        // `CountMode::GroupByRange`, and drive's
+                        // [`detect_mode`] picks the right submode —
+                        // `RangeDistinctProof` on the prove path
+                        // (per-distinct-value counts with In-fanout
+                        // on the prefix) or `RangeNoProof` distinct
+                        // on the no-prove path.
                         CountMode::GroupByRange
                     } else {
                         return Err(not_yet_implemented(&format!(

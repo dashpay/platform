@@ -92,6 +92,11 @@ pub(super) fn value_from_proto(value: ProtoDocumentFieldValue) -> Result<Value, 
                 .map(value_from_proto)
                 .collect::<Result<Vec<_>, _>>()?,
         ),
+        // The bool payload is a placeholder — picking the
+        // `null_value` variant means "this operand is null" and
+        // the bool itself is ignored. See the proto-side comment
+        // on the field for the rationale.
+        document_field_value::Variant::NullValue(_) => Value::Null,
     })
 }
 

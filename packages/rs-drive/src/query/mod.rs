@@ -781,24 +781,36 @@ impl<'a> DriveDocumentQuery<'a> {
             ))),
         }?;
 
-        let order_by_clauses: Vec<OrderClause> = order_by
-            .map(|id_cbor| {
-                if let Value::Array(clauses) = id_cbor {
-                    clauses
-                        .iter()
-                        .filter_map(|order_clause| {
-                            if let Value::Array(clauses_components) = order_clause {
-                                OrderClause::from_components(clauses_components).ok()
-                            } else {
-                                None
-                            }
+        // Malformed `order_by` payloads reject the request — the
+        // pre-existing `filter_map(... .ok())` here silently dropped
+        // bad clauses (or the whole field for non-array shapes),
+        // which could mutate result ordering and (on the prove
+        // path) proof bytes without telling the caller. Tighten the
+        // contract: every clause must parse, and the top-level
+        // shape must be `Value::Null` or `Value::Array`.
+        let order_by_clauses: Vec<OrderClause> = match order_by {
+            None | Some(Value::Null) => Vec::new(),
+            Some(Value::Array(clauses)) => clauses
+                .iter()
+                .map(|order_clause| match order_clause {
+                    Value::Array(components) => {
+                        OrderClause::from_components(components).map_err(|e| {
+                            Error::Query(QuerySyntaxError::InvalidFormatWhereClause(format!(
+                                "invalid order_by clause components: {e}"
+                            )))
                         })
-                        .collect()
-                } else {
-                    Vec::new()
-                }
-            })
-            .unwrap_or_default();
+                    }
+                    _ => Err(Error::Query(QuerySyntaxError::InvalidFormatWhereClause(
+                        "order_by clause must be an array".to_string(),
+                    ))),
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+            Some(_) => {
+                return Err(Error::Query(QuerySyntaxError::InvalidFormatWhereClause(
+                    "order_by must be an array".to_string(),
+                )));
+            }
+        };
 
         Self::from_typed_clauses(
             all_where_clauses,

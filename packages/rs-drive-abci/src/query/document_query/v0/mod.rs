@@ -95,14 +95,32 @@ impl<C> Platform<C> {
 
         let order_by_clauses: Vec<OrderClause> = match order_by_value {
             None | Some(Value::Null) => Vec::new(),
-            Some(Value::Array(clauses)) => clauses
-                .into_iter()
-                .filter_map(|oc| match oc {
-                    Value::Array(components) => OrderClause::from_components(&components).ok(),
-                    _ => None,
-                })
-                .collect(),
-            _ => Vec::new(),
+            Some(Value::Array(clauses)) => {
+                let parsed: Result<Vec<OrderClause>, _> = clauses
+                    .iter()
+                    .map(|oc| match oc {
+                        Value::Array(components) => OrderClause::from_components(components)
+                            .map_err(|e| {
+                                QueryError::Query(QuerySyntaxError::InvalidFormatWhereClause(
+                                    format!("invalid order_by clause components: {e}"),
+                                ))
+                            }),
+                        _ => Err(QueryError::Query(
+                            QuerySyntaxError::InvalidFormatWhereClause(
+                                "order_by clause must be an array".to_string(),
+                            ),
+                        )),
+                    })
+                    .collect();
+                check_validation_result_with_data!(parsed)
+            }
+            _ => {
+                return Ok(QueryValidationResult::new_with_error(QueryError::Query(
+                    QuerySyntaxError::InvalidFormatWhereClause(
+                        "order_by must be an array".to_string(),
+                    ),
+                )));
+            }
         };
 
         self.query_documents_typed(

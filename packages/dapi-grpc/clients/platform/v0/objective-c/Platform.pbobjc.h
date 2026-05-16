@@ -2369,6 +2369,7 @@ typedef GPB_ENUM(GetDocumentsRequest_DocumentFieldValue_FieldNumber) {
   GetDocumentsRequest_DocumentFieldValue_FieldNumber_Text = 5,
   GetDocumentsRequest_DocumentFieldValue_FieldNumber_BytesValue = 6,
   GetDocumentsRequest_DocumentFieldValue_FieldNumber_List = 7,
+  GetDocumentsRequest_DocumentFieldValue_FieldNumber_NullValue = 8,
 };
 
 typedef GPB_ENUM(GetDocumentsRequest_DocumentFieldValue_Variant_OneOfCase) {
@@ -2380,6 +2381,7 @@ typedef GPB_ENUM(GetDocumentsRequest_DocumentFieldValue_Variant_OneOfCase) {
   GetDocumentsRequest_DocumentFieldValue_Variant_OneOfCase_Text = 5,
   GetDocumentsRequest_DocumentFieldValue_Variant_OneOfCase_BytesValue = 6,
   GetDocumentsRequest_DocumentFieldValue_Variant_OneOfCase_List = 7,
+  GetDocumentsRequest_DocumentFieldValue_Variant_OneOfCase_NullValue = 8,
 };
 
 /**
@@ -2403,10 +2405,13 @@ typedef GPB_ENUM(GetDocumentsRequest_DocumentFieldValue_Variant_OneOfCase) {
  *   the indexed type (`u8` … `u64`/`i8` … `i64`/`u128`/`i128`).
  * - String / bool fields accept `text` / `bool_value`.
  *
- * No `null` variant: a where-clause operand is always concrete.
- * Empty where-clauses are expressed by leaving
- * `GetDocumentsRequestV1.where_clauses` empty, not by sending a
- * null operand.
+ * The `null_value` variant is the typed-wire equivalent of a CBOR
+ * `null` operand on the v0 path. Callers should NOT use it for
+ * "no clause" — empty where-clauses are still expressed by
+ * leaving `GetDocumentsRequestV1.where_clauses` empty. It exists
+ * for clauses that legitimately compare against `null` (e.g.
+ * queries on schema-nullable index entries from the v0 wire that
+ * round-trip through the v1 surface).
  **/
 GPB_FINAL @interface GetDocumentsRequest_DocumentFieldValue : GPBMessage
 
@@ -2425,6 +2430,13 @@ GPB_FINAL @interface GetDocumentsRequest_DocumentFieldValue : GPBMessage
 @property(nonatomic, readwrite, copy, null_resettable) NSData *bytesValue;
 
 @property(nonatomic, readwrite, strong, null_resettable) GetDocumentsRequest_DocumentFieldValue_ValueList *list;
+
+/**
+ * `bool` payload is a placeholder — only the discriminant
+ * matters. Picking the variant means "this operand is null";
+ * the bool value itself is ignored on the server.
+ **/
+@property(nonatomic, readwrite) BOOL nullValue;
 
 @end
 

@@ -24354,7 +24354,7 @@ proto.org.dash.platform.dapi.v0.GetDocumentsRequest.WhereOperator = {
  * @private {!Array<!Array<number>>}
  * @const
  */
-proto.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.oneofGroups_ = [[1,2,3,4,5,6,7]];
+proto.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.oneofGroups_ = [[1,2,3,4,5,6,7,8]];
 
 /**
  * @enum {number}
@@ -24367,7 +24367,8 @@ proto.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.VariantCa
   DOUBLE_VALUE: 4,
   TEXT: 5,
   BYTES_VALUE: 6,
-  LIST: 7
+  LIST: 7,
+  NULL_VALUE: 8
 };
 
 /**
@@ -24414,7 +24415,8 @@ proto.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.toObject 
     doubleValue: jspb.Message.getFloatingPointFieldWithDefault(msg, 4, 0.0),
     text: jspb.Message.getFieldWithDefault(msg, 5, ""),
     bytesValue: msg.getBytesValue_asB64(),
-    list: (f = msg.getList()) && proto.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.ValueList.toObject(includeInstance, f)
+    list: (f = msg.getList()) && proto.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.ValueList.toObject(includeInstance, f),
+    nullValue: jspb.Message.getBooleanFieldWithDefault(msg, 8, false)
   };
 
   if (includeInstance) {
@@ -24479,6 +24481,10 @@ proto.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.deseriali
       var value = new proto.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.ValueList;
       reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.ValueList.deserializeBinaryFromReader);
       msg.setList(value);
+      break;
+    case 8:
+      var value = /** @type {boolean} */ (reader.readBool());
+      msg.setNullValue(value);
       break;
     default:
       reader.skipField();
@@ -24557,6 +24563,13 @@ proto.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.serialize
       7,
       f,
       proto.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.ValueList.serializeBinaryToWriter
+    );
+  }
+  f = /** @type {boolean} */ (jspb.Message.getField(message, 8));
+  if (f != null) {
+    writer.writeBool(
+      8,
+      f
     );
   }
 };
@@ -24996,6 +25009,42 @@ proto.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.prototype
  */
 proto.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.prototype.hasList = function() {
   return jspb.Message.getField(this, 7) != null;
+};
+
+
+/**
+ * optional bool null_value = 8;
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.prototype.getNullValue = function() {
+  return /** @type {boolean} */ (jspb.Message.getBooleanFieldWithDefault(this, 8, false));
+};
+
+
+/**
+ * @param {boolean} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.prototype.setNullValue = function(value) {
+  return jspb.Message.setOneofField(this, 8, proto.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.oneofGroups_[0], value);
+};
+
+
+/**
+ * Clears the field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.prototype.clearNullValue = function() {
+  return jspb.Message.setOneofField(this, 8, proto.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.oneofGroups_[0], undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.prototype.hasNullValue = function() {
+  return jspb.Message.getField(this, 8) != null;
 };
 
 

@@ -620,10 +620,13 @@ message GetDocumentsRequest {
   //   the indexed type (`u8` … `u64`/`i8` … `i64`/`u128`/`i128`).
   // - String / bool fields accept `text` / `bool_value`.
   //
-  // No `null` variant: a where-clause operand is always concrete.
-  // Empty where-clauses are expressed by leaving
-  // `GetDocumentsRequestV1.where_clauses` empty, not by sending a
-  // null operand.
+  // The `null_value` variant is the typed-wire equivalent of a CBOR
+  // `null` operand on the v0 path. Callers should NOT use it for
+  // "no clause" — empty where-clauses are still expressed by
+  // leaving `GetDocumentsRequestV1.where_clauses` empty. It exists
+  // for clauses that legitimately compare against `null` (e.g.
+  // queries on schema-nullable index entries from the v0 wire that
+  // round-trip through the v1 surface).
   message DocumentFieldValue {
     // Recursive list — operand for `IN` (candidate values) and
     // `BETWEEN*` (exactly 2 values `[lower, upper]`). Nested
@@ -640,6 +643,10 @@ message GetDocumentsRequest {
       string text = 5;
       bytes bytes_value = 6;
       ValueList list = 7;
+      // `bool` payload is a placeholder — only the discriminant
+      // matters. Picking the variant means "this operand is null";
+      // the bool value itself is ignored on the server.
+      bool null_value = 8;
     }
   }
 

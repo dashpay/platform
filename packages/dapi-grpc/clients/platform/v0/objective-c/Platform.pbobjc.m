@@ -5212,6 +5212,7 @@ BOOL GetDocumentsRequest_WhereOperator_IsValidValue(int32_t value__) {
 @dynamic text;
 @dynamic bytesValue;
 @dynamic list;
+@dynamic nullValue;
 
 typedef struct GetDocumentsRequest_DocumentFieldValue__storage_ {
   uint32_t _has_storage_[2];
@@ -5291,6 +5292,15 @@ typedef struct GetDocumentsRequest_DocumentFieldValue__storage_ {
         .offset = (uint32_t)offsetof(GetDocumentsRequest_DocumentFieldValue__storage_, list),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "nullValue",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentsRequest_DocumentFieldValue_FieldNumber_NullValue,
+        .hasIndex = -1,
+        .offset = 1,  // Stored in _has_storage_ to save space.
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBool,
       },
     };
     GPBDescriptor *localDescriptor =

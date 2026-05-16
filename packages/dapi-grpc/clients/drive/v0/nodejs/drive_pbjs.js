@@ -20135,6 +20135,7 @@ $root.org = (function() {
                              * @property {string|null} [text] DocumentFieldValue text
                              * @property {Uint8Array|null} [bytesValue] DocumentFieldValue bytesValue
                              * @property {org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.IValueList|null} [list] DocumentFieldValue list
+                             * @property {boolean|null} [nullValue] DocumentFieldValue nullValue
                              */
 
                             /**
@@ -20208,17 +20209,25 @@ $root.org = (function() {
                              */
                             DocumentFieldValue.prototype.list = null;
 
+                            /**
+                             * DocumentFieldValue nullValue.
+                             * @member {boolean} nullValue
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue
+                             * @instance
+                             */
+                            DocumentFieldValue.prototype.nullValue = false;
+
                             // OneOf field names bound to virtual getters and setters
                             var $oneOfFields;
 
                             /**
                              * DocumentFieldValue variant.
-                             * @member {"boolValue"|"int64Value"|"uint64Value"|"doubleValue"|"text"|"bytesValue"|"list"|undefined} variant
+                             * @member {"boolValue"|"int64Value"|"uint64Value"|"doubleValue"|"text"|"bytesValue"|"list"|"nullValue"|undefined} variant
                              * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue
                              * @instance
                              */
                             Object.defineProperty(DocumentFieldValue.prototype, "variant", {
-                                get: $util.oneOfGetter($oneOfFields = ["boolValue", "int64Value", "uint64Value", "doubleValue", "text", "bytesValue", "list"]),
+                                get: $util.oneOfGetter($oneOfFields = ["boolValue", "int64Value", "uint64Value", "doubleValue", "text", "bytesValue", "list", "nullValue"]),
                                 set: $util.oneOfSetter($oneOfFields)
                             });
 
@@ -20260,6 +20269,8 @@ $root.org = (function() {
                                     writer.uint32(/* id 6, wireType 2 =*/50).bytes(message.bytesValue);
                                 if (message.list != null && Object.hasOwnProperty.call(message, "list"))
                                     $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.ValueList.encode(message.list, writer.uint32(/* id 7, wireType 2 =*/58).fork()).ldelim();
+                                if (message.nullValue != null && Object.hasOwnProperty.call(message, "nullValue"))
+                                    writer.uint32(/* id 8, wireType 0 =*/64).bool(message.nullValue);
                                 return writer;
                             };
 
@@ -20314,6 +20325,9 @@ $root.org = (function() {
                                         break;
                                     case 7:
                                         message.list = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.ValueList.decode(reader, reader.uint32());
+                                        break;
+                                    case 8:
+                                        message.nullValue = reader.bool();
                                         break;
                                     default:
                                         reader.skipType(tag & 7);
@@ -20401,6 +20415,13 @@ $root.org = (function() {
                                             return "list." + error;
                                     }
                                 }
+                                if (message.nullValue != null && message.hasOwnProperty("nullValue")) {
+                                    if (properties.variant === 1)
+                                        return "variant: multiple values";
+                                    properties.variant = 1;
+                                    if (typeof message.nullValue !== "boolean")
+                                        return "nullValue: boolean expected";
+                                }
                                 return null;
                             };
 
@@ -20450,6 +20471,8 @@ $root.org = (function() {
                                         throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.list: object expected");
                                     message.list = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.ValueList.fromObject(object.list);
                                 }
+                                if (object.nullValue != null)
+                                    message.nullValue = Boolean(object.nullValue);
                                 return message;
                             };
 
@@ -20506,6 +20529,11 @@ $root.org = (function() {
                                     object.list = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.ValueList.toObject(message.list, options);
                                     if (options.oneofs)
                                         object.variant = "list";
+                                }
+                                if (message.nullValue != null && message.hasOwnProperty("nullValue")) {
+                                    object.nullValue = message.nullValue;
+                                    if (options.oneofs)
+                                        object.variant = "nullValue";
                                 }
                                 return object;
                             };
