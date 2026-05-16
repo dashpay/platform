@@ -664,44 +664,63 @@ message GetDocumentsRequest {
     DocumentFieldValue value = 3;
   }
 
-  // Aggregate operand for the left side of a `HavingClause`.
+  // Per-group aggregate operand for the left side of a
+  // `HavingClause`. Only the per-group aggregates live here:
+  // `MIN` / `MAX` / `TOP` / `BOTTOM` are **cross-group** ranking
+  // primitives and appear on the right side via `HavingRanking`.
   //
   // **Field semantics by function**:
   // - `COUNT`: empty `field` means `COUNT(*)` (group cardinality);
   //   non-empty `field` means `COUNT(field)` (count of non-null
   //   values of `field` in the group).
-  // - `SUM` / `AVG` / `MIN` / `MAX`: `field` is required.
-  // - `TOP` / `BOTTOM`: N-th-element aggregates. `TOP(field, N)`
-  //   evaluates to "the N-th largest value of `field` in the
-  //   group"; `BOTTOM(field, N)` is the symmetric N-th-smallest.
-  //   `N` lives in the `n` field below (1-indexed); the
-  //   `HavingClause.value` slot stays free for the comparison
-  //   target so all operators (scalar comparison, `IN`,
-  //   `BETWEEN*`) work uniformly with these functions.
+  // - `SUM` / `AVG`: `field` is required.
   message HavingAggregate {
     enum Function {
       COUNT = 0;
       SUM = 1;
       AVG = 2;
-      MIN = 3;
-      MAX = 4;
-      TOP = 5;
-      BOTTOM = 6;
     }
     Function function = 1;
     // Required for every function except `COUNT`; for `COUNT` an
     // empty `field` means `COUNT(*)`.
     string field = 2;
-    // N-th rank for `TOP` / `BOTTOM` (1-indexed: `n=1` is the
-    // largest / smallest element). Required for those two
-    // functions; must be unset for the others. The wire allows
-    // setting it on any function for forward compatibility, but
-    // evaluation rejects an `n` on `COUNT`/`SUM`/`AVG`/`MIN`/`MAX`
-    // as a malformed aggregate.
-    optional uint64 n = 3 [jstype = JS_STRING];
   }
 
-  // Single `HAVING <aggregate> <op> <value>` clause. Multiple
+  // Cross-group ranking primitive on the right side of a
+  // `HavingClause`. The ranking is computed over the set of
+  // group-aggregate results (one per `GROUP BY` row), so
+  // `HAVING COUNT(*) EQ MAX` selects groups whose count equals
+  // the maximum count across all groups, and
+  // `HAVING COUNT(*) IN TOP(5)` selects groups whose count is
+  // among the five largest. Concise way to express top-N /
+  // bottom-N selection without window functions or
+  // `ORDER BY` + `LIMIT`.
+  //
+  // **Operator compatibility**:
+  // - Scalar operators (`=`, `!=`, `<`, `<=`, `>`, `>=`) work
+  //   with `MIN` / `MAX`. `TOP` / `BOTTOM` with scalar operators
+  //   only make sense when `n=1` (the single largest / smallest);
+  //   evaluation rejects other combinations as ambiguous.
+  // - `IN` works with `TOP(n)` / `BOTTOM(n)` for set membership.
+  // - `BETWEEN*` doesn't compose meaningfully with rankings and
+  //   is rejected at evaluation time.
+  message HavingRanking {
+    enum Kind {
+      MIN = 0;
+      MAX = 1;
+      TOP = 2;
+      BOTTOM = 3;
+    }
+    Kind kind = 1;
+    // N-th rank for `TOP` / `BOTTOM` (1-indexed: `n=1` is the
+    // single largest / smallest). Required for those two kinds;
+    // must be unset for `MIN` / `MAX`. The wire allows setting
+    // it on `MIN` / `MAX` for forward compatibility, but
+    // evaluation rejects it as a malformed ranking.
+    optional uint64 n = 2 [jstype = JS_STRING];
+  }
+
+  // Single `HAVING <aggregate> <op> <right>` clause. Multiple
   // entries in `GetDocumentsRequestV1.having` combine with
   // implicit AND — same semantics as multiple `where_clauses`
   // entries. `HAVING COUNT(*) > 5 AND SUM(amount) > 100` is two
@@ -713,7 +732,12 @@ message GetDocumentsRequest {
   // `IN` operand semantics match `WhereOperator`: `BETWEEN*`
   // expects a 2-element `DocumentFieldValue.list` carrying
   // `[lower, upper]`, and `IN` expects a `list` of candidate
-  // values.
+  // values (or a ranking set via `right.ranking`).
+  //
+  // The `right` oneof carries either a concrete
+  // `DocumentFieldValue` (literal comparison target) or a
+  // `HavingRanking` (cross-group reference). Exactly one is set;
+  // the wire rejects an unset `right`.
   message HavingClause {
     enum Operator {
       EQUAL = 0;
@@ -730,7 +754,10 @@ message GetDocumentsRequest {
     }
     HavingAggregate aggregate = 1;
     Operator operator = 2;
-    DocumentFieldValue value = 3;
+    oneof right {
+      DocumentFieldValue value = 3;
+      HavingRanking ranking = 4;
+    }
   }
 
   // Single `ORDER BY field <direction>` clause. Multi-field

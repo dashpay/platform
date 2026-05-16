@@ -96,6 +96,7 @@ CF_EXTERN_C_BEGIN
 @class GetDocumentsRequest_GetDocumentsRequestV1;
 @class GetDocumentsRequest_HavingAggregate;
 @class GetDocumentsRequest_HavingClause;
+@class GetDocumentsRequest_HavingRanking;
 @class GetDocumentsRequest_OrderClause;
 @class GetDocumentsRequest_WhereClause;
 @class GetDocumentsResponse_GetDocumentsResponseV0;
@@ -403,10 +404,6 @@ typedef GPB_ENUM(GetDocumentsRequest_HavingAggregate_Function) {
   GetDocumentsRequest_HavingAggregate_Function_Count = 0,
   GetDocumentsRequest_HavingAggregate_Function_Sum = 1,
   GetDocumentsRequest_HavingAggregate_Function_Avg = 2,
-  GetDocumentsRequest_HavingAggregate_Function_Min = 3,
-  GetDocumentsRequest_HavingAggregate_Function_Max = 4,
-  GetDocumentsRequest_HavingAggregate_Function_Top = 5,
-  GetDocumentsRequest_HavingAggregate_Function_Bottom = 6,
 };
 
 GPBEnumDescriptor *GetDocumentsRequest_HavingAggregate_Function_EnumDescriptor(void);
@@ -416,6 +413,29 @@ GPBEnumDescriptor *GetDocumentsRequest_HavingAggregate_Function_EnumDescriptor(v
  * the time this source was generated.
  **/
 BOOL GetDocumentsRequest_HavingAggregate_Function_IsValidValue(int32_t value);
+
+#pragma mark - Enum GetDocumentsRequest_HavingRanking_Kind
+
+typedef GPB_ENUM(GetDocumentsRequest_HavingRanking_Kind) {
+  /**
+   * Value used if any message's field encounters a value that is not defined
+   * by this enum. The message will also have C functions to get/set the rawValue
+   * of the field.
+   **/
+  GetDocumentsRequest_HavingRanking_Kind_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
+  GetDocumentsRequest_HavingRanking_Kind_Min = 0,
+  GetDocumentsRequest_HavingRanking_Kind_Max = 1,
+  GetDocumentsRequest_HavingRanking_Kind_Top = 2,
+  GetDocumentsRequest_HavingRanking_Kind_Bottom = 3,
+};
+
+GPBEnumDescriptor *GetDocumentsRequest_HavingRanking_Kind_EnumDescriptor(void);
+
+/**
+ * Checks to see if the given value is defined by the enum or was not known at
+ * the time this source was generated.
+ **/
+BOOL GetDocumentsRequest_HavingRanking_Kind_IsValidValue(int32_t value);
 
 #pragma mark - Enum GetDocumentsRequest_HavingClause_Operator
 
@@ -2571,24 +2591,19 @@ void SetGetDocumentsRequest_WhereClause_Operator_p_RawValue(GetDocumentsRequest_
 typedef GPB_ENUM(GetDocumentsRequest_HavingAggregate_FieldNumber) {
   GetDocumentsRequest_HavingAggregate_FieldNumber_Function = 1,
   GetDocumentsRequest_HavingAggregate_FieldNumber_Field = 2,
-  GetDocumentsRequest_HavingAggregate_FieldNumber_N = 3,
 };
 
 /**
- * Aggregate operand for the left side of a `HavingClause`.
+ * Per-group aggregate operand for the left side of a
+ * `HavingClause`. Only the per-group aggregates live here:
+ * `MIN` / `MAX` / `TOP` / `BOTTOM` are **cross-group** ranking
+ * primitives and appear on the right side via `HavingRanking`.
  *
  * **Field semantics by function**:
  * - `COUNT`: empty `field` means `COUNT(*)` (group cardinality);
  *   non-empty `field` means `COUNT(field)` (count of non-null
  *   values of `field` in the group).
- * - `SUM` / `AVG` / `MIN` / `MAX`: `field` is required.
- * - `TOP` / `BOTTOM`: N-th-element aggregates. `TOP(field, N)`
- *   evaluates to "the N-th largest value of `field` in the
- *   group"; `BOTTOM(field, N)` is the symmetric N-th-smallest.
- *   `N` lives in the `n` field below (1-indexed); the
- *   `HavingClause.value` slot stays free for the comparison
- *   target so all operators (scalar comparison, `IN`,
- *   `BETWEEN*`) work uniformly with these functions.
+ * - `SUM` / `AVG`: `field` is required.
  **/
 GPB_FINAL @interface GetDocumentsRequest_HavingAggregate : GPBMessage
 
@@ -2600,17 +2615,6 @@ GPB_FINAL @interface GetDocumentsRequest_HavingAggregate : GPBMessage
  **/
 @property(nonatomic, readwrite, copy, null_resettable) NSString *field;
 
-/**
- * N-th rank for `TOP` / `BOTTOM` (1-indexed: `n=1` is the
- * largest / smallest element). Required for those two
- * functions; must be unset for the others. The wire allows
- * setting it on any function for forward compatibility, but
- * evaluation rejects an `n` on `COUNT`/`SUM`/`AVG`/`MIN`/`MAX`
- * as a malformed aggregate.
- **/
-@property(nonatomic, readwrite) uint64_t n;
-
-@property(nonatomic, readwrite) BOOL hasN;
 @end
 
 /**
@@ -2625,16 +2629,78 @@ int32_t GetDocumentsRequest_HavingAggregate_Function_RawValue(GetDocumentsReques
  **/
 void SetGetDocumentsRequest_HavingAggregate_Function_RawValue(GetDocumentsRequest_HavingAggregate *message, int32_t value);
 
+#pragma mark - GetDocumentsRequest_HavingRanking
+
+typedef GPB_ENUM(GetDocumentsRequest_HavingRanking_FieldNumber) {
+  GetDocumentsRequest_HavingRanking_FieldNumber_Kind = 1,
+  GetDocumentsRequest_HavingRanking_FieldNumber_N = 2,
+};
+
+/**
+ * Cross-group ranking primitive on the right side of a
+ * `HavingClause`. The ranking is computed over the set of
+ * group-aggregate results (one per `GROUP BY` row), so
+ * `HAVING COUNT(*) EQ MAX` selects groups whose count equals
+ * the maximum count across all groups, and
+ * `HAVING COUNT(*) IN TOP(5)` selects groups whose count is
+ * among the five largest. Concise way to express top-N /
+ * bottom-N selection without window functions or
+ * `ORDER BY` + `LIMIT`.
+ *
+ * **Operator compatibility**:
+ * - Scalar operators (`=`, `!=`, `<`, `<=`, `>`, `>=`) work
+ *   with `MIN` / `MAX`. `TOP` / `BOTTOM` with scalar operators
+ *   only make sense when `n=1` (the single largest / smallest);
+ *   evaluation rejects other combinations as ambiguous.
+ * - `IN` works with `TOP(n)` / `BOTTOM(n)` for set membership.
+ * - `BETWEEN*` doesn't compose meaningfully with rankings and
+ *   is rejected at evaluation time.
+ **/
+GPB_FINAL @interface GetDocumentsRequest_HavingRanking : GPBMessage
+
+@property(nonatomic, readwrite) GetDocumentsRequest_HavingRanking_Kind kind;
+
+/**
+ * N-th rank for `TOP` / `BOTTOM` (1-indexed: `n=1` is the
+ * single largest / smallest). Required for those two kinds;
+ * must be unset for `MIN` / `MAX`. The wire allows setting
+ * it on `MIN` / `MAX` for forward compatibility, but
+ * evaluation rejects it as a malformed ranking.
+ **/
+@property(nonatomic, readwrite) uint64_t n;
+
+@property(nonatomic, readwrite) BOOL hasN;
+@end
+
+/**
+ * Fetches the raw value of a @c GetDocumentsRequest_HavingRanking's @c kind property, even
+ * if the value was not defined by the enum at the time the code was generated.
+ **/
+int32_t GetDocumentsRequest_HavingRanking_Kind_RawValue(GetDocumentsRequest_HavingRanking *message);
+/**
+ * Sets the raw value of an @c GetDocumentsRequest_HavingRanking's @c kind property, allowing
+ * it to be set to a value that was not defined by the enum at the time the code
+ * was generated.
+ **/
+void SetGetDocumentsRequest_HavingRanking_Kind_RawValue(GetDocumentsRequest_HavingRanking *message, int32_t value);
+
 #pragma mark - GetDocumentsRequest_HavingClause
 
 typedef GPB_ENUM(GetDocumentsRequest_HavingClause_FieldNumber) {
   GetDocumentsRequest_HavingClause_FieldNumber_Aggregate = 1,
   GetDocumentsRequest_HavingClause_FieldNumber_Operator_p = 2,
   GetDocumentsRequest_HavingClause_FieldNumber_Value = 3,
+  GetDocumentsRequest_HavingClause_FieldNumber_Ranking = 4,
+};
+
+typedef GPB_ENUM(GetDocumentsRequest_HavingClause_Right_OneOfCase) {
+  GetDocumentsRequest_HavingClause_Right_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDocumentsRequest_HavingClause_Right_OneOfCase_Value = 3,
+  GetDocumentsRequest_HavingClause_Right_OneOfCase_Ranking = 4,
 };
 
 /**
- * Single `HAVING <aggregate> <op> <value>` clause. Multiple
+ * Single `HAVING <aggregate> <op> <right>` clause. Multiple
  * entries in `GetDocumentsRequestV1.having` combine with
  * implicit AND — same semantics as multiple `where_clauses`
  * entries. `HAVING COUNT(*) > 5 AND SUM(amount) > 100` is two
@@ -2646,7 +2712,12 @@ typedef GPB_ENUM(GetDocumentsRequest_HavingClause_FieldNumber) {
  * `IN` operand semantics match `WhereOperator`: `BETWEEN*`
  * expects a 2-element `DocumentFieldValue.list` carrying
  * `[lower, upper]`, and `IN` expects a `list` of candidate
- * values.
+ * values (or a ranking set via `right.ranking`).
+ *
+ * The `right` oneof carries either a concrete
+ * `DocumentFieldValue` (literal comparison target) or a
+ * `HavingRanking` (cross-group reference). Exactly one is set;
+ * the wire rejects an unset `right`.
  **/
 GPB_FINAL @interface GetDocumentsRequest_HavingClause : GPBMessage
 
@@ -2656,9 +2727,11 @@ GPB_FINAL @interface GetDocumentsRequest_HavingClause : GPBMessage
 
 @property(nonatomic, readwrite) GetDocumentsRequest_HavingClause_Operator operator_p;
 
+@property(nonatomic, readonly) GetDocumentsRequest_HavingClause_Right_OneOfCase rightOneOfCase;
+
 @property(nonatomic, readwrite, strong, null_resettable) GetDocumentsRequest_DocumentFieldValue *value;
-/** Test to see if @c value has been set. */
-@property(nonatomic, readwrite) BOOL hasValue;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsRequest_HavingRanking *ranking;
 
 @end
 
@@ -2673,6 +2746,11 @@ int32_t GetDocumentsRequest_HavingClause_Operator_p_RawValue(GetDocumentsRequest
  * was generated.
  **/
 void SetGetDocumentsRequest_HavingClause_Operator_p_RawValue(GetDocumentsRequest_HavingClause *message, int32_t value);
+
+/**
+ * Clears whatever value was set for the oneof 'right'.
+ **/
+void GetDocumentsRequest_HavingClause_ClearRightOneOfCase(GetDocumentsRequest_HavingClause *message);
 
 #pragma mark - GetDocumentsRequest_OrderClause
 

@@ -10,9 +10,10 @@ use dapi_grpc::platform::v0::{
         document_field_value,
         get_documents_request_v0::Start,
         get_documents_request_v1::{Select, Start as V1Start},
-        having_aggregate, having_clause, DocumentFieldValue as ProtoDocumentFieldValue,
-        GetDocumentsRequestV1, HavingAggregate as ProtoHavingAggregate,
-        HavingClause as ProtoHavingClause, OrderClause as ProtoOrderClause,
+        having_aggregate, having_clause, having_ranking,
+        DocumentFieldValue as ProtoDocumentFieldValue, GetDocumentsRequestV1,
+        HavingAggregate as ProtoHavingAggregate, HavingClause as ProtoHavingClause,
+        HavingRanking as ProtoHavingRanking, OrderClause as ProtoOrderClause,
         WhereClause as ProtoWhereClause, WhereOperator as ProtoWhereOperator,
     },
     GetDocumentsRequest, Proof, ResponseMetadata,
@@ -31,7 +32,8 @@ use dpp::{
 };
 use drive::query::{
     DriveDocumentQuery, HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator,
-    InternalClauses, OrderClause, WhereClause, WhereOperator,
+    HavingRanking, HavingRankingKind, HavingRightOperand, InternalClauses, OrderClause,
+    WhereClause, WhereOperator,
 };
 use drive_proof_verifier::{types::Documents, FromProof};
 use rs_dapi_client::transport::{
@@ -575,15 +577,20 @@ fn order_clause_to_proto(clause: OrderClause) -> ProtoOrderClause {
 
 /// Convert a drive [`HavingClause`] into its wire-format proto
 /// counterpart. The inverse of `rs-drive-abci`'s
-/// `having_clause_from_proto`. Errors only on `Value` variants the
-/// underlying `value_to_proto` can't represent — every
-/// [`HavingOperator`] / [`HavingAggregateFunction`] discriminant
-/// has a 1:1 wire counterpart and is always convertible.
+/// `having_clause_from_proto`. Errors only on `Value` variants
+/// the underlying `value_to_proto` can't represent — every
+/// `HavingOperator` / `HavingAggregateFunction` /
+/// `HavingRankingKind` discriminant has a 1:1 wire counterpart
+/// and is always convertible.
 fn having_clause_to_proto(clause: HavingClause) -> Result<ProtoHavingClause, Error> {
+    let right = match clause.right {
+        HavingRightOperand::Value(v) => having_clause::Right::Value(value_to_proto(v)?),
+        HavingRightOperand::Ranking(r) => having_clause::Right::Ranking(having_ranking_to_proto(r)),
+    };
     Ok(ProtoHavingClause {
         aggregate: Some(having_aggregate_to_proto(clause.aggregate)),
         operator: having_operator_to_proto(clause.operator) as i32,
-        value: Some(value_to_proto(clause.value)?),
+        right: Some(right),
     })
 }
 
@@ -591,7 +598,6 @@ fn having_aggregate_to_proto(aggregate: HavingAggregate) -> ProtoHavingAggregate
     ProtoHavingAggregate {
         function: having_function_to_proto(aggregate.function) as i32,
         field: aggregate.field,
-        n: aggregate.n,
     }
 }
 
@@ -600,10 +606,22 @@ fn having_function_to_proto(function: HavingAggregateFunction) -> having_aggrega
         HavingAggregateFunction::Count => having_aggregate::Function::Count,
         HavingAggregateFunction::Sum => having_aggregate::Function::Sum,
         HavingAggregateFunction::Avg => having_aggregate::Function::Avg,
-        HavingAggregateFunction::Min => having_aggregate::Function::Min,
-        HavingAggregateFunction::Max => having_aggregate::Function::Max,
-        HavingAggregateFunction::Top => having_aggregate::Function::Top,
-        HavingAggregateFunction::Bottom => having_aggregate::Function::Bottom,
+    }
+}
+
+fn having_ranking_to_proto(ranking: HavingRanking) -> ProtoHavingRanking {
+    ProtoHavingRanking {
+        kind: having_ranking_kind_to_proto(ranking.kind) as i32,
+        n: ranking.n,
+    }
+}
+
+fn having_ranking_kind_to_proto(kind: HavingRankingKind) -> having_ranking::Kind {
+    match kind {
+        HavingRankingKind::Min => having_ranking::Kind::Min,
+        HavingRankingKind::Max => having_ranking::Kind::Max,
+        HavingRankingKind::Top => having_ranking::Kind::Top,
+        HavingRankingKind::Bottom => having_ranking::Kind::Bottom,
     }
 }
 

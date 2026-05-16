@@ -83,14 +83,15 @@ fn oc(field: &str, ascending: bool) -> ProtoOrderClause {
     }
 }
 
-/// Build a proto `HavingClause` triple `(aggregate, operator,
-/// value)`. Convenience for the rejection tests — the server
-/// rejects any non-empty `having` wholesale today, so the
-/// specific aggregate function / operator / value here don't
-/// need to be domain-meaningful, only well-formed. `n` is left
-/// unset; tests that need the N-th-rank slot for `TOP` / `BOTTOM`
-/// should build the `ProtoHavingClause` inline rather than route
-/// through this helper.
+/// Build a proto `HavingClause` with a literal-value right
+/// operand `(aggregate, operator, value)`. Convenience for the
+/// rejection tests — the server rejects any non-empty `having`
+/// wholesale today, so the specific aggregate function / operator
+/// / value here don't need to be domain-meaningful, only
+/// well-formed. Tests that need the ranking right-operand
+/// (`COUNT EQ MAX`, `COUNT IN TOP(5)`, …) should build the
+/// `ProtoHavingClause` inline with `having_clause::Right::Ranking`
+/// rather than route through this helper.
 fn hc(
     function: having_aggregate::Function,
     field: &str,
@@ -101,10 +102,9 @@ fn hc(
         aggregate: Some(ProtoHavingAggregate {
             function: function as i32,
             field: field.to_string(),
-            n: None,
         }),
         operator: operator as i32,
-        value: Some(pv(value)),
+        right: Some(having_clause::Right::Value(pv(value))),
     }
 }
 

@@ -5,7 +5,10 @@ pub use {
     conditions::{ValueClause, WhereClause, WhereOperator},
     drive_document_count_query::{DocumentCountMode, DriveDocumentCountQuery, SplitCountEntry},
     grovedb::{PathQuery, Query, QueryItem, SizedQuery},
-    having::{HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator},
+    having::{
+        HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator, HavingRanking,
+        HavingRankingKind, HavingRightOperand,
+    },
     ordering::OrderClause,
     single_document_drive_query::SingleDocumentDriveQuery,
     single_document_drive_query::SingleDocumentDriveQueryContestedStatus,

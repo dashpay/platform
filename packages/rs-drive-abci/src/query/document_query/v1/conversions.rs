@@ -28,15 +28,16 @@
 
 use crate::error::query::QueryError;
 use dapi_grpc::platform::v0::get_documents_request::{
-    document_field_value, having_aggregate, having_clause,
+    document_field_value, having_aggregate, having_clause, having_ranking,
     DocumentFieldValue as ProtoDocumentFieldValue, HavingAggregate as ProtoHavingAggregate,
-    HavingClause as ProtoHavingClause, OrderClause as ProtoOrderClause,
-    WhereClause as ProtoWhereClause, WhereOperator as ProtoWhereOperator,
+    HavingClause as ProtoHavingClause, HavingRanking as ProtoHavingRanking,
+    OrderClause as ProtoOrderClause, WhereClause as ProtoWhereClause,
+    WhereOperator as ProtoWhereOperator,
 };
 use dpp::platform_value::Value;
 use drive::query::{
-    HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator, OrderClause,
-    WhereClause, WhereOperator,
+    HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator, HavingRanking,
+    HavingRankingKind, HavingRightOperand, OrderClause, WhereClause, WhereOperator,
 };
 
 /// Map a wire-level [`ProtoWhereOperator`] discriminant onto
@@ -161,7 +162,7 @@ pub(super) fn order_clauses_from_proto(clauses: Vec<ProtoOrderClause>) -> Vec<Or
 fn having_function_from_proto(function: i32) -> Result<HavingAggregateFunction, QueryError> {
     let proto = having_aggregate::Function::try_from(function).map_err(|_| {
         QueryError::InvalidArgument(format!(
-            "unknown HavingAggregate.Function discriminant: {} (valid values: 0..=6, see \
+            "unknown HavingAggregate.Function discriminant: {} (valid values: 0..=2, see \
              `get_documents_request::having_aggregate::Function`)",
             function
         ))
@@ -170,10 +171,36 @@ fn having_function_from_proto(function: i32) -> Result<HavingAggregateFunction, 
         having_aggregate::Function::Count => HavingAggregateFunction::Count,
         having_aggregate::Function::Sum => HavingAggregateFunction::Sum,
         having_aggregate::Function::Avg => HavingAggregateFunction::Avg,
-        having_aggregate::Function::Min => HavingAggregateFunction::Min,
-        having_aggregate::Function::Max => HavingAggregateFunction::Max,
-        having_aggregate::Function::Top => HavingAggregateFunction::Top,
-        having_aggregate::Function::Bottom => HavingAggregateFunction::Bottom,
+    })
+}
+
+/// Map a wire [`having_ranking::Kind`] discriminant onto drive's
+/// [`HavingRankingKind`].
+fn having_ranking_kind_from_proto(kind: i32) -> Result<HavingRankingKind, QueryError> {
+    let proto = having_ranking::Kind::try_from(kind).map_err(|_| {
+        QueryError::InvalidArgument(format!(
+            "unknown HavingRanking.Kind discriminant: {} (valid values: 0..=3, see \
+             `get_documents_request::having_ranking::Kind`)",
+            kind
+        ))
+    })?;
+    Ok(match proto {
+        having_ranking::Kind::Min => HavingRankingKind::Min,
+        having_ranking::Kind::Max => HavingRankingKind::Max,
+        having_ranking::Kind::Top => HavingRankingKind::Top,
+        having_ranking::Kind::Bottom => HavingRankingKind::Bottom,
+    })
+}
+
+/// Map a wire [`ProtoHavingRanking`] onto drive's [`HavingRanking`].
+/// The `kind` ↔ `n` consistency check (e.g. `n` required for
+/// `Top` / `Bottom`, forbidden on `Min` / `Max`) runs inside the
+/// evaluator when HAVING execution lands; this converter only
+/// enforces that the proto shape is well-formed.
+fn having_ranking_from_proto(ranking: ProtoHavingRanking) -> Result<HavingRanking, QueryError> {
+    Ok(HavingRanking {
+        kind: having_ranking_kind_from_proto(ranking.kind)?,
+        n: ranking.n,
     })
 }
 
@@ -204,27 +231,27 @@ fn having_operator_from_proto(operator: i32) -> Result<HavingOperator, QueryErro
 }
 
 /// Map a wire [`ProtoHavingAggregate`] onto drive's
-/// [`HavingAggregate`]. The aggregate-function ↔ field / `n`
-/// consistency check (e.g. `field` required for everything except
-/// `Count`, `n` required for `Top` / `Bottom`) runs inside the
-/// executor when HAVING evaluation lands; the converter only
-/// enforces that the proto shape is well-formed.
+/// [`HavingAggregate`]. The aggregate-function ↔ field
+/// consistency check (`field` required for everything except
+/// `Count`) runs inside the evaluator when HAVING execution
+/// lands; the converter only enforces that the proto shape is
+/// well-formed.
 fn having_aggregate_from_proto(
     aggregate: ProtoHavingAggregate,
 ) -> Result<HavingAggregate, QueryError> {
     Ok(HavingAggregate {
         function: having_function_from_proto(aggregate.function)?,
         field: aggregate.field,
-        n: aggregate.n,
     })
 }
 
 /// Map a wire [`ProtoHavingClause`] onto drive's structured
 /// [`HavingClause`]. Errors surface as
-/// [`QueryError::InvalidArgument`] for aggregate-discriminant,
-/// operator-discriminant, value-shape, and missing-aggregate
-/// failures alike — none of these correspond to "future server
-/// capability," they're wire-level malformations.
+/// [`QueryError::InvalidArgument`] for any wire-level
+/// malformation: unknown discriminant on the aggregate function,
+/// operator, or ranking kind; missing aggregate; missing right
+/// operand (oneof unset on the wire); inner value-shape failures
+/// on the literal-value branch.
 pub(super) fn having_clause_from_proto(
     clause: ProtoHavingClause,
 ) -> Result<HavingClause, QueryError> {
@@ -237,20 +264,24 @@ pub(super) fn having_clause_from_proto(
     })?;
     let aggregate = having_aggregate_from_proto(aggregate)?;
     let operator = having_operator_from_proto(clause.operator)?;
-    let value = clause.value.ok_or_else(|| {
+    let right = clause.right.ok_or_else(|| {
         QueryError::InvalidArgument(
-            "HavingClause has no value set; every clause must carry a concrete \
-             right-hand `DocumentFieldValue` (the comparison target — for \
-             `Between*` a 2-element list, for `In` a list of candidates, \
-             otherwise a scalar)"
+            "HavingClause has no right operand set; every clause must carry \
+             either a concrete `DocumentFieldValue` (`right.value`) or a \
+             cross-group ranking reference (`right.ranking`)"
                 .to_string(),
         )
     })?;
-    let value = value_from_proto(value)?;
+    let right = match right {
+        having_clause::Right::Value(v) => HavingRightOperand::Value(value_from_proto(v)?),
+        having_clause::Right::Ranking(r) => {
+            HavingRightOperand::Ranking(having_ranking_from_proto(r)?)
+        }
+    };
     Ok(HavingClause {
         aggregate,
         operator,
-        value,
+        right,
     })
 }
 
