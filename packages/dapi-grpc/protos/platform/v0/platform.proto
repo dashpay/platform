@@ -664,6 +664,64 @@ message GetDocumentsRequest {
     DocumentFieldValue value = 3;
   }
 
+  // Aggregate operand for the left side of a `HavingClause`.
+  //
+  // **Field semantics by function**:
+  // - `COUNT`: empty `field` means `COUNT(*)` (group cardinality);
+  //   non-empty `field` means `COUNT(field)` (count of non-null
+  //   values of `field` in the group).
+  // - `SUM` / `AVG` / `MIN` / `MAX`: `field` is required.
+  // - `TOP` / `BOTTOM`: N-th-element aggregates. `TOP(field)`
+  //   against a right operand of `N` evaluates to "the N-th
+  //   largest value of `field` in the group"; `BOTTOM(field)` is
+  //   the symmetric N-th-smallest. The `N` argument lives in
+  //   `HavingClause.value`, not here.
+  message HavingAggregate {
+    enum Function {
+      COUNT = 0;
+      SUM = 1;
+      AVG = 2;
+      MIN = 3;
+      MAX = 4;
+      TOP = 5;
+      BOTTOM = 6;
+    }
+    Function function = 1;
+    // Required for every function except `COUNT`; for `COUNT` an
+    // empty `field` means `COUNT(*)`.
+    string field = 2;
+  }
+
+  // Single `HAVING <aggregate> <op> <value>` clause. Multiple
+  // entries in `GetDocumentsRequestV1.having` combine with
+  // implicit AND — same semantics as multiple `where_clauses`
+  // entries. `HAVING COUNT(*) > 5 AND SUM(amount) > 100` is two
+  // `HavingClause` rows, not a tree.
+  //
+  // HAVING uses scalar comparison only — `IN` / `BETWEEN` /
+  // `STARTS_WITH` from `WhereOperator` have no natural meaning
+  // against a single aggregate result, so the operator set is
+  // narrower.
+  //
+  // The right-side `value` slot carries either the comparison
+  // target (for `SUM` / `AVG` / `MIN` / `MAX` / `COUNT`) or the
+  // `N` argument (for `TOP` / `BOTTOM`). The wire shape uses the
+  // same `DocumentFieldValue` envelope for both so the SDK
+  // builders don't need a separate path.
+  message HavingClause {
+    enum Operator {
+      EQUAL = 0;
+      NOT_EQUAL = 1;
+      GREATER_THAN = 2;
+      GREATER_THAN_OR_EQUALS = 3;
+      LESS_THAN = 4;
+      LESS_THAN_OR_EQUALS = 5;
+    }
+    HavingAggregate aggregate = 1;
+    Operator operator = 2;
+    DocumentFieldValue value = 3;
+  }
+
   // Single `ORDER BY field <direction>` clause. Multi-field
   // ordering is expressed by repeating this message at the
   // request level (`repeated OrderClause order_by = 4`), matching
@@ -864,16 +922,23 @@ message GetDocumentsRequest {
     // message-level docstring for the supported-shape table.
     repeated string group_by = 10;
 
-    // SQL `HAVING` clauses, structured the same way as
-    // `where_clauses`. **Always rejected when non-empty** today
-    // with `Unsupported("HAVING clause is not yet implemented")`;
-    // reserved on the wire as a typed surface so the future
-    // server capability can land without another version bump.
-    // HAVING in SQL evaluates against aggregates rather than row
-    // values; the current `WhereClause` shape is a placeholder
-    // that may be refined when execution lands — until then only
-    // the empty/non-empty discriminant is checked.
-    repeated WhereClause having = 11;
+    // SQL `HAVING` clauses — aggregate filters that apply to the
+    // grouped rows produced by `select=COUNT, group_by=[…]`. The
+    // wire shape is `HavingClause`, not `WhereClause`, because
+    // HAVING evaluates against per-group aggregates
+    // (`COUNT`/`SUM`/`AVG`/`MIN`/`MAX`/`TOP`/`BOTTOM`) rather than
+    // row field values. Multiple entries combine with implicit
+    // AND. See `HavingClause` / `HavingAggregate` for the
+    // operator and aggregate-function catalogs.
+    //
+    // **Always rejected when non-empty** today with
+    // `Unsupported("HAVING clause is not yet implemented")`. The
+    // wire shape is shipped now so the future server capability
+    // can land without another version bump — and so callers can
+    // construct full `HAVING COUNT(*) > 5 AND SUM(amount) > 100`
+    // requests in their builders even before the server evaluates
+    // them.
+    repeated HavingClause having = 11;
   }
 
   oneof version {

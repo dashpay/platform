@@ -15,7 +15,9 @@ use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::{
     Select as V1Select, Start as V1Start,
 };
 use dapi_grpc::platform::v0::get_documents_request::{
-    document_field_value, DocumentFieldValue as ProtoDocumentFieldValue, GetDocumentsRequestV0,
+    document_field_value, having_aggregate, having_clause,
+    DocumentFieldValue as ProtoDocumentFieldValue, GetDocumentsRequestV0,
+    HavingAggregate as ProtoHavingAggregate, HavingClause as ProtoHavingClause,
     OrderClause as ProtoOrderClause, WhereClause as ProtoWhereClause,
     WhereOperator as ProtoWhereOperator,
 };
@@ -81,6 +83,27 @@ fn oc(field: &str, ascending: bool) -> ProtoOrderClause {
     }
 }
 
+/// Build a proto `HavingClause` triple `(aggregate, operator,
+/// value)`. Convenience for the rejection tests — the server
+/// rejects any non-empty `having` wholesale today, so the
+/// specific aggregate function / operator / value here don't
+/// need to be domain-meaningful, only well-formed.
+fn hc(
+    function: having_aggregate::Function,
+    field: &str,
+    operator: having_clause::Operator,
+    value: Value,
+) -> ProtoHavingClause {
+    ProtoHavingClause {
+        aggregate: Some(ProtoHavingAggregate {
+            function: function as i32,
+            field: field.to_string(),
+        }),
+        operator: operator as i32,
+        value: Some(pv(value)),
+    }
+}
+
 fn empty_v1_request() -> GetDocumentsRequestV1 {
     GetDocumentsRequestV1 {
         data_contract_id: vec![0u8; 32],
@@ -120,7 +143,12 @@ fn reject_having_non_empty() {
     // doesn't matter (server doesn't decode it past the `is_empty()`
     // check), so a single placeholder clause is sufficient.
     let request = GetDocumentsRequestV1 {
-        having: vec![wc("any", ProtoWhereOperator::Equal, Value::Bool(true))],
+        having: vec![hc(
+            having_aggregate::Function::Count,
+            "",
+            having_clause::Operator::GreaterThan,
+            Value::U64(0),
+        )],
         ..empty_v1_request()
     };
     assert_not_yet_implemented(validate_and_route_for_tests(&request, &[]), "HAVING clause");
@@ -652,7 +680,12 @@ fn e2e_having_rejection_surfaces_in_response() {
         prove: false,
         select: V1Select::Count as i32,
         group_by: Vec::new(),
-        having: vec![wc("any", ProtoWhereOperator::Equal, Value::Bool(true))],
+        having: vec![hc(
+            having_aggregate::Function::Sum,
+            "amount",
+            having_clause::Operator::GreaterThan,
+            Value::U64(100),
+        )],
     };
     let result = platform
         .query_documents_v1(request, &state, version)

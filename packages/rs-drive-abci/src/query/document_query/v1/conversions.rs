@@ -28,12 +28,16 @@
 
 use crate::error::query::QueryError;
 use dapi_grpc::platform::v0::get_documents_request::{
-    document_field_value, DocumentFieldValue as ProtoDocumentFieldValue,
-    OrderClause as ProtoOrderClause, WhereClause as ProtoWhereClause,
-    WhereOperator as ProtoWhereOperator,
+    document_field_value, having_aggregate, having_clause,
+    DocumentFieldValue as ProtoDocumentFieldValue, HavingAggregate as ProtoHavingAggregate,
+    HavingClause as ProtoHavingClause, OrderClause as ProtoOrderClause,
+    WhereClause as ProtoWhereClause, WhereOperator as ProtoWhereOperator,
 };
 use dpp::platform_value::Value;
-use drive::query::{OrderClause, WhereClause, WhereOperator};
+use drive::query::{
+    HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator, OrderClause,
+    WhereClause, WhereOperator,
+};
 
 /// Map a wire-level [`ProtoWhereOperator`] discriminant onto
 /// drive's [`WhereOperator`]. Unknown discriminants are wire-level
@@ -147,4 +151,106 @@ pub(super) fn order_clause_from_proto(clause: ProtoOrderClause) -> OrderClause {
 /// `repeated OrderClause` field.
 pub(super) fn order_clauses_from_proto(clauses: Vec<ProtoOrderClause>) -> Vec<OrderClause> {
     clauses.into_iter().map(order_clause_from_proto).collect()
+}
+
+/// Map a wire [`having_aggregate::Function`] discriminant onto
+/// drive's [`HavingAggregateFunction`]. Unknown discriminants are
+/// wire-level garbage (no future protocol value would map a
+/// malformed integer to a valid behavior), so they surface as
+/// [`QueryError::InvalidArgument`].
+fn having_function_from_proto(function: i32) -> Result<HavingAggregateFunction, QueryError> {
+    let proto = having_aggregate::Function::try_from(function).map_err(|_| {
+        QueryError::InvalidArgument(format!(
+            "unknown HavingAggregate.Function discriminant: {} (valid values: 0..=6, see \
+             `get_documents_request::having_aggregate::Function`)",
+            function
+        ))
+    })?;
+    Ok(match proto {
+        having_aggregate::Function::Count => HavingAggregateFunction::Count,
+        having_aggregate::Function::Sum => HavingAggregateFunction::Sum,
+        having_aggregate::Function::Avg => HavingAggregateFunction::Avg,
+        having_aggregate::Function::Min => HavingAggregateFunction::Min,
+        having_aggregate::Function::Max => HavingAggregateFunction::Max,
+        having_aggregate::Function::Top => HavingAggregateFunction::Top,
+        having_aggregate::Function::Bottom => HavingAggregateFunction::Bottom,
+    })
+}
+
+/// Map a wire [`having_clause::Operator`] discriminant onto
+/// drive's [`HavingOperator`]. Same error contract as
+/// [`having_function_from_proto`].
+fn having_operator_from_proto(operator: i32) -> Result<HavingOperator, QueryError> {
+    let proto = having_clause::Operator::try_from(operator).map_err(|_| {
+        QueryError::InvalidArgument(format!(
+            "unknown HavingClause.Operator discriminant: {} (valid values: 0..=5, see \
+             `get_documents_request::having_clause::Operator`)",
+            operator
+        ))
+    })?;
+    Ok(match proto {
+        having_clause::Operator::Equal => HavingOperator::Equal,
+        having_clause::Operator::NotEqual => HavingOperator::NotEqual,
+        having_clause::Operator::GreaterThan => HavingOperator::GreaterThan,
+        having_clause::Operator::GreaterThanOrEquals => HavingOperator::GreaterThanOrEquals,
+        having_clause::Operator::LessThan => HavingOperator::LessThan,
+        having_clause::Operator::LessThanOrEquals => HavingOperator::LessThanOrEquals,
+    })
+}
+
+/// Map a wire [`ProtoHavingAggregate`] onto drive's [`HavingAggregate`].
+/// The aggregate-function ↔ field consistency check (e.g. `field`
+/// must be non-empty for `SUM`/`AVG`/`MIN`/`MAX`/`TOP`/`BOTTOM`)
+/// runs inside the executor when HAVING evaluation lands; the
+/// converter only enforces that the proto shape is well-formed.
+fn having_aggregate_from_proto(
+    aggregate: ProtoHavingAggregate,
+) -> Result<HavingAggregate, QueryError> {
+    Ok(HavingAggregate {
+        function: having_function_from_proto(aggregate.function)?,
+        field: aggregate.field,
+    })
+}
+
+/// Map a wire [`ProtoHavingClause`] onto drive's structured
+/// [`HavingClause`]. Errors surface as
+/// [`QueryError::InvalidArgument`] for aggregate-discriminant,
+/// operator-discriminant, value-shape, and missing-aggregate
+/// failures alike — none of these correspond to "future server
+/// capability," they're wire-level malformations.
+pub(super) fn having_clause_from_proto(
+    clause: ProtoHavingClause,
+) -> Result<HavingClause, QueryError> {
+    let aggregate = clause.aggregate.ok_or_else(|| {
+        QueryError::InvalidArgument(
+            "HavingClause has no aggregate set; every clause must carry an \
+             aggregate function + field operand"
+                .to_string(),
+        )
+    })?;
+    let aggregate = having_aggregate_from_proto(aggregate)?;
+    let operator = having_operator_from_proto(clause.operator)?;
+    let value = clause.value.ok_or_else(|| {
+        QueryError::InvalidArgument(
+            "HavingClause has no value set; every clause must carry a concrete \
+             right-hand `DocumentFieldValue` (the `N` argument for `TOP`/`BOTTOM`, \
+             or the comparison target for the other aggregates)"
+                .to_string(),
+        )
+    })?;
+    let value = value_from_proto(value)?;
+    Ok(HavingClause {
+        aggregate,
+        operator,
+        value,
+    })
+}
+
+/// Plural form of [`having_clause_from_proto`] for the request-
+/// level `repeated HavingClause` field. Returns an error on the
+/// first malformed clause.
+pub(super) fn having_clauses_from_proto(
+    clauses: Vec<ProtoHavingClause>,
+) -> Result<Vec<HavingClause>, QueryError> {
+    clauses.into_iter().map(having_clause_from_proto).collect()
 }

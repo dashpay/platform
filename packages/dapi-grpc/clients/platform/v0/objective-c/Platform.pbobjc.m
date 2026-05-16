@@ -121,6 +121,8 @@ GPBObjCClassDeclaration(GetDocumentsRequest_DocumentFieldValue);
 GPBObjCClassDeclaration(GetDocumentsRequest_DocumentFieldValue_ValueList);
 GPBObjCClassDeclaration(GetDocumentsRequest_GetDocumentsRequestV0);
 GPBObjCClassDeclaration(GetDocumentsRequest_GetDocumentsRequestV1);
+GPBObjCClassDeclaration(GetDocumentsRequest_HavingAggregate);
+GPBObjCClassDeclaration(GetDocumentsRequest_HavingClause);
 GPBObjCClassDeclaration(GetDocumentsRequest_OrderClause);
 GPBObjCClassDeclaration(GetDocumentsRequest_WhereClause);
 GPBObjCClassDeclaration(GetDocumentsResponse);
@@ -5459,6 +5461,244 @@ void SetGetDocumentsRequest_WhereClause_Operator_p_RawValue(GetDocumentsRequest_
   GPBSetMessageRawEnumField(message, field, value);
 }
 
+#pragma mark - GetDocumentsRequest_HavingAggregate
+
+@implementation GetDocumentsRequest_HavingAggregate
+
+@dynamic function;
+@dynamic field;
+
+typedef struct GetDocumentsRequest_HavingAggregate__storage_ {
+  uint32_t _has_storage_[1];
+  GetDocumentsRequest_HavingAggregate_Function function;
+  NSString *field;
+} GetDocumentsRequest_HavingAggregate__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "function",
+        .dataTypeSpecific.enumDescFunc = GetDocumentsRequest_HavingAggregate_Function_EnumDescriptor,
+        .number = GetDocumentsRequest_HavingAggregate_FieldNumber_Function,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetDocumentsRequest_HavingAggregate__storage_, function),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldHasEnumDescriptor | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeEnum,
+      },
+      {
+        .name = "field",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentsRequest_HavingAggregate_FieldNumber_Field,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetDocumentsRequest_HavingAggregate__storage_, field),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeString,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetDocumentsRequest_HavingAggregate class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetDocumentsRequest_HavingAggregate__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetDocumentsRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+int32_t GetDocumentsRequest_HavingAggregate_Function_RawValue(GetDocumentsRequest_HavingAggregate *message) {
+  GPBDescriptor *descriptor = [GetDocumentsRequest_HavingAggregate descriptor];
+  GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetDocumentsRequest_HavingAggregate_FieldNumber_Function];
+  return GPBGetMessageRawEnumField(message, field);
+}
+
+void SetGetDocumentsRequest_HavingAggregate_Function_RawValue(GetDocumentsRequest_HavingAggregate *message, int32_t value) {
+  GPBDescriptor *descriptor = [GetDocumentsRequest_HavingAggregate descriptor];
+  GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetDocumentsRequest_HavingAggregate_FieldNumber_Function];
+  GPBSetMessageRawEnumField(message, field, value);
+}
+
+#pragma mark - Enum GetDocumentsRequest_HavingAggregate_Function
+
+GPBEnumDescriptor *GetDocumentsRequest_HavingAggregate_Function_EnumDescriptor(void) {
+  static _Atomic(GPBEnumDescriptor*) descriptor = nil;
+  if (!descriptor) {
+    static const char *valueNames =
+        "Count\000Sum\000Avg\000Min\000Max\000Top\000Bottom\000";
+    static const int32_t values[] = {
+        GetDocumentsRequest_HavingAggregate_Function_Count,
+        GetDocumentsRequest_HavingAggregate_Function_Sum,
+        GetDocumentsRequest_HavingAggregate_Function_Avg,
+        GetDocumentsRequest_HavingAggregate_Function_Min,
+        GetDocumentsRequest_HavingAggregate_Function_Max,
+        GetDocumentsRequest_HavingAggregate_Function_Top,
+        GetDocumentsRequest_HavingAggregate_Function_Bottom,
+    };
+    GPBEnumDescriptor *worker =
+        [GPBEnumDescriptor allocDescriptorForName:GPBNSStringifySymbol(GetDocumentsRequest_HavingAggregate_Function)
+                                       valueNames:valueNames
+                                           values:values
+                                            count:(uint32_t)(sizeof(values) / sizeof(int32_t))
+                                     enumVerifier:GetDocumentsRequest_HavingAggregate_Function_IsValidValue];
+    GPBEnumDescriptor *expected = nil;
+    if (!atomic_compare_exchange_strong(&descriptor, &expected, worker)) {
+      [worker release];
+    }
+  }
+  return descriptor;
+}
+
+BOOL GetDocumentsRequest_HavingAggregate_Function_IsValidValue(int32_t value__) {
+  switch (value__) {
+    case GetDocumentsRequest_HavingAggregate_Function_Count:
+    case GetDocumentsRequest_HavingAggregate_Function_Sum:
+    case GetDocumentsRequest_HavingAggregate_Function_Avg:
+    case GetDocumentsRequest_HavingAggregate_Function_Min:
+    case GetDocumentsRequest_HavingAggregate_Function_Max:
+    case GetDocumentsRequest_HavingAggregate_Function_Top:
+    case GetDocumentsRequest_HavingAggregate_Function_Bottom:
+      return YES;
+    default:
+      return NO;
+  }
+}
+
+#pragma mark - GetDocumentsRequest_HavingClause
+
+@implementation GetDocumentsRequest_HavingClause
+
+@dynamic hasAggregate, aggregate;
+@dynamic operator_p;
+@dynamic hasValue, value;
+
+typedef struct GetDocumentsRequest_HavingClause__storage_ {
+  uint32_t _has_storage_[1];
+  GetDocumentsRequest_HavingClause_Operator operator_p;
+  GetDocumentsRequest_HavingAggregate *aggregate;
+  GetDocumentsRequest_DocumentFieldValue *value;
+} GetDocumentsRequest_HavingClause__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "aggregate",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetDocumentsRequest_HavingAggregate),
+        .number = GetDocumentsRequest_HavingClause_FieldNumber_Aggregate,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetDocumentsRequest_HavingClause__storage_, aggregate),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "operator_p",
+        .dataTypeSpecific.enumDescFunc = GetDocumentsRequest_HavingClause_Operator_EnumDescriptor,
+        .number = GetDocumentsRequest_HavingClause_FieldNumber_Operator_p,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetDocumentsRequest_HavingClause__storage_, operator_p),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldHasEnumDescriptor | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeEnum,
+      },
+      {
+        .name = "value",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetDocumentsRequest_DocumentFieldValue),
+        .number = GetDocumentsRequest_HavingClause_FieldNumber_Value,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetDocumentsRequest_HavingClause__storage_, value),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetDocumentsRequest_HavingClause class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetDocumentsRequest_HavingClause__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetDocumentsRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+int32_t GetDocumentsRequest_HavingClause_Operator_p_RawValue(GetDocumentsRequest_HavingClause *message) {
+  GPBDescriptor *descriptor = [GetDocumentsRequest_HavingClause descriptor];
+  GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetDocumentsRequest_HavingClause_FieldNumber_Operator_p];
+  return GPBGetMessageRawEnumField(message, field);
+}
+
+void SetGetDocumentsRequest_HavingClause_Operator_p_RawValue(GetDocumentsRequest_HavingClause *message, int32_t value) {
+  GPBDescriptor *descriptor = [GetDocumentsRequest_HavingClause descriptor];
+  GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetDocumentsRequest_HavingClause_FieldNumber_Operator_p];
+  GPBSetMessageRawEnumField(message, field, value);
+}
+
+#pragma mark - Enum GetDocumentsRequest_HavingClause_Operator
+
+GPBEnumDescriptor *GetDocumentsRequest_HavingClause_Operator_EnumDescriptor(void) {
+  static _Atomic(GPBEnumDescriptor*) descriptor = nil;
+  if (!descriptor) {
+    static const char *valueNames =
+        "Equal\000NotEqual\000GreaterThan\000GreaterThanOr"
+        "Equals\000LessThan\000LessThanOrEquals\000";
+    static const int32_t values[] = {
+        GetDocumentsRequest_HavingClause_Operator_Equal,
+        GetDocumentsRequest_HavingClause_Operator_NotEqual,
+        GetDocumentsRequest_HavingClause_Operator_GreaterThan,
+        GetDocumentsRequest_HavingClause_Operator_GreaterThanOrEquals,
+        GetDocumentsRequest_HavingClause_Operator_LessThan,
+        GetDocumentsRequest_HavingClause_Operator_LessThanOrEquals,
+    };
+    GPBEnumDescriptor *worker =
+        [GPBEnumDescriptor allocDescriptorForName:GPBNSStringifySymbol(GetDocumentsRequest_HavingClause_Operator)
+                                       valueNames:valueNames
+                                           values:values
+                                            count:(uint32_t)(sizeof(values) / sizeof(int32_t))
+                                     enumVerifier:GetDocumentsRequest_HavingClause_Operator_IsValidValue];
+    GPBEnumDescriptor *expected = nil;
+    if (!atomic_compare_exchange_strong(&descriptor, &expected, worker)) {
+      [worker release];
+    }
+  }
+  return descriptor;
+}
+
+BOOL GetDocumentsRequest_HavingClause_Operator_IsValidValue(int32_t value__) {
+  switch (value__) {
+    case GetDocumentsRequest_HavingClause_Operator_Equal:
+    case GetDocumentsRequest_HavingClause_Operator_NotEqual:
+    case GetDocumentsRequest_HavingClause_Operator_GreaterThan:
+    case GetDocumentsRequest_HavingClause_Operator_GreaterThanOrEquals:
+    case GetDocumentsRequest_HavingClause_Operator_LessThan:
+    case GetDocumentsRequest_HavingClause_Operator_LessThanOrEquals:
+      return YES;
+    default:
+      return NO;
+  }
+}
+
 #pragma mark - GetDocumentsRequest_OrderClause
 
 @implementation GetDocumentsRequest_OrderClause
@@ -5778,7 +6018,7 @@ typedef struct GetDocumentsRequest_GetDocumentsRequestV1__storage_ {
       },
       {
         .name = "havingArray",
-        .dataTypeSpecific.clazz = GPBObjCClass(GetDocumentsRequest_WhereClause),
+        .dataTypeSpecific.clazz = GPBObjCClass(GetDocumentsRequest_HavingClause),
         .number = GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_HavingArray,
         .hasIndex = GPBNoHasBit,
         .offset = (uint32_t)offsetof(GetDocumentsRequest_GetDocumentsRequestV1__storage_, havingArray),

@@ -10,9 +10,10 @@ use dapi_grpc::platform::v0::{
         document_field_value,
         get_documents_request_v0::Start,
         get_documents_request_v1::{Select, Start as V1Start},
-        DocumentFieldValue as ProtoDocumentFieldValue, GetDocumentsRequestV1,
-        OrderClause as ProtoOrderClause, WhereClause as ProtoWhereClause,
-        WhereOperator as ProtoWhereOperator,
+        having_aggregate, having_clause, DocumentFieldValue as ProtoDocumentFieldValue,
+        GetDocumentsRequestV1, HavingAggregate as ProtoHavingAggregate,
+        HavingClause as ProtoHavingClause, OrderClause as ProtoOrderClause,
+        WhereClause as ProtoWhereClause, WhereOperator as ProtoWhereOperator,
     },
     GetDocumentsRequest, Proof, ResponseMetadata,
 };
@@ -28,7 +29,10 @@ use dpp::{
     prelude::{DataContract, Identifier},
     InvalidVectorSizeError, ProtocolError,
 };
-use drive::query::{DriveDocumentQuery, InternalClauses, OrderClause, WhereClause, WhereOperator};
+use drive::query::{
+    DriveDocumentQuery, HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator,
+    InternalClauses, OrderClause, WhereClause, WhereOperator,
+};
 use drive_proof_verifier::{types::Documents, FromProof};
 use rs_dapi_client::transport::{
     AppliedRequestSettings, BoxFuture, TransportError, TransportRequest,
@@ -76,15 +80,23 @@ pub struct DocumentQuery {
     /// `select=Documents` is rejected by the server as unsupported.
     #[cfg_attr(feature = "mocks", serde(default))]
     pub group_by: Vec<String>,
-    /// SQL `HAVING` clauses, structured the same way as
-    /// `where_clauses`. Non-empty values are rejected by the
-    /// server with
+    /// SQL `HAVING` clauses — aggregate filters that apply to the
+    /// grouped rows produced by `select = Count`, `group_by =
+    /// […]`. Unlike `where_clauses`, the left side is an aggregate
+    /// (`COUNT(*)`, `SUM(field)`, `AVG(field)`, `MIN`/`MAX`,
+    /// `TOP`/`BOTTOM` for N-th-element selection) rather than a
+    /// raw row field. See [`HavingClause`] /
+    /// [`drive::query::HavingAggregate`] /
+    /// [`drive::query::HavingOperator`] for the catalogs. Multiple
+    /// entries combine with implicit `AND`.
+    ///
+    /// Non-empty values are rejected by the server today with
     /// `QuerySyntaxError::Unsupported("HAVING clause is not yet
-    /// implemented")`. The wire field is reserved as a typed
-    /// `repeated WhereClause` so the SDK can encode `HAVING` once
-    /// the server gains support, without another version bump.
+    /// implemented")` — the typed builder exists so callers can
+    /// encode the full aggregate-filter surface ahead of server
+    /// support landing without a wire-format change.
     #[cfg_attr(feature = "mocks", serde(default))]
-    pub having: Vec<WhereClause>,
+    pub having: Vec<HavingClause>,
     /// `order_by` clauses for the query
     pub order_by_clauses: Vec<OrderClause>,
     /// queryset limit. `0` is the sentinel for "unset / default" and
@@ -220,7 +232,7 @@ impl DocumentQuery {
     /// implemented")`. The builder exists so SDK callers can
     /// encode `HAVING` ahead of server support landing without
     /// another version bump.
-    pub fn with_having(mut self, having: Vec<WhereClause>) -> Self {
+    pub fn with_having(mut self, having: Vec<HavingClause>) -> Self {
         self.having = having;
         self
     }
@@ -366,7 +378,7 @@ impl TryFrom<DocumentQuery> for platform_proto::GetDocumentsRequest {
             .collect();
         let having = having
             .into_iter()
-            .map(where_clause_to_proto)
+            .map(having_clause_to_proto)
             .collect::<Result<Vec<_>, _>>()?;
         // `limit: u32` with `0` sentinel → `optional uint32` on the
         // V1 wire. `None` lets the server apply its own default;
@@ -558,6 +570,50 @@ fn order_clause_to_proto(clause: OrderClause) -> ProtoOrderClause {
     ProtoOrderClause {
         field: clause.field,
         ascending: clause.ascending,
+    }
+}
+
+/// Convert a drive [`HavingClause`] into its wire-format proto
+/// counterpart. The inverse of `rs-drive-abci`'s
+/// `having_clause_from_proto`. Errors only on `Value` variants the
+/// underlying `value_to_proto` can't represent — every
+/// [`HavingOperator`] / [`HavingAggregateFunction`] discriminant
+/// has a 1:1 wire counterpart and is always convertible.
+fn having_clause_to_proto(clause: HavingClause) -> Result<ProtoHavingClause, Error> {
+    Ok(ProtoHavingClause {
+        aggregate: Some(having_aggregate_to_proto(clause.aggregate)),
+        operator: having_operator_to_proto(clause.operator) as i32,
+        value: Some(value_to_proto(clause.value)?),
+    })
+}
+
+fn having_aggregate_to_proto(aggregate: HavingAggregate) -> ProtoHavingAggregate {
+    ProtoHavingAggregate {
+        function: having_function_to_proto(aggregate.function) as i32,
+        field: aggregate.field,
+    }
+}
+
+fn having_function_to_proto(function: HavingAggregateFunction) -> having_aggregate::Function {
+    match function {
+        HavingAggregateFunction::Count => having_aggregate::Function::Count,
+        HavingAggregateFunction::Sum => having_aggregate::Function::Sum,
+        HavingAggregateFunction::Avg => having_aggregate::Function::Avg,
+        HavingAggregateFunction::Min => having_aggregate::Function::Min,
+        HavingAggregateFunction::Max => having_aggregate::Function::Max,
+        HavingAggregateFunction::Top => having_aggregate::Function::Top,
+        HavingAggregateFunction::Bottom => having_aggregate::Function::Bottom,
+    }
+}
+
+fn having_operator_to_proto(op: HavingOperator) -> having_clause::Operator {
+    match op {
+        HavingOperator::Equal => having_clause::Operator::Equal,
+        HavingOperator::NotEqual => having_clause::Operator::NotEqual,
+        HavingOperator::GreaterThan => having_clause::Operator::GreaterThan,
+        HavingOperator::GreaterThanOrEquals => having_clause::Operator::GreaterThanOrEquals,
+        HavingOperator::LessThan => having_clause::Operator::LessThan,
+        HavingOperator::LessThanOrEquals => having_clause::Operator::LessThanOrEquals,
     }
 }
 

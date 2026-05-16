@@ -5,6 +5,7 @@ pub use {
     conditions::{ValueClause, WhereClause, WhereOperator},
     drive_document_count_query::{DocumentCountMode, DriveDocumentCountQuery, SplitCountEntry},
     grovedb::{PathQuery, Query, QueryItem, SizedQuery},
+    having::{HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator},
     ordering::OrderClause,
     single_document_drive_query::SingleDocumentDriveQuery,
     single_document_drive_query::SingleDocumentDriveQueryContestedStatus,
@@ -76,6 +77,8 @@ use crate::util::grove_operations::QueryType::StatefulQuery;
 pub mod conditions;
 #[cfg(any(feature = "server", feature = "verify"))]
 mod defaults;
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod having;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod ordering;
 #[cfg(any(feature = "server", feature = "verify"))]

@@ -94,6 +94,8 @@ CF_EXTERN_C_BEGIN
 @class GetDocumentsRequest_DocumentFieldValue_ValueList;
 @class GetDocumentsRequest_GetDocumentsRequestV0;
 @class GetDocumentsRequest_GetDocumentsRequestV1;
+@class GetDocumentsRequest_HavingAggregate;
+@class GetDocumentsRequest_HavingClause;
 @class GetDocumentsRequest_OrderClause;
 @class GetDocumentsRequest_WhereClause;
 @class GetDocumentsResponse_GetDocumentsResponseV0;
@@ -388,6 +390,57 @@ GPBEnumDescriptor *GetDocumentsRequest_WhereOperator_EnumDescriptor(void);
  * the time this source was generated.
  **/
 BOOL GetDocumentsRequest_WhereOperator_IsValidValue(int32_t value);
+
+#pragma mark - Enum GetDocumentsRequest_HavingAggregate_Function
+
+typedef GPB_ENUM(GetDocumentsRequest_HavingAggregate_Function) {
+  /**
+   * Value used if any message's field encounters a value that is not defined
+   * by this enum. The message will also have C functions to get/set the rawValue
+   * of the field.
+   **/
+  GetDocumentsRequest_HavingAggregate_Function_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
+  GetDocumentsRequest_HavingAggregate_Function_Count = 0,
+  GetDocumentsRequest_HavingAggregate_Function_Sum = 1,
+  GetDocumentsRequest_HavingAggregate_Function_Avg = 2,
+  GetDocumentsRequest_HavingAggregate_Function_Min = 3,
+  GetDocumentsRequest_HavingAggregate_Function_Max = 4,
+  GetDocumentsRequest_HavingAggregate_Function_Top = 5,
+  GetDocumentsRequest_HavingAggregate_Function_Bottom = 6,
+};
+
+GPBEnumDescriptor *GetDocumentsRequest_HavingAggregate_Function_EnumDescriptor(void);
+
+/**
+ * Checks to see if the given value is defined by the enum or was not known at
+ * the time this source was generated.
+ **/
+BOOL GetDocumentsRequest_HavingAggregate_Function_IsValidValue(int32_t value);
+
+#pragma mark - Enum GetDocumentsRequest_HavingClause_Operator
+
+typedef GPB_ENUM(GetDocumentsRequest_HavingClause_Operator) {
+  /**
+   * Value used if any message's field encounters a value that is not defined
+   * by this enum. The message will also have C functions to get/set the rawValue
+   * of the field.
+   **/
+  GetDocumentsRequest_HavingClause_Operator_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
+  GetDocumentsRequest_HavingClause_Operator_Equal = 0,
+  GetDocumentsRequest_HavingClause_Operator_NotEqual = 1,
+  GetDocumentsRequest_HavingClause_Operator_GreaterThan = 2,
+  GetDocumentsRequest_HavingClause_Operator_GreaterThanOrEquals = 3,
+  GetDocumentsRequest_HavingClause_Operator_LessThan = 4,
+  GetDocumentsRequest_HavingClause_Operator_LessThanOrEquals = 5,
+};
+
+GPBEnumDescriptor *GetDocumentsRequest_HavingClause_Operator_EnumDescriptor(void);
+
+/**
+ * Checks to see if the given value is defined by the enum or was not known at
+ * the time this source was generated.
+ **/
+BOOL GetDocumentsRequest_HavingClause_Operator_IsValidValue(int32_t value);
 
 #pragma mark - Enum GetDocumentsRequest_GetDocumentsRequestV1_Select
 
@@ -2508,6 +2561,103 @@ int32_t GetDocumentsRequest_WhereClause_Operator_p_RawValue(GetDocumentsRequest_
  **/
 void SetGetDocumentsRequest_WhereClause_Operator_p_RawValue(GetDocumentsRequest_WhereClause *message, int32_t value);
 
+#pragma mark - GetDocumentsRequest_HavingAggregate
+
+typedef GPB_ENUM(GetDocumentsRequest_HavingAggregate_FieldNumber) {
+  GetDocumentsRequest_HavingAggregate_FieldNumber_Function = 1,
+  GetDocumentsRequest_HavingAggregate_FieldNumber_Field = 2,
+};
+
+/**
+ * Aggregate operand for the left side of a `HavingClause`.
+ *
+ * **Field semantics by function**:
+ * - `COUNT`: empty `field` means `COUNT(*)` (group cardinality);
+ *   non-empty `field` means `COUNT(field)` (count of non-null
+ *   values of `field` in the group).
+ * - `SUM` / `AVG` / `MIN` / `MAX`: `field` is required.
+ * - `TOP` / `BOTTOM`: N-th-element aggregates. `TOP(field)`
+ *   against a right operand of `N` evaluates to "the N-th
+ *   largest value of `field` in the group"; `BOTTOM(field)` is
+ *   the symmetric N-th-smallest. The `N` argument lives in
+ *   `HavingClause.value`, not here.
+ **/
+GPB_FINAL @interface GetDocumentsRequest_HavingAggregate : GPBMessage
+
+@property(nonatomic, readwrite) GetDocumentsRequest_HavingAggregate_Function function;
+
+/**
+ * Required for every function except `COUNT`; for `COUNT` an
+ * empty `field` means `COUNT(*)`.
+ **/
+@property(nonatomic, readwrite, copy, null_resettable) NSString *field;
+
+@end
+
+/**
+ * Fetches the raw value of a @c GetDocumentsRequest_HavingAggregate's @c function property, even
+ * if the value was not defined by the enum at the time the code was generated.
+ **/
+int32_t GetDocumentsRequest_HavingAggregate_Function_RawValue(GetDocumentsRequest_HavingAggregate *message);
+/**
+ * Sets the raw value of an @c GetDocumentsRequest_HavingAggregate's @c function property, allowing
+ * it to be set to a value that was not defined by the enum at the time the code
+ * was generated.
+ **/
+void SetGetDocumentsRequest_HavingAggregate_Function_RawValue(GetDocumentsRequest_HavingAggregate *message, int32_t value);
+
+#pragma mark - GetDocumentsRequest_HavingClause
+
+typedef GPB_ENUM(GetDocumentsRequest_HavingClause_FieldNumber) {
+  GetDocumentsRequest_HavingClause_FieldNumber_Aggregate = 1,
+  GetDocumentsRequest_HavingClause_FieldNumber_Operator_p = 2,
+  GetDocumentsRequest_HavingClause_FieldNumber_Value = 3,
+};
+
+/**
+ * Single `HAVING <aggregate> <op> <value>` clause. Multiple
+ * entries in `GetDocumentsRequestV1.having` combine with
+ * implicit AND — same semantics as multiple `where_clauses`
+ * entries. `HAVING COUNT(*) > 5 AND SUM(amount) > 100` is two
+ * `HavingClause` rows, not a tree.
+ *
+ * HAVING uses scalar comparison only — `IN` / `BETWEEN` /
+ * `STARTS_WITH` from `WhereOperator` have no natural meaning
+ * against a single aggregate result, so the operator set is
+ * narrower.
+ *
+ * The right-side `value` slot carries either the comparison
+ * target (for `SUM` / `AVG` / `MIN` / `MAX` / `COUNT`) or the
+ * `N` argument (for `TOP` / `BOTTOM`). The wire shape uses the
+ * same `DocumentFieldValue` envelope for both so the SDK
+ * builders don't need a separate path.
+ **/
+GPB_FINAL @interface GetDocumentsRequest_HavingClause : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsRequest_HavingAggregate *aggregate;
+/** Test to see if @c aggregate has been set. */
+@property(nonatomic, readwrite) BOOL hasAggregate;
+
+@property(nonatomic, readwrite) GetDocumentsRequest_HavingClause_Operator operator_p;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsRequest_DocumentFieldValue *value;
+/** Test to see if @c value has been set. */
+@property(nonatomic, readwrite) BOOL hasValue;
+
+@end
+
+/**
+ * Fetches the raw value of a @c GetDocumentsRequest_HavingClause's @c operator_p property, even
+ * if the value was not defined by the enum at the time the code was generated.
+ **/
+int32_t GetDocumentsRequest_HavingClause_Operator_p_RawValue(GetDocumentsRequest_HavingClause *message);
+/**
+ * Sets the raw value of an @c GetDocumentsRequest_HavingClause's @c operator_p property, allowing
+ * it to be set to a value that was not defined by the enum at the time the code
+ * was generated.
+ **/
+void SetGetDocumentsRequest_HavingClause_Operator_p_RawValue(GetDocumentsRequest_HavingClause *message, int32_t value);
+
 #pragma mark - GetDocumentsRequest_OrderClause
 
 typedef GPB_ENUM(GetDocumentsRequest_OrderClause_FieldNumber) {
@@ -2802,17 +2952,24 @@ GPB_FINAL @interface GetDocumentsRequest_GetDocumentsRequestV1 : GPBMessage
 @property(nonatomic, readonly) NSUInteger groupByArray_Count;
 
 /**
- * SQL `HAVING` clauses, structured the same way as
- * `where_clauses`. **Always rejected when non-empty** today
- * with `Unsupported("HAVING clause is not yet implemented")`;
- * reserved on the wire as a typed surface so the future
- * server capability can land without another version bump.
- * HAVING in SQL evaluates against aggregates rather than row
- * values; the current `WhereClause` shape is a placeholder
- * that may be refined when execution lands — until then only
- * the empty/non-empty discriminant is checked.
+ * SQL `HAVING` clauses — aggregate filters that apply to the
+ * grouped rows produced by `select=COUNT, group_by=[…]`. The
+ * wire shape is `HavingClause`, not `WhereClause`, because
+ * HAVING evaluates against per-group aggregates
+ * (`COUNT`/`SUM`/`AVG`/`MIN`/`MAX`/`TOP`/`BOTTOM`) rather than
+ * row field values. Multiple entries combine with implicit
+ * AND. See `HavingClause` / `HavingAggregate` for the
+ * operator and aggregate-function catalogs.
+ *
+ * **Always rejected when non-empty** today with
+ * `Unsupported("HAVING clause is not yet implemented")`. The
+ * wire shape is shipped now so the future server capability
+ * can land without another version bump — and so callers can
+ * construct full `HAVING COUNT(*) > 5 AND SUM(amount) > 100`
+ * requests in their builders even before the server evaluates
+ * them.
  **/
-@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDocumentsRequest_WhereClause*> *havingArray;
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDocumentsRequest_HavingClause*> *havingArray;
 /** The number of items in @c havingArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger havingArray_Count;
 

@@ -20547,6 +20547,575 @@ $root.org = (function() {
                             return WhereClause;
                         })();
 
+                        GetDocumentsRequest.HavingAggregate = (function() {
+
+                            /**
+                             * Properties of a HavingAggregate.
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest
+                             * @interface IHavingAggregate
+                             * @property {org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate.Function|null} ["function"] HavingAggregate function
+                             * @property {string|null} [field] HavingAggregate field
+                             */
+
+                            /**
+                             * Constructs a new HavingAggregate.
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest
+                             * @classdesc Represents a HavingAggregate.
+                             * @implements IHavingAggregate
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.IHavingAggregate=} [properties] Properties to set
+                             */
+                            function HavingAggregate(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * HavingAggregate function.
+                             * @member {org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate.Function} function
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate
+                             * @instance
+                             */
+                            HavingAggregate.prototype["function"] = 0;
+
+                            /**
+                             * HavingAggregate field.
+                             * @member {string} field
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate
+                             * @instance
+                             */
+                            HavingAggregate.prototype.field = "";
+
+                            /**
+                             * Creates a new HavingAggregate instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.IHavingAggregate=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate} HavingAggregate instance
+                             */
+                            HavingAggregate.create = function create(properties) {
+                                return new HavingAggregate(properties);
+                            };
+
+                            /**
+                             * Encodes the specified HavingAggregate message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.IHavingAggregate} message HavingAggregate message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            HavingAggregate.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message["function"] != null && Object.hasOwnProperty.call(message, "function"))
+                                    writer.uint32(/* id 1, wireType 0 =*/8).int32(message["function"]);
+                                if (message.field != null && Object.hasOwnProperty.call(message, "field"))
+                                    writer.uint32(/* id 2, wireType 2 =*/18).string(message.field);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified HavingAggregate message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.IHavingAggregate} message HavingAggregate message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            HavingAggregate.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a HavingAggregate message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate} HavingAggregate
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            HavingAggregate.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message["function"] = reader.int32();
+                                        break;
+                                    case 2:
+                                        message.field = reader.string();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a HavingAggregate message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate} HavingAggregate
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            HavingAggregate.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a HavingAggregate message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            HavingAggregate.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message["function"] != null && message.hasOwnProperty("function"))
+                                    switch (message["function"]) {
+                                    default:
+                                        return "function: enum value expected";
+                                    case 0:
+                                    case 1:
+                                    case 2:
+                                    case 3:
+                                    case 4:
+                                    case 5:
+                                    case 6:
+                                        break;
+                                    }
+                                if (message.field != null && message.hasOwnProperty("field"))
+                                    if (!$util.isString(message.field))
+                                        return "field: string expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a HavingAggregate message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate} HavingAggregate
+                             */
+                            HavingAggregate.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate();
+                                switch (object["function"]) {
+                                case "COUNT":
+                                case 0:
+                                    message["function"] = 0;
+                                    break;
+                                case "SUM":
+                                case 1:
+                                    message["function"] = 1;
+                                    break;
+                                case "AVG":
+                                case 2:
+                                    message["function"] = 2;
+                                    break;
+                                case "MIN":
+                                case 3:
+                                    message["function"] = 3;
+                                    break;
+                                case "MAX":
+                                case 4:
+                                    message["function"] = 4;
+                                    break;
+                                case "TOP":
+                                case 5:
+                                    message["function"] = 5;
+                                    break;
+                                case "BOTTOM":
+                                case 6:
+                                    message["function"] = 6;
+                                    break;
+                                }
+                                if (object.field != null)
+                                    message.field = String(object.field);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a HavingAggregate message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate} message HavingAggregate
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            HavingAggregate.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    object["function"] = options.enums === String ? "COUNT" : 0;
+                                    object.field = "";
+                                }
+                                if (message["function"] != null && message.hasOwnProperty("function"))
+                                    object["function"] = options.enums === String ? $root.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate.Function[message["function"]] : message["function"];
+                                if (message.field != null && message.hasOwnProperty("field"))
+                                    object.field = message.field;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this HavingAggregate to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            HavingAggregate.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            /**
+                             * Function enum.
+                             * @name org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate.Function
+                             * @enum {number}
+                             * @property {number} COUNT=0 COUNT value
+                             * @property {number} SUM=1 SUM value
+                             * @property {number} AVG=2 AVG value
+                             * @property {number} MIN=3 MIN value
+                             * @property {number} MAX=4 MAX value
+                             * @property {number} TOP=5 TOP value
+                             * @property {number} BOTTOM=6 BOTTOM value
+                             */
+                            HavingAggregate.Function = (function() {
+                                var valuesById = {}, values = Object.create(valuesById);
+                                values[valuesById[0] = "COUNT"] = 0;
+                                values[valuesById[1] = "SUM"] = 1;
+                                values[valuesById[2] = "AVG"] = 2;
+                                values[valuesById[3] = "MIN"] = 3;
+                                values[valuesById[4] = "MAX"] = 4;
+                                values[valuesById[5] = "TOP"] = 5;
+                                values[valuesById[6] = "BOTTOM"] = 6;
+                                return values;
+                            })();
+
+                            return HavingAggregate;
+                        })();
+
+                        GetDocumentsRequest.HavingClause = (function() {
+
+                            /**
+                             * Properties of a HavingClause.
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest
+                             * @interface IHavingClause
+                             * @property {org.dash.platform.dapi.v0.GetDocumentsRequest.IHavingAggregate|null} [aggregate] HavingClause aggregate
+                             * @property {org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause.Operator|null} [operator] HavingClause operator
+                             * @property {org.dash.platform.dapi.v0.GetDocumentsRequest.IDocumentFieldValue|null} [value] HavingClause value
+                             */
+
+                            /**
+                             * Constructs a new HavingClause.
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest
+                             * @classdesc Represents a HavingClause.
+                             * @implements IHavingClause
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.IHavingClause=} [properties] Properties to set
+                             */
+                            function HavingClause(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * HavingClause aggregate.
+                             * @member {org.dash.platform.dapi.v0.GetDocumentsRequest.IHavingAggregate|null|undefined} aggregate
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause
+                             * @instance
+                             */
+                            HavingClause.prototype.aggregate = null;
+
+                            /**
+                             * HavingClause operator.
+                             * @member {org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause.Operator} operator
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause
+                             * @instance
+                             */
+                            HavingClause.prototype.operator = 0;
+
+                            /**
+                             * HavingClause value.
+                             * @member {org.dash.platform.dapi.v0.GetDocumentsRequest.IDocumentFieldValue|null|undefined} value
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause
+                             * @instance
+                             */
+                            HavingClause.prototype.value = null;
+
+                            /**
+                             * Creates a new HavingClause instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.IHavingClause=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause} HavingClause instance
+                             */
+                            HavingClause.create = function create(properties) {
+                                return new HavingClause(properties);
+                            };
+
+                            /**
+                             * Encodes the specified HavingClause message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.IHavingClause} message HavingClause message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            HavingClause.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.aggregate != null && Object.hasOwnProperty.call(message, "aggregate"))
+                                    $root.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate.encode(message.aggregate, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.operator != null && Object.hasOwnProperty.call(message, "operator"))
+                                    writer.uint32(/* id 2, wireType 0 =*/16).int32(message.operator);
+                                if (message.value != null && Object.hasOwnProperty.call(message, "value"))
+                                    $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.encode(message.value, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified HavingClause message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.IHavingClause} message HavingClause message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            HavingClause.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a HavingClause message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause} HavingClause
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            HavingClause.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.aggregate = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.operator = reader.int32();
+                                        break;
+                                    case 3:
+                                        message.value = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a HavingClause message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause} HavingClause
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            HavingClause.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a HavingClause message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            HavingClause.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.aggregate != null && message.hasOwnProperty("aggregate")) {
+                                    var error = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate.verify(message.aggregate);
+                                    if (error)
+                                        return "aggregate." + error;
+                                }
+                                if (message.operator != null && message.hasOwnProperty("operator"))
+                                    switch (message.operator) {
+                                    default:
+                                        return "operator: enum value expected";
+                                    case 0:
+                                    case 1:
+                                    case 2:
+                                    case 3:
+                                    case 4:
+                                    case 5:
+                                        break;
+                                    }
+                                if (message.value != null && message.hasOwnProperty("value")) {
+                                    var error = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.verify(message.value);
+                                    if (error)
+                                        return "value." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a HavingClause message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause} HavingClause
+                             */
+                            HavingClause.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause();
+                                if (object.aggregate != null) {
+                                    if (typeof object.aggregate !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause.aggregate: object expected");
+                                    message.aggregate = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate.fromObject(object.aggregate);
+                                }
+                                switch (object.operator) {
+                                case "EQUAL":
+                                case 0:
+                                    message.operator = 0;
+                                    break;
+                                case "NOT_EQUAL":
+                                case 1:
+                                    message.operator = 1;
+                                    break;
+                                case "GREATER_THAN":
+                                case 2:
+                                    message.operator = 2;
+                                    break;
+                                case "GREATER_THAN_OR_EQUALS":
+                                case 3:
+                                    message.operator = 3;
+                                    break;
+                                case "LESS_THAN":
+                                case 4:
+                                    message.operator = 4;
+                                    break;
+                                case "LESS_THAN_OR_EQUALS":
+                                case 5:
+                                    message.operator = 5;
+                                    break;
+                                }
+                                if (object.value != null) {
+                                    if (typeof object.value !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause.value: object expected");
+                                    message.value = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.fromObject(object.value);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a HavingClause message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause} message HavingClause
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            HavingClause.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    object.aggregate = null;
+                                    object.operator = options.enums === String ? "EQUAL" : 0;
+                                    object.value = null;
+                                }
+                                if (message.aggregate != null && message.hasOwnProperty("aggregate"))
+                                    object.aggregate = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate.toObject(message.aggregate, options);
+                                if (message.operator != null && message.hasOwnProperty("operator"))
+                                    object.operator = options.enums === String ? $root.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause.Operator[message.operator] : message.operator;
+                                if (message.value != null && message.hasOwnProperty("value"))
+                                    object.value = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.toObject(message.value, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this HavingClause to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            HavingClause.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            /**
+                             * Operator enum.
+                             * @name org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause.Operator
+                             * @enum {number}
+                             * @property {number} EQUAL=0 EQUAL value
+                             * @property {number} NOT_EQUAL=1 NOT_EQUAL value
+                             * @property {number} GREATER_THAN=2 GREATER_THAN value
+                             * @property {number} GREATER_THAN_OR_EQUALS=3 GREATER_THAN_OR_EQUALS value
+                             * @property {number} LESS_THAN=4 LESS_THAN value
+                             * @property {number} LESS_THAN_OR_EQUALS=5 LESS_THAN_OR_EQUALS value
+                             */
+                            HavingClause.Operator = (function() {
+                                var valuesById = {}, values = Object.create(valuesById);
+                                values[valuesById[0] = "EQUAL"] = 0;
+                                values[valuesById[1] = "NOT_EQUAL"] = 1;
+                                values[valuesById[2] = "GREATER_THAN"] = 2;
+                                values[valuesById[3] = "GREATER_THAN_OR_EQUALS"] = 3;
+                                values[valuesById[4] = "LESS_THAN"] = 4;
+                                values[valuesById[5] = "LESS_THAN_OR_EQUALS"] = 5;
+                                return values;
+                            })();
+
+                            return HavingClause;
+                        })();
+
                         GetDocumentsRequest.OrderClause = (function() {
 
                             /**
@@ -21173,7 +21742,7 @@ $root.org = (function() {
                              * @property {boolean|null} [prove] GetDocumentsRequestV1 prove
                              * @property {org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select|null} [select] GetDocumentsRequestV1 select
                              * @property {Array.<string>|null} [groupBy] GetDocumentsRequestV1 groupBy
-                             * @property {Array.<org.dash.platform.dapi.v0.GetDocumentsRequest.IWhereClause>|null} [having] GetDocumentsRequestV1 having
+                             * @property {Array.<org.dash.platform.dapi.v0.GetDocumentsRequest.IHavingClause>|null} [having] GetDocumentsRequestV1 having
                              */
 
                             /**
@@ -21277,7 +21846,7 @@ $root.org = (function() {
 
                             /**
                              * GetDocumentsRequestV1 having.
-                             * @member {Array.<org.dash.platform.dapi.v0.GetDocumentsRequest.IWhereClause>} having
+                             * @member {Array.<org.dash.platform.dapi.v0.GetDocumentsRequest.IHavingClause>} having
                              * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1
                              * @instance
                              */
@@ -21346,7 +21915,7 @@ $root.org = (function() {
                                         writer.uint32(/* id 10, wireType 2 =*/82).string(message.groupBy[i]);
                                 if (message.having != null && message.having.length)
                                     for (var i = 0; i < message.having.length; ++i)
-                                        $root.org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause.encode(message.having[i], writer.uint32(/* id 11, wireType 2 =*/90).fork()).ldelim();
+                                        $root.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause.encode(message.having[i], writer.uint32(/* id 11, wireType 2 =*/90).fork()).ldelim();
                                 return writer;
                             };
 
@@ -21420,7 +21989,7 @@ $root.org = (function() {
                                     case 11:
                                         if (!(message.having && message.having.length))
                                             message.having = [];
-                                        message.having.push($root.org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause.decode(reader, reader.uint32()));
+                                        message.having.push($root.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause.decode(reader, reader.uint32()));
                                         break;
                                     default:
                                         reader.skipType(tag & 7);
@@ -21519,7 +22088,7 @@ $root.org = (function() {
                                     if (!Array.isArray(message.having))
                                         return "having: array expected";
                                     for (var i = 0; i < message.having.length; ++i) {
-                                        var error = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause.verify(message.having[i]);
+                                        var error = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause.verify(message.having[i]);
                                         if (error)
                                             return "having." + error;
                                     }
@@ -21604,7 +22173,7 @@ $root.org = (function() {
                                     for (var i = 0; i < object.having.length; ++i) {
                                         if (typeof object.having[i] !== "object")
                                             throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.having: object expected");
-                                        message.having[i] = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause.fromObject(object.having[i]);
+                                        message.having[i] = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause.fromObject(object.having[i]);
                                     }
                                 }
                                 return message;
@@ -21680,7 +22249,7 @@ $root.org = (function() {
                                 if (message.having && message.having.length) {
                                     object.having = [];
                                     for (var j = 0; j < message.having.length; ++j)
-                                        object.having[j] = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause.toObject(message.having[j], options);
+                                        object.having[j] = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause.toObject(message.having[j], options);
                                 }
                                 return object;
                             };

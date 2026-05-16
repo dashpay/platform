@@ -322,20 +322,35 @@ impl<C> Platform<C> {
         } = request_v1;
 
         // Decode the proto-typed `repeated WhereClause` / `repeated
-        // OrderClause` into drive's structured forms once, up front.
-        // Both the routing decision and the downstream executor
-        // consume the typed clauses directly — no CBOR envelope on
-        // the v1 path.
+        // OrderClause` / `repeated HavingClause` into drive's
+        // structured forms once, up front. Both the routing
+        // decision and the downstream executor consume the typed
+        // clauses directly — no CBOR envelope on the v1 path.
+        //
+        // `having_clauses_from_proto` runs even though the server
+        // rejects non-empty HAVING wholesale: wire-malformed
+        // HavingClauses (bad function/operator discriminant,
+        // missing aggregate or value) surface as
+        // `InvalidArgument` here, not as the generic "not yet
+        // implemented" rejection — matching the contract the
+        // where-clause / value-from-proto path provides. When the
+        // server gains HAVING execution, the decoded vec is
+        // already in hand and only the validate_and_route gate
+        // needs to flip.
         let where_clauses = match conversions::where_clauses_from_proto(proto_where_clauses) {
             Ok(c) => c,
             Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
         };
         let order_by_clauses = conversions::order_clauses_from_proto(proto_order_by);
+        let having_clauses = match conversions::having_clauses_from_proto(having) {
+            Ok(c) => c,
+            Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
+        };
 
         let routing = match validate_and_route(
             select,
             limit,
-            !having.is_empty(),
+            !having_clauses.is_empty(),
             &group_by,
             &where_clauses,
         ) {
