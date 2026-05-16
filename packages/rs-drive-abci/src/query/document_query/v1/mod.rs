@@ -28,6 +28,8 @@
 //! `platform.proto` for the full Phase 1 supported/rejected shape
 //! table.
 
+mod conversions;
+
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
@@ -38,9 +40,7 @@ use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v0::St
 use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::{
     Select, Start as RequestV1Start,
 };
-use dapi_grpc::platform::v0::get_documents_request::{
-    GetDocumentsRequestV0, GetDocumentsRequestV1,
-};
+use dapi_grpc::platform::v0::get_documents_request::GetDocumentsRequestV1;
 use dapi_grpc::platform::v0::get_documents_response::get_documents_response_v1::{
     count_results, result_data, CountEntries, CountEntry, CountResults, Documents, ResultData,
 };
@@ -50,13 +50,12 @@ use dapi_grpc::platform::v0::get_documents_response::{
 use dpp::check_validation_result_with_data;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::identifier::Identifier;
-use dpp::platform_value::Value;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::error::query::QuerySyntaxError;
 use drive::query::{
-    CountMode, DocumentCountRequest, DocumentCountResponse, SplitCountEntry, WhereClause,
-    WhereOperator,
+    CountMode, DocumentCountRequest, DocumentCountResponse, OrderClause, SplitCountEntry,
+    WhereClause, WhereOperator,
 };
 use drive::util::grove_operations::GroveDBToUse;
 
@@ -73,73 +72,16 @@ fn not_yet_implemented(feature: &str) -> QueryError {
     )))
 }
 
-/// Parse the raw CBOR-encoded `where` bytes into structured
-/// [`WhereClause`]s. v1 needs the structured form to enforce
-/// `group_by` ↔ where-field cross-checks before delegating.
-fn decode_where_clauses(where_bytes: &[u8]) -> Result<Vec<WhereClause>, QueryError> {
-    if where_bytes.is_empty() {
-        return Ok(Vec::new());
-    }
-    let value: Value = ciborium::de::from_reader(where_bytes).map_err(|_| {
-        QueryError::Query(QuerySyntaxError::DeserializationError(
-            "unable to decode 'where' query from cbor".to_string(),
-        ))
-    })?;
-    let array = match value {
-        Value::Array(a) => a,
-        Value::Null => return Ok(Vec::new()),
-        _ => {
-            return Err(QueryError::Query(
-                QuerySyntaxError::InvalidFormatWhereClause(
-                    "where clause must be an array".to_string(),
-                ),
-            ));
-        }
-    };
-    let mut clauses = Vec::with_capacity(array.len());
-    for entry in array {
-        let components = match entry {
-            Value::Array(c) => c,
-            _ => {
-                return Err(QueryError::Query(
-                    QuerySyntaxError::InvalidFormatWhereClause(
-                        "where clause must be an array".to_string(),
-                    ),
-                ));
-            }
-        };
-        let clause = WhereClause::from_components(&components).map_err(|e| {
-            QueryError::Query(QuerySyntaxError::InvalidFormatWhereClause(format!(
-                "invalid where clause components: {e}"
-            )))
-        })?;
-        clauses.push(clause);
-    }
-    Ok(clauses)
-}
-
-/// Re-decode the CBOR-encoded `order_by` bytes into a `Value` for
-/// drive's count dispatcher (which accepts the raw `Value` form to
-/// avoid re-imposing a parse). `Value::Null` (empty `order_by` on
-/// the wire) → no clauses.
-fn decode_order_by_value(order_by_bytes: &[u8]) -> Result<Value, QueryError> {
-    if order_by_bytes.is_empty() {
-        return Ok(Value::Null);
-    }
-    ciborium::de::from_reader(order_by_bytes).map_err(|_| {
-        QueryError::Query(QuerySyntaxError::DeserializationError(
-            "unable to decode 'order_by' query from cbor".to_string(),
-        ))
-    })
-}
-
 /// Validate the `select` × `group_by` × `having` combination
 /// against the Phase 1 supported-shape table. Returns the routing
 /// decision so the handler knows whether to dispatch to the
 /// documents-fetch path or the count path, and which response
 /// shape to produce.
 fn validate_and_route(
-    request_v1: &GetDocumentsRequestV1,
+    select_discriminant: i32,
+    limit: Option<u32>,
+    having_non_empty: bool,
+    group_by: &[String],
     where_clauses: &[WhereClause],
 ) -> Result<RoutingDecision, QueryError> {
     // An unknown integer here is malformed wire input (a
@@ -149,11 +91,11 @@ fn validate_and_route(
     // `InvalidArgument` so clients can distinguish "garbage in this
     // field" from `not_yet_implemented`'s "valid request shape, just
     // not wired yet" contract (see [`not_yet_implemented`] above).
-    let select = Select::try_from(request_v1.select).map_err(|_| {
+    let select = Select::try_from(select_discriminant).map_err(|_| {
         QueryError::InvalidArgument(format!(
             "select value {} is not a valid `Select` enum discriminant \
              (expected {} = DOCUMENTS or {} = COUNT)",
-            request_v1.select,
+            select_discriminant,
             Select::Documents as i32,
             Select::Count as i32,
         ))
@@ -182,7 +124,7 @@ fn validate_and_route(
     // at the validation boundary so callers see a single,
     // mode-independent contract: `None` for "use server default",
     // `Some(N > 0)` for an explicit cap, `Some(0)` is invalid.
-    if request_v1.limit == Some(0) {
+    if limit == Some(0) {
         return Err(QueryError::Query(QuerySyntaxError::InvalidLimit(
             "limit = 0 is not a valid wire value on the v1 \
              `optional uint32` field; omit `limit` (None) to use the \
@@ -193,13 +135,13 @@ fn validate_and_route(
         )));
     }
 
-    if !request_v1.having.is_empty() {
+    if having_non_empty {
         return Err(not_yet_implemented("HAVING clause"));
     }
 
     match select {
         Select::Documents => {
-            if !request_v1.group_by.is_empty() {
+            if !group_by.is_empty() {
                 return Err(not_yet_implemented(
                     "GROUP BY with SELECT DOCUMENTS (use SELECT COUNT with GROUP BY \
                      for per-group counts, or SELECT DOCUMENTS without GROUP BY for \
@@ -235,7 +177,7 @@ fn validate_and_route(
             // first; check `limit` validity against the mode after
             // so the rejection lives in one place keyed off
             // `CountMode::accepts_limit()`.
-            let mode = match request_v1.group_by.as_slice() {
+            let mode = match group_by {
                 [] => CountMode::Aggregate,
                 [field] => {
                     if Some(field.as_str()) == in_field {
@@ -301,7 +243,7 @@ fn validate_and_route(
             // selection in its `SizedQuery`. Either way silent
             // truncation or fan-out summing would mislead callers
             // who set a `limit`.
-            if request_v1.limit.is_some() && !mode.accepts_limit() {
+            if limit.is_some() && !mode.accepts_limit() {
                 let reason = match mode {
                     CountMode::Aggregate => {
                         "`limit` is not valid for SELECT COUNT with empty GROUP BY \
@@ -341,13 +283,22 @@ enum RoutingDecision {
 }
 
 /// Test-only: expose the routing decision for unit tests without
-/// needing a full `Platform` setup.
+/// needing a full `Platform` setup. Mirrors the
+/// `validate_and_route` argument shape so tests can drive it
+/// directly with constructed field values.
 #[cfg(test)]
 pub(super) fn validate_and_route_for_tests(
     request_v1: &GetDocumentsRequestV1,
     where_clauses: &[WhereClause],
 ) -> Result<&'static str, QueryError> {
-    validate_and_route(request_v1, where_clauses).map(|d| match d {
+    validate_and_route(
+        request_v1.select,
+        request_v1.limit,
+        !request_v1.having.is_empty(),
+        &request_v1.group_by,
+        where_clauses,
+    )
+    .map(|d| match d {
         RoutingDecision::Documents => "documents",
         RoutingDecision::Count(CountMode::Aggregate) => "count_aggregate",
         RoutingDecision::Count(CountMode::GroupByIn) => "count_entries_via_in_field",
@@ -363,57 +314,109 @@ impl<C> Platform<C> {
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetDocumentsResponseV1>, Error> {
-        let where_clauses = match decode_where_clauses(&request_v1.r#where) {
+        // Destructure the proto request once; the rest of the
+        // pipeline consumes the individual fields by name.
+        let GetDocumentsRequestV1 {
+            data_contract_id,
+            document_type,
+            where_clauses: proto_where_clauses,
+            order_by: proto_order_by,
+            limit,
+            start,
+            prove,
+            select,
+            group_by,
+            having,
+        } = request_v1;
+
+        // Decode the proto-typed `repeated WhereClause` / `repeated
+        // OrderClause` into drive's structured forms once, up front.
+        // Both the routing decision and the downstream executor
+        // consume the typed clauses directly — no CBOR envelope on
+        // the v1 path.
+        let where_clauses = match conversions::where_clauses_from_proto(proto_where_clauses) {
             Ok(c) => c,
             Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
         };
+        let order_by_clauses = conversions::order_clauses_from_proto(proto_order_by);
 
-        let routing = match validate_and_route(&request_v1, &where_clauses) {
+        let routing = match validate_and_route(
+            select,
+            limit,
+            !having.is_empty(),
+            &group_by,
+            &where_clauses,
+        ) {
             Ok(r) => r,
             Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
         };
 
         match routing {
-            RoutingDecision::Documents => {
-                self.dispatch_documents_v1(request_v1, platform_state, platform_version)
-            }
-            RoutingDecision::Count(mode) => {
-                self.dispatch_count_v1(request_v1, mode, platform_state, platform_version)
-            }
+            RoutingDecision::Documents => self.dispatch_documents_v1(
+                data_contract_id,
+                document_type,
+                where_clauses,
+                order_by_clauses,
+                limit,
+                start,
+                prove,
+                platform_state,
+                platform_version,
+            ),
+            RoutingDecision::Count(mode) => self.dispatch_count_v1(
+                data_contract_id,
+                document_type,
+                where_clauses,
+                order_by_clauses,
+                limit,
+                start,
+                prove,
+                mode,
+                platform_state,
+                platform_version,
+            ),
         }
     }
 
-    /// Forward a `select = DOCUMENTS` request through the v0
-    /// handler. v1 doesn't add any documents-side capability — the
-    /// SQL-shaped fields (`select`, `group_by`, `having`) are all
-    /// validated as documents-compatible above (empty `group_by`,
-    /// empty `having`, etc.) before reaching here.
+    /// Forward a `select = DOCUMENTS` request through the shared
+    /// `query_documents_typed` helper that v0 also dispatches into.
+    /// v1 doesn't add any documents-side capability — the SQL-shaped
+    /// fields (`select`, `group_by`, `having`) are all validated as
+    /// documents-compatible above (empty `group_by`, empty `having`,
+    /// etc.) before reaching here.
+    #[allow(clippy::too_many_arguments)]
     fn dispatch_documents_v1(
         &self,
-        request_v1: GetDocumentsRequestV1,
+        data_contract_id: Vec<u8>,
+        document_type: String,
+        where_clauses: Vec<WhereClause>,
+        order_by_clauses: Vec<OrderClause>,
+        limit: Option<u32>,
+        start: Option<RequestV1Start>,
+        prove: bool,
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetDocumentsResponseV1>, Error> {
-        let start = request_v1.start.map(|s| match s {
+        let start = start.map(|s| match s {
             RequestV1Start::StartAfter(b) => RequestV0Start::StartAfter(b),
             RequestV1Start::StartAt(b) => RequestV0Start::StartAt(b),
         });
-        // `limit` is `optional uint32` on v1 vs unwrapped `uint32`
-        // (default 0) on v0. `None` on v1 → 0 on v0 (v0 reads `0`
-        // as "use the server's `default_query_limit`"). `Some(0)`
+        // `limit` is `optional uint32` on v1; the typed helper takes
+        // `Option<u32>` directly (`None` → server default). `Some(0)`
         // can't reach here — `validate_and_route` rejects it for
         // every SELECT mode so the v1 contract is uniform; only
         // `None` or `Some(N > 0)` survive.
-        let request_v0 = GetDocumentsRequestV0 {
-            data_contract_id: request_v1.data_contract_id,
-            document_type: request_v1.document_type,
-            r#where: request_v1.r#where,
-            order_by: request_v1.order_by,
-            limit: request_v1.limit.unwrap_or(0),
-            prove: request_v1.prove,
+        let result = self.query_documents_typed(
+            data_contract_id,
+            document_type,
+            where_clauses,
+            order_by_clauses,
+            limit,
+            prove,
             start,
-        };
-        let result = self.query_documents_v0(request_v0, platform_state, platform_version)?;
+            platform_state,
+            platform_version,
+        )?;
         Ok(result.map(translate_documents_v0_to_v1))
     }
 
@@ -425,26 +428,33 @@ impl<C> Platform<C> {
     /// group entries. The wire response is `GetDocumentsResponseV1`
     /// with the inner `ResultData.counts` variant for non-proof
     /// results.
+    #[allow(clippy::too_many_arguments)]
     fn dispatch_count_v1(
         &self,
-        request_v1: GetDocumentsRequestV1,
+        data_contract_id: Vec<u8>,
+        document_type_name: String,
+        where_clauses: Vec<WhereClause>,
+        order_clauses: Vec<OrderClause>,
+        limit: Option<u32>,
+        start: Option<RequestV1Start>,
+        prove: bool,
         mode: CountMode,
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetDocumentsResponseV1>, Error> {
-        if request_v1.start.is_some() {
+        if start.is_some() {
             return Ok(QueryValidationResult::new_with_error(not_yet_implemented(
                 "start_after / start_at with SELECT COUNT (paginate by narrowing the \
                  range clause itself)",
             )));
         }
 
-        let contract_id: Identifier = check_validation_result_with_data!(request_v1
-            .data_contract_id
-            .try_into()
-            .map_err(|_| QueryError::InvalidArgument(
-                "id must be a valid identifier (32 bytes long)".to_string()
-            )));
+        let contract_id: Identifier =
+            check_validation_result_with_data!(data_contract_id.try_into().map_err(|_| {
+                QueryError::InvalidArgument(
+                    "id must be a valid identifier (32 bytes long)".to_string(),
+                )
+            }));
 
         let (_, contract_fetch_info) = self.drive.get_contract_with_fetch_info_and_fee(
             contract_id.to_buffer(),
@@ -460,37 +470,20 @@ impl<C> Platform<C> {
         ));
         let contract_ref = &contract_fetch_info.contract;
         let document_type = check_validation_result_with_data!(contract_ref
-            .document_type_for_name(request_v1.document_type.as_str())
+            .document_type_for_name(document_type_name.as_str())
             .map_err(|_| QueryError::InvalidArgument(format!(
                 "document type {} not found for contract {}",
-                request_v1.document_type, contract_id
+                document_type_name, contract_id
             ))));
-
-        let where_value = if request_v1.r#where.is_empty() {
-            Value::Null
-        } else {
-            check_validation_result_with_data!(ciborium::de::from_reader(
-                request_v1.r#where.as_slice()
-            )
-            .map_err(
-                |_| QueryError::Query(QuerySyntaxError::DeserializationError(
-                    "unable to decode 'where' query from cbor".to_string()
-                ))
-            ))
-        };
-        let order_by_value = match decode_order_by_value(&request_v1.order_by) {
-            Ok(v) => v,
-            Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
-        };
 
         let drive_request = DocumentCountRequest {
             contract: contract_ref,
             document_type,
-            raw_where_value: where_value,
-            raw_order_by_value: order_by_value,
+            where_clauses,
+            order_clauses,
             mode,
-            limit: request_v1.limit,
-            prove: request_v1.prove,
+            limit,
+            prove,
             drive_config: &self.config.drive,
         };
         let drive_response =

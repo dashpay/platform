@@ -36,45 +36,41 @@ use grovedb::TransactionArg;
 
 /// All inputs required for the unified document-count entry point
 /// [`Drive::execute_document_count_request`]. Built by the gRPC
-/// handler from a `GetDocumentsCountRequestV0` after CBOR-decoding +
+/// handler from a `GetDocumentsRequestV1` after wire-decoding +
 /// contract lookup; drive owns everything past this point including
-/// mode detection, index picking, and per-mode dispatch.
+/// mode-detection-from-clauses, index picking, and per-mode dispatch.
 ///
-/// `raw_where_value` and `raw_order_by_value` arrive as CBOR-decoded
-/// `Value`s and the dispatcher parses them once into structured
-/// `Vec<WhereClause>` / `Vec<OrderClause>` for mode detection +
-/// per-mode executors. None of the count executors consume the raw
-/// `Value` form — the structured parse is the single source of
-/// truth past the dispatcher entry point.
+/// `where_clauses` and `order_clauses` arrive already structured —
+/// the v1 ABCI handler converts proto `repeated WhereClause` /
+/// `repeated OrderClause` upstream; benches and tests that want a
+/// `Value`-shape fixture call [`where_clauses_from_value`] /
+/// [`order_clauses_from_value`] to parse before constructing the
+/// request. The dispatcher entry point runs
+/// [`validate_and_canonicalize_where_clauses`] on the input so
+/// shape-validation rejection (duplicate equal, multiple In, …)
+/// and the `> AND <` → `between*` canonicalization happen
+/// regardless of upstream path.
 pub struct DocumentCountRequest<'a> {
     /// Live contract (already loaded by the handler).
     pub contract: &'a dpp::data_contract::DataContract,
     /// Resolved document type within `contract`.
     pub document_type: DocumentTypeRef<'a>,
-    /// Decoded `where` value as it came off the wire (after CBOR
-    /// decode). The dispatcher parses this into `Vec<WhereClause>`
-    /// once (`where_clauses_from_value`) for every downstream
-    /// consumer — mode detection, index picking, and the per-mode
-    /// executors all operate on the structured form.
-    ///
-    /// Mirrors how the regular `query_documents_v0` handler
-    /// delegates where-clause decomposition to drive: the abci
-    /// layer just CBOR-decodes and hands the raw value down.
-    pub raw_where_value: dpp::platform_value::Value,
-    /// Decoded `order_by` value as it came off the wire. Parsed
-    /// once via `order_clauses_from_value` into
-    /// `Vec<OrderClause>`. The first clause's direction governs
-    /// split-mode entry ordering (per-`In`-value / per-distinct-
-    /// value-in-range) and, on the `RangeDistinctProof` prove
-    /// path, is part of the path-query bytes the SDK reconstructs
-    /// to verify the proof. `PointLookupProof` and the no-proof
-    /// `Total` / `PerInValue` paths don't read order_by.
-    ///
-    /// `Value::Null` (empty `order_by` field on the wire) → no
-    /// clauses. The dispatcher synthesizes a default direction of
-    /// "ascending" for split-mode response ordering when no clauses
-    /// are present.
-    pub raw_order_by_value: dpp::platform_value::Value,
+    /// Structured `where` clauses. The dispatcher runs the same
+    /// [`WhereClause::group_clauses`] validator + same-field
+    /// range-pair merge the regular document-query path runs (see
+    /// [`validate_and_canonicalize_where_clauses`]'s docstring for
+    /// the catalog of rejections this enables and the In/range +
+    /// `between*` canonicalization rules) before mode detection.
+    pub where_clauses: Vec<WhereClause>,
+    /// Structured `order_by` clauses. The first clause's direction
+    /// governs split-mode entry ordering (per-`In`-value /
+    /// per-distinct-value-in-range) and, on the
+    /// `RangeDistinctProof` prove path, is part of the path-query
+    /// bytes the SDK reconstructs to verify the proof.
+    /// `PointLookupProof` and the no-proof `Total` / `PerInValue`
+    /// paths don't read order_by. Empty list → ascending default
+    /// for split-mode response ordering.
+    pub order_clauses: Vec<OrderClause>,
     /// SQL-shaped output mode — the caller's `(select, group_by)`
     /// contract resolved into one of four shapes (Aggregate,
     /// GroupByIn, GroupByRange, GroupByCompound). The dispatcher
@@ -171,7 +167,9 @@ pub enum DocumentCountResponse {
 /// triple that `group_clauses` returns. (The regular query path's
 /// `InternalClauses::extract_from_clauses` uses the triple; the
 /// count path doesn't.)
-fn where_clauses_from_value(value: &dpp::platform_value::Value) -> Result<Vec<WhereClause>, Error> {
+pub fn where_clauses_from_value(
+    value: &dpp::platform_value::Value,
+) -> Result<Vec<WhereClause>, Error> {
     let clauses: Vec<WhereClause> = match value {
         dpp::platform_value::Value::Null => Vec::new(),
         dpp::platform_value::Value::Array(clauses) => clauses
@@ -192,22 +190,47 @@ fn where_clauses_from_value(value: &dpp::platform_value::Value) -> Result<Vec<Wh
         }
     };
 
-    // Run the parsed clauses through the system-wide validator.
-    // The returned triple is discarded; we only care about the
-    // validation errors — see this function's docstring for the
-    // catalog of rejections this enables on the count endpoint.
-    //
-    // Exception: `MultipleRangeClauses` is intentionally tolerated
-    // here. The regular-query parser rejects two ranges on
-    // different fields wholesale (its callers expect
-    // `(equal_clauses, in_clause, range_clause)` triples), but the
-    // count-query path accepts the carrier-aggregate shape
-    // (`outer_range + inner_ACOR_range` on different fields, e.g.
-    // G8). Structural validation for that shape lives in
-    // [`DriveDocumentCountQuery::detect_mode`] (which knows about
-    // `CountMode::GroupByRange`-with-two-ranges and routes to
-    // `DocumentCountMode::RangeAggregateCarrierProof`); replicating
-    // it here would be redundant.
+    validate_and_canonicalize_where_clauses(clauses)
+}
+
+/// Run the system-wide where-clause validator on a structured
+/// `Vec<WhereClause>`. Single source of truth for the count-endpoint
+/// shape contract; called both from the legacy CBOR-decoded entry
+/// [`where_clauses_from_value`] and from the dispatcher's typed
+/// entry, [`Drive::execute_document_count_request`].
+///
+/// The validator (`WhereClause::group_clauses`) rejects:
+/// - Duplicate `Equal` clauses on the same field
+///   (`DuplicateNonGroupableClauseSameField`).
+/// - Multiple `In` clauses (`MultipleInClauses`).
+/// - Multiple non-groupable range clauses (`MultipleRangeClauses`).
+/// - Equality + `In` on the same field, range + equality/In on the
+///   same field (`DuplicateNonGroupableClauseSameField` /
+///   `InvalidWhereClauseComponents`).
+///
+/// Without this validation, downstream
+/// [`DriveDocumentCountQuery::find_countable_index_for_where_clauses`]
+/// collapses repeated fields into a `BTreeSet` and
+/// [`DriveDocumentCountQuery::point_lookup_count_path_query`]
+/// resolves each index property with a single `.find(...)` — both
+/// of which silently pick the first clause on a duplicated field
+/// and return a count for an arbitrarily reduced query rather than
+/// rejecting the malformed request.
+///
+/// **Exception**: `MultipleRangeClauses` is intentionally tolerated
+/// here. The regular-query parser rejects two ranges on different
+/// fields wholesale (its callers expect
+/// `(equal_clauses, in_clause, range_clause)` triples), but the
+/// count-query path accepts the carrier-aggregate shape
+/// (`outer_range + inner_ACOR_range` on different fields, e.g.
+/// G8). Structural validation for that shape lives in
+/// [`DriveDocumentCountQuery::detect_mode`] (which knows about
+/// `CountMode::GroupByRange`-with-two-ranges and routes to
+/// `DocumentCountMode::RangeAggregateCarrierProof`); replicating
+/// it here would be redundant.
+pub fn validate_and_canonicalize_where_clauses(
+    clauses: Vec<WhereClause>,
+) -> Result<Vec<WhereClause>, Error> {
     match WhereClause::group_clauses(&clauses) {
         Ok(_) => {}
         Err(Error::Query(QuerySyntaxError::MultipleRangeClauses(_))) => {}
@@ -223,7 +246,9 @@ fn where_clauses_from_value(value: &dpp::platform_value::Value) -> Result<Vec<Wh
 /// any other shape must be an outer array of `[field, direction]`
 /// inner arrays. Direction is `"asc"` / `"desc"` per
 /// `OrderClause::from_components`.
-fn order_clauses_from_value(value: &dpp::platform_value::Value) -> Result<Vec<OrderClause>, Error> {
+pub fn order_clauses_from_value(
+    value: &dpp::platform_value::Value,
+) -> Result<Vec<OrderClause>, Error> {
     match value {
         dpp::platform_value::Value::Null => Ok(Vec::new()),
         dpp::platform_value::Value::Array(clauses) => clauses
@@ -282,13 +307,15 @@ impl Drive {
     ) -> Result<DocumentCountResponse, Error> {
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
-        // Parse where clauses out of the raw decoded `Value` once,
-        // then thread them through the per-mode executors. Mirrors
-        // how the regular `query_documents_v0` handler delegates this
-        // to `DriveDocumentQuery::from_decomposed_values` —
-        // where-clause decomposition is a drive concern, not abci's.
-        let where_clauses = where_clauses_from_value(&request.raw_where_value)?;
-        let order_clauses = order_clauses_from_value(&request.raw_order_by_value)?;
+        // Validate + canonicalize the structured `where_clauses` —
+        // same rejections the regular document-query path runs,
+        // applied here so the count endpoint's shape contract is
+        // independent of whether the caller arrived via the CBOR-
+        // shaped legacy path or the v1 typed-proto path. See
+        // [`validate_and_canonicalize_where_clauses`]'s docstring
+        // for the catalog of rejections.
+        let where_clauses = validate_and_canonicalize_where_clauses(request.where_clauses)?;
+        let order_clauses = request.order_clauses;
 
         // Split-mode entry direction is whatever the first orderBy
         // clause specifies. Empty orderBy → ascending default. Used

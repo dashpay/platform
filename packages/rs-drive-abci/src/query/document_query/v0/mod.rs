@@ -16,7 +16,7 @@ use dpp::platform_value::Value;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::error::query::QuerySyntaxError;
-use drive::query::DriveDocumentQuery;
+use drive::query::{DriveDocumentQuery, OrderClause, WhereClause};
 use drive::util::grove_operations::GroveDBToUse;
 
 impl<C> Platform<C> {
@@ -31,6 +31,120 @@ impl<C> Platform<C> {
             prove,
             start,
         }: GetDocumentsRequestV0,
+        platform_state: &PlatformState,
+        platform_version: &PlatformVersion,
+    ) -> Result<QueryValidationResult<GetDocumentsResponseV0>, Error> {
+        // CBOR-decode the v0 wire fields into `Value` shells. The
+        // typed-clauses path picks up after this and is shared with
+        // the v1 handler — see `query_documents_typed` below.
+        let where_value = if r#where.is_empty() {
+            Value::Null
+        } else {
+            check_validation_result_with_data!(ciborium::de::from_reader(r#where.as_slice())
+                .map_err(|_| {
+                    QueryError::Query(QuerySyntaxError::DeserializationError(
+                        "unable to decode 'where' query from cbor".to_string(),
+                    ))
+                }))
+        };
+
+        let order_by_value: Option<Value> = if !order_by.is_empty() {
+            check_validation_result_with_data!(ciborium::de::from_reader(order_by.as_slice())
+                .map_err(|_| {
+                    QueryError::Query(QuerySyntaxError::DeserializationError(
+                        "unable to decode 'order_by' query from cbor".to_string(),
+                    ))
+                }))
+        } else {
+            None
+        };
+
+        // Parse the decoded `Value` shells into structured clauses.
+        // `DriveDocumentQuery::from_decomposed_values` historically
+        // did this internally; lifting the parse into the abci layer
+        // lets v0 and v1 (whose wire is already typed) share the
+        // same execution helper without re-encoding bytes.
+        let where_clauses: Vec<WhereClause> = match where_value {
+            Value::Null => Vec::new(),
+            Value::Array(clauses) => {
+                let parsed: Result<Vec<WhereClause>, _> = clauses
+                    .iter()
+                    .map(|wc| match wc {
+                        Value::Array(components) => WhereClause::from_components(components),
+                        _ => Err(drive::error::Error::Query(
+                            QuerySyntaxError::InvalidFormatWhereClause(
+                                "where clause must be an array".to_string(),
+                            ),
+                        )),
+                    })
+                    .collect();
+                check_validation_result_with_data!(parsed.map_err(|e| QueryError::Query(
+                    QuerySyntaxError::InvalidFormatWhereClause(format!(
+                        "invalid where clause components: {e}"
+                    ))
+                )))
+            }
+            _ => {
+                return Ok(QueryValidationResult::new_with_error(QueryError::Query(
+                    QuerySyntaxError::InvalidFormatWhereClause(
+                        "where clause must be an array".to_string(),
+                    ),
+                )));
+            }
+        };
+
+        let order_by_clauses: Vec<OrderClause> = match order_by_value {
+            None | Some(Value::Null) => Vec::new(),
+            Some(Value::Array(clauses)) => clauses
+                .into_iter()
+                .filter_map(|oc| match oc {
+                    Value::Array(components) => OrderClause::from_components(&components).ok(),
+                    _ => None,
+                })
+                .collect(),
+            _ => Vec::new(),
+        };
+
+        self.query_documents_typed(
+            data_contract_id,
+            document_type_name,
+            where_clauses,
+            order_by_clauses,
+            // v0 wire's `uint32` limit: `0` is the sentinel for
+            // "use server default"; `> u16::MAX` is rejected.
+            Some(limit),
+            prove,
+            start,
+            platform_state,
+            platform_version,
+        )
+    }
+
+    /// Shared execution pipeline for `getDocuments` — consumes
+    /// already-structured `where_clauses` / `order_by_clauses` and
+    /// reuses the same drive `DriveDocumentQuery` build + execute
+    /// path under both v0 (CBOR-decoded into typed) and v1 (proto-
+    /// converted into typed) wire envelopes.
+    ///
+    /// `limit_u32` semantics mirror the v0 wire field:
+    /// - `None` (v1's `optional uint32 = None`) → use the server
+    ///   default (`drive_config.default_query_limit`).
+    /// - `Some(0)` (v0's "unset" sentinel) → same as `None`.
+    /// - `Some(N > 0)` → explicit cap; rejected if `N > u16::MAX`.
+    ///
+    /// v1 callers map their `Option<u32>` directly (None → None,
+    /// Some(0) is pre-rejected upstream by `validate_and_route` so
+    /// can't reach this helper).
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn query_documents_typed(
+        &self,
+        data_contract_id: Vec<u8>,
+        document_type_name: String,
+        where_clauses: Vec<WhereClause>,
+        order_by_clauses: Vec<OrderClause>,
+        limit_u32: Option<u32>,
+        prove: bool,
+        start: Option<Start>,
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetDocumentsResponseV0>, Error> {
@@ -63,28 +177,6 @@ impl<C> Platform<C> {
                 document_type_name, contract_id
             ))));
 
-        let where_clause = if r#where.is_empty() {
-            Value::Null
-        } else {
-            check_validation_result_with_data!(ciborium::de::from_reader(r#where.as_slice())
-                .map_err(|_| {
-                    QueryError::Query(QuerySyntaxError::DeserializationError(
-                        "unable to decode 'where' query from cbor".to_string(),
-                    ))
-                }))
-        };
-
-        let order_by = if !order_by.is_empty() {
-            check_validation_result_with_data!(ciborium::de::from_reader(order_by.as_slice())
-                .map_err(|_| {
-                    QueryError::Query(QuerySyntaxError::DeserializationError(
-                        "unable to decode 'order_by' query from cbor".to_string(),
-                    ))
-                }))
-        } else {
-            None
-        };
-
         let (start_at_included, start_at) = if let Some(start) = start {
             match start {
                 Start::StartAfter(after) => (
@@ -110,21 +202,26 @@ impl<C> Platform<C> {
             (true, None)
         };
 
-        if limit > u16::MAX as u32 {
-            return Ok(QueryValidationResult::new_with_error(QueryError::Query(
-                QuerySyntaxError::InvalidLimit(format!("limit {} out of bounds", limit)),
-            )));
-        }
+        // Translate the wire-level `Option<u32>` to the `Option<u16>`
+        // `DriveDocumentQuery::from_typed_clauses` expects. Both
+        // `None` and `Some(0)` map to `Some(default_query_limit)`
+        // (server default applies); values exceeding `u16::MAX` are
+        // rejected here so the cast below is safe.
+        let limit_u16 = match limit_u32 {
+            Some(n) if n > u16::MAX as u32 => {
+                return Ok(QueryValidationResult::new_with_error(QueryError::Query(
+                    QuerySyntaxError::InvalidLimit(format!("limit {} out of bounds", n)),
+                )));
+            }
+            None | Some(0) => Some(self.config.drive.default_query_limit),
+            Some(n) => Some(n as u16),
+        };
 
         let drive_query =
-            check_validation_result_with_data!(DriveDocumentQuery::from_decomposed_values(
-                where_clause,
-                order_by,
-                Some(if limit == 0 {
-                    self.config.drive.default_query_limit
-                } else {
-                    limit as u16
-                }),
+            check_validation_result_with_data!(DriveDocumentQuery::from_typed_clauses(
+                where_clauses,
+                order_by_clauses,
+                limit_u16,
                 start_at,
                 start_at_included,
                 None,

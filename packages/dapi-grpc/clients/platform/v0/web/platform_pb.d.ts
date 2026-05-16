@@ -2272,6 +2272,154 @@ export namespace GetDocumentsRequest {
     v1?: GetDocumentsRequest.GetDocumentsRequestV1.AsObject,
   }
 
+  export class DocumentFieldValue extends jspb.Message {
+    hasBoolValue(): boolean;
+    clearBoolValue(): void;
+    getBoolValue(): boolean;
+    setBoolValue(value: boolean): void;
+
+    hasInt64Value(): boolean;
+    clearInt64Value(): void;
+    getInt64Value(): string;
+    setInt64Value(value: string): void;
+
+    hasUint64Value(): boolean;
+    clearUint64Value(): void;
+    getUint64Value(): string;
+    setUint64Value(value: string): void;
+
+    hasDoubleValue(): boolean;
+    clearDoubleValue(): void;
+    getDoubleValue(): number;
+    setDoubleValue(value: number): void;
+
+    hasText(): boolean;
+    clearText(): void;
+    getText(): string;
+    setText(value: string): void;
+
+    hasBytesValue(): boolean;
+    clearBytesValue(): void;
+    getBytesValue(): Uint8Array | string;
+    getBytesValue_asU8(): Uint8Array;
+    getBytesValue_asB64(): string;
+    setBytesValue(value: Uint8Array | string): void;
+
+    hasList(): boolean;
+    clearList(): void;
+    getList(): GetDocumentsRequest.DocumentFieldValue.ValueList | undefined;
+    setList(value?: GetDocumentsRequest.DocumentFieldValue.ValueList): void;
+
+    getVariantCase(): DocumentFieldValue.VariantCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): DocumentFieldValue.AsObject;
+    static toObject(includeInstance: boolean, msg: DocumentFieldValue): DocumentFieldValue.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: DocumentFieldValue, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): DocumentFieldValue;
+    static deserializeBinaryFromReader(message: DocumentFieldValue, reader: jspb.BinaryReader): DocumentFieldValue;
+  }
+
+  export namespace DocumentFieldValue {
+    export type AsObject = {
+      boolValue: boolean,
+      int64Value: string,
+      uint64Value: string,
+      doubleValue: number,
+      text: string,
+      bytesValue: Uint8Array | string,
+      list?: GetDocumentsRequest.DocumentFieldValue.ValueList.AsObject,
+    }
+
+    export class ValueList extends jspb.Message {
+      clearValuesList(): void;
+      getValuesList(): Array<GetDocumentsRequest.DocumentFieldValue>;
+      setValuesList(value: Array<GetDocumentsRequest.DocumentFieldValue>): void;
+      addValues(value?: GetDocumentsRequest.DocumentFieldValue, index?: number): GetDocumentsRequest.DocumentFieldValue;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): ValueList.AsObject;
+      static toObject(includeInstance: boolean, msg: ValueList): ValueList.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: ValueList, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): ValueList;
+      static deserializeBinaryFromReader(message: ValueList, reader: jspb.BinaryReader): ValueList;
+    }
+
+    export namespace ValueList {
+      export type AsObject = {
+        valuesList: Array<GetDocumentsRequest.DocumentFieldValue.AsObject>,
+      }
+    }
+
+    export enum VariantCase {
+      VARIANT_NOT_SET = 0,
+      BOOL_VALUE = 1,
+      INT64_VALUE = 2,
+      UINT64_VALUE = 3,
+      DOUBLE_VALUE = 4,
+      TEXT = 5,
+      BYTES_VALUE = 6,
+      LIST = 7,
+    }
+  }
+
+  export class WhereClause extends jspb.Message {
+    getField(): string;
+    setField(value: string): void;
+
+    getOperator(): GetDocumentsRequest.WhereOperatorMap[keyof GetDocumentsRequest.WhereOperatorMap];
+    setOperator(value: GetDocumentsRequest.WhereOperatorMap[keyof GetDocumentsRequest.WhereOperatorMap]): void;
+
+    hasValue(): boolean;
+    clearValue(): void;
+    getValue(): GetDocumentsRequest.DocumentFieldValue | undefined;
+    setValue(value?: GetDocumentsRequest.DocumentFieldValue): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): WhereClause.AsObject;
+    static toObject(includeInstance: boolean, msg: WhereClause): WhereClause.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: WhereClause, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): WhereClause;
+    static deserializeBinaryFromReader(message: WhereClause, reader: jspb.BinaryReader): WhereClause;
+  }
+
+  export namespace WhereClause {
+    export type AsObject = {
+      field: string,
+      operator: GetDocumentsRequest.WhereOperatorMap[keyof GetDocumentsRequest.WhereOperatorMap],
+      value?: GetDocumentsRequest.DocumentFieldValue.AsObject,
+    }
+  }
+
+  export class OrderClause extends jspb.Message {
+    getField(): string;
+    setField(value: string): void;
+
+    getAscending(): boolean;
+    setAscending(value: boolean): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): OrderClause.AsObject;
+    static toObject(includeInstance: boolean, msg: OrderClause): OrderClause.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: OrderClause, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): OrderClause;
+    static deserializeBinaryFromReader(message: OrderClause, reader: jspb.BinaryReader): OrderClause;
+  }
+
+  export namespace OrderClause {
+    export type AsObject = {
+      field: string,
+      ascending: boolean,
+    }
+  }
+
   export class GetDocumentsRequestV0 extends jspb.Message {
     getDataContractId(): Uint8Array | string;
     getDataContractId_asU8(): Uint8Array;
@@ -2350,15 +2498,15 @@ export namespace GetDocumentsRequest {
     getDocumentType(): string;
     setDocumentType(value: string): void;
 
-    getWhere(): Uint8Array | string;
-    getWhere_asU8(): Uint8Array;
-    getWhere_asB64(): string;
-    setWhere(value: Uint8Array | string): void;
+    clearWhereClausesList(): void;
+    getWhereClausesList(): Array<GetDocumentsRequest.WhereClause>;
+    setWhereClausesList(value: Array<GetDocumentsRequest.WhereClause>): void;
+    addWhereClauses(value?: GetDocumentsRequest.WhereClause, index?: number): GetDocumentsRequest.WhereClause;
 
-    getOrderBy(): Uint8Array | string;
-    getOrderBy_asU8(): Uint8Array;
-    getOrderBy_asB64(): string;
-    setOrderBy(value: Uint8Array | string): void;
+    clearOrderByList(): void;
+    getOrderByList(): Array<GetDocumentsRequest.OrderClause>;
+    setOrderByList(value: Array<GetDocumentsRequest.OrderClause>): void;
+    addOrderBy(value?: GetDocumentsRequest.OrderClause, index?: number): GetDocumentsRequest.OrderClause;
 
     hasLimit(): boolean;
     clearLimit(): void;
@@ -2390,10 +2538,10 @@ export namespace GetDocumentsRequest {
     setGroupByList(value: Array<string>): void;
     addGroupBy(value: string, index?: number): string;
 
-    getHaving(): Uint8Array | string;
-    getHaving_asU8(): Uint8Array;
-    getHaving_asB64(): string;
-    setHaving(value: Uint8Array | string): void;
+    clearHavingList(): void;
+    getHavingList(): Array<GetDocumentsRequest.WhereClause>;
+    setHavingList(value: Array<GetDocumentsRequest.WhereClause>): void;
+    addHaving(value?: GetDocumentsRequest.WhereClause, index?: number): GetDocumentsRequest.WhereClause;
 
     getStartCase(): GetDocumentsRequestV1.StartCase;
     serializeBinary(): Uint8Array;
@@ -2410,15 +2558,15 @@ export namespace GetDocumentsRequest {
     export type AsObject = {
       dataContractId: Uint8Array | string,
       documentType: string,
-      where: Uint8Array | string,
-      orderBy: Uint8Array | string,
+      whereClausesList: Array<GetDocumentsRequest.WhereClause.AsObject>,
+      orderByList: Array<GetDocumentsRequest.OrderClause.AsObject>,
       limit: number,
       startAfter: Uint8Array | string,
       startAt: Uint8Array | string,
       prove: boolean,
       select: GetDocumentsRequest.GetDocumentsRequestV1.SelectMap[keyof GetDocumentsRequest.GetDocumentsRequestV1.SelectMap],
       groupByList: Array<string>,
-      having: Uint8Array | string,
+      havingList: Array<GetDocumentsRequest.WhereClause.AsObject>,
     }
 
     export interface SelectMap {
@@ -2434,6 +2582,22 @@ export namespace GetDocumentsRequest {
       START_AT = 7,
     }
   }
+
+  export interface WhereOperatorMap {
+    EQUAL: 0;
+    GREATER_THAN: 1;
+    GREATER_THAN_OR_EQUALS: 2;
+    LESS_THAN: 3;
+    LESS_THAN_OR_EQUALS: 4;
+    BETWEEN: 5;
+    BETWEEN_EXCLUDE_BOUNDS: 6;
+    BETWEEN_EXCLUDE_LEFT: 7;
+    BETWEEN_EXCLUDE_RIGHT: 8;
+    IN: 9;
+    STARTS_WITH: 10;
+  }
+
+  export const WhereOperator: WhereOperatorMap;
 
   export enum VersionCase {
     VERSION_NOT_SET = 0,

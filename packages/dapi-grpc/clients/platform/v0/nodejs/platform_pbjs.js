@@ -19582,6 +19582,1153 @@ $root.org = (function() {
                             return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
                         };
 
+                        /**
+                         * WhereOperator enum.
+                         * @name org.dash.platform.dapi.v0.GetDocumentsRequest.WhereOperator
+                         * @enum {number}
+                         * @property {number} EQUAL=0 EQUAL value
+                         * @property {number} GREATER_THAN=1 GREATER_THAN value
+                         * @property {number} GREATER_THAN_OR_EQUALS=2 GREATER_THAN_OR_EQUALS value
+                         * @property {number} LESS_THAN=3 LESS_THAN value
+                         * @property {number} LESS_THAN_OR_EQUALS=4 LESS_THAN_OR_EQUALS value
+                         * @property {number} BETWEEN=5 BETWEEN value
+                         * @property {number} BETWEEN_EXCLUDE_BOUNDS=6 BETWEEN_EXCLUDE_BOUNDS value
+                         * @property {number} BETWEEN_EXCLUDE_LEFT=7 BETWEEN_EXCLUDE_LEFT value
+                         * @property {number} BETWEEN_EXCLUDE_RIGHT=8 BETWEEN_EXCLUDE_RIGHT value
+                         * @property {number} IN=9 IN value
+                         * @property {number} STARTS_WITH=10 STARTS_WITH value
+                         */
+                        GetDocumentsRequest.WhereOperator = (function() {
+                            var valuesById = {}, values = Object.create(valuesById);
+                            values[valuesById[0] = "EQUAL"] = 0;
+                            values[valuesById[1] = "GREATER_THAN"] = 1;
+                            values[valuesById[2] = "GREATER_THAN_OR_EQUALS"] = 2;
+                            values[valuesById[3] = "LESS_THAN"] = 3;
+                            values[valuesById[4] = "LESS_THAN_OR_EQUALS"] = 4;
+                            values[valuesById[5] = "BETWEEN"] = 5;
+                            values[valuesById[6] = "BETWEEN_EXCLUDE_BOUNDS"] = 6;
+                            values[valuesById[7] = "BETWEEN_EXCLUDE_LEFT"] = 7;
+                            values[valuesById[8] = "BETWEEN_EXCLUDE_RIGHT"] = 8;
+                            values[valuesById[9] = "IN"] = 9;
+                            values[valuesById[10] = "STARTS_WITH"] = 10;
+                            return values;
+                        })();
+
+                        GetDocumentsRequest.DocumentFieldValue = (function() {
+
+                            /**
+                             * Properties of a DocumentFieldValue.
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest
+                             * @interface IDocumentFieldValue
+                             * @property {boolean|null} [boolValue] DocumentFieldValue boolValue
+                             * @property {number|Long|null} [int64Value] DocumentFieldValue int64Value
+                             * @property {number|Long|null} [uint64Value] DocumentFieldValue uint64Value
+                             * @property {number|null} [doubleValue] DocumentFieldValue doubleValue
+                             * @property {string|null} [text] DocumentFieldValue text
+                             * @property {Uint8Array|null} [bytesValue] DocumentFieldValue bytesValue
+                             * @property {org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.IValueList|null} [list] DocumentFieldValue list
+                             */
+
+                            /**
+                             * Constructs a new DocumentFieldValue.
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest
+                             * @classdesc Represents a DocumentFieldValue.
+                             * @implements IDocumentFieldValue
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.IDocumentFieldValue=} [properties] Properties to set
+                             */
+                            function DocumentFieldValue(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * DocumentFieldValue boolValue.
+                             * @member {boolean} boolValue
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue
+                             * @instance
+                             */
+                            DocumentFieldValue.prototype.boolValue = false;
+
+                            /**
+                             * DocumentFieldValue int64Value.
+                             * @member {number|Long} int64Value
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue
+                             * @instance
+                             */
+                            DocumentFieldValue.prototype.int64Value = $util.Long ? $util.Long.fromBits(0,0,false) : 0;
+
+                            /**
+                             * DocumentFieldValue uint64Value.
+                             * @member {number|Long} uint64Value
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue
+                             * @instance
+                             */
+                            DocumentFieldValue.prototype.uint64Value = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                            /**
+                             * DocumentFieldValue doubleValue.
+                             * @member {number} doubleValue
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue
+                             * @instance
+                             */
+                            DocumentFieldValue.prototype.doubleValue = 0;
+
+                            /**
+                             * DocumentFieldValue text.
+                             * @member {string} text
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue
+                             * @instance
+                             */
+                            DocumentFieldValue.prototype.text = "";
+
+                            /**
+                             * DocumentFieldValue bytesValue.
+                             * @member {Uint8Array} bytesValue
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue
+                             * @instance
+                             */
+                            DocumentFieldValue.prototype.bytesValue = $util.newBuffer([]);
+
+                            /**
+                             * DocumentFieldValue list.
+                             * @member {org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.IValueList|null|undefined} list
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue
+                             * @instance
+                             */
+                            DocumentFieldValue.prototype.list = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * DocumentFieldValue variant.
+                             * @member {"boolValue"|"int64Value"|"uint64Value"|"doubleValue"|"text"|"bytesValue"|"list"|undefined} variant
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue
+                             * @instance
+                             */
+                            Object.defineProperty(DocumentFieldValue.prototype, "variant", {
+                                get: $util.oneOfGetter($oneOfFields = ["boolValue", "int64Value", "uint64Value", "doubleValue", "text", "bytesValue", "list"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new DocumentFieldValue instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.IDocumentFieldValue=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue} DocumentFieldValue instance
+                             */
+                            DocumentFieldValue.create = function create(properties) {
+                                return new DocumentFieldValue(properties);
+                            };
+
+                            /**
+                             * Encodes the specified DocumentFieldValue message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.IDocumentFieldValue} message DocumentFieldValue message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            DocumentFieldValue.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.boolValue != null && Object.hasOwnProperty.call(message, "boolValue"))
+                                    writer.uint32(/* id 1, wireType 0 =*/8).bool(message.boolValue);
+                                if (message.int64Value != null && Object.hasOwnProperty.call(message, "int64Value"))
+                                    writer.uint32(/* id 2, wireType 0 =*/16).sint64(message.int64Value);
+                                if (message.uint64Value != null && Object.hasOwnProperty.call(message, "uint64Value"))
+                                    writer.uint32(/* id 3, wireType 0 =*/24).uint64(message.uint64Value);
+                                if (message.doubleValue != null && Object.hasOwnProperty.call(message, "doubleValue"))
+                                    writer.uint32(/* id 4, wireType 1 =*/33).double(message.doubleValue);
+                                if (message.text != null && Object.hasOwnProperty.call(message, "text"))
+                                    writer.uint32(/* id 5, wireType 2 =*/42).string(message.text);
+                                if (message.bytesValue != null && Object.hasOwnProperty.call(message, "bytesValue"))
+                                    writer.uint32(/* id 6, wireType 2 =*/50).bytes(message.bytesValue);
+                                if (message.list != null && Object.hasOwnProperty.call(message, "list"))
+                                    $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.ValueList.encode(message.list, writer.uint32(/* id 7, wireType 2 =*/58).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified DocumentFieldValue message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.IDocumentFieldValue} message DocumentFieldValue message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            DocumentFieldValue.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a DocumentFieldValue message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue} DocumentFieldValue
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            DocumentFieldValue.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.boolValue = reader.bool();
+                                        break;
+                                    case 2:
+                                        message.int64Value = reader.sint64();
+                                        break;
+                                    case 3:
+                                        message.uint64Value = reader.uint64();
+                                        break;
+                                    case 4:
+                                        message.doubleValue = reader.double();
+                                        break;
+                                    case 5:
+                                        message.text = reader.string();
+                                        break;
+                                    case 6:
+                                        message.bytesValue = reader.bytes();
+                                        break;
+                                    case 7:
+                                        message.list = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.ValueList.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a DocumentFieldValue message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue} DocumentFieldValue
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            DocumentFieldValue.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a DocumentFieldValue message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            DocumentFieldValue.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.boolValue != null && message.hasOwnProperty("boolValue")) {
+                                    properties.variant = 1;
+                                    if (typeof message.boolValue !== "boolean")
+                                        return "boolValue: boolean expected";
+                                }
+                                if (message.int64Value != null && message.hasOwnProperty("int64Value")) {
+                                    if (properties.variant === 1)
+                                        return "variant: multiple values";
+                                    properties.variant = 1;
+                                    if (!$util.isInteger(message.int64Value) && !(message.int64Value && $util.isInteger(message.int64Value.low) && $util.isInteger(message.int64Value.high)))
+                                        return "int64Value: integer|Long expected";
+                                }
+                                if (message.uint64Value != null && message.hasOwnProperty("uint64Value")) {
+                                    if (properties.variant === 1)
+                                        return "variant: multiple values";
+                                    properties.variant = 1;
+                                    if (!$util.isInteger(message.uint64Value) && !(message.uint64Value && $util.isInteger(message.uint64Value.low) && $util.isInteger(message.uint64Value.high)))
+                                        return "uint64Value: integer|Long expected";
+                                }
+                                if (message.doubleValue != null && message.hasOwnProperty("doubleValue")) {
+                                    if (properties.variant === 1)
+                                        return "variant: multiple values";
+                                    properties.variant = 1;
+                                    if (typeof message.doubleValue !== "number")
+                                        return "doubleValue: number expected";
+                                }
+                                if (message.text != null && message.hasOwnProperty("text")) {
+                                    if (properties.variant === 1)
+                                        return "variant: multiple values";
+                                    properties.variant = 1;
+                                    if (!$util.isString(message.text))
+                                        return "text: string expected";
+                                }
+                                if (message.bytesValue != null && message.hasOwnProperty("bytesValue")) {
+                                    if (properties.variant === 1)
+                                        return "variant: multiple values";
+                                    properties.variant = 1;
+                                    if (!(message.bytesValue && typeof message.bytesValue.length === "number" || $util.isString(message.bytesValue)))
+                                        return "bytesValue: buffer expected";
+                                }
+                                if (message.list != null && message.hasOwnProperty("list")) {
+                                    if (properties.variant === 1)
+                                        return "variant: multiple values";
+                                    properties.variant = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.ValueList.verify(message.list);
+                                        if (error)
+                                            return "list." + error;
+                                    }
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a DocumentFieldValue message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue} DocumentFieldValue
+                             */
+                            DocumentFieldValue.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue();
+                                if (object.boolValue != null)
+                                    message.boolValue = Boolean(object.boolValue);
+                                if (object.int64Value != null)
+                                    if ($util.Long)
+                                        (message.int64Value = $util.Long.fromValue(object.int64Value)).unsigned = false;
+                                    else if (typeof object.int64Value === "string")
+                                        message.int64Value = parseInt(object.int64Value, 10);
+                                    else if (typeof object.int64Value === "number")
+                                        message.int64Value = object.int64Value;
+                                    else if (typeof object.int64Value === "object")
+                                        message.int64Value = new $util.LongBits(object.int64Value.low >>> 0, object.int64Value.high >>> 0).toNumber();
+                                if (object.uint64Value != null)
+                                    if ($util.Long)
+                                        (message.uint64Value = $util.Long.fromValue(object.uint64Value)).unsigned = true;
+                                    else if (typeof object.uint64Value === "string")
+                                        message.uint64Value = parseInt(object.uint64Value, 10);
+                                    else if (typeof object.uint64Value === "number")
+                                        message.uint64Value = object.uint64Value;
+                                    else if (typeof object.uint64Value === "object")
+                                        message.uint64Value = new $util.LongBits(object.uint64Value.low >>> 0, object.uint64Value.high >>> 0).toNumber(true);
+                                if (object.doubleValue != null)
+                                    message.doubleValue = Number(object.doubleValue);
+                                if (object.text != null)
+                                    message.text = String(object.text);
+                                if (object.bytesValue != null)
+                                    if (typeof object.bytesValue === "string")
+                                        $util.base64.decode(object.bytesValue, message.bytesValue = $util.newBuffer($util.base64.length(object.bytesValue)), 0);
+                                    else if (object.bytesValue.length >= 0)
+                                        message.bytesValue = object.bytesValue;
+                                if (object.list != null) {
+                                    if (typeof object.list !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.list: object expected");
+                                    message.list = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.ValueList.fromObject(object.list);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a DocumentFieldValue message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue} message DocumentFieldValue
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            DocumentFieldValue.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (message.boolValue != null && message.hasOwnProperty("boolValue")) {
+                                    object.boolValue = message.boolValue;
+                                    if (options.oneofs)
+                                        object.variant = "boolValue";
+                                }
+                                if (message.int64Value != null && message.hasOwnProperty("int64Value")) {
+                                    if (typeof message.int64Value === "number")
+                                        object.int64Value = options.longs === String ? String(message.int64Value) : message.int64Value;
+                                    else
+                                        object.int64Value = options.longs === String ? $util.Long.prototype.toString.call(message.int64Value) : options.longs === Number ? new $util.LongBits(message.int64Value.low >>> 0, message.int64Value.high >>> 0).toNumber() : message.int64Value;
+                                    if (options.oneofs)
+                                        object.variant = "int64Value";
+                                }
+                                if (message.uint64Value != null && message.hasOwnProperty("uint64Value")) {
+                                    if (typeof message.uint64Value === "number")
+                                        object.uint64Value = options.longs === String ? String(message.uint64Value) : message.uint64Value;
+                                    else
+                                        object.uint64Value = options.longs === String ? $util.Long.prototype.toString.call(message.uint64Value) : options.longs === Number ? new $util.LongBits(message.uint64Value.low >>> 0, message.uint64Value.high >>> 0).toNumber(true) : message.uint64Value;
+                                    if (options.oneofs)
+                                        object.variant = "uint64Value";
+                                }
+                                if (message.doubleValue != null && message.hasOwnProperty("doubleValue")) {
+                                    object.doubleValue = options.json && !isFinite(message.doubleValue) ? String(message.doubleValue) : message.doubleValue;
+                                    if (options.oneofs)
+                                        object.variant = "doubleValue";
+                                }
+                                if (message.text != null && message.hasOwnProperty("text")) {
+                                    object.text = message.text;
+                                    if (options.oneofs)
+                                        object.variant = "text";
+                                }
+                                if (message.bytesValue != null && message.hasOwnProperty("bytesValue")) {
+                                    object.bytesValue = options.bytes === String ? $util.base64.encode(message.bytesValue, 0, message.bytesValue.length) : options.bytes === Array ? Array.prototype.slice.call(message.bytesValue) : message.bytesValue;
+                                    if (options.oneofs)
+                                        object.variant = "bytesValue";
+                                }
+                                if (message.list != null && message.hasOwnProperty("list")) {
+                                    object.list = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.ValueList.toObject(message.list, options);
+                                    if (options.oneofs)
+                                        object.variant = "list";
+                                }
+                                return object;
+                            };
+
+                            /**
+                             * Converts this DocumentFieldValue to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            DocumentFieldValue.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            DocumentFieldValue.ValueList = (function() {
+
+                                /**
+                                 * Properties of a ValueList.
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue
+                                 * @interface IValueList
+                                 * @property {Array.<org.dash.platform.dapi.v0.GetDocumentsRequest.IDocumentFieldValue>|null} [values] ValueList values
+                                 */
+
+                                /**
+                                 * Constructs a new ValueList.
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue
+                                 * @classdesc Represents a ValueList.
+                                 * @implements IValueList
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.IValueList=} [properties] Properties to set
+                                 */
+                                function ValueList(properties) {
+                                    this.values = [];
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * ValueList values.
+                                 * @member {Array.<org.dash.platform.dapi.v0.GetDocumentsRequest.IDocumentFieldValue>} values
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.ValueList
+                                 * @instance
+                                 */
+                                ValueList.prototype.values = $util.emptyArray;
+
+                                /**
+                                 * Creates a new ValueList instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.ValueList
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.IValueList=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.ValueList} ValueList instance
+                                 */
+                                ValueList.create = function create(properties) {
+                                    return new ValueList(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified ValueList message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.ValueList.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.ValueList
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.IValueList} message ValueList message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                ValueList.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.values != null && message.values.length)
+                                        for (var i = 0; i < message.values.length; ++i)
+                                            $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.encode(message.values[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified ValueList message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.ValueList.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.ValueList
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.IValueList} message ValueList message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                ValueList.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a ValueList message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.ValueList
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.ValueList} ValueList
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                ValueList.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.ValueList();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            if (!(message.values && message.values.length))
+                                                message.values = [];
+                                            message.values.push($root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.decode(reader, reader.uint32()));
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a ValueList message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.ValueList
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.ValueList} ValueList
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                ValueList.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a ValueList message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.ValueList
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                ValueList.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.values != null && message.hasOwnProperty("values")) {
+                                        if (!Array.isArray(message.values))
+                                            return "values: array expected";
+                                        for (var i = 0; i < message.values.length; ++i) {
+                                            var error = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.verify(message.values[i]);
+                                            if (error)
+                                                return "values." + error;
+                                        }
+                                    }
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a ValueList message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.ValueList
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.ValueList} ValueList
+                                 */
+                                ValueList.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.ValueList)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.ValueList();
+                                    if (object.values) {
+                                        if (!Array.isArray(object.values))
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.ValueList.values: array expected");
+                                        message.values = [];
+                                        for (var i = 0; i < object.values.length; ++i) {
+                                            if (typeof object.values[i] !== "object")
+                                                throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.ValueList.values: object expected");
+                                            message.values[i] = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.fromObject(object.values[i]);
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a ValueList message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.ValueList
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.ValueList} message ValueList
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                ValueList.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.arrays || options.defaults)
+                                        object.values = [];
+                                    if (message.values && message.values.length) {
+                                        object.values = [];
+                                        for (var j = 0; j < message.values.length; ++j)
+                                            object.values[j] = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.toObject(message.values[j], options);
+                                    }
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this ValueList to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.ValueList
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                ValueList.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return ValueList;
+                            })();
+
+                            return DocumentFieldValue;
+                        })();
+
+                        GetDocumentsRequest.WhereClause = (function() {
+
+                            /**
+                             * Properties of a WhereClause.
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest
+                             * @interface IWhereClause
+                             * @property {string|null} [field] WhereClause field
+                             * @property {org.dash.platform.dapi.v0.GetDocumentsRequest.WhereOperator|null} [operator] WhereClause operator
+                             * @property {org.dash.platform.dapi.v0.GetDocumentsRequest.IDocumentFieldValue|null} [value] WhereClause value
+                             */
+
+                            /**
+                             * Constructs a new WhereClause.
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest
+                             * @classdesc Represents a WhereClause.
+                             * @implements IWhereClause
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.IWhereClause=} [properties] Properties to set
+                             */
+                            function WhereClause(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * WhereClause field.
+                             * @member {string} field
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause
+                             * @instance
+                             */
+                            WhereClause.prototype.field = "";
+
+                            /**
+                             * WhereClause operator.
+                             * @member {org.dash.platform.dapi.v0.GetDocumentsRequest.WhereOperator} operator
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause
+                             * @instance
+                             */
+                            WhereClause.prototype.operator = 0;
+
+                            /**
+                             * WhereClause value.
+                             * @member {org.dash.platform.dapi.v0.GetDocumentsRequest.IDocumentFieldValue|null|undefined} value
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause
+                             * @instance
+                             */
+                            WhereClause.prototype.value = null;
+
+                            /**
+                             * Creates a new WhereClause instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.IWhereClause=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause} WhereClause instance
+                             */
+                            WhereClause.create = function create(properties) {
+                                return new WhereClause(properties);
+                            };
+
+                            /**
+                             * Encodes the specified WhereClause message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.IWhereClause} message WhereClause message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            WhereClause.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.field != null && Object.hasOwnProperty.call(message, "field"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).string(message.field);
+                                if (message.operator != null && Object.hasOwnProperty.call(message, "operator"))
+                                    writer.uint32(/* id 2, wireType 0 =*/16).int32(message.operator);
+                                if (message.value != null && Object.hasOwnProperty.call(message, "value"))
+                                    $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.encode(message.value, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified WhereClause message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.IWhereClause} message WhereClause message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            WhereClause.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a WhereClause message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause} WhereClause
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            WhereClause.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.field = reader.string();
+                                        break;
+                                    case 2:
+                                        message.operator = reader.int32();
+                                        break;
+                                    case 3:
+                                        message.value = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a WhereClause message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause} WhereClause
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            WhereClause.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a WhereClause message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            WhereClause.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.field != null && message.hasOwnProperty("field"))
+                                    if (!$util.isString(message.field))
+                                        return "field: string expected";
+                                if (message.operator != null && message.hasOwnProperty("operator"))
+                                    switch (message.operator) {
+                                    default:
+                                        return "operator: enum value expected";
+                                    case 0:
+                                    case 1:
+                                    case 2:
+                                    case 3:
+                                    case 4:
+                                    case 5:
+                                    case 6:
+                                    case 7:
+                                    case 8:
+                                    case 9:
+                                    case 10:
+                                        break;
+                                    }
+                                if (message.value != null && message.hasOwnProperty("value")) {
+                                    var error = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.verify(message.value);
+                                    if (error)
+                                        return "value." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a WhereClause message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause} WhereClause
+                             */
+                            WhereClause.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause();
+                                if (object.field != null)
+                                    message.field = String(object.field);
+                                switch (object.operator) {
+                                case "EQUAL":
+                                case 0:
+                                    message.operator = 0;
+                                    break;
+                                case "GREATER_THAN":
+                                case 1:
+                                    message.operator = 1;
+                                    break;
+                                case "GREATER_THAN_OR_EQUALS":
+                                case 2:
+                                    message.operator = 2;
+                                    break;
+                                case "LESS_THAN":
+                                case 3:
+                                    message.operator = 3;
+                                    break;
+                                case "LESS_THAN_OR_EQUALS":
+                                case 4:
+                                    message.operator = 4;
+                                    break;
+                                case "BETWEEN":
+                                case 5:
+                                    message.operator = 5;
+                                    break;
+                                case "BETWEEN_EXCLUDE_BOUNDS":
+                                case 6:
+                                    message.operator = 6;
+                                    break;
+                                case "BETWEEN_EXCLUDE_LEFT":
+                                case 7:
+                                    message.operator = 7;
+                                    break;
+                                case "BETWEEN_EXCLUDE_RIGHT":
+                                case 8:
+                                    message.operator = 8;
+                                    break;
+                                case "IN":
+                                case 9:
+                                    message.operator = 9;
+                                    break;
+                                case "STARTS_WITH":
+                                case 10:
+                                    message.operator = 10;
+                                    break;
+                                }
+                                if (object.value != null) {
+                                    if (typeof object.value !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause.value: object expected");
+                                    message.value = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.fromObject(object.value);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a WhereClause message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause} message WhereClause
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            WhereClause.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    object.field = "";
+                                    object.operator = options.enums === String ? "EQUAL" : 0;
+                                    object.value = null;
+                                }
+                                if (message.field != null && message.hasOwnProperty("field"))
+                                    object.field = message.field;
+                                if (message.operator != null && message.hasOwnProperty("operator"))
+                                    object.operator = options.enums === String ? $root.org.dash.platform.dapi.v0.GetDocumentsRequest.WhereOperator[message.operator] : message.operator;
+                                if (message.value != null && message.hasOwnProperty("value"))
+                                    object.value = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.toObject(message.value, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this WhereClause to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            WhereClause.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return WhereClause;
+                        })();
+
+                        GetDocumentsRequest.OrderClause = (function() {
+
+                            /**
+                             * Properties of an OrderClause.
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest
+                             * @interface IOrderClause
+                             * @property {string|null} [field] OrderClause field
+                             * @property {boolean|null} [ascending] OrderClause ascending
+                             */
+
+                            /**
+                             * Constructs a new OrderClause.
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest
+                             * @classdesc Represents an OrderClause.
+                             * @implements IOrderClause
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.IOrderClause=} [properties] Properties to set
+                             */
+                            function OrderClause(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * OrderClause field.
+                             * @member {string} field
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause
+                             * @instance
+                             */
+                            OrderClause.prototype.field = "";
+
+                            /**
+                             * OrderClause ascending.
+                             * @member {boolean} ascending
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause
+                             * @instance
+                             */
+                            OrderClause.prototype.ascending = false;
+
+                            /**
+                             * Creates a new OrderClause instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.IOrderClause=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause} OrderClause instance
+                             */
+                            OrderClause.create = function create(properties) {
+                                return new OrderClause(properties);
+                            };
+
+                            /**
+                             * Encodes the specified OrderClause message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.IOrderClause} message OrderClause message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            OrderClause.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.field != null && Object.hasOwnProperty.call(message, "field"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).string(message.field);
+                                if (message.ascending != null && Object.hasOwnProperty.call(message, "ascending"))
+                                    writer.uint32(/* id 2, wireType 0 =*/16).bool(message.ascending);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified OrderClause message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.IOrderClause} message OrderClause message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            OrderClause.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes an OrderClause message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause} OrderClause
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            OrderClause.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.field = reader.string();
+                                        break;
+                                    case 2:
+                                        message.ascending = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes an OrderClause message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause} OrderClause
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            OrderClause.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies an OrderClause message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            OrderClause.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.field != null && message.hasOwnProperty("field"))
+                                    if (!$util.isString(message.field))
+                                        return "field: string expected";
+                                if (message.ascending != null && message.hasOwnProperty("ascending"))
+                                    if (typeof message.ascending !== "boolean")
+                                        return "ascending: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates an OrderClause message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause} OrderClause
+                             */
+                            OrderClause.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause();
+                                if (object.field != null)
+                                    message.field = String(object.field);
+                                if (object.ascending != null)
+                                    message.ascending = Boolean(object.ascending);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from an OrderClause message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause} message OrderClause
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            OrderClause.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    object.field = "";
+                                    object.ascending = false;
+                                }
+                                if (message.field != null && message.hasOwnProperty("field"))
+                                    object.field = message.field;
+                                if (message.ascending != null && message.hasOwnProperty("ascending"))
+                                    object.ascending = message.ascending;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this OrderClause to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            OrderClause.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return OrderClause;
+                        })();
+
                         GetDocumentsRequest.GetDocumentsRequestV0 = (function() {
 
                             /**
@@ -19990,15 +21137,15 @@ $root.org = (function() {
                              * @interface IGetDocumentsRequestV1
                              * @property {Uint8Array|null} [dataContractId] GetDocumentsRequestV1 dataContractId
                              * @property {string|null} [documentType] GetDocumentsRequestV1 documentType
-                             * @property {Uint8Array|null} [where] GetDocumentsRequestV1 where
-                             * @property {Uint8Array|null} [orderBy] GetDocumentsRequestV1 orderBy
+                             * @property {Array.<org.dash.platform.dapi.v0.GetDocumentsRequest.IWhereClause>|null} [whereClauses] GetDocumentsRequestV1 whereClauses
+                             * @property {Array.<org.dash.platform.dapi.v0.GetDocumentsRequest.IOrderClause>|null} [orderBy] GetDocumentsRequestV1 orderBy
                              * @property {number|null} [limit] GetDocumentsRequestV1 limit
                              * @property {Uint8Array|null} [startAfter] GetDocumentsRequestV1 startAfter
                              * @property {Uint8Array|null} [startAt] GetDocumentsRequestV1 startAt
                              * @property {boolean|null} [prove] GetDocumentsRequestV1 prove
                              * @property {org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select|null} [select] GetDocumentsRequestV1 select
                              * @property {Array.<string>|null} [groupBy] GetDocumentsRequestV1 groupBy
-                             * @property {Uint8Array|null} [having] GetDocumentsRequestV1 having
+                             * @property {Array.<org.dash.platform.dapi.v0.GetDocumentsRequest.IWhereClause>|null} [having] GetDocumentsRequestV1 having
                              */
 
                             /**
@@ -20010,7 +21157,10 @@ $root.org = (function() {
                              * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.IGetDocumentsRequestV1=} [properties] Properties to set
                              */
                             function GetDocumentsRequestV1(properties) {
+                                this.whereClauses = [];
+                                this.orderBy = [];
                                 this.groupBy = [];
+                                this.having = [];
                                 if (properties)
                                     for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                                         if (properties[keys[i]] != null)
@@ -20034,20 +21184,20 @@ $root.org = (function() {
                             GetDocumentsRequestV1.prototype.documentType = "";
 
                             /**
-                             * GetDocumentsRequestV1 where.
-                             * @member {Uint8Array} where
+                             * GetDocumentsRequestV1 whereClauses.
+                             * @member {Array.<org.dash.platform.dapi.v0.GetDocumentsRequest.IWhereClause>} whereClauses
                              * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1
                              * @instance
                              */
-                            GetDocumentsRequestV1.prototype.where = $util.newBuffer([]);
+                            GetDocumentsRequestV1.prototype.whereClauses = $util.emptyArray;
 
                             /**
                              * GetDocumentsRequestV1 orderBy.
-                             * @member {Uint8Array} orderBy
+                             * @member {Array.<org.dash.platform.dapi.v0.GetDocumentsRequest.IOrderClause>} orderBy
                              * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1
                              * @instance
                              */
-                            GetDocumentsRequestV1.prototype.orderBy = $util.newBuffer([]);
+                            GetDocumentsRequestV1.prototype.orderBy = $util.emptyArray;
 
                             /**
                              * GetDocumentsRequestV1 limit.
@@ -20099,11 +21249,11 @@ $root.org = (function() {
 
                             /**
                              * GetDocumentsRequestV1 having.
-                             * @member {Uint8Array} having
+                             * @member {Array.<org.dash.platform.dapi.v0.GetDocumentsRequest.IWhereClause>} having
                              * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1
                              * @instance
                              */
-                            GetDocumentsRequestV1.prototype.having = $util.newBuffer([]);
+                            GetDocumentsRequestV1.prototype.having = $util.emptyArray;
 
                             // OneOf field names bound to virtual getters and setters
                             var $oneOfFields;
@@ -20147,10 +21297,12 @@ $root.org = (function() {
                                     writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.dataContractId);
                                 if (message.documentType != null && Object.hasOwnProperty.call(message, "documentType"))
                                     writer.uint32(/* id 2, wireType 2 =*/18).string(message.documentType);
-                                if (message.where != null && Object.hasOwnProperty.call(message, "where"))
-                                    writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.where);
-                                if (message.orderBy != null && Object.hasOwnProperty.call(message, "orderBy"))
-                                    writer.uint32(/* id 4, wireType 2 =*/34).bytes(message.orderBy);
+                                if (message.whereClauses != null && message.whereClauses.length)
+                                    for (var i = 0; i < message.whereClauses.length; ++i)
+                                        $root.org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause.encode(message.whereClauses[i], writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                if (message.orderBy != null && message.orderBy.length)
+                                    for (var i = 0; i < message.orderBy.length; ++i)
+                                        $root.org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause.encode(message.orderBy[i], writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
                                 if (message.limit != null && Object.hasOwnProperty.call(message, "limit"))
                                     writer.uint32(/* id 5, wireType 0 =*/40).uint32(message.limit);
                                 if (message.startAfter != null && Object.hasOwnProperty.call(message, "startAfter"))
@@ -20164,8 +21316,9 @@ $root.org = (function() {
                                 if (message.groupBy != null && message.groupBy.length)
                                     for (var i = 0; i < message.groupBy.length; ++i)
                                         writer.uint32(/* id 10, wireType 2 =*/82).string(message.groupBy[i]);
-                                if (message.having != null && Object.hasOwnProperty.call(message, "having"))
-                                    writer.uint32(/* id 11, wireType 2 =*/90).bytes(message.having);
+                                if (message.having != null && message.having.length)
+                                    for (var i = 0; i < message.having.length; ++i)
+                                        $root.org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause.encode(message.having[i], writer.uint32(/* id 11, wireType 2 =*/90).fork()).ldelim();
                                 return writer;
                             };
 
@@ -20207,10 +21360,14 @@ $root.org = (function() {
                                         message.documentType = reader.string();
                                         break;
                                     case 3:
-                                        message.where = reader.bytes();
+                                        if (!(message.whereClauses && message.whereClauses.length))
+                                            message.whereClauses = [];
+                                        message.whereClauses.push($root.org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause.decode(reader, reader.uint32()));
                                         break;
                                     case 4:
-                                        message.orderBy = reader.bytes();
+                                        if (!(message.orderBy && message.orderBy.length))
+                                            message.orderBy = [];
+                                        message.orderBy.push($root.org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause.decode(reader, reader.uint32()));
                                         break;
                                     case 5:
                                         message.limit = reader.uint32();
@@ -20233,7 +21390,9 @@ $root.org = (function() {
                                         message.groupBy.push(reader.string());
                                         break;
                                     case 11:
-                                        message.having = reader.bytes();
+                                        if (!(message.having && message.having.length))
+                                            message.having = [];
+                                        message.having.push($root.org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause.decode(reader, reader.uint32()));
                                         break;
                                     default:
                                         reader.skipType(tag & 7);
@@ -20277,12 +21436,24 @@ $root.org = (function() {
                                 if (message.documentType != null && message.hasOwnProperty("documentType"))
                                     if (!$util.isString(message.documentType))
                                         return "documentType: string expected";
-                                if (message.where != null && message.hasOwnProperty("where"))
-                                    if (!(message.where && typeof message.where.length === "number" || $util.isString(message.where)))
-                                        return "where: buffer expected";
-                                if (message.orderBy != null && message.hasOwnProperty("orderBy"))
-                                    if (!(message.orderBy && typeof message.orderBy.length === "number" || $util.isString(message.orderBy)))
-                                        return "orderBy: buffer expected";
+                                if (message.whereClauses != null && message.hasOwnProperty("whereClauses")) {
+                                    if (!Array.isArray(message.whereClauses))
+                                        return "whereClauses: array expected";
+                                    for (var i = 0; i < message.whereClauses.length; ++i) {
+                                        var error = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause.verify(message.whereClauses[i]);
+                                        if (error)
+                                            return "whereClauses." + error;
+                                    }
+                                }
+                                if (message.orderBy != null && message.hasOwnProperty("orderBy")) {
+                                    if (!Array.isArray(message.orderBy))
+                                        return "orderBy: array expected";
+                                    for (var i = 0; i < message.orderBy.length; ++i) {
+                                        var error = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause.verify(message.orderBy[i]);
+                                        if (error)
+                                            return "orderBy." + error;
+                                    }
+                                }
                                 if (message.limit != null && message.hasOwnProperty("limit"))
                                     if (!$util.isInteger(message.limit))
                                         return "limit: integer expected";
@@ -20316,9 +21487,15 @@ $root.org = (function() {
                                         if (!$util.isString(message.groupBy[i]))
                                             return "groupBy: string[] expected";
                                 }
-                                if (message.having != null && message.hasOwnProperty("having"))
-                                    if (!(message.having && typeof message.having.length === "number" || $util.isString(message.having)))
-                                        return "having: buffer expected";
+                                if (message.having != null && message.hasOwnProperty("having")) {
+                                    if (!Array.isArray(message.having))
+                                        return "having: array expected";
+                                    for (var i = 0; i < message.having.length; ++i) {
+                                        var error = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause.verify(message.having[i]);
+                                        if (error)
+                                            return "having." + error;
+                                    }
+                                }
                                 return null;
                             };
 
@@ -20341,16 +21518,26 @@ $root.org = (function() {
                                         message.dataContractId = object.dataContractId;
                                 if (object.documentType != null)
                                     message.documentType = String(object.documentType);
-                                if (object.where != null)
-                                    if (typeof object.where === "string")
-                                        $util.base64.decode(object.where, message.where = $util.newBuffer($util.base64.length(object.where)), 0);
-                                    else if (object.where.length >= 0)
-                                        message.where = object.where;
-                                if (object.orderBy != null)
-                                    if (typeof object.orderBy === "string")
-                                        $util.base64.decode(object.orderBy, message.orderBy = $util.newBuffer($util.base64.length(object.orderBy)), 0);
-                                    else if (object.orderBy.length >= 0)
-                                        message.orderBy = object.orderBy;
+                                if (object.whereClauses) {
+                                    if (!Array.isArray(object.whereClauses))
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.whereClauses: array expected");
+                                    message.whereClauses = [];
+                                    for (var i = 0; i < object.whereClauses.length; ++i) {
+                                        if (typeof object.whereClauses[i] !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.whereClauses: object expected");
+                                        message.whereClauses[i] = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause.fromObject(object.whereClauses[i]);
+                                    }
+                                }
+                                if (object.orderBy) {
+                                    if (!Array.isArray(object.orderBy))
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.orderBy: array expected");
+                                    message.orderBy = [];
+                                    for (var i = 0; i < object.orderBy.length; ++i) {
+                                        if (typeof object.orderBy[i] !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.orderBy: object expected");
+                                        message.orderBy[i] = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause.fromObject(object.orderBy[i]);
+                                    }
+                                }
                                 if (object.limit != null)
                                     message.limit = object.limit >>> 0;
                                 if (object.startAfter != null)
@@ -20382,11 +21569,16 @@ $root.org = (function() {
                                     for (var i = 0; i < object.groupBy.length; ++i)
                                         message.groupBy[i] = String(object.groupBy[i]);
                                 }
-                                if (object.having != null)
-                                    if (typeof object.having === "string")
-                                        $util.base64.decode(object.having, message.having = $util.newBuffer($util.base64.length(object.having)), 0);
-                                    else if (object.having.length >= 0)
-                                        message.having = object.having;
+                                if (object.having) {
+                                    if (!Array.isArray(object.having))
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.having: array expected");
+                                    message.having = [];
+                                    for (var i = 0; i < object.having.length; ++i) {
+                                        if (typeof object.having[i] !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.having: object expected");
+                                        message.having[i] = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause.fromObject(object.having[i]);
+                                    }
+                                }
                                 return message;
                             };
 
@@ -20403,8 +21595,12 @@ $root.org = (function() {
                                 if (!options)
                                     options = {};
                                 var object = {};
-                                if (options.arrays || options.defaults)
+                                if (options.arrays || options.defaults) {
+                                    object.whereClauses = [];
+                                    object.orderBy = [];
                                     object.groupBy = [];
+                                    object.having = [];
+                                }
                                 if (options.defaults) {
                                     if (options.bytes === String)
                                         object.dataContractId = "";
@@ -20414,39 +21610,24 @@ $root.org = (function() {
                                             object.dataContractId = $util.newBuffer(object.dataContractId);
                                     }
                                     object.documentType = "";
-                                    if (options.bytes === String)
-                                        object.where = "";
-                                    else {
-                                        object.where = [];
-                                        if (options.bytes !== Array)
-                                            object.where = $util.newBuffer(object.where);
-                                    }
-                                    if (options.bytes === String)
-                                        object.orderBy = "";
-                                    else {
-                                        object.orderBy = [];
-                                        if (options.bytes !== Array)
-                                            object.orderBy = $util.newBuffer(object.orderBy);
-                                    }
                                     object.limit = 0;
                                     object.prove = false;
                                     object.select = options.enums === String ? "DOCUMENTS" : 0;
-                                    if (options.bytes === String)
-                                        object.having = "";
-                                    else {
-                                        object.having = [];
-                                        if (options.bytes !== Array)
-                                            object.having = $util.newBuffer(object.having);
-                                    }
                                 }
                                 if (message.dataContractId != null && message.hasOwnProperty("dataContractId"))
                                     object.dataContractId = options.bytes === String ? $util.base64.encode(message.dataContractId, 0, message.dataContractId.length) : options.bytes === Array ? Array.prototype.slice.call(message.dataContractId) : message.dataContractId;
                                 if (message.documentType != null && message.hasOwnProperty("documentType"))
                                     object.documentType = message.documentType;
-                                if (message.where != null && message.hasOwnProperty("where"))
-                                    object.where = options.bytes === String ? $util.base64.encode(message.where, 0, message.where.length) : options.bytes === Array ? Array.prototype.slice.call(message.where) : message.where;
-                                if (message.orderBy != null && message.hasOwnProperty("orderBy"))
-                                    object.orderBy = options.bytes === String ? $util.base64.encode(message.orderBy, 0, message.orderBy.length) : options.bytes === Array ? Array.prototype.slice.call(message.orderBy) : message.orderBy;
+                                if (message.whereClauses && message.whereClauses.length) {
+                                    object.whereClauses = [];
+                                    for (var j = 0; j < message.whereClauses.length; ++j)
+                                        object.whereClauses[j] = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause.toObject(message.whereClauses[j], options);
+                                }
+                                if (message.orderBy && message.orderBy.length) {
+                                    object.orderBy = [];
+                                    for (var j = 0; j < message.orderBy.length; ++j)
+                                        object.orderBy[j] = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause.toObject(message.orderBy[j], options);
+                                }
                                 if (message.limit != null && message.hasOwnProperty("limit"))
                                     object.limit = message.limit;
                                 if (message.startAfter != null && message.hasOwnProperty("startAfter")) {
@@ -20468,8 +21649,11 @@ $root.org = (function() {
                                     for (var j = 0; j < message.groupBy.length; ++j)
                                         object.groupBy[j] = message.groupBy[j];
                                 }
-                                if (message.having != null && message.hasOwnProperty("having"))
-                                    object.having = options.bytes === String ? $util.base64.encode(message.having, 0, message.having.length) : options.bytes === Array ? Array.prototype.slice.call(message.having) : message.having;
+                                if (message.having && message.having.length) {
+                                    object.having = [];
+                                    for (var j = 0; j < message.having.length; ++j)
+                                        object.having[j] = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause.toObject(message.having[j], options);
+                                }
                                 return object;
                             };
 

@@ -117,8 +117,12 @@ GPBObjCClassDeclaration(GetDataContractsResponse_DataContractEntry);
 GPBObjCClassDeclaration(GetDataContractsResponse_DataContracts);
 GPBObjCClassDeclaration(GetDataContractsResponse_GetDataContractsResponseV0);
 GPBObjCClassDeclaration(GetDocumentsRequest);
+GPBObjCClassDeclaration(GetDocumentsRequest_DocumentFieldValue);
+GPBObjCClassDeclaration(GetDocumentsRequest_DocumentFieldValue_ValueList);
 GPBObjCClassDeclaration(GetDocumentsRequest_GetDocumentsRequestV0);
 GPBObjCClassDeclaration(GetDocumentsRequest_GetDocumentsRequestV1);
+GPBObjCClassDeclaration(GetDocumentsRequest_OrderClause);
+GPBObjCClassDeclaration(GetDocumentsRequest_WhereClause);
 GPBObjCClassDeclaration(GetDocumentsResponse);
 GPBObjCClassDeclaration(GetDocumentsResponse_GetDocumentsResponseV0);
 GPBObjCClassDeclaration(GetDocumentsResponse_GetDocumentsResponseV0_Documents);
@@ -5140,6 +5144,367 @@ void GetDocumentsRequest_ClearVersionOneOfCase(GetDocumentsRequest *message) {
   GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
   GPBClearOneof(message, oneof);
 }
+#pragma mark - Enum GetDocumentsRequest_WhereOperator
+
+GPBEnumDescriptor *GetDocumentsRequest_WhereOperator_EnumDescriptor(void) {
+  static _Atomic(GPBEnumDescriptor*) descriptor = nil;
+  if (!descriptor) {
+    static const char *valueNames =
+        "Equal\000GreaterThan\000GreaterThanOrEquals\000Le"
+        "ssThan\000LessThanOrEquals\000Between\000BetweenE"
+        "xcludeBounds\000BetweenExcludeLeft\000BetweenE"
+        "xcludeRight\000In\000StartsWith\000";
+    static const int32_t values[] = {
+        GetDocumentsRequest_WhereOperator_Equal,
+        GetDocumentsRequest_WhereOperator_GreaterThan,
+        GetDocumentsRequest_WhereOperator_GreaterThanOrEquals,
+        GetDocumentsRequest_WhereOperator_LessThan,
+        GetDocumentsRequest_WhereOperator_LessThanOrEquals,
+        GetDocumentsRequest_WhereOperator_Between,
+        GetDocumentsRequest_WhereOperator_BetweenExcludeBounds,
+        GetDocumentsRequest_WhereOperator_BetweenExcludeLeft,
+        GetDocumentsRequest_WhereOperator_BetweenExcludeRight,
+        GetDocumentsRequest_WhereOperator_In,
+        GetDocumentsRequest_WhereOperator_StartsWith,
+    };
+    GPBEnumDescriptor *worker =
+        [GPBEnumDescriptor allocDescriptorForName:GPBNSStringifySymbol(GetDocumentsRequest_WhereOperator)
+                                       valueNames:valueNames
+                                           values:values
+                                            count:(uint32_t)(sizeof(values) / sizeof(int32_t))
+                                     enumVerifier:GetDocumentsRequest_WhereOperator_IsValidValue];
+    GPBEnumDescriptor *expected = nil;
+    if (!atomic_compare_exchange_strong(&descriptor, &expected, worker)) {
+      [worker release];
+    }
+  }
+  return descriptor;
+}
+
+BOOL GetDocumentsRequest_WhereOperator_IsValidValue(int32_t value__) {
+  switch (value__) {
+    case GetDocumentsRequest_WhereOperator_Equal:
+    case GetDocumentsRequest_WhereOperator_GreaterThan:
+    case GetDocumentsRequest_WhereOperator_GreaterThanOrEquals:
+    case GetDocumentsRequest_WhereOperator_LessThan:
+    case GetDocumentsRequest_WhereOperator_LessThanOrEquals:
+    case GetDocumentsRequest_WhereOperator_Between:
+    case GetDocumentsRequest_WhereOperator_BetweenExcludeBounds:
+    case GetDocumentsRequest_WhereOperator_BetweenExcludeLeft:
+    case GetDocumentsRequest_WhereOperator_BetweenExcludeRight:
+    case GetDocumentsRequest_WhereOperator_In:
+    case GetDocumentsRequest_WhereOperator_StartsWith:
+      return YES;
+    default:
+      return NO;
+  }
+}
+
+#pragma mark - GetDocumentsRequest_DocumentFieldValue
+
+@implementation GetDocumentsRequest_DocumentFieldValue
+
+@dynamic variantOneOfCase;
+@dynamic boolValue;
+@dynamic int64Value;
+@dynamic uint64Value;
+@dynamic doubleValue;
+@dynamic text;
+@dynamic bytesValue;
+@dynamic list;
+
+typedef struct GetDocumentsRequest_DocumentFieldValue__storage_ {
+  uint32_t _has_storage_[2];
+  NSString *text;
+  NSData *bytesValue;
+  GetDocumentsRequest_DocumentFieldValue_ValueList *list;
+  int64_t int64Value;
+  uint64_t uint64Value;
+  double doubleValue;
+} GetDocumentsRequest_DocumentFieldValue__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "boolValue",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentsRequest_DocumentFieldValue_FieldNumber_BoolValue,
+        .hasIndex = -1,
+        .offset = 0,  // Stored in _has_storage_ to save space.
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBool,
+      },
+      {
+        .name = "int64Value",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentsRequest_DocumentFieldValue_FieldNumber_Int64Value,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetDocumentsRequest_DocumentFieldValue__storage_, int64Value),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeSInt64,
+      },
+      {
+        .name = "uint64Value",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentsRequest_DocumentFieldValue_FieldNumber_Uint64Value,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetDocumentsRequest_DocumentFieldValue__storage_, uint64Value),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeUInt64,
+      },
+      {
+        .name = "doubleValue",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentsRequest_DocumentFieldValue_FieldNumber_DoubleValue,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetDocumentsRequest_DocumentFieldValue__storage_, doubleValue),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeDouble,
+      },
+      {
+        .name = "text",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentsRequest_DocumentFieldValue_FieldNumber_Text,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetDocumentsRequest_DocumentFieldValue__storage_, text),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeString,
+      },
+      {
+        .name = "bytesValue",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentsRequest_DocumentFieldValue_FieldNumber_BytesValue,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetDocumentsRequest_DocumentFieldValue__storage_, bytesValue),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "list",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetDocumentsRequest_DocumentFieldValue_ValueList),
+        .number = GetDocumentsRequest_DocumentFieldValue_FieldNumber_List,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetDocumentsRequest_DocumentFieldValue__storage_, list),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetDocumentsRequest_DocumentFieldValue class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetDocumentsRequest_DocumentFieldValue__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "variant",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetDocumentsRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetDocumentsRequest_DocumentFieldValue_ClearVariantOneOfCase(GetDocumentsRequest_DocumentFieldValue *message) {
+  GPBDescriptor *descriptor = [GetDocumentsRequest_DocumentFieldValue descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetDocumentsRequest_DocumentFieldValue_ValueList
+
+@implementation GetDocumentsRequest_DocumentFieldValue_ValueList
+
+@dynamic valuesArray, valuesArray_Count;
+
+typedef struct GetDocumentsRequest_DocumentFieldValue_ValueList__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *valuesArray;
+} GetDocumentsRequest_DocumentFieldValue_ValueList__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "valuesArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetDocumentsRequest_DocumentFieldValue),
+        .number = GetDocumentsRequest_DocumentFieldValue_ValueList_FieldNumber_ValuesArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetDocumentsRequest_DocumentFieldValue_ValueList__storage_, valuesArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetDocumentsRequest_DocumentFieldValue_ValueList class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetDocumentsRequest_DocumentFieldValue_ValueList__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetDocumentsRequest_DocumentFieldValue)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetDocumentsRequest_WhereClause
+
+@implementation GetDocumentsRequest_WhereClause
+
+@dynamic field;
+@dynamic operator_p;
+@dynamic hasValue, value;
+
+typedef struct GetDocumentsRequest_WhereClause__storage_ {
+  uint32_t _has_storage_[1];
+  GetDocumentsRequest_WhereOperator operator_p;
+  NSString *field;
+  GetDocumentsRequest_DocumentFieldValue *value;
+} GetDocumentsRequest_WhereClause__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "field",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentsRequest_WhereClause_FieldNumber_Field,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetDocumentsRequest_WhereClause__storage_, field),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeString,
+      },
+      {
+        .name = "operator_p",
+        .dataTypeSpecific.enumDescFunc = GetDocumentsRequest_WhereOperator_EnumDescriptor,
+        .number = GetDocumentsRequest_WhereClause_FieldNumber_Operator_p,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetDocumentsRequest_WhereClause__storage_, operator_p),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldHasEnumDescriptor | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeEnum,
+      },
+      {
+        .name = "value",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetDocumentsRequest_DocumentFieldValue),
+        .number = GetDocumentsRequest_WhereClause_FieldNumber_Value,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetDocumentsRequest_WhereClause__storage_, value),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetDocumentsRequest_WhereClause class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetDocumentsRequest_WhereClause__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetDocumentsRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+int32_t GetDocumentsRequest_WhereClause_Operator_p_RawValue(GetDocumentsRequest_WhereClause *message) {
+  GPBDescriptor *descriptor = [GetDocumentsRequest_WhereClause descriptor];
+  GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetDocumentsRequest_WhereClause_FieldNumber_Operator_p];
+  return GPBGetMessageRawEnumField(message, field);
+}
+
+void SetGetDocumentsRequest_WhereClause_Operator_p_RawValue(GetDocumentsRequest_WhereClause *message, int32_t value) {
+  GPBDescriptor *descriptor = [GetDocumentsRequest_WhereClause descriptor];
+  GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetDocumentsRequest_WhereClause_FieldNumber_Operator_p];
+  GPBSetMessageRawEnumField(message, field, value);
+}
+
+#pragma mark - GetDocumentsRequest_OrderClause
+
+@implementation GetDocumentsRequest_OrderClause
+
+@dynamic field;
+@dynamic ascending;
+
+typedef struct GetDocumentsRequest_OrderClause__storage_ {
+  uint32_t _has_storage_[1];
+  NSString *field;
+} GetDocumentsRequest_OrderClause__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "field",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentsRequest_OrderClause_FieldNumber_Field,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetDocumentsRequest_OrderClause__storage_, field),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeString,
+      },
+      {
+        .name = "ascending",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentsRequest_OrderClause_FieldNumber_Ascending,
+        .hasIndex = 1,
+        .offset = 2,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetDocumentsRequest_OrderClause class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetDocumentsRequest_OrderClause__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetDocumentsRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
 #pragma mark - GetDocumentsRequest_GetDocumentsRequestV0
 
 @implementation GetDocumentsRequest_GetDocumentsRequestV0
@@ -5281,15 +5646,15 @@ void GetDocumentsRequest_GetDocumentsRequestV0_ClearStartOneOfCase(GetDocumentsR
 @dynamic startOneOfCase;
 @dynamic dataContractId;
 @dynamic documentType;
-@dynamic where;
-@dynamic orderBy;
+@dynamic whereClausesArray, whereClausesArray_Count;
+@dynamic orderByArray, orderByArray_Count;
 @dynamic hasLimit, limit;
 @dynamic startAfter;
 @dynamic startAt;
 @dynamic prove;
 @dynamic select;
 @dynamic groupByArray, groupByArray_Count;
-@dynamic having;
+@dynamic havingArray, havingArray_Count;
 
 typedef struct GetDocumentsRequest_GetDocumentsRequestV1__storage_ {
   uint32_t _has_storage_[2];
@@ -5297,12 +5662,12 @@ typedef struct GetDocumentsRequest_GetDocumentsRequestV1__storage_ {
   GetDocumentsRequest_GetDocumentsRequestV1_Select select;
   NSData *dataContractId;
   NSString *documentType;
-  NSData *where;
-  NSData *orderBy;
+  NSMutableArray *whereClausesArray;
+  NSMutableArray *orderByArray;
   NSData *startAfter;
   NSData *startAt;
   NSMutableArray *groupByArray;
-  NSData *having;
+  NSMutableArray *havingArray;
 } GetDocumentsRequest_GetDocumentsRequestV1__storage_;
 
 // This method is threadsafe because it is initially called
@@ -5330,28 +5695,28 @@ typedef struct GetDocumentsRequest_GetDocumentsRequestV1__storage_ {
         .dataType = GPBDataTypeString,
       },
       {
-        .name = "where",
-        .dataTypeSpecific.clazz = Nil,
-        .number = GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_Where,
-        .hasIndex = 2,
-        .offset = (uint32_t)offsetof(GetDocumentsRequest_GetDocumentsRequestV1__storage_, where),
-        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
-        .dataType = GPBDataTypeBytes,
+        .name = "whereClausesArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetDocumentsRequest_WhereClause),
+        .number = GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_WhereClausesArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetDocumentsRequest_GetDocumentsRequestV1__storage_, whereClausesArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
       },
       {
-        .name = "orderBy",
-        .dataTypeSpecific.clazz = Nil,
-        .number = GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_OrderBy,
-        .hasIndex = 3,
-        .offset = (uint32_t)offsetof(GetDocumentsRequest_GetDocumentsRequestV1__storage_, orderBy),
-        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
-        .dataType = GPBDataTypeBytes,
+        .name = "orderByArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetDocumentsRequest_OrderClause),
+        .number = GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_OrderByArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetDocumentsRequest_GetDocumentsRequestV1__storage_, orderByArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
       },
       {
         .name = "limit",
         .dataTypeSpecific.clazz = Nil,
         .number = GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_Limit,
-        .hasIndex = 4,
+        .hasIndex = 2,
         .offset = (uint32_t)offsetof(GetDocumentsRequest_GetDocumentsRequestV1__storage_, limit),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeUInt32,
@@ -5378,8 +5743,8 @@ typedef struct GetDocumentsRequest_GetDocumentsRequestV1__storage_ {
         .name = "prove",
         .dataTypeSpecific.clazz = Nil,
         .number = GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_Prove,
-        .hasIndex = 5,
-        .offset = 6,  // Stored in _has_storage_ to save space.
+        .hasIndex = 3,
+        .offset = 4,  // Stored in _has_storage_ to save space.
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBool,
       },
@@ -5387,7 +5752,7 @@ typedef struct GetDocumentsRequest_GetDocumentsRequestV1__storage_ {
         .name = "select",
         .dataTypeSpecific.enumDescFunc = GetDocumentsRequest_GetDocumentsRequestV1_Select_EnumDescriptor,
         .number = GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_Select,
-        .hasIndex = 7,
+        .hasIndex = 5,
         .offset = (uint32_t)offsetof(GetDocumentsRequest_GetDocumentsRequestV1__storage_, select),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldHasEnumDescriptor | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeEnum,
@@ -5402,13 +5767,13 @@ typedef struct GetDocumentsRequest_GetDocumentsRequestV1__storage_ {
         .dataType = GPBDataTypeString,
       },
       {
-        .name = "having",
-        .dataTypeSpecific.clazz = Nil,
-        .number = GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_Having,
-        .hasIndex = 8,
-        .offset = (uint32_t)offsetof(GetDocumentsRequest_GetDocumentsRequestV1__storage_, having),
-        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
-        .dataType = GPBDataTypeBytes,
+        .name = "havingArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetDocumentsRequest_WhereClause),
+        .number = GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_HavingArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetDocumentsRequest_GetDocumentsRequestV1__storage_, havingArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
       },
     };
     GPBDescriptor *localDescriptor =

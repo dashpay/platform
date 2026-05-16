@@ -90,8 +90,12 @@ CF_EXTERN_C_BEGIN
 @class GetDataContractsResponse_DataContractEntry;
 @class GetDataContractsResponse_DataContracts;
 @class GetDataContractsResponse_GetDataContractsResponseV0;
+@class GetDocumentsRequest_DocumentFieldValue;
+@class GetDocumentsRequest_DocumentFieldValue_ValueList;
 @class GetDocumentsRequest_GetDocumentsRequestV0;
 @class GetDocumentsRequest_GetDocumentsRequestV1;
+@class GetDocumentsRequest_OrderClause;
+@class GetDocumentsRequest_WhereClause;
 @class GetDocumentsResponse_GetDocumentsResponseV0;
 @class GetDocumentsResponse_GetDocumentsResponseV0_Documents;
 @class GetDocumentsResponse_GetDocumentsResponseV1;
@@ -343,6 +347,47 @@ GPBEnumDescriptor *SecurityLevelMap_KeyKindRequestType_EnumDescriptor(void);
  * the time this source was generated.
  **/
 BOOL SecurityLevelMap_KeyKindRequestType_IsValidValue(int32_t value);
+
+#pragma mark - Enum GetDocumentsRequest_WhereOperator
+
+/**
+ * Comparison operator for a single `WhereClause`. Wire values
+ * mirror `drive::query::WhereOperator` 1:1; the server maps the
+ * enum discriminant directly without re-parsing operator strings.
+ *
+ * `BETWEEN*` operators expect the right-hand operand to be a
+ * 2-element `DocumentFieldValue.list` carrying `[lower, upper]`;
+ * `IN` expects a `list` of candidate values; all other operators
+ * expect a scalar `DocumentFieldValue` matching the indexed
+ * field's type.
+ **/
+typedef GPB_ENUM(GetDocumentsRequest_WhereOperator) {
+  /**
+   * Value used if any message's field encounters a value that is not defined
+   * by this enum. The message will also have C functions to get/set the rawValue
+   * of the field.
+   **/
+  GetDocumentsRequest_WhereOperator_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
+  GetDocumentsRequest_WhereOperator_Equal = 0,
+  GetDocumentsRequest_WhereOperator_GreaterThan = 1,
+  GetDocumentsRequest_WhereOperator_GreaterThanOrEquals = 2,
+  GetDocumentsRequest_WhereOperator_LessThan = 3,
+  GetDocumentsRequest_WhereOperator_LessThanOrEquals = 4,
+  GetDocumentsRequest_WhereOperator_Between = 5,
+  GetDocumentsRequest_WhereOperator_BetweenExcludeBounds = 6,
+  GetDocumentsRequest_WhereOperator_BetweenExcludeLeft = 7,
+  GetDocumentsRequest_WhereOperator_BetweenExcludeRight = 8,
+  GetDocumentsRequest_WhereOperator_In = 9,
+  GetDocumentsRequest_WhereOperator_StartsWith = 10,
+};
+
+GPBEnumDescriptor *GetDocumentsRequest_WhereOperator_EnumDescriptor(void);
+
+/**
+ * Checks to see if the given value is defined by the enum or was not known at
+ * the time this source was generated.
+ **/
+BOOL GetDocumentsRequest_WhereOperator_IsValidValue(int32_t value);
 
 #pragma mark - Enum GetDocumentsRequest_GetDocumentsRequestV1_Select
 
@@ -2314,6 +2359,164 @@ GPB_FINAL @interface GetDocumentsRequest : GPBMessage
  **/
 void GetDocumentsRequest_ClearVersionOneOfCase(GetDocumentsRequest *message);
 
+#pragma mark - GetDocumentsRequest_DocumentFieldValue
+
+typedef GPB_ENUM(GetDocumentsRequest_DocumentFieldValue_FieldNumber) {
+  GetDocumentsRequest_DocumentFieldValue_FieldNumber_BoolValue = 1,
+  GetDocumentsRequest_DocumentFieldValue_FieldNumber_Int64Value = 2,
+  GetDocumentsRequest_DocumentFieldValue_FieldNumber_Uint64Value = 3,
+  GetDocumentsRequest_DocumentFieldValue_FieldNumber_DoubleValue = 4,
+  GetDocumentsRequest_DocumentFieldValue_FieldNumber_Text = 5,
+  GetDocumentsRequest_DocumentFieldValue_FieldNumber_BytesValue = 6,
+  GetDocumentsRequest_DocumentFieldValue_FieldNumber_List = 7,
+};
+
+typedef GPB_ENUM(GetDocumentsRequest_DocumentFieldValue_Variant_OneOfCase) {
+  GetDocumentsRequest_DocumentFieldValue_Variant_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDocumentsRequest_DocumentFieldValue_Variant_OneOfCase_BoolValue = 1,
+  GetDocumentsRequest_DocumentFieldValue_Variant_OneOfCase_Int64Value = 2,
+  GetDocumentsRequest_DocumentFieldValue_Variant_OneOfCase_Uint64Value = 3,
+  GetDocumentsRequest_DocumentFieldValue_Variant_OneOfCase_DoubleValue = 4,
+  GetDocumentsRequest_DocumentFieldValue_Variant_OneOfCase_Text = 5,
+  GetDocumentsRequest_DocumentFieldValue_Variant_OneOfCase_BytesValue = 6,
+  GetDocumentsRequest_DocumentFieldValue_Variant_OneOfCase_List = 7,
+};
+
+/**
+ * Tagged scalar (or list) operand for a `WhereClause`. The
+ * variant the caller picks names the wire-level primitive type
+ * only — the **document type's schema** is the source of truth
+ * for the indexed field's actual type, and the server coerces
+ * each variant through the schema-driven
+ * `document_type.serialize_value_for_key(field, value, …)` path
+ * (the same path the CBOR-shaped v0 request flows through). That
+ * means:
+ *
+ * - Identifier-typed fields accept either a `bytes_value` (raw
+ *   32 bytes) **or** a `text` (base58-encoded). The schema
+ *   decides; callers don't need a dedicated identifier variant.
+ * - Fixed-width byte fields (e.g. `Bytes20`/`Bytes36`) accept
+ *   `bytes_value` of the appropriate length; the schema
+ *   validates the size.
+ * - Numeric fields accept the closest-fit signed (`int64_value`)
+ *   or unsigned (`uint64_value`) variant; the schema coerces to
+ *   the indexed type (`u8` … `u64`/`i8` … `i64`/`u128`/`i128`).
+ * - String / bool fields accept `text` / `bool_value`.
+ *
+ * No `null` variant: a where-clause operand is always concrete.
+ * Empty where-clauses are expressed by leaving
+ * `GetDocumentsRequestV1.where_clauses` empty, not by sending a
+ * null operand.
+ **/
+GPB_FINAL @interface GetDocumentsRequest_DocumentFieldValue : GPBMessage
+
+@property(nonatomic, readonly) GetDocumentsRequest_DocumentFieldValue_Variant_OneOfCase variantOneOfCase;
+
+@property(nonatomic, readwrite) BOOL boolValue;
+
+@property(nonatomic, readwrite) int64_t int64Value;
+
+@property(nonatomic, readwrite) uint64_t uint64Value;
+
+@property(nonatomic, readwrite) double doubleValue;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSString *text;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *bytesValue;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsRequest_DocumentFieldValue_ValueList *list;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'variant'.
+ **/
+void GetDocumentsRequest_DocumentFieldValue_ClearVariantOneOfCase(GetDocumentsRequest_DocumentFieldValue *message);
+
+#pragma mark - GetDocumentsRequest_DocumentFieldValue_ValueList
+
+typedef GPB_ENUM(GetDocumentsRequest_DocumentFieldValue_ValueList_FieldNumber) {
+  GetDocumentsRequest_DocumentFieldValue_ValueList_FieldNumber_ValuesArray = 1,
+};
+
+/**
+ * Recursive list — operand for `IN` (candidate values) and
+ * `BETWEEN*` (exactly 2 values `[lower, upper]`). Nested
+ * `list` is structurally allowed but every supported document
+ * index value-type is currently scalar, so callers should not
+ * need to nest.
+ **/
+GPB_FINAL @interface GetDocumentsRequest_DocumentFieldValue_ValueList : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDocumentsRequest_DocumentFieldValue*> *valuesArray;
+/** The number of items in @c valuesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger valuesArray_Count;
+
+@end
+
+#pragma mark - GetDocumentsRequest_WhereClause
+
+typedef GPB_ENUM(GetDocumentsRequest_WhereClause_FieldNumber) {
+  GetDocumentsRequest_WhereClause_FieldNumber_Field = 1,
+  GetDocumentsRequest_WhereClause_FieldNumber_Operator_p = 2,
+  GetDocumentsRequest_WhereClause_FieldNumber_Value = 3,
+};
+
+/**
+ * Single `field <op> value` clause. The server reassembles a
+ * `Vec<WhereClause>` from the request's `where_clauses` field,
+ * runs the same `WhereClause::group_clauses` validator (rejects
+ * duplicate / conflicting same-field clauses) and the same
+ * `> AND <` → `between*` canonicalizer the CBOR-shaped path uses,
+ * then hands the structured clauses to the executor. Wire
+ * semantics are identical to v0's CBOR `[field, op, value]`
+ * triples — only the envelope differs.
+ **/
+GPB_FINAL @interface GetDocumentsRequest_WhereClause : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSString *field;
+
+@property(nonatomic, readwrite) GetDocumentsRequest_WhereOperator operator_p;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsRequest_DocumentFieldValue *value;
+/** Test to see if @c value has been set. */
+@property(nonatomic, readwrite) BOOL hasValue;
+
+@end
+
+/**
+ * Fetches the raw value of a @c GetDocumentsRequest_WhereClause's @c operator_p property, even
+ * if the value was not defined by the enum at the time the code was generated.
+ **/
+int32_t GetDocumentsRequest_WhereClause_Operator_p_RawValue(GetDocumentsRequest_WhereClause *message);
+/**
+ * Sets the raw value of an @c GetDocumentsRequest_WhereClause's @c operator_p property, allowing
+ * it to be set to a value that was not defined by the enum at the time the code
+ * was generated.
+ **/
+void SetGetDocumentsRequest_WhereClause_Operator_p_RawValue(GetDocumentsRequest_WhereClause *message, int32_t value);
+
+#pragma mark - GetDocumentsRequest_OrderClause
+
+typedef GPB_ENUM(GetDocumentsRequest_OrderClause_FieldNumber) {
+  GetDocumentsRequest_OrderClause_FieldNumber_Field = 1,
+  GetDocumentsRequest_OrderClause_FieldNumber_Ascending = 2,
+};
+
+/**
+ * Single `ORDER BY field <direction>` clause. Multi-field
+ * ordering is expressed by repeating this message at the
+ * request level (`repeated OrderClause order_by = 4`), matching
+ * SQL's `ORDER BY a ASC, b DESC` shape.
+ **/
+GPB_FINAL @interface GetDocumentsRequest_OrderClause : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSString *field;
+
+@property(nonatomic, readwrite) BOOL ascending;
+
+@end
+
 #pragma mark - GetDocumentsRequest_GetDocumentsRequestV0
 
 typedef GPB_ENUM(GetDocumentsRequest_GetDocumentsRequestV0_FieldNumber) {
@@ -2374,15 +2577,15 @@ void GetDocumentsRequest_GetDocumentsRequestV0_ClearStartOneOfCase(GetDocumentsR
 typedef GPB_ENUM(GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber) {
   GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_DataContractId = 1,
   GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_DocumentType = 2,
-  GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_Where = 3,
-  GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_OrderBy = 4,
+  GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_WhereClausesArray = 3,
+  GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_OrderByArray = 4,
   GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_Limit = 5,
   GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_StartAfter = 6,
   GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_StartAt = 7,
   GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_Prove = 8,
   GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_Select = 9,
   GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_GroupByArray = 10,
-  GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_Having = 11,
+  GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_HavingArray = 11,
 };
 
 typedef GPB_ENUM(GetDocumentsRequest_GetDocumentsRequestV1_Start_OneOfCase) {
@@ -2411,56 +2614,69 @@ typedef GPB_ENUM(GetDocumentsRequest_GetDocumentsRequestV1_Start_OneOfCase) {
  *   other shapes return `Unsupported` (see Phase 1 notes below).
  *
  * `having` is wire-reserved for Phase 2. Any non-empty `having`
- * value returns `Unsupported("HAVING clause is not yet
- * implemented")` regardless of `select` / `group_by`.
+ * list returns `Unsupported("HAVING clause is not yet
+ * implemented")` regardless of `select` / `group_by`. The wire
+ * shape is `repeated WhereClause` so the future-capability
+ * surface is typed end-to-end.
  *
  * **Phase 1 supported shapes** (everything else rejects with a
  * typed `QuerySyntaxError::Unsupported` so callers can detect
- * un-wired capabilities without parsing prose):
+ * un-wired capabilities without parsing prose). Bullets are
+ * kept single-line so the generated Rust doc comments don't trip
+ * rustdoc's `list_item_without_indent` lint on continuation
+ * lines.
  *
- *   select=DOCUMENTS, group_by=[]:
- *     any where shape v0 supports.
+ * `select=DOCUMENTS, group_by=[]`: any where shape v0 supports.
  *
- *   select=COUNT, group_by=[]:
- *     - empty where → `documentsCountable: true` doctype.
- *     - `==` only → `countable: true` index covering the fields.
- *     - one `In` → `countable: true` index covering the fields
- *       (per-In aggregate fan-out).
- *     - one range → `rangeCountable: true` index.
- *     - one `In` + one range → `rangeCountable: true` compound
- *       index (per-In aggregate fan-out on no-proof; rejected on
- *       prove because the aggregate proof primitive can't fork).
+ * `select=COUNT, group_by=[]`:
+ * - empty where → `documentsCountable: true` doctype.
+ * - `==` only → `countable: true` index covering the fields.
+ * - one `In` → `countable: true` index covering the fields (per-In aggregate fan-out).
+ * - one range → `rangeCountable: true` index.
+ * - one `In` + one range → `rangeCountable: true` compound index (per-In aggregate fan-out on no-proof; rejected on prove because the aggregate proof primitive can't fork).
  *
- *   select=COUNT, group_by=[g]:
- *     - g is the In clause's field → `countable: true` index,
- *       grouped by g (PerInValue on no-proof, CountTree element
- *       proof per In branch on prove).
- *     - g is the range clause's field → `rangeCountable: true`
- *       index, grouped by g (RangeDistinct on no-proof, distinct
- *       range proof on prove).
+ * `select=COUNT, group_by=[g]`:
+ * - g is the In clause's field → `countable: true` index, grouped by g (PerInValue on no-proof, CountTree element proof per In branch on prove).
+ * - g is the range clause's field → `rangeCountable: true` index, grouped by g (RangeDistinct on no-proof, distinct range proof on prove).
  *
- *   select=COUNT, group_by=[a, b]:
- *     - a is the In field AND b is the range field, in that order
- *       → existing compound distinct shape; entries carry both
- *       `in_key` (= a's value) and `key` (= b's value).
+ * `select=COUNT, group_by=[a, b]`:
+ * - a is the In field AND b is the range field, in that order → existing compound distinct shape; entries carry both `in_key` (= a's value) and `key` (= b's value).
  *
  * **Phase 1 rejected shapes** (return `Unsupported`):
- *   - any non-empty `having` (always).
- *   - `select=DOCUMENTS` with non-empty `group_by`.
- *   - `select=COUNT` with `group_by` on a field that is not
- *     constrained by an `In` or range where clause.
- *   - `select=COUNT` with `group_by.len() > 2`.
- *   - `select=COUNT` with 2-field `group_by` that does not match
- *     the `(in_field, range_field)` shape above.
+ * - any non-empty `having` (always).
+ * - `select=DOCUMENTS` with non-empty `group_by`.
+ * - `select=COUNT` with `group_by` on a field that is not constrained by an `In` or range where clause.
+ * - `select=COUNT` with `group_by.len() > 2`.
+ * - `select=COUNT` with 2-field `group_by` that does not match the `(in_field, range_field)` shape above.
  *
- * **Zero-count entries on `In`-grouped queries**: when
+ * **Absent-from-tree branches on `In`-grouped queries**: when
  * `select=COUNT, group_by=[in_field]` and an `In` value has no
- * matching documents, v1 emits a `CountEntry { key: in_value,
- * count: 0 }` for it — a deliberate divergence from SQL, which
- * would skip empty groups. Callers can distinguish "no docs at
- * this value" from "value filtered out" without re-querying.
- * For range-grouped queries the existing walker only emits keys
- * that exist in the index, which IS SQL-conformant; no change.
+ * matching documents, the underlying merk index has nothing to
+ * emit (zero-count branches aren't materialized as CountTree
+ * elements), so the wire `CountEntries.entries` list contains
+ * only the In values that exist.
+ *
+ * The SDK's proof decoder surfaces this by **omission**, not by
+ * a sentinel `count` value: the current point-lookup path query
+ * doesn't set `absence_proofs_for_non_existing_searched_keys:
+ * true`, so grovedb's `verify_query` silently drops absent-Key
+ * branches from the verified elements stream. The drive-side
+ * verifier (`verify_point_lookup_count_proof`) therefore emits
+ * one `SplitCountEntry` per **present** In branch and the SDK
+ * wraps those into `CountEntry`. Callers that need to detect
+ * "queried but absent" diff their request's In array against
+ * the returned entries by `key` (each entry's `key` is the
+ * serialized In value, recoverable via
+ * `document_type.serialize_value_for_key(in_field, v, …)`).
+ * `SplitCountEntry::count`'s `Option<u64>` and the `None`
+ * variant exist for a future absence-proof variant; today the
+ * wire `CountEntry.count` is plain `uint64`.
+ *
+ * For range-grouped queries the walker only emits keys that
+ * exist in the index, which IS SQL-conformant; no equivalent
+ * reconstruction step because the range itself is unbounded and
+ * the caller has no explicit "expected keys" list to compare
+ * against.
  **/
 GPB_FINAL @interface GetDocumentsRequest_GetDocumentsRequestV1 : GPBMessage
 
@@ -2470,32 +2686,82 @@ GPB_FINAL @interface GetDocumentsRequest_GetDocumentsRequestV1 : GPBMessage
 /** Document type within the contract */
 @property(nonatomic, readwrite, copy, null_resettable) NSString *documentType;
 
-/** CBOR-encoded where clauses (same shape as v0) */
-@property(nonatomic, readwrite, copy, null_resettable) NSData *where;
+/**
+ * Structured where clauses. Empty list = no `WHERE` filter
+ * (return all matching rows under the document type / contract).
+ * See top-level `WhereClause` for shape semantics.
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDocumentsRequest_WhereClause*> *whereClausesArray;
+/** The number of items in @c whereClausesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger whereClausesArray_Count;
 
-/** CBOR-encoded order_by clauses (same shape as v0) */
-@property(nonatomic, readwrite, copy, null_resettable) NSData *orderBy;
+/**
+ * Structured order_by clauses. Empty list = no explicit
+ * ordering (server applies the index's natural order). Multiple
+ * entries express SQL's `ORDER BY a ASC, b DESC, …` shape; the
+ * first entry's direction also governs split-mode entry
+ * ordering on `select=COUNT` paths.
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDocumentsRequest_OrderClause*> *orderByArray;
+/** The number of items in @c orderByArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger orderByArray_Count;
 
 /**
  * Maximum number of rows to return.
+ *
+ * **Wire semantics on the `optional uint32` field**: `None`
+ * (unset) requests the server's default; `Some(N)` with `N > 0`
+ * requests an explicit cap of `N`. `Some(0)` is **rejected with
+ * `InvalidLimit` across every SELECT mode** — zero-cap is
+ * structurally meaningless and the legacy v0 `uint32`-with-0-as-
+ * sentinel mapping doesn't extend to `optional uint32` (the
+ * whole point of switching is that `None` carries "unset"
+ * explicitly). Callers must send `None` for "use server default."
+ *
+ * Per-mode behavior of `Some(N > 0)`:
  *   - `select=DOCUMENTS`: matched-document cap (same as v0).
- *   - `select=COUNT, group_by=[]`: ignored (aggregate is one row).
- *   - `select=COUNT, group_by=[…]`: entries cap. On prove paths
- *     this is validate-don't-clamp — `limit > max_query_limit`
- *     returns `InvalidLimit` rather than silent clamping (see
- *     `RangeDistinctProof`'s contract; unset falls back to the
- *     SDK-shared `DEFAULT_QUERY_LIMIT` compile-time constant so
- *     proof bytes are deterministic across operators).
+ *   - `select=COUNT, group_by=[]`: **rejected with `InvalidLimit`
+ *     when set**. Aggregate count is a single row by construction
+ *     — a limit would either be redundant (≥ 1) or silently
+ *     mislead callers if the dispatcher's per-In fan-out honored
+ *     it and returned a partial sum disguised as a total. Omit
+ *     `limit` for aggregate count.
+ *   - `select=COUNT, group_by=[in_field]`: **rejected with
+ *     `InvalidLimit` when set**. The In array is already capped
+ *     at 100 entries by `WhereClause::in_values()`, so the
+ *     result is bounded by construction; a separate `limit`
+ *     would either be redundant or silently truncate the proof
+ *     to fewer In branches than the caller asked for (the
+ *     PointLookupProof shape can't represent a partial-In
+ *     selection in its `SizedQuery`). Narrow the In array
+ *     directly to reduce the result set.
+ *   - `select=COUNT, group_by=[range_field]`: entries cap on
+ *     the distinct-range walk.
+ *   - `select=COUNT, group_by=[in_field, range_field]`: global
+ *     cap over the emitted `(in_key, key)` lex stream — NOT
+ *     per-In-branch. The compound walk pushes one
+ *     `SizedQuery::limit` over the combined tuple stream, so a
+ *     request with `|In| = 3` and `limit = 5` returns at most
+ *     5 entries total across all In branches (ordered by
+ *     `(in_key, key)`, direction from the first `order_by`
+ *     clause).
+ *   Both range-grouped variants share the same validate-don't-
+ *   clamp policy on prove paths — `limit > max_query_limit`
+ *   returns `InvalidLimit` rather than silent clamping (see
+ *   `RangeDistinctProof`'s contract; unset falls back to the
+ *   SDK-shared `DEFAULT_QUERY_LIMIT` compile-time constant so
+ *   proof bytes are deterministic across operators).
  **/
 @property(nonatomic, readwrite) uint32_t limit;
 
 @property(nonatomic, readwrite) BOOL hasLimit;
 /**
- * Pagination cursor. Valid for `select=DOCUMENTS` and for
- * `select=COUNT` with non-empty `group_by` (paginate entries by
- * the grouping field's serialized key). Rejected on
- * `select=COUNT, group_by=[]` — no concept of "start" for a
- * single aggregate.
+ * Pagination cursor. Valid only for `select=DOCUMENTS`. The
+ * count surface (`select=COUNT`) rejects cursors entirely:
+ * aggregate counts have no concept of "start," and per-group
+ * entry paginators would need a new merk walk that doesn't
+ * exist yet — callers paginate counts by narrowing the
+ * where-clause range itself instead.
  **/
 @property(nonatomic, readonly) GetDocumentsRequest_GetDocumentsRequestV1_Start_OneOfCase startOneOfCase;
 
@@ -2522,13 +2788,18 @@ GPB_FINAL @interface GetDocumentsRequest_GetDocumentsRequestV1 : GPBMessage
 @property(nonatomic, readonly) NSUInteger groupByArray_Count;
 
 /**
- * SQL `HAVING` clauses, CBOR-encoded the same way as `where`.
- * **Phase 1: always rejected when non-empty** with
- * `Unsupported("HAVING clause is not yet implemented")`.
- * Reserved on the wire so future capability can land without
- * another version bump.
+ * SQL `HAVING` clauses, structured the same way as
+ * `where_clauses`. **Phase 1: always rejected when non-empty**
+ * with `Unsupported("HAVING clause is not yet implemented")`.
+ * Reserved on the wire as a typed surface so future capability
+ * can land without another version bump. HAVING in SQL
+ * evaluates against aggregates rather than row values; the
+ * current `WhereClause` shape is a placeholder that may be
+ * refined when execution lands — Phase 1 only checks emptiness.
  **/
-@property(nonatomic, readwrite, copy, null_resettable) NSData *having;
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDocumentsRequest_WhereClause*> *havingArray;
+/** The number of items in @c havingArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger havingArray_Count;
 
 @end
 

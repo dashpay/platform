@@ -14,16 +14,69 @@ use crate::query::tests::{setup_platform, store_data_contract, store_document};
 use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::{
     Select as V1Select, Start as V1Start,
 };
+use dapi_grpc::platform::v0::get_documents_request::{
+    document_field_value, DocumentFieldValue as ProtoDocumentFieldValue, GetDocumentsRequestV0,
+    OrderClause as ProtoOrderClause, WhereClause as ProtoWhereClause,
+    WhereOperator as ProtoWhereOperator,
+};
 use dpp::dashcore::Network;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
-use dpp::platform_value::platform_value;
+use dpp::platform_value::{platform_value, Value};
+
+/// Build a `ProtoDocumentFieldValue` from a `dpp::platform_value::Value`
+/// using the same primitive-by-primitive mapping the SDK's wire
+/// conversion uses. Keeps each test focused on the clause shape
+/// rather than per-variant proto plumbing. Mirrors
+/// `rs-sdk/src/platform/documents/document_query.rs::value_to_proto`.
+fn pv(value: Value) -> ProtoDocumentFieldValue {
+    let variant = match value {
+        Value::Bool(b) => document_field_value::Variant::BoolValue(b),
+        Value::I8(i) => document_field_value::Variant::Int64Value(i as i64),
+        Value::I16(i) => document_field_value::Variant::Int64Value(i as i64),
+        Value::I32(i) => document_field_value::Variant::Int64Value(i as i64),
+        Value::I64(i) => document_field_value::Variant::Int64Value(i),
+        Value::U8(u) => document_field_value::Variant::Uint64Value(u as u64),
+        Value::U16(u) => document_field_value::Variant::Uint64Value(u as u64),
+        Value::U32(u) => document_field_value::Variant::Uint64Value(u as u64),
+        Value::U64(u) => document_field_value::Variant::Uint64Value(u),
+        Value::Float(f) => document_field_value::Variant::DoubleValue(f),
+        Value::Text(s) => document_field_value::Variant::Text(s),
+        Value::Bytes(b) => document_field_value::Variant::BytesValue(b),
+        Value::Array(items) => {
+            document_field_value::Variant::List(document_field_value::ValueList {
+                values: items.into_iter().map(pv).collect(),
+            })
+        }
+        other => panic!("pv: unsupported test-value variant {:?}", other),
+    };
+    ProtoDocumentFieldValue {
+        variant: Some(variant),
+    }
+}
+
+/// Build a proto `WhereClause` triple `(field, operator, value)`.
+fn wc(field: &str, operator: ProtoWhereOperator, value: Value) -> ProtoWhereClause {
+    ProtoWhereClause {
+        field: field.to_string(),
+        operator: operator as i32,
+        value: Some(pv(value)),
+    }
+}
+
+/// Build a proto `OrderClause` (field, ascending).
+fn oc(field: &str, ascending: bool) -> ProtoOrderClause {
+    ProtoOrderClause {
+        field: field.to_string(),
+        ascending,
+    }
+}
 
 fn empty_v1_request() -> GetDocumentsRequestV1 {
     GetDocumentsRequestV1 {
         data_contract_id: vec![0u8; 32],
         document_type: "widget".to_string(),
-        r#where: Vec::new(),
+        where_clauses: Vec::new(),
         order_by: Vec::new(),
         limit: None,
         start: None,
@@ -53,8 +106,11 @@ fn assert_not_yet_implemented(result: Result<&'static str, QueryError>, expected
 
 #[test]
 fn reject_having_non_empty() {
+    // Phase 1 rejects any non-empty `having`. The clause shape itself
+    // doesn't matter (server doesn't decode it past the `is_empty()`
+    // check), so a single placeholder clause is sufficient.
     let request = GetDocumentsRequestV1 {
-        having: vec![0x01, 0x02],
+        having: vec![wc("any", ProtoWhereOperator::Equal, Value::Bool(true))],
         ..empty_v1_request()
     };
     assert_not_yet_implemented(validate_and_route_for_tests(&request, &[]), "HAVING clause");
@@ -544,7 +600,7 @@ fn e2e_documents_select_matches_v0() {
     let request_v1 = GetDocumentsRequestV1 {
         data_contract_id: contract.id().to_vec(),
         document_type: "widget".to_string(),
-        r#where: Vec::new(),
+        where_clauses: Vec::new(),
         order_by: Vec::new(),
         limit: None,
         start: None,
@@ -574,14 +630,14 @@ fn e2e_having_rejection_surfaces_in_response() {
     let request = GetDocumentsRequestV1 {
         data_contract_id: vec![0u8; 32],
         document_type: "anything".to_string(),
-        r#where: Vec::new(),
+        where_clauses: Vec::new(),
         order_by: Vec::new(),
         limit: None,
         start: None,
         prove: false,
         select: V1Select::Count as i32,
         group_by: Vec::new(),
-        having: vec![0xFF, 0xFE],
+        having: vec![wc("any", ProtoWhereOperator::Equal, Value::Bool(true))],
     };
     let result = platform
         .query_documents_v1(request, &state, version)
@@ -608,7 +664,7 @@ fn reject_start_with_select_count() {
     let request = GetDocumentsRequestV1 {
         data_contract_id: vec![0u8; 32],
         document_type: "widget".to_string(),
-        r#where: Vec::new(),
+        where_clauses: Vec::new(),
         order_by: Vec::new(),
         limit: None,
         start: Some(V1Start::StartAfter(vec![1u8; 32])),
@@ -654,11 +710,17 @@ mod ported_v0_count_tests {
     // so the inner module sees `validate_and_route_for_tests`,
     // `GetDocumentsRequestV1`, etc. directly.
     use super::super::*;
+    use super::{oc, wc};
     use crate::query::tests::{setup_platform, store_data_contract, store_document};
     use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::Select as V1Select;
+    use dapi_grpc::platform::v0::get_documents_request::{
+        OrderClause as ProtoOrderClause, WhereClause as ProtoWhereClause,
+        WhereOperator as ProtoWhereOperator,
+    };
     use dpp::dashcore::Network;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
     use dpp::document::DocumentV0Setters;
+    use dpp::platform_value::Value;
     use dpp::tests::json_document::json_document_to_contract_with_ids;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
@@ -694,15 +756,6 @@ mod ported_v0_count_tests {
             )
             .expect("create contract")
             .data_contract_owned()
-    }
-
-    fn serialize_where_clauses_to_cbor(where_clauses: Vec<Value>) -> Vec<u8> {
-        use ciborium::value::Value as CborValue;
-        let cbor: CborValue = TryInto::<CborValue>::try_into(Value::Array(where_clauses))
-            .expect("expected to convert where clauses to cbor value");
-        let mut out = Vec::new();
-        ciborium::ser::into_writer(&cbor, &mut out).expect("expected to serialize where clauses");
-        out
     }
 
     fn store_person_document(
@@ -759,8 +812,8 @@ mod ported_v0_count_tests {
     fn count_v1_request(
         data_contract_id: Vec<u8>,
         document_type: &str,
-        where_bytes: Vec<u8>,
-        order_by_bytes: Vec<u8>,
+        where_clauses: Vec<ProtoWhereClause>,
+        order_by: Vec<ProtoOrderClause>,
         group_by: Vec<String>,
         limit: Option<u32>,
         prove: bool,
@@ -768,8 +821,8 @@ mod ported_v0_count_tests {
         GetDocumentsRequestV1 {
             data_contract_id,
             document_type: document_type.to_string(),
-            r#where: where_bytes,
-            order_by: order_by_bytes,
+            where_clauses,
+            order_by,
             limit,
             start: None,
             prove,
@@ -923,16 +976,16 @@ mod ported_v0_count_tests {
             );
         }
 
-        let where_clauses = vec![Value::Array(vec![
-            Value::Text("age".to_string()),
-            Value::Text("in".to_string()),
+        let where_clauses = vec![wc(
+            "age",
+            ProtoWhereOperator::In,
             Value::Array(vec![Value::U64(30), Value::U64(40)]),
-        ])];
+        )];
 
         let request = count_v1_request(
             data_contract.id().to_vec(),
             "person",
-            serialize_where_clauses_to_cbor(where_clauses),
+            where_clauses,
             Vec::new(),
             vec!["age".to_string()],
             None,
@@ -1014,16 +1067,16 @@ mod ported_v0_count_tests {
             );
         }
 
-        let where_clauses = vec![Value::Array(vec![
-            Value::Text("age".to_string()),
-            Value::Text("in".to_string()),
+        let where_clauses = vec![wc(
+            "age",
+            ProtoWhereOperator::In,
             Value::Array(vec![Value::U64(30), Value::U64(40)]),
-        ])];
+        )];
 
         let request = count_v1_request(
             data_contract.id().to_vec(),
             "person",
-            serialize_where_clauses_to_cbor(where_clauses),
+            where_clauses,
             Vec::new(),
             /* group_by = */ Vec::new(),
             /* limit = */ None,
@@ -1071,16 +1124,12 @@ mod ported_v0_count_tests {
         .expect("expected to get json based contract");
         store_data_contract(&platform, &data_contract, version);
 
-        let where_clauses = vec![Value::Array(vec![
-            Value::Text("age".to_string()),
-            Value::Text(">".to_string()),
-            Value::U64(20),
-        ])];
+        let where_clauses = vec![wc("age", ProtoWhereOperator::GreaterThan, Value::U64(20))];
 
         let request = count_v1_request(
             data_contract.id().to_vec(),
             "person",
-            serialize_where_clauses_to_cbor(where_clauses),
+            where_clauses,
             Vec::new(),
             Vec::new(),
             None,
@@ -1145,16 +1194,16 @@ mod ported_v0_count_tests {
             );
         }
 
-        let where_clauses = vec![Value::Array(vec![
-            Value::Text("firstName".to_string()),
-            Value::Text("==".to_string()),
+        let where_clauses = vec![wc(
+            "firstName",
+            ProtoWhereOperator::Equal,
             Value::Text("Alice".to_string()),
-        ])];
+        )];
 
         let request = count_v1_request(
             data_contract.id().to_vec(),
             "person",
-            serialize_where_clauses_to_cbor(where_clauses),
+            where_clauses,
             Vec::new(),
             Vec::new(),
             None,
@@ -1261,21 +1310,18 @@ mod ported_v0_count_tests {
             );
         }
 
-        let where_clauses = vec![Value::Array(vec![
-            Value::Text("age".to_string()),
-            Value::Text("in".to_string()),
+        let where_clauses = vec![wc(
+            "age",
+            ProtoWhereOperator::In,
             Value::Array(vec![Value::U64(30), Value::U64(40)]),
-        ])];
-        let order_by = vec![Value::Array(vec![
-            Value::Text("age".to_string()),
-            Value::Text("asc".to_string()),
-        ])];
+        )];
+        let order_by = vec![oc("age", /* ascending = */ true)];
 
         let request = count_v1_request(
             data_contract.id().to_vec(),
             "person",
-            serialize_where_clauses_to_cbor(where_clauses),
-            serialize_where_clauses_to_cbor(order_by),
+            where_clauses,
+            order_by,
             vec!["age".to_string()],
             None,
             true,
@@ -1362,23 +1408,20 @@ mod ported_v0_count_tests {
         }
 
         let make_request = |group_by: Vec<String>, limit: Option<u32>, ascending: Option<bool>| {
-            let where_clauses = vec![Value::Array(vec![
-                Value::Text("color".to_string()),
-                Value::Text(">".to_string()),
+            let where_clauses = vec![wc(
+                "color",
+                ProtoWhereOperator::GreaterThan,
                 Value::Text("blue".to_string()),
-            ])];
-            let order_by_bytes = match ascending {
-                Some(asc) => serialize_where_clauses_to_cbor(vec![Value::Array(vec![
-                    Value::Text("color".to_string()),
-                    Value::Text(if asc { "asc" } else { "desc" }.to_string()),
-                ])]),
+            )];
+            let order_by = match ascending {
+                Some(asc) => vec![oc("color", asc)],
                 None => Vec::new(),
             };
             count_v1_request(
                 contract.id().to_vec(),
                 "widget",
-                serialize_where_clauses_to_cbor(where_clauses),
-                order_by_bytes,
+                where_clauses,
+                order_by,
                 group_by,
                 limit,
                 false,
@@ -1493,15 +1536,15 @@ mod ported_v0_count_tests {
             store_document(&platform, &contract, document_type, &doc, platform_version);
         }
 
-        let where_clauses = vec![Value::Array(vec![
-            Value::Text("color".to_string()),
-            Value::Text(">".to_string()),
+        let where_clauses = vec![wc(
+            "color",
+            ProtoWhereOperator::GreaterThan,
             Value::Text("blue".to_string()),
-        ])];
+        )];
         let request = count_v1_request(
             contract.id().to_vec(),
             "widget",
-            serialize_where_clauses_to_cbor(where_clauses),
+            where_clauses,
             Vec::new(),
             vec!["color".to_string()],
             None,

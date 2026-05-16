@@ -354,8 +354,11 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         .field_attribute("nullifiers", SERDE_WITH_BASE64)
         // Get documents fields
         .field_attribute("data_contract_id", SERDE_WITH_BYTES)
-        .field_attribute("where", SERDE_WITH_BYTES)
-        .field_attribute("order_by", SERDE_WITH_BYTES)
+        // V0 still ships CBOR for `where` / `order_by`; V1 ships
+        // typed `repeated WhereClause` / `repeated OrderClause`
+        // and doesn't need the `bytes`-shaped serde shim.
+        .field_attribute("GetDocumentsRequestV0.where", SERDE_WITH_BYTES)
+        .field_attribute("GetDocumentsRequestV0.order_by", SERDE_WITH_BYTES)
         // Proof fields
         .field_attribute("Proof.grovedb_proof", SERDE_WITH_BYTES)
         .field_attribute("Proof.quorum_hash", SERDE_WITH_BYTES)

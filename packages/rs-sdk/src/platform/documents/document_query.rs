@@ -3,14 +3,16 @@
 use std::sync::Arc;
 
 use crate::{error::Error, sdk::Sdk};
-use ciborium::Value as CborValue;
 use dapi_grpc::platform::v0::get_documents_request::Version::V1;
 use dapi_grpc::platform::v0::{
     self as platform_proto,
     get_documents_request::{
+        document_field_value,
         get_documents_request_v0::Start,
         get_documents_request_v1::{Select, Start as V1Start},
-        GetDocumentsRequestV1,
+        DocumentFieldValue as ProtoDocumentFieldValue, GetDocumentsRequestV1,
+        OrderClause as ProtoOrderClause, WhereClause as ProtoWhereClause,
+        WhereOperator as ProtoWhereOperator,
     },
     GetDocumentsRequest, Proof, ResponseMetadata,
 };
@@ -74,15 +76,15 @@ pub struct DocumentQuery {
     /// `select=Documents` is rejected by the server as unsupported.
     #[cfg_attr(feature = "mocks", serde(default))]
     pub group_by: Vec<String>,
-    /// SQL `HAVING` clauses, CBOR-encoded the same way as
+    /// SQL `HAVING` clauses, structured the same way as
     /// `where_clauses`. Non-empty values are rejected by the
     /// server with
     /// `QuerySyntaxError::Unsupported("HAVING clause is not yet
-    /// implemented")`. The wire field is reserved so the SDK
-    /// can encode `HAVING` once the server gains support, without
-    /// another version bump.
+    /// implemented")`. The wire field is reserved as a typed
+    /// `repeated WhereClause` so the SDK can encode `HAVING` once
+    /// the server gains support, without another version bump.
     #[cfg_attr(feature = "mocks", serde(default))]
-    pub having: Vec<u8>,
+    pub having: Vec<WhereClause>,
     /// `order_by` clauses for the query
     pub order_by_clauses: Vec<OrderClause>,
     /// queryset limit. `0` is the sentinel for "unset / default" and
@@ -211,15 +213,14 @@ impl DocumentQuery {
         self
     }
 
-    /// Set the `HAVING` clause CBOR bytes (replaces any prior
-    /// value).
+    /// Set the `HAVING` clauses (replaces any prior value).
     ///
     /// Non-empty values are rejected by the server with
     /// `QuerySyntaxError::Unsupported("HAVING clause is not yet
     /// implemented")`. The builder exists so SDK callers can
     /// encode `HAVING` ahead of server support landing without
     /// another version bump.
-    pub fn with_having(mut self, having: Vec<u8>) -> Self {
+    pub fn with_having(mut self, having: Vec<WhereClause>) -> Self {
         self.having = having;
         self
     }
@@ -341,9 +342,24 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
 impl TryFrom<DocumentQuery> for platform_proto::GetDocumentsRequest {
     type Error = Error;
     fn try_from(dapi_request: DocumentQuery) -> Result<Self, Self::Error> {
-        let where_clauses = serialize_vec_to_cbor(dapi_request.where_clauses.clone())
-            .expect("where clauses serialization should never fail");
-        let order_by = serialize_vec_to_cbor(dapi_request.order_by_clauses.clone())?;
+        let where_clauses = dapi_request
+            .where_clauses
+            .clone()
+            .into_iter()
+            .map(where_clause_to_proto)
+            .collect::<Result<Vec<_>, _>>()?;
+        let order_by = dapi_request
+            .order_by_clauses
+            .clone()
+            .into_iter()
+            .map(order_clause_to_proto)
+            .collect();
+        let having = dapi_request
+            .having
+            .clone()
+            .into_iter()
+            .map(where_clause_to_proto)
+            .collect::<Result<Vec<_>, _>>()?;
         // `limit: u32` with `0` sentinel → `optional uint32` on the
         // V1 wire. `None` lets the server apply its own default;
         // explicit `0` would be a strange "return zero rows" request.
@@ -366,7 +382,7 @@ impl TryFrom<DocumentQuery> for platform_proto::GetDocumentsRequest {
             version: Some(V1(GetDocumentsRequestV1 {
                 data_contract_id: dapi_request.data_contract.id().to_vec(),
                 document_type: dapi_request.document_type_name.clone(),
-                r#where: where_clauses,
+                where_clauses,
                 order_by,
                 limit,
                 // Document fetch always proves via this conversion.
@@ -382,7 +398,7 @@ impl TryFrom<DocumentQuery> for platform_proto::GetDocumentsRequest {
                 start: start_v1,
                 select: dapi_request.select as i32,
                 group_by: dapi_request.group_by.clone(),
-                having: dapi_request.having.clone(),
+                having,
             })),
         })
     }
@@ -515,20 +531,112 @@ impl<'a> TryFrom<&'a DocumentQuery> for DriveDocumentQuery<'a> {
     }
 }
 
-fn serialize_vec_to_cbor<T: Into<Value>>(input: Vec<T>) -> Result<Vec<u8>, Error> {
-    let values = Value::Array(
-        input
-            .into_iter()
-            .map(|v| v.into() as Value)
-            .collect::<Vec<Value>>(),
-    );
+/// Convert a drive [`WhereClause`] into its wire-format proto
+/// counterpart. The proto value variant is picked from the
+/// `dpp::platform_value::Value` variant by primitive type — schema-
+/// agnostic, matching the inverse direction the rs-drive-abci v1
+/// handler runs via its `conversions::value_from_proto`.
+///
+/// Errors only on `Value` variants that have no wire-format
+/// counterpart (`Map`, `EnumU8`, `EnumString`) — these aren't
+/// produced by the SDK's typical WhereClause builders, so a
+/// rejection here flags an unsupported caller construction at the
+/// wire boundary rather than silently dropping the value.
+fn where_clause_to_proto(clause: WhereClause) -> Result<ProtoWhereClause, Error> {
+    Ok(ProtoWhereClause {
+        field: clause.field,
+        operator: where_operator_to_proto(clause.operator) as i32,
+        value: Some(value_to_proto(clause.value)?),
+    })
+}
 
-    let cbor_values: CborValue = TryInto::<CborValue>::try_into(values)
-        .map_err(|e| Error::Protocol(dpp::ProtocolError::EncodingError(e.to_string())))?;
+fn order_clause_to_proto(clause: OrderClause) -> ProtoOrderClause {
+    ProtoOrderClause {
+        field: clause.field,
+        ascending: clause.ascending,
+    }
+}
 
-    let mut serialized = Vec::new();
-    ciborium::ser::into_writer(&cbor_values, &mut serialized)
-        .map_err(|e| Error::Protocol(dpp::ProtocolError::EncodingError(e.to_string())))?;
+fn where_operator_to_proto(op: WhereOperator) -> ProtoWhereOperator {
+    match op {
+        WhereOperator::Equal => ProtoWhereOperator::Equal,
+        WhereOperator::GreaterThan => ProtoWhereOperator::GreaterThan,
+        WhereOperator::GreaterThanOrEquals => ProtoWhereOperator::GreaterThanOrEquals,
+        WhereOperator::LessThan => ProtoWhereOperator::LessThan,
+        WhereOperator::LessThanOrEquals => ProtoWhereOperator::LessThanOrEquals,
+        WhereOperator::Between => ProtoWhereOperator::Between,
+        WhereOperator::BetweenExcludeBounds => ProtoWhereOperator::BetweenExcludeBounds,
+        WhereOperator::BetweenExcludeLeft => ProtoWhereOperator::BetweenExcludeLeft,
+        WhereOperator::BetweenExcludeRight => ProtoWhereOperator::BetweenExcludeRight,
+        WhereOperator::In => ProtoWhereOperator::In,
+        WhereOperator::StartsWith => ProtoWhereOperator::StartsWith,
+    }
+}
 
-    Ok(serialized)
+/// Map `dpp::platform_value::Value` onto the wire-shape
+/// [`ProtoDocumentFieldValue`]. The schema-driven decode on the
+/// server side resolves the actual indexed type — this layer just
+/// names the primitive.
+///
+/// Mapping rules:
+/// - `Bool` → `BoolValue`
+/// - `I8`/`I16`/`I32`/`I64` → `Int64Value` (widened)
+/// - `U8`/`U16`/`U32`/`U64` → `Uint64Value` (widened)
+/// - `Float` → `DoubleValue`
+/// - `Text` → `Text`
+/// - `Bytes`/`Bytes20`/`Bytes32`/`Bytes36`/`Identifier` → `BytesValue`
+/// - `U128`/`I128` → `Text` (decimal string; the server decodes
+///   against the indexed `U128`/`I128` field type)
+/// - `Array` → `List` (recursive — operand for `IN` / `BETWEEN*`)
+/// - `Null`/`Map`/`EnumU8`/`EnumString` → `Error` (no wire-format
+///   counterpart for these shapes in a WhereClause operand)
+fn value_to_proto(value: Value) -> Result<ProtoDocumentFieldValue, Error> {
+    let variant = match value {
+        Value::Bool(b) => document_field_value::Variant::BoolValue(b),
+        Value::I8(i) => document_field_value::Variant::Int64Value(i as i64),
+        Value::I16(i) => document_field_value::Variant::Int64Value(i as i64),
+        Value::I32(i) => document_field_value::Variant::Int64Value(i as i64),
+        Value::I64(i) => document_field_value::Variant::Int64Value(i),
+        Value::U8(u) => document_field_value::Variant::Uint64Value(u as u64),
+        Value::U16(u) => document_field_value::Variant::Uint64Value(u as u64),
+        Value::U32(u) => document_field_value::Variant::Uint64Value(u as u64),
+        Value::U64(u) => document_field_value::Variant::Uint64Value(u),
+        Value::Float(f) => document_field_value::Variant::DoubleValue(f),
+        Value::Text(s) => document_field_value::Variant::Text(s),
+        Value::Bytes(b) => document_field_value::Variant::BytesValue(b),
+        Value::Bytes20(b) => document_field_value::Variant::BytesValue(b.to_vec()),
+        Value::Bytes32(b) => document_field_value::Variant::BytesValue(b.to_vec()),
+        Value::Bytes36(b) => document_field_value::Variant::BytesValue(b.to_vec()),
+        Value::Identifier(b) => document_field_value::Variant::BytesValue(b.to_vec()),
+        // u128 / i128 don't fit in `int64_value`/`uint64_value`;
+        // encode as a decimal string. The server's schema-driven
+        // decode path accepts text against U128/I128 fields.
+        Value::U128(u) => document_field_value::Variant::Text(u.to_string()),
+        Value::I128(i) => document_field_value::Variant::Text(i.to_string()),
+        Value::Array(items) => {
+            document_field_value::Variant::List(document_field_value::ValueList {
+                values: items
+                    .into_iter()
+                    .map(value_to_proto)
+                    .collect::<Result<Vec<_>, _>>()?,
+            })
+        }
+        Value::Null | Value::Map(_) | Value::EnumU8(_) | Value::EnumString(_) => {
+            return Err(Error::Protocol(dpp::ProtocolError::EncodingError(format!(
+                "Value variant has no `DocumentFieldValue` wire-format counterpart: {value:?}"
+            ))));
+        }
+        _ => {
+            // `dpp::platform_value::Value` is `#[non_exhaustive]`;
+            // any new variant added upstream surfaces as a wire-
+            // boundary error here so the SDK fails loudly rather
+            // than silently dropping data.
+            return Err(Error::Protocol(dpp::ProtocolError::EncodingError(format!(
+                "Value variant has no `DocumentFieldValue` wire-format counterpart: {value:?}"
+            ))));
+        }
+    };
+    Ok(ProtoDocumentFieldValue {
+        variant: Some(variant),
+    })
 }

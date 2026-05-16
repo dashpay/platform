@@ -577,6 +577,95 @@ message GetDataContractHistoryResponse {
 }
 
 message GetDocumentsRequest {
+  // Comparison operator for a single `WhereClause`. Wire values
+  // mirror `drive::query::WhereOperator` 1:1; the server maps the
+  // enum discriminant directly without re-parsing operator strings.
+  //
+  // `BETWEEN*` operators expect the right-hand operand to be a
+  // 2-element `DocumentFieldValue.list` carrying `[lower, upper]`;
+  // `IN` expects a `list` of candidate values; all other operators
+  // expect a scalar `DocumentFieldValue` matching the indexed
+  // field's type.
+  enum WhereOperator {
+    EQUAL = 0;
+    GREATER_THAN = 1;
+    GREATER_THAN_OR_EQUALS = 2;
+    LESS_THAN = 3;
+    LESS_THAN_OR_EQUALS = 4;
+    BETWEEN = 5;
+    BETWEEN_EXCLUDE_BOUNDS = 6;
+    BETWEEN_EXCLUDE_LEFT = 7;
+    BETWEEN_EXCLUDE_RIGHT = 8;
+    IN = 9;
+    STARTS_WITH = 10;
+  }
+
+  // Tagged scalar (or list) operand for a `WhereClause`. The
+  // variant the caller picks names the wire-level primitive type
+  // only — the **document type's schema** is the source of truth
+  // for the indexed field's actual type, and the server coerces
+  // each variant through the schema-driven
+  // `document_type.serialize_value_for_key(field, value, …)` path
+  // (the same path the CBOR-shaped v0 request flows through). That
+  // means:
+  //
+  // - Identifier-typed fields accept either a `bytes_value` (raw
+  //   32 bytes) **or** a `text` (base58-encoded). The schema
+  //   decides; callers don't need a dedicated identifier variant.
+  // - Fixed-width byte fields (e.g. `Bytes20`/`Bytes36`) accept
+  //   `bytes_value` of the appropriate length; the schema
+  //   validates the size.
+  // - Numeric fields accept the closest-fit signed (`int64_value`)
+  //   or unsigned (`uint64_value`) variant; the schema coerces to
+  //   the indexed type (`u8` … `u64`/`i8` … `i64`/`u128`/`i128`).
+  // - String / bool fields accept `text` / `bool_value`.
+  //
+  // No `null` variant: a where-clause operand is always concrete.
+  // Empty where-clauses are expressed by leaving
+  // `GetDocumentsRequestV1.where_clauses` empty, not by sending a
+  // null operand.
+  message DocumentFieldValue {
+    // Recursive list — operand for `IN` (candidate values) and
+    // `BETWEEN*` (exactly 2 values `[lower, upper]`). Nested
+    // `list` is structurally allowed but every supported document
+    // index value-type is currently scalar, so callers should not
+    // need to nest.
+    message ValueList { repeated DocumentFieldValue values = 1; }
+
+    oneof variant {
+      bool bool_value = 1;
+      sint64 int64_value = 2 [jstype = JS_STRING];
+      uint64 uint64_value = 3 [jstype = JS_STRING];
+      double double_value = 4;
+      string text = 5;
+      bytes bytes_value = 6;
+      ValueList list = 7;
+    }
+  }
+
+  // Single `field <op> value` clause. The server reassembles a
+  // `Vec<WhereClause>` from the request's `where_clauses` field,
+  // runs the same `WhereClause::group_clauses` validator (rejects
+  // duplicate / conflicting same-field clauses) and the same
+  // `> AND <` → `between*` canonicalizer the CBOR-shaped path uses,
+  // then hands the structured clauses to the executor. Wire
+  // semantics are identical to v0's CBOR `[field, op, value]`
+  // triples — only the envelope differs.
+  message WhereClause {
+    string field = 1;
+    WhereOperator operator = 2;
+    DocumentFieldValue value = 3;
+  }
+
+  // Single `ORDER BY field <direction>` clause. Multi-field
+  // ordering is expressed by repeating this message at the
+  // request level (`repeated OrderClause order_by = 4`), matching
+  // SQL's `ORDER BY a ASC, b DESC` shape.
+  message OrderClause {
+    string field = 1;
+    bool ascending = 2;
+  }
+
   message GetDocumentsRequestV0 {
     bytes data_contract_id =
         1; // The ID of the data contract containing the documents
@@ -612,8 +701,10 @@ message GetDocumentsRequest {
   //   other shapes return `Unsupported` (see Phase 1 notes below).
   //
   // `having` is wire-reserved for Phase 2. Any non-empty `having`
-  // value returns `Unsupported("HAVING clause is not yet
-  // implemented")` regardless of `select` / `group_by`.
+  // list returns `Unsupported("HAVING clause is not yet
+  // implemented")` regardless of `select` / `group_by`. The wire
+  // shape is `repeated WhereClause` so the future-capability
+  // surface is typed end-to-end.
   //
   // **Phase 1 supported shapes** (everything else rejects with a
   // typed `QuerySyntaxError::Unsupported` so callers can detect
@@ -686,8 +777,16 @@ message GetDocumentsRequest {
 
     bytes data_contract_id = 1; // The data contract owning the documents
     string document_type = 2;   // Document type within the contract
-    bytes where = 3;            // CBOR-encoded where clauses (same shape as v0)
-    bytes order_by = 4;         // CBOR-encoded order_by clauses (same shape as v0)
+    // Structured where clauses. Empty list = no `WHERE` filter
+    // (return all matching rows under the document type / contract).
+    // See top-level `WhereClause` for shape semantics.
+    repeated WhereClause where_clauses = 3;
+    // Structured order_by clauses. Empty list = no explicit
+    // ordering (server applies the index's natural order). Multiple
+    // entries express SQL's `ORDER BY a ASC, b DESC, …` shape; the
+    // first entry's direction also governs split-mode entry
+    // ordering on `select=COUNT` paths.
+    repeated OrderClause order_by = 4;
     // Maximum number of rows to return.
     //
     // **Wire semantics on the `optional uint32` field**: `None`
@@ -756,12 +855,15 @@ message GetDocumentsRequest {
     // message-level docstring for the Phase 1 supported shapes.
     repeated string group_by = 10;
 
-    // SQL `HAVING` clauses, CBOR-encoded the same way as `where`.
-    // **Phase 1: always rejected when non-empty** with
-    // `Unsupported("HAVING clause is not yet implemented")`.
-    // Reserved on the wire so future capability can land without
-    // another version bump.
-    bytes having = 11;
+    // SQL `HAVING` clauses, structured the same way as
+    // `where_clauses`. **Phase 1: always rejected when non-empty**
+    // with `Unsupported("HAVING clause is not yet implemented")`.
+    // Reserved on the wire as a typed surface so future capability
+    // can land without another version bump. HAVING in SQL
+    // evaluates against aggregates rather than row values; the
+    // current `WhereClause` shape is a placeholder that may be
+    // refined when execution lands — Phase 1 only checks emptiness.
+    repeated WhereClause having = 11;
   }
 
   oneof version {
