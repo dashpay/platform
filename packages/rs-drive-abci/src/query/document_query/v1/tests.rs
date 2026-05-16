@@ -115,7 +115,8 @@ fn assert_not_yet_implemented(result: Result<&'static str, QueryError>, expected
 
 #[test]
 fn reject_having_non_empty() {
-    // Phase 1 rejects any non-empty `having`. The clause shape itself
+    // Non-empty `having` is rejected wholesale until the server
+    // gains HAVING-evaluation capability. The clause shape itself
     // doesn't matter (server doesn't decode it past the `is_empty()`
     // check), so a single placeholder clause is sufficient.
     let request = GetDocumentsRequestV1 {

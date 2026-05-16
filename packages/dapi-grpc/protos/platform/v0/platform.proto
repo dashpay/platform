@@ -705,18 +705,20 @@ message GetDocumentsRequest {
   // * `select = COUNT, group_by = [<field>]`: return per-group
   //   `CountEntry` rows. Only supported when the grouping field
   //   matches an `In`-constrained or range-constrained where clause;
-  //   other shapes return `Unsupported` (see Phase 1 notes below).
+  //   other shapes return `Unsupported` (see supported-shape table
+  //   below).
   //
-  // `having` is wire-reserved for Phase 2. Any non-empty `having`
-  // list returns `Unsupported("HAVING clause is not yet
-  // implemented")` regardless of `select` / `group_by`. The wire
-  // shape is `repeated WhereClause` so the future-capability
-  // surface is typed end-to-end.
+  // `having` is wire-reserved for a future server capability. Any
+  // non-empty `having` list currently returns
+  // `Unsupported("HAVING clause is not yet implemented")`
+  // regardless of `select` / `group_by`. The wire shape is
+  // `repeated WhereClause` so when execution lands the surface is
+  // already typed end-to-end and callers don't need to re-encode.
   //
-  // **Phase 1 supported shapes** (everything else rejects with a
-  // typed `QuerySyntaxError::Unsupported` so callers can detect
-  // un-wired capabilities without parsing prose). Bullets are
-  // kept single-line so the generated Rust doc comments don't trip
+  // **Supported shapes** (everything else rejects with a typed
+  // `QuerySyntaxError::Unsupported` so callers can detect un-wired
+  // capabilities without parsing prose). Bullets are kept
+  // single-line so the generated Rust doc comments don't trip
   // rustdoc's `list_item_without_indent` lint on continuation
   // lines.
   //
@@ -736,8 +738,8 @@ message GetDocumentsRequest {
   // `select=COUNT, group_by=[a, b]`:
   // - a is the In field AND b is the range field, in that order → existing compound distinct shape; entries carry both `in_key` (= a's value) and `key` (= b's value).
   //
-  // **Phase 1 rejected shapes** (return `Unsupported`):
-  // - any non-empty `having` (always).
+  // **Rejected shapes** (return `Unsupported`):
+  // - any non-empty `having` (always — pending future server capability).
   // - `select=DOCUMENTS` with non-empty `group_by`.
   // - `select=COUNT` with `group_by` on a field that is not constrained by an `In` or range where clause.
   // - `select=COUNT` with `group_by.len() > 2`.
@@ -858,18 +860,19 @@ message GetDocumentsRequest {
     Select select = 9;
 
     // SQL `GROUP BY` field names, in left-to-right order. Empty =
-    // no explicit grouping (aggregate for `select=COUNT`). See
-    // message-level docstring for the Phase 1 supported shapes.
+    // no explicit grouping (aggregate for `select=COUNT`). See the
+    // message-level docstring for the supported-shape table.
     repeated string group_by = 10;
 
     // SQL `HAVING` clauses, structured the same way as
-    // `where_clauses`. **Phase 1: always rejected when non-empty**
-    // with `Unsupported("HAVING clause is not yet implemented")`.
-    // Reserved on the wire as a typed surface so future capability
-    // can land without another version bump. HAVING in SQL
-    // evaluates against aggregates rather than row values; the
-    // current `WhereClause` shape is a placeholder that may be
-    // refined when execution lands — Phase 1 only checks emptiness.
+    // `where_clauses`. **Always rejected when non-empty** today
+    // with `Unsupported("HAVING clause is not yet implemented")`;
+    // reserved on the wire as a typed surface so the future
+    // server capability can land without another version bump.
+    // HAVING in SQL evaluates against aggregates rather than row
+    // values; the current `WhereClause` shape is a placeholder
+    // that may be refined when execution lands — until then only
+    // the empty/non-empty discriminant is checked.
     repeated WhereClause having = 11;
   }
 

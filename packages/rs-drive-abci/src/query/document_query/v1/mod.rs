@@ -5,15 +5,14 @@
 //!
 //! ## What this handler is
 //!
-//! **Wire-format unification.** Phase 1 ships no new server-side
-//! execution capability: every supported request shape reaches an
-//! existing drive executor (`DriveDocumentQuery` for `DOCUMENTS`,
-//! `Drive::execute_document_count_request` for `COUNT`) and produces
-//! the same proof bytes / response data the now-removed
-//! `getDocumentsCount` v0 endpoint did. The v1 surface just makes
-//! the SQL semantics explicit on the wire so callers don't have to
-//! reverse-engineer "this where clause shape happens to produce
-//! per-value entries."
+//! **Wire-format unification.** Every supported request shape
+//! reaches an existing drive executor (`DriveDocumentQuery` for
+//! `DOCUMENTS`, `Drive::execute_document_count_request` for
+//! `COUNT`) and produces the same proof bytes / response data
+//! the now-removed `getDocumentsCount` v0 endpoint did. The v1
+//! surface just makes the SQL semantics explicit on the wire so
+//! callers don't have to reverse-engineer "this where clause
+//! shape happens to produce per-value entries."
 //!
 //! ## What it rejects
 //!
@@ -25,8 +24,7 @@
 //! can keep these requests around in code and they'll start working
 //! once the capability lands without a wire-format change. See the
 //! message-level docstring on `GetDocumentsRequestV1` in
-//! `platform.proto` for the full Phase 1 supported/rejected shape
-//! table.
+//! `platform.proto` for the full supported / rejected shape table.
 
 mod conversions;
 
@@ -61,8 +59,8 @@ use drive::util::grove_operations::GroveDBToUse;
 
 /// Build a `QuerySyntaxError::Unsupported` carrying a stable
 /// "<feature> is not yet implemented" message. The wording is
-/// deliberate — Phase 1 of v1 publishes a SQL-shaped surface that
-/// the server only partially implements; the rejected shapes signal
+/// deliberate — v1 publishes a SQL-shaped surface that the server
+/// only partially implements today; the rejected shapes signal
 /// future capability, not malformed requests, and callers can keep
 /// the request structure unchanged when the capability lands.
 fn not_yet_implemented(feature: &str) -> QueryError {
@@ -73,10 +71,11 @@ fn not_yet_implemented(feature: &str) -> QueryError {
 }
 
 /// Validate the `select` × `group_by` × `having` combination
-/// against the Phase 1 supported-shape table. Returns the routing
-/// decision so the handler knows whether to dispatch to the
-/// documents-fetch path or the count path, and which response
-/// shape to produce.
+/// against the supported-shape table (see the message-level
+/// docstring on `GetDocumentsRequestV1` in `platform.proto`).
+/// Returns the routing decision so the handler knows whether to
+/// dispatch to the documents-fetch path or the count path, and
+/// which response shape to produce.
 fn validate_and_route(
     select_discriminant: i32,
     limit: Option<u32>,
