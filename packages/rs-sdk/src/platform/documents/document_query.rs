@@ -730,15 +730,43 @@ fn where_operator_to_proto(op: WhereOperator) -> ProtoWhereOperator {
 /// - `Float` → `DoubleValue`
 /// - `Text` → `Text`
 /// - `Bytes`/`Bytes20`/`Bytes32`/`Bytes36`/`Identifier` → `BytesValue`
-/// - `U128`/`I128` → `Text` (decimal string; the server decodes
-///   against the indexed `U128`/`I128` field type)
-/// - `Array` → `List` (recursive — operand for `IN` / `BETWEEN*`)
+/// - `U128`/`I128` → `Text` (decimal string). **Not yet
+///   round-trippable against `U128`/`I128`-typed indexed fields**:
+///   the v1 typed-decode path (`v1/conversions.rs::value_from_proto`)
+///   passes the text through as `Value::Text`, and the
+///   downstream executor's strict `Value::to_integer()` then
+///   rejects it. Schema-aware coercion (the
+///   `DocumentPropertyType::value_from_string` path the v0 SQL
+///   parser uses) hasn't been threaded through to the typed
+///   path yet. The encoding is shipped because the proto needs a
+///   home for 128-bit values; no production system contract
+///   indexes `U128`/`I128` today. Tracked in the v1 follow-up
+///   issue.
+/// - `Array` → `List` (recursive, but only one level deep —
+///   `value_to_proto` rejects nested arrays with
+///   `EncodingError("nested DocumentFieldValue.list …")` to
+///   match the server-side depth cap in
+///   `v1/conversions.rs::value_from_proto_at_depth`, so wire-
+///   malformed shapes fail at request-construction time with a
+///   deterministic local error rather than after a transport
+///   round-trip.
 /// - `Null` → `NullValue(true)` (the `bool` payload is a
 ///   placeholder per the proto-side comment; only the variant
 ///   discriminant carries meaning)
 /// - `Map`/`EnumU8`/`EnumString` → `Error` (no wire-format
 ///   counterpart for these shapes in a WhereClause operand)
 fn value_to_proto(value: Value) -> Result<ProtoDocumentFieldValue, Error> {
+    value_to_proto_at_depth(value, 0)
+}
+
+/// Recursion-bounded form of [`value_to_proto`]. Mirrors the
+/// server-side `value_from_proto_at_depth` contract so encoder
+/// and decoder agree on the supported `Value` subset: `depth = 0`
+/// is the clause-level operand; `Array` is legal once (the flat
+/// list of scalars for `IN` / `BETWEEN*`); any deeper nesting
+/// rejects locally instead of producing a request the server
+/// would round-trip just to reject.
+fn value_to_proto_at_depth(value: Value, depth: u8) -> Result<ProtoDocumentFieldValue, Error> {
     let variant = match value {
         Value::Null => document_field_value::Variant::NullValue(true),
         Value::Bool(b) => document_field_value::Variant::BoolValue(b),
@@ -758,15 +786,23 @@ fn value_to_proto(value: Value) -> Result<ProtoDocumentFieldValue, Error> {
         Value::Bytes36(b) => document_field_value::Variant::BytesValue(b.to_vec()),
         Value::Identifier(b) => document_field_value::Variant::BytesValue(b.to_vec()),
         // u128 / i128 don't fit in `int64_value`/`uint64_value`;
-        // encode as a decimal string. The server's schema-driven
-        // decode path accepts text against U128/I128 fields.
+        // encode as a decimal string. See the function-level
+        // docstring for the U128/I128 round-trip caveat.
         Value::U128(u) => document_field_value::Variant::Text(u.to_string()),
         Value::I128(i) => document_field_value::Variant::Text(i.to_string()),
         Value::Array(items) => {
+            if depth >= 1 {
+                return Err(Error::Protocol(dpp::ProtocolError::EncodingError(
+                    "nested DocumentFieldValue.list is not supported on the v1 \
+                     query surface; `IN` / `BETWEEN*` candidate lists are flat \
+                     scalars only"
+                        .to_string(),
+                )));
+            }
             document_field_value::Variant::List(document_field_value::ValueList {
                 values: items
                     .into_iter()
-                    .map(value_to_proto)
+                    .map(|v| value_to_proto_at_depth(v, depth + 1))
                     .collect::<Result<Vec<_>, _>>()?,
             })
         }

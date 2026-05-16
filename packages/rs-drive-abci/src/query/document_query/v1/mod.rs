@@ -360,6 +360,15 @@ pub(super) fn validate_and_route_for_tests(
     // the handler's behavior so order-by-aggregate tests pin
     // through the test helper too.
     conversions::order_clauses_from_proto(request_v1.order_by.clone())?;
+    // WHERE decoding can fail on wire-malformed input (unknown
+    // operator discriminant, nested `DocumentFieldValue.list`
+    // beyond depth 1, …). Run the decoder against the proto
+    // `where_clauses` field even though the caller passes a
+    // separate decoded `where_clauses` slice for the routing
+    // decision — without this mirror the depth-cap and other
+    // decode-time contracts aren't exercised through the test
+    // helper.
+    conversions::where_clauses_from_proto(request_v1.where_clauses.clone())?;
     let select = request_v1
         .selects
         .first()

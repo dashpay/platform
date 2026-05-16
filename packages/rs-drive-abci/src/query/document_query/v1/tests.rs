@@ -328,6 +328,58 @@ fn reject_order_by_aggregate_target() {
     );
 }
 
+/// `value_from_proto`'s recursion-depth cap is the only
+/// structural defense against deeply-nested wire payloads on the
+/// v1 surface before schema validation runs. Pin the contract
+/// with a depth-2 `DocumentFieldValue` so a future refactor that
+/// reorders the depth check or restores the naive recursion
+/// fails this test loudly rather than silently widening the
+/// attack surface.
+///
+/// The malformed clause is delivered via a real `WhereClause`
+/// because the conversion entry point on the routing path is
+/// `where_clauses_from_proto`; the inner `value_from_proto_at_depth`
+/// is the actual unit under test.
+#[test]
+fn nested_list_rejected_at_depth_two() {
+    let nested_list_value = ProtoDocumentFieldValue {
+        variant: Some(document_field_value::Variant::List(
+            document_field_value::ValueList {
+                values: vec![ProtoDocumentFieldValue {
+                    variant: Some(document_field_value::Variant::List(
+                        document_field_value::ValueList {
+                            values: vec![ProtoDocumentFieldValue {
+                                variant: Some(document_field_value::Variant::Int64Value(1)),
+                            }],
+                        },
+                    )),
+                }],
+            },
+        )),
+    };
+    let nested_clause = ProtoWhereClause {
+        field: "any".to_string(),
+        operator: ProtoWhereOperator::In as i32,
+        value: Some(nested_list_value),
+    };
+    let request = GetDocumentsRequestV1 {
+        where_clauses: vec![nested_clause],
+        ..empty_v1_request()
+    };
+    match validate_and_route_for_tests(&request, &[]) {
+        Err(QueryError::InvalidArgument(msg)) => {
+            assert!(
+                msg.contains("nested DocumentFieldValue.list"),
+                "expected nested-list rejection message, got: {msg}"
+            );
+        }
+        other => panic!(
+            "expected InvalidArgument for nested DocumentFieldValue.list, got {:?}",
+            other
+        ),
+    }
+}
+
 #[test]
 fn reject_limit_some_zero_uniformly_across_select_modes() {
     let in_clauses = || {
