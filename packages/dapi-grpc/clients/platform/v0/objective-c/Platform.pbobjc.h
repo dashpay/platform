@@ -481,6 +481,18 @@ typedef GPB_ENUM(GetDocumentsRequest_GetDocumentsRequestV1_Select_Function) {
   GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_Count = 1,
   GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_Sum = 2,
   GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_Avg = 3,
+
+  /**
+   * Per-group MIN / MAX — `SELECT MIN(field) GROUP BY
+   * category` returns the smallest `field` value in each
+   * category. Semantically distinct from
+   * `HavingRanking::Min` / `Max` (which are cross-group
+   * meta-aggregates over group results). MIN/MAX here
+   * operate over the row values within each group, the
+   * same way `SUM` and `AVG` do.
+   **/
+  GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_Min = 4,
+  GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_Max = 5,
 };
 
 GPBEnumDescriptor *GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_EnumDescriptor(void);
@@ -2750,6 +2762,13 @@ void GetDocumentsRequest_HavingClause_ClearRightOneOfCase(GetDocumentsRequest_Ha
 typedef GPB_ENUM(GetDocumentsRequest_OrderClause_FieldNumber) {
   GetDocumentsRequest_OrderClause_FieldNumber_Field = 1,
   GetDocumentsRequest_OrderClause_FieldNumber_Ascending = 2,
+  GetDocumentsRequest_OrderClause_FieldNumber_Aggregate = 3,
+};
+
+typedef GPB_ENUM(GetDocumentsRequest_OrderClause_Target_OneOfCase) {
+  GetDocumentsRequest_OrderClause_Target_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDocumentsRequest_OrderClause_Target_OneOfCase_Field = 1,
+  GetDocumentsRequest_OrderClause_Target_OneOfCase_Aggregate = 3,
 };
 
 /**
@@ -2757,14 +2776,45 @@ typedef GPB_ENUM(GetDocumentsRequest_OrderClause_FieldNumber) {
  * ordering is expressed by repeating this message at the
  * request level (`repeated OrderClause order_by = 4`), matching
  * SQL's `ORDER BY a ASC, b DESC` shape.
+ * Single ORDER BY entry. Multi-entry ordering is expressed by
+ * repeating this message at the request level.
+ *
+ * The `target` oneof carries either a plain field name
+ * (`ORDER BY field`) or an aggregate function applied to a
+ * field (`ORDER BY COUNT(*)`, `ORDER BY SUM(amount)`) — the
+ * latter sorts per-group result rows produced by `GROUP BY`,
+ * useful with `LIMIT` for top-N / bottom-N selection at the
+ * routing layer (overlapping `HavingRanking::Top` / `Bottom`
+ * but more general because the ranking field can be any
+ * aggregate, not just count).
+ *
+ * **Aggregate target currently rejected** with
+ * `Unsupported("ORDER BY on aggregate is not yet implemented")`.
+ * The wire surface is shipped now so callers can encode the
+ * shape ahead of server support landing.
  **/
 GPB_FINAL @interface GetDocumentsRequest_OrderClause : GPBMessage
 
+@property(nonatomic, readonly) GetDocumentsRequest_OrderClause_Target_OneOfCase targetOneOfCase;
+
+/** Plain field name. Today's evaluated form. */
 @property(nonatomic, readwrite, copy, null_resettable) NSString *field;
+
+/**
+ * Aggregate function applied to a field, sorted by the
+ * per-group result. `function = DOCUMENTS` is invalid
+ * here — DOCUMENTS isn't an aggregate.
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsRequest_HavingAggregate *aggregate;
 
 @property(nonatomic, readwrite) BOOL ascending;
 
 @end
+
+/**
+ * Clears whatever value was set for the oneof 'target'.
+ **/
+void GetDocumentsRequest_OrderClause_ClearTargetOneOfCase(GetDocumentsRequest_OrderClause *message);
 
 #pragma mark - GetDocumentsRequest_GetDocumentsRequestV0
 
@@ -2832,9 +2882,10 @@ typedef GPB_ENUM(GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber) {
   GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_StartAfter = 6,
   GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_StartAt = 7,
   GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_Prove = 8,
-  GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_Select = 9,
+  GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_SelectsArray = 9,
   GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_GroupByArray = 10,
   GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_HavingArray = 11,
+  GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_Offset = 12,
 };
 
 typedef GPB_ENUM(GetDocumentsRequest_GetDocumentsRequestV1_Start_OneOfCase) {
@@ -3024,13 +3075,27 @@ GPB_FINAL @interface GetDocumentsRequest_GetDocumentsRequestV1 : GPBMessage
 @property(nonatomic, readwrite) BOOL prove;
 
 /**
- * SQL `SELECT` projection. Unset (= default-constructed
- * `Select` with `function = DOCUMENTS, field = ""`) keeps v0
- * semantics for callers that just want documents back.
+ * SQL `SELECT` projection list. Multiple entries express
+ * `SELECT f1(a), f2(b), …` — one row per group carrying a
+ * parallel list of aggregate values in the response.
+ *
+ * Empty list defaults to a single `documents()` projection
+ * for v0-style document fetch — callers that don't opt into
+ * the SQL-shaped surface get plain row semantics.
+ *
+ * **Currently rejected when `selects.len() > 1`** with
+ * `Unsupported("multi-projection SELECT is not yet
+ * implemented")`. The single-projection cases (`DOCUMENTS`,
+ * `COUNT(*)`) are evaluated today; `SUM` / `AVG` / `MIN` /
+ * `MAX` are rejected at the per-function gate. When
+ * multi-projection lands the response shape gains a parallel
+ * `repeated AggregateValue values` field, so caller code
+ * structured around `repeated Select` doesn't need to be
+ * rewritten when it does.
  **/
-@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsRequest_GetDocumentsRequestV1_Select *select;
-/** Test to see if @c select has been set. */
-@property(nonatomic, readwrite) BOOL hasSelect;
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDocumentsRequest_GetDocumentsRequestV1_Select*> *selectsArray;
+/** The number of items in @c selectsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger selectsArray_Count;
 
 /**
  * SQL `GROUP BY` field names, in left-to-right order. Empty =
@@ -3063,6 +3128,20 @@ GPB_FINAL @interface GetDocumentsRequest_GetDocumentsRequestV1 : GPBMessage
 /** The number of items in @c havingArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger havingArray_Count;
 
+/**
+ * Row-based pagination offset, on top of the cursor-based
+ * `start_after` / `start_at` pagination. `OFFSET N` skips the
+ * first `N` matching rows before applying `limit`. Currently
+ * **always rejected when non-`None`** with
+ * `Unsupported("OFFSET pagination is not yet implemented")`
+ * — the wire surface is shipped now so callers can encode it
+ * ahead of server support landing without another version
+ * bump. Cursor pagination via `start_after` / `start_at`
+ * remains the supported way to page through results.
+ **/
+@property(nonatomic, readwrite) uint32_t offset;
+
+@property(nonatomic, readwrite) BOOL hasOffset;
 @end
 
 /**
@@ -3110,8 +3189,8 @@ GPB_FINAL @interface GetDocumentsRequest_GetDocumentsRequestV1_Select : GPBMessa
 /**
  * Field the projection function is applied to. See the
  * message-level docstring for the per-function requirement
- * (empty for `DOCUMENTS`, optional for `COUNT`, required for
- * `SUM` / `AVG`).
+ * (empty for `DOCUMENTS`, optional for `COUNT`, required
+ * for `SUM` / `AVG` / `MIN` / `MAX`).
  **/
 @property(nonatomic, readwrite, copy, null_resettable) NSString *field;
 

@@ -2532,12 +2532,20 @@ export namespace GetDocumentsRequest {
   }
 
   export class OrderClause extends jspb.Message {
+    hasField(): boolean;
+    clearField(): void;
     getField(): string;
     setField(value: string): void;
+
+    hasAggregate(): boolean;
+    clearAggregate(): void;
+    getAggregate(): GetDocumentsRequest.HavingAggregate | undefined;
+    setAggregate(value?: GetDocumentsRequest.HavingAggregate): void;
 
     getAscending(): boolean;
     setAscending(value: boolean): void;
 
+    getTargetCase(): OrderClause.TargetCase;
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): OrderClause.AsObject;
     static toObject(includeInstance: boolean, msg: OrderClause): OrderClause.AsObject;
@@ -2551,7 +2559,14 @@ export namespace GetDocumentsRequest {
   export namespace OrderClause {
     export type AsObject = {
       field: string,
+      aggregate?: GetDocumentsRequest.HavingAggregate.AsObject,
       ascending: boolean,
+    }
+
+    export enum TargetCase {
+      TARGET_NOT_SET = 0,
+      FIELD = 1,
+      AGGREGATE = 3,
     }
   }
 
@@ -2665,10 +2680,10 @@ export namespace GetDocumentsRequest {
     getProve(): boolean;
     setProve(value: boolean): void;
 
-    hasSelect(): boolean;
-    clearSelect(): void;
-    getSelect(): GetDocumentsRequest.GetDocumentsRequestV1.Select | undefined;
-    setSelect(value?: GetDocumentsRequest.GetDocumentsRequestV1.Select): void;
+    clearSelectsList(): void;
+    getSelectsList(): Array<GetDocumentsRequest.GetDocumentsRequestV1.Select>;
+    setSelectsList(value: Array<GetDocumentsRequest.GetDocumentsRequestV1.Select>): void;
+    addSelects(value?: GetDocumentsRequest.GetDocumentsRequestV1.Select, index?: number): GetDocumentsRequest.GetDocumentsRequestV1.Select;
 
     clearGroupByList(): void;
     getGroupByList(): Array<string>;
@@ -2679,6 +2694,11 @@ export namespace GetDocumentsRequest {
     getHavingList(): Array<GetDocumentsRequest.HavingClause>;
     setHavingList(value: Array<GetDocumentsRequest.HavingClause>): void;
     addHaving(value?: GetDocumentsRequest.HavingClause, index?: number): GetDocumentsRequest.HavingClause;
+
+    hasOffset(): boolean;
+    clearOffset(): void;
+    getOffset(): number;
+    setOffset(value: number): void;
 
     getStartCase(): GetDocumentsRequestV1.StartCase;
     serializeBinary(): Uint8Array;
@@ -2701,9 +2721,10 @@ export namespace GetDocumentsRequest {
       startAfter: Uint8Array | string,
       startAt: Uint8Array | string,
       prove: boolean,
-      select?: GetDocumentsRequest.GetDocumentsRequestV1.Select.AsObject,
+      selectsList: Array<GetDocumentsRequest.GetDocumentsRequestV1.Select.AsObject>,
       groupByList: Array<string>,
       havingList: Array<GetDocumentsRequest.HavingClause.AsObject>,
+      offset: number,
     }
 
     export class Select extends jspb.Message {
@@ -2734,6 +2755,8 @@ export namespace GetDocumentsRequest {
         COUNT: 1;
         SUM: 2;
         AVG: 3;
+        MIN: 4;
+        MAX: 5;
       }
 
       export const Function: FunctionMap;

@@ -168,6 +168,7 @@ goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingCla
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingRanking', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingRanking.Kind', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause', null, { proto });
+goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause.TargetCase', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetDocumentsRequest.VersionCase', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.GetDocumentsRequest.WhereOperator', null, { proto });
@@ -2314,7 +2315,7 @@ if (goog.DEBUG && !COMPILED) {
  * @constructor
  */
 proto.org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause = function(opt_data) {
-  jspb.Message.initialize(this, opt_data, 0, -1, null, null);
+  jspb.Message.initialize(this, opt_data, 0, -1, null, proto.org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause.oneofGroups_);
 };
 goog.inherits(proto.org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause, jspb.Message);
 if (goog.DEBUG && !COMPILED) {
@@ -26035,6 +26036,32 @@ proto.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause.prototype.hasRa
 
 
 
+/**
+ * Oneof group definitions for this message. Each group defines the field
+ * numbers belonging to that group. When of these fields' value is set, all
+ * other fields in the group are cleared. During deserialization, if multiple
+ * fields are encountered for a group, only the last value seen will be kept.
+ * @private {!Array<!Array<number>>}
+ * @const
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause.oneofGroups_ = [[1,3]];
+
+/**
+ * @enum {number}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause.TargetCase = {
+  TARGET_NOT_SET: 0,
+  FIELD: 1,
+  AGGREGATE: 3
+};
+
+/**
+ * @return {proto.org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause.TargetCase}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause.prototype.getTargetCase = function() {
+  return /** @type {proto.org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause.TargetCase} */(jspb.Message.computeOneofCase(this, proto.org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause.oneofGroups_[0]));
+};
+
 
 
 if (jspb.Message.GENERATE_TO_OBJECT) {
@@ -26067,6 +26094,7 @@ proto.org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause.prototype.toObje
 proto.org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause.toObject = function(includeInstance, msg) {
   var f, obj = {
     field: jspb.Message.getFieldWithDefault(msg, 1, ""),
+    aggregate: (f = msg.getAggregate()) && proto.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate.toObject(includeInstance, f),
     ascending: jspb.Message.getBooleanFieldWithDefault(msg, 2, false)
   };
 
@@ -26108,6 +26136,11 @@ proto.org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause.deserializeBinar
       var value = /** @type {string} */ (reader.readString());
       msg.setField(value);
       break;
+    case 3:
+      var value = new proto.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate;
+      reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate.deserializeBinaryFromReader);
+      msg.setAggregate(value);
+      break;
     case 2:
       var value = /** @type {boolean} */ (reader.readBool());
       msg.setAscending(value);
@@ -26141,11 +26174,19 @@ proto.org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause.prototype.serial
  */
 proto.org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
-  f = message.getField();
-  if (f.length > 0) {
+  f = /** @type {string} */ (jspb.Message.getField(message, 1));
+  if (f != null) {
     writer.writeString(
       1,
       f
+    );
+  }
+  f = message.getAggregate();
+  if (f != null) {
+    writer.writeMessage(
+      3,
+      f,
+      proto.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate.serializeBinaryToWriter
     );
   }
   f = message.getAscending();
@@ -26172,7 +26213,62 @@ proto.org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause.prototype.getFie
  * @return {!proto.org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause} returns this
  */
 proto.org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause.prototype.setField = function(value) {
-  return jspb.Message.setProto3StringField(this, 1, value);
+  return jspb.Message.setOneofField(this, 1, proto.org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause.oneofGroups_[0], value);
+};
+
+
+/**
+ * Clears the field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause.prototype.clearField = function() {
+  return jspb.Message.setOneofField(this, 1, proto.org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause.oneofGroups_[0], undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause.prototype.hasField = function() {
+  return jspb.Message.getField(this, 1) != null;
+};
+
+
+/**
+ * optional HavingAggregate aggregate = 3;
+ * @return {?proto.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause.prototype.getAggregate = function() {
+  return /** @type{?proto.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate} */ (
+    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate, 3));
+};
+
+
+/**
+ * @param {?proto.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate|undefined} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause} returns this
+*/
+proto.org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause.prototype.setAggregate = function(value) {
+  return jspb.Message.setOneofWrapperField(this, 3, proto.org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause.oneofGroups_[0], value);
+};
+
+
+/**
+ * Clears the message field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause.prototype.clearAggregate = function() {
+  return this.setAggregate(undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause.prototype.hasAggregate = function() {
+  return jspb.Message.getField(this, 3) != null;
 };
 
 
@@ -26722,7 +26818,7 @@ proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV0.protot
  * @private {!Array<number>}
  * @const
  */
-proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.repeatedFields_ = [3,4,10,11];
+proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.repeatedFields_ = [3,4,9,10,11];
 
 /**
  * Oneof group definitions for this message. Each group defines the field
@@ -26791,10 +26887,12 @@ proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.toObje
     startAfter: msg.getStartAfter_asB64(),
     startAt: msg.getStartAt_asB64(),
     prove: jspb.Message.getBooleanFieldWithDefault(msg, 8, false),
-    select: (f = msg.getSelect()) && proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select.toObject(includeInstance, f),
+    selectsList: jspb.Message.toObjectList(msg.getSelectsList(),
+    proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select.toObject, includeInstance),
     groupByList: (f = jspb.Message.getRepeatedField(msg, 10)) == null ? undefined : f,
     havingList: jspb.Message.toObjectList(msg.getHavingList(),
-    proto.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause.toObject, includeInstance)
+    proto.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause.toObject, includeInstance),
+    offset: jspb.Message.getFieldWithDefault(msg, 12, 0)
   };
 
   if (includeInstance) {
@@ -26868,7 +26966,7 @@ proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.deseri
     case 9:
       var value = new proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select;
       reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select.deserializeBinaryFromReader);
-      msg.setSelect(value);
+      msg.addSelects(value);
       break;
     case 10:
       var value = /** @type {string} */ (reader.readString());
@@ -26878,6 +26976,10 @@ proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.deseri
       var value = new proto.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause;
       reader.readMessage(value,proto.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause.deserializeBinaryFromReader);
       msg.addHaving(value);
+      break;
+    case 12:
+      var value = /** @type {number} */ (reader.readUint32());
+      msg.setOffset(value);
       break;
     default:
       reader.skipField();
@@ -26966,9 +27068,9 @@ proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.serial
       f
     );
   }
-  f = message.getSelect();
-  if (f != null) {
-    writer.writeMessage(
+  f = message.getSelectsList();
+  if (f.length > 0) {
+    writer.writeRepeatedMessage(
       9,
       f,
       proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select.serializeBinaryToWriter
@@ -26987,6 +27089,13 @@ proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.serial
       11,
       f,
       proto.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause.serializeBinaryToWriter
+    );
+  }
+  f = /** @type {number} */ (jspb.Message.getField(message, 12));
+  if (f != null) {
+    writer.writeUint32(
+      12,
+      f
     );
   }
 };
@@ -27123,7 +27232,9 @@ proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select
   DOCUMENTS: 0,
   COUNT: 1,
   SUM: 2,
-  AVG: 3
+  AVG: 3,
+  MIN: 4,
+  MAX: 5
 };
 
 /**
@@ -27473,39 +27584,40 @@ proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.protot
 
 
 /**
- * optional Select select = 9;
- * @return {?proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select}
+ * repeated Select selects = 9;
+ * @return {!Array<!proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select>}
  */
-proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.prototype.getSelect = function() {
-  return /** @type{?proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select} */ (
-    jspb.Message.getWrapperField(this, proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select, 9));
+proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.prototype.getSelectsList = function() {
+  return /** @type{!Array<!proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select>} */ (
+    jspb.Message.getRepeatedWrapperField(this, proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select, 9));
 };
 
 
 /**
- * @param {?proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select|undefined} value
+ * @param {!Array<!proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select>} value
  * @return {!proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1} returns this
 */
-proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.prototype.setSelect = function(value) {
-  return jspb.Message.setWrapperField(this, 9, value);
+proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.prototype.setSelectsList = function(value) {
+  return jspb.Message.setRepeatedWrapperField(this, 9, value);
 };
 
 
 /**
- * Clears the message field making it undefined.
+ * @param {!proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select=} opt_value
+ * @param {number=} opt_index
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.prototype.addSelects = function(opt_value, opt_index) {
+  return jspb.Message.addToRepeatedWrapperField(this, 9, opt_value, proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select, opt_index);
+};
+
+
+/**
+ * Clears the list making it empty but non-null.
  * @return {!proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1} returns this
  */
-proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.prototype.clearSelect = function() {
-  return this.setSelect(undefined);
-};
-
-
-/**
- * Returns whether this field is set.
- * @return {boolean}
- */
-proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.prototype.hasSelect = function() {
-  return jspb.Message.getField(this, 9) != null;
+proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.prototype.clearSelectsList = function() {
+  return this.setSelectsList([]);
 };
 
 
@@ -27581,6 +27693,42 @@ proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.protot
  */
 proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.prototype.clearHavingList = function() {
   return this.setHavingList([]);
+};
+
+
+/**
+ * optional uint32 offset = 12;
+ * @return {number}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.prototype.getOffset = function() {
+  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 12, 0));
+};
+
+
+/**
+ * @param {number} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.prototype.setOffset = function(value) {
+  return jspb.Message.setField(this, 12, value);
+};
+
+
+/**
+ * Clears the field making it undefined.
+ * @return {!proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.prototype.clearOffset = function() {
+  return jspb.Message.setField(this, 12, undefined);
+};
+
+
+/**
+ * Returns whether this field is set.
+ * @return {boolean}
+ */
+proto.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.prototype.hasOffset = function() {
+  return jspb.Message.getField(this, 12) != null;
 };
 
 

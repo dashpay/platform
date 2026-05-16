@@ -5840,12 +5840,15 @@ BOOL GetDocumentsRequest_HavingClause_Operator_IsValidValue(int32_t value__) {
 
 @implementation GetDocumentsRequest_OrderClause
 
+@dynamic targetOneOfCase;
 @dynamic field;
+@dynamic aggregate;
 @dynamic ascending;
 
 typedef struct GetDocumentsRequest_OrderClause__storage_ {
-  uint32_t _has_storage_[1];
+  uint32_t _has_storage_[2];
   NSString *field;
+  GetDocumentsRequest_HavingAggregate *aggregate;
 } GetDocumentsRequest_OrderClause__storage_;
 
 // This method is threadsafe because it is initially called
@@ -5858,19 +5861,28 @@ typedef struct GetDocumentsRequest_OrderClause__storage_ {
         .name = "field",
         .dataTypeSpecific.clazz = Nil,
         .number = GetDocumentsRequest_OrderClause_FieldNumber_Field,
-        .hasIndex = 0,
+        .hasIndex = -1,
         .offset = (uint32_t)offsetof(GetDocumentsRequest_OrderClause__storage_, field),
-        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .flags = GPBFieldOptional,
         .dataType = GPBDataTypeString,
       },
       {
         .name = "ascending",
         .dataTypeSpecific.clazz = Nil,
         .number = GetDocumentsRequest_OrderClause_FieldNumber_Ascending,
-        .hasIndex = 1,
-        .offset = 2,  // Stored in _has_storage_ to save space.
+        .hasIndex = 0,
+        .offset = 1,  // Stored in _has_storage_ to save space.
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBool,
+      },
+      {
+        .name = "aggregate",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetDocumentsRequest_HavingAggregate),
+        .number = GetDocumentsRequest_OrderClause_FieldNumber_Aggregate,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetDocumentsRequest_OrderClause__storage_, aggregate),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
       },
     };
     GPBDescriptor *localDescriptor =
@@ -5881,6 +5893,12 @@ typedef struct GetDocumentsRequest_OrderClause__storage_ {
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
                                    storageSize:sizeof(GetDocumentsRequest_OrderClause__storage_)
                                          flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "target",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
     [localDescriptor setupContainingMessageClass:GPBObjCClass(GetDocumentsRequest)];
     #if defined(DEBUG) && DEBUG
       NSAssert(descriptor == nil, @"Startup recursed!");
@@ -5892,6 +5910,11 @@ typedef struct GetDocumentsRequest_OrderClause__storage_ {
 
 @end
 
+void GetDocumentsRequest_OrderClause_ClearTargetOneOfCase(GetDocumentsRequest_OrderClause *message) {
+  GPBDescriptor *descriptor = [GetDocumentsRequest_OrderClause descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
 #pragma mark - GetDocumentsRequest_GetDocumentsRequestV0
 
 @implementation GetDocumentsRequest_GetDocumentsRequestV0
@@ -6039,20 +6062,22 @@ void GetDocumentsRequest_GetDocumentsRequestV0_ClearStartOneOfCase(GetDocumentsR
 @dynamic startAfter;
 @dynamic startAt;
 @dynamic prove;
-@dynamic hasSelect, select;
+@dynamic selectsArray, selectsArray_Count;
 @dynamic groupByArray, groupByArray_Count;
 @dynamic havingArray, havingArray_Count;
+@dynamic hasOffset, offset;
 
 typedef struct GetDocumentsRequest_GetDocumentsRequestV1__storage_ {
   uint32_t _has_storage_[2];
   uint32_t limit;
+  uint32_t offset;
   NSData *dataContractId;
   NSString *documentType;
   NSMutableArray *whereClausesArray;
   NSMutableArray *orderByArray;
   NSData *startAfter;
   NSData *startAt;
-  GetDocumentsRequest_GetDocumentsRequestV1_Select *select;
+  NSMutableArray *selectsArray;
   NSMutableArray *groupByArray;
   NSMutableArray *havingArray;
 } GetDocumentsRequest_GetDocumentsRequestV1__storage_;
@@ -6136,12 +6161,12 @@ typedef struct GetDocumentsRequest_GetDocumentsRequestV1__storage_ {
         .dataType = GPBDataTypeBool,
       },
       {
-        .name = "select",
+        .name = "selectsArray",
         .dataTypeSpecific.clazz = GPBObjCClass(GetDocumentsRequest_GetDocumentsRequestV1_Select),
-        .number = GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_Select,
-        .hasIndex = 5,
-        .offset = (uint32_t)offsetof(GetDocumentsRequest_GetDocumentsRequestV1__storage_, select),
-        .flags = GPBFieldOptional,
+        .number = GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_SelectsArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetDocumentsRequest_GetDocumentsRequestV1__storage_, selectsArray),
+        .flags = GPBFieldRepeated,
         .dataType = GPBDataTypeMessage,
       },
       {
@@ -6161,6 +6186,15 @@ typedef struct GetDocumentsRequest_GetDocumentsRequestV1__storage_ {
         .offset = (uint32_t)offsetof(GetDocumentsRequest_GetDocumentsRequestV1__storage_, havingArray),
         .flags = GPBFieldRepeated,
         .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "offset",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetDocumentsRequest_GetDocumentsRequestV1_FieldNumber_Offset,
+        .hasIndex = 5,
+        .offset = (uint32_t)offsetof(GetDocumentsRequest_GetDocumentsRequestV1__storage_, offset),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeUInt32,
       },
     };
     GPBDescriptor *localDescriptor =
@@ -6268,12 +6302,14 @@ GPBEnumDescriptor *GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_Enu
   static _Atomic(GPBEnumDescriptor*) descriptor = nil;
   if (!descriptor) {
     static const char *valueNames =
-        "Documents\000Count\000Sum\000Avg\000";
+        "Documents\000Count\000Sum\000Avg\000Min\000Max\000";
     static const int32_t values[] = {
         GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_Documents,
         GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_Count,
         GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_Sum,
         GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_Avg,
+        GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_Min,
+        GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_Max,
     };
     GPBEnumDescriptor *worker =
         [GPBEnumDescriptor allocDescriptorForName:GPBNSStringifySymbol(GetDocumentsRequest_GetDocumentsRequestV1_Select_Function)
@@ -6295,6 +6331,8 @@ BOOL GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_IsValidValue(int3
     case GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_Count:
     case GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_Sum:
     case GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_Avg:
+    case GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_Min:
+    case GetDocumentsRequest_GetDocumentsRequestV1_Select_Function_Max:
       return YES;
     default:
       return NO;

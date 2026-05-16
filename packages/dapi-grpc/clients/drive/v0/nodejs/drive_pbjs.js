@@ -21957,6 +21957,7 @@ $root.org = (function() {
                              * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest
                              * @interface IOrderClause
                              * @property {string|null} [field] OrderClause field
+                             * @property {org.dash.platform.dapi.v0.GetDocumentsRequest.IHavingAggregate|null} [aggregate] OrderClause aggregate
                              * @property {boolean|null} [ascending] OrderClause ascending
                              */
 
@@ -21984,12 +21985,34 @@ $root.org = (function() {
                             OrderClause.prototype.field = "";
 
                             /**
+                             * OrderClause aggregate.
+                             * @member {org.dash.platform.dapi.v0.GetDocumentsRequest.IHavingAggregate|null|undefined} aggregate
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause
+                             * @instance
+                             */
+                            OrderClause.prototype.aggregate = null;
+
+                            /**
                              * OrderClause ascending.
                              * @member {boolean} ascending
                              * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause
                              * @instance
                              */
                             OrderClause.prototype.ascending = false;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * OrderClause target.
+                             * @member {"field"|"aggregate"|undefined} target
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause
+                             * @instance
+                             */
+                            Object.defineProperty(OrderClause.prototype, "target", {
+                                get: $util.oneOfGetter($oneOfFields = ["field", "aggregate"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
 
                             /**
                              * Creates a new OrderClause instance using the specified properties.
@@ -22019,6 +22042,8 @@ $root.org = (function() {
                                     writer.uint32(/* id 1, wireType 2 =*/10).string(message.field);
                                 if (message.ascending != null && Object.hasOwnProperty.call(message, "ascending"))
                                     writer.uint32(/* id 2, wireType 0 =*/16).bool(message.ascending);
+                                if (message.aggregate != null && Object.hasOwnProperty.call(message, "aggregate"))
+                                    $root.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate.encode(message.aggregate, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
                                 return writer;
                             };
 
@@ -22055,6 +22080,9 @@ $root.org = (function() {
                                     switch (tag >>> 3) {
                                     case 1:
                                         message.field = reader.string();
+                                        break;
+                                    case 3:
+                                        message.aggregate = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate.decode(reader, reader.uint32());
                                         break;
                                     case 2:
                                         message.ascending = reader.bool();
@@ -22094,9 +22122,22 @@ $root.org = (function() {
                             OrderClause.verify = function verify(message) {
                                 if (typeof message !== "object" || message === null)
                                     return "object expected";
-                                if (message.field != null && message.hasOwnProperty("field"))
+                                var properties = {};
+                                if (message.field != null && message.hasOwnProperty("field")) {
+                                    properties.target = 1;
                                     if (!$util.isString(message.field))
                                         return "field: string expected";
+                                }
+                                if (message.aggregate != null && message.hasOwnProperty("aggregate")) {
+                                    if (properties.target === 1)
+                                        return "target: multiple values";
+                                    properties.target = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate.verify(message.aggregate);
+                                        if (error)
+                                            return "aggregate." + error;
+                                    }
+                                }
                                 if (message.ascending != null && message.hasOwnProperty("ascending"))
                                     if (typeof message.ascending !== "boolean")
                                         return "ascending: boolean expected";
@@ -22117,6 +22158,11 @@ $root.org = (function() {
                                 var message = new $root.org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause();
                                 if (object.field != null)
                                     message.field = String(object.field);
+                                if (object.aggregate != null) {
+                                    if (typeof object.aggregate !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause.aggregate: object expected");
+                                    message.aggregate = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate.fromObject(object.aggregate);
+                                }
                                 if (object.ascending != null)
                                     message.ascending = Boolean(object.ascending);
                                 return message;
@@ -22135,14 +22181,20 @@ $root.org = (function() {
                                 if (!options)
                                     options = {};
                                 var object = {};
-                                if (options.defaults) {
-                                    object.field = "";
+                                if (options.defaults)
                                     object.ascending = false;
-                                }
-                                if (message.field != null && message.hasOwnProperty("field"))
+                                if (message.field != null && message.hasOwnProperty("field")) {
                                     object.field = message.field;
+                                    if (options.oneofs)
+                                        object.target = "field";
+                                }
                                 if (message.ascending != null && message.hasOwnProperty("ascending"))
                                     object.ascending = message.ascending;
+                                if (message.aggregate != null && message.hasOwnProperty("aggregate")) {
+                                    object.aggregate = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate.toObject(message.aggregate, options);
+                                    if (options.oneofs)
+                                        object.target = "aggregate";
+                                }
                                 return object;
                             };
 
@@ -22574,9 +22626,10 @@ $root.org = (function() {
                              * @property {Uint8Array|null} [startAfter] GetDocumentsRequestV1 startAfter
                              * @property {Uint8Array|null} [startAt] GetDocumentsRequestV1 startAt
                              * @property {boolean|null} [prove] GetDocumentsRequestV1 prove
-                             * @property {org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.ISelect|null} [select] GetDocumentsRequestV1 select
+                             * @property {Array.<org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.ISelect>|null} [selects] GetDocumentsRequestV1 selects
                              * @property {Array.<string>|null} [groupBy] GetDocumentsRequestV1 groupBy
                              * @property {Array.<org.dash.platform.dapi.v0.GetDocumentsRequest.IHavingClause>|null} [having] GetDocumentsRequestV1 having
+                             * @property {number|null} [offset] GetDocumentsRequestV1 offset
                              */
 
                             /**
@@ -22590,6 +22643,7 @@ $root.org = (function() {
                             function GetDocumentsRequestV1(properties) {
                                 this.whereClauses = [];
                                 this.orderBy = [];
+                                this.selects = [];
                                 this.groupBy = [];
                                 this.having = [];
                                 if (properties)
@@ -22663,12 +22717,12 @@ $root.org = (function() {
                             GetDocumentsRequestV1.prototype.prove = false;
 
                             /**
-                             * GetDocumentsRequestV1 select.
-                             * @member {org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.ISelect|null|undefined} select
+                             * GetDocumentsRequestV1 selects.
+                             * @member {Array.<org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.ISelect>} selects
                              * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1
                              * @instance
                              */
-                            GetDocumentsRequestV1.prototype.select = null;
+                            GetDocumentsRequestV1.prototype.selects = $util.emptyArray;
 
                             /**
                              * GetDocumentsRequestV1 groupBy.
@@ -22685,6 +22739,14 @@ $root.org = (function() {
                              * @instance
                              */
                             GetDocumentsRequestV1.prototype.having = $util.emptyArray;
+
+                            /**
+                             * GetDocumentsRequestV1 offset.
+                             * @member {number} offset
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1
+                             * @instance
+                             */
+                            GetDocumentsRequestV1.prototype.offset = 0;
 
                             // OneOf field names bound to virtual getters and setters
                             var $oneOfFields;
@@ -22742,14 +22804,17 @@ $root.org = (function() {
                                     writer.uint32(/* id 7, wireType 2 =*/58).bytes(message.startAt);
                                 if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
                                     writer.uint32(/* id 8, wireType 0 =*/64).bool(message.prove);
-                                if (message.select != null && Object.hasOwnProperty.call(message, "select"))
-                                    $root.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select.encode(message.select, writer.uint32(/* id 9, wireType 2 =*/74).fork()).ldelim();
+                                if (message.selects != null && message.selects.length)
+                                    for (var i = 0; i < message.selects.length; ++i)
+                                        $root.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select.encode(message.selects[i], writer.uint32(/* id 9, wireType 2 =*/74).fork()).ldelim();
                                 if (message.groupBy != null && message.groupBy.length)
                                     for (var i = 0; i < message.groupBy.length; ++i)
                                         writer.uint32(/* id 10, wireType 2 =*/82).string(message.groupBy[i]);
                                 if (message.having != null && message.having.length)
                                     for (var i = 0; i < message.having.length; ++i)
                                         $root.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause.encode(message.having[i], writer.uint32(/* id 11, wireType 2 =*/90).fork()).ldelim();
+                                if (message.offset != null && Object.hasOwnProperty.call(message, "offset"))
+                                    writer.uint32(/* id 12, wireType 0 =*/96).uint32(message.offset);
                                 return writer;
                             };
 
@@ -22813,7 +22878,9 @@ $root.org = (function() {
                                         message.prove = reader.bool();
                                         break;
                                     case 9:
-                                        message.select = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select.decode(reader, reader.uint32());
+                                        if (!(message.selects && message.selects.length))
+                                            message.selects = [];
+                                        message.selects.push($root.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select.decode(reader, reader.uint32()));
                                         break;
                                     case 10:
                                         if (!(message.groupBy && message.groupBy.length))
@@ -22824,6 +22891,9 @@ $root.org = (function() {
                                         if (!(message.having && message.having.length))
                                             message.having = [];
                                         message.having.push($root.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause.decode(reader, reader.uint32()));
+                                        break;
+                                    case 12:
+                                        message.offset = reader.uint32();
                                         break;
                                     default:
                                         reader.skipType(tag & 7);
@@ -22903,10 +22973,14 @@ $root.org = (function() {
                                 if (message.prove != null && message.hasOwnProperty("prove"))
                                     if (typeof message.prove !== "boolean")
                                         return "prove: boolean expected";
-                                if (message.select != null && message.hasOwnProperty("select")) {
-                                    var error = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select.verify(message.select);
-                                    if (error)
-                                        return "select." + error;
+                                if (message.selects != null && message.hasOwnProperty("selects")) {
+                                    if (!Array.isArray(message.selects))
+                                        return "selects: array expected";
+                                    for (var i = 0; i < message.selects.length; ++i) {
+                                        var error = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select.verify(message.selects[i]);
+                                        if (error)
+                                            return "selects." + error;
+                                    }
                                 }
                                 if (message.groupBy != null && message.hasOwnProperty("groupBy")) {
                                     if (!Array.isArray(message.groupBy))
@@ -22924,6 +22998,9 @@ $root.org = (function() {
                                             return "having." + error;
                                     }
                                 }
+                                if (message.offset != null && message.hasOwnProperty("offset"))
+                                    if (!$util.isInteger(message.offset))
+                                        return "offset: integer expected";
                                 return null;
                             };
 
@@ -22980,10 +23057,15 @@ $root.org = (function() {
                                         message.startAt = object.startAt;
                                 if (object.prove != null)
                                     message.prove = Boolean(object.prove);
-                                if (object.select != null) {
-                                    if (typeof object.select !== "object")
-                                        throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.select: object expected");
-                                    message.select = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select.fromObject(object.select);
+                                if (object.selects) {
+                                    if (!Array.isArray(object.selects))
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.selects: array expected");
+                                    message.selects = [];
+                                    for (var i = 0; i < object.selects.length; ++i) {
+                                        if (typeof object.selects[i] !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.selects: object expected");
+                                        message.selects[i] = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select.fromObject(object.selects[i]);
+                                    }
                                 }
                                 if (object.groupBy) {
                                     if (!Array.isArray(object.groupBy))
@@ -23002,6 +23084,8 @@ $root.org = (function() {
                                         message.having[i] = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause.fromObject(object.having[i]);
                                     }
                                 }
+                                if (object.offset != null)
+                                    message.offset = object.offset >>> 0;
                                 return message;
                             };
 
@@ -23021,6 +23105,7 @@ $root.org = (function() {
                                 if (options.arrays || options.defaults) {
                                     object.whereClauses = [];
                                     object.orderBy = [];
+                                    object.selects = [];
                                     object.groupBy = [];
                                     object.having = [];
                                 }
@@ -23035,7 +23120,7 @@ $root.org = (function() {
                                     object.documentType = "";
                                     object.limit = 0;
                                     object.prove = false;
-                                    object.select = null;
+                                    object.offset = 0;
                                 }
                                 if (message.dataContractId != null && message.hasOwnProperty("dataContractId"))
                                     object.dataContractId = options.bytes === String ? $util.base64.encode(message.dataContractId, 0, message.dataContractId.length) : options.bytes === Array ? Array.prototype.slice.call(message.dataContractId) : message.dataContractId;
@@ -23065,8 +23150,11 @@ $root.org = (function() {
                                 }
                                 if (message.prove != null && message.hasOwnProperty("prove"))
                                     object.prove = message.prove;
-                                if (message.select != null && message.hasOwnProperty("select"))
-                                    object.select = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select.toObject(message.select, options);
+                                if (message.selects && message.selects.length) {
+                                    object.selects = [];
+                                    for (var j = 0; j < message.selects.length; ++j)
+                                        object.selects[j] = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select.toObject(message.selects[j], options);
+                                }
                                 if (message.groupBy && message.groupBy.length) {
                                     object.groupBy = [];
                                     for (var j = 0; j < message.groupBy.length; ++j)
@@ -23077,6 +23165,8 @@ $root.org = (function() {
                                     for (var j = 0; j < message.having.length; ++j)
                                         object.having[j] = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause.toObject(message.having[j], options);
                                 }
+                                if (message.offset != null && message.hasOwnProperty("offset"))
+                                    object.offset = message.offset;
                                 return object;
                             };
 
@@ -23243,6 +23333,8 @@ $root.org = (function() {
                                         case 1:
                                         case 2:
                                         case 3:
+                                        case 4:
+                                        case 5:
                                             break;
                                         }
                                     if (message.field != null && message.hasOwnProperty("field"))
@@ -23279,6 +23371,14 @@ $root.org = (function() {
                                     case "AVG":
                                     case 3:
                                         message["function"] = 3;
+                                        break;
+                                    case "MIN":
+                                    case 4:
+                                        message["function"] = 4;
+                                        break;
+                                    case "MAX":
+                                    case 5:
+                                        message["function"] = 5;
                                         break;
                                     }
                                     if (object.field != null)
@@ -23329,6 +23429,8 @@ $root.org = (function() {
                                  * @property {number} COUNT=1 COUNT value
                                  * @property {number} SUM=2 SUM value
                                  * @property {number} AVG=3 AVG value
+                                 * @property {number} MIN=4 MIN value
+                                 * @property {number} MAX=5 MAX value
                                  */
                                 Select.Function = (function() {
                                     var valuesById = {}, values = Object.create(valuesById);
@@ -23336,6 +23438,8 @@ $root.org = (function() {
                                     values[valuesById[1] = "COUNT"] = 1;
                                     values[valuesById[2] = "SUM"] = 2;
                                     values[valuesById[3] = "AVG"] = 3;
+                                    values[valuesById[4] = "MIN"] = 4;
+                                    values[valuesById[5] = "MAX"] = 5;
                                     return values;
                                 })();
 
