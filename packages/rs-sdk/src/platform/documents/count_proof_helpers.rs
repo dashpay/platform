@@ -29,21 +29,29 @@ use drive_proof_verifier::{
 };
 
 /// Validate that the caller-built [`DocumentQuery`] actually
-/// targets the count surface. Without this check a caller who
-/// forgets `.with_select(SelectProjection::count_star())` would
-/// silently send a `Documents` request and fail later inside the
-/// proof verifier with an inscrutable "wrong wire shape" error;
-/// this surfaces the misuse at the SDK boundary with a clear
-/// pointer to the fix.
+/// targets the count surface AND uses the `COUNT(*)` shape — the
+/// only shape today's verifier can reproduce. The verifier in
+/// `verify_count_query()` rebuilds a `DriveDocumentCountQuery`
+/// without threading the selected `field`, so an accepted
+/// `COUNT(field)` request would verify as `COUNT(*)` (different
+/// result for nullable fields). Reject `COUNT(field)` upstream
+/// until the verifier carries the counted field; the
+/// not-yet-implemented gate already rejects it server-side, so
+/// this check is the SDK-side mirror.
 pub(super) fn assert_select_is_count(
     request: &DocumentQuery,
 ) -> Result<(), drive_proof_verifier::Error> {
-    if request.select.function != SelectFunction::Count {
+    if request.select.function != SelectFunction::Count || !request.select.field.is_empty() {
         return Err(drive_proof_verifier::Error::RequestError {
             error: format!(
-                "DocumentCount / DocumentSplitCounts require `select.function = Count`, \
-                 got {:?}. Call `.with_select(SelectProjection::count_star())` (or \
-                 `count_field(...)`) on the DocumentQuery before fetching.",
+                "DocumentCount / DocumentSplitCounts currently require \
+                 `SelectProjection::count_star()` (i.e. `COUNT(*)`); got {:?}. \
+                 `COUNT(field)` is not verifiable today because the proof \
+                 query doesn't carry the counted field — `COUNT(field)` \
+                 against a nullable field would verify as `COUNT(*)` and \
+                 return a different total. Call \
+                 `.with_select(SelectProjection::count_star())` on the \
+                 DocumentQuery before fetching.",
                 request.select
             ),
         });

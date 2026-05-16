@@ -285,9 +285,24 @@ impl TransportRequest for DocumentQuery {
         client: &'c mut Self::Client,
         settings: &AppliedRequestSettings,
     ) -> BoxFuture<'c, Result<Self::Response, TransportError>> {
-        let request: GetDocumentsRequest = self
-            .try_into()
-            .expect("DocumentQuery should always be valid");
+        // `TryFrom<DocumentQuery> for GetDocumentsRequest` became
+        // fallible once `where_clause_to_proto` / `having_clause_to_proto`
+        // / `value_to_proto` started rejecting `Value` variants
+        // that have no wire-format counterpart (`Map`, future
+        // `Value` additions, …). Propagate the conversion failure
+        // as a `TransportError::Grpc(Status::invalid_argument(...))`
+        // so the SDK surfaces a normal request error instead of
+        // panicking the process.
+        let request: GetDocumentsRequest = match self.try_into() {
+            Ok(r) => r,
+            Err(e) => {
+                let status = dapi_grpc::tonic::Status::invalid_argument(format!(
+                    "DocumentQuery contains values that can't be encoded on the v1 \
+                     wire: {e}"
+                ));
+                return Box::pin(async move { Err(TransportError::Grpc(status)) });
+            }
+        };
         request.execute_transport(client, settings)
     }
 }

@@ -73,13 +73,29 @@ pub(super) fn where_operator_from_proto(op: i32) -> Result<WhereOperator, QueryE
 
 /// Map a wire [`ProtoDocumentFieldValue`] onto a
 /// `dpp::platform_value::Value`. Schema-agnostic — variants map
-/// 1:1 by primitive type and recurse for `list`.
+/// 1:1 by primitive type and recurse for `list` up to a depth of
+/// 1 (the only nesting level the query surface needs: `IN` /
+/// `BETWEEN*` take a flat list of scalars). Anything deeper is
+/// rejected as malformed wire input rather than recursed into,
+/// so a hostile client can't blow the call stack with
+/// `list(list(list(...)))` before schema validation.
 ///
 /// `None` (oneof unset on the wire) is rejected — a where-clause
 /// operand is always concrete; empty where-clauses are expressed
 /// by an empty `where_clauses` field at the request level, not by
 /// sending an empty `DocumentFieldValue`.
 pub(super) fn value_from_proto(value: ProtoDocumentFieldValue) -> Result<Value, QueryError> {
+    value_from_proto_at_depth(value, 0)
+}
+
+/// Recursion-bounded form of [`value_from_proto`]. `depth = 0` is
+/// the request-level operand; the only legal child shape is a
+/// flat list (`depth = 1` for `IN` / `BETWEEN*` candidates), so a
+/// `list` encountered at `depth >= 1` is wire-malformed.
+fn value_from_proto_at_depth(
+    value: ProtoDocumentFieldValue,
+    depth: u8,
+) -> Result<Value, QueryError> {
     let variant = value.variant.ok_or_else(|| {
         QueryError::InvalidArgument(
             "DocumentFieldValue has no variant set; a where-clause operand must \
@@ -94,12 +110,22 @@ pub(super) fn value_from_proto(value: ProtoDocumentFieldValue) -> Result<Value, 
         document_field_value::Variant::DoubleValue(f) => Value::Float(f),
         document_field_value::Variant::Text(s) => Value::Text(s),
         document_field_value::Variant::BytesValue(b) => Value::Bytes(b),
-        document_field_value::Variant::List(list) => Value::Array(
-            list.values
-                .into_iter()
-                .map(value_from_proto)
-                .collect::<Result<Vec<_>, _>>()?,
-        ),
+        document_field_value::Variant::List(list) => {
+            if depth >= 1 {
+                return Err(QueryError::InvalidArgument(
+                    "nested DocumentFieldValue.list is not supported; the v1 \
+                     query surface accepts at most one level of nesting \
+                     (`IN` / `BETWEEN*` candidate lists of scalars)"
+                        .to_string(),
+                ));
+            }
+            Value::Array(
+                list.values
+                    .into_iter()
+                    .map(|v| value_from_proto_at_depth(v, depth + 1))
+                    .collect::<Result<Vec<_>, _>>()?,
+            )
+        }
         // The bool payload is a placeholder — picking the
         // `null_value` variant means "this operand is null" and
         // the bool itself is ignored. See the proto-side comment
