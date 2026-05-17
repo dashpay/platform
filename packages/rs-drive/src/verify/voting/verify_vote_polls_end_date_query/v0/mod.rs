@@ -1,3 +1,4 @@
+use crate::verify::canonicalize_grovedb_proof;
 use crate::verify::RootHash;
 use dpp::prelude::TimestampMillis;
 use dpp::serialization::PlatformDeserializable;
@@ -52,8 +53,11 @@ impl VotePollsByEndDateDriveQuery {
         I: FromIterator<(TimestampMillis, Vec<VotePoll>)>,
     {
         let path_query = self.construct_path_query();
-        let (root_hash, proved_key_values) =
-            GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?;
+        let (root_hash, proved_key_values) = GroveDb::verify_query(
+            &canonicalize_grovedb_proof(proof)?,
+            &path_query,
+            &platform_version.drive.grove_version,
+        )?;
         let vote_polls_by_end_date = proved_key_values
             .into_iter()
             .filter_map(|(path, _, element)| Some((path, element?)))

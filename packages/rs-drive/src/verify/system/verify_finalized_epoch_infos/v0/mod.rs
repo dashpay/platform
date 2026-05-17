@@ -4,6 +4,7 @@ use crate::error::drive::DriveError;
 use crate::error::proof::ProofError;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
+use crate::verify::canonicalize_grovedb_proof;
 use crate::verify::RootHash;
 use dpp::block::epoch::{EpochIndex, EPOCH_KEY_OFFSET};
 use dpp::block::finalized_epoch_info::FinalizedEpochInfo;
@@ -60,7 +61,7 @@ impl Drive {
         // Use verify_subset_query because the proof may contain extra lower layers
         // for sibling subtrees at the root level (e.g., shielded pool subtrees)
         let (root_hash, elements) = GroveDb::verify_subset_query(
-            proof,
+            &canonicalize_grovedb_proof(proof)?,
             &path_query,
             &platform_version.drive.grove_version,
         )?;

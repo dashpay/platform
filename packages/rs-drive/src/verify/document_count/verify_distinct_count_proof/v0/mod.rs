@@ -1,5 +1,6 @@
 use crate::error::Error;
 use crate::query::{DriveDocumentCountQuery, SplitCountEntry, WhereOperator};
+use crate::verify::canonicalize_grovedb_proof;
 use crate::verify::RootHash;
 use dpp::version::PlatformVersion;
 use grovedb::GroveDb;
@@ -55,9 +56,12 @@ impl DriveDocumentCountQuery<'_> {
             .where_clauses
             .iter()
             .any(|wc| wc.operator == WhereOperator::In);
-        let (root_hash, elements) =
-            GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)
-                .map_err(|e| Error::GroveDB(Box::new(e)))?;
+        let (root_hash, elements) = GroveDb::verify_query(
+            &canonicalize_grovedb_proof(proof)?,
+            &path_query,
+            &platform_version.drive.grove_version,
+        )
+        .map_err(|e| Error::GroveDB(Box::new(e)))?;
 
         let mut out: Vec<SplitCountEntry> = Vec::with_capacity(elements.len());
         for (path, key, elem) in elements {

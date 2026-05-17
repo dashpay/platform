@@ -1,5 +1,6 @@
 use crate::error::Error;
 use crate::query::DriveDocumentCountQuery;
+use crate::verify::canonicalize_grovedb_proof;
 use crate::verify::RootHash;
 use dpp::version::PlatformVersion;
 use grovedb::GroveDb;
@@ -38,7 +39,7 @@ impl DriveDocumentCountQuery<'_> {
     ) -> Result<(RootHash, Vec<(Vec<u8>, u64)>), Error> {
         let path_query = self.carrier_aggregate_count_path_query(limit, platform_version)?;
         let (root_hash, entries) = GroveDb::verify_aggregate_count_query_per_key(
-            proof,
+            &canonicalize_grovedb_proof(proof)?,
             &path_query,
             &platform_version.drive.grove_version,
         )

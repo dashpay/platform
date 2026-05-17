@@ -1,3 +1,4 @@
+use crate::verify::canonicalize_grovedb_proof;
 use crate::verify::RootHash;
 
 use crate::error::proof::ProofError;
@@ -41,9 +42,17 @@ impl DriveDocumentQuery<'_> {
         }?;
 
         let (root_hash, proved_key_values) = if self.start_at.is_some() {
-            GroveDb::verify_subset_query(proof, &path_query, &platform_version.drive.grove_version)?
+            GroveDb::verify_subset_query(
+                &canonicalize_grovedb_proof(proof)?,
+                &path_query,
+                &platform_version.drive.grove_version,
+            )?
         } else {
-            GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?
+            GroveDb::verify_query(
+                &canonicalize_grovedb_proof(proof)?,
+                &path_query,
+                &platform_version.drive.grove_version,
+            )?
         };
 
         let documents = proved_key_values

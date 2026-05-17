@@ -2,6 +2,7 @@ use crate::drive::Drive;
 
 use crate::error::Error;
 
+use crate::verify::canonicalize_grovedb_proof;
 use crate::verify::RootHash;
 use dpp::identifier::Identifier;
 use dpp::identity::{IdentityPublicKey, Purpose};
@@ -56,13 +57,13 @@ impl Drive {
 
         let (root_hash, proved_values) = if is_proof_subset {
             GroveDb::verify_subset_query_with_absence_proof(
-                proof,
+                &canonicalize_grovedb_proof(proof)?,
                 &path_query,
                 &platform_version.drive.grove_version,
             )?
         } else {
             GroveDb::verify_query_with_absence_proof(
-                proof,
+                &canonicalize_grovedb_proof(proof)?,
                 &path_query,
                 &platform_version.drive.grove_version,
             )?

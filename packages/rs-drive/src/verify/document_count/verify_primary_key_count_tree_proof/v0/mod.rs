@@ -1,5 +1,6 @@
 use crate::error::Error;
 use crate::query::DriveDocumentCountQuery;
+use crate::verify::canonicalize_grovedb_proof;
 use crate::verify::RootHash;
 use dpp::version::PlatformVersion;
 use grovedb::GroveDb;
@@ -25,9 +26,12 @@ impl DriveDocumentCountQuery<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, u64), Error> {
         let path_query = Self::primary_key_count_tree_path_query(contract_id, document_type_name);
-        let (root_hash, elements) =
-            GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)
-                .map_err(|e| Error::GroveDB(Box::new(e)))?;
+        let (root_hash, elements) = GroveDb::verify_query(
+            &canonicalize_grovedb_proof(proof)?,
+            &path_query,
+            &platform_version.drive.grove_version,
+        )
+        .map_err(|e| Error::GroveDB(Box::new(e)))?;
 
         // The path query asks for exactly one key (`[0]`) under the
         // doctype path, so `elements` is either empty (CountTree

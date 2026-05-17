@@ -1,3 +1,4 @@
+use crate::verify::canonicalize_grovedb_proof;
 use crate::verify::RootHash;
 use dpp::identifier::Identifier;
 use dpp::serialization::PlatformDeserializable;
@@ -52,8 +53,11 @@ impl ResolvedContestedDocumentVotePollDriveQuery<'_> {
     ) -> Result<(RootHash, ContestedDocumentVotePollDriveQueryExecutionResult), Error> {
         let path_query = self.construct_path_query(platform_version)?;
         // println!("{:?}", &path_query);
-        let (root_hash, proved_key_values) =
-            GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?;
+        let (root_hash, proved_key_values) = GroveDb::verify_query(
+            &canonicalize_grovedb_proof(proof)?,
+            &path_query,
+            &platform_version.drive.grove_version,
+        )?;
 
         match self.result_type {
             ContestedDocumentVotePollDriveQueryResultType::Documents

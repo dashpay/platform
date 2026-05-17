@@ -4,6 +4,7 @@ use crate::drive::contract::paths::{contract_keeping_history_root_path, contract
 use crate::drive::Drive;
 use crate::error::proof::ProofError;
 use crate::error::Error;
+use crate::verify::canonicalize_grovedb_proof;
 use crate::verify::RootHash;
 use dpp::prelude::DataContract;
 use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
@@ -56,13 +57,13 @@ impl Drive {
 
         let result = if is_proof_subset {
             GroveDb::verify_subset_query_with_absence_proof(
-                proof,
+                &canonicalize_grovedb_proof(proof)?,
                 &path_query,
                 &platform_version.drive.grove_version,
             )
         } else {
             GroveDb::verify_query_with_absence_proof(
-                proof,
+                &canonicalize_grovedb_proof(proof)?,
                 &path_query,
                 &platform_version.drive.grove_version,
             )
@@ -208,7 +209,7 @@ impl Drive {
         // contracts_query.query.limit = Some(request_len as u16);
         //
         // //todo: we are currently not proving succintness, a new method is required in grovedb
-        // let (root_hash, mut proved_key_values) = GroveDb::verify_subset_query_with_absence_proof(proof, &contracts_query)?;
+        // let (root_hash, mut proved_key_values) = GroveDb::verify_subset_query_with_absence_proof(&canonicalize_grovedb_proof(proof)?, &contracts_query)?;
         //
         // let contracts = proved_key_values.into_iter().map(|(path, key, maybe_element) | {
         //     let last_part = path.last().ok_or(Error::Proof(ProofError::CorruptedProof(

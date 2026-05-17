@@ -7,6 +7,7 @@ use crate::drive::Drive;
 use crate::drive::RootTree;
 use crate::error::proof::ProofError;
 use crate::error::Error;
+use crate::verify::canonicalize_grovedb_proof;
 use crate::verify::RootHash;
 use grovedb::operations::proof::{GroveDBProof, ProofBytes};
 use grovedb::{
@@ -159,7 +160,7 @@ impl Drive {
         let path_query = PathQuery::new(path, SizedQuery::new(query, limit, None));
 
         let (root_hash, proved_key_values) = GroveDb::verify_subset_query(
-            proof,
+            &canonicalize_grovedb_proof(proof)?,
             &path_query,
             &platform_version.drive.grove_version,
         )?;

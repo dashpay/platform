@@ -3,6 +3,7 @@ use crate::drive::Drive;
 use crate::error::proof::ProofError;
 use crate::error::Error;
 
+use crate::verify::canonicalize_grovedb_proof;
 use crate::verify::RootHash;
 
 use grovedb::GroveDb;
@@ -49,13 +50,13 @@ impl Drive {
         path_query.query.limit = Some(public_key_hashes.len() as u16);
         let (root_hash, proved_key_values) = if is_proof_subset {
             GroveDb::verify_subset_query_with_absence_proof(
-                proof,
+                &canonicalize_grovedb_proof(proof)?,
                 &path_query,
                 &platform_version.drive.grove_version,
             )?
         } else {
             GroveDb::verify_query_with_absence_proof(
-                proof,
+                &canonicalize_grovedb_proof(proof)?,
                 &path_query,
                 &platform_version.drive.grove_version,
             )?

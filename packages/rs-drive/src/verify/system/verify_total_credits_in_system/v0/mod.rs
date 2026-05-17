@@ -8,6 +8,7 @@ use crate::drive::{Drive, RootTree};
 use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::query::Query;
+use crate::verify::canonicalize_grovedb_proof;
 use crate::verify::RootHash;
 use dpp::block::epoch::{Epoch, EpochIndex};
 use dpp::core_subsidy::epoch_core_reward_credits_for_distribution::epoch_core_reward_credits_for_distribution;
@@ -48,7 +49,7 @@ impl Drive {
         let total_credits_on_platform_path_query = total_credits_on_platform_path_query();
 
         let (root_hash, mut proved_path_key_values) = GroveDb::verify_subset_query(
-            proof,
+            &canonicalize_grovedb_proof(proof)?,
             &total_credits_on_platform_path_query,
             &platform_version.drive.grove_version,
         )?;
@@ -93,7 +94,7 @@ impl Drive {
         };
 
         let (_, mut proved_path_key_values) = GroveDb::verify_subset_query(
-            proof,
+            &canonicalize_grovedb_proof(proof)?,
             &unpaid_epoch_index,
             &platform_version.drive.grove_version,
         )?;
@@ -145,7 +146,7 @@ impl Drive {
             };
 
             let (_, mut proved_path_key_values) = GroveDb::verify_subset_query(
-                proof,
+                &canonicalize_grovedb_proof(proof)?,
                 &start_core_height_query,
                 &platform_version.drive.grove_version,
             )?;

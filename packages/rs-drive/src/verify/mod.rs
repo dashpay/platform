@@ -28,5 +28,10 @@ pub mod tokens;
 /// Voting proof verification module
 pub mod voting;
 
+/// Backward-compatibility shim that trims trailing bytes from grovedb
+/// proofs captured before grovedb's canonical-envelope check landed.
+mod grovedb_proof_compat;
+pub use grovedb_proof_compat::canonicalize_grovedb_proof;
+
 /// Represents the root hash of the grovedb tree
 pub type RootHash = [u8; 32];

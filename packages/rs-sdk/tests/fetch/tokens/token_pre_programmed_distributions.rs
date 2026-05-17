@@ -12,15 +12,6 @@ use dash_sdk::platform::tokens::token_pre_programmed_distributions::{
 use dash_sdk::platform::Fetch;
 
 /// TOKEN_ID_2 has pre-programmed distributions configured with 3 timestamps.
-///
-/// Ignored after the grovedb bump to `352c2f55` because the recorded
-/// proof fixtures contain trailing bytes that the new strict
-/// `decode_grovedb_proof_canonical` (added with the ProvableSumTree /
-/// AggregateSumOnRange work in grovedb#661) rejects with
-/// `"data corruption error: proof has 1 trailing bytes after the encoded
-/// envelope"`. The fixtures need to be regenerated against the bumped
-/// grovedb (see the `generate_test_vectors.sh` invocation above).
-#[ignore = "fixtures need regen against new grovedb (strict proof envelope decoder)"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_token_pre_programmed_distributions_present() {
     setup_logs();
@@ -76,10 +67,6 @@ async fn test_token_pre_programmed_distributions_present() {
 }
 
 /// TOKEN_ID_0 has no pre-programmed distributions; query should return None.
-///
-/// Ignored for the same reason as
-/// `test_token_pre_programmed_distributions_present` above.
-#[ignore = "fixtures need regen against new grovedb (strict proof envelope decoder)"]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_token_pre_programmed_distributions_absent() {
     setup_logs();

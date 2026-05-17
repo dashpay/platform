@@ -4,6 +4,7 @@ use grovedb::Element::Item;
 use crate::error::proof::ProofError;
 use crate::error::Error;
 
+use crate::verify::canonicalize_grovedb_proof;
 use crate::verify::RootHash;
 
 use dpp::serialization::PlatformDeserializable;
@@ -24,13 +25,13 @@ impl Drive {
         let path_query = Self::token_statuses_query(token_ids);
         let (root_hash, proved_key_values) = if verify_subset_of_proof {
             GroveDb::verify_subset_query_with_absence_proof(
-                proof,
+                &canonicalize_grovedb_proof(proof)?,
                 &path_query,
                 &platform_version.drive.grove_version,
             )?
         } else {
             GroveDb::verify_query_with_absence_proof(
-                proof,
+                &canonicalize_grovedb_proof(proof)?,
                 &path_query,
                 &platform_version.drive.grove_version,
             )?
