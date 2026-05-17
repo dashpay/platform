@@ -87,7 +87,8 @@ DashSDKConfig config = {
 // Create SDK instance
 DashSDKResult result = dash_sdk_create(&config);
 if (result.error) {
-    // Handle error
+    // Handle error. Do not free result.error->message separately; the outer
+    // DashSDKError owns it and must be released with dash_sdk_error_free.
     dash_sdk_error_free(result.error);
     return;
 }
@@ -117,7 +118,8 @@ var config = DashSDKConfig(
 // Create SDK instance
 let result = dash_sdk_create(&config)
 if let error = result.error {
-    // Handle error
+    // Handle error. Do not reclaim error.pointee.message separately; the outer
+    // DashSDKError owns it and must be released with dash_sdk_error_free.
     dash_sdk_error_free(error)
     return
 }

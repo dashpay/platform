@@ -223,7 +223,7 @@ pub unsafe extern "C" fn dash_sdk_identity_withdraw(
             .await
             .map_err(|e| {
                 error!(error = %e, "dash_sdk_identity_withdraw: withdraw failed");
-                FFIError::InternalError(format!("Failed to withdraw credits: {}", e))
+                FFIError::SDKError(e)
             })?;
 
         info!(new_balance, "dash_sdk_identity_withdraw: withdrawal successful");

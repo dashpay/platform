@@ -13,7 +13,12 @@
 //! caller. Callers query
 //! [`dash_sdk_error_consensus_error_count`] and
 //! [`dash_sdk_error_consensus_error_at`] *before* freeing the error with
-//! [`dash_sdk_error_free`]; freeing also releases the sidecar entry.
+//! [`dash_sdk_error_free`]; freeing also releases the sidecar entry. If an FFI
+//! caller leaks a returned `DashSDKError` and never calls the matching free
+//! function, the active sidecar entry is leaked for the same process lifetime
+//! as the leaked error allocation. Long-running embedders must therefore treat
+//! `dash_sdk_error_free` / `dash_sdk_result_free` as mandatory ownership
+//! cleanup, not just message-string cleanup.
 //!
 //! # Sidecar contract (pointer-identity)
 //!
@@ -260,11 +265,11 @@ fn with_active_consensus_errors<R>(
     }
     let guard = lock_recover(&ACTIVE_CONSENSUS_ERRORS);
     let entry = guard.get(&(error_ptr as usize))?;
-    // Only dereference the FFI pointer after an active sidecar entry exists
-    // for that exact heap `DashSDKError` pointer. A miss is treated as "no
-    // details" and must not read from the caller-provided pointer at all.
-    // Once an entry exists, re-check the current `message` field against the
-    // value captured at boxing time to reject recycled heap allocations.
+    // Only dereference caller memory after confirming the boxed error pointer
+    // is still active in the sidecar map. This avoids touching arbitrary
+    // non-null pointers that are not one of our live boxed errors, while still
+    // checking that the current `message` field matches the value captured at
+    // boxing time.
     let current_message = unsafe { (*error_ptr).message } as usize;
     if entry.message_ptr != current_message {
         // Pointer key matched but the message field doesn't match the value
@@ -339,8 +344,8 @@ impl DashSDKError {
 /// before the Drop runs.
 ///
 /// Compatibility note: `Drop` owns `message`. External callers and tests must
-/// not reclaim `message` separately with `CString::from_raw`; free the outer
-/// error through [`dash_sdk_error_free`] instead.
+/// not reclaim `message` separately with `CString::from_raw(error.message)`; free
+/// the outer error through [`dash_sdk_error_free`] instead.
 impl Drop for DashSDKError {
     fn drop(&mut self) {
         if !self.message.is_null() {
@@ -410,6 +415,14 @@ fn classify_sdk_error(sdk_err: &dash_sdk::Error) -> (DashSDKErrorCode, String) {
         // consensus sibling is handled by the caller before this point.
         dash_sdk::Error::Protocol(_) => (DashSDKErrorCode::ProtocolError, sdk_err.to_string()),
         dash_sdk::Error::TimeoutReached(_, _) => (DashSDKErrorCode::Timeout, sdk_err.to_string()),
+        dash_sdk::Error::Cancelled(message) => (
+            DashSDKErrorCode::Timeout,
+            format!("Operation cancelled: {message}"),
+        ),
+        dash_sdk::Error::StaleNode(_) => (
+            DashSDKErrorCode::NetworkError,
+            format!("Stale node response: {sdk_err}. Retry the operation or try another server."),
+        ),
         // No-address / exhausted-addresses paths get the explicit operator
         // hint message.
         dash_sdk::Error::DapiClientError(DapiClientError::NoAvailableAddresses)
@@ -436,11 +449,19 @@ fn classify_sdk_error(sdk_err: &dash_sdk::Error) -> (DashSDKErrorCode, String) {
         | dash_sdk::Error::IdentityNonceNotFound(_) => {
             (DashSDKErrorCode::NotFound, sdk_err.to_string())
         }
-        // Neutral fallback: we could not classify this SDK error as
-        // network/timeout/protocol/not-found, so report it as an internal
-        // SDK error rather than misattributing it to a specific operation
-        // (e.g. "Failed to fetch balances").
-        _ => (
+        dash_sdk::Error::Config(_)
+        | dash_sdk::Error::Drive(_)
+        | dash_sdk::Error::DriveProofError(_, _, _)
+        | dash_sdk::Error::Proof(_)
+        | dash_sdk::Error::InvalidProvedResponse(_)
+        | dash_sdk::Error::CoreError(_)
+        | dash_sdk::Error::MerkleBlockError(_)
+        | dash_sdk::Error::AlreadyExists(_)
+        | dash_sdk::Error::InvalidCreditTransfer(_)
+        | dash_sdk::Error::NonceOverflow(_)
+        | dash_sdk::Error::Generic(_)
+        | dash_sdk::Error::StateTransitionBroadcastError(_)
+        | dash_sdk::Error::DapiMocksError(_) => (
             DashSDKErrorCode::InternalError,
             format!("SDK error: {}", sdk_err),
         ),
@@ -546,12 +567,10 @@ pub unsafe extern "C" fn dash_sdk_error_free(error: *mut DashSDKError) {
 ///   module-level move-only sidecar contract.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_error_consensus_error_count(error: *const DashSDKError) -> usize {
-    if error.is_null() {
-        return 0;
-    }
-    if (*error).code != DashSDKErrorCode::ProtocolError {
-        return 0;
-    }
+    // Do not read fields from `error` before sidecar lookup: callers may pass
+    // a stale pointer, and the sidecar miss path must avoid dereferencing it.
+    // Active sidecar entries are only registered for ProtocolError consensus
+    // details, so the previous code check is redundant once lookup succeeds.
     with_active_consensus_errors(error, |entries| entries.len()).unwrap_or(0)
 }
 
@@ -573,13 +592,9 @@ pub unsafe extern "C" fn dash_sdk_error_consensus_error_at(
     error: *const DashSDKError,
     index: usize,
 ) -> *mut DashSDKConsensusError {
-    if error.is_null() {
-        return std::ptr::null_mut();
-    }
-    if (*error).code != DashSDKErrorCode::ProtocolError {
-        return std::ptr::null_mut();
-    }
-
+    // Sidecar lookup comes before any field read from `error`; a miss returns
+    // null without dereferencing the caller-provided pointer. Active entries
+    // are only registered for ProtocolError consensus details.
     let entry =
         with_active_consensus_errors(error, |entries| entries.get(index).cloned()).flatten();
     let Some(entry) = entry else {
@@ -963,6 +978,44 @@ mod tests {
         );
         let ffi_error = boxed(DashSDKError::from(FFIError::SDKError(sdk_error)));
         assert_eq!(unsafe { (*ffi_error).code }, DashSDKErrorCode::Timeout);
+        unsafe { dash_sdk_error_free(ffi_error) };
+    }
+
+    #[test]
+    fn cancelled_maps_to_timeout_with_clear_message() {
+        let sdk_error = dash_sdk::Error::Cancelled("request aborted by caller".to_string());
+        let ffi_error = boxed(DashSDKError::from(FFIError::SDKError(sdk_error)));
+        assert_eq!(unsafe { (*ffi_error).code }, DashSDKErrorCode::Timeout);
+        let message = error_message_ptr(ffi_error);
+        assert!(
+            message.contains("Operation cancelled"),
+            "expected cancellation prefix, got: {message}"
+        );
+        assert!(
+            message.contains("request aborted by caller"),
+            "expected original cancellation reason, got: {message}"
+        );
+        unsafe { dash_sdk_error_free(ffi_error) };
+    }
+
+    #[test]
+    fn stale_node_maps_to_network_with_retry_hint() {
+        let sdk_error = dash_sdk::Error::StaleNode(dash_sdk::error::StaleNodeError::Height {
+            expected_height: 100,
+            received_height: 95,
+            tolerance_blocks: 2,
+        });
+        let ffi_error = boxed(DashSDKError::from(FFIError::SDKError(sdk_error)));
+        assert_eq!(unsafe { (*ffi_error).code }, DashSDKErrorCode::NetworkError);
+        let message = error_message_ptr(ffi_error);
+        assert!(
+            message.contains("Stale node response"),
+            "expected stale-node prefix, got: {message}"
+        );
+        assert!(
+            message.contains("try another server") || message.contains("Retry the operation"),
+            "expected retry guidance, got: {message}"
+        );
         unsafe { dash_sdk_error_free(ffi_error) };
     }
 

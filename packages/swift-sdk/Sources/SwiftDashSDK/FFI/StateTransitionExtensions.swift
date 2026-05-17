@@ -61,7 +61,7 @@ private func selectSigningKey(from identity: DPPIdentity, operation: String) -> 
 }
 
 /// Helper to create a public key handle from an IdentityPublicKey
-private func createPublicKeyHandle(from key: IdentityPublicKey, operation: String) -> UnsafeMutablePointer<IdentityPublicKeyHandle>? {
+private func createPublicKeyHandle(from key: IdentityPublicKey, operation: String) throws -> UnsafeMutablePointer<IdentityPublicKeyHandle> {
     let keyData = key.data
     let keyType = key.keyType.ffiValue
     let purpose = key.purpose.ffiValue
@@ -80,17 +80,15 @@ private func createPublicKeyHandle(from key: IdentityPublicKey, operation: Strin
         )
     }
 
-    guard keyResult.error == nil else {
-        let errorString = keyResult.error?.pointee.message != nil ?
-            String(cString: keyResult.error!.pointee.message) : "Failed to create public key handle"
-        print("❌ [\(operation)] Key handle creation failed: \(errorString)")
-        dash_sdk_error_free(keyResult.error)
-        return nil
+    if let error = keyResult.error {
+        let mapped = SDKError.consumeDashSDKError(error)
+        print("❌ [\(operation)] Key handle creation failed: \(mapped.localizedDescription)")
+        throw mapped
     }
 
     guard let keyHandle = keyResult.data else {
         print("❌ [\(operation)] Invalid public key handle")
-        return nil
+        throw SDKError.internalError("Failed to create public key handle")
     }
 
     print("✅ [\(operation)] Public key handle created from local data")
@@ -584,9 +582,12 @@ extension SDK {
                 }
 
                 // Create public key handle
-                guard let keyHandle = createPublicKeyHandle(from: keyToUse, operation: "DOCUMENT CREATE") else {
+                let keyHandle: UnsafeMutablePointer<IdentityPublicKeyHandle>
+                do {
+                    keyHandle = try createPublicKeyHandle(from: keyToUse, operation: "DOCUMENT CREATE")
+                } catch {
                     print("⏱️ [DOCUMENT CREATE] Total time before failure: \(Date().timeIntervalSince(startTime)) seconds")
-                    continuation.resume(throwing: SDKError.internalError("Failed to create public key handle"))
+                    continuation.resume(throwing: error)
                     return
                 }
 
@@ -767,8 +768,11 @@ extension SDK {
                 }
 
                 // Create public key handle
-                guard let keyHandle = createPublicKeyHandle(from: keyToUse, operation: "DOCUMENT REPLACE") else {
-                    continuation.resume(throwing: SDKError.internalError("Failed to create public key handle"))
+                let keyHandle: UnsafeMutablePointer<IdentityPublicKeyHandle>
+                do {
+                    keyHandle = try createPublicKeyHandle(from: keyToUse, operation: "DOCUMENT REPLACE")
+                } catch {
+                    continuation.resume(throwing: error)
                     return
                 }
 
@@ -857,9 +861,7 @@ extension SDK {
                     }
 
                     // Create public key handle
-                    guard let keyHandle = createPublicKeyHandle(from: keyToUse, operation: "DOCUMENT DELETE") else {
-                        throw SDKError.protocolError("Failed to create public key handle")
-                    }
+                    let keyHandle = try createPublicKeyHandle(from: keyToUse, operation: "DOCUMENT DELETE")
 
                     defer {
                         dash_sdk_identity_public_key_destroy(keyHandle)
@@ -944,8 +946,11 @@ extension SDK {
                 }
 
                 // Create public key handle
-                guard let keyHandle = createPublicKeyHandle(from: keyToUse, operation: "DOCUMENT TRANSFER") else {
-                    continuation.resume(throwing: SDKError.internalError("Failed to create key handle"))
+                let keyHandle: UnsafeMutablePointer<IdentityPublicKeyHandle>
+                do {
+                    keyHandle = try createPublicKeyHandle(from: keyToUse, operation: "DOCUMENT TRANSFER")
+                } catch {
+                    continuation.resume(throwing: error)
                     return
                 }
 
@@ -1179,8 +1184,11 @@ extension SDK {
                     return
                 }
 
-                guard let keyHandle = createPublicKeyHandle(from: keyToUse, operation: "UPDATE_PRICE") else {
-                    continuation.resume(throwing: SDKError.serializationError("Failed to create key handle"))
+                let keyHandle: UnsafeMutablePointer<IdentityPublicKeyHandle>
+                do {
+                    keyHandle = try createPublicKeyHandle(from: keyToUse, operation: "UPDATE_PRICE")
+                } catch {
+                    continuation.resume(throwing: error)
                     return
                 }
 
@@ -1263,8 +1271,11 @@ extension SDK {
                 }
 
                 // Create public key handle
-                guard let keyHandle = createPublicKeyHandle(from: keyToUse, operation: "DOCUMENT PURCHASE") else {
-                    continuation.resume(throwing: SDKError.internalError("Failed to create key handle"))
+                let keyHandle: UnsafeMutablePointer<IdentityPublicKeyHandle>
+                do {
+                    keyHandle = try createPublicKeyHandle(from: keyToUse, operation: "DOCUMENT PURCHASE")
+                } catch {
+                    continuation.resume(throwing: error)
                     return
                 }
 

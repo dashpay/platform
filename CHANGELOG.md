@@ -8,6 +8,9 @@
 * **sdk:** fix type inconsistencies across wasm-sdk and js-evo-sdk (#3047)
 * **sdk:** getSignableBytes is not compatible with sign and verify (#3048)
 * **platform:** update PlatformAddress encoding and HRP constants (#3059)
+* **dpp:** `ProtocolError` is now `#[non_exhaustive]` and can carry plural
+  consensus failures via `ProtocolError::ConsensusErrors`; downstream crates
+  should keep a wildcard arm when matching protocol errors.
 * **platform:** 3.0 audit report fixes (#3053)
 * **swift-sdk:** `SDKError.protocolError(String)` associated values are
   clean human-readable messages again (no embedded payload). FFI errors
@@ -19,6 +22,16 @@
   `SDKError.fromDashSDKErrorWithConsensusErrors(_:)`) remain available
   before `dash_sdk_error_free`, or explicitly wrap both values in
   `SDKDetailedError`.
+* **rs-sdk-ffi:** `DashSDKError.message` is now owned by the outer
+  `DashSDKError`/`dash_sdk_error_free` lifecycle. External C and Swift
+  consumers must not manually reclaim `error.message` with
+  `CString::from_raw` or equivalent; free the outer error with
+  `dash_sdk_error_free` instead.
+* **dpp:** `DocumentPurchaseTransition::from_document` now requires a
+  `new_owner_id` argument so construction can reject self-purchase attempts
+  earlier in the version-independent dispatcher with
+  `InvalidDocumentTransitionActionError`. The V0 constructor path no longer
+  carries an unused version-specific owner argument.
 * **sdk:** comprehensive Evo SDK refactoring (#2999)
 * upgrade bincode to 2.0.1 (#2991)
 

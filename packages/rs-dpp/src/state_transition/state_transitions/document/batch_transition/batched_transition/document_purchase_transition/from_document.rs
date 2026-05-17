@@ -26,6 +26,9 @@ impl DocumentPurchaseTransition {
         feature_version: Option<FeatureVersion>,
         base_feature_version: Option<FeatureVersion>,
     ) -> Result<Self, ProtocolError> {
+        // Self-purchase is intentionally version-independent: every current
+        // and future purchase transition version must reject transferring a
+        // document to its existing owner before constructing the transition.
         if document.owner_id() == new_owner_id {
             return Err(ProtocolError::ConsensusError(Box::new(
                 InvalidDocumentTransitionActionError::new(format!(
@@ -48,7 +51,6 @@ impl DocumentPurchaseTransition {
                     DocumentPurchaseTransitionV0::from_document(
                         document,
                         document_type,
-                        new_owner_id,
                         price,
                         token_payment_info,
                         identity_contract_nonce,

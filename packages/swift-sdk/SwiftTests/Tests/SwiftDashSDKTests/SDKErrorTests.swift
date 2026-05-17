@@ -76,13 +76,12 @@ final class SDKErrorTests: XCTestCase {
   }
 
   func testConsumeDashSDKErrorReturnsSDKErrorForExistingCatchLogic() {
-    let sdkError = SDKError.finalizeConsumedDashSDKError(
+    let finalized = SDKError.finalizeConsumedDashSDKError(
       .protocolError("Protocol mismatch"),
-      consensusErrors: [
-        SDKConsensusError(code: 1, kind: "Consensus", name: "X", message: "y")
-      ]
+      consensusErrors: nil
     )
 
+    let sdkError = finalized
     if case .protocolError(let message) = sdkError {
       XCTAssertEqual(message, "Protocol mismatch")
     } else {
@@ -97,20 +96,19 @@ final class SDKErrorTests: XCTestCase {
     XCTAssertNil(sdkError.consensusErrors)
   }
 
-  func testFinalizeConsumedDashSDKErrorIgnoresConsensusDetailsForSDKError() {
-    let sdkError = SDKError.finalizeConsumedDashSDKError(
+  func testFinalizeConsumedDashSDKErrorDropsStructuredDetailsForPublicWrappers() {
+    let finalized = SDKError.finalizeConsumedDashSDKError(
       .protocolError("Protocol mismatch"),
       consensusErrors: [
         SDKConsensusError(code: 1, kind: "Consensus", name: "X", message: "y")
       ]
     )
-    let consensusErrors = [
-      SDKConsensusError(code: 1, kind: "Consensus", name: "X", message: "y")
-    ]
 
-    let detailed = SDKDetailedError(sdkError: sdkError, consensusErrors: consensusErrors)
-
-    XCTAssertNil(sdkError.consensusErrors)
-    XCTAssertEqual(detailed.consensusErrors, consensusErrors)
+    if case .protocolError(let message) = finalized {
+      XCTAssertEqual(message, "Protocol mismatch")
+    } else {
+      XCTFail("Expected SDKError.protocolError")
+    }
+    XCTAssertNil(finalized.consensusErrors)
   }
 }

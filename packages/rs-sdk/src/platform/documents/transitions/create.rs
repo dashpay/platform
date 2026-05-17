@@ -25,6 +25,9 @@ use tracing::trace;
 pub struct DocumentCreateTransitionBuilder {
     pub data_contract: Arc<DataContract>,
     pub document_type_name: String,
+    /// The document to create. Callers may set `document.id()` to
+    /// `Identifier::default()` to have the SDK derive the deterministic id, or
+    /// to that exact derived id. Any other non-default id is rejected.
     pub document: Document,
     pub document_state_transition_entropy: [u8; 32],
     pub token_payment_info: Option<TokenPaymentInfo>,
@@ -127,11 +130,17 @@ impl DocumentCreateTransitionBuilder {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<Identifier, Error> {
-        match platform_version
+        // Keep deterministic create-id derivation aligned with the DPP pre-sign
+        // create-transition structure validator, not the transition serializer.
+        let feature_version = platform_version
             .dpp
-            .document_versions
-            .document_structure_version
-        {
+            .state_transitions
+            .documents
+            .documents_batch_transition
+            .validation
+            .document_create_transition_structure_validation;
+
+        match feature_version {
             0 => Ok(Document::generate_document_id_v0(
                 self.data_contract.id_ref(),
                 &self.document.owner_id(),
@@ -160,6 +169,10 @@ impl DocumentCreateTransitionBuilder {
     /// # Returns
     ///
     /// * `Result<StateTransition, Error>` - The signed state transition or an error
+    ///
+    /// The builder accepts either `Identifier::default()` on `self.document`
+    /// to request deterministic id derivation, or the exact derived id. Any
+    /// other non-default id is rejected before nonce fetching.
     pub async fn sign(
         &self,
         sdk: &Sdk,
@@ -167,15 +180,6 @@ impl DocumentCreateTransitionBuilder {
         signer: &impl Signer<IdentityPublicKey>,
         platform_version: &PlatformVersion,
     ) -> Result<StateTransition, Error> {
-        let identity_contract_nonce = sdk
-            .get_identity_contract_nonce(
-                self.document.owner_id(),
-                self.data_contract.id(),
-                true,
-                self.settings,
-            )
-            .await?;
-
         let document_type = self
             .data_contract
             .document_type_for_name(&self.document_type_name)
@@ -195,6 +199,15 @@ impl DocumentCreateTransitionBuilder {
                 ))),
             )));
         }
+
+        let identity_contract_nonce = sdk
+            .get_identity_contract_nonce(
+                self.document.owner_id(),
+                self.data_contract.id(),
+                true,
+                self.settings,
+            )
+            .await?;
 
         let state_transition = BatchTransition::new_document_creation_transition_from_document(
             document,

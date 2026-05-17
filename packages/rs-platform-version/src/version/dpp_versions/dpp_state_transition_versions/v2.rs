@@ -11,6 +11,7 @@ pub const STATE_TRANSITION_VERSIONS_V2: DPPStateTransitionVersions = DPPStateTra
             validation: DocumentsBatchTransitionValidationVersions {
                 find_duplicates_by_id: 0,
                 validate_base_structure: 0,
+                validate_base_structure_pre_sign: 0,
                 document_create_transition_structure_validation: 0,
                 document_replace_transition_structure_validation: 0,
                 document_transfer_transition_structure_validation: 0,

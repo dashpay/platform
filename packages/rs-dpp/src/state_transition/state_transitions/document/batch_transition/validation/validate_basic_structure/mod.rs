@@ -75,7 +75,7 @@ impl BatchTransition {
             .documents
             .documents_batch_transition
             .validation
-            .validate_base_structure
+            .validate_base_structure_pre_sign
         {
             0 => self.validate_base_structure_pre_sign_v0(platform_version)?,
             version => {

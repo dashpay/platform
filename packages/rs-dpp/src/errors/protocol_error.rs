@@ -44,6 +44,7 @@ use platform_value::{Error as ValueError, Value};
 use platform_version::error::PlatformVersionError;
 
 #[allow(clippy::large_enum_variant)]
+#[non_exhaustive]
 #[derive(Error, Debug)]
 pub enum ProtocolError {
     #[error("Identifier Error: {0}")]
@@ -130,9 +131,6 @@ pub enum ProtocolError {
 
     #[error(transparent)]
     ConsensusError(Box<ConsensusError>),
-
-    #[error("Multiple consensus errors: {}", join_consensus_errors(.0))]
-    ConsensusErrors(Vec<ConsensusError>),
 
     #[error(transparent)]
     Document(Box<DocumentError>),
@@ -309,6 +307,9 @@ pub enum ProtocolError {
         using: u16,
         msg: &'static str,
     },
+
+    #[error("Multiple consensus errors: {}", join_consensus_errors(.0))]
+    ConsensusErrors(Vec<ConsensusError>),
 }
 
 impl From<&str> for ProtocolError {

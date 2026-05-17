@@ -285,9 +285,9 @@ public struct SDKConsensusError: Equatable, Sendable {
 /// private payload markers, so `case .protocolError(let message)` matches
 /// produce the original human-readable message.
 ///
-/// Public Swift wrappers now keep throwing `SDKError` for source compatibility.
-/// This wrapper remains available for callers that explicitly want to bundle an
-/// `SDKError` with structured consensus details into a single `Error` value.
+/// Public Swift wrappers throw `SDKError` for scalar errors and upgrade to this
+/// wrapper when a consumed FFI error still carries structured consensus
+/// details.
 public struct SDKDetailedError: Error, LocalizedError {
   public let sdkError: SDKError
   public let consensusErrors: [SDKConsensusError]
@@ -449,23 +449,21 @@ public enum SDKError: Error {
 
   // Shared finalization path so tests can verify wrapper behavior without
   // depending on FFI-owned pointers.
-  static func finalizeConsumedDashSDKError(
-    _ error: SDKError,
-    consensusErrors: [SDKConsensusError]?
-  ) -> SDKError {
-    _ = consensusErrors
+  static func finalizeConsumedDashSDKError(_ error: SDKError) -> SDKError {
     return error
   }
 
   /// Frees the owned FFI error pointer after mapping it to a Swift error.
   ///
-  /// Always returns the mapped `SDKError`, preserving the public thrown runtime
-  /// type for existing `catch let sdkError as SDKError` handlers. Structured
-  /// consensus details, if needed, must be read from the original pointer with
-  /// `fromDashSDKErrorWithConsensusErrors(_:)` before it is freed.
+  /// Public throwing wrappers intentionally collapse the FFI error to scalar
+  /// `SDKError` for source compatibility. Callers that need structured
+  /// consensus details must inspect the pointer with
+  /// `consensusErrors(fromDashSDKError:)` or
+  /// `fromDashSDKErrorWithConsensusErrors(_:)` before this free runs.
   static func consumeDashSDKError(_ error: UnsafeMutablePointer<DashSDKError>) -> SDKError {
-    let mapped = fromDashSDKError(UnsafePointer(error))
-    let finalized = finalizeConsumedDashSDKError(mapped, consensusErrors: nil)
+    let pointer = UnsafePointer(error)
+    let mapped = fromDashSDKError(pointer)
+    let finalized = finalizeConsumedDashSDKError(mapped)
     dash_sdk_error_free(error)
     return finalized
   }

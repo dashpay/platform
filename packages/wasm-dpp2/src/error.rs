@@ -1,5 +1,6 @@
 use anyhow::Error as AnyhowError;
 use dpp::ProtocolError;
+use dpp::consensus::{ConsensusError, codes::ErrorWithCode};
 use wasm_bindgen::prelude::wasm_bindgen;
 
 /// Structured error returned by wasm-dpp2 APIs.
@@ -27,14 +28,26 @@ pub struct WasmDppError {
     message: String,
     /// Optional numeric error code. `-1` indicates absence.
     code: i32,
+    /// Structured consensus errors when this wraps a protocol consensus error.
+    consensus_errors: Vec<ConsensusError>,
 }
 
 impl WasmDppError {
     fn new(kind: WasmDppErrorKind, message: impl Into<String>, code: Option<i32>) -> Self {
+        Self::new_with_consensus_errors(kind, message, code, Vec::new())
+    }
+
+    fn new_with_consensus_errors(
+        kind: WasmDppErrorKind,
+        message: impl Into<String>,
+        code: Option<i32>,
+        consensus_errors: Vec<ConsensusError>,
+    ) -> Self {
         Self {
             kind,
             message: message.into(),
             code: code.unwrap_or(-1),
+            consensus_errors,
         }
     }
 
@@ -57,11 +70,41 @@ impl WasmDppError {
     pub fn generic(message: impl Into<String>) -> Self {
         Self::new(WasmDppErrorKind::Generic, message, None)
     }
+
+    pub fn consensus_errors(&self) -> &[ConsensusError] {
+        &self.consensus_errors
+    }
 }
 
 impl From<ProtocolError> for WasmDppError {
     fn from(error: ProtocolError) -> Self {
-        Self::protocol(error.to_string())
+        match error {
+            ProtocolError::ConsensusError(consensus_error) => {
+                let consensus_error = *consensus_error;
+                let message = consensus_error.to_string();
+                let code = consensus_error.code() as i32;
+                Self::new_with_consensus_errors(
+                    WasmDppErrorKind::Protocol,
+                    message,
+                    Some(code),
+                    vec![consensus_error],
+                )
+            }
+            ProtocolError::ConsensusErrors(consensus_errors) => {
+                let message = consensus_errors
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join("; ");
+                Self::new_with_consensus_errors(
+                    WasmDppErrorKind::Protocol,
+                    message,
+                    None,
+                    consensus_errors,
+                )
+            }
+            error => Self::protocol(error.to_string()),
+        }
     }
 }
 

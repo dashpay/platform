@@ -268,7 +268,9 @@ impl From<StateTransitionBroadcastError> for WasmSdkError {
 impl From<WasmDppError> for WasmSdkError {
     fn from(err: WasmDppError) -> Self {
         use wasm_dpp2::error::WasmDppErrorKind;
-        // Map WasmDppError kind to appropriate WasmSdkError kind
+        // Map WasmDppError kind to appropriate WasmSdkError kind. If wasm-dpp2
+        // preserved protocol consensus errors, thread them through to the same
+        // structured JS `consensusErrors` surface as direct ProtocolError paths.
         let kind = match err.kind() {
             WasmDppErrorKind::Protocol => WasmSdkErrorKind::Protocol,
             WasmDppErrorKind::InvalidArgument => WasmSdkErrorKind::InvalidArgument,
@@ -276,7 +278,22 @@ impl From<WasmDppError> for WasmSdkError {
             WasmDppErrorKind::Conversion => WasmSdkErrorKind::SerializationError,
             WasmDppErrorKind::Generic => WasmSdkErrorKind::Generic,
         };
-        Self::new(kind, err.to_string(), None, false)
+        let consensus_errors = err
+            .consensus_errors()
+            .iter()
+            .map(WasmConsensusError::from_consensus_error)
+            .collect::<Vec<_>>();
+        if consensus_errors.is_empty() {
+            Self::new(kind, err.to_string(), None, false)
+        } else {
+            Self {
+                kind,
+                message: err.to_string(),
+                code: err.code(),
+                is_retriable: false,
+                consensus_errors,
+            }
+        }
     }
 }
 
@@ -497,6 +514,21 @@ mod tests {
         assert_eq!(error.kind, WasmSdkErrorKind::Protocol);
         assert_eq!(error.is_retriable, retriable);
         assert_eq!(error.consensus_errors.len(), 2);
+        assert!(error.message.contains("; "));
+    }
+
+    #[test]
+    fn wasm_dpp_error_consensus_errors_are_preserved_structurally() {
+        let dpp_error = WasmDppError::from(ProtocolError::ConsensusErrors(vec![
+            ConsensusError::DefaultError,
+            ConsensusError::DefaultError,
+        ]));
+        let error = WasmSdkError::from(dpp_error);
+
+        assert_eq!(error.kind, WasmSdkErrorKind::Protocol);
+        assert_eq!(error.code, -1);
+        assert_eq!(error.consensus_errors.len(), 2);
+        assert_eq!(error.consensus_errors[0].name, "DefaultError");
         assert!(error.message.contains("; "));
     }
 }

@@ -145,12 +145,10 @@ pub fn base58_from_hex32(hex_str: &str) -> String {
 /// Parse a DashSDKResult and extract the string data
 pub unsafe fn parse_string_result(result: DashSDKResult) -> Result<Option<String>, String> {
     if !result.error.is_null() {
-        let error = Box::from_raw(result.error);
-        return Err(format!(
-            "Error code {}: {}",
-            error.code as i32,
-            from_c_string(error.message).unwrap_or_default()
-        ));
+        let code = (*result.error).code as i32;
+        let message = from_c_string((*result.error).message).unwrap_or_default();
+        dash_sdk_error_free(result.error);
+        return Err(format!("Error code {}: {}", code, message));
     }
 
     match result.data_type {

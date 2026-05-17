@@ -35,11 +35,22 @@ use crate::state_transition::state_transitions::document::batch_transition::batc
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::token_burn_transition::validate_structure::TokenBurnTransitionStructureValidation;
 use crate::state_transition::StateTransitionOwned;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TokenStructureErrorMode {
+    /// Server-reachable consensus validation preserves the pre-existing
+    /// short-circuit behavior for token transition-local structure failures.
+    PreserveConsensusEarlyReturn,
+    /// Constructor pre-sign validation accumulates token transition-local
+    /// structure failures with batch-level errors so SDK callers can see every
+    /// locally-detectable issue before signing.
+    AccumulateForPreSign,
+}
+
 impl BatchTransition {
     #[inline(always)]
     fn validate_base_structure_v0_internal(
         &self,
-        accumulate_token_structure_errors: bool,
+        token_structure_error_mode: TokenStructureErrorMode,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         if self.transitions_are_empty() {
@@ -188,10 +199,13 @@ impl BatchTransition {
             };
 
             if !consensus_result.is_valid() {
-                if accumulate_token_structure_errors {
-                    result.merge(consensus_result);
-                } else {
-                    return Ok(consensus_result);
+                match token_structure_error_mode {
+                    TokenStructureErrorMode::AccumulateForPreSign => {
+                        result.merge(consensus_result);
+                    }
+                    TokenStructureErrorMode::PreserveConsensusEarlyReturn => {
+                        return Ok(consensus_result);
+                    }
                 }
             }
 
@@ -236,7 +250,10 @@ impl BatchTransition {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-        self.validate_base_structure_v0_internal(false, platform_version)
+        self.validate_base_structure_v0_internal(
+            TokenStructureErrorMode::PreserveConsensusEarlyReturn,
+            platform_version,
+        )
     }
 
     #[cfg(any(test, feature = "state-transition-signing"))]
@@ -245,7 +262,10 @@ impl BatchTransition {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-        self.validate_base_structure_v0_internal(true, platform_version)
+        self.validate_base_structure_v0_internal(
+            TokenStructureErrorMode::AccumulateForPreSign,
+            platform_version,
+        )
     }
 }
 

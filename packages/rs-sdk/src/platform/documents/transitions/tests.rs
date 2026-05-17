@@ -282,6 +282,53 @@ async fn document_create_builder_sign_normalizes_default_document_id() {
 }
 
 #[tokio::test]
+async fn document_create_builder_generated_id_ignores_unknown_method_feature_version() {
+    let data_contract = test_data_contract(TEST_DOCUMENT_TYPE_NAME);
+    let owner_id = Identifier::random();
+    let mut document = test_document(owner_id);
+    document.set_id(Identifier::default());
+    let sdk = new_mock_sdk_with_contract_nonce(owner_id, data_contract.id(), 0).await;
+
+    let builder = DocumentCreateTransitionBuilder::new(
+        Arc::clone(&data_contract),
+        TEST_DOCUMENT_TYPE_NAME.to_string(),
+        document,
+        [7; 32],
+    )
+    .with_state_transition_creation_options(
+        dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions {
+            method_feature_version: Some(999),
+            ..Default::default()
+        },
+    );
+
+    let result = builder
+        .sign(
+            &sdk,
+            &test_identity_public_key(),
+            &TestSigner,
+            dpp::version::PlatformVersion::latest(),
+        )
+        .await;
+
+    match result {
+        Err(Error::Protocol(ProtocolError::UnknownVersionMismatch {
+            method,
+            known_versions,
+            received,
+        })) => {
+            assert_eq!(method, "DocumentCreateTransition::from_document");
+            assert_eq!(known_versions, vec![0]);
+            assert_eq!(received, 999);
+        }
+        other => panic!(
+            "expected unknown method feature version to be rejected by DocumentCreateTransition::from_document, got {:?}",
+            other
+        ),
+    }
+}
+
+#[tokio::test]
 async fn document_replace_builder_sign_succeeds_for_valid_input() {
     let data_contract = test_data_contract(TEST_DOCUMENT_TYPE_NAME);
     let owner_id = Identifier::random();
