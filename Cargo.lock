@@ -1600,7 +1600,6 @@ dependencies = [
  "base64 0.22.1",
  "bip37-bloom-filter",
  "chrono",
- "ciborium",
  "clap",
  "dapi-grpc",
  "dash-async",

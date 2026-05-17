@@ -2032,16 +2032,31 @@ fn count_request<'a>(
     limit: Option<u32>,
     prove: bool,
 ) -> DocumentCountRequest<'a> {
+    use drive::query::drive_document_count_query::drive_dispatcher::{
+        order_clauses_from_value, where_clauses_from_value,
+    };
+
     let document_type = fixture
         .data_contract
         .document_type_for_name(DOCUMENT_TYPE_NAME)
         .expect("expected widget document type");
 
+    // The bench fixtures express where/order_by as `Value::Array`
+    // shapes (matching the wire-CBOR layout). Parse them into
+    // structured `Vec<WhereClause>` / `Vec<OrderClause>` here so the
+    // bench keeps its compact fixture vocabulary while the
+    // dispatcher consumes the same typed form the v1 ABCI handler
+    // produces.
+    let where_clauses = where_clauses_from_value(&raw_where_value)
+        .expect("bench fixture builds a valid `where` shape");
+    let order_clauses = order_clauses_from_value(&raw_order_by_value)
+        .expect("bench fixture builds a valid `order_by` shape");
+
     DocumentCountRequest {
         contract: &fixture.data_contract,
         document_type,
-        raw_where_value,
-        raw_order_by_value,
+        where_clauses,
+        order_clauses,
         mode,
         limit,
         prove,

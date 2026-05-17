@@ -4,7 +4,7 @@
 //! `DocumentSplitCounts::fetch(sdk, query)` both consume a
 //! [`DocumentQuery`] (the same type used by
 //! `Document::fetch_many`), with the count-specific shape
-//! signalled via `.with_select(Select::Count)` + optional
+//! signalled via `.with_select(SelectProjection::count_star())` + optional
 //! `.with_group_by(…)`. This file exercises the SDK ↔ mock-DAPI
 //! seam:
 //!
@@ -32,7 +32,6 @@
 use std::sync::Arc;
 
 use super::common::{mock_data_contract, mock_document_type};
-use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::Select;
 use dash_sdk::{
     platform::{documents::document_query::DocumentQuery, Fetch},
     Sdk,
@@ -41,6 +40,7 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::platform_value::Value;
 use drive::query::conditions::{WhereClause, WhereOperator};
 use drive::query::ordering::OrderClause;
+use drive::query::SelectProjection;
 use drive_proof_verifier::{DocumentCount, DocumentSplitCounts, SplitCountEntry};
 
 #[tokio::test]
@@ -51,7 +51,7 @@ async fn test_mock_fetch_document_count_returns_expected() {
     let data_contract = mock_data_contract(Some(&document_type));
     let query = DocumentQuery::new(Arc::new(data_contract), document_type.name())
         .expect("build DocumentQuery")
-        .with_select(Select::Count);
+        .with_select(SelectProjection::count_star());
 
     let expected = DocumentCount(7);
 
@@ -77,7 +77,7 @@ async fn test_mock_fetch_document_count_zero() {
     let data_contract = mock_data_contract(Some(&document_type));
     let query = DocumentQuery::new(Arc::new(data_contract), document_type.name())
         .expect("build DocumentQuery")
-        .with_select(Select::Count);
+        .with_select(SelectProjection::count_star());
 
     let expected = DocumentCount(0);
 
@@ -102,7 +102,7 @@ async fn test_mock_fetch_document_count_not_found() {
     let data_contract = mock_data_contract(Some(&document_type));
     let query = DocumentQuery::new(Arc::new(data_contract), document_type.name())
         .expect("build DocumentQuery")
-        .with_select(Select::Count);
+        .with_select(SelectProjection::count_star());
 
     sdk.mock()
         .expect_fetch::<DocumentCount, _>(query.clone(), None as Option<DocumentCount>)
@@ -140,7 +140,7 @@ async fn test_mock_fetch_document_split_counts_with_in_clause() {
                 Value::Text("beta".to_string()),
             ]),
         })
-        .with_select(Select::Count)
+        .with_select(SelectProjection::count_star())
         .with_group_by("a");
 
     let expected = DocumentSplitCounts::from_verified(vec![
@@ -193,7 +193,7 @@ async fn test_mock_fetch_document_split_counts_with_distinct_range() {
             field: "a".to_string(),
             ascending: false,
         })
-        .with_select(Select::Count)
+        .with_select(SelectProjection::count_star())
         .with_group_by("a")
         .with_limit(50);
 
@@ -247,7 +247,7 @@ async fn test_mock_fetch_document_count_with_distinct_range_sums_entries() {
             operator: WhereOperator::GreaterThan,
             value: Value::Text("blue".to_string()),
         })
-        .with_select(Select::Count)
+        .with_select(SelectProjection::count_star())
         .with_group_by("a");
 
     let expected = DocumentCount(20);
@@ -293,7 +293,7 @@ async fn test_mock_fetch_document_split_counts_preserves_none_for_absent_in_valu
                 Value::Text("gamma".to_string()),
             ]),
         })
-        .with_select(Select::Count)
+        .with_select(SelectProjection::count_star())
         .with_group_by("a");
 
     // Mixed-shape fixture: `alpha` has a verified count, `beta` is

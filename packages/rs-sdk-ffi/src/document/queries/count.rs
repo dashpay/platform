@@ -18,10 +18,9 @@ use std::collections::BTreeMap;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
-use dash_sdk::dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::Select;
 use dash_sdk::dpp::platform_value::Value;
 use dash_sdk::dpp::prelude::DataContract;
-use dash_sdk::drive::query::{OrderClause, WhereClause, WhereOperator};
+use dash_sdk::drive::query::{OrderClause, SelectProjection, WhereClause, WhereOperator};
 use dash_sdk::platform::documents::document_query::DocumentQuery;
 use dash_sdk::platform::Fetch;
 use drive_proof_verifier::DocumentSplitCounts;
@@ -381,7 +380,7 @@ pub unsafe extern "C" fn dash_sdk_document_count(
         // combinations (see proto docs).
         let group_by = parse_group_by_json(group_by_json)?;
         let count_query = base_query
-            .with_select(Select::Count)
+            .with_select(SelectProjection::count_star())
             .with_group_by_fields(group_by)
             .with_limit(limit_u32);
 
