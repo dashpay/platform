@@ -130,11 +130,25 @@ fn validate_and_route(
                 )));
             }
             if !group_by.is_empty() {
-                return Err(not_yet_implemented(
-                    "GROUP BY with SELECT DOCUMENTS (use SELECT COUNT with GROUP BY \
-                     for per-group counts, or SELECT DOCUMENTS without GROUP BY for \
-                     matched documents)",
-                ));
+                // GROUP BY with SELECT DOCUMENTS is structurally
+                // nonsensical — GROUP BY produces one row per
+                // distinct key, but SELECT DOCUMENTS returns the
+                // underlying rows; the two contracts can't be
+                // reconciled. Callers wanting per-group output use
+                // SELECT COUNT / SUM / AVG / MIN / MAX. Classify
+                // as `InvalidArgument` rather than
+                // `not_yet_implemented` because this isn't a
+                // future capability — no protocol version will
+                // make this combination meaningful.
+                return Err(QueryError::InvalidArgument(format!(
+                    "GROUP BY with SELECT DOCUMENTS is not a valid SQL shape: \
+                     GROUP BY produces one row per distinct key, but SELECT \
+                     DOCUMENTS returns the underlying rows themselves. Use \
+                     SELECT COUNT / SUM / AVG / MIN / MAX with GROUP BY for \
+                     per-group output, or SELECT DOCUMENTS without GROUP BY \
+                     for plain document fetch. Got group_by={:?}.",
+                    group_by
+                )));
             }
             Ok(RoutingDecision::Documents)
         }

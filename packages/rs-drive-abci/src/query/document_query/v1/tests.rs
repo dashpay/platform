@@ -531,17 +531,38 @@ fn reject_limit_some_zero_uniformly_across_select_modes() {
     }
 }
 
+/// GROUP BY with SELECT DOCUMENTS is structurally nonsensical
+/// (GROUP BY → one row per key; DOCUMENTS → underlying rows),
+/// so the rejection uses `InvalidArgument`, not
+/// `not_yet_implemented`. There's no protocol version where the
+/// combination becomes meaningful — callers want SELECT COUNT /
+/// SUM / etc. for per-group output. Pin the discriminator so a
+/// future refactor that collapses this back into the
+/// not-yet-implemented family fails loudly.
 #[test]
-fn reject_group_by_with_documents() {
+fn reject_group_by_with_documents_as_invalid_argument() {
     let request = GetDocumentsRequestV1 {
         selects: select_documents(),
         group_by: vec!["color".to_string()],
         ..empty_v1_request()
     };
-    assert_not_yet_implemented(
-        validate_and_route_for_tests(&request, &[]),
-        "GROUP BY with SELECT DOCUMENTS",
-    );
+    match validate_and_route_for_tests(&request, &[]) {
+        Err(QueryError::InvalidArgument(msg)) => {
+            assert!(
+                msg.contains("GROUP BY with SELECT DOCUMENTS")
+                    && msg.contains("not a valid SQL shape"),
+                "expected SQL-shape-mismatch message, got: {msg}"
+            );
+        }
+        Err(QueryError::Query(QuerySyntaxError::Unsupported(msg))) => panic!(
+            "expected InvalidArgument for GROUP BY + SELECT DOCUMENTS; got \
+             not_yet_implemented(\"{msg}\"). The two error classes carry different \
+             contracts (malformed input vs. future capability) and must not be \
+             collapsed — GROUP BY + DOCUMENTS is structurally invalid, not \
+             future capability."
+        ),
+        other => panic!("expected InvalidArgument, got {:?}", other),
+    }
 }
 
 #[test]
