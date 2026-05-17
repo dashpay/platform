@@ -1552,6 +1552,32 @@ mod tests {
         );
     }
 
+    /// Covers the `TreeType::ProvableSumTree` arm of
+    /// `LowLevelDriveOperationTreeTypeConverter::empty_tree_operation_for_known_path_key`
+    /// added by the grovedb#661 bump. Drive doesn't currently construct
+    /// `ProvableSumTree` anywhere else, so without this test the new arm is
+    /// uncovered.
+    #[test]
+    fn empty_tree_operation_for_known_path_key_provable_sum_tree() {
+        use grovedb::batch::GroveOp;
+
+        let op = TreeType::ProvableSumTree
+            .empty_tree_operation_for_known_path_key(vec![b"root".to_vec()], b"k".to_vec(), None)
+            .expect("empty_tree_operation_for_known_path_key");
+
+        match op {
+            LowLevelDriveOperation::GroveOperation(grove_op) => match grove_op.op {
+                GroveOp::InsertOrReplace { element } => assert!(
+                    matches!(element, Element::ProvableSumTree(..)),
+                    "expected ProvableSumTree element, got: {:?}",
+                    element
+                ),
+                other => panic!("expected GroveOp::InsertOrReplace, got: {:?}", other),
+            },
+            other => panic!("expected GroveOperation, got: {:?}", other),
+        }
+    }
+
     #[test]
     fn ephemeral_cost_overflow_in_addition_chain() {
         // Use values that individually do not overflow but whose sum does.
