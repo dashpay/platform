@@ -1700,25 +1700,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dash-spv-ffi"
-version = "0.42.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=53130869e5b9343ae59016323e5e5269e717a8fd#53130869e5b9343ae59016323e5e5269e717a8fd"
-dependencies = [
- "cbindgen 0.29.2",
- "clap",
- "dash-network",
- "dash-spv",
- "dashcore",
- "hex",
- "key-wallet",
- "key-wallet-ffi",
- "key-wallet-manager",
- "tokio",
- "tokio-util",
- "tracing",
-]
-
-[[package]]
 name = "dashcore"
 version = "0.42.0"
 source = "git+https://github.com/dashpay/rust-dashcore?rev=53130869e5b9343ae59016323e5e5269e717a8fd#53130869e5b9343ae59016323e5e5269e717a8fd"
@@ -6125,7 +6106,6 @@ name = "rs-unified-sdk-ffi"
 version = "3.1.0-dev.1"
 dependencies = [
  "dash-network",
- "dash-spv-ffi",
  "key-wallet-ffi",
  "platform-wallet-ffi",
  "rs-sdk-ffi",
