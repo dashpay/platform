@@ -20,10 +20,9 @@ impl DocumentPurchaseTransitionStructureValidationV0 for DocumentPurchaseTransit
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         // Mirrors the drive-abci action validator trade-mode check; safe
         // pre-sign because it depends only on the document type definition.
-        // The drive-abci self-purchase check (original_owner_id ==
-        // new_owner_id) is enforced separately by
-        // `new_document_purchase_transition_from_document` because that hook
-        // is where the new owner id (the batch owner / buyer) is known.
+        // The self-purchase check now lives in
+        // `DocumentPurchaseTransition::from_document`, which has both the
+        // seller (`document.owner_id()`) and the buyer (`new_owner_id`).
         if document_type.trade_mode() != TradeMode::DirectPurchase {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 InvalidDocumentTransitionActionError::new(format!(

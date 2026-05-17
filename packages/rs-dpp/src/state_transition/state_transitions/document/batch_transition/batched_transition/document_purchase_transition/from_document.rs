@@ -1,6 +1,9 @@
+use crate::consensus::basic::document::InvalidDocumentTransitionActionError;
+use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::DocumentTypeRef;
-use crate::document::Document;
+use crate::document::{Document, DocumentV0Getters};
 use crate::fee::Credits;
+use crate::prelude::Identifier;
 use crate::prelude::IdentityNonce;
 use crate::ProtocolError;
 use platform_version::version::{FeatureVersion, PlatformVersion};
@@ -15,6 +18,7 @@ impl DocumentPurchaseTransition {
     pub fn from_document(
         document: Document,
         document_type: DocumentTypeRef,
+        new_owner_id: Identifier,
         price: Credits,
         token_payment_info: Option<TokenPaymentInfo>,
         identity_contract_nonce: IdentityNonce,
@@ -22,6 +26,15 @@ impl DocumentPurchaseTransition {
         feature_version: Option<FeatureVersion>,
         base_feature_version: Option<FeatureVersion>,
     ) -> Result<Self, ProtocolError> {
+        if document.owner_id() == new_owner_id {
+            return Err(ProtocolError::ConsensusError(Box::new(
+                InvalidDocumentTransitionActionError::new(format!(
+                    "on document type: {} identity trying to purchase a document that is already owned by the purchaser",
+                    document_type.name()
+                ))
+                .into(),
+            )));
+        }
         match feature_version.unwrap_or(
             platform_version
                 .dpp
@@ -35,6 +48,7 @@ impl DocumentPurchaseTransition {
                     DocumentPurchaseTransitionV0::from_document(
                         document,
                         document_type,
+                        new_owner_id,
                         price,
                         token_payment_info,
                         identity_contract_nonce,

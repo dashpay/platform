@@ -1,11 +1,14 @@
 use crate::platform::transition::broadcast::BroadcastStateTransition;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::{Error, Sdk};
+use dpp::consensus::basic::document::InvalidDocumentTransitionIdError;
+use dpp::consensus::ConsensusError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
+use dpp::prelude::Identifier;
 use dpp::prelude::UserFeeIncrease;
 use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
@@ -120,6 +123,31 @@ impl DocumentCreateTransitionBuilder {
         self
     }
 
+    fn generated_document_id(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Identifier, Error> {
+        match platform_version
+            .dpp
+            .document_versions
+            .document_structure_version
+        {
+            0 => Ok(Document::generate_document_id_v0(
+                self.data_contract.id_ref(),
+                &self.document.owner_id(),
+                &self.document_type_name,
+                self.document_state_transition_entropy.as_slice(),
+            )),
+            version => Err(Error::Protocol(
+                dpp::ProtocolError::UnknownVersionMismatch {
+                    method: "DocumentCreateTransitionBuilder::generated_document_id".to_string(),
+                    known_versions: vec![0],
+                    received: version,
+                },
+            )),
+        }
+    }
+
     /// Signs the document create transition
     ///
     /// # Arguments
@@ -153,18 +181,20 @@ impl DocumentCreateTransitionBuilder {
             .document_type_for_name(&self.document_type_name)
             .map_err(|e| Error::Protocol(e.into()))?;
 
+        let generated_id = self.generated_document_id(platform_version)?;
         let mut document = self.document.clone();
-        // The public create builder always normalizes the document id here before
-        // calling the DPP constructor, so the constructor's create-id pre-sign
-        // validation is defense-in-depth for this SDK path rather than a
-        // user-reachable builder failure. Non-create transition-local checks are
-        // still exercised in the corresponding DPP `from_document` constructors.
-        document.set_id(Document::generate_document_id_v0(
-            self.data_contract.id_ref(),
-            &document.owner_id(),
-            &self.document_type_name,
-            self.document_state_transition_entropy.as_slice(),
-        ));
+        let current_id = document.id();
+
+        if current_id == Identifier::default() {
+            document.set_id(generated_id);
+        } else if current_id != generated_id {
+            return Err(Error::Protocol(dpp::ProtocolError::ConsensusError(
+                Box::new(ConsensusError::from(InvalidDocumentTransitionIdError::new(
+                    generated_id,
+                    current_id,
+                ))),
+            )));
+        }
 
         let state_transition = BatchTransition::new_document_creation_transition_from_document(
             document,

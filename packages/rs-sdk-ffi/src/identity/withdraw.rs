@@ -286,10 +286,7 @@ mod tests {
 
         // Clean up
         unsafe {
-            if !error.message.is_null() {
-                let _ = CString::from_raw(error.message as *mut _);
-            }
-            let _ = Box::from_raw(result.error);
+            crate::error::dash_sdk_error_free(result.error);
             let _ = Box::from_raw(signer_ptr as *mut crate::signer::VTableSigner);
             let _ = CString::from_raw(address as *mut _);
             destroy_mock_sdk_handle(sdk_handle);
@@ -325,10 +322,7 @@ mod tests {
 
         // Clean up
         unsafe {
-            if !error.message.is_null() {
-                let _ = CString::from_raw(error.message as *mut _);
-            }
-            let _ = Box::from_raw(result.error);
+            crate::error::dash_sdk_error_free(result.error);
             let _ = Box::from_raw(signer_ptr as *mut crate::signer::VTableSigner);
             let _ = CString::from_raw(address as *mut _);
         }

@@ -2,7 +2,7 @@ use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::errors::DocumentError;
 use crate::document::{Document, DocumentV0Getters};
 use crate::fee::Credits;
-use crate::prelude::IdentityNonce;
+use crate::prelude::{Identifier, IdentityNonce};
 use crate::state_transition::batch_transition::batched_transition::document_purchase_transition::DocumentPurchaseTransitionV0;
 use crate::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
 use crate::tokens::token_payment_info::TokenPaymentInfo;
@@ -13,6 +13,7 @@ impl DocumentPurchaseTransitionV0 {
     pub(crate) fn from_document(
         document: Document,
         document_type: DocumentTypeRef,
+        _new_owner_id: Identifier,
         price: Credits,
         token_payment_info: Option<TokenPaymentInfo>,
         identity_contract_nonce: IdentityNonce,

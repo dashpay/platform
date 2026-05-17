@@ -51,6 +51,27 @@ fn assert_invalid_document_transition_action(
     }
 }
 
+#[track_caller]
+fn assert_invalid_document_transition_id(
+    result: Result<StateTransition, Error>,
+    expected_id: Identifier,
+    invalid_id: Identifier,
+) {
+    match result {
+        Err(Error::Protocol(ProtocolError::ConsensusError(boxed))) => match *boxed {
+            ConsensusError::BasicError(BasicError::InvalidDocumentTransitionIdError(ref err)) => {
+                assert_eq!(err.expected_id(), expected_id);
+                assert_eq!(err.invalid_id(), invalid_id);
+            }
+            other => panic!("expected InvalidDocumentTransitionIdError, got {:?}", other),
+        },
+        other => panic!(
+            "expected ProtocolError::ConsensusError(InvalidDocumentTransitionIdError), got {:?}",
+            other
+        ),
+    }
+}
+
 fn test_document(owner_id: Identifier) -> Document {
     Document::V0(DocumentV0 {
         id: Identifier::random(),
@@ -144,7 +165,8 @@ async fn document_delete_builder_sign_succeeds_for_valid_input() {
 async fn document_create_builder_sign_succeeds_for_valid_input() {
     let data_contract = test_data_contract(TEST_DOCUMENT_TYPE_NAME);
     let owner_id = Identifier::random();
-    let document = test_document(owner_id);
+    let mut document = test_document(owner_id);
+    document.set_id(Identifier::default());
     let sdk = new_mock_sdk_with_contract_nonce(owner_id, data_contract.id(), 0).await;
 
     let builder = DocumentCreateTransitionBuilder::new(
@@ -176,7 +198,7 @@ async fn document_create_builder_sign_succeeds_for_valid_input() {
 }
 
 #[tokio::test]
-async fn document_create_builder_sign_replaces_incorrect_document_id() {
+async fn document_create_builder_sign_rejects_incorrect_document_id() {
     let data_contract = test_data_contract(TEST_DOCUMENT_TYPE_NAME);
     let owner_id = Identifier::random();
     let mut document = test_document(owner_id);
@@ -189,8 +211,44 @@ async fn document_create_builder_sign_replaces_incorrect_document_id() {
     );
 
     document.set_id(Identifier::random());
-    assert_ne!(document.id(), expected_id);
+    let invalid_id = document.id();
+    assert_ne!(invalid_id, expected_id);
 
+    let sdk = new_mock_sdk_with_contract_nonce(owner_id, data_contract.id(), 0).await;
+
+    let builder = DocumentCreateTransitionBuilder::new(
+        Arc::clone(&data_contract),
+        TEST_DOCUMENT_TYPE_NAME.to_string(),
+        document,
+        entropy,
+    );
+
+    let result = builder
+        .sign(
+            &sdk,
+            &test_identity_public_key(),
+            &TestSigner,
+            dpp::version::PlatformVersion::latest(),
+        )
+        .await;
+
+    assert_invalid_document_transition_id(result, expected_id, invalid_id);
+}
+
+#[tokio::test]
+async fn document_create_builder_sign_normalizes_default_document_id() {
+    let data_contract = test_data_contract(TEST_DOCUMENT_TYPE_NAME);
+    let owner_id = Identifier::random();
+    let mut document = test_document(owner_id);
+    let entropy = [7; 32];
+    let expected_id = Document::generate_document_id_v0(
+        data_contract.id_ref(),
+        &owner_id,
+        TEST_DOCUMENT_TYPE_NAME,
+        entropy.as_slice(),
+    );
+
+    document.set_id(Identifier::default());
     let sdk = new_mock_sdk_with_contract_nonce(owner_id, data_contract.id(), 0).await;
 
     let builder = DocumentCreateTransitionBuilder::new(
@@ -211,7 +269,7 @@ async fn document_create_builder_sign_replaces_incorrect_document_id() {
 
     assert!(
         result.is_ok(),
-        "builder should normalize document id before signing; got error: {:?}",
+        "builder should normalize default document id before signing; got error: {:?}",
         result.err()
     );
 

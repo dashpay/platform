@@ -41,6 +41,21 @@
 //!   entry (e.g. local validation errors built without a `From<FFIError>`
 //!   conversion) are outside this contract and may be boxed directly; they
 //!   simply have no structured details to expose.
+//!
+//! # Compatibility notes
+//!
+//! [`DashSDKError::message`] is always owned by the `DashSDKError` allocation
+//! itself. Ownership is released only when [`dash_sdk_error_free`] reclaims the
+//! outer error (or when an unboxed value is dropped in Rust). External callers
+//! and in-crate tests must treat `message` as borrowed memory and must not
+//! reclaim it manually with `CString::from_raw`.
+//!
+//! For in-crate construction, any `DashSDKError` produced by
+//! `From<FFIError>` while a consensus sidecar is still pending must not be
+//! `mem::forget`-ed or otherwise have `Drop` bypassed before boxing, because
+//! doing so would leak both the owned message and the pending sidecar entry.
+//! All sidecar-capable return paths should route through [`box_dashsdk_error`]
+//! (directly or via [`DashSDKResult::error`] / [`ffi_result!`]).
 
 use dash_sdk::dapi_client::DapiClientError;
 use dash_sdk::dpp::consensus::{codes::ErrorWithCode, ConsensusError};
@@ -99,6 +114,12 @@ pub enum DashSDKErrorCode {
 /// error, use [`dash_sdk_error_consensus_error_count`] and
 /// [`dash_sdk_error_consensus_error_at`] before calling
 /// [`dash_sdk_error_free`].
+///
+/// # Compatibility notes
+///
+/// `message` is Drop-owned / [`dash_sdk_error_free`]-owned memory. Consumers,
+/// including in-crate tests, may read it through [`std::ffi::CStr`] while the
+/// error is live, but must not take ownership with `CString::from_raw`.
 #[repr(C)]
 pub struct DashSDKError {
     /// Error code
@@ -237,14 +258,14 @@ fn with_active_consensus_errors<R>(
     if error_ptr.is_null() {
         return None;
     }
-    // Snapshot the current message pointer for identity verification *before*
-    // taking the lock to keep the unsafe deref scope small. This dereference
-    // is sound under the documented contract (caller passes a live pointer
-    // returned by the SDK that has not yet been freed); a stale dangling
-    // pointer is UB at this point and unavoidable.
-    let current_message = unsafe { (*error_ptr).message } as usize;
     let guard = lock_recover(&ACTIVE_CONSENSUS_ERRORS);
     let entry = guard.get(&(error_ptr as usize))?;
+    // Only dereference the FFI pointer after an active sidecar entry exists
+    // for that exact heap `DashSDKError` pointer. A miss is treated as "no
+    // details" and must not read from the caller-provided pointer at all.
+    // Once an entry exists, re-check the current `message` field against the
+    // value captured at boxing time to reject recycled heap allocations.
+    let current_message = unsafe { (*error_ptr).message } as usize;
     if entry.message_ptr != current_message {
         // Pointer key matched but the message field doesn't match the value
         // we recorded at boxing time — almost certainly a recycled heap
@@ -316,6 +337,10 @@ impl DashSDKError {
 /// so successful boxing → free paths still drop exactly once. The active
 /// sidecar (keyed on the heap pointer) is removed by `dash_sdk_error_free`
 /// before the Drop runs.
+///
+/// Compatibility note: `Drop` owns `message`. External callers and tests must
+/// not reclaim `message` separately with `CString::from_raw`; free the outer
+/// error through [`dash_sdk_error_free`] instead.
 impl Drop for DashSDKError {
     fn drop(&mut self) {
         if !self.message.is_null() {
@@ -396,6 +421,14 @@ fn classify_sdk_error(sdk_err: &dash_sdk::Error) -> (DashSDKErrorCode, String) {
         dash_sdk::Error::DapiClientError(_) => (
             DashSDKErrorCode::NetworkError,
             format!("DAPI error: {}", sdk_err),
+        ),
+        dash_sdk::Error::ContextProviderError(_) => (
+            DashSDKErrorCode::NetworkError,
+            format!("Context provider error: {}", sdk_err),
+        ),
+        dash_sdk::Error::CoreClientError(_) => (
+            DashSDKErrorCode::NetworkError,
+            format!("Core client error: {}", sdk_err),
         ),
         dash_sdk::Error::MissingDependency(_, _)
         | dash_sdk::Error::TotalCreditsNotFound
@@ -943,6 +976,19 @@ mod tests {
             message.contains("No DAPI addresses configured"),
             "expected operator hint, got: {message}"
         );
+        unsafe { dash_sdk_error_free(ffi_error) };
+    }
+
+    #[test]
+    fn context_provider_error_maps_to_network_with_clear_prefix() {
+        let sdk_error = dash_sdk::Error::ContextProviderError(
+            dash_sdk::error::ContextProviderError::Generic("quorum lookup failed".to_string()),
+        );
+        let ffi_error = boxed(DashSDKError::from(FFIError::SDKError(sdk_error)));
+        assert_eq!(unsafe { (*ffi_error).code }, DashSDKErrorCode::NetworkError);
+        let message = error_message_ptr(ffi_error);
+        assert!(message.starts_with("Context provider error:"));
+        assert!(message.contains("quorum lookup failed"));
         unsafe { dash_sdk_error_free(ffi_error) };
     }
 

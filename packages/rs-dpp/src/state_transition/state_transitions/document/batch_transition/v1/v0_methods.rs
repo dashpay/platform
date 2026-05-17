@@ -328,25 +328,11 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV1 {
         platform_version: &PlatformVersion,
         options: Option<StateTransitionCreationOptions>,
     ) -> Result<StateTransition, ProtocolError> {
-        // Mirrors the drive-abci action validator self-purchase check.
-        // The document's owner is the seller; `new_owner_id` is the buyer.
-        // Surfacing this here means the SDK builder fails before signing
-        // when the same identity tries to buy from itself.
-        if document.owner_id() == new_owner_id {
-            return Err(ProtocolError::ConsensusError(Box::new(
-                crate::consensus::basic::document::InvalidDocumentTransitionActionError::new(
-                    format!(
-                        "on document type: {} identity trying to purchase a document that is already owned by the purchaser",
-                        document_type.name()
-                    ),
-                )
-                .into(),
-            )));
-        }
         let resolved_options = options.unwrap_or_default();
         let purchase_transition = DocumentPurchaseTransition::from_document(
             document,
             document_type,
+            new_owner_id,
             price,
             token_payment_info,
             identity_contract_nonce,

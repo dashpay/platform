@@ -1,5 +1,4 @@
 use dpp::DashPlatformProtocolInitError;
-use js_sys::Array;
 use wasm_bindgen::JsValue;
 
 use dpp::errors::ProtocolError;
@@ -11,14 +10,13 @@ use crate::errors::value_error::PlatformValueErrorWasm;
 
 use super::data_contract_not_present_error::DataContractNotPresentNotConsensusErrorWasm;
 use crate::errors::consensus::consensus_error::from_consensus_error;
+use crate::errors::protocol_error::from_consensus_errors;
 
 pub fn from_dpp_err(pe: ProtocolError) -> JsValue {
     match pe {
         // TODO(versioning): restore this
         ProtocolError::ConsensusError(consensus_error) => from_consensus_error(*consensus_error),
-        ProtocolError::ConsensusErrors(consensus_errors) => {
-            Array::from_iter(consensus_errors.into_iter().map(from_consensus_error)).into()
-        }
+        ProtocolError::ConsensusErrors(consensus_errors) => from_consensus_errors(consensus_errors),
         ProtocolError::DataContractError(e) => from_data_contract_to_js_error(e),
 
         ProtocolError::Document(e) => from_document_to_js_error(*e),

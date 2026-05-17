@@ -289,7 +289,7 @@ mod tests {
     use crate::test_utils::test_utils::{
         create_c_string, create_mock_sdk_handle, create_mock_signer, destroy_mock_sdk_handle,
     };
-    use std::ffi::CString;
+    use std::ffi::{CStr, CString};
 
     /// Verify that passing a null identity handle returns an error instead of crashing.
     ///
@@ -326,20 +326,18 @@ mod tests {
         let error = unsafe { &*result.error };
         assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
 
-        // Clean up error message
-        if !error.message.is_null() {
-            let msg = unsafe { CString::from_raw(error.message as *mut _) };
-            let msg_str = msg.to_str().expect("valid utf-8");
-            assert!(
-                msg_str.contains("null"),
-                "Error message should mention null, got: {}",
-                msg_str
-            );
-        }
+        let msg_str = unsafe { CStr::from_ptr(error.message) }
+            .to_str()
+            .expect("valid utf-8");
+        assert!(
+            msg_str.contains("null"),
+            "Error message should mention null, got: {}",
+            msg_str
+        );
 
         // Clean up
         unsafe {
-            let _ = Box::from_raw(result.error);
+            crate::error::dash_sdk_error_free(result.error);
             let _ = Box::from_raw(signer_ptr as *mut crate::signer::VTableSigner);
             let _ = CString::from_raw(to_id as *mut _);
             destroy_mock_sdk_handle(sdk_handle);
@@ -374,10 +372,7 @@ mod tests {
 
         // Clean up
         unsafe {
-            if !error.message.is_null() {
-                let _ = CString::from_raw(error.message as *mut _);
-            }
-            let _ = Box::from_raw(result.error);
+            crate::error::dash_sdk_error_free(result.error);
             let _ = Box::from_raw(signer_ptr as *mut crate::signer::VTableSigner);
             let _ = CString::from_raw(to_id as *mut _);
         }
@@ -410,10 +405,7 @@ mod tests {
 
         // Clean up
         unsafe {
-            if !error.message.is_null() {
-                let _ = CString::from_raw(error.message as *mut _);
-            }
-            let _ = Box::from_raw(result.error);
+            crate::error::dash_sdk_error_free(result.error);
             let _ = CString::from_raw(to_id as *mut _);
             destroy_mock_sdk_handle(sdk_handle);
         }
@@ -447,10 +439,7 @@ mod tests {
 
         // Clean up
         unsafe {
-            if !error.message.is_null() {
-                let _ = CString::from_raw(error.message as *mut _);
-            }
-            let _ = Box::from_raw(result.error);
+            crate::error::dash_sdk_error_free(result.error);
             let _ = Box::from_raw(signer_ptr as *mut crate::signer::VTableSigner);
             destroy_mock_sdk_handle(sdk_handle);
         }
