@@ -298,11 +298,17 @@ pub(super) fn verify_count_query(
             } else {
                 Some(limit_to_u16_or_default(request.limit)?)
             };
+            let left_to_right = request
+                .order_by_clauses
+                .first()
+                .map(|c| c.ascending)
+                .unwrap_or(true);
             let entries = verify_carrier_aggregate_count_proof(
                 &count_query,
                 proof,
                 mtd,
                 limit_u16,
+                left_to_right,
                 platform_version,
                 provider,
             )?;

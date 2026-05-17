@@ -9,7 +9,9 @@ use dpp::version::PlatformVersion;
 impl DriveDocumentCountQuery<'_> {
     /// Verifies a **carrier** `AggregateCountOnRange` proof and
     /// returns `(root_hash, per_key_counts)` — one `(in_key, u64)`
-    /// pair per resolved In branch in serialized lex-asc order.
+    /// pair per resolved In branch. Order depends on
+    /// `left_to_right`: `true` returns serialized lex-ascending,
+    /// `false` returns serialized lex-descending.
     ///
     /// Counterpart to the prover-side
     /// [`execute_carrier_aggregate_count_with_proof`](Self::execute_carrier_aggregate_count_with_proof):
@@ -24,6 +26,17 @@ impl DriveDocumentCountQuery<'_> {
     ///
     /// # Arguments
     /// * `proof` — raw grovedb proof bytes.
+    /// * `limit` — per-branch carrier walk cap; must match the
+    ///   prover's `SizedQuery::limit`.
+    /// * `left_to_right` — proof-shaping bit. Must match the value
+    ///   the prover passed to
+    ///   [`Self::execute_carrier_aggregate_count_with_proof`]
+    ///   (typically derived from the request's first
+    ///   `order_by_clauses` entry's `ascending`). The verifier
+    ///   constructs the outer `Query` via
+    ///   `Query::new_with_direction(left_to_right)`; a mismatch
+    ///   produces different `PathQuery` bytes and the tenderdash
+    ///   root check fails.
     /// * `platform_version` — selects the method version.
     ///
     /// The `Vec<(Vec<u8>, u64)>` payload mirrors grovedb's per-key

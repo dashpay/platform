@@ -447,6 +447,21 @@ impl DriveDocumentCountQuery<'_> {
     /// Verified client-side via
     /// [`grovedb::GroveDb::verify_aggregate_count_query_per_key`],
     /// which returns `(RootHash, Vec<(Vec<u8>, u64)>)`.
+    ///
+    /// # Arguments
+    /// * `left_to_right` — proof-shaping bit. Threaded into the
+    ///   outer `Query` via `Query::new_with_direction(left_to_right)`
+    ///   on the inner carrier path query (see
+    ///   [`Self::carrier_aggregate_count_path_query`]). `true` walks
+    ///   the outer range ascending and emits the per-branch `u64`s
+    ///   in lex-ascending key order; `false` walks descending and
+    ///   emits them in lex-descending order. The serialized
+    ///   `PathQuery` bytes differ between the two — the verifier
+    ///   rebuilds the path query from `(query, limit, left_to_right)`
+    ///   on its side, so the value passed here must match what the
+    ///   caller will pass to
+    ///   [`Self::verify_carrier_aggregate_count_proof`] or the
+    ///   tenderdash root check fails.
     pub fn execute_carrier_aggregate_count_with_proof(
         &self,
         drive: &Drive,

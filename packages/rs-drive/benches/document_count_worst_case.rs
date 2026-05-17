@@ -910,9 +910,20 @@ fn report_group_by_matrix(fixture: &CountBenchFixture, platform_version: &Platfo
         label: &'static str,
         platform_allowed: &'static str,
         raw_where: Value,
+        /// Order-by shape; `Value::Null` for the default-ascending
+        /// path. Threaded through so order-sensitive carrier cases
+        /// (G8a's descending walk) actually exercise
+        /// `left_to_right = false` instead of silently defaulting
+        /// to ascending.
+        raw_order_by: Value,
         mode: CountMode,
         limit: Option<u32>,
     }
+
+    let order_by_brand_desc = Value::Array(vec![Value::Array(vec![
+        Value::Text("brand".to_string()),
+        Value::Text("desc".to_string()),
+    ])]);
 
     let cases: Vec<MatrixCase> = vec![
         // ── group_by = [] (Aggregate) ──────────────────────────────
@@ -920,6 +931,7 @@ fn report_group_by_matrix(fixture: &CountBenchFixture, platform_version: &Platfo
             label: "[] / where=(empty)",
             platform_allowed: "yes (documentsCountable fast path)",
             raw_where: where_empty(),
+            raw_order_by: Value::Null,
             mode: CountMode::Aggregate,
             limit: None,
         },
@@ -927,6 +939,7 @@ fn report_group_by_matrix(fixture: &CountBenchFixture, platform_version: &Platfo
             label: "[] / where=brand==X",
             platform_allowed: "yes",
             raw_where: where_brand_eq(),
+            raw_order_by: Value::Null,
             mode: CountMode::Aggregate,
             limit: None,
         },
@@ -934,6 +947,7 @@ fn report_group_by_matrix(fixture: &CountBenchFixture, platform_version: &Platfo
             label: "[] / where=color==X",
             platform_allowed: "yes",
             raw_where: where_color_eq(),
+            raw_order_by: Value::Null,
             mode: CountMode::Aggregate,
             limit: None,
         },
@@ -941,6 +955,7 @@ fn report_group_by_matrix(fixture: &CountBenchFixture, platform_version: &Platfo
             label: "[] / where=brand==X AND color==Y",
             platform_allowed: "yes",
             raw_where: where_brand_eq_color_eq(),
+            raw_order_by: Value::Null,
             mode: CountMode::Aggregate,
             limit: None,
         },
@@ -948,6 +963,7 @@ fn report_group_by_matrix(fixture: &CountBenchFixture, platform_version: &Platfo
             label: "[] / where=brand IN[2]",
             platform_allowed: "yes (per-In aggregate fan-out)",
             raw_where: where_brand_in(),
+            raw_order_by: Value::Null,
             mode: CountMode::Aggregate,
             limit: None,
         },
@@ -955,6 +971,7 @@ fn report_group_by_matrix(fixture: &CountBenchFixture, platform_version: &Platfo
             label: "[] / where=color IN[2]",
             platform_allowed: "yes (per-In aggregate fan-out)",
             raw_where: where_color_in(),
+            raw_order_by: Value::Null,
             mode: CountMode::Aggregate,
             limit: None,
         },
@@ -962,6 +979,7 @@ fn report_group_by_matrix(fixture: &CountBenchFixture, platform_version: &Platfo
             label: "[] / where=color > floor",
             platform_allowed: "yes (AggregateCountOnRange)",
             raw_where: where_color_gt(),
+            raw_order_by: Value::Null,
             mode: CountMode::Aggregate,
             limit: None,
         },
@@ -969,6 +987,7 @@ fn report_group_by_matrix(fixture: &CountBenchFixture, platform_version: &Platfo
             label: "[] / where=brand==X AND color > floor",
             platform_allowed: "yes (AggregateCountOnRange on byBrandColor terminator)",
             raw_where: where_brand_eq_color_gt(),
+            raw_order_by: Value::Null,
             mode: CountMode::Aggregate,
             limit: None,
         },
@@ -976,6 +995,7 @@ fn report_group_by_matrix(fixture: &CountBenchFixture, platform_version: &Platfo
             label: "[] / where=brand IN[2] AND color > floor",
             platform_allowed: "no-proof: yes / prove: no (aggregate proof can't fork)",
             raw_where: where_brand_in_color_gt(),
+            raw_order_by: Value::Null,
             mode: CountMode::Aggregate,
             limit: None,
         },
@@ -991,6 +1011,7 @@ fn report_group_by_matrix(fixture: &CountBenchFixture, platform_version: &Platfo
             platform_allowed:
                 "no — two-range carrier requires `GroupByRange + group_by = [outer_range_field]`",
             raw_where: where_brand_gt_color_gt(),
+            raw_order_by: Value::Null,
             mode: CountMode::Aggregate,
             limit: None,
         },
@@ -999,6 +1020,7 @@ fn report_group_by_matrix(fixture: &CountBenchFixture, platform_version: &Platfo
             label: "[color] / where=color IN[2]",
             platform_allowed: "yes (GroupByIn)",
             raw_where: where_color_in(),
+            raw_order_by: Value::Null,
             mode: CountMode::GroupByIn,
             limit: None,
         },
@@ -1006,6 +1028,7 @@ fn report_group_by_matrix(fixture: &CountBenchFixture, platform_version: &Platfo
             label: "[color] / where=color > floor",
             platform_allowed: "yes (GroupByRange — distinct-range walk)",
             raw_where: where_color_gt(),
+            raw_order_by: Value::Null,
             mode: CountMode::GroupByRange,
             limit: None,
         },
@@ -1013,6 +1036,7 @@ fn report_group_by_matrix(fixture: &CountBenchFixture, platform_version: &Platfo
             label: "[color] / where=color==X",
             platform_allowed: "no — `color` is constrained by `==`, not `In` or range",
             raw_where: where_color_eq(),
+            raw_order_by: Value::Null,
             mode: CountMode::GroupByIn,
             limit: None,
         },
@@ -1020,6 +1044,7 @@ fn report_group_by_matrix(fixture: &CountBenchFixture, platform_version: &Platfo
             label: "[color] / where=brand IN[2] AND color > floor",
             platform_allowed: "no — single-field GROUP BY with both `In` and range",
             raw_where: where_brand_in_color_gt(),
+            raw_order_by: Value::Null,
             mode: CountMode::GroupByRange,
             limit: None,
         },
@@ -1028,6 +1053,7 @@ fn report_group_by_matrix(fixture: &CountBenchFixture, platform_version: &Platfo
             label: "[brand] / where=brand IN[2]",
             platform_allowed: "yes (GroupByIn — non-rangeCountable byBrand)",
             raw_where: where_brand_in(),
+            raw_order_by: Value::Null,
             mode: CountMode::GroupByIn,
             limit: None,
         },
@@ -1035,6 +1061,7 @@ fn report_group_by_matrix(fixture: &CountBenchFixture, platform_version: &Platfo
             label: "[brand] / where=brand IN[2] AND color==Y",
             platform_allowed: "yes (GroupByIn — compound covers byBrandColor)",
             raw_where: where_brand_in_color_eq(),
+            raw_order_by: Value::Null,
             mode: CountMode::GroupByIn,
             limit: None,
         },
@@ -1042,6 +1069,7 @@ fn report_group_by_matrix(fixture: &CountBenchFixture, platform_version: &Platfo
             label: "[brand] / where=brand IN[2] AND color > floor",
             platform_allowed: "yes (RangeAggregateCarrierProof — carrier ACOR per In branch)",
             raw_where: where_brand_in_color_gt(),
+            raw_order_by: Value::Null,
             mode: CountMode::GroupByIn,
             limit: None,
         },
@@ -1050,6 +1078,7 @@ fn report_group_by_matrix(fixture: &CountBenchFixture, platform_version: &Platfo
             platform_allowed:
                 "yes (RangeAggregateCarrierProof — carrier ACOR; platform-max outer limit = 10)",
             raw_where: where_brand_gt_color_gt(),
+            raw_order_by: Value::Null,
             mode: CountMode::GroupByRange,
             limit: None,
         },
@@ -1072,6 +1101,7 @@ fn report_group_by_matrix(fixture: &CountBenchFixture, platform_version: &Platfo
                 clause("color", ">", Value::Text(color_label(200))),
                 clause("color", "<", Value::Text(color_label(400))),
             ]),
+            raw_order_by: order_by_brand_desc.clone(),
             mode: CountMode::GroupByRange,
             limit: None,
         },
@@ -1079,6 +1109,7 @@ fn report_group_by_matrix(fixture: &CountBenchFixture, platform_version: &Platfo
             label: "[brand] / where=brand==X",
             platform_allowed: "no — `brand` is `==`, not `In` or range",
             raw_where: where_brand_eq(),
+            raw_order_by: Value::Null,
             mode: CountMode::GroupByIn,
             limit: None,
         },
@@ -1087,6 +1118,7 @@ fn report_group_by_matrix(fixture: &CountBenchFixture, platform_version: &Platfo
             label: "[brand, color] / where=brand IN[2] AND color > floor",
             platform_allowed: "yes (GroupByCompound — `(In, range)` shape)",
             raw_where: where_brand_in_color_gt(),
+            raw_order_by: Value::Null,
             mode: CountMode::GroupByCompound,
             limit: Some(100),
         },
@@ -1094,6 +1126,7 @@ fn report_group_by_matrix(fixture: &CountBenchFixture, platform_version: &Platfo
             label: "[brand, color] / where=brand IN[2] AND color==Y",
             platform_allowed: "no — `color` must be range, not `==`",
             raw_where: where_brand_in_color_eq(),
+            raw_order_by: Value::Null,
             mode: CountMode::GroupByCompound,
             limit: Some(100),
         },
@@ -1111,6 +1144,7 @@ fn report_group_by_matrix(fixture: &CountBenchFixture, platform_version: &Platfo
             platform_allowed:
                 "no — two-range carrier requires `GroupByRange + group_by = [outer_range_field]`",
             raw_where: where_brand_gt_color_gt(),
+            raw_order_by: Value::Null,
             mode: CountMode::GroupByCompound,
             limit: None,
         },
@@ -1125,6 +1159,7 @@ fn report_group_by_matrix(fixture: &CountBenchFixture, platform_version: &Platfo
                 clause("color", "in", Value::Array(colors_2.clone())),
                 clause("brand", ">", Value::Text(mid_brand.clone())),
             ]),
+            raw_order_by: Value::Null,
             mode: CountMode::GroupByCompound,
             limit: Some(100),
         },
@@ -1134,6 +1169,7 @@ fn report_group_by_matrix(fixture: &CountBenchFixture, platform_version: &Platfo
         let noproof_result = drive_count_outcome(
             fixture,
             case.raw_where.clone(),
+            case.raw_order_by.clone(),
             case.mode,
             case.limit,
             false,
@@ -1142,6 +1178,7 @@ fn report_group_by_matrix(fixture: &CountBenchFixture, platform_version: &Platfo
         let prove_result = drive_count_outcome(
             fixture,
             case.raw_where.clone(),
+            case.raw_order_by.clone(),
             case.mode,
             case.limit,
             true,
@@ -2160,12 +2197,13 @@ fn hex_bytes(bytes: &[u8]) -> String {
 fn drive_count_outcome(
     fixture: &CountBenchFixture,
     raw_where: Value,
+    raw_order_by: Value,
     mode: CountMode,
     limit: Option<u32>,
     prove: bool,
     platform_version: &PlatformVersion,
 ) -> String {
-    let request = count_request(fixture, raw_where, Value::Null, mode, limit, prove);
+    let request = count_request(fixture, raw_where, raw_order_by, mode, limit, prove);
     match fixture
         .drive
         .execute_document_count_request(request, None, platform_version)
