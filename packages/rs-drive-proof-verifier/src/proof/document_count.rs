@@ -267,11 +267,17 @@ pub fn verify_carrier_aggregate_count_proof(
     proof: &Proof,
     mtd: &ResponseMetadata,
     limit: Option<u16>,
+    left_to_right: bool,
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
 ) -> Result<Vec<SplitCountEntry>, Error> {
     let (root_hash, per_key_counts) = query
-        .verify_carrier_aggregate_count_proof(&proof.grovedb_proof, limit, platform_version)
+        .verify_carrier_aggregate_count_proof(
+            &proof.grovedb_proof,
+            limit,
+            left_to_right,
+            platform_version,
+        )
         .map_drive_error(proof, mtd)?;
 
     verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;

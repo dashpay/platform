@@ -194,19 +194,11 @@ pub fn where_clauses_from_value(
 }
 
 /// Run the system-wide where-clause validator on a structured
-/// `Vec<WhereClause>`. Single source of truth for the count-endpoint
-/// shape contract; called both from the legacy CBOR-decoded entry
-/// [`where_clauses_from_value`] and from the dispatcher's typed
-/// entry, [`Drive::execute_document_count_request`].
-///
-/// Despite the name, this function is **validation-only** in the
-/// worktree's base — it does not re-shape the clauses (no
-/// `> AND <` → `between*` merge). The "canonicalize" suffix is
-/// reserved for the eventual carrier-aggregate landing where a
-/// same-field range-pair merge becomes load-bearing; on the
-/// current code path `WhereClause::group_clauses` only classifies,
-/// and the merged form is computed lazily inside the executors
-/// when an executor needs it.
+/// `Vec<WhereClause>` and canonicalize same-field range pairs into
+/// their `between*` form. Single source of truth for the
+/// count-endpoint shape contract; called both from the legacy
+/// CBOR-decoded entry [`where_clauses_from_value`] and from the
+/// dispatcher's typed entry, [`Drive::execute_document_count_request`].
 ///
 /// The validator (`WhereClause::group_clauses`) rejects:
 /// - Duplicate `Equal` clauses on the same field
@@ -237,6 +229,21 @@ pub fn where_clauses_from_value(
 /// `CountMode::GroupByRange`-with-two-ranges and routes to
 /// `DocumentCountMode::RangeAggregateCarrierProof`); replicating
 /// it here would be redundant.
+///
+/// After validation, [`merge_same_field_range_pairs`] collapses
+/// `[field > A, field < B]` (and analogous pairs with `>=` / `<=`)
+/// into the canonical `between*` operator that
+/// [`DriveDocumentCountQuery::range_clause_to_query_item`] knows
+/// how to convert into a single `QueryItem`. The regular-query
+/// parser does the same merge before its grouped-triple
+/// validation; for count queries we do it explicitly here so
+/// callers can pass either the bounded form (e.g.
+/// `[brand > A, brand < B]`) or the pre-merged form (e.g.
+/// `[brand BetweenExcludeBounds [A, B]]`) and get equivalent
+/// mode detection downstream. Without this merge, G8a's natural
+/// wire shape (four range clauses, two per field) would slip past
+/// the catch-`MultipleRangeClauses` block above and then get
+/// rejected by `detect_mode`'s `range_count > 1` structural check.
 pub fn validate_and_canonicalize_where_clauses(
     clauses: Vec<WhereClause>,
 ) -> Result<Vec<WhereClause>, Error> {
@@ -245,7 +252,106 @@ pub fn validate_and_canonicalize_where_clauses(
         Err(Error::Query(QuerySyntaxError::MultipleRangeClauses(_))) => {}
         Err(e) => return Err(e),
     }
-    Ok(clauses)
+    merge_same_field_range_pairs(clauses)
+}
+
+/// Collapse `[field > A, field < B]` (and analogous pairs with
+/// `>=` / `<=`) into a single `field between* [A, B]` clause per
+/// field. Equality / In clauses pass through unchanged.
+///
+/// Returns an error if a field has more than two range clauses
+/// (structurally meaningless — a third bound would either
+/// contradict an existing one or be redundant) or if the pair
+/// isn't one lower-bound + one upper-bound (e.g. two `>` on the
+/// same field).
+fn merge_same_field_range_pairs(clauses: Vec<WhereClause>) -> Result<Vec<WhereClause>, Error> {
+    use crate::query::conditions::WhereOperator::{
+        Between, BetweenExcludeBounds, BetweenExcludeLeft, BetweenExcludeRight, GreaterThan,
+        GreaterThanOrEquals, LessThan, LessThanOrEquals,
+    };
+    use std::collections::BTreeMap;
+
+    let mut by_field: BTreeMap<String, Vec<WhereClause>> = BTreeMap::new();
+    let mut non_range: Vec<WhereClause> = Vec::new();
+    for wc in clauses {
+        if DriveDocumentCountQuery::is_range_operator(wc.operator) {
+            by_field.entry(wc.field.clone()).or_default().push(wc);
+        } else {
+            non_range.push(wc);
+        }
+    }
+    let mut result = non_range;
+    for (field, mut ranges) in by_field {
+        match ranges.len() {
+            0 => {}
+            1 => result.push(ranges.remove(0)),
+            2 => {
+                let (mut lower, mut upper): (Option<WhereClause>, Option<WhereClause>) =
+                    (None, None);
+                for r in ranges {
+                    match r.operator {
+                        GreaterThan | GreaterThanOrEquals => {
+                            if lower.is_some() {
+                                return Err(Error::Query(QuerySyntaxError::MultipleRangeClauses(
+                                    "two lower-bound range clauses on the same field cannot be \
+                                     merged; combine via `between*` or remove the redundant clause",
+                                )));
+                            }
+                            lower = Some(r);
+                        }
+                        LessThan | LessThanOrEquals => {
+                            if upper.is_some() {
+                                return Err(Error::Query(QuerySyntaxError::MultipleRangeClauses(
+                                    "two upper-bound range clauses on the same field cannot be \
+                                     merged; combine via `between*` or remove the redundant clause",
+                                )));
+                            }
+                            upper = Some(r);
+                        }
+                        _ => {
+                            // The other range operators (Between*,
+                            // StartsWith) are themselves bounded
+                            // already; a second range clause on the
+                            // same field is structurally redundant.
+                            return Err(Error::Query(QuerySyntaxError::MultipleRangeClauses(
+                                "cannot pair a `between*`/`startsWith` range clause with \
+                                 another range on the same field; use the pre-merged form",
+                            )));
+                        }
+                    }
+                }
+                let lower = lower.ok_or(Error::Query(QuerySyntaxError::MultipleRangeClauses(
+                    "two range clauses on the same field require one lower bound (> or >=) \
+                     and one upper bound (< or <=)",
+                )))?;
+                let upper = upper.ok_or(Error::Query(QuerySyntaxError::MultipleRangeClauses(
+                    "two range clauses on the same field require one lower bound (> or >=) \
+                     and one upper bound (< or <=)",
+                )))?;
+                let merged_op = match (
+                    lower.operator == GreaterThanOrEquals,
+                    upper.operator == LessThanOrEquals,
+                ) {
+                    (true, true) => Between,                // [a, b]
+                    (false, false) => BetweenExcludeBounds, // (a, b)
+                    (true, false) => BetweenExcludeRight,   // [a, b)
+                    (false, true) => BetweenExcludeLeft,    // (a, b]
+                };
+                result.push(WhereClause {
+                    field,
+                    operator: merged_op,
+                    value: dpp::platform_value::Value::Array(vec![lower.value, upper.value]),
+                });
+            }
+            _ => {
+                return Err(Error::Query(QuerySyntaxError::MultipleRangeClauses(
+                    "more than two range clauses on the same field are not supported; a \
+                     bounded range needs exactly one lower bound and one upper bound",
+                )));
+            }
+        }
+    }
+    Ok(result)
 }
 
 /// Parse the decoded `order_by` value into structured [`OrderClause`]s.
@@ -322,7 +428,7 @@ impl Drive {
         // independent of whether the caller arrived via the CBOR-
         // shaped legacy path or the v1 typed-proto path. See
         // [`validate_and_canonicalize_where_clauses`]'s docstring
-        // for the catalog of rejections.
+        // for the catalog of rejections / canonicalization rules.
         let where_clauses = validate_and_canonicalize_where_clauses(request.where_clauses)?;
         let order_clauses = request.order_clauses;
 
@@ -567,6 +673,14 @@ impl Drive {
                     }
                     None
                 };
+                // Outer-walk direction: ascending by default (the
+                // grovedb invariant for serialized-key carriers), or
+                // descending when the caller's `order_by` first
+                // clause is `desc`. Carried byte-identically through
+                // `Query::left_to_right` so the verifier rebuilds the
+                // exact same `PathQuery` — same load-bearing pattern
+                // as the `RangeDistinctProof` arm above.
+                let left_to_right = order_by_ascending;
                 Ok(DocumentCountResponse::Proof(
                     self.execute_document_count_range_aggregate_carrier_proof(
                         contract_id,
@@ -574,6 +688,7 @@ impl Drive {
                         document_type_name,
                         where_clauses,
                         effective_limit,
+                        left_to_right,
                         transaction,
                         platform_version,
                     )?,
