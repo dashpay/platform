@@ -447,15 +447,32 @@ impl DriveDocumentCountQuery<'_> {
     /// Verified client-side via
     /// [`grovedb::GroveDb::verify_aggregate_count_query_per_key`],
     /// which returns `(RootHash, Vec<(Vec<u8>, u64)>)`.
+    ///
+    /// # Arguments
+    /// * `left_to_right` — proof-shaping bit. Threaded into the
+    ///   outer `Query` via `Query::new_with_direction(left_to_right)`
+    ///   on the inner carrier path query (see
+    ///   [`Self::carrier_aggregate_count_path_query`]). `true` walks
+    ///   the outer range ascending and emits the per-branch `u64`s
+    ///   in lex-ascending key order; `false` walks descending and
+    ///   emits them in lex-descending order. The serialized
+    ///   `PathQuery` bytes differ between the two — the verifier
+    ///   rebuilds the path query from `(query, limit, left_to_right)`
+    ///   on its side, so the value passed here must match what the
+    ///   caller will pass to
+    ///   [`Self::verify_carrier_aggregate_count_proof`] or the
+    ///   tenderdash root check fails.
     pub fn execute_carrier_aggregate_count_with_proof(
         &self,
         drive: &Drive,
         limit: Option<u16>,
+        left_to_right: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
         let drive_version = &platform_version.drive;
-        let path_query = self.carrier_aggregate_count_path_query(limit, platform_version)?;
+        let path_query =
+            self.carrier_aggregate_count_path_query(limit, left_to_right, platform_version)?;
         // Same destructure pattern as the sibling aggregate / distinct
         // executors. `get_proved_path_query` returns `CostContext<Result>`;
         // ignoring the cost field is the same pattern those use today.

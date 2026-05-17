@@ -56,6 +56,7 @@ impl Drive {
         document_type_name: String,
         where_clauses: Vec<WhereClause>,
         limit: Option<u16>,
+        left_to_right: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
@@ -81,6 +82,7 @@ impl Drive {
         count_query.execute_carrier_aggregate_count_with_proof(
             self,
             limit,
+            left_to_right,
             transaction,
             platform_version,
         )
