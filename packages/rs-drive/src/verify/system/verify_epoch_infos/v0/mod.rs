@@ -8,7 +8,6 @@ use crate::error::drive::DriveError;
 use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::query::{Query, QueryItem};
-use crate::verify::canonicalize_grovedb_proof;
 use crate::verify::RootHash;
 use dpp::block::epoch::{EpochIndex, EPOCH_KEY_OFFSET};
 use dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0;
@@ -85,11 +84,8 @@ impl Drive {
             SizedQuery::new(query, Some(count * 5), None),
         );
 
-        let (root_hash, elements) = GroveDb::verify_query(
-            &canonicalize_grovedb_proof(proof)?,
-            &path_query,
-            &platform_version.drive.grove_version,
-        )?;
+        let (root_hash, elements) =
+            GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?;
 
         let results = elements.into_iter().fold(
             BTreeMap::<_, BTreeMap<_, _>>::new(),

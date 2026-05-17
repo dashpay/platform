@@ -3,7 +3,6 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::proof::ProofError;
 use crate::error::Error;
-use crate::verify::canonicalize_grovedb_proof;
 use crate::verify::RootHash;
 use grovedb::{Element, GroveDb};
 use platform_version::version::PlatformVersion;
@@ -27,17 +26,9 @@ impl Drive {
         let path_query = shielded_latest_recorded_anchor_path_query();
 
         let (root_hash, mut proved_key_values) = if verify_subset_of_proof {
-            GroveDb::verify_subset_query(
-                &canonicalize_grovedb_proof(proof)?,
-                &path_query,
-                &platform_version.drive.grove_version,
-            )?
+            GroveDb::verify_subset_query(proof, &path_query, &platform_version.drive.grove_version)?
         } else {
-            GroveDb::verify_query(
-                &canonicalize_grovedb_proof(proof)?,
-                &path_query,
-                &platform_version.drive.grove_version,
-            )?
+            GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?
         };
 
         if proved_key_values.len() > 1 {

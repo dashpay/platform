@@ -1,7 +1,6 @@
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::query::Query;
-use crate::verify::canonicalize_grovedb_proof;
 use crate::verify::RootHash;
 use grovedb::query_result_type::PathKeyOptionalElementTrio;
 use grovedb::{Element, GroveDb, PathQuery, SizedQuery};
@@ -42,11 +41,8 @@ impl Drive {
         query.insert_keys(keys);
         let path_query = PathQuery::new(path, SizedQuery::new(query, None, None));
 
-        let (root_hash, proved_path_key_values) = GroveDb::verify_query_raw(
-            &canonicalize_grovedb_proof(proof)?,
-            &path_query,
-            &platform_version.drive.grove_version,
-        )?;
+        let (root_hash, proved_path_key_values) =
+            GroveDb::verify_query_raw(proof, &path_query, &platform_version.drive.grove_version)?;
         let path_key_optional_elements = proved_path_key_values
             .into_iter()
             .map(|pkv| {

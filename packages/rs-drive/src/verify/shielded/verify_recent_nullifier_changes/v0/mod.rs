@@ -3,7 +3,6 @@ use crate::drive::shielded::nullifiers::types::{CompactedNullifiers, NullifierCh
 use crate::drive::Drive;
 use crate::error::proof::ProofError;
 use crate::error::Error;
-use crate::verify::canonicalize_grovedb_proof;
 use crate::verify::RootHash;
 use grovedb::{Element, GroveDb, PathQuery, Query, SizedQuery};
 use platform_version::version::PlatformVersion;
@@ -29,17 +28,9 @@ impl Drive {
         let path_query = PathQuery::new(path, SizedQuery::new(query, limit, None));
 
         let (root_hash, proved_key_values) = if verify_subset_of_proof {
-            GroveDb::verify_subset_query(
-                &canonicalize_grovedb_proof(proof)?,
-                &path_query,
-                &platform_version.drive.grove_version,
-            )?
+            GroveDb::verify_subset_query(proof, &path_query, &platform_version.drive.grove_version)?
         } else {
-            GroveDb::verify_query(
-                &canonicalize_grovedb_proof(proof)?,
-                &path_query,
-                &platform_version.drive.grove_version,
-            )?
+            GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?
         };
 
         let mut nullifier_changes = Vec::new();

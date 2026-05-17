@@ -2,7 +2,6 @@ use crate::drive::contract::paths::contract_storage_path_vec;
 use crate::drive::Drive;
 use crate::error::proof::ProofError;
 use crate::error::Error;
-use crate::verify::canonicalize_grovedb_proof;
 use crate::verify::RootHash;
 
 use dpp::prelude::DataContract;
@@ -49,11 +48,8 @@ impl Drive {
         let path_query =
             Self::fetch_contract_history_query(contract_id, start_at_date, limit, offset)?;
 
-        let (root_hash, mut proved_key_values) = GroveDb::verify_query(
-            &canonicalize_grovedb_proof(proof)?,
-            &path_query,
-            &platform_version.drive.grove_version,
-        )?;
+        let (root_hash, mut proved_key_values) =
+            GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?;
 
         let mut contracts: BTreeMap<u64, DataContract> = BTreeMap::new();
         for (path, key, maybe_element) in proved_key_values.drain(..) {

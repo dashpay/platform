@@ -3,7 +3,6 @@ use crate::drive::Drive;
 use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::query::{Query, QueryItem};
-use crate::verify::canonicalize_grovedb_proof;
 use crate::verify::RootHash;
 use dpp::util::deserializer::ProtocolVersion;
 use grovedb::{GroveDb, PathQuery};
@@ -41,11 +40,8 @@ impl Drive {
             Query::new_single_query_item(QueryItem::RangeFull(RangeFull)),
         );
 
-        let (root_hash, elements) = GroveDb::verify_query(
-            &canonicalize_grovedb_proof(proof)?,
-            &path_query,
-            &platform_version.drive.grove_version,
-        )?;
+        let (root_hash, elements) =
+            GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?;
 
         let protocol_version_map = elements
             .into_iter()

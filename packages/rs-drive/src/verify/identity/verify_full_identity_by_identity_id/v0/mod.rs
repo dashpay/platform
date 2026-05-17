@@ -7,7 +7,6 @@ use crate::drive::Drive;
 use crate::error::proof::ProofError;
 use crate::error::Error;
 
-use crate::verify::canonicalize_grovedb_proof;
 use crate::verify::RootHash;
 use dpp::identifier::Identifier;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -51,17 +50,9 @@ impl Drive {
         let path_query =
             Self::full_identity_query(&identity_id, &platform_version.drive.grove_version)?;
         let (root_hash, proved_key_values) = if is_proof_subset {
-            GroveDb::verify_subset_query(
-                &canonicalize_grovedb_proof(proof)?,
-                &path_query,
-                &platform_version.drive.grove_version,
-            )?
+            GroveDb::verify_subset_query(proof, &path_query, &platform_version.drive.grove_version)?
         } else {
-            GroveDb::verify_query(
-                &canonicalize_grovedb_proof(proof)?,
-                &path_query,
-                &platform_version.drive.grove_version,
-            )?
+            GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?
         };
         let mut balance = None;
         let mut revision = None;

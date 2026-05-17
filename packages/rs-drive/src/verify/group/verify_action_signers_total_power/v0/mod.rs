@@ -4,7 +4,6 @@ use grovedb::Element::SumItem;
 use crate::error::proof::ProofError;
 use crate::error::Error;
 
-use crate::verify::canonicalize_grovedb_proof;
 use crate::verify::RootHash;
 
 use dpp::data_contract::group::GroupSumPower;
@@ -35,7 +34,7 @@ impl Drive {
                     group_contract_position,
                 );
                 let mut proved_key_values = GroveDb::verify_query_with_options(
-                    &canonicalize_grovedb_proof(proof)?,
+                    proof,
                     &path_query,
                     VerifyOptions {
                         absence_proofs_for_non_existing_searched_keys: false,
@@ -91,13 +90,13 @@ impl Drive {
 
         let (root_hash, tree_feature, mut proved_key_values) = if verify_subset_of_proof {
             GroveDb::verify_subset_query_get_parent_tree_info(
-                &canonicalize_grovedb_proof(proof)?,
+                proof,
                 &path_query,
                 &platform_version.drive.grove_version,
             )?
         } else {
             GroveDb::verify_query_get_parent_tree_info(
-                &canonicalize_grovedb_proof(proof)?,
+                proof,
                 &path_query,
                 &platform_version.drive.grove_version,
             )?

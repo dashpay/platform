@@ -2,7 +2,6 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::query::proposer_block_count_query::ProposerQueryType;
-use crate::verify::canonicalize_grovedb_proof;
 use crate::verify::RootHash;
 use dpp::block::epoch::{Epoch, EpochIndex};
 use grovedb::{Element, GroveDb};
@@ -55,11 +54,8 @@ impl Drive {
 
         let path_query = proposer_query_type.into_path_query(&epoch);
 
-        let (root_hash, elements) = GroveDb::verify_query(
-            &canonicalize_grovedb_proof(proof)?,
-            &path_query,
-            &platform_version.drive.grove_version,
-        )?;
+        let (root_hash, elements) =
+            GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?;
 
         let proposers = elements
             .into_iter()

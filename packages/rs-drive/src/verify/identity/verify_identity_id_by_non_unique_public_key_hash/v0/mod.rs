@@ -3,7 +3,6 @@ use crate::drive::{non_unique_key_hashes_sub_tree_path_vec, Drive};
 use crate::error::proof::ProofError;
 use crate::error::Error;
 
-use crate::verify::canonicalize_grovedb_proof;
 use crate::verify::RootHash;
 
 use grovedb::GroveDb;
@@ -46,17 +45,9 @@ impl Drive {
             Self::identity_id_by_non_unique_public_key_hash_query(public_key_hash, after);
         path_query.query.limit = Some(1);
         let (root_hash, mut proved_key_values) = if is_proof_subset {
-            GroveDb::verify_subset_query(
-                &canonicalize_grovedb_proof(proof)?,
-                &path_query,
-                &platform_version.drive.grove_version,
-            )?
+            GroveDb::verify_subset_query(proof, &path_query, &platform_version.drive.grove_version)?
         } else {
-            GroveDb::verify_query(
-                &canonicalize_grovedb_proof(proof)?,
-                &path_query,
-                &platform_version.drive.grove_version,
-            )?
+            GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?
         };
 
         if proved_key_values.len() == 1 {

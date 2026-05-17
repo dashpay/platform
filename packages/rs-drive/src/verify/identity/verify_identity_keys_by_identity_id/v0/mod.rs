@@ -6,7 +6,6 @@ use crate::error::proof::ProofError;
 use crate::error::Error;
 
 use crate::drive::identity::key::fetch::IdentityKeysRequest;
-use crate::verify::canonicalize_grovedb_proof;
 use crate::verify::RootHash;
 use dpp::identifier::Identifier;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -66,17 +65,9 @@ impl Drive {
 
         let path_query = PathQuery::merge(path_queries, &platform_version.drive.grove_version)?;
         let (root_hash, proved_values) = if is_proof_subset {
-            GroveDb::verify_subset_query(
-                &canonicalize_grovedb_proof(proof)?,
-                &path_query,
-                &platform_version.drive.grove_version,
-            )?
+            GroveDb::verify_subset_query(proof, &path_query, &platform_version.drive.grove_version)?
         } else {
-            GroveDb::verify_query(
-                &canonicalize_grovedb_proof(proof)?,
-                &path_query,
-                &platform_version.drive.grove_version,
-            )?
+            GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?
         };
 
         let mut loaded_public_keys = BTreeMap::<KeyID, IdentityPublicKey>::new();

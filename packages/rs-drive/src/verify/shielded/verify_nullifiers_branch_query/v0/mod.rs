@@ -2,7 +2,6 @@ use crate::drive::shielded::paths::nullifiers_path_for_pool;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::verify::canonicalize_grovedb_proof;
 use grovedb::{GroveBranchQueryResult, GroveDb, PathBranchChunkQuery};
 use platform_version::version::PlatformVersion;
 
@@ -38,7 +37,7 @@ impl Drive {
         let query = PathBranchChunkQuery { path, key, depth };
 
         let result = GroveDb::verify_branch_chunk_proof(
-            &canonicalize_grovedb_proof(proof)?,
+            proof,
             &query,
             expected_root_hash,
             &platform_version.drive.grove_version,
