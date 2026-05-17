@@ -654,6 +654,10 @@ impl LowLevelDriveOperation {
             reference_path_type,
             max_reference_hop,
             flags,
+            // Drive only refreshes plain (counted) references; the
+            // non-counted/`ReferenceWithSumItem` variants added in grovedb
+            // are not used by platform.
+            false,
             trust_refresh_reference,
         ))
     }
@@ -691,6 +695,7 @@ impl LowLevelDriveOperationTreeTypeConverter for TreeType {
             TreeType::ProvableCountSumTree => {
                 Element::empty_provable_count_sum_tree_with_flags(element_flags)
             }
+            TreeType::ProvableSumTree => Element::empty_provable_sum_tree_with_flags(element_flags),
             TreeType::CommitmentTree(chunk_power) => {
                 Element::empty_commitment_tree_with_flags(*chunk_power, element_flags)?
             }
