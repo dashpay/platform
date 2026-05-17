@@ -292,6 +292,69 @@ describe('Simple Type Conversions', () => {
     });
   });
 
+  describe('PathElement', () => {
+    const jsonFixture = {
+      path: ['key'],
+      key: 'AQI=',
+      pathBytes: ['AwQ=', 'AQI='],
+      value: 'dmFsdWU=',
+      valueBytes: 'dmFsdWU=',
+      elementType: 'sumItem',
+      sum: '9007199254740993',
+      referenceTarget: ['BQY='],
+      referenceTargetError: null,
+    };
+
+    const objectInputFixture = {
+      path: ['key'],
+      key: new Uint8Array([1, 2]),
+      pathBytes: [new Uint8Array([3, 4]), new Uint8Array([1, 2])],
+      value: 'dmFsdWU=',
+      valueBytes: new Uint8Array([118, 97, 108, 117, 101]),
+      elementType: 'sumItem',
+      sum: 9007199254740993n,
+      referenceTarget: [new Uint8Array([5, 6])],
+      referenceTargetError: null,
+    };
+
+    const objectOutputFixture = {
+      ...objectInputFixture,
+      referenceTargetError: undefined,
+    };
+
+    describe('toJSON()', () => {
+      it('should serialize binary fields as base64 strings', () => {
+        const result = sdk.PathElement.fromJSON(jsonFixture);
+        expect(result.toJSON()).to.deep.equal(jsonFixture);
+      });
+    });
+
+    describe('toObject()', () => {
+      it('should serialize binary fields as Uint8Array and sum as BigInt', () => {
+        const result = sdk.PathElement.fromObject(objectInputFixture);
+        expect(result.toObject()).to.deep.equal(objectOutputFixture);
+      });
+    });
+
+    describe('fromObject()', () => {
+      it('should expose typed getters for tree exploration fields', () => {
+        const result = sdk.PathElement.fromObject(objectInputFixture);
+
+        expect(result.key).to.deep.equal(new Uint8Array([1, 2]));
+        expect(result.pathBytes).to.deep.equal([
+          new Uint8Array([3, 4]),
+          new Uint8Array([1, 2]),
+        ]);
+        expect(result.value).to.equal('dmFsdWU=');
+        expect(result.valueBytes).to.deep.equal(new Uint8Array([118, 97, 108, 117, 101]));
+        expect(result.elementType).to.equal('sumItem');
+        expect(result.sum).to.equal(9007199254740993n);
+        expect(result.referenceTarget).to.deep.equal([new Uint8Array([5, 6])]);
+        expect(result.referenceTargetError).to.be.undefined();
+      });
+    });
+  });
+
   describe('TokenPriceInfo', () => {
     const testId = 'H2pb35GtKpjLinncBYeMsXkdDYXCbsFzzVmssce6pSJ1';
 
