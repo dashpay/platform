@@ -198,6 +198,41 @@ mod tests {
     }
 
     #[test]
+    fn test_grove_insert_empty_tree_provable_sum() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+        let tx = drive.grove.start_transaction();
+
+        drive
+            .grove_insert_empty_tree_v0(
+                SubtreePath::empty(),
+                b"provable_sum",
+                TreeType::ProvableSumTree,
+                Some(&tx),
+                None,
+                &mut vec![],
+                &pv.drive,
+            )
+            .expect("expected to insert root tree");
+
+        let mut query_ops = vec![];
+        let element = drive
+            .grove_get_raw(
+                SubtreePath::empty(),
+                b"provable_sum",
+                DirectQueryType::StatefulDirectQuery,
+                Some(&tx),
+                &mut query_ops,
+                &pv.drive,
+            )
+            .expect("expected to get element");
+        assert!(
+            matches!(element, Some(Element::ProvableSumTree(..))),
+            "Expected a provable sum tree element after insert"
+        );
+    }
+
+    #[test]
     fn test_grove_insert_empty_tree_count_sum() {
         let drive = setup_drive(None);
         let pv = PlatformVersion::latest();
