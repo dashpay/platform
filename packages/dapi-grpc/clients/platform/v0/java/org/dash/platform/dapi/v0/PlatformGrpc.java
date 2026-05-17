@@ -2094,13 +2094,6 @@ public final class PlatformGrpc {
     }
 
     /**
-     * <pre>
-     * `getDocumentsCount` removed in v1: callers express counts via
-     * `getDocuments` with `version.v1.select = COUNT` (optionally
-     * with `group_by`). See `GetDocumentsRequestV1` for the unified
-     * SQL-shaped surface. The v0-count endpoint shipped briefly in
-     * #3623 and never had stable callers; v1 supersedes it entirely.
-     * </pre>
      */
     public void getIdentityByPublicKeyHash(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByPublicKeyHashRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByPublicKeyHashResponse> responseObserver) {
@@ -3025,13 +3018,6 @@ public final class PlatformGrpc {
     }
 
     /**
-     * <pre>
-     * `getDocumentsCount` removed in v1: callers express counts via
-     * `getDocuments` with `version.v1.select = COUNT` (optionally
-     * with `group_by`). See `GetDocumentsRequestV1` for the unified
-     * SQL-shaped surface. The v0-count endpoint shipped briefly in
-     * #3623 and never had stable callers; v1 supersedes it entirely.
-     * </pre>
      */
     public void getIdentityByPublicKeyHash(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByPublicKeyHashRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByPublicKeyHashResponse> responseObserver) {
@@ -3549,13 +3535,6 @@ public final class PlatformGrpc {
     }
 
     /**
-     * <pre>
-     * `getDocumentsCount` removed in v1: callers express counts via
-     * `getDocuments` with `version.v1.select = COUNT` (optionally
-     * with `group_by`). See `GetDocumentsRequestV1` for the unified
-     * SQL-shaped surface. The v0-count endpoint shipped briefly in
-     * #3623 and never had stable callers; v1 supersedes it entirely.
-     * </pre>
      */
     public org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByPublicKeyHashResponse getIdentityByPublicKeyHash(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByPublicKeyHashRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
@@ -4041,13 +4020,6 @@ public final class PlatformGrpc {
     }
 
     /**
-     * <pre>
-     * `getDocumentsCount` removed in v1: callers express counts via
-     * `getDocuments` with `version.v1.select = COUNT` (optionally
-     * with `group_by`). See `GetDocumentsRequestV1` for the unified
-     * SQL-shaped surface. The v0-count endpoint shipped briefly in
-     * #3623 and never had stable callers; v1 supersedes it entirely.
-     * </pre>
      */
     public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByPublicKeyHashResponse> getIdentityByPublicKeyHash(
         org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByPublicKeyHashRequest request) {

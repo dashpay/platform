@@ -213,10 +213,18 @@ pub struct SplitCountEntry {
 /// prove)` by [`DriveDocumentCountQuery::detect_mode`] just before
 /// dispatch.
 ///
-/// The invariants below are enforced upstream (in drive-abci's
-/// `validate_and_route`) before a `DocumentCountRequest` is built.
-/// They're documented here so any new caller knows the
-/// shape-validity contract attached to each variant.
+/// **Result shape vs. executor strategy.** Each variant names a
+/// result shape — the per-variant docstring lists the
+/// where-clause shapes that route to that result shape and
+/// notes which executor strategy
+/// [`DriveDocumentCountQuery::detect_mode`] picks for each.
+/// `(in_field, range_field)` combinations on the same request
+/// are accepted on multiple `CountMode` variants — the executor
+/// strategy distinguishes them. Upstream routing
+/// (drive-abci's `validate_and_route`) picks the `CountMode`
+/// from the caller's `group_by`; downstream `detect_mode`
+/// converts the `(CountMode, where_clauses, prove)` triple into
+/// the resolved [`DocumentCountMode`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CountMode {
     /// `select=COUNT, group_by=[]`. Single u64 result.
@@ -236,8 +244,17 @@ pub enum CountMode {
 
     /// `select=COUNT, group_by=[in_field]`. One entry per `In` value.
     ///
-    /// Where-clause invariants: exactly one `In` clause whose field
-    /// matches `group_by[0]`; no range clause.
+    /// Where-clause shapes accepted:
+    /// - one `In` clause on `group_by[0]` (no range clause): the
+    ///   canonical shape — routes to `PointLookupProof` on the
+    ///   prove path, `PerInValue` on the no-proof path.
+    /// - one `In` on `group_by[0]` AND a range clause on a
+    ///   different field: routes to
+    ///   `RangeAggregateCarrierProof` on the prove path
+    ///   (grovedb #663 carrier-ACOR — one verified `u64` per
+    ///   In branch, range collapsed) and `RangeNoProof` on the
+    ///   no-prove path (per-In-branch range walk). Both produce
+    ///   entries that line up with the caller's GROUP BY shape.
     ///
     /// `limit` is rejected upstream when set. The In array is
     /// already capped at 100 entries by `WhereClause::in_values()`,
@@ -252,8 +269,21 @@ pub enum CountMode {
     /// `select=COUNT, group_by=[range_field]`. One entry per distinct
     /// value within the range.
     ///
-    /// Where-clause invariants: exactly one range clause whose field
-    /// matches `group_by[0]`; no `In` clause.
+    /// Where-clause shapes accepted:
+    /// - one range clause on `group_by[0]` (no `In` clause):
+    ///   canonical RangeDistinctProof / RangeNoProof distinct.
+    /// - one range on `group_by[0]` AND an `In` clause on a
+    ///   different field: prove path keeps `RangeDistinctProof`
+    ///   with In-fanout via grovedb subquery; no-prove path uses
+    ///   `RangeNoProof` distinct on the merged result. Per-
+    ///   distinct-value entries cover both branches of the In.
+    /// - two range clauses on different fields, the second
+    ///   being `group_by[0]`: routes to
+    ///   `RangeAggregateCarrierProof` (outer range + inner-ACOR
+    ///   carrier per grovedb #664 outer-range cap). See
+    ///   `outer_range_plus_inner_range_with_prove_and_group_by_range_routes_to_carrier_proof`
+    ///   for the regression test pinning this shape.
+    ///
     /// `limit` caps the number of distinct values; on the prove
     /// path it's validated-not-clamped (oversized values rejected
     /// with `InvalidLimit`).
@@ -262,8 +292,10 @@ pub enum CountMode {
     /// `select=COUNT, group_by=[in_field, range_field]`. One entry
     /// per `(in_key, range_key)` pair.
     ///
-    /// Where-clause invariants: exactly one `In` clause on `group_by[0]`
-    /// AND exactly one range clause on `group_by[1]`.
+    /// Where-clause invariants: an `In` clause on `group_by[0]`
+    /// AND a range clause on `group_by[1]` (match-any over
+    /// the where-clauses list — clause ordering on the wire
+    /// doesn't affect routing).
     /// `limit` is a **global cap on the emitted `(in_key, key)` lex
     /// stream**, not per-In-branch. The executor pushes a single
     /// `SizedQuery::limit` over the compound walk, so a request

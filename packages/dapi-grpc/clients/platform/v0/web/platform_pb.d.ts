@@ -2272,6 +2272,304 @@ export namespace GetDocumentsRequest {
     v1?: GetDocumentsRequest.GetDocumentsRequestV1.AsObject,
   }
 
+  export class DocumentFieldValue extends jspb.Message {
+    hasBoolValue(): boolean;
+    clearBoolValue(): void;
+    getBoolValue(): boolean;
+    setBoolValue(value: boolean): void;
+
+    hasInt64Value(): boolean;
+    clearInt64Value(): void;
+    getInt64Value(): string;
+    setInt64Value(value: string): void;
+
+    hasUint64Value(): boolean;
+    clearUint64Value(): void;
+    getUint64Value(): string;
+    setUint64Value(value: string): void;
+
+    hasDoubleValue(): boolean;
+    clearDoubleValue(): void;
+    getDoubleValue(): number;
+    setDoubleValue(value: number): void;
+
+    hasText(): boolean;
+    clearText(): void;
+    getText(): string;
+    setText(value: string): void;
+
+    hasBytesValue(): boolean;
+    clearBytesValue(): void;
+    getBytesValue(): Uint8Array | string;
+    getBytesValue_asU8(): Uint8Array;
+    getBytesValue_asB64(): string;
+    setBytesValue(value: Uint8Array | string): void;
+
+    hasList(): boolean;
+    clearList(): void;
+    getList(): GetDocumentsRequest.DocumentFieldValue.ValueList | undefined;
+    setList(value?: GetDocumentsRequest.DocumentFieldValue.ValueList): void;
+
+    hasNullValue(): boolean;
+    clearNullValue(): void;
+    getNullValue(): boolean;
+    setNullValue(value: boolean): void;
+
+    getVariantCase(): DocumentFieldValue.VariantCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): DocumentFieldValue.AsObject;
+    static toObject(includeInstance: boolean, msg: DocumentFieldValue): DocumentFieldValue.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: DocumentFieldValue, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): DocumentFieldValue;
+    static deserializeBinaryFromReader(message: DocumentFieldValue, reader: jspb.BinaryReader): DocumentFieldValue;
+  }
+
+  export namespace DocumentFieldValue {
+    export type AsObject = {
+      boolValue: boolean,
+      int64Value: string,
+      uint64Value: string,
+      doubleValue: number,
+      text: string,
+      bytesValue: Uint8Array | string,
+      list?: GetDocumentsRequest.DocumentFieldValue.ValueList.AsObject,
+      nullValue: boolean,
+    }
+
+    export class ValueList extends jspb.Message {
+      clearValuesList(): void;
+      getValuesList(): Array<GetDocumentsRequest.DocumentFieldValue>;
+      setValuesList(value: Array<GetDocumentsRequest.DocumentFieldValue>): void;
+      addValues(value?: GetDocumentsRequest.DocumentFieldValue, index?: number): GetDocumentsRequest.DocumentFieldValue;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): ValueList.AsObject;
+      static toObject(includeInstance: boolean, msg: ValueList): ValueList.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: ValueList, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): ValueList;
+      static deserializeBinaryFromReader(message: ValueList, reader: jspb.BinaryReader): ValueList;
+    }
+
+    export namespace ValueList {
+      export type AsObject = {
+        valuesList: Array<GetDocumentsRequest.DocumentFieldValue.AsObject>,
+      }
+    }
+
+    export enum VariantCase {
+      VARIANT_NOT_SET = 0,
+      BOOL_VALUE = 1,
+      INT64_VALUE = 2,
+      UINT64_VALUE = 3,
+      DOUBLE_VALUE = 4,
+      TEXT = 5,
+      BYTES_VALUE = 6,
+      LIST = 7,
+      NULL_VALUE = 8,
+    }
+  }
+
+  export class WhereClause extends jspb.Message {
+    getField(): string;
+    setField(value: string): void;
+
+    getOperator(): GetDocumentsRequest.WhereOperatorMap[keyof GetDocumentsRequest.WhereOperatorMap];
+    setOperator(value: GetDocumentsRequest.WhereOperatorMap[keyof GetDocumentsRequest.WhereOperatorMap]): void;
+
+    hasValue(): boolean;
+    clearValue(): void;
+    getValue(): GetDocumentsRequest.DocumentFieldValue | undefined;
+    setValue(value?: GetDocumentsRequest.DocumentFieldValue): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): WhereClause.AsObject;
+    static toObject(includeInstance: boolean, msg: WhereClause): WhereClause.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: WhereClause, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): WhereClause;
+    static deserializeBinaryFromReader(message: WhereClause, reader: jspb.BinaryReader): WhereClause;
+  }
+
+  export namespace WhereClause {
+    export type AsObject = {
+      field: string,
+      operator: GetDocumentsRequest.WhereOperatorMap[keyof GetDocumentsRequest.WhereOperatorMap],
+      value?: GetDocumentsRequest.DocumentFieldValue.AsObject,
+    }
+  }
+
+  export class HavingAggregate extends jspb.Message {
+    getFunction(): GetDocumentsRequest.HavingAggregate.FunctionMap[keyof GetDocumentsRequest.HavingAggregate.FunctionMap];
+    setFunction(value: GetDocumentsRequest.HavingAggregate.FunctionMap[keyof GetDocumentsRequest.HavingAggregate.FunctionMap]): void;
+
+    getField(): string;
+    setField(value: string): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): HavingAggregate.AsObject;
+    static toObject(includeInstance: boolean, msg: HavingAggregate): HavingAggregate.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: HavingAggregate, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): HavingAggregate;
+    static deserializeBinaryFromReader(message: HavingAggregate, reader: jspb.BinaryReader): HavingAggregate;
+  }
+
+  export namespace HavingAggregate {
+    export type AsObject = {
+      pb_function: GetDocumentsRequest.HavingAggregate.FunctionMap[keyof GetDocumentsRequest.HavingAggregate.FunctionMap],
+      field: string,
+    }
+
+    export interface FunctionMap {
+      COUNT: 0;
+      SUM: 1;
+      AVG: 2;
+    }
+
+    export const Function: FunctionMap;
+  }
+
+  export class HavingRanking extends jspb.Message {
+    getKind(): GetDocumentsRequest.HavingRanking.KindMap[keyof GetDocumentsRequest.HavingRanking.KindMap];
+    setKind(value: GetDocumentsRequest.HavingRanking.KindMap[keyof GetDocumentsRequest.HavingRanking.KindMap]): void;
+
+    hasN(): boolean;
+    clearN(): void;
+    getN(): string;
+    setN(value: string): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): HavingRanking.AsObject;
+    static toObject(includeInstance: boolean, msg: HavingRanking): HavingRanking.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: HavingRanking, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): HavingRanking;
+    static deserializeBinaryFromReader(message: HavingRanking, reader: jspb.BinaryReader): HavingRanking;
+  }
+
+  export namespace HavingRanking {
+    export type AsObject = {
+      kind: GetDocumentsRequest.HavingRanking.KindMap[keyof GetDocumentsRequest.HavingRanking.KindMap],
+      n: string,
+    }
+
+    export interface KindMap {
+      MIN: 0;
+      MAX: 1;
+      TOP: 2;
+      BOTTOM: 3;
+    }
+
+    export const Kind: KindMap;
+  }
+
+  export class HavingClause extends jspb.Message {
+    hasAggregate(): boolean;
+    clearAggregate(): void;
+    getAggregate(): GetDocumentsRequest.HavingAggregate | undefined;
+    setAggregate(value?: GetDocumentsRequest.HavingAggregate): void;
+
+    getOperator(): GetDocumentsRequest.HavingClause.OperatorMap[keyof GetDocumentsRequest.HavingClause.OperatorMap];
+    setOperator(value: GetDocumentsRequest.HavingClause.OperatorMap[keyof GetDocumentsRequest.HavingClause.OperatorMap]): void;
+
+    hasValue(): boolean;
+    clearValue(): void;
+    getValue(): GetDocumentsRequest.DocumentFieldValue | undefined;
+    setValue(value?: GetDocumentsRequest.DocumentFieldValue): void;
+
+    hasRanking(): boolean;
+    clearRanking(): void;
+    getRanking(): GetDocumentsRequest.HavingRanking | undefined;
+    setRanking(value?: GetDocumentsRequest.HavingRanking): void;
+
+    getRightCase(): HavingClause.RightCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): HavingClause.AsObject;
+    static toObject(includeInstance: boolean, msg: HavingClause): HavingClause.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: HavingClause, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): HavingClause;
+    static deserializeBinaryFromReader(message: HavingClause, reader: jspb.BinaryReader): HavingClause;
+  }
+
+  export namespace HavingClause {
+    export type AsObject = {
+      aggregate?: GetDocumentsRequest.HavingAggregate.AsObject,
+      operator: GetDocumentsRequest.HavingClause.OperatorMap[keyof GetDocumentsRequest.HavingClause.OperatorMap],
+      value?: GetDocumentsRequest.DocumentFieldValue.AsObject,
+      ranking?: GetDocumentsRequest.HavingRanking.AsObject,
+    }
+
+    export interface OperatorMap {
+      EQUAL: 0;
+      NOT_EQUAL: 1;
+      GREATER_THAN: 2;
+      GREATER_THAN_OR_EQUALS: 3;
+      LESS_THAN: 4;
+      LESS_THAN_OR_EQUALS: 5;
+      BETWEEN: 6;
+      BETWEEN_EXCLUDE_BOUNDS: 7;
+      BETWEEN_EXCLUDE_LEFT: 8;
+      BETWEEN_EXCLUDE_RIGHT: 9;
+      IN: 10;
+    }
+
+    export const Operator: OperatorMap;
+
+    export enum RightCase {
+      RIGHT_NOT_SET = 0,
+      VALUE = 3,
+      RANKING = 4,
+    }
+  }
+
+  export class OrderClause extends jspb.Message {
+    hasField(): boolean;
+    clearField(): void;
+    getField(): string;
+    setField(value: string): void;
+
+    hasAggregate(): boolean;
+    clearAggregate(): void;
+    getAggregate(): GetDocumentsRequest.HavingAggregate | undefined;
+    setAggregate(value?: GetDocumentsRequest.HavingAggregate): void;
+
+    getAscending(): boolean;
+    setAscending(value: boolean): void;
+
+    getTargetCase(): OrderClause.TargetCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): OrderClause.AsObject;
+    static toObject(includeInstance: boolean, msg: OrderClause): OrderClause.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: OrderClause, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): OrderClause;
+    static deserializeBinaryFromReader(message: OrderClause, reader: jspb.BinaryReader): OrderClause;
+  }
+
+  export namespace OrderClause {
+    export type AsObject = {
+      field: string,
+      aggregate?: GetDocumentsRequest.HavingAggregate.AsObject,
+      ascending: boolean,
+    }
+
+    export enum TargetCase {
+      TARGET_NOT_SET = 0,
+      FIELD = 1,
+      AGGREGATE = 3,
+    }
+  }
+
   export class GetDocumentsRequestV0 extends jspb.Message {
     getDataContractId(): Uint8Array | string;
     getDataContractId_asU8(): Uint8Array;
@@ -2350,15 +2648,15 @@ export namespace GetDocumentsRequest {
     getDocumentType(): string;
     setDocumentType(value: string): void;
 
-    getWhere(): Uint8Array | string;
-    getWhere_asU8(): Uint8Array;
-    getWhere_asB64(): string;
-    setWhere(value: Uint8Array | string): void;
+    clearWhereClausesList(): void;
+    getWhereClausesList(): Array<GetDocumentsRequest.WhereClause>;
+    setWhereClausesList(value: Array<GetDocumentsRequest.WhereClause>): void;
+    addWhereClauses(value?: GetDocumentsRequest.WhereClause, index?: number): GetDocumentsRequest.WhereClause;
 
-    getOrderBy(): Uint8Array | string;
-    getOrderBy_asU8(): Uint8Array;
-    getOrderBy_asB64(): string;
-    setOrderBy(value: Uint8Array | string): void;
+    clearOrderByList(): void;
+    getOrderByList(): Array<GetDocumentsRequest.OrderClause>;
+    setOrderByList(value: Array<GetDocumentsRequest.OrderClause>): void;
+    addOrderBy(value?: GetDocumentsRequest.OrderClause, index?: number): GetDocumentsRequest.OrderClause;
 
     hasLimit(): boolean;
     clearLimit(): void;
@@ -2382,18 +2680,25 @@ export namespace GetDocumentsRequest {
     getProve(): boolean;
     setProve(value: boolean): void;
 
-    getSelect(): GetDocumentsRequest.GetDocumentsRequestV1.SelectMap[keyof GetDocumentsRequest.GetDocumentsRequestV1.SelectMap];
-    setSelect(value: GetDocumentsRequest.GetDocumentsRequestV1.SelectMap[keyof GetDocumentsRequest.GetDocumentsRequestV1.SelectMap]): void;
+    clearSelectsList(): void;
+    getSelectsList(): Array<GetDocumentsRequest.GetDocumentsRequestV1.Select>;
+    setSelectsList(value: Array<GetDocumentsRequest.GetDocumentsRequestV1.Select>): void;
+    addSelects(value?: GetDocumentsRequest.GetDocumentsRequestV1.Select, index?: number): GetDocumentsRequest.GetDocumentsRequestV1.Select;
 
     clearGroupByList(): void;
     getGroupByList(): Array<string>;
     setGroupByList(value: Array<string>): void;
     addGroupBy(value: string, index?: number): string;
 
-    getHaving(): Uint8Array | string;
-    getHaving_asU8(): Uint8Array;
-    getHaving_asB64(): string;
-    setHaving(value: Uint8Array | string): void;
+    clearHavingList(): void;
+    getHavingList(): Array<GetDocumentsRequest.HavingClause>;
+    setHavingList(value: Array<GetDocumentsRequest.HavingClause>): void;
+    addHaving(value?: GetDocumentsRequest.HavingClause, index?: number): GetDocumentsRequest.HavingClause;
+
+    hasOffset(): boolean;
+    clearOffset(): void;
+    getOffset(): number;
+    setOffset(value: number): void;
 
     getStartCase(): GetDocumentsRequestV1.StartCase;
     serializeBinary(): Uint8Array;
@@ -2410,23 +2715,52 @@ export namespace GetDocumentsRequest {
     export type AsObject = {
       dataContractId: Uint8Array | string,
       documentType: string,
-      where: Uint8Array | string,
-      orderBy: Uint8Array | string,
+      whereClausesList: Array<GetDocumentsRequest.WhereClause.AsObject>,
+      orderByList: Array<GetDocumentsRequest.OrderClause.AsObject>,
       limit: number,
       startAfter: Uint8Array | string,
       startAt: Uint8Array | string,
       prove: boolean,
-      select: GetDocumentsRequest.GetDocumentsRequestV1.SelectMap[keyof GetDocumentsRequest.GetDocumentsRequestV1.SelectMap],
+      selectsList: Array<GetDocumentsRequest.GetDocumentsRequestV1.Select.AsObject>,
       groupByList: Array<string>,
-      having: Uint8Array | string,
+      havingList: Array<GetDocumentsRequest.HavingClause.AsObject>,
+      offset: number,
     }
 
-    export interface SelectMap {
-      DOCUMENTS: 0;
-      COUNT: 1;
+    export class Select extends jspb.Message {
+      getFunction(): GetDocumentsRequest.GetDocumentsRequestV1.Select.FunctionMap[keyof GetDocumentsRequest.GetDocumentsRequestV1.Select.FunctionMap];
+      setFunction(value: GetDocumentsRequest.GetDocumentsRequestV1.Select.FunctionMap[keyof GetDocumentsRequest.GetDocumentsRequestV1.Select.FunctionMap]): void;
+
+      getField(): string;
+      setField(value: string): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): Select.AsObject;
+      static toObject(includeInstance: boolean, msg: Select): Select.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: Select, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): Select;
+      static deserializeBinaryFromReader(message: Select, reader: jspb.BinaryReader): Select;
     }
 
-    export const Select: SelectMap;
+    export namespace Select {
+      export type AsObject = {
+        pb_function: GetDocumentsRequest.GetDocumentsRequestV1.Select.FunctionMap[keyof GetDocumentsRequest.GetDocumentsRequestV1.Select.FunctionMap],
+        field: string,
+      }
+
+      export interface FunctionMap {
+        DOCUMENTS: 0;
+        COUNT: 1;
+        SUM: 2;
+        AVG: 3;
+        MIN: 4;
+        MAX: 5;
+      }
+
+      export const Function: FunctionMap;
+    }
 
     export enum StartCase {
       START_NOT_SET = 0,
@@ -2434,6 +2768,22 @@ export namespace GetDocumentsRequest {
       START_AT = 7,
     }
   }
+
+  export interface WhereOperatorMap {
+    EQUAL: 0;
+    GREATER_THAN: 1;
+    GREATER_THAN_OR_EQUALS: 2;
+    LESS_THAN: 3;
+    LESS_THAN_OR_EQUALS: 4;
+    BETWEEN: 5;
+    BETWEEN_EXCLUDE_BOUNDS: 6;
+    BETWEEN_EXCLUDE_LEFT: 7;
+    BETWEEN_EXCLUDE_RIGHT: 8;
+    IN: 9;
+    STARTS_WITH: 10;
+  }
+
+  export const WhereOperator: WhereOperatorMap;
 
   export enum VersionCase {
     VERSION_NOT_SET = 0,

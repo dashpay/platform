@@ -12,25 +12,137 @@
 use super::*;
 use crate::query::tests::{setup_platform, store_data_contract, store_document};
 use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::{
-    Select as V1Select, Start as V1Start,
+    select as v1_select, Select as V1Select, Start as V1Start,
+};
+use dapi_grpc::platform::v0::get_documents_request::{
+    document_field_value, having_aggregate, having_clause, order_clause,
+    DocumentFieldValue as ProtoDocumentFieldValue, GetDocumentsRequestV0,
+    HavingAggregate as ProtoHavingAggregate, HavingClause as ProtoHavingClause,
+    OrderClause as ProtoOrderClause, WhereClause as ProtoWhereClause,
+    WhereOperator as ProtoWhereOperator,
 };
 use dpp::dashcore::Network;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
-use dpp::platform_value::platform_value;
+use dpp::platform_value::{platform_value, Value};
+
+/// Build a `ProtoDocumentFieldValue` from a `dpp::platform_value::Value`
+/// for use inside this test module only. **Subset of the SDK's
+/// `value_to_proto`** — covers the primitive types these tests
+/// actually construct: `Bool` / signed + unsigned integers /
+/// `Float` / `Text` / `Bytes` / `Array` / `Null`. Variants the
+/// SDK supports but the tests don't need (`Bytes20/32/36`,
+/// `Identifier`, `U128`/`I128` → decimal text) are intentionally
+/// omitted here — a test trying to use one panics so the gap is
+/// loud rather than silent. Wider fidelity lives in the SDK at
+/// `rs-sdk/src/platform/documents/document_query.rs::value_to_proto`.
+fn pv(value: Value) -> ProtoDocumentFieldValue {
+    let variant = match value {
+        Value::Bool(b) => document_field_value::Variant::BoolValue(b),
+        Value::I8(i) => document_field_value::Variant::Int64Value(i as i64),
+        Value::I16(i) => document_field_value::Variant::Int64Value(i as i64),
+        Value::I32(i) => document_field_value::Variant::Int64Value(i as i64),
+        Value::I64(i) => document_field_value::Variant::Int64Value(i),
+        Value::U8(u) => document_field_value::Variant::Uint64Value(u as u64),
+        Value::U16(u) => document_field_value::Variant::Uint64Value(u as u64),
+        Value::U32(u) => document_field_value::Variant::Uint64Value(u as u64),
+        Value::U64(u) => document_field_value::Variant::Uint64Value(u),
+        Value::Float(f) => document_field_value::Variant::DoubleValue(f),
+        Value::Text(s) => document_field_value::Variant::Text(s),
+        Value::Bytes(b) => document_field_value::Variant::BytesValue(b),
+        Value::Array(items) => {
+            document_field_value::Variant::List(document_field_value::ValueList {
+                values: items.into_iter().map(pv).collect(),
+            })
+        }
+        // Picking the variant means "this operand is null"; the
+        // bool payload is a placeholder per the proto-side comment
+        // on the `null_value` field.
+        Value::Null => document_field_value::Variant::NullValue(true),
+        other => panic!("pv: unsupported test-value variant {:?}", other),
+    };
+    ProtoDocumentFieldValue {
+        variant: Some(variant),
+    }
+}
+
+/// Build a proto `WhereClause` triple `(field, operator, value)`.
+fn wc(field: &str, operator: ProtoWhereOperator, value: Value) -> ProtoWhereClause {
+    ProtoWhereClause {
+        field: field.to_string(),
+        operator: operator as i32,
+        value: Some(pv(value)),
+    }
+}
+
+/// Build a proto `OrderClause` (field, ascending) — field-target
+/// variant of the wire's `target` oneof.
+fn oc(field: &str, ascending: bool) -> ProtoOrderClause {
+    ProtoOrderClause {
+        target: Some(order_clause::Target::Field(field.to_string())),
+        ascending,
+    }
+}
+
+/// Build a proto `HavingClause` with a literal-value right
+/// operand `(aggregate, operator, value)`. Convenience for the
+/// rejection tests — the server rejects any non-empty `having`
+/// wholesale today, so the specific aggregate function / operator
+/// / value here don't need to be domain-meaningful, only
+/// well-formed. Tests that need the ranking right-operand
+/// (`COUNT EQ MAX`, `COUNT IN TOP(5)`, …) should build the
+/// `ProtoHavingClause` inline with `having_clause::Right::Ranking`
+/// rather than route through this helper.
+fn hc(
+    function: having_aggregate::Function,
+    field: &str,
+    operator: having_clause::Operator,
+    value: Value,
+) -> ProtoHavingClause {
+    ProtoHavingClause {
+        aggregate: Some(ProtoHavingAggregate {
+            function: function as i32,
+            field: field.to_string(),
+        }),
+        operator: operator as i32,
+        right: Some(having_clause::Right::Value(pv(value))),
+    }
+}
+
+/// Build the proto `selects` field for the common single-projection
+/// tests. Wraps a single `Select { function, field }` in a
+/// one-element vec — the wire field is `repeated Select`, the
+/// `documents` / `count_star` helpers cover the bulk of test cases.
+/// Tests that need the multi-projection or unknown-discriminant
+/// shapes should build the vec inline.
+fn select_with(function: v1_select::Function) -> Vec<V1Select> {
+    vec![V1Select {
+        function: function as i32,
+        field: String::new(),
+    }]
+}
+
+fn select_documents() -> Vec<V1Select> {
+    select_with(v1_select::Function::Documents)
+}
+
+fn select_count_star() -> Vec<V1Select> {
+    select_with(v1_select::Function::Count)
+}
 
 fn empty_v1_request() -> GetDocumentsRequestV1 {
     GetDocumentsRequestV1 {
         data_contract_id: vec![0u8; 32],
         document_type: "widget".to_string(),
-        r#where: Vec::new(),
+        where_clauses: Vec::new(),
         order_by: Vec::new(),
         limit: None,
         start: None,
         prove: false,
-        select: V1Select::Documents as i32,
+        selects: select_documents(),
         group_by: Vec::new(),
         having: Vec::new(),
+        offset: None,
     }
 }
 
@@ -53,20 +165,29 @@ fn assert_not_yet_implemented(result: Result<&'static str, QueryError>, expected
 
 #[test]
 fn reject_having_non_empty() {
+    // Non-empty `having` is rejected wholesale until the server
+    // gains HAVING-evaluation capability. The clause shape itself
+    // doesn't matter (server doesn't decode it past the `is_empty()`
+    // check), so a single placeholder clause is sufficient.
     let request = GetDocumentsRequestV1 {
-        having: vec![0x01, 0x02],
+        having: vec![hc(
+            having_aggregate::Function::Count,
+            "",
+            having_clause::Operator::GreaterThan,
+            Value::U64(0),
+        )],
         ..empty_v1_request()
     };
     assert_not_yet_implemented(validate_and_route_for_tests(&request, &[]), "HAVING clause");
 }
 
-/// Unknown `Select` enum discriminants (e.g. `42`) are malformed
+/// Unknown `Select.Function` discriminants (e.g. `42`) are malformed
 /// wire input, not future capability. The handler must classify
 /// them as [`QueryError::InvalidArgument`] — `not_yet_implemented`
 /// carries the contract "valid request shape, caller can keep it
 /// unchanged when capability lands" which is wrong for garbage
 /// enum discriminants (no future protocol value would make `42`
-/// meaningful for `Select`).
+/// meaningful for `Select.Function`).
 ///
 /// Pins the discriminator so a future refactor that re-collapses
 /// the two error classes back together (e.g. someone replaces the
@@ -77,8 +198,11 @@ fn reject_having_non_empty() {
 fn reject_unknown_select_enum_value_as_invalid_argument() {
     let request = GetDocumentsRequestV1 {
         // Neither 0 (DOCUMENTS) nor 1 (COUNT); a discriminant
-        // outside the `Select` enum's defined set.
-        select: 42,
+        // outside the `Select.Function` enum's defined set.
+        selects: vec![V1Select {
+            function: 42,
+            field: String::new(),
+        }],
         ..empty_v1_request()
     };
     match validate_and_route_for_tests(&request, &[]) {
@@ -91,7 +215,7 @@ fn reject_unknown_select_enum_value_as_invalid_argument() {
             );
         }
         Err(QueryError::Query(QuerySyntaxError::Unsupported(msg))) => panic!(
-            "expected InvalidArgument for unknown Select discriminant; got \
+            "expected InvalidArgument for unknown Select.Function discriminant; got \
              not_yet_implemented(\"{}\"). The two error classes carry different \
              contracts (malformed input vs. future capability) and must not be \
              collapsed.",
@@ -119,6 +243,189 @@ fn reject_unknown_select_enum_value_as_invalid_argument() {
 /// All five modes must return `QuerySyntaxError::InvalidLimit`
 /// with the centralized message — not five different rejection
 /// reasons.
+/// Non-`None` `offset` is rejected as `not_yet_implemented` before
+/// any other routing happens. Pins the contract for all SELECT
+/// modes (DOCUMENTS / COUNT / SUM / AVG / MIN / MAX) since the
+/// rejection lives in the handler entry, not the per-function
+/// gate.
+#[test]
+fn reject_offset_uniformly_across_select_modes() {
+    for select_helper in [select_documents(), select_count_star()] {
+        let request = GetDocumentsRequestV1 {
+            selects: select_helper,
+            offset: Some(10),
+            ..empty_v1_request()
+        };
+        assert_not_yet_implemented(
+            validate_and_route_for_tests(&request, &[]),
+            "OFFSET pagination",
+        );
+    }
+}
+
+/// `selects.len() > 1` is rejected as `not_yet_implemented` —
+/// multi-projection routing + response shape are deferred to a
+/// follow-up. The wire stays `repeated` so the surface is stable
+/// when execution lands.
+#[test]
+fn reject_multi_projection_selects() {
+    let request = GetDocumentsRequestV1 {
+        selects: vec![
+            V1Select {
+                function: v1_select::Function::Count as i32,
+                field: String::new(),
+            },
+            V1Select {
+                function: v1_select::Function::Sum as i32,
+                field: "amount".to_string(),
+            },
+        ],
+        ..empty_v1_request()
+    };
+    assert_not_yet_implemented(
+        validate_and_route_for_tests(&request, &[]),
+        "multi-projection SELECT",
+    );
+}
+
+/// `SELECT MIN(field)` / `MAX(field)` are wire-accepted but
+/// rejected at routing — execution lives in a follow-up.
+#[test]
+fn reject_select_min_max() {
+    for (function, expected_msg) in [
+        (v1_select::Function::Min, "SELECT MIN"),
+        (v1_select::Function::Max, "SELECT MAX"),
+    ] {
+        let request = GetDocumentsRequestV1 {
+            selects: vec![V1Select {
+                function: function as i32,
+                field: "amount".to_string(),
+            }],
+            ..empty_v1_request()
+        };
+        assert_not_yet_implemented(validate_and_route_for_tests(&request, &[]), expected_msg);
+    }
+}
+
+/// `ORDER BY <aggregate>` (wire `OrderClause.target.aggregate`) is
+/// rejected at proto-decode time — drive's `OrderClause` only
+/// carries a plain field name today.
+#[test]
+fn reject_order_by_aggregate_target() {
+    let request = GetDocumentsRequestV1 {
+        order_by: vec![ProtoOrderClause {
+            target: Some(order_clause::Target::Aggregate(ProtoHavingAggregate {
+                function: having_aggregate::Function::Count as i32,
+                field: String::new(),
+            })),
+            ascending: false,
+        }],
+        ..empty_v1_request()
+    };
+    assert_not_yet_implemented(
+        validate_and_route_for_tests(&request, &[]),
+        "ORDER BY on aggregate keys",
+    );
+}
+
+/// `validate_and_route_for_tests` must mirror the real
+/// handler's gate ordering, not just its rejection messages, so
+/// a request that hits multiple gates fails on the same one in
+/// tests as in production.
+///
+/// Real-handler order:
+/// `offset → where_clauses decode → order_by decode → selects.len > 1 → select decode → validate_and_route`.
+///
+/// This test builds a request that is *both* multi-projection
+/// AND carries an aggregate-target order_by; the order_by gate
+/// must fire first (matches the real handler), not the
+/// multi-projection one.
+#[test]
+fn validate_and_route_for_tests_matches_real_handler_gate_order() {
+    let request = GetDocumentsRequestV1 {
+        // Multi-projection: would trip `selects.len > 1` gate.
+        selects: vec![
+            V1Select {
+                function: v1_select::Function::Count as i32,
+                field: String::new(),
+            },
+            V1Select {
+                function: v1_select::Function::Sum as i32,
+                field: "amount".to_string(),
+            },
+        ],
+        // ORDER BY on aggregate: trips order_by decode (earlier
+        // in the sequence than `selects.len > 1`).
+        order_by: vec![ProtoOrderClause {
+            target: Some(order_clause::Target::Aggregate(ProtoHavingAggregate {
+                function: having_aggregate::Function::Count as i32,
+                field: String::new(),
+            })),
+            ascending: false,
+        }],
+        ..empty_v1_request()
+    };
+    // Real handler decodes order_by before checking
+    // `selects.len > 1`, so the order-by-aggregate rejection
+    // must surface first.
+    assert_not_yet_implemented(
+        validate_and_route_for_tests(&request, &[]),
+        "ORDER BY on aggregate keys",
+    );
+}
+
+/// `value_from_proto`'s recursion-depth cap is the only
+/// structural defense against deeply-nested wire payloads on the
+/// v1 surface before schema validation runs. Pin the contract
+/// with a depth-2 `DocumentFieldValue` so a future refactor that
+/// reorders the depth check or restores the naive recursion
+/// fails this test loudly rather than silently widening the
+/// attack surface.
+///
+/// The malformed clause is delivered via a real `WhereClause`
+/// because the conversion entry point on the routing path is
+/// `where_clauses_from_proto`; the inner `value_from_proto_at_depth`
+/// is the actual unit under test.
+#[test]
+fn nested_list_rejected_at_depth_two() {
+    let nested_list_value = ProtoDocumentFieldValue {
+        variant: Some(document_field_value::Variant::List(
+            document_field_value::ValueList {
+                values: vec![ProtoDocumentFieldValue {
+                    variant: Some(document_field_value::Variant::List(
+                        document_field_value::ValueList {
+                            values: vec![ProtoDocumentFieldValue {
+                                variant: Some(document_field_value::Variant::Int64Value(1)),
+                            }],
+                        },
+                    )),
+                }],
+            },
+        )),
+    };
+    let nested_clause = ProtoWhereClause {
+        field: "any".to_string(),
+        operator: ProtoWhereOperator::In as i32,
+        value: Some(nested_list_value),
+    };
+    let request = GetDocumentsRequestV1 {
+        where_clauses: vec![nested_clause],
+        ..empty_v1_request()
+    };
+    match validate_and_route_for_tests(&request, &[]) {
+        Err(QueryError::InvalidArgument(msg)) => {
+            assert!(
+                msg.contains("nested DocumentFieldValue.list"),
+                "expected nested-list rejection message, got: {msg}"
+            );
+        }
+        other => panic!(
+            "expected InvalidArgument for nested DocumentFieldValue.list, got {:?}",
+            other
+        ),
+    }
+}
+
 #[test]
 fn reject_limit_some_zero_uniformly_across_select_modes() {
     let in_clauses = || {
@@ -155,7 +462,7 @@ fn reject_limit_some_zero_uniformly_across_select_modes() {
         (
             "SELECT DOCUMENTS, group_by=[]",
             GetDocumentsRequestV1 {
-                select: V1Select::Documents as i32,
+                selects: select_documents(),
                 limit: Some(0),
                 ..empty_v1_request()
             },
@@ -164,7 +471,7 @@ fn reject_limit_some_zero_uniformly_across_select_modes() {
         (
             "SELECT COUNT, group_by=[] (Aggregate) with In clause",
             GetDocumentsRequestV1 {
-                select: V1Select::Count as i32,
+                selects: select_count_star(),
                 limit: Some(0),
                 ..empty_v1_request()
             },
@@ -173,7 +480,7 @@ fn reject_limit_some_zero_uniformly_across_select_modes() {
         (
             "SELECT COUNT, group_by=[in_field] (GroupByIn)",
             GetDocumentsRequestV1 {
-                select: V1Select::Count as i32,
+                selects: select_count_star(),
                 group_by: vec!["brand".to_string()],
                 limit: Some(0),
                 ..empty_v1_request()
@@ -183,7 +490,7 @@ fn reject_limit_some_zero_uniformly_across_select_modes() {
         (
             "SELECT COUNT, group_by=[range_field] (GroupByRange)",
             GetDocumentsRequestV1 {
-                select: V1Select::Count as i32,
+                selects: select_count_star(),
                 group_by: vec!["color".to_string()],
                 limit: Some(0),
                 ..empty_v1_request()
@@ -193,7 +500,7 @@ fn reject_limit_some_zero_uniformly_across_select_modes() {
         (
             "SELECT COUNT, group_by=[in_field, range_field] (GroupByCompound)",
             GetDocumentsRequestV1 {
-                select: V1Select::Count as i32,
+                selects: select_count_star(),
                 group_by: vec!["brand".to_string(), "color".to_string()],
                 limit: Some(0),
                 ..empty_v1_request()
@@ -224,23 +531,44 @@ fn reject_limit_some_zero_uniformly_across_select_modes() {
     }
 }
 
+/// GROUP BY with SELECT DOCUMENTS is structurally nonsensical
+/// (GROUP BY → one row per key; DOCUMENTS → underlying rows),
+/// so the rejection uses `InvalidArgument`, not
+/// `not_yet_implemented`. There's no protocol version where the
+/// combination becomes meaningful — callers want SELECT COUNT /
+/// SUM / etc. for per-group output. Pin the discriminator so a
+/// future refactor that collapses this back into the
+/// not-yet-implemented family fails loudly.
 #[test]
-fn reject_group_by_with_documents() {
+fn reject_group_by_with_documents_as_invalid_argument() {
     let request = GetDocumentsRequestV1 {
-        select: V1Select::Documents as i32,
+        selects: select_documents(),
         group_by: vec!["color".to_string()],
         ..empty_v1_request()
     };
-    assert_not_yet_implemented(
-        validate_and_route_for_tests(&request, &[]),
-        "GROUP BY with SELECT DOCUMENTS",
-    );
+    match validate_and_route_for_tests(&request, &[]) {
+        Err(QueryError::InvalidArgument(msg)) => {
+            assert!(
+                msg.contains("GROUP BY with SELECT DOCUMENTS")
+                    && msg.contains("not a valid SQL shape"),
+                "expected SQL-shape-mismatch message, got: {msg}"
+            );
+        }
+        Err(QueryError::Query(QuerySyntaxError::Unsupported(msg))) => panic!(
+            "expected InvalidArgument for GROUP BY + SELECT DOCUMENTS; got \
+             not_yet_implemented(\"{msg}\"). The two error classes carry different \
+             contracts (malformed input vs. future capability) and must not be \
+             collapsed — GROUP BY + DOCUMENTS is structurally invalid, not \
+             future capability."
+        ),
+        other => panic!("expected InvalidArgument, got {:?}", other),
+    }
 }
 
 #[test]
 fn reject_group_by_field_not_in_where_clauses() {
     let request = GetDocumentsRequestV1 {
-        select: V1Select::Count as i32,
+        selects: select_count_star(),
         group_by: vec!["color".to_string()],
         ..empty_v1_request()
     };
@@ -253,7 +581,7 @@ fn reject_group_by_field_not_in_where_clauses() {
 #[test]
 fn reject_group_by_more_than_two_fields() {
     let request = GetDocumentsRequestV1 {
-        select: V1Select::Count as i32,
+        selects: select_count_star(),
         group_by: vec!["a".to_string(), "b".to_string(), "c".to_string()],
         ..empty_v1_request()
     };
@@ -266,7 +594,7 @@ fn reject_group_by_more_than_two_fields() {
 #[test]
 fn reject_two_field_group_by_outside_compound_shape() {
     let request = GetDocumentsRequestV1 {
-        select: V1Select::Count as i32,
+        selects: select_count_star(),
         group_by: vec!["color".to_string(), "brand".to_string()],
         ..empty_v1_request()
     };
@@ -291,7 +619,7 @@ fn reject_two_field_group_by_outside_compound_shape() {
 #[test]
 fn accept_count_with_empty_group_by_routes_to_aggregate() {
     let request = GetDocumentsRequestV1 {
-        select: V1Select::Count as i32,
+        selects: select_count_star(),
         ..empty_v1_request()
     };
     assert_eq!(
@@ -306,7 +634,7 @@ fn reject_count_aggregate_with_limit() {
     // meaningless and previously caused Drive's per-In fan-out
     // to honor it and return a partial sum disguised as a total.
     let request = GetDocumentsRequestV1 {
-        select: V1Select::Count as i32,
+        selects: select_count_star(),
         limit: Some(1),
         ..empty_v1_request()
     };
@@ -337,7 +665,7 @@ fn reject_count_group_by_in_with_limit() {
     // before reaching the path-query builder. Reject upstream
     // to make the contract explicit.
     let request = GetDocumentsRequestV1 {
-        select: V1Select::Count as i32,
+        selects: select_count_star(),
         group_by: vec!["age".to_string()],
         limit: Some(1),
         ..empty_v1_request()
@@ -359,14 +687,15 @@ fn reject_count_group_by_in_with_limit() {
 }
 
 #[test]
-fn reject_single_field_group_by_on_in_field_when_range_also_constrained() {
-    // `group_by=[in_field]` looks well-formed in isolation, but
-    // the simultaneous range clause forces Drive's compound walk
-    // to emit `(in_key, key)` rows that don't match the caller's
-    // single-field grouping. Caller must spell out the compound
-    // shape explicitly with `[in_field, range_field]`.
+fn accept_single_field_group_by_on_in_field_with_range_routes_to_in_entries() {
+    // `group_by=[in_field]` with an additional range clause is
+    // valid: drive's `detect_mode` picks
+    // `RangeAggregateCarrierProof` (grovedb #663) on the prove
+    // path and `RangeNoProof` per-In-branch on the no-prove path —
+    // both produce entries that line up with the caller's
+    // single-field GROUP BY shape.
     let request = GetDocumentsRequestV1 {
-        select: V1Select::Count as i32,
+        selects: select_count_star(),
         group_by: vec!["brand".to_string()],
         ..empty_v1_request()
     };
@@ -382,18 +711,22 @@ fn reject_single_field_group_by_on_in_field_when_range_also_constrained() {
             value: platform_value!("blue"),
         },
     ];
-    assert_not_yet_implemented(
-        validate_and_route_for_tests(&request, &where_clauses),
-        "single-field GROUP BY when both `In` and range clauses are present",
+    assert_eq!(
+        validate_and_route_for_tests(&request, &where_clauses).unwrap(),
+        "count_entries_via_in_field"
     );
 }
 
 #[test]
-fn reject_single_field_group_by_on_range_field_when_in_also_constrained() {
-    // Mirror of the above for the range-field branch: same
-    // compound-shape mismatch, different `group_by` entry.
+fn accept_single_field_group_by_on_range_field_with_in_routes_to_range_entries() {
+    // Mirror of the above: `group_by=[range_field]` with an
+    // active In on the prefix routes to
+    // `CountMode::GroupByRange`, and drive picks
+    // `RangeDistinctProof` (with In-fanout via subquery) on the
+    // prove path or `RangeNoProof` distinct on the no-prove
+    // path.
     let request = GetDocumentsRequestV1 {
-        select: V1Select::Count as i32,
+        selects: select_count_star(),
         group_by: vec!["color".to_string()],
         ..empty_v1_request()
     };
@@ -409,16 +742,63 @@ fn reject_single_field_group_by_on_range_field_when_in_also_constrained() {
             value: platform_value!("blue"),
         },
     ];
-    assert_not_yet_implemented(
-        validate_and_route_for_tests(&request, &where_clauses),
-        "single-field GROUP BY when both `In` and range clauses are present",
+    assert_eq!(
+        validate_and_route_for_tests(&request, &where_clauses).unwrap(),
+        "count_entries_via_range_field"
+    );
+}
+
+/// Routing decision must not depend on `where_clauses` element
+/// order when two range clauses are present. Pins the
+/// `is_range_field` / `is_in_field` membership-test contract
+/// (match-any, not match-first) so a future refactor that swaps
+/// back to a `.find(...).map(...) == Some(...)` shape fails
+/// loudly rather than re-introducing the bug.
+///
+/// Drive's executor explicitly supports the two-range
+/// `GroupByRange + prove` shape (see
+/// `outer_range_plus_inner_range_with_prove_and_group_by_range_routes_to_carrier_proof`
+/// in `rs-drive`); the router must reach it regardless of
+/// which range clause the caller wrote first.
+#[test]
+fn group_by_routing_is_independent_of_two_range_clause_order() {
+    let make_request = |where_clauses: Vec<WhereClause>| {
+        let request = GetDocumentsRequestV1 {
+            selects: select_count_star(),
+            group_by: vec!["brand".to_string()],
+            ..empty_v1_request()
+        };
+        validate_and_route_for_tests(&request, &where_clauses).unwrap()
+    };
+
+    let brand_range = WhereClause {
+        field: "brand".to_string(),
+        operator: WhereOperator::GreaterThan,
+        value: platform_value!("acme"),
+    };
+    let color_range = WhereClause {
+        field: "color".to_string(),
+        operator: WhereOperator::GreaterThan,
+        value: platform_value!("blue"),
+    };
+
+    // GROUP BY brand: both orderings must route the same way.
+    assert_eq!(
+        make_request(vec![brand_range.clone(), color_range.clone()]),
+        "count_entries_via_range_field",
+        "GROUP BY brand routing must not depend on whether brand or color is first",
+    );
+    assert_eq!(
+        make_request(vec![color_range, brand_range]),
+        "count_entries_via_range_field",
+        "GROUP BY brand routing must not depend on whether brand or color is first",
     );
 }
 
 #[test]
 fn accept_count_group_by_in_field_routes_to_in_entries() {
     let request = GetDocumentsRequestV1 {
-        select: V1Select::Count as i32,
+        selects: select_count_star(),
         group_by: vec!["brand".to_string()],
         ..empty_v1_request()
     };
@@ -436,7 +816,7 @@ fn accept_count_group_by_in_field_routes_to_in_entries() {
 #[test]
 fn accept_count_group_by_range_field_routes_to_range_entries() {
     let request = GetDocumentsRequestV1 {
-        select: V1Select::Count as i32,
+        selects: select_count_star(),
         group_by: vec!["color".to_string()],
         ..empty_v1_request()
     };
@@ -454,7 +834,7 @@ fn accept_count_group_by_range_field_routes_to_range_entries() {
 #[test]
 fn accept_count_group_by_compound_routes_to_compound_entries() {
     let request = GetDocumentsRequestV1 {
-        select: V1Select::Count as i32,
+        selects: select_count_star(),
         group_by: vec!["brand".to_string(), "color".to_string()],
         ..empty_v1_request()
     };
@@ -544,14 +924,15 @@ fn e2e_documents_select_matches_v0() {
     let request_v1 = GetDocumentsRequestV1 {
         data_contract_id: contract.id().to_vec(),
         document_type: "widget".to_string(),
-        r#where: Vec::new(),
+        where_clauses: Vec::new(),
         order_by: Vec::new(),
         limit: None,
         start: None,
         prove: false,
-        select: V1Select::Documents as i32,
+        selects: select_documents(),
         group_by: Vec::new(),
         having: Vec::new(),
+        offset: None,
     };
     let v1_result = platform
         .query_documents_v1(request_v1, &state, version)
@@ -574,14 +955,20 @@ fn e2e_having_rejection_surfaces_in_response() {
     let request = GetDocumentsRequestV1 {
         data_contract_id: vec![0u8; 32],
         document_type: "anything".to_string(),
-        r#where: Vec::new(),
+        where_clauses: Vec::new(),
         order_by: Vec::new(),
         limit: None,
         start: None,
         prove: false,
-        select: V1Select::Count as i32,
+        selects: select_count_star(),
         group_by: Vec::new(),
-        having: vec![0xFF, 0xFE],
+        having: vec![hc(
+            having_aggregate::Function::Sum,
+            "amount",
+            having_clause::Operator::GreaterThan,
+            Value::U64(100),
+        )],
+        offset: None,
     };
     let result = platform
         .query_documents_v1(request, &state, version)
@@ -608,14 +995,15 @@ fn reject_start_with_select_count() {
     let request = GetDocumentsRequestV1 {
         data_contract_id: vec![0u8; 32],
         document_type: "widget".to_string(),
-        r#where: Vec::new(),
+        where_clauses: Vec::new(),
         order_by: Vec::new(),
         limit: None,
         start: Some(V1Start::StartAfter(vec![1u8; 32])),
         prove: false,
-        select: V1Select::Count as i32,
+        selects: select_count_star(),
         group_by: Vec::new(),
         having: Vec::new(),
+        offset: None,
     };
     let result = platform
         .query_documents_v1(request, &state, version)
@@ -654,11 +1042,17 @@ mod ported_v0_count_tests {
     // so the inner module sees `validate_and_route_for_tests`,
     // `GetDocumentsRequestV1`, etc. directly.
     use super::super::*;
+    use super::{oc, select_count_star, select_documents, wc};
     use crate::query::tests::{setup_platform, store_data_contract, store_document};
     use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::Select as V1Select;
+    use dapi_grpc::platform::v0::get_documents_request::{
+        OrderClause as ProtoOrderClause, WhereClause as ProtoWhereClause,
+        WhereOperator as ProtoWhereOperator,
+    };
     use dpp::dashcore::Network;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
     use dpp::document::DocumentV0Setters;
+    use dpp::platform_value::Value;
     use dpp::tests::json_document::json_document_to_contract_with_ids;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
@@ -694,15 +1088,6 @@ mod ported_v0_count_tests {
             )
             .expect("create contract")
             .data_contract_owned()
-    }
-
-    fn serialize_where_clauses_to_cbor(where_clauses: Vec<Value>) -> Vec<u8> {
-        use ciborium::value::Value as CborValue;
-        let cbor: CborValue = TryInto::<CborValue>::try_into(Value::Array(where_clauses))
-            .expect("expected to convert where clauses to cbor value");
-        let mut out = Vec::new();
-        ciborium::ser::into_writer(&cbor, &mut out).expect("expected to serialize where clauses");
-        out
     }
 
     fn store_person_document(
@@ -759,8 +1144,8 @@ mod ported_v0_count_tests {
     fn count_v1_request(
         data_contract_id: Vec<u8>,
         document_type: &str,
-        where_bytes: Vec<u8>,
-        order_by_bytes: Vec<u8>,
+        where_clauses: Vec<ProtoWhereClause>,
+        order_by: Vec<ProtoOrderClause>,
         group_by: Vec<String>,
         limit: Option<u32>,
         prove: bool,
@@ -768,14 +1153,15 @@ mod ported_v0_count_tests {
         GetDocumentsRequestV1 {
             data_contract_id,
             document_type: document_type.to_string(),
-            r#where: where_bytes,
-            order_by: order_by_bytes,
+            where_clauses,
+            order_by,
             limit,
             start: None,
             prove,
-            select: V1Select::Count as i32,
+            selects: select_count_star(),
             group_by,
             having: Vec::new(),
+            offset: None,
         }
     }
 
@@ -923,16 +1309,16 @@ mod ported_v0_count_tests {
             );
         }
 
-        let where_clauses = vec![Value::Array(vec![
-            Value::Text("age".to_string()),
-            Value::Text("in".to_string()),
+        let where_clauses = vec![wc(
+            "age",
+            ProtoWhereOperator::In,
             Value::Array(vec![Value::U64(30), Value::U64(40)]),
-        ])];
+        )];
 
         let request = count_v1_request(
             data_contract.id().to_vec(),
             "person",
-            serialize_where_clauses_to_cbor(where_clauses),
+            where_clauses,
             Vec::new(),
             vec!["age".to_string()],
             None,
@@ -1014,16 +1400,16 @@ mod ported_v0_count_tests {
             );
         }
 
-        let where_clauses = vec![Value::Array(vec![
-            Value::Text("age".to_string()),
-            Value::Text("in".to_string()),
+        let where_clauses = vec![wc(
+            "age",
+            ProtoWhereOperator::In,
             Value::Array(vec![Value::U64(30), Value::U64(40)]),
-        ])];
+        )];
 
         let request = count_v1_request(
             data_contract.id().to_vec(),
             "person",
-            serialize_where_clauses_to_cbor(where_clauses),
+            where_clauses,
             Vec::new(),
             /* group_by = */ Vec::new(),
             /* limit = */ None,
@@ -1071,16 +1457,12 @@ mod ported_v0_count_tests {
         .expect("expected to get json based contract");
         store_data_contract(&platform, &data_contract, version);
 
-        let where_clauses = vec![Value::Array(vec![
-            Value::Text("age".to_string()),
-            Value::Text(">".to_string()),
-            Value::U64(20),
-        ])];
+        let where_clauses = vec![wc("age", ProtoWhereOperator::GreaterThan, Value::U64(20))];
 
         let request = count_v1_request(
             data_contract.id().to_vec(),
             "person",
-            serialize_where_clauses_to_cbor(where_clauses),
+            where_clauses,
             Vec::new(),
             Vec::new(),
             None,
@@ -1145,16 +1527,16 @@ mod ported_v0_count_tests {
             );
         }
 
-        let where_clauses = vec![Value::Array(vec![
-            Value::Text("firstName".to_string()),
-            Value::Text("==".to_string()),
+        let where_clauses = vec![wc(
+            "firstName",
+            ProtoWhereOperator::Equal,
             Value::Text("Alice".to_string()),
-        ])];
+        )];
 
         let request = count_v1_request(
             data_contract.id().to_vec(),
             "person",
-            serialize_where_clauses_to_cbor(where_clauses),
+            where_clauses,
             Vec::new(),
             Vec::new(),
             None,
@@ -1261,21 +1643,18 @@ mod ported_v0_count_tests {
             );
         }
 
-        let where_clauses = vec![Value::Array(vec![
-            Value::Text("age".to_string()),
-            Value::Text("in".to_string()),
+        let where_clauses = vec![wc(
+            "age",
+            ProtoWhereOperator::In,
             Value::Array(vec![Value::U64(30), Value::U64(40)]),
-        ])];
-        let order_by = vec![Value::Array(vec![
-            Value::Text("age".to_string()),
-            Value::Text("asc".to_string()),
-        ])];
+        )];
+        let order_by = vec![oc("age", /* ascending = */ true)];
 
         let request = count_v1_request(
             data_contract.id().to_vec(),
             "person",
-            serialize_where_clauses_to_cbor(where_clauses),
-            serialize_where_clauses_to_cbor(order_by),
+            where_clauses,
+            order_by,
             vec!["age".to_string()],
             None,
             true,
@@ -1362,23 +1741,20 @@ mod ported_v0_count_tests {
         }
 
         let make_request = |group_by: Vec<String>, limit: Option<u32>, ascending: Option<bool>| {
-            let where_clauses = vec![Value::Array(vec![
-                Value::Text("color".to_string()),
-                Value::Text(">".to_string()),
+            let where_clauses = vec![wc(
+                "color",
+                ProtoWhereOperator::GreaterThan,
                 Value::Text("blue".to_string()),
-            ])];
-            let order_by_bytes = match ascending {
-                Some(asc) => serialize_where_clauses_to_cbor(vec![Value::Array(vec![
-                    Value::Text("color".to_string()),
-                    Value::Text(if asc { "asc" } else { "desc" }.to_string()),
-                ])]),
+            )];
+            let order_by = match ascending {
+                Some(asc) => vec![oc("color", asc)],
                 None => Vec::new(),
             };
             count_v1_request(
                 contract.id().to_vec(),
                 "widget",
-                serialize_where_clauses_to_cbor(where_clauses),
-                order_by_bytes,
+                where_clauses,
+                order_by,
                 group_by,
                 limit,
                 false,
@@ -1493,15 +1869,15 @@ mod ported_v0_count_tests {
             store_document(&platform, &contract, document_type, &doc, platform_version);
         }
 
-        let where_clauses = vec![Value::Array(vec![
-            Value::Text("color".to_string()),
-            Value::Text(">".to_string()),
+        let where_clauses = vec![wc(
+            "color",
+            ProtoWhereOperator::GreaterThan,
             Value::Text("blue".to_string()),
-        ])];
+        )];
         let request = count_v1_request(
             contract.id().to_vec(),
             "widget",
-            serialize_where_clauses_to_cbor(where_clauses),
+            where_clauses,
             Vec::new(),
             vec!["color".to_string()],
             None,
