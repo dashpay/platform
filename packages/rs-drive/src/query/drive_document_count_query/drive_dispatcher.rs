@@ -224,7 +224,7 @@ pub fn where_clauses_from_value(
 /// `(equal_clauses, in_clause, range_clause)` triples), but the
 /// count-query path accepts the carrier-aggregate shape
 /// (`outer_range + inner_ACOR_range` on different fields, e.g.
-/// G8 / G9). Structural validation for that shape lives in
+/// G8). Structural validation for that shape lives in
 /// [`DriveDocumentCountQuery::detect_mode`] (which knows about
 /// `CountMode::GroupByRange`-with-two-ranges and routes to
 /// `DocumentCountMode::RangeAggregateCarrierProof`); replicating

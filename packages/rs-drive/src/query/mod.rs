@@ -3,19 +3,33 @@ use std::sync::Arc;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub use {
     conditions::{ValueClause, WhereClause, WhereOperator},
-    drive_document_count_query::{DocumentCountMode, DriveDocumentCountQuery, SplitCountEntry},
+    // `CountMode` is the SQL-shape contract (Aggregate /
+    // GroupByIn / GroupByRange / GroupByCompound) the prover
+    // dispatches on; the verifier needs the same enum to route
+    // proof verification to the matching primitive
+    // (`DocumentCountMode`). Available under either `server`
+    // (executor input) or `verify` (proof-decode input).
+    drive_document_count_query::{
+        CountMode, DocumentCountMode, DriveDocumentCountQuery, SplitCountEntry,
+    },
     grovedb::{PathQuery, Query, QueryItem, SizedQuery},
+    having::{
+        HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator, HavingRanking,
+        HavingRankingKind, HavingRightOperand,
+    },
     ordering::OrderClause,
+    projection::{SelectFunction, SelectProjection},
     single_document_drive_query::SingleDocumentDriveQuery,
     single_document_drive_query::SingleDocumentDriveQueryContestedStatus,
     vote_polls_by_end_date_query::VotePollsByEndDateDriveQuery,
     vote_query::IdentityBasedVoteDriveQuery,
 };
 
+// `DocumentCountRequest` / `RangeCountOptions` are the
+// server-side executor inputs and stay `server`-only.
 #[cfg(feature = "server")]
 pub use drive_document_count_query::{
-    CountMode, DocumentCountRequest, DocumentCountResponse, RangeCountOptions,
-    MAX_LIMIT_AS_FAILSAFE,
+    DocumentCountRequest, DocumentCountResponse, RangeCountOptions, MAX_LIMIT_AS_FAILSAFE,
 };
 // Imports available when either "server" or "verify" features are enabled
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -77,7 +91,11 @@ pub mod conditions;
 #[cfg(any(feature = "server", feature = "verify"))]
 mod defaults;
 #[cfg(any(feature = "server", feature = "verify"))]
+pub mod having;
+#[cfg(any(feature = "server", feature = "verify"))]
 pub mod ordering;
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod projection;
 #[cfg(any(feature = "server", feature = "verify"))]
 mod single_document_drive_query;
 
@@ -781,24 +799,36 @@ impl<'a> DriveDocumentQuery<'a> {
             ))),
         }?;
 
-        let order_by_clauses: Vec<OrderClause> = order_by
-            .map(|id_cbor| {
-                if let Value::Array(clauses) = id_cbor {
-                    clauses
-                        .iter()
-                        .filter_map(|order_clause| {
-                            if let Value::Array(clauses_components) = order_clause {
-                                OrderClause::from_components(clauses_components).ok()
-                            } else {
-                                None
-                            }
+        // Malformed `order_by` payloads reject the request — the
+        // pre-existing `filter_map(... .ok())` here silently dropped
+        // bad clauses (or the whole field for non-array shapes),
+        // which could mutate result ordering and (on the prove
+        // path) proof bytes without telling the caller. Tighten the
+        // contract: every clause must parse, and the top-level
+        // shape must be `Value::Null` or `Value::Array`.
+        let order_by_clauses: Vec<OrderClause> = match order_by {
+            None | Some(Value::Null) => Vec::new(),
+            Some(Value::Array(clauses)) => clauses
+                .iter()
+                .map(|order_clause| match order_clause {
+                    Value::Array(components) => {
+                        OrderClause::from_components(components).map_err(|_| {
+                            Error::Query(QuerySyntaxError::InvalidOrderByProperties(
+                                "invalid order_by clause components",
+                            ))
                         })
-                        .collect()
-                } else {
-                    Vec::new()
-                }
-            })
-            .unwrap_or_default();
+                    }
+                    _ => Err(Error::Query(QuerySyntaxError::InvalidOrderByProperties(
+                        "order_by clause must be an array",
+                    ))),
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+            Some(_) => {
+                return Err(Error::Query(QuerySyntaxError::InvalidOrderByProperties(
+                    "order_by must be an array",
+                )));
+            }
+        };
 
         Self::from_typed_clauses(
             all_where_clauses,

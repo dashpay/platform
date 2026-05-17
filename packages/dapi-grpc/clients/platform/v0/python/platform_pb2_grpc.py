@@ -421,12 +421,7 @@ class PlatformServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def getIdentityByPublicKeyHash(self, request, context):
-        """`getDocumentsCount` removed in v1: callers express counts via
-        `getDocuments` with `version.v1.select = COUNT` (optionally
-        with `group_by`). See `GetDocumentsRequestV1` for the unified
-        SQL-shaped surface. The v0-count endpoint shipped briefly in
-        #3623 and never had stable callers; v1 supersedes it entirely.
-        """
+        """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
