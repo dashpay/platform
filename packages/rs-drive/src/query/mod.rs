@@ -3,7 +3,15 @@ use std::sync::Arc;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub use {
     conditions::{ValueClause, WhereClause, WhereOperator},
-    drive_document_count_query::{DocumentCountMode, DriveDocumentCountQuery, SplitCountEntry},
+    // `CountMode` is the SQL-shape contract (Aggregate /
+    // GroupByIn / GroupByRange / GroupByCompound) the prover
+    // dispatches on; the verifier needs the same enum to route
+    // proof verification to the matching primitive
+    // (`DocumentCountMode`). Available under either `server`
+    // (executor input) or `verify` (proof-decode input).
+    drive_document_count_query::{
+        CountMode, DocumentCountMode, DriveDocumentCountQuery, SplitCountEntry,
+    },
     grovedb::{PathQuery, Query, QueryItem, SizedQuery},
     having::{
         HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator, HavingRanking,
@@ -17,10 +25,11 @@ pub use {
     vote_query::IdentityBasedVoteDriveQuery,
 };
 
+// `DocumentCountRequest` / `RangeCountOptions` are the
+// server-side executor inputs and stay `server`-only.
 #[cfg(feature = "server")]
 pub use drive_document_count_query::{
-    CountMode, DocumentCountRequest, DocumentCountResponse, RangeCountOptions,
-    MAX_LIMIT_AS_FAILSAFE,
+    DocumentCountRequest, DocumentCountResponse, RangeCountOptions, MAX_LIMIT_AS_FAILSAFE,
 };
 // Imports available when either "server" or "verify" features are enabled
 #[cfg(any(feature = "server", feature = "verify"))]
