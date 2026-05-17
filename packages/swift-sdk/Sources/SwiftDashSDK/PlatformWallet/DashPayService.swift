@@ -11,7 +11,7 @@ public final class DashPayService: Sendable {
     private let platformWallet: SendableBox<PlatformWallet?>
     private let identityManager: SendableBox<IdentityManager?>
     private let currentIdentity: SendableBox<ManagedIdentity?>
-    private let network: SendableBox<PlatformNetwork>
+    private let network: SendableBox<Network>
 
     public init() {
         self.platformWallet = SendableBox(nil)
@@ -50,7 +50,7 @@ public final class DashPayService: Sendable {
     ///   - mnemonic: BIP39 mnemonic phrase
     ///   - network: Platform network (mainnet, testnet, devnet)
     /// - Throws: Error if wallet creation fails
-    public func initializeWallet(mnemonic: String, network: PlatformNetwork = .testnet) throws {
+    public func initializeWallet(mnemonic: String, network: Network = .testnet) throws {
         // Create platform wallet from mnemonic
         let wallet = try PlatformWallet.fromMnemonic(mnemonic)
 
@@ -138,7 +138,9 @@ public final class DashPayService: Sendable {
     /// - Throws: Error if acceptance fails
     public func acceptContactRequest(identity: ManagedIdentity, from senderId: Identifier) throws {
         guard let request = try identity.getIncomingContactRequest(senderId: senderId) else {
-            throw PlatformWalletError.contactNotFound
+            throw PlatformWalletError.contactNotFound(
+                "no incoming contact request from sender id"
+            )
         }
         try identity.acceptContactRequest(request)
     }

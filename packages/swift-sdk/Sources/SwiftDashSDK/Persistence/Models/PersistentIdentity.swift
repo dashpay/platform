@@ -4,12 +4,23 @@ import SwiftData
 /// SwiftData model for persisting Identity data
 @Model
 public final class PersistentIdentity {
+    /// Index `networkRaw` so per-network scans (`#Predicate { $0.networkRaw == raw }`)
+    /// don't degrade to a table scan. Every UI surface that lists
+    /// identities filters by the active network.
+    #Index<PersistentIdentity>([\.networkRaw])
+
     // MARK: - Core Properties
     @Attribute(.unique) public var identityId: Data
     public var balance: Int64
     public var revision: Int64
     public var isLocal: Bool
     public var alias: String?
+    /// User's chosen primary display label (the one rendered on
+    /// list rows and avatars). Populated only when the user selects a
+    /// main name from `mainDpnsName` selection or as the fallback set
+    /// during initial registration. The full label collection lives on
+    /// the `dpnsNames` relationship below; this scalar is just the
+    /// "show this one in the cell" hint.
     public var dpnsName: String?
     public var mainDpnsName: String?
     public var identityType: String
@@ -28,22 +39,22 @@ public final class PersistentIdentity {
     public var lastSyncedAt: Date?
 
     // MARK: - Network
-    /// Stored as the `AppNetwork.rawValue` `Int` so SwiftData
+    /// Stored as the `Network.rawValue` `UInt32` so SwiftData
     /// `#Predicate` expressions can evaluate it directly. Foundation's
     /// predicate engine rejects captured non-primitive types — even
     /// Codable raw-value enums crash at evaluation with
     /// "Unsupported Predicate: Captured/constant values of type
-    /// 'AppNetwork' are not supported". The `network` computed
+    /// 'Network' are not supported". The `network` computed
     /// accessor below keeps the public API type-safe; only predicates
     /// that need to filter by network reach for `networkRaw`.
-    public var networkRaw: Int
+    public var networkRaw: UInt32
 
     /// Type-safe accessor over `networkRaw`. Reads fall back to
     /// `.testnet` if the stored raw value ever drifts out of the
-    /// `AppNetwork` range (shouldn't happen — writers only go through
-    /// this setter which uses `AppNetwork.rawValue`).
-    public var network: AppNetwork {
-        get { AppNetwork(rawValue: networkRaw) ?? .testnet }
+    /// `Network` range (shouldn't happen — writers only go through
+    /// this setter which uses `Network.rawValue`).
+    public var network: Network {
+        get { Network(rawValue: networkRaw) ?? .testnet }
         set { networkRaw = newValue.rawValue }
     }
 
@@ -73,6 +84,40 @@ public final class PersistentIdentity {
     @Relationship(deleteRule: .cascade, inverse: \PersistentDocument.ownerIdentity) public var documents: [PersistentDocument]
     @Relationship(deleteRule: .nullify) public var tokenBalances: [PersistentTokenBalance]
 
+    /// Confirmed DPNS labels owned by this identity. Cascade-deleted
+    /// from the parent — losing the identity row drops the label
+    /// cache too. Append-only on the write path: the changeset's
+    /// merge policy never removes labels (DPNS doesn't expose a
+    /// user-driven "delete name" today), so the persister callback
+    /// only inserts new rows, never removes them. Predicates filter
+    /// by the denormalized `PersistentDPNSName.identityId` column,
+    /// not through this collection — see
+    /// `PersistentDPNSName.predicate(identityId:)`.
+    @Relationship(deleteRule: .cascade, inverse: \PersistentDPNSName.identity)
+    public var dpnsNames: [PersistentDPNSName] = []
+
+    /// DashPay profile cache for this identity — at most one row per
+    /// (network, identity) per the contract's per-`ownerId`
+    /// uniqueness on the `profile` document. Cascade-deleted from the
+    /// parent. Optional because not every identity has published a
+    /// profile (and the FFI changeset's `dashpay_profile: None`
+    /// semantics mean "no update", not "delete" — the persister never
+    /// nils this out from a flush). Inserted / refreshed by
+    /// `PlatformWalletPersistenceHandler.upsertDashpayProfile(...)`.
+    @Relationship(deleteRule: .cascade, inverse: \PersistentDashpayProfile.identity)
+    public var dashpayProfile: PersistentDashpayProfile?
+
+    /// DashPay contact-request rows owned by this identity (both
+    /// outgoing and incoming). Cascade-deleted from the parent. Same
+    /// query-by-denormalized-id pattern as `dpnsNames`: filters use
+    /// `PersistentDashpayContactRequest.predicate(ownerIdentityId:)`
+    /// rather than walking this collection from a SwiftUI view.
+    /// Append / overwrite / delete on the write path: the persister
+    /// callback applies upserts (per `(owner, contact, isOutgoing)`)
+    /// and tombstones (`removed_sent` / `removed_incoming`) directly.
+    @Relationship(deleteRule: .cascade, inverse: \PersistentDashpayContactRequest.owner)
+    public var contactRequests: [PersistentDashpayContactRequest] = []
+
     // Contracts in the local store that name this identity as their
     // owner. `.nullify` so deleting the identity leaves the contract
     // rows alive (with `ownerIdentity` nulled) — matches the user's
@@ -96,7 +141,7 @@ public final class PersistentIdentity {
         votingPrivateKeyIdentifier: String? = nil,
         ownerPrivateKeyIdentifier: String? = nil,
         payoutPrivateKeyIdentifier: String? = nil,
-        network: AppNetwork,
+        network: Network,
         identityIndex: UInt32 = 0
     ) {
         self.identityId = identityId
@@ -115,6 +160,9 @@ public final class PersistentIdentity {
         self.publicKeys = []
         self.documents = []
         self.tokenBalances = []
+        self.dpnsNames = []
+        self.dashpayProfile = nil
+        self.contactRequests = []
         self.ownedDataContracts = []
         self.createdAt = Date()
         self.lastUpdated = Date()
@@ -236,10 +284,10 @@ extension PersistentIdentity {
         }
     }
 
-    public static func predicate(network: AppNetwork) -> Predicate<PersistentIdentity> {
-        // Compare against the Int-backed `networkRaw` because Foundation's
+    public static func predicate(network: Network) -> Predicate<PersistentIdentity> {
+        // Compare against the UInt32-backed `networkRaw` because Foundation's
         // predicate evaluator can't capture non-primitive types like
-        // `AppNetwork` (the computed `network` accessor is invisible to
+        // `Network` (the computed `network` accessor is invisible to
         // SwiftData — it can't see through `\.network.rawValue` either).
         let target = network.rawValue
         return #Predicate<PersistentIdentity> { identity in
@@ -251,7 +299,7 @@ extension PersistentIdentity {
     /// Used by the recipient pickers, the "Acting as" picker, and any
     /// view that needs to restrict to identities the user controls on
     /// a specific network.
-    public static func walletOwnedIdentitiesPredicate(network: AppNetwork) -> Predicate<PersistentIdentity> {
+    public static func walletOwnedIdentitiesPredicate(network: Network) -> Predicate<PersistentIdentity> {
         let target = network.rawValue
         return #Predicate<PersistentIdentity> { identity in
             identity.wallet != nil && identity.networkRaw == target

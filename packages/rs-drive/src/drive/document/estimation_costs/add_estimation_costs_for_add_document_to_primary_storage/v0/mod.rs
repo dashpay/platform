@@ -1,5 +1,6 @@
 use crate::drive::constants::{AVERAGE_NUMBER_OF_UPDATES, AVERAGE_UPDATE_BYTE_COUNT_REQUIRED_SIZE};
 use crate::drive::document::paths::contract_documents_keeping_history_primary_key_path_for_document_id;
+use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
 use crate::util::storage_flags::StorageFlags;
 
 use crate::drive::Drive;
@@ -70,6 +71,7 @@ impl Drive {
         };
         let contract = document_and_contract_info.contract;
         let document_type = document_and_contract_info.document_type;
+        let primary_key_tree_type = document_type.primary_key_tree_type(platform_version)?;
         // at this level we have all the documents for the contract
         if document_type.documents_keep_history() {
             // if we keep history this level has trees
@@ -84,7 +86,7 @@ impl Drive {
             estimated_costs_only_with_layer_info.insert(
                 KeyInfoPath::from_known_path(primary_key_path),
                 EstimatedLayerInformation {
-                    tree_type: TreeType::NormalTree,
+                    tree_type: primary_key_tree_type,
                     estimated_layer_count: PotentiallyAtMaxElements,
                     estimated_layer_sizes: AllSubtrees(
                         DEFAULT_HASH_SIZE_U8,
@@ -137,7 +139,7 @@ impl Drive {
             estimated_costs_only_with_layer_info.insert(
                 KeyInfoPath::from_known_path(primary_key_path),
                 EstimatedLayerInformation {
-                    tree_type: TreeType::NormalTree,
+                    tree_type: primary_key_tree_type,
                     estimated_layer_count: PotentiallyAtMaxElements,
                     estimated_layer_sizes: AllItems(
                         DEFAULT_HASH_SIZE_U8,

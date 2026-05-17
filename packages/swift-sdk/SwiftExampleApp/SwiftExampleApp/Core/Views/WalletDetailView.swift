@@ -4,6 +4,20 @@ import SwiftData
 import DashSDKFFI
 import LocalAuthentication
 
+/// Routes for value-based navigation from the wallets tab. All
+/// pushes go through `.navigationDestination(for:)` modifiers
+/// on the stack root (see `WalletsContentView`) — this avoids
+/// closure-based `NavigationLink { Destination }` which on iOS 26
+/// (a) eagerly constructs the destination on every parent body
+/// invocation, stalling the click when the destination has any
+/// meaningful `init`, and (b) when mixed with value-based pushes
+/// further down the stack, makes SwiftUI animate-then-pop the
+/// inner destination because the stack identity is split across
+/// paradigms. Going value-based all the way fixes both.
+struct TransactionsRoute: Hashable {
+    let walletId: Data
+}
+
 struct WalletDetailView: View {
     @EnvironmentObject var walletManager: PlatformWalletManager
     @EnvironmentObject var platformState: AppState
@@ -14,30 +28,33 @@ struct WalletDetailView: View {
     @State private var showSendTransaction = false
     @State private var showWalletInfo = false
 
-    // Badge count for "View All Transactions". Backed by a
-    // bounded FetchDescriptor against the `(walletId, firstSeen)`
-    // compound index on `PersistentTransaction` — SQLite resolves
-    // it as an index-only scan. `propertiesToFetch = [\.walletId]`
-    // keeps SwiftData from hydrating `transactionData` / `label` /
-    // etc. just to produce a count; we only ever read `.count`.
-    //
-    // Previous approach queried `PersistentAccount` and reduced
-    // `accounts.reduce(0) { $0 + $1.transactions.count }`, which
-    // fault-loaded every transaction across every account just to
-    // count them — O(N) main-thread work on every render.
-    @Query private var walletTransactions: [PersistentTransaction]
+    // Badge count for "View All Transactions". Transactions are no
+    // longer wallet-scoped (the same on-chain tx can land in
+    // multiple accounts / wallets), so we can't filter
+    // `PersistentTransaction` by walletId directly. We query the
+    // wallet's TXOs instead and count the distinct creating-or-
+    // spending transactions in the body — same union the list view
+    // uses.
+    @Query private var walletTxos: [PersistentTxo]
 
     init(wallet: PersistentWallet) {
         self.wallet = wallet
         let walletId = wallet.walletId
-        var descriptor = FetchDescriptor<PersistentTransaction>(
+        var descriptor = FetchDescriptor<PersistentTxo>(
             predicate: #Predicate { $0.walletId == walletId }
         )
         descriptor.propertiesToFetch = [\.walletId]
-        _walletTransactions = Query(descriptor)
+        _walletTxos = Query(descriptor)
     }
 
-    private var transactionCount: Int { walletTransactions.count }
+    private var transactionCount: Int {
+        var seen: Set<Data> = []
+        for txo in walletTxos {
+            if let tx = txo.transaction { seen.insert(tx.txid) }
+            if let spending = txo.spendingTransaction { seen.insert(spending.txid) }
+        }
+        return seen.count
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -91,9 +108,7 @@ struct WalletDetailView: View {
                 }
                 .padding(.horizontal)
 
-                NavigationLink {
-                    TransactionListView(wallet: wallet)
-                } label: {
+                NavigationLink(value: TransactionsRoute(walletId: wallet.walletId)) {
                     HStack {
                         Label("View All Transactions", systemImage: "list.bullet.rectangle")
                             .font(.subheadline)
@@ -187,6 +202,7 @@ struct WalletInfoView: View {
     @State private var mainnetAccountCount: Int? = nil
     @State private var testnetAccountCount: Int? = nil
     @State private var devnetAccountCount: Int? = nil
+    @State private var regtestAccountCount: Int? = nil
 
     // "View Seed Phrase" flow.
     @State private var isAuthorizingSeedPhrase = false
@@ -199,7 +215,7 @@ struct WalletInfoView: View {
         self.wallet = wallet
         self.onWalletDeleted = onWalletDeleted
         let walletId = wallet.walletId
-        _accounts = Query(filter: #Predicate<PersistentAccount> { $0.wallet?.walletId == walletId })
+        _accounts = Query(filter: #Predicate<PersistentAccount> { $0.wallet.walletId == walletId })
     }
 
     var body: some View {
@@ -294,6 +310,25 @@ struct WalletInfoView: View {
                             .disabled(isUpdatingNetworks)
                         }
                     }
+
+                    HStack {
+                        Text("Local (Regtest)")
+                        Spacer()
+                        if regtestEnabled {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                        } else {
+                            Button(action: {
+                                Task {
+                                    await enableNetwork(.regtest)
+                                }
+                            }) {
+                                Image(systemName: "plus.circle")
+                                    .foregroundColor(.blue)
+                            }
+                            .disabled(isUpdatingNetworks)
+                        }
+                    }
                 }
 
                 Section {
@@ -342,6 +377,14 @@ struct WalletInfoView: View {
                             Text("Devnet Accounts")
                             Spacer()
                             Text(devnetAccountCount.map(String.init) ?? "–")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    if regtestEnabled {
+                        HStack {
+                            Text("Regtest Accounts")
+                            Spacer()
+                            Text(regtestAccountCount.map(String.init) ?? "–")
                                 .foregroundColor(.secondary)
                         }
                     }
@@ -495,23 +538,73 @@ struct WalletInfoView: View {
         mainnetAccountCount = mainnetEnabled ? count : nil
         testnetAccountCount = testnetEnabled ? count : nil
         devnetAccountCount = devnetEnabled ? count : nil
+        regtestAccountCount = regtestEnabled ? count : nil
     }
 
     private func saveWalletName() {
         // `label` is a computed fallback; the writable backing
         // field is `name`. Empty-string means "unnamed"; the
         // computed `label` then falls back to the hex fingerprint.
-        wallet.name = editedName.isEmpty ? nil : editedName
+        let trimmed = editedName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let newName: String? = trimmed.isEmpty ? nil : trimmed
+        wallet.name = newName
         do {
             try modelContext.save()
             isEditingName = false
         } catch {
             errorMessage = "Failed to save wallet name: \(error.localizedDescription)"
             showError = true
+            return
+        }
+        // Mirror the rename into the keychain metadata blob so a
+        // future reinstall / orphan-recovery picks up the new
+        // label instead of resurrecting the old one (or the
+        // "Recovered Wallet" placeholder when the original name
+        // was never written). Read the existing blob first so the
+        // `networks` and `birthHeight` fields round-trip — those
+        // get filled in at creation time and the rename UI has no
+        // business overwriting them with stale values from the
+        // SwiftData row. Falls back to a freshly-built blob if
+        // none exists yet (older installs that predate the
+        // metadata feature).
+        let storage = WalletStorage()
+        let walletId = wallet.walletId
+        var metadata: WalletKeychainMetadata
+        do {
+            metadata = try storage.metadata(for: walletId)
+                ?? WalletKeychainMetadata()
+        } catch {
+            metadata = WalletKeychainMetadata()
+        }
+        metadata.name = newName
+        metadata.walletDescription = wallet.walletDescription
+        // Backfill `networks` from the SwiftData row when the
+        // existing blob is missing it. `PersistentWallet` is
+        // currently single-network, so the best we can do here is
+        // a one-element list. When multi-network support lands on
+        // the Rust side this can be widened.
+        if metadata.networks == nil, let net = wallet.network {
+            metadata.networks = [net.networkName]
+        }
+        // Same backfill story for `birthHeight` — older blobs
+        // missed it; we have the SwiftData copy on hand so push
+        // it in once.
+        if metadata.birthHeight == nil {
+            metadata.birthHeight = wallet.birthHeight
+        }
+        do {
+            try storage.setMetadata(metadata, for: walletId)
+        } catch {
+            // Non-fatal: SwiftData already has the new name; this
+            // only affects orphan-recovery after a wipe. Surface
+            // through the logger instead of blocking the UI.
+            SDKLogger.error(
+                "Failed to update wallet metadata in keychain: \(error.localizedDescription)"
+            )
         }
     }
 
-    private func enableNetwork(_ network: AppNetwork) async {
+    private func enableNetwork(_ network: Network) async {
         isUpdatingNetworks = true
         defer { isUpdatingNetworks = false }
 
@@ -539,7 +632,12 @@ struct WalletInfoView: View {
         modelContext.delete(wallet)
         do {
             try modelContext.save()
-            try WalletStorage().deleteMnemonic(for: walletId)
+            let storage = WalletStorage()
+            try storage.deleteMnemonic(for: walletId)
+            // Keychain metadata is independent of the mnemonic
+            // row — clear it here so a deleted wallet doesn't
+            // leave stale name/description behind.
+            try storage.deleteMetadata(for: walletId)
         } catch {
             modelContext.rollback()
             SDKLogger.error(
@@ -565,33 +663,17 @@ struct WalletInfoView: View {
 
 struct BalanceCardView: View {
     let wallet: PersistentWallet
+    @EnvironmentObject var walletManager: PlatformWalletManager
     @EnvironmentObject var platformState: AppState
     @EnvironmentObject var shieldedService: ShieldedService
     @EnvironmentObject var platformBalanceSyncService: PlatformBalanceSyncService
 
-    /// Per-wallet platform-address balance rows. SwiftData drives
-    /// the sum directly so every wallet's card reflects its own
-    /// funds — the previous code read
-    /// `platformBalanceSyncService.totalPlatformBalance`, a
-    /// singleton tied to whichever wallet was most recently
-    /// configured, which caused every wallet's balance to show the
-    /// last-synced wallet's total.
     @Query private var addressBalances: [PersistentPlatformAddress]
-    /// Network-scoped BLAST sync watermark. One row per network —
-    /// shared across every wallet on that network — so this query
-    /// filters by `network` rather than `walletId`. Used only to
-    /// distinguish "synced with zero balance" from "never synced".
     @Query private var syncStates: [PersistentPlatformAddressesSyncState]
 
     init(wallet: PersistentWallet) {
         self.wallet = wallet
         let walletId = wallet.walletId
-        // `PersistentPlatformAddressesSyncState.network` is a required AppNetwork;
-        // `.testnet` is a harmless sentinel for wallets that haven't
-        // had their network stamped yet — they won't have a matching
-        // sync state row either, so the query naturally returns empty.
-        // Filter against `networkRaw` (the Int-backed shadow field) —
-        // Foundation's predicate engine can't capture `AppNetwork`.
         let walletNetworkRaw = (wallet.network ?? .testnet).rawValue
         _addressBalances = Query(
             filter: #Predicate<PersistentPlatformAddress> { $0.walletId == walletId }
@@ -601,12 +683,18 @@ struct BalanceCardView: View {
         )
     }
 
+    /// Confirmed core-chain balance summed from Rust's in-memory
+    /// per-account state via FFI.
     private var confirmedBalance: UInt64 {
-        wallet.balanceConfirmed
+        walletManager.accountBalances(for: wallet.walletId)
+            .reduce(0) { $0 + $1.confirmed }
     }
 
+    /// Unconfirmed core-chain balance summed from Rust's in-memory
+    /// per-account state via FFI.
     private var unconfirmedBalance: UInt64 {
-        wallet.balanceUnconfirmed
+        walletManager.accountBalances(for: wallet.walletId)
+            .reduce(0) { $0 + $1.unconfirmed }
     }
 
     /// Platform balance from BLAST sync (preferred) or identity sum (fallback).

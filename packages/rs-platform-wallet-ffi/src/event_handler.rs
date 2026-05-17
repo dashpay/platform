@@ -3,7 +3,10 @@
 use crate::platform_address_sync::{
     PlatformAddressSyncMetricsFFI, PlatformAddressSyncWalletResultFFI,
 };
+use crate::shielded_types::ShieldedSyncWalletResultFFI;
 use platform_wallet::events::{EventHandler, PlatformEventHandler, WalletEvent};
+#[cfg(feature = "shielded")]
+use platform_wallet::manager::shielded_sync::{ShieldedSyncPassSummary, WalletShieldedOutcome};
 use platform_wallet::{PlatformAddressSyncSummary, WalletSyncOutcome};
 use std::os::raw::{c_char, c_void};
 
@@ -27,6 +30,19 @@ pub struct EventHandlerCallbacks {
         unsafe extern "C" fn(
             context: *mut c_void,
             results: *const PlatformAddressSyncWalletResultFFI,
+            count: usize,
+            sync_unix_seconds: u64,
+        ),
+    >,
+    /// Called when a shielded sync pass completes (only emitted when
+    /// the `shielded` feature is enabled in the FFI build). The
+    /// callback slot is plumbed unconditionally so the C ABI is
+    /// stable across feature toggles, but is only invoked when
+    /// shielded support is compiled in.
+    pub on_shielded_sync_completed_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            results: *const ShieldedSyncWalletResultFFI,
             count: usize,
             sync_unix_seconds: u64,
         ),
@@ -127,6 +143,57 @@ impl PlatformEventHandler for FFIEventHandler {
                         error_message: error_ptr,
                         ..PlatformAddressSyncWalletResultFFI::default()
                     });
+                }
+            }
+        }
+
+        unsafe {
+            cb(
+                self.callbacks.context,
+                results.as_ptr(),
+                results.len(),
+                summary.sync_unix_seconds,
+            );
+        }
+    }
+
+    #[cfg(feature = "shielded")]
+    fn on_shielded_sync_completed(&self, summary: &ShieldedSyncPassSummary) {
+        let Some(cb) = self.callbacks.on_shielded_sync_completed_fn else {
+            return;
+        };
+
+        if summary.wallet_results.is_empty() {
+            unsafe {
+                cb(
+                    self.callbacks.context,
+                    std::ptr::null(),
+                    0,
+                    summary.sync_unix_seconds,
+                );
+            }
+            return;
+        }
+
+        let mut owned_errors = Vec::new();
+        let mut results = Vec::with_capacity(summary.wallet_results.len());
+        for (&wallet_id, outcome) in &summary.wallet_results {
+            match outcome {
+                WalletShieldedOutcome::Ok(result) => {
+                    results.push(ShieldedSyncWalletResultFFI::ok(wallet_id, result));
+                }
+                WalletShieldedOutcome::Skipped => {
+                    results.push(ShieldedSyncWalletResultFFI::skipped(wallet_id));
+                }
+                WalletShieldedOutcome::Err(error) => {
+                    let error_message = std::ffi::CString::new(error.as_str()).ok();
+                    let error_ptr = error_message
+                        .as_ref()
+                        .map_or(std::ptr::null(), |message| message.as_ptr());
+                    if let Some(error_message) = error_message {
+                        owned_errors.push(error_message);
+                    }
+                    results.push(ShieldedSyncWalletResultFFI::err(wallet_id, error_ptr));
                 }
             }
         }

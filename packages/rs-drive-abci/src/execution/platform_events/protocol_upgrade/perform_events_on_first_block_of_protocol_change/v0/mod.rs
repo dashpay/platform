@@ -27,9 +27,14 @@ use drive::drive::saved_block_transactions::{
     ADDRESS_BALANCES_KEY_U8, COMPACTED_ADDRESSES_EXPIRATION_TIME_KEY_U8,
     COMPACTED_ADDRESS_BALANCES_KEY_U8,
 };
+use drive::drive::shielded::nullifiers::queries::{
+    SHIELDED_COMPACTED_NULLIFIERS_KEY_U8, SHIELDED_NULLIFIERS_EXPIRATION_TIME_KEY_U8,
+    SHIELDED_RECENT_NULLIFIERS_KEY_U8,
+};
 use drive::drive::shielded::paths::{
-    shielded_credit_pool_path, SHIELDED_ANCHORS_IN_POOL_KEY, SHIELDED_CREDIT_POOL_KEY_U8,
-    SHIELDED_NOTES_KEY, SHIELDED_NULLIFIERS_KEY, SHIELDED_TOTAL_BALANCE_KEY,
+    shielded_credit_pool_path, MAIN_SHIELDED_CREDIT_POOL_KEY_U8, SHIELDED_ANCHORS_BY_HEIGHT_KEY,
+    SHIELDED_ANCHORS_IN_POOL_KEY, SHIELDED_NOTES_CHUNK_POWER, SHIELDED_NOTES_KEY,
+    SHIELDED_NULLIFIERS_KEY, SHIELDED_TOTAL_BALANCE_KEY,
 };
 use drive::drive::system::misc_path;
 use drive::drive::tokens::paths::{
@@ -607,37 +612,62 @@ impl<C> Platform<C> {
         Ok(())
     }
 
-    /// We introduced in version 12 Shielded Pools
+    /// We introduced in version 12 Shielded Pools.
+    ///
+    /// Mirrors the layout produced by `Drive::create_initial_state_structure_v3`
+    /// for a fresh genesis-12 chain: a top-level `ShieldedBalances` SumTree
+    /// containing the main shielded credit pool at `MAIN_SHIELDED_CREDIT_POOL_KEY`,
+    /// and all eight pool subtrees inserted breadth-first. The recent-nullifiers
+    /// `CountSumTree` is wrapped in `Element::NotSummed` so its sum side does
+    /// not propagate into the pool's "credits" aggregate.
     fn transition_to_version_12(
         &self,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let addresses_path = Drive::addresses_path();
-
-        // Shielded credit pool SumTree under AddressBalances: [AddressBalances] / "s"
+        // Top-level ShieldedBalances SumTree — separate from AddressBalances so
+        // per-pool internal trees cannot contaminate the address-credit
+        // aggregate via sum propagation.
         self.drive.grove_insert_if_not_exists(
-            addresses_path.as_slice().into(),
-            &[SHIELDED_CREDIT_POOL_KEY_U8],
+            SubtreePath::empty(),
+            &[RootTree::ShieldedBalances as u8],
             Element::empty_sum_tree(),
             Some(transaction),
             None,
             &platform_version.drive,
         )?;
 
-        // Notes tree (CommitmentTree = CountTree items + Sinsemilla Frontier):
-        // [AddressBalances, "s"] / [1]
-        let shielded_pool_path = shielded_credit_pool_path();
+        // Main shielded credit pool SumTree: [ShieldedBalances] / "M"
         self.drive.grove_insert_if_not_exists(
-            (&shielded_pool_path).into(),
-            &[SHIELDED_NOTES_KEY],
-            Element::empty_commitment_tree(11).expect("chunk_power 11 is valid"),
+            SubtreePath::from(&[&[RootTree::ShieldedBalances as u8] as &[u8]]),
+            &[MAIN_SHIELDED_CREDIT_POOL_KEY_U8],
+            Element::empty_sum_tree(),
             Some(transaction),
             None,
             &platform_version.drive,
         )?;
 
-        // Nullifiers tree (ProvableCountTree): [AddressBalances, "s"] / [2]
+        // The eight child inserts below are ordered breadth-first to match the
+        // intended balanced shape of the parent Merk tree (see the layout
+        // diagram in `drive::drive::shielded::paths`). AVL rebalancing is
+        // order-sensitive, so this ordering is what actually places
+        // `SHIELDED_NOTES_KEY` at the root and the spend-path keys at depth 1.
+
+        // Level 0 (root): notes tree (CommitmentTree = CountTree items + Sinsemilla Frontier)
+        // [ShieldedBalances, "M"] / [128]
+        let shielded_pool_path = shielded_credit_pool_path();
+        self.drive.grove_insert_if_not_exists(
+            (&shielded_pool_path).into(),
+            &[SHIELDED_NOTES_KEY],
+            Element::empty_commitment_tree(SHIELDED_NOTES_CHUNK_POWER)
+                .expect("SHIELDED_NOTES_CHUNK_POWER is valid"),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
+        // Level 1 (left): nullifiers tree (ProvableCountTree)
+        // [ShieldedBalances, "M"] / [64]
         self.drive.grove_insert_if_not_exists(
             (&shielded_pool_path).into(),
             &[SHIELDED_NULLIFIERS_KEY],
@@ -647,7 +677,19 @@ impl<C> Platform<C> {
             &platform_version.drive,
         )?;
 
-        // Total balance SumItem(0): [AddressBalances, "s"] / [5]
+        // Level 1 (right): anchors tree (NormalTree) — anchor_bytes → block_height_be
+        // [ShieldedBalances, "M"] / [192]
+        self.drive.grove_insert_if_not_exists(
+            (&shielded_pool_path).into(),
+            &[SHIELDED_ANCHORS_IN_POOL_KEY],
+            Element::empty_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
+        // Level 2: total balance SumItem(0)
+        // [ShieldedBalances, "M"] / [32]
         self.drive.grove_insert_if_not_exists(
             (&shielded_pool_path).into(),
             &[SHIELDED_TOTAL_BALANCE_KEY],
@@ -657,11 +699,48 @@ impl<C> Platform<C> {
             &platform_version.drive,
         )?;
 
-        // Anchors tree (NormalTree) inside pool: [AddressBalances, "s"] / [6]
-        // Stores block_height_be → anchor_bytes
+        // Level 2: anchors-by-height tree (NormalTree) — block_height_be → anchor_bytes.
+        // [ShieldedBalances, "M"] / [96]
         self.drive.grove_insert_if_not_exists(
             (&shielded_pool_path).into(),
-            &[SHIELDED_ANCHORS_IN_POOL_KEY],
+            &[SHIELDED_ANCHORS_BY_HEIGHT_KEY],
+            Element::empty_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
+        // Level 2: per-block recent-nullifiers CountSumTree wrapped in
+        // NotSummed — the sum side (per-block nullifier count) is suppressed
+        // so it does NOT propagate into the enclosing shielded pool SumTree.
+        // [ShieldedBalances, "M"] / [160]
+        self.drive.grove_insert_if_not_exists(
+            (&shielded_pool_path).into(),
+            &[SHIELDED_RECENT_NULLIFIERS_KEY_U8],
+            Element::new_not_summed(Element::empty_count_sum_tree())
+                .expect("count sum tree is a valid NotSummed inner"),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
+        // Level 2: compacted nullifiers NormalTree —
+        // (start_block, end_block) → serialized Vec<[u8;32]>.
+        // [ShieldedBalances, "M"] / [224]
+        self.drive.grove_insert_if_not_exists(
+            (&shielded_pool_path).into(),
+            &[SHIELDED_COMPACTED_NULLIFIERS_KEY_U8],
+            Element::empty_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
+        // Level 3: nullifiers-expiration-time NormalTree (deepest leaf).
+        // [ShieldedBalances, "M"] / [240]
+        self.drive.grove_insert_if_not_exists(
+            (&shielded_pool_path).into(),
+            &[SHIELDED_NULLIFIERS_EXPIRATION_TIME_KEY_U8],
             Element::empty_tree(),
             Some(transaction),
             None,
@@ -814,10 +893,10 @@ mod tests {
             .transition_to_version_12(&transaction, platform_version)
             .expect("expected version 12 transition to succeed");
 
-        // Verify shielded credit pool tree was created under AddressBalances
+        // Verify shielded credit pool tree was created under ShieldedBalances
         let shielded_pool_element = platform.drive.grove.get(
-            SubtreePath::from(&[&[RootTree::AddressBalances as u8] as &[u8]]),
-            &[SHIELDED_CREDIT_POOL_KEY_U8],
+            SubtreePath::from(&[&[RootTree::ShieldedBalances as u8] as &[u8]]),
+            &[MAIN_SHIELDED_CREDIT_POOL_KEY_U8],
             Some(&transaction),
             &platform_version.drive.grove_version,
         );
@@ -911,8 +990,8 @@ mod tests {
 
         // Verify version 12 artifacts: shielded credit pool tree should exist
         let shielded_pool = platform.drive.grove.get(
-            SubtreePath::from(&[&[RootTree::AddressBalances as u8] as &[u8]]),
-            &[SHIELDED_CREDIT_POOL_KEY_U8],
+            SubtreePath::from(&[&[RootTree::ShieldedBalances as u8] as &[u8]]),
+            &[MAIN_SHIELDED_CREDIT_POOL_KEY_U8],
             Some(&transaction),
             &platform_version.drive.grove_version,
         );
@@ -1006,12 +1085,24 @@ mod tests {
             )
             .expect("expected to convert to serialization format");
 
-        // Inject unknown property into the "person" document schema
+        // Inject unknown properties into the "person" document schema. These
+        // include both an arbitrary unknown key and the v12-introduced flags
+        // (`documentsCountable` / `rangeCountable`) — the latter must also be
+        // stripped from pre-v12 contracts so the v2 parser cannot revive them
+        // and reinterpret a NormalTree contract as a count tree post-upgrade.
         for (_doc_type_name, schema_value) in serialization_format.document_schemas_mut().iter_mut()
         {
             if let Some(map) = schema_value.as_map_mut() {
                 map.push((
                     PlatformValue::Text("unknownSmuggled".to_string()),
+                    PlatformValue::Bool(true),
+                ));
+                map.push((
+                    PlatformValue::Text("documentsCountable".to_string()),
+                    PlatformValue::Bool(true),
+                ));
+                map.push((
+                    PlatformValue::Text("rangeCountable".to_string()),
                     PlatformValue::Bool(true),
                 ));
             }
@@ -1135,18 +1226,26 @@ mod tests {
         .expect("deserialize")
         .0;
 
-        let has_unknown_after = format_after.document_schemas().values().any(|schema| {
-            schema
-                .as_map()
-                .map(|map| {
-                    map.iter()
-                        .any(|(k, _)| k.as_text() == Some("unknownSmuggled"))
-                })
-                .unwrap_or(false)
-        });
+        let schema_has_key = |format: &DataContractInSerializationFormat, key: &str| -> bool {
+            format.document_schemas().values().any(|schema| {
+                schema
+                    .as_map()
+                    .map(|map| map.iter().any(|(k, _)| k.as_text() == Some(key)))
+                    .unwrap_or(false)
+            })
+        };
+
         assert!(
-            !has_unknown_after,
+            !schema_has_key(&format_after, "unknownSmuggled"),
             "Contract should NOT have unknownSmuggled property after v12 migration"
+        );
+        assert!(
+            !schema_has_key(&format_after, "documentsCountable"),
+            "Contract should NOT have smuggled documentsCountable after v12 migration"
+        );
+        assert!(
+            !schema_has_key(&format_after, "rangeCountable"),
+            "Contract should NOT have smuggled rangeCountable after v12 migration"
         );
 
         // 7. Verify known properties are still present
@@ -1198,18 +1297,26 @@ mod tests {
         )
         .expect("convert to serialization format");
 
-        let has_unknown_refetched = refetched_format.document_schemas().values().any(|schema| {
-            schema
-                .as_map()
-                .map(|map| {
-                    map.iter()
-                        .any(|(k, _)| k.as_text() == Some("unknownSmuggled"))
+        let schema_has_key_refetched =
+            |format: &DataContractInSerializationFormat, key: &str| -> bool {
+                format.document_schemas().values().any(|schema| {
+                    schema
+                        .as_map()
+                        .map(|map| map.iter().any(|(k, _)| k.as_text() == Some(key)))
+                        .unwrap_or(false)
                 })
-                .unwrap_or(false)
-        });
+            };
         assert!(
-            !has_unknown_refetched,
+            !schema_has_key_refetched(&refetched_format, "unknownSmuggled"),
             "Contract fetched through Drive API after migration should not have unknownSmuggled"
+        );
+        assert!(
+            !schema_has_key_refetched(&refetched_format, "documentsCountable"),
+            "Contract fetched through Drive API after migration should not have smuggled documentsCountable"
+        );
+        assert!(
+            !schema_has_key_refetched(&refetched_format, "rangeCountable"),
+            "Contract fetched through Drive API after migration should not have smuggled rangeCountable"
         );
     }
 

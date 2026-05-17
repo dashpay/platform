@@ -487,6 +487,14 @@ export default {
           description: 'List of core indexes to enable. `platform.enable`, '
             + ' `core.masternode.enable`, and `core.insight.enabled` add indexes dynamically',
         },
+        compactFilters: {
+          type: 'boolean',
+          description: 'Build the BIP158 cfilter index and advertise '
+            + 'NODE_COMPACT_FILTERS to peers, so BIP157 SPV clients can sync '
+            + 'filter headers + filters from this node. Defaults to true on '
+            + 'every preset; flip to false to skip the cfilter index '
+            + '(~10% chain-size disk overhead on mainnet).',
+        },
       },
       required: ['docker', 'p2p', 'rpc', 'zmq', 'spork', 'masternode', 'miner', 'devnet', 'log',
         'indexes', 'insight'],

@@ -40,6 +40,10 @@ mod update;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod paths;
 
+/// Primary key tree type resolution
+#[cfg(feature = "server")]
+pub mod primary_key_tree_type;
+
 #[cfg(feature = "server")]
 /// Creates a reference to a document.
 fn make_document_reference(

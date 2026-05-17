@@ -81,20 +81,52 @@ impl Drive {
             );
         }
 
-        let apply_type = if estimated_costs_only_with_layer_info.is_none() {
-            BatchInsertTreeApplyType::StatefulBatchInsertTree
-        } else {
-            BatchInsertTreeApplyType::StatelessBatchInsertTree {
-                in_tree_type: TreeType::NormalTree,
-                tree_type: TreeType::NormalTree,
-                flags_len: storage_flags
-                    .map(|s| s.serialized_size())
-                    .unwrap_or_default(),
-            }
-        };
+        // The per-iteration `value_apply_type` (built below) selects
+        // `in_tree_type` / `tree_type` based on each index sub-level's
+        // range_countable flag — see the block inside the loop. We don't
+        // share a single `apply_type` here anymore because the top-level
+        // property-name tree variant is data-driven.
 
         // next we need to store a reference to the document for each index
         for (name, sub_level) in index_level.sub_levels() {
+            // Two flags split on the same `sub_level.has_index_with_type()`
+            // result:
+            //
+            // - `sub_level_is_countable_terminator` — sub_level has any
+            //   countable index. Drives the value-tree type: each value
+            //   tree becomes a `CountTree` whose `count_value_or_default()`
+            //   IS the per-value doc count. This is what shrinks the
+            //   point-lookup count proof by one merk layer (no `[0]`
+            //   descent needed; see
+            //   `point_lookup_count_path_query`'s rangeCountable-shape
+            //   docstring).
+            // - `sub_level_range_countable` — sub_level opts into
+            //   `AggregateCountOnRange`. Drives the property-name tree's
+            //   upgrade from `NormalTree` to `ProvableCountTree`. Implies
+            //   `is_countable` per the invariant on `Index::range_countable`.
+            //
+            // Pure prefix sub-levels (no index here, only further nesting)
+            // leave both flags `false` — both property-name and value tree
+            // stay `NormalTree`, since there's no count surface to
+            // materialize at a prefix level.
+            let sub_level_index_info = sub_level.has_index_with_type();
+            let sub_level_is_countable_terminator = sub_level_index_info
+                .map(|info| info.countable.is_countable())
+                .unwrap_or(false);
+            let sub_level_range_countable = sub_level_index_info
+                .map(|info| info.range_countable)
+                .unwrap_or(false);
+            let property_name_tree_type = if sub_level_range_countable {
+                TreeType::ProvableCountTree
+            } else {
+                TreeType::NormalTree
+            };
+            let value_tree_type = if sub_level_is_countable_terminator {
+                TreeType::CountTree
+            } else {
+                TreeType::NormalTree
+            };
+
             // at this point the contract path is to the contract documents
             // for each index the top index component will already have been added
             // when the contract itself was created
@@ -117,12 +149,26 @@ impl Drive {
 
             // The zero will not matter here, because the PathKeyInfo is variable
             let path_key_info = document_top_field.clone().add_path::<0>(index_path.clone());
-            // here we are inserting an empty tree that will have a subtree of all other index properties
+            // here we are inserting the value tree (per distinct property value)
+            // under the top-level property-name tree. The top-level property-name
+            // tree itself is created at contract setup, so the apply_type's
+            // `in_tree_type` reflects whichever variant the contract setup used.
+            let value_apply_type = if estimated_costs_only_with_layer_info.is_none() {
+                BatchInsertTreeApplyType::StatefulBatchInsertTree
+            } else {
+                BatchInsertTreeApplyType::StatelessBatchInsertTree {
+                    in_tree_type: property_name_tree_type,
+                    tree_type: value_tree_type,
+                    flags_len: storage_flags
+                        .map(|s| s.serialized_size())
+                        .unwrap_or_default(),
+                }
+            };
             self.batch_insert_empty_tree_if_not_exists(
                 path_key_info.clone(),
-                TreeType::NormalTree,
+                value_tree_type,
                 storage_flags,
-                apply_type,
+                value_apply_type,
                 transaction,
                 previous_batch_operations,
                 batch_operations,
@@ -146,7 +192,7 @@ impl Drive {
                 estimated_costs_only_with_layer_info.insert(
                     KeyInfoPath::from_known_owned_path(index_path.clone()),
                     EstimatedLayerInformation {
-                        tree_type: TreeType::NormalTree,
+                        tree_type: property_name_tree_type,
                         estimated_layer_count: PotentiallyAtMaxElements,
                         estimated_layer_sizes: AllSubtrees(
                             document_top_field_estimated_size as u8,
@@ -175,12 +221,18 @@ impl Drive {
             index_path_info.push(document_top_field)?;
             // the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>
 
+            // Propagate `parent_value_tree_is_count_tree` to the recursive
+            // level: the value tree we just inserted at the top level
+            // becomes a `CountTree` iff its sub_level terminates a
+            // countable index. The recursive level uses this to decide
+            // whether to NonCounted-wrap its own continuation children.
             self.add_indices_for_index_level_for_contract_operations(
                 document_and_contract_info,
                 index_path_info,
                 sub_level,
                 any_fields_null,
                 all_fields_null,
+                sub_level_is_countable_terminator,
                 previous_batch_operations,
                 &storage_flags,
                 estimated_costs_only_with_layer_info,

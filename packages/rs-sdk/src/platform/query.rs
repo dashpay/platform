@@ -325,7 +325,15 @@ impl Query<GetAddressesTrunkStateRequest> for () {
 impl Query<DocumentQuery> for DriveDocumentQuery<'_> {
     fn query(self, prove: bool) -> Result<DocumentQuery, Error> {
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            // dash-sdk only serves proof-verified responses. Raw,
+            // unverified gRPC responses are out of scope for the
+            // SDK fetch path — callers needing unverified data
+            // should talk to DAPI directly via rs-dapi-client.
+            return Err(Error::Config(
+                "dash-sdk does not support non-proven queries; proof verification is \
+                 mandatory on the SDK fetch path"
+                    .to_string(),
+            ));
         }
         let q: DocumentQuery = (&self).into();
         Ok(q)

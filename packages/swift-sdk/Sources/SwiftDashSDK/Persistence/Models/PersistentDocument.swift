@@ -4,6 +4,11 @@ import SwiftData
 /// SwiftData model for persisting documents
 @Model
 public final class PersistentDocument {
+    /// Index `networkRaw` to keep per-network document scans
+    /// index-served. The static `predicate(contractId:network:)` helper
+    /// and every UI list view filter by the active network.
+    #Index<PersistentDocument>([\.networkRaw])
+
     // Primary key
     @Attribute(.unique) public var documentId: String
 
@@ -36,14 +41,14 @@ public final class PersistentDocument {
     public var transferredAtCoreBlockHeight: Int64?
 
     // Network
-    /// Stored as the `AppNetwork.rawValue` `Int` so SwiftData
+    /// Stored as the `Network.rawValue` `UInt32` so SwiftData
     /// `#Predicate` expressions can evaluate it directly. See
     /// `PersistentIdentity.networkRaw` for the full rationale.
-    public var networkRaw: Int
+    public var networkRaw: UInt32
 
     /// Type-safe accessor over `networkRaw`. Setter writes through.
-    public var network: AppNetwork {
-        get { AppNetwork(rawValue: networkRaw) ?? .testnet }
+    public var network: Network {
+        get { Network(rawValue: networkRaw) ?? .testnet }
         set { networkRaw = newValue.rawValue }
     }
 
@@ -119,7 +124,7 @@ public final class PersistentDocument {
         data: Data,
         contractId: String,
         ownerId: String,
-        network: AppNetwork
+        network: Network
     ) {
         self.documentId = documentId
         self.documentType = documentType
@@ -159,10 +164,10 @@ public final class PersistentDocument {
         }
     }
 
-    public static func predicate(contractId: String, network: AppNetwork) -> Predicate<PersistentDocument> {
+    public static func predicate(contractId: String, network: Network) -> Predicate<PersistentDocument> {
         // See `PersistentIdentity.predicate(network:)` — Foundation's
-        // predicate engine can't capture `AppNetwork`, so we filter on
-        // the Int-backed `networkRaw` shadow field.
+        // predicate engine can't capture `Network`, so we filter on
+        // the UInt32-backed `networkRaw` shadow field.
         let target = network.rawValue
         return #Predicate<PersistentDocument> { doc in
             doc.contractId == contractId && doc.networkRaw == target && doc.isDeleted == false

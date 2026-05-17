@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use dashcore::Address as DashAddress;
 use dashcore::{OutPoint, PrivateKey, Transaction, TxOut};
+use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::{
     AssetLockFundingType, CreditOutputFunding,
 };
@@ -79,6 +80,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         let result = info
             .core_wallet
             .build_asset_lock(wallet, account_index, vec![funding], DEFAULT_FEE_PER_KB)
+            .await
             .map_err(|e| {
                 PlatformWalletError::AssetLockTransaction(format!(
                     "Asset lock builder failed: {}",

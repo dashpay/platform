@@ -26,11 +26,10 @@ public class Wallet {
     /// Create a wallet from a mnemonic phrase
     /// - Parameters:
     ///   - mnemonic: The mnemonic phrase
-    ///   - passphrase: Optional BIP39 passphrase
     ///   - network: The network type
     ///   - accountOptions: Account creation options
-    public init(mnemonic: String, passphrase: String? = nil,
-                network: KeyWalletNetwork = .mainnet,
+    public init(mnemonic: String,
+                network: Network = .mainnet,
                 accountOptions: AccountCreationOption = .default) throws {
 
         var error = FFIError()
@@ -43,46 +42,21 @@ public class Wallet {
             // Note: For production, we'd need to properly manage the memory for the arrays
             // This is a simplified version
             walletPtr = mnemonic.withCString { mnemonicCStr in
-                if let passphrase = passphrase {
-                    return passphrase.withCString { passphraseCStr in
-                        wallet_create_from_mnemonic_with_options(
-                            mnemonicCStr,
-                            passphraseCStr,
-                            network.ffiValue,
-                            &options,
-                            &error
-                        )
-                    }
-                } else {
-                    return wallet_create_from_mnemonic_with_options(
-                        mnemonicCStr,
-                        nil,
-                        network.ffiValue,
-                        &options,
-                        &error
-                    )
-                }
+                wallet_create_from_mnemonic_with_options(
+                    mnemonicCStr,
+                    network.ffiValue,
+                    &options,
+                    &error
+                )
             }
         } else {
             // Use simpler variant for default options
             walletPtr = mnemonic.withCString { mnemonicCStr in
-                if let passphrase = passphrase {
-                    return passphrase.withCString { passphraseCStr in
-                        wallet_create_from_mnemonic(
-                            mnemonicCStr,
-                            passphraseCStr,
-                            network.ffiValue,
-                            &error
-                        )
-                    }
-                } else {
-                    return wallet_create_from_mnemonic(
-                        mnemonicCStr,
-                        nil,
-                        network.ffiValue,
-                        &error
-                    )
-                }
+                wallet_create_from_mnemonic(
+                    mnemonicCStr,
+                    network.ffiValue,
+                    &error
+                )
             }
         }
 
@@ -105,7 +79,7 @@ public class Wallet {
     ///   - seed: The seed bytes (typically 64 bytes)
     ///   - network: The network type
     ///   - accountOptions: Account creation options
-    public init(seed: Data, network: KeyWalletNetwork = .mainnet,
+    public init(seed: Data, network: Network = .mainnet,
                 accountOptions: AccountCreationOption = .default) throws {
         self.ownsHandle = true
 
@@ -149,7 +123,7 @@ public class Wallet {
     /// - Parameters:
     ///   - xpub: The extended public key string
     ///   - network: The network type
-    public init(xpub: String, network: KeyWalletNetwork = .mainnet) throws {
+    public init(xpub: String, network: Network = .mainnet) throws {
         // Create an empty wallet first (no accounts)
         var error = FFIError()
         var options = AccountCreationOption.noAccounts.toFFIOptions()
@@ -184,7 +158,7 @@ public class Wallet {
     /// - Parameters:
     ///   - network: The network type
     ///   - accountOptions: Account creation options
-    public static func createRandom(network: KeyWalletNetwork = .mainnet,
+    public static func createRandom(network: Network = .mainnet,
                                    accountOptions: AccountCreationOption = .default) throws -> Wallet {
         var error = FFIError()
         let walletPtr: UnsafeMutablePointer<FFIWallet>?
@@ -212,7 +186,7 @@ public class Wallet {
     }
 
     /// Private initializer for internal use (takes ownership)
-    private init(handle: UnsafeMutablePointer<FFIWallet>, network: KeyWalletNetwork) {
+    private init(handle: UnsafeMutablePointer<FFIWallet>, network: Network) {
         self.handle = handle
         self.ownsHandle = true
     }

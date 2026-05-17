@@ -1,7 +1,11 @@
 //! Multi-wallet manager with SPV coordination.
 
-mod accessors;
+pub mod accessors;
+pub mod identity_sync;
 mod load;
+pub mod platform_address_sync;
+#[cfg(feature = "shielded")]
+pub mod shielded_sync;
 mod wallet_lifecycle;
 
 use std::sync::Arc;
@@ -14,7 +18,10 @@ use key_wallet_manager::WalletManager;
 
 use crate::changeset::{spawn_wallet_event_adapter, PlatformWalletPersistence};
 use crate::events::{PlatformEventHandler, PlatformEventManager};
-use crate::platform_address_sync::PlatformAddressSyncManager;
+use crate::manager::identity_sync::IdentitySyncManager;
+use crate::manager::platform_address_sync::PlatformAddressSyncManager;
+#[cfg(feature = "shielded")]
+use crate::manager::shielded_sync::ShieldedSyncManager;
 use crate::spv::SpvRuntime;
 use crate::wallet::asset_lock::LockNotifyHandler;
 use crate::wallet::core::BalanceUpdateHandler;
@@ -36,10 +43,22 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     pub(super) wallets: Arc<RwLock<std::collections::BTreeMap<WalletId, Arc<PlatformWallet>>>>,
     /// Notified on InstantLock / ChainLock events for `AssetLockManager` waiters.
     pub(super) lock_notify: Arc<Notify>,
-    pub(super) spv: Arc<SpvRuntime>,
+    pub(super) spv_manager: Arc<SpvRuntime>,
     /// Periodic platform-address (BLAST) balance sync coordinator.
     /// Not auto-started — call `start` after wallets are registered.
-    pub(super) platform_address_sync: Arc<PlatformAddressSyncManager>,
+    pub(super) platform_address_sync_manager: Arc<PlatformAddressSyncManager>,
+    /// Periodic per-identity token state sync coordinator. Refreshes
+    /// the per-(identity, token) balance cache on every registered
+    /// wallet. Not auto-started — call `start` after wallets are
+    /// registered. See [`IdentitySyncManager`].
+    pub(super) identity_sync_manager: Arc<IdentitySyncManager<P>>,
+    /// Periodic shielded (Orchard) note + nullifier sync coordinator.
+    /// Iterates every wallet that has been bound via
+    /// [`PlatformWallet::bind_shielded`](crate::wallet::PlatformWallet::bind_shielded);
+    /// unbound wallets are skipped silently. Not auto-started — call
+    /// `start` after wallets are registered.
+    #[cfg(feature = "shielded")]
+    pub(super) shielded_sync_manager: Arc<ShieldedSyncManager>,
     pub(super) persister: Arc<P>,
     /// Cancellation token + join handle for the wallet-event adapter
     /// task. Held so [`shutdown`] can stop it cleanly when the manager
@@ -59,24 +78,17 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         persister: Arc<P>,
         app_handler: Arc<dyn PlatformEventHandler>,
     ) -> Self {
-        // `PlatformWallet` / `WalletPersister` and the new wallet-event
-        // adapter all consume `Arc<dyn PlatformWalletPersistence>`;
-        // coerce once here and pass clones along instead of re-erasing
-        // at every call site.
-        let dyn_persister: Arc<dyn PlatformWalletPersistence> = Arc::clone(&persister) as _;
         let wallet_manager = Arc::new(RwLock::new(WalletManager::new(sdk.network)));
         let wallets = Arc::new(RwLock::new(std::collections::BTreeMap::new()));
         let lock_notify = Arc::new(Notify::new());
 
         // Spawn the wallet-event adapter that translates upstream
         // `WalletEvent`s into `CoreChangeSet`s and forwards them to
-        // the persister. Replaces the old `CorePersistenceBridge`
-        // pattern (upstream `WalletPersistence` callback was deleted
-        // in favour of an event bus — see rust-dashcore PR #696).
+        // the persister.
         let event_adapter_cancel = CancellationToken::new();
         let event_adapter_join = spawn_wallet_event_adapter(
             Arc::clone(&wallet_manager),
-            Arc::clone(&dyn_persister),
+            Arc::clone(&persister),
             event_adapter_cancel.clone(),
         );
 
@@ -102,26 +114,44 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             Arc::clone(&wallets),
             Arc::clone(&event_manager),
         ));
+        let identity_sync = Arc::new(IdentitySyncManager::new(
+            Arc::clone(&sdk),
+            Arc::clone(&persister),
+        ));
+        #[cfg(feature = "shielded")]
+        let shielded_sync = Arc::new(ShieldedSyncManager::new(
+            Arc::clone(&wallets),
+            Arc::clone(&event_manager),
+        ));
         Self {
             sdk,
             wallet_manager,
             wallets,
             lock_notify,
-            spv,
-            platform_address_sync,
+            spv_manager: spv,
+            platform_address_sync_manager: platform_address_sync,
+            identity_sync_manager: identity_sync,
+            #[cfg(feature = "shielded")]
+            shielded_sync_manager: shielded_sync,
             persister,
             event_adapter_cancel,
             event_adapter_join: tokio::sync::Mutex::new(Some(event_adapter_join)),
         }
     }
 
-    /// Stop the wallet-event adapter task and wait for it to exit.
+    /// Stop all background tasks and wait for them to exit.
     ///
-    /// Idempotent. After this returns, no further `WalletEvent`s will
-    /// be projected to the persister. Call before dropping the manager
-    /// when a clean shutdown is required (e.g. on app termination); a
-    /// dirty drop simply leaks the task until the runtime exits.
+    /// Stops the periodic coordinators (`PlatformAddressSyncManager`,
+    /// `IdentitySyncManager`) and the wallet-event adapter task.
+    /// Idempotent. Call before dropping the manager when a clean
+    /// shutdown is required (e.g. on app termination); a dirty drop
+    /// simply leaks the tasks until the runtime exits.
     pub async fn shutdown(&self) {
+        self.platform_address_sync_manager.stop();
+        self.identity_sync_manager.stop();
+        #[cfg(feature = "shielded")]
+        self.shielded_sync_manager.stop();
+
         self.event_adapter_cancel.cancel();
         if let Some(handle) = self.event_adapter_join.lock().await.take() {
             if let Err(e) = handle.await {

@@ -5,6 +5,7 @@ import SwiftDashSDK
 /// Available send flow types based on source and destination.
 enum SendFlow: Equatable {
     case coreToCore              // Standard L1 payment
+    case platformToPlatform      // Platform-address → platform-address transfer
     case platformToShielded      // Shield credits
     case shieldedToShielded      // Private transfer
     case shieldedToPlatform      // Unshield
@@ -13,6 +14,7 @@ enum SendFlow: Equatable {
     var displayName: String {
         switch self {
         case .coreToCore: return "Core Payment"
+        case .platformToPlatform: return "Platform Transfer"
         case .platformToShielded: return "Shield Credits"
         case .shieldedToShielded: return "Shielded Transfer"
         case .shieldedToPlatform: return "Unshield"
@@ -23,6 +25,7 @@ enum SendFlow: Equatable {
     var iconName: String {
         switch self {
         case .coreToCore: return "arrow.right"
+        case .platformToPlatform: return "arrow.right"
         case .platformToShielded: return "lock.shield"
         case .shieldedToShielded: return "arrow.left.arrow.right"
         case .shieldedToPlatform: return "lock.open"
@@ -33,6 +36,7 @@ enum SendFlow: Equatable {
     var estimatedFee: UInt64 {
         switch self {
         case .coreToCore: return 500_000             // ~0.005 DASH
+        case .platformToPlatform: return 100_000_000 // ~0.001 DASH in credits
         case .platformToShielded: return 200_000
         case .shieldedToShielded: return 300_000
         case .shieldedToPlatform: return 300_000
@@ -83,15 +87,25 @@ class SendViewModel: ObservableObject {
     @Published var error: String?
     @Published var successMessage: String?
 
-    private let network: AppNetwork
+    private let network: Network
 
-    init(network: AppNetwork) {
+    init(network: Network) {
         self.network = network
     }
 
+    /// Amount in duffs (1 DASH = 1e8). Used by core/L1 flows.
+    /// Backed by `Decimal` parsing — typing 0.0001 deterministically
+    /// yields exactly 10_000 duffs, not 9_999 or 10_001 depending on
+    /// binary-float rounding.
     var amount: UInt64? {
-        guard let double = Double(amountString), double > 0 else { return nil }
-        return UInt64(double * 100_000_000)
+        parseTokenAmount(amountString, decimals: 8)
+    }
+
+    /// Amount in platform credits (1 DASH = 1e11 credits). Used by
+    /// platform-credit flows. Same `Decimal`-backed parsing as
+    /// `amount`; the divisor difference is just the `decimals` arg.
+    var amountCredits: UInt64? {
+        parseTokenAmount(amountString, decimals: 11)
     }
 
     var canSend: Bool {
@@ -113,6 +127,7 @@ class SendViewModel: ObservableObject {
             if shieldedBalance > 0 { sources.append(.shielded) }
             if platformBalance > 0 { sources.append(.platform) }
         case .platform:
+            if platformBalance > 0 { sources.append(.platform) }
             if shieldedBalance > 0 { sources.append(.shielded) }
         case .unknown:
             break
@@ -146,6 +161,8 @@ class SendViewModel: ObservableObject {
             detectedFlow = .shieldedToShielded
         case (.orchard, .platform):
             detectedFlow = .platformToShielded
+        case (.platform, .platform):
+            detectedFlow = .platformToPlatform
         case (.platform, .shielded):
             detectedFlow = .shieldedToPlatform
         default:
@@ -162,9 +179,13 @@ class SendViewModel: ObservableObject {
         platformState: AppState,
         wallet: PersistentWallet,
         coreWallet: ManagedCoreWallet?,
+        platformAddressWallet: ManagedPlatformAddressWallet?,
+        signer: KeychainSigner?,
+        senderAccountIndex: UInt32,
+        changeAddressRow: PersistentPlatformAddress?,
         modelContext: ModelContext
     ) async {
-        guard let flow = detectedFlow, let amount = amount else { return }
+        guard let flow = detectedFlow else { return }
 
         isSending = true
         error = nil
@@ -178,138 +199,132 @@ class SendViewModel: ObservableObject {
                     error = "Core wallet not available"
                     return
                 }
+                guard let amount = amount else { return }
                 let address = recipientAddress.trimmingCharacters(in: .whitespacesAndNewlines)
                 let _ = try core.sendToAddresses(
                     recipients: [(address: address, amountDuffs: amount)]
                 )
                 successMessage = "Payment sent"
 
-            case .platformToShielded:
-                _ = platformState // quiet unused-param warnings
-                guard let poolClient = shieldedService.poolClient else {
-                    error = "Shielded pool not initialized"
+            case .platformToPlatform:
+                guard let addressWallet = platformAddressWallet else {
+                    error = "Platform address wallet not available"
                     return
                 }
-                let bundle = try await poolClient.buildShieldBundle(amount: amount)
+                guard let signer = signer else {
+                    error = "Signer not available"
+                    return
+                }
+                guard case .platform(let payload) = detectedAddressType else {
+                    error = "Recipient is not a platform address"
+                    return
+                }
+                guard payload.count == 21 else {
+                    error = "Platform address must be 21 bytes (got \(payload.count))"
+                    return
+                }
+                guard let credits = amountCredits else {
+                    error = "Invalid amount"
+                    return
+                }
+                // Map bech32m wire byte → FFI storage discriminant.
+                // See rs-dpp/src/address_funds/platform_address.rs:41-47.
+                let bech32mByte = payload[0]
+                let ffiAddressType: UInt8
+                switch bech32mByte {
+                case 0xb0: ffiAddressType = 0  // P2PKH
+                case 0x80: ffiAddressType = 1  // P2SH
+                default:
+                    error = "Unknown platform address type byte 0x\(String(bech32mByte, radix: 16))"
+                    return
+                }
+                // The Rust FFI's `PlatformAddressFFI → PlatformAddress`
+                // conversion (rs-platform-wallet-ffi/src/platform_address_types.rs:42)
+                // only accepts P2PKH; sending to a P2SH platform address
+                // would surface a raw "Unsupported address type" string
+                // from Rust. Fail fast with a user-readable message.
+                guard ffiAddressType == 0 else {
+                    error = "P2SH platform addresses aren't supported yet. Use a P2PKH recipient."
+                    return
+                }
+                let hash = payload.subdata(in: 1..<21)
+                let output = ManagedPlatformAddressWallet.TransferOutput(
+                    addressType: ffiAddressType,
+                    hash: hash,
+                    credits: credits
+                )
+                // If the view passed a fresh unused HD address from the
+                // pool, use it as the dedicated change destination —
+                // matches the Receive screen's lowest-unused selection.
+                let change: ManagedPlatformAddressWallet.ChangeAddress? = changeAddressRow.map {
+                    ManagedPlatformAddressWallet.ChangeAddress(
+                        addressType: $0.addressType,
+                        hash: $0.addressHash
+                    )
+                }
+                let updated = try await addressWallet.transfer(
+                    accountIndex: senderAccountIndex,
+                    outputs: [output],
+                    changeAddress: change,
+                    signer: signer
+                )
 
-                // Fetch a PersistentIdentity on this wallet/network
-                // that has enough platform balance to cover `amount`.
-                // `balance` is stored as Int64 (bit-pattern cast of
-                // the UInt64 DPP credits), so we compare against the
-                // same bit-pattern cast of the requested amount.
-                let walletId = wallet.walletId
-                // Identities are scoped to a network; match the
-                // wallet's resolved network directly. The `?? .testnet`
-                // keeps the predicate well-formed when the wallet row
-                // hasn't had its network stamped yet — a wallet in
-                // that state has no identities to find anyway.
+                // Belt-and-suspenders: apply the post-broadcast
+                // balances/nonces returned by `transfer` to SwiftData
+                // directly. The Rust side already pushes the same
+                // changeset through the persister, so this loop is
+                // idempotent (same hash → same balance/nonce), but
+                // doing it here too keeps the @Query-bound
+                // PersistentPlatformAddress rows fresh even if the
+                // persister callback ordering ever changes.
                 //
-                // Filter against `networkRaw` (the Int-backed shadow
-                // field) because Foundation's predicate engine can't
-                // capture `AppNetwork`.
-                let walletNetworkRaw = (wallet.network ?? .testnet).rawValue
-                let amountThreshold = Int64(bitPattern: amount)
-                let descriptor = FetchDescriptor<PersistentIdentity>(
-                    predicate: #Predicate<PersistentIdentity> { identity in
-                        identity.wallet?.walletId == walletId &&
-                        identity.networkRaw == walletNetworkRaw &&
-                        identity.balance >= amountThreshold
+                // Mirrors PlatformWalletPersistenceHandler.persistAddressBalances:
+                // fetch each row by `addressHash`, update the
+                // volatile fields, stamp `lastUpdated`. Every entry
+                // returned was touched by the transition, so
+                // `isUsed = true` unconditionally. Rows that aren't
+                // found are silently skipped — same defensive shape
+                // the BLAST handler uses.
+                for entry in updated {
+                    let entryHash = entry.hash
+                    let descriptor = FetchDescriptor<PersistentPlatformAddress>(
+                        predicate: #Predicate { $0.addressHash == entryHash }
+                    )
+                    guard let row = try? modelContext.fetch(descriptor).first else {
+                        continue
                     }
-                )
-                guard let identity = try? modelContext.fetch(descriptor).first else {
-                    error = "No identity with sufficient platform balance"
+                    row.balance = entry.balance
+                    row.nonce = entry.nonce
+                    row.isUsed = true
+                    row.lastUpdated = Date()
+                }
+                do {
+                    try modelContext.save()
+                } catch {
+                    self.error = "Couldn't persist post-transfer balances: \(error.localizedDescription)"
                     return
                 }
 
-                // Pick the first public key that has an associated
-                // private key in the keychain. Private keys no
-                // longer live on the identity row.
-                guard let privateKey = identity.publicKeys.lazy
-                    .compactMap({ key -> Data? in
-                        KeychainManager.shared.retrievePrivateKey(
-                            identityId: identity.identityId,
-                            keyIndex: key.keyId
-                        )
-                    })
-                    .first else {
-                    error = "No private key available for identity"
-                    return
-                }
+                successMessage = "Platform transfer sent"
 
-                let addressBytes = identity.identityId.prefix(21)
-                let input = ShieldFundsInput(
-                    address: Data(addressBytes),
-                    amount: amount,
-                    privateKey: privateKey
-                )
-                try await sdk.shieldFunds(
-                    inputs: [input],
-                    bundle: bundle,
-                    amount: amount,
-                    feeFromInputIndex: 0
-                )
-                successMessage = "Shielding complete"
-
-            case .shieldedToShielded:
-                guard let poolClient = shieldedService.poolClient else {
-                    error = "Shielded pool not initialized"
-                    return
-                }
-                let parsed = DashAddress.parse(recipientAddress, network: network)
-                guard case .orchard(let rawAddress) = parsed.type else { return }
-                let bundle = try await poolClient.buildTransferBundle(
-                    recipientAddress: rawAddress,
-                    amount: amount
-                )
-                try await sdk.shieldedTransfer(
-                    bundle: bundle,
-                    valueBalance: flow.estimatedFee
-                )
-                successMessage = "Shielded transfer complete"
-
-            case .shieldedToPlatform:
-                guard let poolClient = shieldedService.poolClient else {
-                    error = "Shielded pool not initialized"
-                    return
-                }
-                let parsed = DashAddress.parse(recipientAddress, network: network)
-                guard case .platform(let addressBytes) = parsed.type else { return }
-                let bundle = try await poolClient.buildUnshieldBundle(
-                    outputAddress: addressBytes,
-                    amount: amount
-                )
-                try await sdk.unshieldFunds(
-                    outputAddress: addressBytes,
-                    amount: amount,
-                    bundle: bundle
-                )
-                successMessage = "Unshield complete"
-
-            case .shieldedToCore:
-                guard let poolClient = shieldedService.poolClient else {
-                    error = "Shielded pool not initialized"
-                    return
-                }
-                let parsed = DashAddress.parse(recipientAddress, network: network)
-                guard case .core(let outputScript) = parsed.type else { return }
-                let bundle = try await poolClient.buildWithdrawalBundle(
-                    outputScript: outputScript,
-                    amount: amount,
-                    coreFeePerByte: 1,
-                    pooling: .never
-                )
-                try await sdk.shieldedWithdraw(
-                    amount: amount,
-                    bundle: bundle,
-                    coreFeePerByte: 1,
-                    pooling: .never,
-                    outputScript: outputScript
-                )
-                successMessage = "Withdrawal submitted"
+            case .platformToShielded,
+                 .shieldedToShielded,
+                 .shieldedToPlatform,
+                 .shieldedToCore:
+                // Shielded send paths are being moved to the Rust
+                // platform-wallet shielded coordinator. The previous
+                // SDK-side bundle/build/broadcast surface was deleted
+                // along with the duplicate `ShieldedPoolClient` FFI;
+                // wiring back up against the new manager-driven path
+                // happens in a follow-up PR.
+                _ = platformState
+                _ = shieldedService
+                _ = wallet
+                _ = modelContext
+                _ = sdk
+                error = "Shielded sending is being rebuilt — see follow-up PR"
+                return
             }
-
-            // Refresh balances
-            shieldedService.refreshBalance()
 
         } catch {
             self.error = error.localizedDescription

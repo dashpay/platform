@@ -1,12 +1,10 @@
 //! The main PlatformWallet struct combining core, identity (+DashPay), and platform sub-wallets.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 use dashcore::OutPoint;
-use dpp::balances::credits::TokenAmount;
-use dpp::prelude::Identifier;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet_manager::WalletManager;
@@ -18,11 +16,16 @@ use super::core::{CoreWallet, WalletBalance};
 use super::identity::{IdentityManager, IdentityWallet};
 use super::persister::WalletPersister;
 use super::platform_addresses::PlatformAddressWallet;
-use super::tokens::TokenWallet;
+#[cfg(feature = "shielded")]
+use super::shielded::{FileBackedShieldedStore, ShieldedSyncSummary, ShieldedWallet};
 use crate::broadcaster::SpvBroadcaster;
 use crate::changeset::{
     ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
+#[cfg(feature = "shielded")]
+use crate::error::PlatformWalletError;
+#[cfg(feature = "shielded")]
+use std::path::Path;
 
 /// Unique identifier for a wallet (32-byte hash).
 pub type WalletId = [u8; 32];
@@ -42,8 +45,6 @@ pub struct PlatformWalletInfo {
     pub balance: Arc<WalletBalance>,
     pub identity_manager: IdentityManager,
     pub tracked_asset_locks: BTreeMap<OutPoint, TrackedAssetLock>,
-    pub token_watched: BTreeMap<Identifier, BTreeSet<Identifier>>,
-    pub token_balances: BTreeMap<(Identifier, Identifier), TokenAmount>,
 }
 
 /// A platform wallet that combines core UTXO functionality with identity management.
@@ -69,13 +70,21 @@ pub struct PlatformWallet {
     pub(crate) core: CoreWallet<SpvBroadcaster>,
     pub(crate) identity: IdentityWallet<SpvBroadcaster>,
     pub(crate) platform: PlatformAddressWallet,
-    pub(crate) tokens: TokenWallet,
     /// Shared asset lock manager.
     pub(crate) asset_locks: Arc<AssetLockManager<SpvBroadcaster>>,
     /// Per-wallet persistence handle.
     persister: WalletPersister,
     /// Lock-free balance for UI reads, cloned from `PlatformWalletInfo.balance`.
     pub(crate) balance: Arc<WalletBalance>,
+    /// Shielded (Orchard / ZK) sub-wallet. `None` until [`bind_shielded`]
+    /// has run; remains `None` for `WatchOnly` / `ExternalSignable`
+    /// wallets that have never had a resolver-driven bind. The
+    /// `RwLock` lets the shielded sync coordinator read the bound
+    /// state without serializing against unrelated wallet writes.
+    ///
+    /// [`bind_shielded`]: Self::bind_shielded
+    #[cfg(feature = "shielded")]
+    pub(crate) shielded: Arc<RwLock<Option<ShieldedWallet<FileBackedShieldedStore>>>>,
 }
 
 impl PlatformWallet {
@@ -100,11 +109,6 @@ impl PlatformWallet {
         &self.platform
     }
 
-    /// Access the token wallet.
-    pub fn tokens(&self) -> &TokenWallet {
-        &self.tokens
-    }
-
     /// Access the shared asset lock manager.
     pub fn asset_locks(&self) -> &Arc<AssetLockManager<SpvBroadcaster>> {
         &self.asset_locks
@@ -118,6 +122,14 @@ impl PlatformWallet {
     /// Get a reference to the SDK.
     pub fn sdk(&self) -> &dash_sdk::Sdk {
         &self.sdk
+    }
+
+    /// Clone the underlying `Arc<dash_sdk::Sdk>` so callers (e.g. FFI
+    /// async blocks moved onto a worker runtime) can hold an
+    /// independently-owned SDK handle without keeping the
+    /// `PlatformWallet` borrow alive.
+    pub fn sdk_arc(&self) -> Arc<dash_sdk::Sdk> {
+        Arc::clone(&self.sdk)
     }
 
     /// Get a reference to the shared wallet manager lock.
@@ -263,12 +275,6 @@ impl PlatformWallet {
             wallet_id,
             wallet_persister.clone(),
         );
-        let tokens = TokenWallet::new(
-            Arc::clone(&sdk),
-            Arc::clone(&wallet_manager),
-            wallet_id,
-            wallet_persister.clone(),
-        );
 
         Self {
             wallet_id,
@@ -277,11 +283,82 @@ impl PlatformWallet {
             core,
             identity,
             platform,
-            tokens,
             asset_locks,
             persister: wallet_persister,
             balance,
+            #[cfg(feature = "shielded")]
+            shielded: Arc::new(RwLock::new(None)),
         }
+    }
+
+    /// Bind a shielded (Orchard) sub-wallet to this `PlatformWallet`.
+    ///
+    /// Derives ZIP-32 Orchard keys from `seed` (a 32-252 byte BIP-39
+    /// seed; see [`SpendingKey::from_zip32_seed`]), opens or creates
+    /// the per-network commitment tree at `db_path`, and stores the
+    /// resulting [`ShieldedWallet`] on this handle. The caller is
+    /// responsible for sourcing the seed (e.g. via the host
+    /// `MnemonicResolverHandle`) and for zeroizing it once this call
+    /// returns. The seed is not retained — only the FVK / IVK / OVK
+    /// / default address derived from it survive on the wallet.
+    ///
+    /// Idempotent: a second call replaces the previously-bound
+    /// shielded wallet (e.g. after a network switch).
+    ///
+    /// [`SpendingKey::from_zip32_seed`]: grovedb_commitment_tree::SpendingKey::from_zip32_seed
+    #[cfg(feature = "shielded")]
+    pub async fn bind_shielded(
+        &self,
+        seed: &[u8],
+        account: u32,
+        db_path: impl AsRef<Path>,
+    ) -> Result<(), PlatformWalletError> {
+        // Open / create the SQLite-backed commitment tree first so
+        // any I/O failure surfaces before we touch the wallet's
+        // existing shielded slot.
+        let store = FileBackedShieldedStore::open_path(db_path, 100)
+            .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+        let network = self.sdk.network;
+        let wallet =
+            ShieldedWallet::from_seed(Arc::clone(&self.sdk), seed, network, account, store)?;
+
+        let mut slot = self.shielded.write().await;
+        *slot = Some(wallet);
+        Ok(())
+    }
+
+    /// Whether the shielded sub-wallet has been bound via
+    /// [`bind_shielded`](Self::bind_shielded).
+    #[cfg(feature = "shielded")]
+    pub async fn is_shielded_bound(&self) -> bool {
+        self.shielded.read().await.is_some()
+    }
+
+    /// Run one shielded sync pass on this wallet.
+    ///
+    /// Returns `Ok(None)` if the shielded sub-wallet hasn't been
+    /// bound (the sync coordinator skips unbound wallets without
+    /// surfacing an error). Returns `Ok(Some(summary))` after a
+    /// successful pass, or `Err(_)` if the underlying sync failed.
+    #[cfg(feature = "shielded")]
+    pub async fn shielded_sync(&self) -> Result<Option<ShieldedSyncSummary>, PlatformWalletError> {
+        let guard = self.shielded.read().await;
+        match guard.as_ref() {
+            Some(wallet) => Ok(Some(wallet.sync().await?)),
+            None => Ok(None),
+        }
+    }
+
+    /// The default Orchard payment address for this wallet, as the
+    /// raw 43-byte representation. Returns `None` if the shielded
+    /// sub-wallet hasn't been bound. Hosts apply their own bech32m
+    /// encoding (HRP + 0x10 type byte) on top.
+    #[cfg(feature = "shielded")]
+    pub async fn shielded_default_address(&self) -> Option<[u8; 43]> {
+        let guard = self.shielded.read().await;
+        guard
+            .as_ref()
+            .map(|w| w.default_address().to_raw_address_bytes())
     }
 }
 
@@ -401,10 +478,11 @@ impl Clone for PlatformWallet {
             core: self.core.clone(),
             identity: self.identity.clone(),
             platform: self.platform.clone(),
-            tokens: self.tokens.clone(),
             asset_locks: self.asset_locks.clone(),
             persister: self.persister.clone(),
             balance: self.balance.clone(),
+            #[cfg(feature = "shielded")]
+            shielded: self.shielded.clone(),
         }
     }
 }

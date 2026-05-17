@@ -443,6 +443,86 @@ impl LowLevelDriveOperation {
         LowLevelDriveOperation::insert_for_known_path_key_element(path, key, tree)
     }
 
+    /// Sets `GroveOperation` for inserting an empty `NormalTree` wrapped in
+    /// `Element::NonCounted` at the given path and key. The wrapper makes
+    /// the inserted subtree contribute 0 to a parent count tree's aggregate
+    /// (per grovedb #654). Used by the index-walker for sibling continuations
+    /// inside a `range_countable` value tree, so e.g. a compound `byColorShape`
+    /// continuation under a `byColor` value tree (which is a `CountTree`)
+    /// doesn't pollute the byColor count.
+    pub fn for_known_path_key_empty_non_counted_normal_tree(
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        storage_flags: Option<&StorageFlags>,
+    ) -> Self {
+        Self::for_known_path_key_empty_non_counted_tree(
+            path,
+            key,
+            TreeType::NormalTree,
+            storage_flags,
+        )
+        .expect("NormalTree NonCounted wrapping never fails")
+    }
+
+    /// Sets `GroveOperation` for inserting an empty tree of the given
+    /// `tree_type` wrapped in `Element::NonCounted`. The wrapper makes the
+    /// inserted subtree contribute 0 to a parent count tree's aggregate
+    /// count (per grovedb #654), regardless of the inner tree variant.
+    ///
+    /// Used by the index walker for sibling continuations inside a
+    /// `range_countable` value tree (a `CountTree`). Most continuations are
+    /// plain `NormalTree`, but in nested-`range_countable` cases (e.g. an
+    /// index `[color]` is range-countable AND a deeper compound index
+    /// `[color, size]` is also range-countable), the continuation
+    /// property-name tree at `"size"` is itself a `ProvableCountTree` and
+    /// must still contribute 0 to the parent `<c1>` `CountTree`.
+    ///
+    /// Returns an error for tree variants whose `NonCounted` wrapping
+    /// hasn't been validated end-to-end yet (currently anything outside
+    /// `NormalTree` / `CountTree` / `ProvableCountTree`).
+    pub fn for_known_path_key_empty_non_counted_tree(
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        tree_type: TreeType,
+        storage_flags: Option<&StorageFlags>,
+    ) -> Result<Self, Error> {
+        let element_flags = storage_flags.map(|s| s.to_element_flags());
+        let inner = match tree_type {
+            TreeType::NormalTree => Element::empty_tree_with_flags(element_flags),
+            TreeType::CountTree => Element::empty_count_tree_with_flags(element_flags),
+            TreeType::ProvableCountTree => {
+                Element::empty_provable_count_tree_with_flags(element_flags)
+            }
+            _ => {
+                return Err(Error::Drive(DriveError::NotSupported(
+                    "NonCounted-wrapping is only supported for NormalTree, CountTree, and ProvableCountTree",
+                )));
+            }
+        };
+        let tree = Element::new_non_counted(inner)
+            .expect("new_non_counted only fails when wrapping another NonCounted");
+        Ok(LowLevelDriveOperation::insert_for_known_path_key_element(
+            path, key, tree,
+        ))
+    }
+
+    /// Sets `GroveOperation` for inserting an empty provable count tree at the given path and key
+    pub fn for_known_path_key_empty_provable_count_tree(
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        storage_flags: Option<&StorageFlags>,
+    ) -> Self {
+        let tree = match storage_flags {
+            Some(storage_flags) => Element::new_provable_count_tree_with_flags(
+                None,
+                storage_flags.to_some_element_flags(),
+            ),
+            None => Element::empty_provable_count_tree(),
+        };
+
+        LowLevelDriveOperation::insert_for_known_path_key_element(path, key, tree)
+    }
+
     /// Sets `GroveOperation` for inserting an empty tree at the given path and key
     pub fn for_estimated_path_key_empty_tree(
         path: KeyInfoPath,
@@ -470,6 +550,38 @@ impl LowLevelDriveOperation {
                 Element::empty_sum_tree_with_flags(storage_flags.to_some_element_flags())
             }
             None => Element::empty_sum_tree(),
+        };
+
+        LowLevelDriveOperation::insert_for_estimated_path_key_element(path, key, tree)
+    }
+
+    /// Sets `GroveOperation` for inserting an empty count tree at the given (estimated) path and key
+    pub fn for_estimated_path_key_empty_count_tree(
+        path: KeyInfoPath,
+        key: KeyInfo,
+        storage_flags: Option<&StorageFlags>,
+    ) -> Self {
+        let tree = match storage_flags {
+            Some(storage_flags) => {
+                Element::empty_count_tree_with_flags(storage_flags.to_some_element_flags())
+            }
+            None => Element::empty_count_tree(),
+        };
+
+        LowLevelDriveOperation::insert_for_estimated_path_key_element(path, key, tree)
+    }
+
+    /// Sets `GroveOperation` for inserting an empty provable count tree at the given (estimated) path and key
+    pub fn for_estimated_path_key_empty_provable_count_tree(
+        path: KeyInfoPath,
+        key: KeyInfo,
+        storage_flags: Option<&StorageFlags>,
+    ) -> Self {
+        let tree = match storage_flags {
+            Some(storage_flags) => {
+                Element::empty_provable_count_tree_with_flags(storage_flags.to_some_element_flags())
+            }
+            None => Element::empty_provable_count_tree(),
         };
 
         LowLevelDriveOperation::insert_for_estimated_path_key_element(path, key, tree)
@@ -542,6 +654,10 @@ impl LowLevelDriveOperation {
             reference_path_type,
             max_reference_hop,
             flags,
+            // Drive only refreshes plain (counted) references; the
+            // non-counted/`ReferenceWithSumItem` variants added in grovedb
+            // are not used by platform.
+            false,
             trust_refresh_reference,
         ))
     }
@@ -579,6 +695,7 @@ impl LowLevelDriveOperationTreeTypeConverter for TreeType {
             TreeType::ProvableCountSumTree => {
                 Element::empty_provable_count_sum_tree_with_flags(element_flags)
             }
+            TreeType::ProvableSumTree => Element::empty_provable_sum_tree_with_flags(element_flags),
             TreeType::CommitmentTree(chunk_power) => {
                 Element::empty_commitment_tree_with_flags(*chunk_power, element_flags)?
             }
@@ -1433,6 +1550,32 @@ mod tests {
             result.is_err(),
             "expected overflow error for loaded bytes cost"
         );
+    }
+
+    /// Covers the `TreeType::ProvableSumTree` arm of
+    /// `LowLevelDriveOperationTreeTypeConverter::empty_tree_operation_for_known_path_key`
+    /// added by the grovedb#661 bump. Drive doesn't currently construct
+    /// `ProvableSumTree` anywhere else, so without this test the new arm is
+    /// uncovered.
+    #[test]
+    fn empty_tree_operation_for_known_path_key_provable_sum_tree() {
+        use grovedb::batch::GroveOp;
+
+        let op = TreeType::ProvableSumTree
+            .empty_tree_operation_for_known_path_key(vec![b"root".to_vec()], b"k".to_vec(), None)
+            .expect("empty_tree_operation_for_known_path_key");
+
+        match op {
+            LowLevelDriveOperation::GroveOperation(grove_op) => match grove_op.op {
+                GroveOp::InsertOrReplace { element } => assert!(
+                    matches!(element, Element::ProvableSumTree(..)),
+                    "expected ProvableSumTree element, got: {:?}",
+                    element
+                ),
+                other => panic!("expected GroveOp::InsertOrReplace, got: {:?}", other),
+            },
+            other => panic!("expected GroveOperation, got: {:?}", other),
+        }
     }
 
     #[test]

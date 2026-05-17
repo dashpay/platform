@@ -420,6 +420,16 @@ fn serialize_query_item(item: &QueryItem) -> Result<JsValue, JsValue> {
             )
             .map_err(|_| JsValue::from_str("Failed to set endInclusive"))?;
         }
+        QueryItem::AggregateCountOnRange(_) => {
+            return Err(JsValue::from_str(
+                "AggregateCountOnRange QueryItem is not supported in token-transition path queries",
+            ));
+        }
+        QueryItem::AggregateSumOnRange(_) => {
+            return Err(JsValue::from_str(
+                "AggregateSumOnRange QueryItem is not supported in token-transition path queries",
+            ));
+        }
     }
 
     Ok(obj.into())

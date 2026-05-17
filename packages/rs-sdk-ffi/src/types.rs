@@ -35,21 +35,13 @@ pub struct IdentityPublicKeyHandle {
 /// Alias for compatibility
 pub type DashSDKPublicKeyHandle = IdentityPublicKeyHandle;
 
-/// Network type for SDK configuration
-#[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DashSDKNetwork {
-    /// Mainnet
-    SDKMainnet = 0,
-    /// Testnet
-    SDKTestnet = 1,
-    /// Regtest
-    SDKRegtest = 2,
-    /// Devnet
-    SDKDevnet = 3,
-    /// Local development network
-    SDKLocal = 4,
-}
+// Single source of truth for the network type across the Rust-side
+// SDK and the FFI boundary. `Network` is the typed enum; `FFINetwork`
+// is the `#[repr(C)]` mirror cbindgen emits for callers. Every FFI
+// entry point in this crate takes / returns `FFINetwork`; internal
+// Rust code converts via `Network::from(ffi)` / `ffi.into()`.
+pub use dash_network::ffi::FFINetwork;
+pub use dash_network::Network;
 
 /// SDK configuration passed from C callers.
 ///
@@ -67,7 +59,7 @@ pub enum DashSDKNetwork {
 #[repr(C)]
 pub struct DashSDKConfig {
     /// Network to connect to
-    pub network: DashSDKNetwork,
+    pub network: FFINetwork,
     /// Comma-separated list of DAPI addresses (e.g., "http://127.0.0.1:3000,http://127.0.0.1:3001")
     /// If null or empty, will use mock SDK.
     ///

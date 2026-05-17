@@ -1417,7 +1417,7 @@ public class Addresses: @unchecked Sendable {
             dash_sdk_signer_create_from_private_key(
                 keyBytes.bindMemory(to: UInt8.self).baseAddress!,
                 UInt(identityPrivateKey.count),
-                sdk.network
+                sdk.network.ffiValue
             )
         }
 
@@ -1565,7 +1565,7 @@ public class Addresses: @unchecked Sendable {
             dash_sdk_signer_create_from_private_key(
                 keyBytes.bindMemory(to: UInt8.self).baseAddress!,
                 UInt(identityPrivateKey.count),
-                sdk.network
+                sdk.network.ffiValue
             )
         }
 
