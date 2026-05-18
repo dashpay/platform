@@ -324,4 +324,63 @@ mod tests {
         assert!(dt.documents_countable());
         assert!(dt.range_countable());
     }
+
+    // ── Sum-side accessor invariants ────────────────────────────────
+
+    #[test]
+    fn set_range_summable_requires_documents_summable() {
+        // `range_summable` carries a name-of-property dependency on
+        // `documents_summable`; setting it true when
+        // `documents_summable` is None must normalize to false rather
+        // than leaving the type in an inconsistent state.
+        let mut v2: DocumentTypeV2 = make_v0().into();
+        assert_eq!(v2.documents_summable, None);
+        v2.set_range_summable(true);
+        assert!(
+            !v2.range_summable,
+            "range_summable must clamp to false when documents_summable is None"
+        );
+    }
+
+    #[test]
+    fn set_range_summable_honors_with_documents_summable() {
+        let mut v2: DocumentTypeV2 = make_v0().into();
+        v2.set_documents_summable(Some("amount".to_string()));
+        v2.set_range_summable(true);
+        assert_eq!(v2.documents_summable.as_deref(), Some("amount"));
+        assert!(v2.range_summable);
+    }
+
+    #[test]
+    fn set_documents_summable_none_clears_range_summable() {
+        // Invariant maintenance: clearing documents_summable must also
+        // clear range_summable (which depends on it).
+        let mut v2: DocumentTypeV2 = make_v0().into();
+        v2.set_documents_summable(Some("amount".to_string()));
+        v2.set_range_summable(true);
+        assert!(v2.range_summable);
+
+        v2.set_documents_summable(None);
+        assert_eq!(v2.documents_summable, None);
+        assert!(
+            !v2.range_summable,
+            "clearing documents_summable must clear range_summable too"
+        );
+    }
+
+    #[test]
+    fn set_range_summable_false_independent_of_documents_summable() {
+        // Toggling range_summable false should always succeed, regardless
+        // of documents_summable state.
+        let mut v2: DocumentTypeV2 = make_v0().into();
+        v2.set_documents_summable(Some("amount".to_string()));
+        v2.set_range_summable(true);
+        assert!(v2.range_summable);
+
+        v2.set_range_summable(false);
+        assert!(!v2.range_summable);
+        // documents_summable should NOT be cleared by setting
+        // range_summable false — the dependency is one-directional.
+        assert_eq!(v2.documents_summable.as_deref(), Some("amount"));
+    }
 }

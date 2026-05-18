@@ -1410,6 +1410,85 @@ mod tests {
     }
 
     #[test]
+    fn test_index_try_from_summable_string_sets_property() {
+        let index_map: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("recipient".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+            (
+                Value::Text("summable".to_string()),
+                Value::Text("amount".to_string()),
+            ),
+        ];
+        let index = Index::try_from(index_map.as_slice()).expect("valid index parses");
+        assert_eq!(index.summable.as_deref(), Some("amount"));
+        assert!(!index.range_summable);
+    }
+
+    #[test]
+    fn test_index_try_from_summable_null_treated_as_none() {
+        let index_map: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("recipient".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+            (Value::Text("summable".to_string()), Value::Null),
+        ];
+        let index = Index::try_from(index_map.as_slice()).expect("null summable parses");
+        assert_eq!(index.summable, None);
+    }
+
+    #[test]
+    fn test_index_try_from_summable_empty_string_rejected() {
+        // Empty `summable: ""` is a contract bug — must reject at parse
+        // time, not silently store `Some("")` and fail later in the
+        // index picker.
+        let index_map: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("recipient".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+            (
+                Value::Text("summable".to_string()),
+                Value::Text(String::new()),
+            ),
+        ];
+        let result = Index::try_from(index_map.as_slice());
+        assert!(result.is_err(), "empty summable string must error");
+        let msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            msg.contains("non-empty"),
+            "error must reference the non-empty requirement; got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_index_try_from_summable_non_string_rejected() {
+        let index_map: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("recipient".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+            (Value::Text("summable".to_string()), Value::Bool(true)),
+        ];
+        let result = Index::try_from(index_map.as_slice());
+        assert!(result.is_err(), "non-string/non-null summable must error");
+    }
+
+    #[test]
     fn test_index_try_from_contested_without_unique_error() {
         let index_map: Vec<(Value, Value)> = vec![
             (
