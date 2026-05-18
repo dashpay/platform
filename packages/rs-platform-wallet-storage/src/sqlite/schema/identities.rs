@@ -67,8 +67,8 @@ pub fn fetch(
     }
 }
 
-/// Build an [`IdentityManagerStartState`] for one wallet from the
-/// `identities` table. Tombstoned rows are skipped (a logical delete,
+/// Build a [`platform_wallet::changeset::IdentityManagerStartState`]
+/// for one wallet from the `identities` table. Tombstoned rows are skipped (a logical delete,
 /// not corruption); any row that fails to decode is a hard error —
 /// corruption is never silently dropped.
 ///

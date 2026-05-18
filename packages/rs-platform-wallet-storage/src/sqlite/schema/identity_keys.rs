@@ -7,8 +7,8 @@
 //! "one blob per row" property we transcribe the entry into a wire
 //! shape where the public key is bincode-2-native-encoded (the dpp
 //! types derive `Encode`/`Decode`) and the surrounding fields ride
-//! the bincode-serde encoder. The shape is documented at
-//! [`IdentityKeyWire`].
+//! the bincode-serde encoder. The shape is documented on the
+//! `IdentityKeyWire` struct below.
 
 use rusqlite::{params, Transaction};
 use serde::{Deserialize, Serialize};

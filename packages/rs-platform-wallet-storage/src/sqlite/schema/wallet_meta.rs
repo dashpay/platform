@@ -91,7 +91,7 @@ fn network_to_str(net: key_wallet::Network) -> &'static str {
     }
 }
 
-/// Inverse of [`network_to_str`].
+/// Inverse of `network_to_str`.
 pub fn parse_network(s: &str) -> Option<key_wallet::Network> {
     match s {
         "mainnet" => Some(key_wallet::Network::Mainnet),
