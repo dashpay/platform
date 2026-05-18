@@ -140,7 +140,7 @@ impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransitionV0 {
         // never sees a raw private key — only a 32-byte digest goes in and a
         // serialised signature comes out.
         state_transition
-            .sign_with_signer(asset_lock_proof_path, asset_lock_signer)
+            .sign_with_core_signer(asset_lock_proof_path, asset_lock_signer)
             .await?;
 
         Ok(state_transition)

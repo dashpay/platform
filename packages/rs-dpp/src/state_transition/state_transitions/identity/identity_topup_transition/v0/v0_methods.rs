@@ -80,7 +80,7 @@ impl IdentityTopUpTransitionMethodsV0 for IdentityTopUpTransitionV0 {
         let mut state_transition: StateTransition = identity_top_up_transition.into();
 
         state_transition
-            .sign_with_signer(asset_lock_proof_path, asset_lock_signer)
+            .sign_with_core_signer(asset_lock_proof_path, asset_lock_signer)
             .await?;
 
         Ok(state_transition)

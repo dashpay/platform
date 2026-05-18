@@ -1245,26 +1245,59 @@ impl StateTransition {
         Ok(())
     }
 
-    /// Signs `self.signable_bytes()` with an external [`key_wallet::signer::Signer`]
-    /// and stores the resulting Core-ECDSA signature on the state transition.
+    /// Sign `self.signable_bytes()` with an external Core-wallet signer and
+    /// store the resulting Core-ECDSA signature in the transition's wrapper
+    /// signature field.
     ///
-    /// This is the signer-driven counterpart to [`Self::sign_by_private_key`] for
-    /// the ECDSA (asset-lock-proof) signing path. It exists so callers — most
-    /// notably the iOS Swift SDK and any other host that holds its private keys
-    /// inside a hardware wallet, secure enclave, or remote signing service — can
-    /// produce the asset-lock-proof signature on `IdentityCreate` /
-    /// `IdentityTopUp` state transitions **without ever materialising a raw
-    /// `[u8]` private key on the Rust side**. The signer performs the
-    /// derive + sign + zeroise sequence atomically inside its own trust
-    /// boundary; this function only sees a 32-byte digest and the resulting
-    /// signature.
+    /// # Position in the signing-primitive family
+    ///
+    /// This is a **primitive** in the same family as
+    /// [`Self::sign_by_private_key`] — it performs no validation of the
+    /// transition variant, the key, or the relationship between them. It is
+    /// the external-custody sibling of `sign_by_private_key`:
+    ///
+    /// | Primitive | Key source | Validation |
+    /// |---|---|---|
+    /// | [`Self::sign_by_private_key`] | raw `&[u8]` in host memory | none |
+    /// | `sign_with_core_signer` | external signer (HSM / hardware wallet / secure enclave / remote signing service), key reached via BIP32 [`DerivationPath`] | none |
+    ///
+    /// Both produce **byte-identical** wrapper signatures over the same
+    /// digest when given the same underlying private key (proven by
+    /// `sign_with_signer_matches_sign_by_private_key_byte_for_byte` in this
+    /// file's tests). The only difference is where the key bytes live: in
+    /// host memory vs inside the signer's trust boundary. The signer
+    /// performs the derive + sign + zeroise sequence atomically; this
+    /// function never sees raw key material, only a 32-byte digest and the
+    /// resulting signature.
+    ///
+    /// # Scope (what the BIP32 path means)
+    ///
+    /// The `path` parameter selects a key in the signer's Core wallet
+    /// (BIP32-derived). For that path's signature to be **meaningful** the
+    /// transition's wrapper signature field must itself carry a Core-key
+    /// signature. Today that is exactly the four asset-lock-signed
+    /// variants — `IdentityCreate`, `IdentityTopUp`,
+    /// `AddressFundingFromAssetLock`, `ShieldFromAssetLock` — where the
+    /// wrapper signature is the asset-lock proof signed by the credit
+    /// output's Core key.
+    ///
+    /// For identity-signed variants (`DataContractCreate`, `Batch`,
+    /// `IdentityCreditTransfer`, etc.) the wrapper signature is an
+    /// identity-key signature paired with a `signature_public_key_id`,
+    /// and the right external-signer entry point is [`Self::sign_external`]
+    /// with a [`Signer<IdentityPublicKey>`](crate::identity::signer::Signer).
+    /// Calling `sign_with_core_signer` on such a variant compiles and
+    /// produces a structurally valid 65-byte signature, but the signature
+    /// is **semantically meaningless** — Platform validation will reject
+    /// the transition because the signature doesn't match the expected
+    /// identity public key and `signature_public_key_id` isn't set. The
+    /// same caveat applies to misusing `sign_by_private_key`, the sibling
+    /// primitive — both rely on the caller passing a key the wrapper
+    /// signature is *meant* to carry.
     ///
     /// # Wire-format parity with `sign_by_private_key`
     ///
-    /// The byte layout of the signature stored on `self` is **byte-identical**
-    /// to the one produced by [`Self::sign_by_private_key`] when called with
-    /// `KeyType::ECDSA_SECP256K1` / `KeyType::ECDSA_HASH160` and the same
-    /// underlying private key. The pre-image transform mirrors
+    /// The byte layout of the stored signature mirrors
     /// `dashcore::signer::sign`:
     ///
     /// 1. `digest = double_sha256(self.signable_bytes()?)`
@@ -1290,7 +1323,7 @@ impl StateTransition {
     /// - Returns [`ProtocolError::InvalidVerificationWrongNumberOfElements`] if
     ///   `set_signature` rejects the result (matches `sign_by_private_key`).
     #[cfg(all(feature = "state-transition-signing", feature = "core_key_wallet"))]
-    pub async fn sign_with_signer<S: ::key_wallet::signer::Signer>(
+    pub async fn sign_with_core_signer<S: ::key_wallet::signer::Signer>(
         &mut self,
         path: &::key_wallet::bip32::DerivationPath,
         signer: &S,
@@ -3246,14 +3279,15 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // sign_with_signer byte-parity test
+    // sign_with_core_signer byte-parity test
     //
-    // Proves that `StateTransition::sign_with_signer` produces a byte-identical
-    // signature to the legacy `sign_by_private_key` ECDSA path when both are
-    // driven by the same underlying secret. This is the on-wire contract the
-    // Swift / external-signer flow depends on: changing the digest pre-image
-    // or the recoverable-compact encoding would silently break asset-lock
-    // verification on testnet/mainnet, so we pin both shapes here.
+    // Proves that `StateTransition::sign_with_core_signer` produces a
+    // byte-identical signature to the legacy `sign_by_private_key` ECDSA path
+    // when both are driven by the same underlying secret. This is the on-wire
+    // contract the Swift / external-signer flow depends on: changing the
+    // digest pre-image or the recoverable-compact encoding would silently
+    // break asset-lock verification on testnet/mainnet, so we pin both shapes
+    // here.
     // -----------------------------------------------------------------------
     #[cfg(all(
         feature = "state-transition-signing",
@@ -3261,7 +3295,7 @@ mod tests {
         feature = "bls-signatures"
     ))]
     #[tokio::test]
-    async fn sign_with_signer_matches_sign_by_private_key_byte_for_byte() {
+    async fn sign_with_core_signer_matches_sign_by_private_key_byte_for_byte() {
         use async_trait::async_trait;
         use dashcore::secp256k1::{
             ecdsa, rand::rngs::OsRng, Message, PublicKey, Secp256k1, SecretKey,
@@ -3345,9 +3379,9 @@ mod tests {
         // New signer-driven path: digest → external signer → recovered →
         // 65-byte recoverable compact. Byte-identical to the legacy result.
         st_signer
-            .sign_with_signer(&path, &signer)
+            .sign_with_core_signer(&path, &signer)
             .await
-            .expect("sign_with_signer");
+            .expect("sign_with_core_signer");
 
         let sig_legacy = st_legacy.signature().expect("legacy signature set");
         let sig_signer = st_signer.signature().expect("signer signature set");
@@ -3365,7 +3399,7 @@ mod tests {
         assert_eq!(
             sig_legacy.as_slice(),
             sig_signer.as_slice(),
-            "sign_with_signer must produce byte-identical output to sign_by_private_key"
+            "sign_with_core_signer must produce byte-identical output to sign_by_private_key"
         );
     }
 }
