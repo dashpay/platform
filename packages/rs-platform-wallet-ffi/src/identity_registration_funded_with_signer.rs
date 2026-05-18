@@ -32,7 +32,7 @@ use crate::core_wallet_types::OutPointFFI;
 use rs_sdk_ffi::MnemonicResolverHandle;
 use crate::error::*;
 use crate::handle::*;
-use crate::identity_registration_with_signer::IdentityPubkeyFFI;
+use crate::identity_registration_with_signer::{decode_contract_bounds, IdentityPubkeyFFI};
 use rs_sdk_ffi::MnemonicResolverCoreSigner;
 use crate::runtime::block_on_worker;
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
@@ -85,13 +85,20 @@ unsafe fn decode_identity_pubkeys(
         }
         let pubkey_bytes: Vec<u8> =
             slice::from_raw_parts(row.pubkey_bytes, row.pubkey_len).to_vec();
+        // ContractBounds round-trip: decode the kind/id/document_type
+        // tuple the Swift side marshalled, with the same enforcement
+        // the signer-only registration path uses (Encryption /
+        // Decryption purposes must carry bounds; kind 0 for those is
+        // rejected with a clean FFI error rather than producing a key
+        // Drive silently can't use).
+        let contract_bounds = decode_contract_bounds(row, purpose, i, "identity_pubkeys")?;
         keys_map.insert(
             row.key_id,
             IdentityPublicKey::V0(IdentityPublicKeyV0 {
                 id: row.key_id,
                 purpose,
                 security_level,
-                contract_bounds: None,
+                contract_bounds,
                 key_type,
                 read_only: row.read_only,
                 data: BinaryData::new(pubkey_bytes),

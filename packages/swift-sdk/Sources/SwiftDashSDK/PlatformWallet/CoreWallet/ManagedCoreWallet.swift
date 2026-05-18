@@ -105,8 +105,29 @@ public class ManagedCoreWallet {
         var txBytesPtr: UnsafeMutablePointer<UInt8>? = nil
         var txLen: UInt = 0
 
-        // Build C string array
-        let cStrings = recipients.map { ($0.address as NSString).utf8String }
+        // Own the C-string storage explicitly. The naive shape
+        // `recipients.map { ($0.address as NSString).utf8String }`
+        // yields pointers into a bridged `NSString` temporary whose
+        // lifetime ends with the `.map` closure — Rust would then
+        // `CStr::from_ptr` against freed (or autorelease-pool-
+        // recycled) memory. `strdup` malloc's a fresh NUL-terminated
+        // copy we own through the FFI call; `defer` frees them after
+        // Rust returns.
+        let cStringStorage: [UnsafeMutablePointer<CChar>?] = recipients.map {
+            strdup($0.address)
+        }
+        defer {
+            for ptr in cStringStorage {
+                if let p = ptr { free(p) }
+            }
+        }
+        // Promote the owned buffers to immutable `UnsafePointer<CChar>?`
+        // for the FFI's `*const *const c_char` signature. No
+        // `assumingMemoryBound` re-interpretation needed — the bytes
+        // are already correctly typed.
+        let cStringPointers: [UnsafePointer<CChar>?] = cStringStorage.map { ptr in
+            ptr.map { UnsafePointer($0) }
+        }
         let amounts = recipients.map { $0.amountDuffs }
 
         // Resolver-backed signer owns mnemonic access for the lifetime
@@ -115,7 +136,7 @@ public class ManagedCoreWallet {
         // digest signed, buffers zeroed) — no priv key leaves Swift.
         let resolver = MnemonicResolver()
 
-        try cStrings.withUnsafeBufferPointer { addrBuf in
+        try cStringPointers.withUnsafeBufferPointer { addrBuf in
             try amounts.withUnsafeBufferPointer { amountBuf in
                 try withExtendedLifetime(resolver) {
                     try core_wallet_send_to_addresses(
