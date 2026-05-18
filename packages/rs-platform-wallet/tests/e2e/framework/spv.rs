@@ -25,7 +25,7 @@ use dash_spv::ClientConfig;
 use dashcore::Network;
 use platform_wallet::events::{EventHandler, PlatformEventHandler, WalletEvent};
 use platform_wallet::{changeset::PlatformWalletPersistence, PlatformWalletManager, SpvRuntime};
-use tokio::sync::mpsc;
+use tokio::sync::broadcast;
 
 use super::config::Config;
 use super::{FrameworkError, FrameworkResult};
@@ -108,7 +108,11 @@ where
 /// Polls every [`READINESS_POLL_INTERVAL`] and emits an info-level
 /// pipeline snapshot every [`PROGRESS_LOG_INTERVAL`] so cold-cache
 /// hangs are debuggable from default-level logs.
-pub async fn wait_for_mn_list_synced(spv: &SpvRuntime, timeout: Duration) -> FrameworkResult<()> {
+pub async fn wait_for_mn_list_synced(
+    spv: &SpvRuntime,
+    mn_list_observer: &MnListErrorObserver,
+    timeout: Duration,
+) -> FrameworkResult<()> {
     let effective_timeout = timeout.max(COLD_CACHE_TIMEOUT_FLOOR);
     if effective_timeout != timeout {
         tracing::info!(
@@ -119,22 +123,13 @@ pub async fn wait_for_mn_list_synced(spv: &SpvRuntime, timeout: Duration) -> Fra
         );
     }
 
-    // Subscribe to dash-spv's `SyncEvent::ManagerError` stream by
-    // registering a single-purpose [`PlatformEventHandler`] on the
-    // runtime's event manager. The handler forwards Masternode-scoped
-    // errors into an mpsc channel that the wait loop selects on, so
+    // Subscribe a fresh receiver to dash-spv's
+    // `SyncEvent::ManagerError` stream via the constructor-injected
+    // `MnListErrorObserver`. It forwards Masternode-scoped errors so
     // hard-stalls (QRInfo retry exhaustion, etc.) surface in O(ms)
-    // instead of waiting for the heuristic or the hard timeout.
-    //
-    // The handler stays registered for the lifetime of the
-    // `PlatformEventManager` (it has no `remove_handler`); after we
-    // return, sends on the channel become best-effort no-ops because
-    // the Receiver is dropped. That's a few harmless `Result::Err`s
-    // at most — never on the SPV hot path because Masternode errors
-    // are rare by design.
-    let (err_tx, mut err_rx) = mpsc::unbounded_channel::<String>();
-    let handler: Arc<dyn PlatformEventHandler> = Arc::new(MnListErrorListener::new(err_tx)) as _;
-    spv.event_manager().add_handler(handler);
+    // instead of waiting for the heuristic or the hard timeout. The
+    // receiver is dropped when this call returns — no leak.
+    let mut err_rx = mn_list_observer.subscribe();
 
     let start = Instant::now();
     let deadline = start + effective_timeout;
@@ -151,7 +146,7 @@ pub async fn wait_for_mn_list_synced(spv: &SpvRuntime, timeout: Duration) -> Fra
         tokio::select! {
             biased;
             maybe_err = err_rx.recv() => {
-                if let Some(err) = maybe_err {
+                if let Ok(err) = maybe_err {
                     tracing::error!(
                         target: "platform_wallet::e2e::spv",
                         error = %err,
@@ -165,9 +160,11 @@ pub async fn wait_for_mn_list_synced(spv: &SpvRuntime, timeout: Duration) -> Fra
                          next testnet ChainLock cycle."
                     )));
                 }
-                // Sender dropped (shouldn't happen — we hold it via
-                // the registered handler). Fall through to a poll so
-                // the heuristic / hard timeout still applies.
+                // Lagged (ring overflow — Masternode errors are rare,
+                // so this is effectively unreachable) or Closed (the
+                // observer outlives every wait via the manager, so
+                // also unreachable). Fall through to a poll so the
+                // stall heuristic / hard timeout still applies.
             }
             _ = tokio::time::sleep(READINESS_POLL_INTERVAL) => {}
         }
@@ -266,31 +263,53 @@ pub async fn wait_for_mn_list_synced(spv: &SpvRuntime, timeout: Duration) -> Fra
     }
 }
 
+/// Broadcast capacity for [`MnListErrorObserver`]. Masternode-scoped
+/// `ManagerError`s are rare by design, so a small ring is ample; if a
+/// wait loop ever lags far enough to drop one, the stall heuristic
+/// still backstops it.
+const MN_LIST_ERROR_CHANNEL_CAP: usize = 16;
+
 /// Single-purpose [`PlatformEventHandler`] that forwards
 /// [`SyncEvent::ManagerError`] events scoped to
-/// [`ManagerIdentifier::Masternode`] into an mpsc channel. Used by
-/// [`wait_for_mn_list_synced`] to escape the cold-cache floor as
-/// soon as dash-spv signals a fatal manager error.
+/// [`ManagerIdentifier::Masternode`] onto a broadcast channel. Built
+/// once during harness init and threaded into
+/// [`PlatformWalletManager::new`] as one of its `app_handlers`; each
+/// [`wait_for_mn_list_synced`] call [`subscribe`](Self::subscribe)s a
+/// fresh receiver so it escapes the cold-cache floor as soon as
+/// dash-spv signals a fatal manager error during that wait.
 ///
 /// All other event variants are ignored — this is *not* a substitute
 /// for [`super::wait_hub::WaitEventHub`].
-struct MnListErrorListener {
-    tx: mpsc::UnboundedSender<String>,
+pub struct MnListErrorObserver {
+    tx: broadcast::Sender<String>,
 }
 
-impl MnListErrorListener {
-    fn new(tx: mpsc::UnboundedSender<String>) -> Self {
+impl MnListErrorObserver {
+    pub fn new() -> Self {
+        let (tx, _) = broadcast::channel(MN_LIST_ERROR_CHANNEL_CAP);
         Self { tx }
+    }
+
+    /// A fresh receiver scoped to the caller's wait window. Only
+    /// observes errors emitted after this call returns, matching the
+    /// per-wait semantics the loop relies on.
+    pub fn subscribe(&self) -> broadcast::Receiver<String> {
+        self.tx.subscribe()
     }
 }
 
-impl EventHandler for MnListErrorListener {
+impl Default for MnListErrorObserver {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl EventHandler for MnListErrorObserver {
     fn on_sync_event(&self, event: &SyncEvent) {
         if let SyncEvent::ManagerError { manager, error } = event {
             if matches!(manager, ManagerIdentifier::Masternode) {
-                // Best-effort: receiver dropped after wait returned
-                // is fine, just means the event arrived too late to
-                // matter.
+                // Best-effort: no live subscriber (between waits) is
+                // fine, the next wait subscribes its own receiver.
                 let _ = self.tx.send(format!("Masternode manager error: {error}"));
             }
         }
@@ -302,7 +321,7 @@ impl EventHandler for MnListErrorListener {
     fn on_error(&self, _error: &str) {}
 }
 
-impl PlatformEventHandler for MnListErrorListener {}
+impl PlatformEventHandler for MnListErrorObserver {}
 
 /// One-line info-level pipeline-snapshot log used by
 /// [`wait_for_mn_list_synced`].

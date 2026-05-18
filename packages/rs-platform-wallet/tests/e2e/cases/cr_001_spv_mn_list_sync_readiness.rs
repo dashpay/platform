@@ -74,7 +74,7 @@ async fn cr_001_spv_mn_list_sync_readiness() {
     // already ran this at init, so the call returns immediately when
     // already synced; on a cold cache the helper waits up to its
     // `COLD_CACHE_TIMEOUT_FLOOR` (600 s).
-    wait_for_mn_list_synced(spv, MN_LIST_SYNC_TIMEOUT)
+    wait_for_mn_list_synced(spv, s.ctx.mn_list_observer(), MN_LIST_SYNC_TIMEOUT)
         .await
         .expect("wait_for_mn_list_synced failed before the cold-cache floor elapsed");
 

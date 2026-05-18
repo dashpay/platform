@@ -189,6 +189,12 @@ pub struct E2eContext {
     /// wallets clone the `Arc` so `wait_for_balance` wakes on real
     /// events instead of fixed polling.
     pub wait_hub: Arc<WaitEventHub>,
+    /// Constructor-injected observer of dash-spv
+    /// `SyncEvent::ManagerError`s scoped to the masternode manager.
+    /// [`spv::wait_for_mn_list_synced`] subscribes a fresh receiver
+    /// per call so mn-list hard-stalls surface immediately instead of
+    /// burning the cold-cache floor.
+    pub mn_list_observer: Arc<spv::MnListErrorObserver>,
     /// Independent DAPI cross-check of the bank's Platform balance,
     /// captured once per init AFTER the startup sweep and
     /// `sync_and_refresh_floor` (QA-V26-005 / QA-V26-013). Both
@@ -267,6 +273,13 @@ impl E2eContext {
     /// Live SPV runtime started by [`Self::build`].
     pub fn spv(&self) -> Option<&Arc<SpvRuntime>> {
         self.spv_runtime.as_ref()
+    }
+
+    /// Constructor-injected mn-list `ManagerError` observer. Pass to
+    /// [`spv::wait_for_mn_list_synced`] to surface dash-spv hard-stalls
+    /// without the full cold-cache wait.
+    pub fn mn_list_observer(&self) -> &Arc<spv::MnListErrorObserver> {
+        &self.mn_list_observer
     }
 
     /// Framework-shutdown signal; background helpers can `select!`
@@ -352,16 +365,22 @@ impl E2eContext {
         let (sdk, context_provider) = sdk::build_sdk(&config)?;
 
         // Persister discards changesets (testnet re-sync is fast).
-        // Event handler is the shared [`WaitEventHub`] so test
-        // helpers can await on real events instead of fixed polling.
+        // App handlers: the shared [`WaitEventHub`] so test helpers
+        // await on real events instead of fixed polling, plus the
+        // [`MnListErrorObserver`] so `wait_for_mn_list_synced` can
+        // surface dash-spv `ManagerError`s without a post-construction
+        // handler-registration escape hatch.
         let persister: Arc<NoPlatformPersistence> = Arc::new(NoPlatformPersistence);
         let wait_hub = Arc::new(WaitEventHub::new());
-        let event_handler: Arc<dyn PlatformEventHandler> = Arc::clone(&wait_hub) as _;
+        let mn_list_observer = Arc::new(spv::MnListErrorObserver::new());
 
         let manager = Arc::new(PlatformWalletManager::new(
             Arc::clone(&sdk),
             persister,
-            event_handler,
+            vec![
+                Arc::clone(&wait_hub) as Arc<dyn PlatformEventHandler>,
+                Arc::clone(&mn_list_observer) as Arc<dyn PlatformEventHandler>,
+            ],
         ));
 
         // Start SPV before the bank loads so any L1 funding /
@@ -400,7 +419,8 @@ impl E2eContext {
             // `build`. Drops the previous slot value (should be `None`
             // already because we took it above; defensive).
             *IN_FLIGHT_SPV.lock().expect("IN_FLIGHT_SPV poisoned") = Some(Arc::clone(&spv_runtime));
-            spv::wait_for_mn_list_synced(&spv_runtime, SPV_READY_TIMEOUT).await?;
+            spv::wait_for_mn_list_synced(&spv_runtime, &mn_list_observer, SPV_READY_TIMEOUT)
+                .await?;
             Some(spv_runtime)
         };
 
@@ -770,6 +790,7 @@ impl E2eContext {
             registry,
             cancel_token,
             wait_hub,
+            mn_list_observer,
             bank_balance_cross_check,
             identity_sync: StdMutex::new(Some(identity_sync)),
             active_guards: AtomicUsize::new(0),
