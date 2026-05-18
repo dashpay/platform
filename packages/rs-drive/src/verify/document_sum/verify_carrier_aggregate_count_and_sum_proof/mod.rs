@@ -19,7 +19,7 @@ impl DriveDocumentSumQuery<'_> {
     /// `ProvableCountProvableSumTree`. Counterpart to the prover-side
     /// [`execute_carrier_aggregate_count_and_sum_with_proof`](DriveDocumentSumQuery::execute_carrier_aggregate_count_and_sum_with_proof).
     /// Calls `GroveDb::verify_aggregate_count_and_sum_query_per_key`
-    /// (grovedb PR #670 head `e69df59f`).
+    /// (grovedb develop (PR #670 merged; head `e98bab5f` as of this PR)).
     #[allow(clippy::type_complexity)]
     pub fn verify_carrier_aggregate_count_and_sum_proof(
         &self,

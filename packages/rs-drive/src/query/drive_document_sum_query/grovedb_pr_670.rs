@@ -76,7 +76,7 @@
 //! carrier-aggregate path query. Backs the `GroupByCompound + In on
 //! prefix + range on terminator` shape.
 //!
-//! **Status**: live in grovedb PR #670 head `e69df59f`. Drive-side
+//! **Status**: live in grovedb develop (PR #670 merged; head `e98bab5f` as of this PR). Drive-side
 //! wired through: path-query builder + executor + verifier all call
 //! `verify_aggregate_sum_query_per_key` end-to-end.
 //!
@@ -326,7 +326,7 @@
 //!   "Choosing What to Set" table's "both" row for the forward
 //!   reference).
 //!
-//! **Carrier variant**: live in grovedb PR #670 head `e69df59f`.
+//! **Carrier variant**: live in grovedb develop (PR #670 merged; head `e98bab5f` as of this PR).
 //! Drive-side wired through
 //! ([`crate::query::drive_document_sum_query::DriveDocumentSumQuery::carrier_aggregate_count_and_sum_path_query`]
 //! +
@@ -362,7 +362,7 @@
 //!    based on the parent value-tree's aggregation axes. ~30 lines
 //!    of focused branching.
 // (was: carrier-sum primitives pending grovedb — now live in
-// grovedb PR #670 head `e69df59f` and wired through end-to-end.)
+// grovedb develop (PR #670 merged; head `e98bab5f` as of this PR) and wired through end-to-end.)
 //!
 //! Activation sequence once those land:
 //! 1. Run `cargo bench --bench document_sum_worst_case` to validate

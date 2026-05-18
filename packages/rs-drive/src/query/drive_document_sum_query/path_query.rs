@@ -530,7 +530,7 @@ impl<'a> DriveDocumentSumQuery<'a> {
     /// - `subquery`: `Query::new_aggregate_sum_on_range(range_item)`.
     ///
     /// Both the executor and the verifier consume the `PathQuery`
-    /// this builder produces. Grovedb PR #670 (head `e69df59f`)
+    /// this builder produces. Grovedb PR #670 (head `e98bab5f`)
     /// landed carrier-`AggregateSumOnRange` support
     /// (`Query::validate_carrier_aggregate_sum_on_range` and
     /// `GroveDb::verify_aggregate_sum_query_per_key`), so the
@@ -730,7 +730,7 @@ impl<'a> DriveDocumentSumQuery<'a> {
     /// `(outer_key, u64 count, i64 sum)` triple per resolved In
     /// branch. Verified client-side via
     /// `GroveDb::verify_aggregate_count_and_sum_query_per_key`
-    /// (grovedb PR #670 head `e69df59f`).
+    /// (grovedb develop (PR #670 merged; head `e98bab5f` as of this PR)).
     ///
     /// Same outer/subquery topology as
     /// [`Self::carrier_aggregate_sum_path_query`] — the only
@@ -987,7 +987,7 @@ impl<'a> DriveDocumentSumQuery<'a> {
     /// implicit static surface via the executor.
     /// Used by the SDK verifier-side rebuild via
     /// `GroveDb::verify_aggregate_sum_query_per_key` (grovedb PR #670
-    /// head `e69df59f`).
+    /// head `e98bab5f`).
     pub fn carrier_aggregate_sum_path_query_static(
         contract: &DataContract,
         document_type: DocumentTypeRef,

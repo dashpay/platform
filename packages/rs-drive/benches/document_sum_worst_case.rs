@@ -843,7 +843,7 @@ fn report_proof_sizes(
         // Soft-skip cases that surface NotSupported / Unsupported so
         // partial coverage doesn't block the rest of the report.
         // Carrier-sum proofs work as of grovedb PR #670 head
-        // `e69df59f`; the remaining typical skip cause is the
+        // `e98bab5f`; the remaining typical skip cause is the
         // group-by-range / group-by-compound distinct walker, which
         // is the next sum-side port (mirror of count's
         // `distinct_count_path_query`).

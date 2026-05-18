@@ -6,7 +6,7 @@
 //! ([`super::super::DriveDocumentSumQuery::carrier_aggregate_sum_path_query`])
 //! and asks grovedb for a proof. The client verifies via
 //! [`grovedb::GroveDb::verify_aggregate_sum_query_per_key`] (grovedb
-//! PR #670 head `e69df59f`), producing `Vec<(outer_key, i64)>` — same
+//! PR #670 head `e98bab5f`), producing `Vec<(outer_key, i64)>` — same
 //! per-key aggregate semantics as the no-proof per-In fan-out, just
 //! verifiable.
 

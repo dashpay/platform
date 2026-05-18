@@ -13,7 +13,7 @@ impl DriveDocumentSumQuery<'_> {
     /// PCPS terminator. Counterpart to the prover-side
     /// [`execute_aggregate_count_and_sum_with_proof`](DriveDocumentSumQuery::execute_aggregate_count_and_sum_with_proof).
     /// Calls `GroveDb::verify_aggregate_count_and_sum_query` (grovedb
-    /// PR #670 head `e69df59f`).
+    /// PR #670 head `e98bab5f`).
     ///
     /// The client computes `avg = sum as f64 / count as f64` (or
     /// preferred precision) to recover the verified average — the

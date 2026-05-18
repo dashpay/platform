@@ -10,7 +10,7 @@
 //! Carrier-aggregate verifier bodies call
 //! `GroveDb::verify_aggregate_sum_query_per_key` and
 //! `GroveDb::verify_aggregate_count_and_sum_query_per_key` (grovedb
-//! PR #670 head `e69df59f`).
+//! PR #670 head `e98bab5f`).
 
 /// Carrier-aggregate-sum proof verification — sum-side analog of
 /// count's `verify_carrier_aggregate_count_proof`. Returns one

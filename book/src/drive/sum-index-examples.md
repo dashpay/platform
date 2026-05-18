@@ -1545,7 +1545,7 @@ sum_property = "amount"
 prove        = true
 ```
 
-This is the **carrier-aggregate sum** shape: an `In` clause on the index's prefix property combined with a range on its terminator, returning **one sum per resolved In-bucket** rather than a single aggregate across all matches. Sum analog of count's [Range-Countable group-by carrier-aggregate](./count-index-examples.md#range-countable-group-by-carrier-aggregate). The primitive landed in [grovedb PR #670](https://github.com/dashpay/grovedb/pull/670) (head `e69df59f`); the verifier is [`GroveDb::verify_aggregate_sum_query_per_key`](https://github.com/dashpay/grovedb/blob/e69df59f/grovedb/src/operations/proof/aggregate_sum/mod.rs).
+This is the **carrier-aggregate sum** shape: an `In` clause on the index's prefix property combined with a range on its terminator, returning **one sum per resolved In-bucket** rather than a single aggregate across all matches. Sum analog of count's [Range-Countable group-by carrier-aggregate](./count-index-examples.md#range-countable-group-by-carrier-aggregate). The primitive landed in [grovedb PR #670](https://github.com/dashpay/grovedb/pull/670) (head `e98bab5f`); the verifier is [`GroveDb::verify_aggregate_sum_query_per_key`](https://github.com/dashpay/grovedb/blob/e98bab5f/grovedb/src/operations/proof/aggregate_sum/mod.rs).
 
 **Path query** (carrier-style: outer Query enumerates the In branches, subquery descends through the terminator's `AggregateSumOnRange`):
 

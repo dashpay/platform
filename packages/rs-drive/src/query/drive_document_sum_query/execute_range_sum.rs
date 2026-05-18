@@ -277,7 +277,7 @@ impl DriveDocumentSumQuery<'_> {
     /// for a proof. The proof commits one aggregate sum per resolved
     /// In branch; verified client-side via
     /// `GroveDb::verify_aggregate_sum_query_per_key` (grovedb PR #670
-    /// head `e69df59f`), which returns `(RootHash, Vec<(Vec<u8>, i64)>)`.
+    /// head `e98bab5f`), which returns `(RootHash, Vec<(Vec<u8>, i64)>)`.
     ///
     /// `left_to_right` and `limit` are byte-load-bearing — they are
     /// part of the `PathQuery` bytes the verifier rebuilds. See count's
@@ -313,7 +313,7 @@ impl DriveDocumentSumQuery<'_> {
     /// Returns proof bytes the verifier maps to
     /// `Vec<(Vec<u8>, u64, i64)>` via
     /// `GroveDb::verify_aggregate_count_and_sum_query_per_key` (grovedb
-    /// PR #670 head `e69df59f`) — one `(in_key, count, sum)` triple
+    /// PR #670 head `e98bab5f`) — one `(in_key, count, sum)` triple
     /// per resolved In branch.
     pub fn execute_carrier_aggregate_count_and_sum_with_proof(
         &self,
