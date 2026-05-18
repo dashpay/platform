@@ -211,17 +211,20 @@ struct OptionsView: View {
                                         .foregroundColor(.secondary)
                                 }
                             } else if appState.sdk != nil {
-                                Label("Connected", systemImage: "checkmark.circle.fill")
-                                    .font(.caption)
-                                    .foregroundColor(.green)
+                                Label(
+                                    "Connected to \(appState.currentNetwork.displayName)",
+                                    systemImage: "checkmark.circle.fill"
+                                )
+                                .font(.caption)
+                                .foregroundColor(.green)
                             } else {
                                 Label("Disconnected", systemImage: "xmark.circle.fill")
                                     .font(.caption)
                                     .foregroundColor(.red)
                             }
                         }
-                        // Tests wait on this label transitioning to "Connected"
-                        // after a network switch (signal-based, not sleep-based).
+                        // Combine the icon + text into a single accessibility element
+                        // so the network status reads as one string under the shared identifier.
                         .accessibilityElement(children: .combine)
                         .accessibilityIdentifier("options.networkStatusLabel")
                     }

@@ -404,18 +404,12 @@ func switchAppNetworkToTestnet(
         file: file, line: line
     )
 
-    let tappedToSwitch = !testnetButton.isSelected
-    if tappedToSwitch {
+    if !testnetButton.isSelected {
         testnetButton.tap()
     }
 
-    // Belt-and-braces: the AppState change makes the status label
-    // honest about the rebind-in-progress window, but if the segmented-
-    // control tap itself never landed (animation interrupted, picker
-    // disabled mid-frame), `appState.currentNetwork` never changes,
-    // `isSwitchingNetwork` stays false, and the label keeps reading
-    // "Connected" against the *previous* network's SDK. Wait for the
-    // segment to latch before trusting the connected predicate below.
+    // Confirm the segmented control actually latched onto Testnet
+    // before reading the status label below.
     let selectedResult = XCTWaiter.wait(
         for: [XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "isSelected == true"),
@@ -439,35 +433,12 @@ func switchAppNetworkToTestnet(
         file: file, line: line
     )
 
-    // When we actually tapped to switch, observe the "Switching..." state
-    // before trusting "Connected". The status label isn't network-aware
-    // (it cycles between "Connected", "Switching...", "Disconnected"), so
-    // a stale "Connected" from the *previous* network can satisfy the
-    // predicate before the AppState chain (`currentNetwork.didSet` →
-    // `beginNetworkSwitch` → `isSwitchingNetwork = true` → SwiftUI
-    // rerender) has flipped the label. Observing "Switching..." first
-    // proves that chain ran. Idempotent path (already on testnet) skips
-    // this — there's no transition to wait for.
-    if tappedToSwitch {
-        let switchingPredicate = NSPredicate { object, _ in
-            guard let element = object as? XCUIElement, element.exists else { return false }
-            return element.label.contains("Switching")
-        }
-        let switchingResult = XCTWaiter.wait(
-            for: [XCTNSPredicateExpectation(predicate: switchingPredicate, object: statusLabel)],
-            timeout: 10
-        )
-        XCTAssertEqual(
-            switchingResult,
-            .completed,
-            "Status label never showed 'Switching...' after the testnet tap. Either the AppState chain didn't fire or the switch completed faster than the XCUITest poll cadence. Last label: \(statusLabel.label).",
-            file: file, line: line
-        )
-    }
-
+    // The label includes the network name ("Connected to Testnet"), so
+    // matching on the network-qualified string proves we're on testnet
+    // rather than reading a stale "Connected" from the previous SDK.
     let connectedPredicate = NSPredicate { object, _ in
         guard let element = object as? XCUIElement, element.exists else { return false }
-        return element.label.contains("Connected")
+        return element.label.contains("Connected to Testnet")
     }
     let result = XCTWaiter.wait(
         for: [XCTNSPredicateExpectation(predicate: connectedPredicate, object: statusLabel)],
@@ -476,7 +447,7 @@ func switchAppNetworkToTestnet(
     XCTAssertEqual(
         result,
         .completed,
-        "Network status did not reach 'Connected' within \(Int(timeout))s. Last label: \(statusLabel.label).",
+        "Network status did not reach 'Connected to Testnet' within \(Int(timeout))s. Last label: \(statusLabel.label).",
         file: file, line: line
     )
     XCTAssertFalse(
@@ -716,26 +687,24 @@ func readIdentityBalanceCredits(
 /// `Wallet operation: Wallet already exists` because walletId is
 /// deterministic from the mnemonic.
 ///
-/// Bails as soon as no matching row is visible: an earlier full-sweep
-/// implementation issued blind `swipeUp` calls on an empty wallets list
-/// and routinely tripped XCUITest's 60s event-synthesis timeout (per
-/// swipe), blowing the test runtime out by ~20+ minutes. If a developer
-/// has accumulated more `ImportTransfer-*` wallets than the viewport
-/// can hold, `simctl erase` is the right recovery (documented in
-/// SwiftExampleAppUITests/README.md).
+/// Best-effort: terminates when no matching row remains or when a delete
+/// makes no progress on the row at the top of the list.
 @MainActor
 func cleanupWalletsByPrefix(_ prefix: String, in app: XCUIApplication) {
     let walletsScreen = element(Identifier.walletsScreen, in: app)
     guard walletsScreen.waitForExistence(timeout: 10) else { return }
 
-    let predicate = NSPredicate(format: "label BEGINSWITH %@", prefix)
-    for _ in 0..<10 {
-        let row = app.buttons.matching(predicate).firstMatch
-        if !row.waitForExistence(timeout: 1) {
-            return
-        }
-        let name = row.label
-        bestEffortDeleteWallet(named: name, in: app)
+    let prefixPredicate = NSPredicate(format: "label BEGINSWITH %@", prefix)
+    for _ in 0..<50 {
+        let row = app.buttons.matching(prefixPredicate).firstMatch
+        if !row.waitForExistence(timeout: 1) { return }
+        let nameBefore = row.label
+        bestEffortDeleteWallet(named: nameBefore, in: app)
+
+        let stillThere = app.buttons
+            .matching(NSPredicate(format: "label == %@", nameBefore))
+            .firstMatch
+        if stillThere.exists { return }
     }
 }
 
@@ -753,12 +722,21 @@ func bestEffortDeleteWallet(named walletName: String, in app: XCUIApplication) {
     // matching SwiftData rows, the cold-launch shows the orphan-mnemonic
     // recovery prompt before any UI we care about. Dismiss it
     // best-effort so the rest of the helper isn't silently no-oped by
-    // a modal blocking the wallets tab. The prompt's "Cancel" button
-    // declines the recovery offer (we then proceed with the deletion
-    // we came here to do).
+    // a modal blocking the wallets tab. The prompt's "No" button
+    // (role: .cancel in ContentView.swift) declines the recovery offer
+    // — we then proceed with the deletion we came here to do.
     // Match both the singular ("Recover Wallet?") and plural
     // ("Recover Wallets?", N>1 orphans) titles so the teardown
     // dismisses either variant.
+    //
+    // No positional (`boundBy: 0`) fallback on purpose: index 0 is
+    // "Authorize" (declared first in the SwiftUI .alert closure), and
+    // tapping it would *enter* the recovery flow instead of dismissing
+    // it — opening the RecoverWalletsSheet, leaving the simulator in a
+    // half-recovered state, and undermining the cleanup these tests
+    // rely on. If the "No" label ever changes, the next assertion
+    // should fail loudly against the still-visible modal rather than
+    // be silently dismissed onto the wrong screen.
     let recoverAlert = app.alerts.matching(
         NSPredicate(
             format: "label == %@ OR label == %@",
@@ -767,13 +745,8 @@ func bestEffortDeleteWallet(named walletName: String, in app: XCUIApplication) {
         )
     ).firstMatch
     if recoverAlert.waitForExistence(timeout: 1) {
-        if recoverAlert.buttons["Cancel"].exists {
-            recoverAlert.buttons["Cancel"].tap()
-        } else if recoverAlert.buttons["Don't Recover"].exists {
-            recoverAlert.buttons["Don't Recover"].tap()
-        } else {
-            // Last-ditch: tap whatever the dismissive button is by index.
-            recoverAlert.buttons.element(boundBy: 0).tap()
+        if recoverAlert.buttons["No"].exists {
+            recoverAlert.buttons["No"].tap()
         }
     }
 
