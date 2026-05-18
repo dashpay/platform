@@ -19,6 +19,7 @@ use platform_wallet::changeset::{
     PlatformAddressBalanceEntry, PlatformAddressChangeSet, PlatformWalletChangeSet,
     PlatformWalletPersistence,
 };
+use platform_wallet_storage::WalletStorageError;
 
 fn entry(
     wallet_id: [u8; 32],
@@ -534,10 +535,210 @@ fn tc_p4_008_corruption_is_hard_error() {
     let b_state = identities::load_state(&conn, &b).expect("B must decode cleanly");
     drop(conn);
     assert!(
-        a_result.is_err(),
-        "corrupt identity blob must be a hard error, not a silent skip"
+        matches!(a_result, Err(WalletStorageError::BincodeDecode { .. })),
+        "corrupt identity blob must be a typed BincodeDecode error, not a \
+         silent skip; got {a_result:?}"
     );
     assert_eq!(b_state.wallet_identities.get(&b).map(|m| m.len()), Some(1));
+}
+
+/// TC-P4-008b: `contacts::load_state` is fail-hard. A garbage
+/// `entry_blob` yields a typed `BincodeDecode`; a non-32-byte id column
+/// yields a typed `BlobDecode`. Neither is silently skipped, and an
+/// intact wallet still decodes cleanly.
+#[test]
+fn tc_p4_008b_contacts_corruption_is_hard_error() {
+    use platform_wallet_storage::sqlite::schema::contacts;
+    let (persister, _tmp, path) = fresh_persister();
+    let bad_blob = wid(0xD1);
+    let bad_id = wid(0xD2);
+    let good = wid(0xD3);
+    ensure_wallet_meta(&persister, &bad_blob);
+    ensure_wallet_meta(&persister, &bad_id);
+    ensure_wallet_meta(&persister, &good);
+    {
+        let conn = persister.lock_conn_for_test();
+        // bad_blob: well-formed 32-byte ids, undecodable entry_blob.
+        conn.execute(
+            "INSERT INTO contacts_sent (wallet_id, owner_id, recipient_id, entry_blob) \
+             VALUES (?1, ?2, ?3, X'00')",
+            rusqlite::params![bad_blob.as_slice(), &[0x11u8; 32][..], &[0x12u8; 32][..]],
+        )
+        .unwrap();
+        // bad_id: owner_id is only 10 bytes — fails the 32-byte check.
+        conn.execute(
+            "INSERT INTO contacts_sent (wallet_id, owner_id, recipient_id, entry_blob) \
+             VALUES (?1, ?2, ?3, X'00')",
+            rusqlite::params![bad_id.as_slice(), &[0xAAu8; 10][..], &[0x12u8; 32][..]],
+        )
+        .unwrap();
+    }
+    let mut sent_good = std::collections::BTreeMap::new();
+    sent_good.insert(
+        SentContactRequestKey {
+            owner_id: Identifier::from([0x21; 32]),
+            recipient_id: Identifier::from([0x22; 32]),
+        },
+        contact_request_entry(0x21, 0x22),
+    );
+    persister
+        .store(
+            good,
+            PlatformWalletChangeSet {
+                contacts: Some(ContactChangeSet {
+                    sent_requests: sent_good,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    drop(persister);
+
+    let p2 = reopen(&path);
+    let conn = p2.lock_conn_for_test();
+    let blob_result = contacts::load_state_for_test(&conn, &bad_blob);
+    let id_result = contacts::load_state_for_test(&conn, &bad_id);
+    let good_state =
+        contacts::load_state_for_test(&conn, &good).expect("intact wallet must decode");
+    drop(conn);
+
+    assert!(
+        matches!(blob_result, Err(WalletStorageError::BincodeDecode { .. })),
+        "garbage contacts entry_blob must be a typed BincodeDecode; got {blob_result:?}"
+    );
+    assert!(
+        matches!(id_result, Err(WalletStorageError::BlobDecode { .. })),
+        "non-32-byte contacts id column must be a typed BlobDecode; got {id_result:?}"
+    );
+    assert_eq!(good_state.sent_requests.len(), 1);
+}
+
+/// TC-P4-008c: `asset_locks::load_state` is fail-hard. A garbage
+/// `lifecycle_blob` yields a typed `BincodeDecode`; a non-36-byte
+/// `outpoint` column yields a typed `BlobDecode`. An intact wallet
+/// still decodes cleanly.
+#[test]
+fn tc_p4_008c_asset_locks_corruption_is_hard_error() {
+    use dashcore::hashes::Hash;
+    use dashcore::{OutPoint, Transaction, Txid};
+    use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+    use platform_wallet::changeset::{AssetLockChangeSet, AssetLockEntry};
+    use platform_wallet::wallet::asset_lock::tracked::AssetLockStatus;
+    use platform_wallet_storage::sqlite::schema::asset_locks;
+
+    let (persister, _tmp, path) = fresh_persister();
+    let bad_blob = wid(0xE1);
+    let bad_op = wid(0xE2);
+    let good = wid(0xE3);
+    ensure_wallet_meta(&persister, &bad_blob);
+    ensure_wallet_meta(&persister, &bad_op);
+    ensure_wallet_meta(&persister, &good);
+    {
+        let conn = persister.lock_conn_for_test();
+        // bad_blob: valid 36-byte outpoint, undecodable lifecycle_blob.
+        conn.execute(
+            "INSERT INTO asset_locks \
+                (wallet_id, outpoint, status, account_index, identity_index, amount_duffs, lifecycle_blob) \
+             VALUES (?1, ?2, 'built', 0, 0, 0, X'00')",
+            rusqlite::params![bad_blob.as_slice(), &[0x01u8; 36][..]],
+        )
+        .unwrap();
+        // bad_op: outpoint column is only 4 bytes — fails the 36-byte
+        // length check before any blob decode is attempted.
+        conn.execute(
+            "INSERT INTO asset_locks \
+                (wallet_id, outpoint, status, account_index, identity_index, amount_duffs, lifecycle_blob) \
+             VALUES (?1, ?2, 'built', 0, 0, 0, X'00')",
+            rusqlite::params![bad_op.as_slice(), &[0x01u8; 4][..]],
+        )
+        .unwrap();
+    }
+    let op_good = OutPoint {
+        txid: Txid::from_byte_array([0x40; 32]),
+        vout: 0,
+    };
+    let mut locks_good = AssetLockChangeSet::default();
+    locks_good.asset_locks.insert(
+        op_good,
+        AssetLockEntry {
+            out_point: op_good,
+            transaction: Transaction {
+                version: 3,
+                lock_time: 0,
+                input: vec![],
+                output: vec![],
+                special_transaction_payload: None,
+            },
+            account_index: 0,
+            funding_type: AssetLockFundingType::IdentityTopUp,
+            identity_index: 0,
+            amount_duffs: 1000,
+            status: AssetLockStatus::Built,
+            proof: None,
+        },
+    );
+    persister
+        .store(
+            good,
+            PlatformWalletChangeSet {
+                asset_locks: Some(locks_good),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    drop(persister);
+
+    let p2 = reopen(&path);
+    let conn = p2.lock_conn_for_test();
+    let blob_result = asset_locks::load_state(&conn, &bad_blob);
+    let op_result = asset_locks::load_state(&conn, &bad_op);
+    let good_state = asset_locks::load_state(&conn, &good).expect("intact wallet must decode");
+    drop(conn);
+
+    assert!(
+        matches!(blob_result, Err(WalletStorageError::BincodeDecode { .. })),
+        "garbage asset_locks lifecycle_blob must be a typed BincodeDecode; got {blob_result:?}"
+    );
+    assert!(
+        matches!(op_result, Err(WalletStorageError::BlobDecode { .. })),
+        "non-36-byte asset_locks outpoint must be a typed BlobDecode; got {op_result:?}"
+    );
+    assert_eq!(good_state[&0].len(), 1);
+}
+
+/// TC-P4-008d: `wallet_meta::list_ids` is fail-hard on a malformed
+/// stored `wallet_id`. This is the code path where a non-32-byte id
+/// actually surfaces (the per-area `load_state` readers take a typed
+/// `&WalletId`, so the length check belongs here). A 10-byte
+/// `wallet_metadata.wallet_id` yields a typed `InvalidWalletIdLength`.
+#[test]
+fn tc_p4_008d_list_ids_rejects_non_32_byte_wallet_id() {
+    use platform_wallet_storage::sqlite::schema::wallet_meta;
+    let (persister, _tmp, path) = fresh_persister();
+    {
+        let conn = persister.lock_conn_for_test();
+        conn.execute(
+            "INSERT INTO wallet_metadata (wallet_id, network, birth_height) \
+             VALUES (?1, 'testnet', 0)",
+            rusqlite::params![&[0xAAu8; 10][..]],
+        )
+        .unwrap();
+    }
+    drop(persister);
+
+    let p2 = reopen(&path);
+    let conn = p2.lock_conn_for_test();
+    let result = wallet_meta::list_ids(&conn);
+    drop(conn);
+    assert!(
+        matches!(
+            result,
+            Err(WalletStorageError::InvalidWalletIdLength { actual: 10 })
+        ),
+        "non-32-byte stored wallet_id must be a typed InvalidWalletIdLength {{ actual: 10 }}; \
+         got {result:?}"
+    );
 }
 
 /// TC-P4-012: `load()` query cost is bounded per wallet.

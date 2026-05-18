@@ -76,10 +76,12 @@ pub type AssetLocksByAccount = BTreeMap<u32, BTreeMap<OutPoint, TrackedAssetLock
 
 /// Decode one raw `(outpoint_bytes, account_index, lifecycle_blob)`
 /// tuple into the typed `(account_index, OutPoint, TrackedAssetLock)`
-/// triple that both [`list_active`] and [`load_all`] consume.
+/// triple that [`list_active`], [`load_state`], and [`load_all`]
+/// consume.
 ///
-/// Hard-fail behaviour (typed error) — corruption-tolerant readers
-/// (`load_state` / `load_all`) wrap the call in a per-row skip.
+/// Hard-fail behaviour: a malformed outpoint, blob, or out-of-range
+/// account index returns a typed [`WalletStorageError`]. Every caller
+/// propagates that error — corruption is never silently skipped.
 fn decode_row(
     op_bytes: &[u8],
     account_index: i64,
@@ -155,8 +157,9 @@ pub fn load_all(
 /// index. Every status variant the changeset writes is considered
 /// "active": consumed locks leave via [`AssetLockChangeSet::removed`].
 ///
-/// Hard-fail on the first decode error (legacy contract; corruption
-/// tolerance lives in [`load_state`] / [`load_all`]).
+/// Hard-fail on the first decode error — like [`load_state`] and
+/// [`load_all`], a corrupt row aborts the read with a typed
+/// [`WalletStorageError`].
 pub fn list_active(
     conn: &Connection,
     wallet_id: &WalletId,
