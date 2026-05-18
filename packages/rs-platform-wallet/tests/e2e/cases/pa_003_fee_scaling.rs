@@ -204,13 +204,13 @@ async fn pa_003_fee_scaling() {
     let fee_1 = real_fee(&pre_1, &post_1, &[dest_1], OUTPUT_AMOUNT);
 
     // ---- Derive five distinct destinations. `next_unused_address`
-    // parks the cursor until the prior address is observed-used, so
-    // each derivation needs a small marker transfer to advance it
-    // (the established PA-001 "prep transfer" pattern). The marker also
-    // establishes each destination's address-funds record so the
-    // measured 5-output transfer hits UPDATE storage ops — symmetric
-    // with the pre-markered `dest_1`. Markers do not affect the
-    // measured fees: `real_fee` nets post against a pre snapshot. ----
+    // reserves its index on hand-out (Found-026 `bc87e4dec9`), so the
+    // five derivations are already distinct. The marker transfer is now
+    // only needed to establish each destination's address-funds record
+    // so the measured 5-output transfer hits UPDATE storage ops —
+    // symmetric with the pre-markered `dest_1` (the QA-003 fee setup;
+    // unrelated to the cursor). Markers do not affect the measured
+    // fees: `real_fee` nets post against a pre snapshot. ----
     let mut dests = Vec::with_capacity(5);
     for i in 0..5 {
         let d = s

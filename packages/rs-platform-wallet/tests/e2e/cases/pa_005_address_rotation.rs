@@ -3,10 +3,11 @@
 //! Priority: P1.
 //!
 //! Pins two invariants of `next_unused_receive_address`:
-//!   1. **Cursor parks until observed-used.** Three back-to-back calls
-//!      (no sync between) MUST return the same address — the receive-
-//!      address pool refuses to advance until it has observed an
-//!      inbound credit on the prior address.
+//!   1. **Reserve on hand-out.** Each call reserves its index on
+//!      hand-out and returns a distinct address; the cursor advances
+//!      on hand-out, not on observed-used. Three back-to-back calls
+//!      (no sync between) return three pairwise-distinct addresses
+//!      (Found-026 `bc87e4dec9`).
 //!   2. **Cursor advances after funding + sync.** Once `addr_n` is
 //!      observed-used, the next call returns a fresh distinct address.
 //!
@@ -53,7 +54,7 @@ async fn pa_005_address_rotation() {
 
     let s = setup().await.expect("e2e setup failed");
 
-    // ---- Invariant 1: cursor parks before any observed-used. ----
+    // ---- Invariant 1: each hand-out reserves its index (distinct). ----
     let a1 = s
         .test_wallet
         .next_unused_address()
@@ -63,20 +64,26 @@ async fn pa_005_address_rotation() {
         .test_wallet
         .next_unused_address()
         .await
-        .expect("derive a2 (parked)");
+        .expect("derive a2 (reserved on hand-out)");
     let a3 = s
         .test_wallet
         .next_unused_address()
         .await
-        .expect("derive a3 (parked)");
-    assert_eq!(
+        .expect("derive a3 (reserved on hand-out)");
+    assert_ne!(
         a1, a2,
-        "Invariant 1: back-to-back next_unused_address must park \
-         until prior address is observed-used; a1 != a2"
+        "Invariant 1: each hand-out reserves its index; back-to-back \
+         calls must return DISTINCT addresses (Found-026)"
     );
-    assert_eq!(
+    assert_ne!(
         a1, a3,
-        "Invariant 1: cursor must NOT advance on repeated calls; a1 != a3"
+        "Invariant 1: each hand-out reserves its index; back-to-back \
+         calls must return DISTINCT addresses (Found-026)"
+    );
+    assert_ne!(
+        a2, a3,
+        "Invariant 1: each hand-out reserves its index; back-to-back \
+         calls must return DISTINCT addresses (Found-026)"
     );
 
     // ---- Invariant 2: cursor advances after funding + sync. ----

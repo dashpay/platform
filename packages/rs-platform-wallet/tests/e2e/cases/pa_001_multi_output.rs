@@ -3,10 +3,10 @@
 //! Priority: P0.
 //!
 //! Bank funds `addr_1`. The wallet derives a pair of fresh receive
-//! addresses (`addr_2`, `addr_3`) — note that `next_unused_address`
-//! parks the cursor until each derived address is *observed used*
-//! (PA-005 invariant), so `addr_3` is only distinct from `addr_2`
-//! after a small "prep" transfer marks `addr_2` used. The PA-001
+//! addresses (`addr_2`, `addr_3`) — each `next_unused_address` call
+//! reserves its index on hand-out (Found-026 `bc87e4dec9`), so the
+//! addresses are already pairwise distinct (PA-005 Invariant 1). The
+//! "prep" transfer below now only funds `addr_2`. The PA-001
 //! transfer itself then sends `OUTPUT_A_CREDITS` and
 //! `OUTPUT_B_CREDITS` to {`addr_2`, `addr_3`} in a single transition.
 //!
@@ -127,10 +127,9 @@ async fn pa_001_multi_output_transfer() {
         .expect("derive addr_2");
     assert_ne!(addr_1, addr_2, "addr_2 must differ from addr_1");
 
-    // Prep transfer to mark `addr_2` observed-used so the cursor
-    // advances. `addr_2` absorbs the chain-time fee (it's the sole
-    // output). Without this step `next_unused_address` would park
-    // and return `addr_2` again — see PA-005.
+    // Prep transfer to fund `addr_2`; `addr_2` absorbs the chain-time
+    // fee (it's the sole output). Hand-outs are already distinct
+    // post-Found-026 (`bc87e4dec9`) — see PA-005 Invariant 1.
     let prep_outputs: BTreeMap<_, _> = std::iter::once((addr_2, PREP_CREDITS)).collect();
     s.test_wallet
         .transfer(prep_outputs)

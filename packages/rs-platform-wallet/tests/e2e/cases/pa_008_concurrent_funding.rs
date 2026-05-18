@@ -49,10 +49,10 @@ async fn pa_008_concurrent_funding() {
     let s = setup().await.expect("e2e setup failed");
 
     // ---- Derive three distinct receive addresses by funding+marking each ----
-    // `next_unused_address` parks until observed-used, so we mark each
-    // with a tiny self-transfer before deriving the next. Cheaper than
-    // full bank funding: we self-transfer the bank-funded balance from
-    // a single seed address forward through the receive chain.
+    // Each `next_unused_address` hand-out is reserved on hand-out
+    // (Found-026 `bc87e4dec9`), so the addresses are already distinct;
+    // the marker funding below is retained only to land each address
+    // observable on chain (no longer needed to advance the cursor).
     //
     // BUT: since the test exists to exercise concurrent FUND_ADDRESS,
     // the simplest path is to drive the bank itself in a marker pattern.
@@ -89,7 +89,7 @@ async fn pa_008_concurrent_funding() {
         .expect("derive addr_b");
     assert_ne!(
         addr_a, addr_b,
-        "addr_b must differ from addr_a after observed-used cursor advance"
+        "addr_b must differ from addr_a — each hand-out is reserved (Found-026)"
     );
     s.ctx
         .bank()

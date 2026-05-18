@@ -96,8 +96,9 @@ async fn pa_008c_funding_mutex_serialisation_observable() {
     let s = setup().await.expect("e2e setup failed");
 
     // ---- Derive three distinct receive addresses by funding+marking each. ----
-    // `next_unused_address` parks until observed-used; mirror PA-008's
-    // marker pattern. Sequential funds here are NOT what the assertion
+    // Each `next_unused_address` hand-out is reserved (Found-026
+    // `bc87e4dec9`); mirror PA-008's marker pattern (marks retained as
+    // no-op documentation). Sequential funds here are NOT what the assertion
     // pins — we only care about the post-marker concurrent fan-in
     // below. We DRAIN the history after the markers so the assertion
     // sees only the three concurrent entries.
@@ -125,7 +126,7 @@ async fn pa_008c_funding_mutex_serialisation_observable() {
         .expect("derive addr_b");
     assert_ne!(
         addr_a, addr_b,
-        "addr_b must differ from addr_a after observed-used cursor advance"
+        "addr_b must differ from addr_a — each hand-out is reserved (Found-026)"
     );
     s.ctx
         .bank()
