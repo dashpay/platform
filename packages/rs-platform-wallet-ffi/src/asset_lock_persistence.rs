@@ -96,13 +96,10 @@ pub fn build_asset_lock_entries(
             .consensus_encode(&mut transaction_bytes)
             .expect("consensus_encode to Vec is infallible");
 
-        let proof_bytes: Option<Vec<u8>> = match &entry.proof {
-            Some(proof) => Some(
-                dpp::bincode::encode_to_vec::<&AssetLockProof, _>(proof, config::standard())
-                    .expect("bincode encoding AssetLockProof is infallible"),
-            ),
-            None => None,
-        };
+        let proof_bytes: Option<Vec<u8>> = entry.proof.as_ref().map(|proof| {
+            dpp::bincode::encode_to_vec::<&AssetLockProof, _>(proof, config::standard())
+                .expect("bincode encoding AssetLockProof is infallible")
+        });
 
         let funding_type = funding_type_to_u8(entry.funding_type);
         let status = status_to_u8(&entry.status);
