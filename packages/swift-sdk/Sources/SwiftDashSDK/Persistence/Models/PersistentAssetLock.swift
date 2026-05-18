@@ -58,6 +58,25 @@ public final class PersistentAssetLock {
     /// `Int32.max`).
     public var identityIndexRaw: Int32
 
+    /// BIP44 account index the asset-lock funding tx was built from.
+    /// The Rust restore path uses this value to reinsert the
+    /// unresolved funding tx into `standard_bip44_accounts[account_index]`
+    /// at load time — a wrong value silently drops the record. The
+    /// SDK surface (`ManagedAssetLockManager.buildTransaction` and
+    /// friends) already accepts any `accountIndex: UInt32`, so this
+    /// column captures the actual value rather than always defaulting
+    /// to 0.
+    ///
+    /// Default `0` on the column makes SwiftData's lightweight
+    /// migration safe for rows that pre-date this field — the same
+    /// hardcoded value the restore path used before, so behavior is
+    /// preserved bit-exactly for the BIP44-account-0 common case.
+    /// Wallets that funded from a non-zero account on the old code
+    /// have a latent broken row either way; restoring with `0` here
+    /// matches the pre-this-commit behavior. New rows always carry
+    /// the real value.
+    public var accountIndexRaw: Int32 = 0
+
     /// Locked amount in duffs (1 DASH = 1e8 duffs). Stored as `Int64`
     /// for the same predicate-friendliness reason as
     /// `identityIndexRaw`.
@@ -87,6 +106,7 @@ public final class PersistentAssetLock {
         transactionBytes: Data,
         fundingTypeRaw: Int,
         identityIndexRaw: Int32,
+        accountIndexRaw: Int32 = 0,
         amountDuffs: Int64,
         statusRaw: Int,
         proofBytes: Data? = nil
@@ -96,6 +116,7 @@ public final class PersistentAssetLock {
         self.transactionBytes = transactionBytes
         self.fundingTypeRaw = fundingTypeRaw
         self.identityIndexRaw = identityIndexRaw
+        self.accountIndexRaw = accountIndexRaw
         self.amountDuffs = amountDuffs
         self.statusRaw = statusRaw
         self.proofBytes = proofBytes

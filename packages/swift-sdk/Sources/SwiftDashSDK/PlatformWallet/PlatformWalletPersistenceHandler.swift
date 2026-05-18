@@ -145,6 +145,7 @@ public class PlatformWalletPersistenceHandler {
                     existing.transactionBytes = entry.transactionBytes
                     existing.fundingTypeRaw = entry.fundingTypeRaw
                     existing.identityIndexRaw = entry.identityIndexRaw
+                    existing.accountIndexRaw = entry.accountIndexRaw
                     existing.amountDuffs = entry.amountDuffs
                     existing.statusRaw = entry.statusRaw
                     existing.proofBytes = entry.proofBytes
@@ -156,6 +157,7 @@ public class PlatformWalletPersistenceHandler {
                         transactionBytes: entry.transactionBytes,
                         fundingTypeRaw: entry.fundingTypeRaw,
                         identityIndexRaw: entry.identityIndexRaw,
+                        accountIndexRaw: entry.accountIndexRaw,
                         amountDuffs: entry.amountDuffs,
                         statusRaw: entry.statusRaw,
                         proofBytes: entry.proofBytes
@@ -200,6 +202,7 @@ public class PlatformWalletPersistenceHandler {
                 transactionBytes: record.transactionBytes,
                 fundingTypeRaw: record.fundingTypeRaw,
                 identityIndexRaw: record.identityIndexRaw,
+                accountIndexRaw: record.accountIndexRaw,
                 amountDuffs: record.amountDuffs,
                 statusRaw: record.statusRaw,
                 proofBytes: record.proofBytes
@@ -217,6 +220,7 @@ public class PlatformWalletPersistenceHandler {
         public let transactionBytes: Data
         public let fundingTypeRaw: Int
         public let identityIndexRaw: Int32
+        public let accountIndexRaw: Int32
         public let amountDuffs: Int64
         public let statusRaw: Int
         public let proofBytes: Data?
@@ -2857,12 +2861,16 @@ public class PlatformWalletPersistenceHandler {
             copyBytes(outPoint, into: &entry.out_point)
             entry.transaction_bytes = txPtr
             entry.transaction_bytes_len = UInt(txLen)
-            // `accountIndex` isn't stored on the SwiftData model
-            // (Rust derives it from the funding path), so default to
-            // 0. The Rust load path doesn't read this field for
-            // anything load-bearing — it's a breadcrumb for the
-            // FFI persist path going forward.
-            entry.account_index = 0
+            // BIP44 account the funding tx was built from, captured
+            // on every upsert. The Rust load path uses this value to
+            // route the unresolved record back into the matching
+            // `standard_bip44_accounts[account_index]` bucket — a
+            // wrong value silently drops the record, which broke
+            // restore for any wallet that funded an asset lock from
+            // a non-zero account index. Pre-feature rows default to
+            // 0 (matches the previous behavior; the only realistic
+            // common case).
+            entry.account_index = UInt32(bitPattern: record.accountIndexRaw)
             // Exact (not clamping) conversion: a corrupt persisted row
             // with `fundingTypeRaw` or `statusRaw` outside `0...255`
             // would be silently coerced to a valid-looking enum value
@@ -2976,16 +2984,13 @@ public class PlatformWalletPersistenceHandler {
             allocation.scalarBuffers.append((txBuf, txBytes.count))
 
             var entry = UnresolvedAssetLockTxRecordFFI()
-            // `accountIndex` isn't stored on `PersistentAssetLock`
-            // (the existing `buildAssetLockRestoreBuffer` makes the
-            // same assumption). In production iOS the funding
-            // account is always BIP44 index 0 — the same default
-            // used by `recover_asset_lock_blocking`. The Rust side
-            // looks up `standard_bip44_accounts.get(&account_index)`
-            // so a wrong value here would silently drop the
-            // restore; documented as a known limit until per-row
-            // `accountIndex` lands on the SwiftData model.
-            entry.account_index = 0
+            // Use the row's persisted `accountIndexRaw` — the Rust
+            // side looks up `standard_bip44_accounts.get(&account_index)`
+            // and silently drops the restore if the account doesn't
+            // exist, so passing the actual funding account is
+            // load-bearing for any wallet that funded an asset lock
+            // from a non-zero BIP44 account index.
+            entry.account_index = UInt32(bitPattern: lock.accountIndexRaw)
             entry.tx_bytes = txBuf
             entry.tx_bytes_len = UInt(txBytes.count)
             entry.context_raw = txRow.context
@@ -4021,6 +4026,7 @@ private func persistAssetLocksCallback(
                 transactionBytes: txBytes,
                 fundingTypeRaw: Int(e.funding_type),
                 identityIndexRaw: Int32(bitPattern: e.identity_index),
+                accountIndexRaw: Int32(bitPattern: e.account_index),
                 amountDuffs: Int64(bitPattern: e.amount_duffs),
                 statusRaw: Int(e.status),
                 proofBytes: proofBytes
