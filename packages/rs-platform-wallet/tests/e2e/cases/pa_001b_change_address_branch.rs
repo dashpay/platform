@@ -23,7 +23,6 @@ use crate::framework::wait::{
     wait_for_address_balance_chain_confirmed_n, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
 };
 use dpp::address_funds::PlatformAddress;
-use key_wallet::managed_account::platform_address::PlatformP2PKHAddress;
 use platform_wallet::wallet::platform_addresses::{InputSelection, PlatformAddressWallet};
 
 /// Bank fund per test address. Sized well above the chain-time fee
@@ -161,60 +160,21 @@ async fn pa_001b_change_address_branch_subcase_b() {
     .await
     .expect("src funding never observed");
 
-    // QA-V25-003 — `next_unused_receive_address` parks on the lowest
-    // unused index until something marks it used (PA-005 invariant,
-    // pinned by `key_wallet::AddressPool::next_unused`). Two sequential
-    // `next_unused_address()` calls without an intervening mark would
-    // return the SAME index — exactly the "change_addr == receive_addr"
-    // symptom Marvin v25 reported.
-    //
-    // QA-V27-006 — the prior fix used `next_unused_receive_addresses`
-    // (the batch-fresh helper that always extends past
-    // `highest_generated`) to dodge the cursor-park. But by this point
-    // `src`'s funding sync has already invoked `mark_and_maintain_gap_limit`
-    // and pushed the pool to `highest_used + gap_limit = 21`, leaving
-    // zero headroom for a fresh-past-watermark derivation. The batch
-    // call hits `GapLimitError::Exceeded` deterministically once sync has
-    // observed `src` (reliably under threads=8, racy at threads=1).
-    //
-    // PA-001b's contract is just "two distinct unused addresses" — it
-    // does not need fresh-past-watermark semantics (those belong to
-    // PA-005b). Derive `dest` from the existing 20-address gap window
-    // via `next_unused_address()`, mark it used to advance the cursor,
-    // then derive `change_addr` the same way. Marking `dest` used early
-    // is harmless: the funds-arrival sync will mark it used anyway.
-    // (DIP-17 path: `m/9'/coin'/17'/account'/key_class'/index` — there
-    // is no BIP-44 change branch at this layer; the symptom is purely
-    // a cursor-parking artefact, not a derivation collapse.)
+    // PA-001b's contract is "two distinct unused addresses" for the
+    // transfer + change pair. `next_unused_receive_address` reserves the
+    // index it hands out, so two back-to-back `next_unused_address()`
+    // calls yield distinct indices from the existing 20-address gap
+    // window (DIP-17 path `m/9'/coin'/17'/account'/key_class'/index` —
+    // no BIP-44 change branch at this layer). Fresh-past-watermark
+    // semantics belong to PA-005b, not here.
     let dest = s
         .test_wallet
         .next_unused_address()
         .await
         .expect("derive dest");
-    let PlatformAddress::P2pkh(dest_hash) = dest else {
+    let PlatformAddress::P2pkh(_) = dest else {
         panic!("platform-payment account derives P2PKH only; got {dest:?}");
     };
-    {
-        let wallet_id = s.test_wallet.platform_wallet().wallet_id();
-        let mut wm = s
-            .test_wallet
-            .platform_wallet()
-            .wallet_manager()
-            .write()
-            .await;
-        let info = wm
-            .get_wallet_info_mut(&wallet_id)
-            .expect("test wallet present in manager");
-        let account = info
-            .core_wallet
-            .platform_payment_managed_account_at_index_mut(default_account_index())
-            .expect("default platform-payment account present");
-        let dest_p2pkh = PlatformP2PKHAddress::new(dest_hash);
-        assert!(
-            account.mark_platform_address_used(&dest_p2pkh),
-            "mark_platform_address_used(dest) returned false: dest missing from pool"
-        );
-    }
     let change_addr = s
         .test_wallet
         .next_unused_address()

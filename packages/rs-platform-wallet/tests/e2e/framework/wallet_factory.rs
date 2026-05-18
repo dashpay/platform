@@ -1124,15 +1124,14 @@ fn drop_shutdown_identity_sync(ctx: &'static E2eContext) {
     }
 }
 
-/// Generate the address at DIP-17 slot-0 of (account=0, key_class=0)
-/// and mark it used in the address pool, so the next call to
-/// `next_unused_receive_address` returns slot-1 instead.
+/// Hand out the DIP-17 slot-0 receive address of (account=0, key_class=0)
+/// so the next `next_unused_receive_address` call returns slot-1.
 ///
-/// QA-002 fix: shifts every test wallet's "first usable address" off
-/// the slot reserved for [`super::bank::BankWallet::primary_receive_address`].
+/// `next_unused_receive_address` reserves the index it hands out, so a
+/// single call consumes slot 0. This shifts every test wallet's "first
+/// usable address" off the slot reserved for
+/// [`super::bank::BankWallet::primary_receive_address`] (QA-002).
 async fn consume_platform_address_index_zero(wallet: &Arc<PlatformWallet>) -> FrameworkResult<()> {
-    // Generates index 0 with `add_to_state=true`, populating the pool
-    // so `mark_index_used(0)` can find it below.
     let _index_zero = wallet
         .platform()
         .next_unused_receive_address(default_platform_payment_account_key())
@@ -1156,10 +1155,10 @@ async fn consume_platform_address_index_zero(wallet: &Arc<PlatformWallet>) -> Fr
                  during slot-0 consume"
             ))
         })?;
-    if !account.addresses.mark_index_used(0) {
+    if !account.addresses.used_indices.contains(&0) {
         return Err(FrameworkError::Wallet(
-            "mark_index_used(0) returned false: slot-0 missing from pool \
-             or already marked used"
+            "slot-0 not reserved after next_unused_receive_address: \
+             hand-out no longer marks the index used"
                 .into(),
         ));
     }

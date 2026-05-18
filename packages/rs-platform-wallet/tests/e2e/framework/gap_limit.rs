@@ -81,11 +81,11 @@ impl From<PlatformWalletError> for GapLimitError {
 ///
 /// Unlike the production
 /// [`PlatformAddressWallet::next_unused_receive_address`](platform_wallet::wallet::platform_addresses::PlatformAddressWallet::next_unused_receive_address)
-/// (which parks on the LOWEST unused index until something marks it
-/// used), this helper permanently advances the pool's
-/// `highest_generated` watermark on every call, so consecutive
-/// invocations on the same wallet yield non-overlapping ranges. This
-/// is the contract PA-005b pins at the `gap_limit` boundary.
+/// (which hands out one index at a time and reserves it on hand-out),
+/// this helper permanently advances the pool's `highest_generated`
+/// watermark on every call, so consecutive invocations on the same
+/// wallet yield non-overlapping ranges. This is the contract PA-005b
+/// pins at the `gap_limit` boundary.
 ///
 /// **Gap-limit interaction**: an `AddressPool` exposes `gap_limit`
 /// unused addresses past the highest-used index (or `gap_limit` total
