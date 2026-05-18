@@ -2863,10 +2863,33 @@ public class PlatformWalletPersistenceHandler {
             // anything load-bearing — it's a breadcrumb for the
             // FFI persist path going forward.
             entry.account_index = 0
-            entry.funding_type = UInt8(clamping: record.fundingTypeRaw)
+            // Exact (not clamping) conversion: a corrupt persisted row
+            // with `fundingTypeRaw` or `statusRaw` outside `0...255`
+            // would be silently coerced to a valid-looking enum value
+            // by `UInt8(clamping:)` (negative → 0 = Built / IdentityRegistration,
+            // >255 → 255 = sentinel). Either drops or rewrites the
+            // asset-lock's effective state. Skip the row instead,
+            // logged loudly so an operator can see and fix the bad row.
+            guard let fundingType = UInt8(exactly: record.fundingTypeRaw) else {
+                NSLog(
+                    "[persistor-load] dropping asset-lock row %@ — fundingTypeRaw out of u8 range: %d",
+                    record.outPointHex,
+                    record.fundingTypeRaw
+                )
+                continue
+            }
+            guard let status = UInt8(exactly: record.statusRaw) else {
+                NSLog(
+                    "[persistor-load] dropping asset-lock row %@ — statusRaw out of u8 range: %d",
+                    record.outPointHex,
+                    record.statusRaw
+                )
+                continue
+            }
+            entry.funding_type = fundingType
             entry.identity_index = UInt32(bitPattern: record.identityIndexRaw)
             entry.amount_duffs = UInt64(bitPattern: record.amountDuffs)
-            entry.status = UInt8(clamping: record.statusRaw)
+            entry.status = status
             entry.proof_bytes = proofPtr
             entry.proof_bytes_len = UInt(proofLen)
             buf[written] = entry

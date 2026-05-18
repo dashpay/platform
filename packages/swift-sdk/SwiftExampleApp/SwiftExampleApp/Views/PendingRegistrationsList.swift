@@ -14,11 +14,31 @@ struct PendingRegistrationsList: View {
         let active = coordinator.activeControllers()
         if !active.isEmpty {
             Section("Pending Registrations") {
-                ForEach(active, id: \.identityIndex) { controller in
+                // `identityIndex` is per-wallet, NOT globally unique.
+                // Two wallets registering identities at the same slot
+                // (e.g. both starting at #1) would collide on the
+                // ForEach diff and SwiftUI would collapse / replace
+                // one row with the other. Composite `(walletId,
+                // identityIndex)` matches the coordinator's actual
+                // key shape.
+                ForEach(
+                    active,
+                    id: \.registrationRowID
+                ) { controller in
                     PendingRegistrationRow(controller: controller)
                 }
             }
         }
+    }
+}
+
+private extension IdentityRegistrationController {
+    /// Composite `(walletId, identityIndex)` key used by SwiftUI's
+    /// `ForEach` to diff Pending Registrations rows. The walletId is
+    /// rendered as hex so the resulting `String` is `Hashable` without
+    /// any custom conformance work on `Data` / the controller itself.
+    var registrationRowID: String {
+        "\(walletId.map { String(format: "%02x", $0) }.joined())-\(identityIndex)"
     }
 }
 

@@ -2415,6 +2415,17 @@ extension ManagedPlatformWallet {
                 }
             }
             try result.check()
+            // Defend against an FFI contract violation: on Success
+            // `outManagedHandle` must be non-NULL. Wrapping
+            // `NULL_HANDLE` would push the failure to a later, harder-
+            // to-debug point (`ManagedIdentity.deinit` calling
+            // `managed_identity_destroy(NULL)` or any downstream FFI
+            // accessor crashing on a NULL slot).
+            guard outManagedHandle != NULL_HANDLE else {
+                throw PlatformWalletError.walletOperation(
+                    "FFI returned success but managed-identity handle was NULL"
+                )
+            }
             // Copy the 32-byte tuple into a Data via withUnsafeBytes.
             let identityId = Swift.withUnsafeBytes(of: idTuple) { Data($0) }
             return (identityId, ManagedIdentity(handle: outManagedHandle))
@@ -2525,6 +2536,13 @@ extension ManagedPlatformWallet {
                 }
             }
             try result.check()
+            // FFI contract: on Success `outManagedHandle` is non-NULL.
+            // Same defense as `registerIdentityWithFunding`.
+            guard outManagedHandle != NULL_HANDLE else {
+                throw PlatformWalletError.walletOperation(
+                    "FFI returned success but managed-identity handle was NULL"
+                )
+            }
             let identityId = Swift.withUnsafeBytes(of: idTuple) { Data($0) }
             return (identityId, ManagedIdentity(handle: outManagedHandle))
         }.value

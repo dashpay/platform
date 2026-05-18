@@ -153,7 +153,18 @@ public final class ManagedAssetLockManager: @unchecked Sendable {
         defer { if let p = pathPtr { platform_wallet_string_free(p) } }
 
         let txData = Data(bytes: txPtr, count: Int(txLen))
-        let path = pathPtr.map { String(cString: $0) } ?? ""
+        // Fail fast on a NULL or empty derivation path. The FFI
+        // contract is: on `Success` the path pointer is non-NULL and
+        // points to a non-empty NUL-terminated C string. Defaulting
+        // to `""` would surface as opaque "key not found" / "derive
+        // failed" errors at the next signing step; throwing here
+        // names the actual contract violation.
+        guard let pathPtr, pathPtr.pointee != 0 else {
+            throw PlatformWalletError.unknown(
+                "FFI returned success but derivation path was NULL or empty"
+            )
+        }
+        let path = String(cString: pathPtr)
         return BuildResult(transaction: txData, derivationPath: path)
     }
 
@@ -186,7 +197,18 @@ public final class ManagedAssetLockManager: @unchecked Sendable {
         defer { asset_lock_manager_free_proof_bytes(proofPtr, proofLen) }
         defer { if let p = pathPtr { platform_wallet_string_free(p) } }
 
-        let path = pathPtr.map { String(cString: $0) } ?? ""
+        // Fail fast on a NULL or empty derivation path. The FFI
+        // contract is: on `Success` the path pointer is non-NULL and
+        // points to a non-empty NUL-terminated C string. Defaulting
+        // to `""` would surface as opaque "key not found" / "derive
+        // failed" errors at the next signing step; throwing here
+        // names the actual contract violation.
+        guard let pathPtr, pathPtr.pointee != 0 else {
+            throw PlatformWalletError.unknown(
+                "FFI returned success but derivation path was NULL or empty"
+            )
+        }
+        let path = String(cString: pathPtr)
         return FundedProofResult(
             proofBytes: Data(bytes: proofPtr, count: Int(proofLen)),
             derivationPath: path,
@@ -234,7 +256,18 @@ public final class ManagedAssetLockManager: @unchecked Sendable {
         defer { asset_lock_manager_free_proof_bytes(proofPtr, proofLen) }
         defer { if let p = pathPtr { platform_wallet_string_free(p) } }
 
-        let path = pathPtr.map { String(cString: $0) } ?? ""
+        // Fail fast on a NULL or empty derivation path. The FFI
+        // contract is: on `Success` the path pointer is non-NULL and
+        // points to a non-empty NUL-terminated C string. Defaulting
+        // to `""` would surface as opaque "key not found" / "derive
+        // failed" errors at the next signing step; throwing here
+        // names the actual contract violation.
+        guard let pathPtr, pathPtr.pointee != 0 else {
+            throw PlatformWalletError.unknown(
+                "FFI returned success but derivation path was NULL or empty"
+            )
+        }
+        let path = String(cString: pathPtr)
         return ResumeResult(
             proofBytes: Data(bytes: proofPtr, count: Int(proofLen)),
             derivationPath: path
