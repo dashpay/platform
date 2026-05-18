@@ -341,8 +341,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         wallet_id: &WalletId,
     ) -> Result<Arc<PlatformWallet>, PlatformWalletError> {
         let owned_identity_ids: Vec<dpp::prelude::Identifier> = {
-            let wm = self.wallet_manager.read().await;
-            match wm.get_wallet_info(wallet_id) {
+            let mut wm = self.wallet_manager.write().await;
+            let ids = match wm.get_wallet_info(wallet_id) {
                 Some(info) => info
                     .identity_manager
                     .wallet_identities
@@ -356,7 +356,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     })
                     .unwrap_or_default(),
                 None => Vec::new(),
-            }
+            };
+            let _ = wm.remove_wallet(wallet_id);
+            ids
         };
 
         let removed = {
@@ -365,10 +367,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 .remove(wallet_id)
                 .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(wallet_id)))?
         };
-        {
-            let mut wm = self.wallet_manager.write().await;
-            let _ = wm.remove_wallet(wallet_id);
-        }
 
         for identity_id in &owned_identity_ids {
             self.identity_sync_manager

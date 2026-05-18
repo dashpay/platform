@@ -347,6 +347,8 @@ public class PlatformWalletManager: ObservableObject {
             )
         }
 
+        let identityIds = try persistenceHandler.identityIdsForWallet(walletId: walletId)
+
         try walletId.withUnsafeBytes { raw in
             guard let base = raw.baseAddress?.assumingMemoryBound(to: FFIByteTuple32.self) else {
                 throw PlatformWalletError.nullPointer(
@@ -357,8 +359,6 @@ public class PlatformWalletManager: ObservableObject {
         }
 
         wallets.removeValue(forKey: walletId)
-
-        let identityIds = try persistenceHandler.identityIdsForWallet(walletId: walletId)
 
         try persistenceHandler.deleteWalletData(walletId: walletId)
 
