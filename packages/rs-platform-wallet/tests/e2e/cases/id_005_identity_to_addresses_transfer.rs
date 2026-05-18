@@ -88,6 +88,10 @@ async fn id_005_identity_to_addresses_transfer() {
     .await
     .expect("funding never observed");
 
+    // Chain-confirmed gate is sdk-only and never warms the wallet's local
+    // balance map; refresh it before register consumes funding_addr.
+    s.test_wallet.sync_balances().await.expect("pre-tx sync");
+
     // QA-802 — bias the funding-address gate toward more distinct DAPI
     // replicas before handing the address to the registration broadcast.
     wait_for_address_known_to_platform(s.ctx.sdk(), &funding_addr, FUNDING_FLOOR, STEP_TIMEOUT)

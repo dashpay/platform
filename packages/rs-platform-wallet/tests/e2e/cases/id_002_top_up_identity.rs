@@ -95,6 +95,10 @@ async fn id_002_top_up_identity_from_addresses() {
     .await
     .expect("register funding never observed");
 
+    // Chain-confirmed gate is sdk-only and never warms the wallet's local
+    // balance map; refresh it before register consumes register_addr.
+    s.test_wallet.sync_balances().await.expect("pre-tx sync");
+
     let registered = s
         .test_wallet
         .register_identity_from_addresses(register_addr, REGISTRATION_FUNDING, 0)
@@ -149,6 +153,10 @@ async fn id_002_top_up_identity_from_addresses() {
     )
     .await
     .expect("top-up funding never observed");
+
+    // Chain-confirmed gate is sdk-only and never warms the wallet's local
+    // balance map; refresh it before top-up consumes top_up_addr.
+    s.test_wallet.sync_balances().await.expect("pre-tx sync");
 
     let inputs: BTreeMap<PlatformAddress, Credits> =
         std::iter::once((top_up_addr, TOP_UP_AMOUNT)).collect();

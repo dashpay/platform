@@ -116,6 +116,10 @@ async fn pa_001_multi_output_transfer() {
     .await
     .expect("addr_1 funding never observed");
 
+    // Chain-confirmed gate is sdk-only and never warms the wallet's local
+    // balance map; refresh it before the prep transfer consumes addr_1.
+    s.test_wallet.sync_balances().await.expect("pre-tx sync");
+
     let addr_2 = s
         .test_wallet
         .next_unused_address()

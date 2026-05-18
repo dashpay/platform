@@ -151,6 +151,10 @@ async fn pa_003_fee_scaling() {
     .await
     .expect("addr_src funding never observed");
 
+    // Chain-confirmed gate is sdk-only and never warms the wallet's local
+    // balance map; refresh it before the marker transfer consumes addr_src.
+    s.test_wallet.sync_balances().await.expect("pre-tx sync");
+
     // ---- 1-output transfer: derive `dest_1`, pre-marker it, then ----
     // ---- transfer from `addr_src` only and capture the real fee. ----
     let dest_1 = s
