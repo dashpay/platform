@@ -541,7 +541,14 @@ where
             return;
         }
 
-        // Build the changeset and update our own cache in lockstep.
+        self.apply_fresh_balances(identity_id, fresh_balances).await;
+    }
+
+    async fn apply_fresh_balances(
+        &self,
+        identity_id: Identifier,
+        fresh_balances: BTreeMap<Identifier, Option<TokenAmount>>,
+    ) {
         let mut cs = TokenBalanceChangeSet::default();
         for (token_id, maybe_balance) in &fresh_balances {
             let key = (identity_id, *token_id);
@@ -554,6 +561,16 @@ where
                 }
             }
         }
+
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+
+        let mut state = self.state.write().await;
+        let Some(existing_row) = state.get(&identity_id).cloned() else {
+            return;
+        };
 
         // The persister API is wallet-scoped (`store(wallet_id, ..)`)
         // but this manager is identity-scoped. Use the zero-byte
@@ -569,67 +586,31 @@ where
             );
         }
 
-        // TODO(identity-sync nonce): once token-id → contract-id
-        // resolution lands on the registry (currently keyed by token
-        // id only), fetch the per-(identity, contract) nonce here via
-        // `self.sdk.get_identity_contract_nonce(identity_id,
-        // contract_id, false, None).await` and replicate it onto
-        // every token row that shares the same contract. The
-        // `IdentityTokenSyncInfo::contract_id` field is plumbed
-        // through with a `Identifier::default()` placeholder so the
-        // FFI mirror shape doesn't have to change when this lands.
-
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-
-        // Rewrite the per-identity cache row from the freshly fetched
-        // balances. Tokens that returned `None` (i.e. removed on
-        // Platform) drop out of the row; tokens that returned `Some`
-        // get the new balance. We rebuild rather than splice so that
-        // the row always reflects the latest watched-token set
-        // intersected with what Platform reports.
-        let mut state = self.state.write().await;
-        if let Some(existing_row) = state.get(&identity_id).cloned() {
-            // Rebuild from the *live* row (which may have been mutated
-            // by concurrent `update_watched_tokens` / `unregister_identity`
-            // while our network calls were in flight) rather than the
-            // stale `token_ids` snapshot. This way mid-sync registry
-            // changes are preserved: newly added tokens keep their
-            // initial state, and tokens removed during the pass stay
-            // removed.
-            let mut new_tokens: Vec<IdentityTokenSyncInfo> =
-                Vec::with_capacity(existing_row.tokens.len());
-            for prior in &existing_row.tokens {
-                match fresh_balances.get(&prior.token_id) {
-                    Some(Some(amount)) => {
-                        new_tokens.push(IdentityTokenSyncInfo {
-                            balance: *amount,
-                            ..*prior
-                        });
-                    }
-                    Some(None) => {
-                        // Platform reported the token removed for
-                        // this identity — drop the row.
-                    }
-                    None => {
-                        // Batch didn't cover this token (added mid-
-                        // sync, or batch failed) — keep prior state.
-                        new_tokens.push(*prior);
-                    }
+        let mut new_tokens: Vec<IdentityTokenSyncInfo> =
+            Vec::with_capacity(existing_row.tokens.len());
+        for prior in &existing_row.tokens {
+            match fresh_balances.get(&prior.token_id) {
+                Some(Some(amount)) => {
+                    new_tokens.push(IdentityTokenSyncInfo {
+                        balance: *amount,
+                        ..*prior
+                    });
+                }
+                Some(None) => {}
+                None => {
+                    new_tokens.push(*prior);
                 }
             }
-
-            state.insert(
-                identity_id,
-                IdentityTokenSyncState {
-                    identity_id,
-                    last_sync_unix: now,
-                    tokens: new_tokens,
-                },
-            );
         }
+
+        state.insert(
+            identity_id,
+            IdentityTokenSyncState {
+                identity_id,
+                last_sync_unix: now,
+                tokens: new_tokens,
+            },
+        );
     }
 }
 
@@ -652,6 +633,7 @@ mod tests {
     use super::*;
 
     use crate::changeset::{ClientStartState, PersistenceError, PlatformWalletChangeSet};
+    use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 
     /// Test-only persister that swallows every `store` call and
     /// records nothing. Lifecycle / registry tests don't need the
@@ -678,6 +660,37 @@ mod tests {
         }
     }
 
+    struct RecordingPersister {
+        stores: AtomicUsize,
+    }
+
+    impl RecordingPersister {
+        fn new() -> Self {
+            Self {
+                stores: AtomicUsize::new(0),
+            }
+        }
+    }
+
+    impl PlatformWalletPersistence for RecordingPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            self.stores.fetch_add(1, AtomicOrdering::SeqCst);
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
     /// Build a manager wired to a no-op persister. The SDK is
     /// constructed via `SdkBuilder::new_mock` so we don't need a
     /// running runtime for the registry/lifecycle tests below; none
@@ -686,6 +699,18 @@ mod tests {
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let persister = Arc::new(NoopPersister);
         Arc::new(IdentitySyncManager::new(sdk, persister))
+    }
+
+    fn make_recording_manager() -> (
+        Arc<IdentitySyncManager<RecordingPersister>>,
+        Arc<RecordingPersister>,
+    ) {
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let persister = Arc::new(RecordingPersister::new());
+        (
+            Arc::new(IdentitySyncManager::new(sdk, Arc::clone(&persister))),
+            persister,
+        )
     }
 
     /// `register_identity` populates a row with zero-balance
@@ -768,6 +793,21 @@ mod tests {
         // Idempotent: calling again on an unknown identity must not panic.
         mgr.unregister_identity(&id_a).await;
         mgr.unregister_identity(&Identifier::from([99u8; 32])).await;
+    }
+
+    #[tokio::test]
+    async fn unregistered_identity_does_not_persist_fresh_balances() {
+        let (mgr, persister) = make_recording_manager();
+        let id_a = Identifier::from([1u8; 32]);
+        let token_x = Identifier::from([10u8; 32]);
+        let mut fresh = BTreeMap::new();
+        fresh.insert(token_x, Some(5u64));
+
+        mgr.register_identity(id_a, [token_x]).await;
+        mgr.unregister_identity(&id_a).await;
+        mgr.apply_fresh_balances(id_a, fresh).await;
+
+        assert_eq!(persister.stores.load(AtomicOrdering::SeqCst), 0);
     }
 
     /// `set_interval` clamps to >=1s and is read back via `interval`.
