@@ -456,7 +456,6 @@ impl PlatformWallet {
         let ClientStartState {
             mut platform_addresses,
             wallets: _,
-            ..
         } = self.load_persisted()?;
 
         if let Some(persisted) = platform_addresses.remove(&self.wallet_id) {

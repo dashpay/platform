@@ -33,7 +33,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let ClientStartState {
             mut platform_addresses,
             wallets,
-            ..
         } = self.persister.load().map_err(|e| {
             PlatformWalletError::WalletCreation(format!(
                 "Failed to load persisted client state: {}",
