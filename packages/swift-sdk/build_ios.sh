@@ -122,6 +122,33 @@ fi
 
 inject_modulemap() {
   local HEADERS_DIR="$1"
+  local required_headers=(
+    "dash-network/dash-network.h"
+    "key-wallet-ffi/key-wallet-ffi.h"
+    "rs-sdk-ffi/rs-sdk-ffi.h"
+    "platform-wallet-ffi/platform-wallet-ffi.h"
+  )
+  local header
+
+  mkdir -p "$HEADERS_DIR"
+
+  # The target directory is preserved between CI runs. Drop header directories
+  # from crates that are no longer part of the umbrella module.
+  find "$HEADERS_DIR" -mindepth 1 -maxdepth 1 -type d \
+    ! -name "dash-network" \
+    ! -name "key-wallet-ffi" \
+    ! -name "rs-sdk-ffi" \
+    ! -name "platform-wallet-ffi" \
+    -exec rm -rf {} +
+
+  rm -f "$HEADERS_DIR/DashSDKFFI.h" "$HEADERS_DIR/module.modulemap"
+
+  for header in "${required_headers[@]}"; do
+    if [ ! -f "$HEADERS_DIR/$header" ]; then
+      log_error "Missing generated FFI header: $HEADERS_DIR/$header"
+      exit 1
+    fi
+  done
 
   # Create umbrella header that includes all FFI headers in dependency order
   cat > "$HEADERS_DIR/DashSDKFFI.h" << 'EOF'
