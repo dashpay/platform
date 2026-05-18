@@ -17,7 +17,6 @@
 //! 4 of the swift-funding-with-asset-lock series.
 
 use dashcore::OutPoint;
-use key_wallet::bip32::DerivationPath;
 
 /// How to fund an identity operation (registration, top-up).
 ///
@@ -28,6 +27,19 @@ use key_wallet::bip32::DerivationPath;
 /// for cleanup (so the tracked-asset-lock row can be removed on
 /// success) and for IS→CL fallback (so the consumed lock can be
 /// looked up by outpoint when the IS proof times out or is rejected).
+///
+/// Every variant produces a lock tracked by this wallet's
+/// [`AssetLockManager`](crate::wallet::asset_lock::manager::AssetLockManager).
+/// The IS→CL fallback paths (300s IS-timeout in the resolver, Platform
+/// IS-rejection retry in the submission layer) require the lock to be
+/// tracked so they can look it up by outpoint and drive the wait. An
+/// earlier variant (`UseAssetLock`) accepted an externally-built proof
+/// and skipped tracking — it broke the IS→CL fallback unrecoverably
+/// because the lock was invisible to `upgrade_to_chain_lock_proof`
+/// (which short-circuits with `Asset lock {} is not tracked`). The
+/// variant was removed; future callers that hold an external proof
+/// should register it through `AssetLockManager` first, then use
+/// `FromExistingAssetLock`.
 #[derive(Debug, Clone)]
 pub enum IdentityFunding {
     /// Build an asset lock from wallet UTXOs for the given amount.
@@ -55,27 +67,5 @@ pub enum IdentityFunding {
     FromExistingAssetLock {
         /// The outpoint identifying the tracked asset lock (txid + output index).
         out_point: OutPoint,
-    },
-
-    /// Use a pre-supplied asset lock proof + derivation path directly.
-    ///
-    /// The caller has already obtained the proof through some external
-    /// flow (e.g. an SDK-side broadcast that ran outside this wallet's
-    /// `AssetLockManager`) and just needs the registration / top-up
-    /// flow to submit it. No tracking, no fallback, no cleanup — the
-    /// caller owns the lifecycle.
-    ///
-    /// In practice this variant is used by callers that manage asset
-    /// locks via a sibling component (evo-tool's tasks, integration
-    /// tests, etc.). The Swift app's normal flow goes through
-    /// `FromWalletBalance` or `FromExistingAssetLock`.
-    UseAssetLock {
-        /// The asset lock proof (IS or CL).
-        proof: dpp::prelude::AssetLockProof,
-        /// Derivation path the credit-output P2PKH was built from. The
-        /// signer-driven submission path passes this to the asset-lock
-        /// signer when constructing the IdentityCreate / IdentityTopUp
-        /// transition.
-        derivation_path: DerivationPath,
     },
 }

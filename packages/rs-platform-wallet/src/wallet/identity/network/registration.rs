@@ -221,14 +221,17 @@ fn bump_user_fee_increase(mut settings: PutSettings) -> PutSettings {
 /// Outcome of resolving an [`IdentityFunding`] to a concrete asset-lock
 /// proof + derivation path.
 ///
-/// `tracked_out_point` is `Some` whenever this wallet's
-/// `AssetLockManager` owns the lifecycle of the underlying asset lock
-/// — i.e. for `FromWalletBalance` (we just built and tracked it) and
-/// `FromExistingAssetLock` (caller is resuming a tracked entry). It's
-/// `None` for `UseAssetLock` where the caller has externally-managed
-/// proofs and we shouldn't touch the tracked-asset-lock map. The
-/// outpoint also drives both IS→CL fallback (look up the lock by
-/// outpoint) and cleanup (remove the lock on Platform success).
+/// `tracked_out_point` is always `Some` — every `IdentityFunding`
+/// variant produces a lock tracked by this wallet's `AssetLockManager`
+/// (the now-removed `UseAssetLock` variant was the only one that set
+/// it to `None`, and its absence broke both the IS-timeout and the
+/// IS-rejection fallback paths because they need the tracked entry to
+/// drive `upgrade_to_chain_lock_proof`). The outpoint drives IS→CL
+/// fallback (look up the lock by outpoint) and cleanup (remove the
+/// lock on Platform success). Kept as `Option<OutPoint>` for now so
+/// future variants without lifecycle tracking can be added without
+/// reshaping `FundingResolution`; today every code path that
+/// constructs it passes `Some`.
 struct ResolvedFunding {
     proof: AssetLockProof,
     path: DerivationPath,
@@ -333,16 +336,6 @@ impl IdentityWallet {
                     Err(e) => Err(e),
                 }
             }
-            IdentityFunding::UseAssetLock {
-                proof,
-                derivation_path,
-            } => Ok(FundingResolution::Resolved(ResolvedFunding {
-                proof,
-                path: derivation_path,
-                // Caller owns the lock lifecycle — don't touch the
-                // tracked-asset-lock map.
-                tracked_out_point: None,
-            })),
         }
     }
 }
@@ -580,9 +573,10 @@ impl IdentityWallet {
 
         // Step 5: clean up the tracked asset lock — Platform has
         // accepted the registration and the credit output is now
-        // consumed. Only fires for the variants where we own the
-        // lifecycle (`FromWalletBalance` / `FromExistingAssetLock`);
-        // `UseAssetLock` is `None` and skipped.
+        // consumed. Both `IdentityFunding` variants produce a tracked
+        // lock so `tracked_out_point` is always `Some` today; the
+        // `Option` is retained for future variants that may not have
+        // wallet-owned lifecycle.
         if let Some(out_point) = tracked_out_point {
             // Cleanup failure here can only mean WalletNotFound
             // (the wallet handle that just registered an identity
