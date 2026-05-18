@@ -884,6 +884,22 @@ impl DocumentTypeV2Getters for DocumentType {
             DocumentType::V2(v2) => v2.range_countable(),
         }
     }
+
+    fn documents_summable(&self) -> Option<&str> {
+        match self {
+            DocumentType::V0(_) => None,
+            DocumentType::V1(_) => None,
+            DocumentType::V2(v2) => v2.documents_summable(),
+        }
+    }
+
+    fn range_summable(&self) -> bool {
+        match self {
+            DocumentType::V0(_) => false,
+            DocumentType::V1(_) => false,
+            DocumentType::V2(v2) => v2.range_summable(),
+        }
+    }
 }
 
 impl DocumentTypeV2Setters for DocumentType {
@@ -900,6 +916,22 @@ impl DocumentTypeV2Setters for DocumentType {
             DocumentType::V0(_) => { /* no-op */ }
             DocumentType::V1(_) => { /* no-op */ }
             DocumentType::V2(v2) => v2.set_range_countable(range_countable),
+        }
+    }
+
+    fn set_documents_summable(&mut self, property: Option<String>) {
+        match self {
+            DocumentType::V0(_) => { /* no-op */ }
+            DocumentType::V1(_) => { /* no-op */ }
+            DocumentType::V2(v2) => v2.set_documents_summable(property),
+        }
+    }
+
+    fn set_range_summable(&mut self, range_summable: bool) {
+        match self {
+            DocumentType::V0(_) => { /* no-op */ }
+            DocumentType::V1(_) => { /* no-op */ }
+            DocumentType::V2(v2) => v2.set_range_summable(range_summable),
         }
     }
 }
@@ -920,6 +952,22 @@ impl DocumentTypeV2Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V2(v2) => v2.range_countable(),
         }
     }
+
+    fn documents_summable(&self) -> Option<&str> {
+        match self {
+            DocumentTypeRef::V0(_) => None,
+            DocumentTypeRef::V1(_) => None,
+            DocumentTypeRef::V2(v2) => v2.documents_summable(),
+        }
+    }
+
+    fn range_summable(&self) -> bool {
+        match self {
+            DocumentTypeRef::V0(_) => false,
+            DocumentTypeRef::V1(_) => false,
+            DocumentTypeRef::V2(v2) => v2.range_summable(),
+        }
+    }
 }
 
 impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
@@ -936,6 +984,22 @@ impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(_) => false,
             DocumentTypeMutRef::V1(_) => false,
             DocumentTypeMutRef::V2(v2) => v2.range_countable(),
+        }
+    }
+
+    fn documents_summable(&self) -> Option<&str> {
+        match self {
+            DocumentTypeMutRef::V0(_) => None,
+            DocumentTypeMutRef::V1(_) => None,
+            DocumentTypeMutRef::V2(v2) => v2.documents_summable(),
+        }
+    }
+
+    fn range_summable(&self) -> bool {
+        match self {
+            DocumentTypeMutRef::V0(_) => false,
+            DocumentTypeMutRef::V1(_) => false,
+            DocumentTypeMutRef::V2(v2) => v2.range_summable(),
         }
     }
 }

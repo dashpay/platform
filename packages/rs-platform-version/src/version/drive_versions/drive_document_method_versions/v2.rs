@@ -69,5 +69,15 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V2: DriveDocumentMethodVersions =
             validate_document_purchase_transition_action_uniqueness: 1, // Changed
             validate_document_update_price_transition_action_uniqueness: 1, // Changed
         },
-        primary_key_tree_type: 0,
+        // Bumped to 1 for the v3 sum-tree feature: the v1 dispatch
+        // arm in
+        // `packages/rs-drive/src/drive/document/primary_key_tree_type.rs`
+        // composes count + sum flags from
+        // `DocumentTypeV2::documents_countable` /
+        // `documents_summable` (+ their range_* siblings) into the
+        // right grovedb `TreeType` — including the combined
+        // `CountSumTree` / `ProvableCountSumTree` variants. The v0
+        // arm (count-only) stays available for pre-v12 platform
+        // versions through the standard versioned-dispatch fallback.
+        primary_key_tree_type: 1,
     };

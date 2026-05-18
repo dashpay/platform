@@ -1,7 +1,8 @@
 use crate::version::drive_versions::drive_verify_method_versions::{
     DriveVerifyAddressFundsMethodVersions, DriveVerifyContractMethodVersions,
     DriveVerifyDocumentCountMethodVersions, DriveVerifyDocumentMethodVersions,
-    DriveVerifyGroupMethodVersions, DriveVerifyIdentityMethodVersions, DriveVerifyMethodVersions,
+    DriveVerifyDocumentSumMethodVersions, DriveVerifyGroupMethodVersions,
+    DriveVerifyIdentityMethodVersions, DriveVerifyMethodVersions,
     DriveVerifyShieldedMethodVersions, DriveVerifySingleDocumentMethodVersions,
     DriveVerifyStateTransitionMethodVersions, DriveVerifySystemMethodVersions,
     DriveVerifyTokenMethodVersions, DriveVerifyVoteMethodVersions,
@@ -24,6 +25,15 @@ pub const DRIVE_VERIFY_METHOD_VERSIONS_V1: DriveVerifyMethodVersions = DriveVeri
         verify_distinct_count_proof: 0,
         verify_point_lookup_count_proof: 0,
         verify_primary_key_count_tree_proof: 0,
+    },
+    document_sum: DriveVerifyDocumentSumMethodVersions {
+        // Pre-stage stub bodies — surface `NotSupported` until the
+        // grovedb sister PR exposes per-key carrier-sum support.
+        // Once it lands, the v0 bodies flip to real grovedb calls
+        // (no version bump needed; same v0 dispatch arm).
+        verify_carrier_aggregate_sum_proof: 0,
+        verify_carrier_aggregate_count_and_sum_proof: 0,
+        verify_aggregate_count_and_sum_proof: 0,
     },
     identity: DriveVerifyIdentityMethodVersions {
         verify_full_identities_by_public_key_hashes: 0,

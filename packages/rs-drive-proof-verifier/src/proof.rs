@@ -1,5 +1,13 @@
 pub mod document_count;
 pub mod document_split_count;
+/// Per-entry verified sum result (sum-side analog of
+/// `document_split_count`). One `(in_key, key, sum)` triple per
+/// matched group. Lights up alongside grovedb PR 670.
+pub mod document_split_sum;
+/// Verified sum result (sum-side analog of `document_count`).
+/// Single-value aggregate sum recovered from a sum-tree proof.
+/// Lights up alongside grovedb PR 670; see the file's docs.
+pub mod document_sum;
 pub mod groups;
 pub mod identity_token_balance;
 pub mod token_contract_info;

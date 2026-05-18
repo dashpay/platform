@@ -1,5 +1,8 @@
 use crate::drive::constants::STORAGE_FLAGS_SIZE;
-use crate::drive::document::{document_reference_size, make_document_reference};
+use crate::drive::document::{
+    document_reference_size, make_document_reference, make_document_reference_with_sum_item,
+    read_document_sum_contribution,
+};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -17,6 +20,7 @@ use crate::util::storage_flags::StorageFlags;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::data_contract::document_type::{IndexCountability, IndexLevelTypeInfo};
+use dpp::document::Document;
 use dpp::document::DocumentV0Getters;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::key_info::KeyInfo;
@@ -34,7 +38,8 @@ impl Drive {
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
         mut index_path_info: PathInfo<0>,
-        index_type: IndexLevelTypeInfo,
+        // See the wrapper's docstring for why this is a borrow now.
+        index_type: &IndexLevelTypeInfo,
         any_fields_null: bool,
         all_fields_null: bool,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
@@ -50,16 +55,102 @@ impl Drive {
             return Ok(());
         }
 
-        // The terminal reference's tree type is driven by the index's countability:
-        // `NotCountable` keeps a plain `NormalTree`; `Countable` uses a `CountTree`
-        // so totals are O(1) at the root; `CountableAllowingOffset` uses a
-        // `ProvableCountTree` so future range / offset queries can walk per-node
-        // counts.
-        let reference_tree_type = match index_type.countable {
-            IndexCountability::NotCountable => TreeType::NormalTree,
-            IndexCountability::Countable => TreeType::CountTree,
-            IndexCountability::CountableAllowingOffset => TreeType::ProvableCountTree,
-        };
+        // The terminal reference's tree type is driven by the
+        // composition of the index's countability AND summability,
+        // per-axis (grovedb PR 670's expanded TreeType set
+        // distinguishes provable from root-only on each axis
+        // independently):
+        //
+        // - count provable + sum root → `ProvableCountSumTree`
+        //   (existing variant: per-node count, root-only sum)
+        // - count root + sum provable → `ProvableCountProvableSumTree`
+        //   (no dedicated "count-root + sum-provable" variant exists;
+        //   upgrades count to per-node too)
+        // - count provable + sum provable →
+        //   `ProvableCountProvableSumTree` (PR 670 newcomer: both
+        //   per-node)
+        //
+        // Same dispatch shape as the primary-key tree dispatcher's v1
+        // arm in `primary_key_tree_type.rs` — see that file for the
+        // full table. The `IndexLevelTypeInfo`'s `summable` carries
+        // the property name the reference's sum-item will contribute
+        // (read below to construct the `Element::ReferenceWithSumItem`
+        // that replaces a plain `Element::Reference` under summable
+        // indexes).
+        let count_provable = matches!(
+            index_type.countable,
+            IndexCountability::CountableAllowingOffset
+        );
+        let count_root_only =
+            matches!(index_type.countable, IndexCountability::Countable) && !count_provable;
+        let sum_provable = index_type.range_summable;
+        let sum_root_only = index_type.summable.is_some() && !sum_provable;
+        let want_count = count_provable || count_root_only;
+        let want_sum = sum_provable || sum_root_only;
+        let reference_tree_type =
+            match (count_provable, count_root_only, sum_provable, sum_root_only) {
+                (false, false, false, false) => TreeType::NormalTree,
+                (false, true, false, false) => TreeType::CountTree,
+                (true, _, false, false) => TreeType::ProvableCountTree,
+                (false, false, false, true) => TreeType::SumTree,
+                (false, false, true, _) => TreeType::ProvableSumTree,
+                (false, true, false, true) => TreeType::CountSumTree,
+                (true, _, false, true) => TreeType::ProvableCountSumTree,
+                (true, _, true, _) => TreeType::ProvableCountProvableSumTree,
+                (false, true, true, _) => TreeType::ProvableCountProvableSumTree,
+                _ => {
+                    // Defensive: covered by patterns above. Silences the
+                    // exhaustiveness check.
+                    let _ = (want_count, want_sum);
+                    TreeType::NormalTree
+                }
+            };
+
+        // Element-shape selector. Under a summable index path the
+        // reference element MUST be
+        // `Element::ReferenceWithSumItem(reference_path, amount_i64,
+        // flags)` (grovedb PR 670) rather than a plain
+        // `Element::Reference` — only `ReferenceWithSumItem`
+        // contributes a sum to the ancestor sum trees while still
+        // dereferencing to the document body in primary storage
+        // (so document iteration via index walks keeps working
+        // identically to the count side). Read the sum contribution
+        // once per insert from the document's `summable.unwrap()`
+        // property and freeze it into the element. On delete, grovedb
+        // pulls the same sum value off the stored element and
+        // propagates the subtraction up the merk path — no need to
+        // re-read the source document on the way down.
+        let sum_property_name: Option<&str> = index_type.summable.as_deref();
+        let make_terminal_ref =
+            |document: &Document, storage_flags: Option<&StorageFlags>| -> Result<Element, Error> {
+                match sum_property_name {
+                    Some(prop_name) => {
+                        // DPP validator guarantees the property is in
+                        // `required` and is an integer type, so this
+                        // conversion is safe — propagated as
+                        // `CorruptedCodeExecution` if it ever fails.
+                        let sum_value = read_document_sum_contribution(document, prop_name)?;
+                        Ok(make_document_reference_with_sum_item(
+                            document,
+                            document_and_contract_info.document_type,
+                            sum_value,
+                            storage_flags,
+                        ))
+                    }
+                    None => Ok(make_document_reference(
+                        document,
+                        document_and_contract_info.document_type,
+                        storage_flags,
+                    )),
+                }
+            };
+        // TODO(sum-feature, cost): for the
+        // `DocumentEstimatedAverageSize` cost-only paths, swap
+        // `Element::required_item_space(...)` for
+        // `Element::required_item_with_sum_item_space(...)` when
+        // `sum_property_name.is_some()` so the fee estimate accounts
+        // for the extra `i64` per reference. Stateless-cost arms
+        // marked inline below.
 
         // unique indexes will be stored under key "0"
         // non-unique indices should have a tree at key "0" that has all elements based off of primary key
@@ -122,20 +213,18 @@ impl Drive {
                 match &document_and_contract_info.owned_document_info.document_info {
                     DocumentRefAndSerialization((document, _, storage_flags))
                     | DocumentRefInfo((document, storage_flags)) => {
-                        let document_reference = make_document_reference(
+                        let document_reference = make_terminal_ref(
                             document,
-                            document_and_contract_info.document_type,
                             storage_flags.as_ref().map(|flags| flags.as_ref()),
-                        );
+                        )?;
                         KeyElement((document.id_ref().as_slice(), document_reference))
                     }
                     DocumentOwnedInfo((document, storage_flags))
                     | DocumentAndSerialization((document, _, storage_flags)) => {
-                        let document_reference = make_document_reference(
+                        let document_reference = make_terminal_ref(
                             document,
-                            document_and_contract_info.document_type,
                             storage_flags.as_ref().map(|flags| flags.as_ref()),
-                        );
+                        )?;
                         KeyElement((document.id_ref().as_slice(), document_reference))
                     }
                     DocumentEstimatedAverageSize(max_size) => KeyUnknownElementSize((
@@ -146,6 +235,9 @@ impl Drive {
                                 .to_vec(),
                             max_size: DEFAULT_HASH_SIZE_U8,
                         },
+                        // TODO(sum-feature, cost): when sum_property_name.is_some(),
+                        // use `Element::required_item_with_sum_item_space` (8
+                        // extra bytes for the i64).
                         Element::required_item_space(
                             *max_size,
                             STORAGE_FLAGS_SIZE,
@@ -166,20 +258,18 @@ impl Drive {
                 match &document_and_contract_info.owned_document_info.document_info {
                     DocumentRefAndSerialization((document, _, storage_flags))
                     | DocumentRefInfo((document, storage_flags)) => {
-                        let document_reference = make_document_reference(
+                        let document_reference = make_terminal_ref(
                             document,
-                            document_and_contract_info.document_type,
                             storage_flags.as_ref().map(|flags| flags.as_ref()),
-                        );
+                        )?;
                         KeyElement((&[0], document_reference))
                     }
                     DocumentOwnedInfo((document, storage_flags))
                     | DocumentAndSerialization((document, _, storage_flags)) => {
-                        let document_reference = make_document_reference(
+                        let document_reference = make_terminal_ref(
                             document,
-                            document_and_contract_info.document_type,
                             storage_flags.as_ref().map(|flags| flags.as_ref()),
-                        );
+                        )?;
                         KeyElement((&[0], document_reference))
                     }
                     DocumentEstimatedAverageSize(estimated_size) => KeyUnknownElementSize((
@@ -190,6 +280,8 @@ impl Drive {
                                 .to_vec(),
                             max_size: 1,
                         },
+                        // TODO(sum-feature, cost): see the parallel
+                        // note on the non-unique branch above.
                         Element::required_item_space(
                             *estimated_size,
                             STORAGE_FLAGS_SIZE,

@@ -1150,13 +1150,53 @@ message GetDocumentsResponse {
       }
     }
 
+    // Sum-side analog of `CountEntry` — one per matched key for
+    // `select=SUM, group_by=[...]` queries. `in_key` carries the
+    // outer prefix value for compound `(In, range)` shapes; `key`
+    // carries the terminator value. `sum` is signed because grovedb's
+    // SumTree values are `i64` and sums can in principle be negative
+    // (deliberate i64-overflow signaling — see the sum-tree book
+    // chapter's "Signed `i64` overflow" note). For tip-jar-style
+    // non-negative sums this stays >= 0 in practice.
+    message SumEntry {
+      optional bytes in_key = 1;
+      bytes key = 2;
+      // `jstype = JS_STRING` so JS/Web clients receive a string
+      // and don't round large sums to the nearest Number.
+      sint64 sum = 3 [jstype = JS_STRING];
+    }
+
+    message SumEntries {
+      repeated SumEntry entries = 1;
+    }
+
+    // Non-proof sum result. Same shape as `CountResults` for the
+    // sum surface — the variants mirror count's:
+    //   * `aggregate_sum`: `select=SUM, group_by=[]` — single signed
+    //     sum with no per-key breakdown.
+    //   * `entries`: `select=SUM, group_by=[…]` — one SumEntry per
+    //     distinct group.
+    message SumResults {
+      oneof variant {
+        sint64 aggregate_sum = 1 [jstype = JS_STRING];
+        SumEntries entries = 2;
+      }
+    }
+
     // Non-proof result wrapper. The outer `oneof result` switches
     // between this and `proof`; this inner oneof switches between
-    // the two non-proof shapes the v1 surface can return.
+    // the three non-proof shapes the v1 surface can return.
     message ResultData {
       oneof variant {
         Documents documents = 1;
         CountResults counts = 2;
+        // Sum-aggregate result. Routed when the request's
+        // `select.function == SUM` and the dispatcher's
+        // [`DriveDocumentSumQuery`] (in rs-drive) returns a
+        // non-proof variant. The schema field name (`sums`) parallels
+        // `counts` above; field numbers stay 1/2/3 per the proto-
+        // wire-stability rule (additions only, never renumbers).
+        SumResults sums = 3;
       }
     }
 

@@ -13,18 +13,23 @@ use dpp::data_contract::document_type::IndexLevel;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::{EstimatedLayerInformation, TransactionArg, TreeType};
 use std::collections::HashMap;
 
 impl Drive {
     /// Adds indices for an index level and recurses.
     ///
-    /// `parent_value_tree_is_count_tree` reflects whether the value tree
-    /// at `index_path_info` is a `CountTree` (because the IndexLevel that
-    /// produced it is a countable terminator). See the v0 doc for the
-    /// full Element::NonCounted-wrapping rationale and the
-    /// `countable.is_countable()` gating that distinguishes terminators
-    /// from pure prefix levels.
+    /// `parent_value_tree_type` is the exact `TreeType` of the value
+    /// tree at `index_path_info` — `NormalTree` for non-terminator /
+    /// non-aggregating levels, or one of the aggregating variants
+    /// (`CountTree` / `ProvableCountTree` / `SumTree` / `ProvableSumTree` /
+    /// `CountSumTree` / `ProvableCountSumTree` /
+    /// `ProvableCountProvableSumTree`) when the parent index opts into
+    /// count and/or sum aggregation. The v0 implementation uses this
+    /// to pick the correct wrapper variant
+    /// (`NonCounted` / `NotSummed` / `NotCountedOrSummed`) for child
+    /// continuation property-name trees so they contribute 0 to the
+    /// parent's per-axis aggregates.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn add_indices_for_index_level_for_contract_operations(
         &self,
@@ -33,7 +38,7 @@ impl Drive {
         index_level: &IndexLevel,
         any_fields_null: bool,
         all_fields_null: bool,
-        parent_value_tree_is_count_tree: bool,
+        parent_value_tree_type: TreeType,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         storage_flags: &Option<&StorageFlags>,
         estimated_costs_only_with_layer_info: &mut Option<
@@ -57,7 +62,7 @@ impl Drive {
                 index_level,
                 any_fields_null,
                 all_fields_null,
-                parent_value_tree_is_count_tree,
+                parent_value_tree_type,
                 previous_batch_operations,
                 storage_flags,
                 estimated_costs_only_with_layer_info,

@@ -22,6 +22,20 @@ impl Drive {
     /// * `index_path_info`: The index path info.
     /// * `index_level`: The index level.
     /// * `any_fields_null`: Indicator if any fields are null.
+    /// * `parent_value_tree_is_range_countable`: Mirror of the insert
+    ///   walker. Originally signaled "value tree is a CountTree (was
+    ///   inserted by a range_countable terminator)." v3 extended the
+    ///   insert-side dispatch to also produce SumTree /
+    ///   ProvableSumTree / CountSumTree / ProvableCountSumTree
+    ///   variants, but this single-bool input doesn't carry that
+    ///   information. Cost estimation for sum-bearing layers may
+    ///   under-charge by a few bytes per affected node as a result.
+    ///   See the matching docstring on
+    ///   `remove_indices_for_index_level_for_contract_operations_v0`
+    ///   for the full deferred-fix note (replacing the bool with a
+    ///   `TreeType` is a focused follow-up; the actual delete
+    ///   operations remain correct because the per-element delete
+    ///   path composes all four count+sum flags).
     /// * `storage_flags`: The storage flags.
     /// * `previous_batch_operations`: Previous batch operations to include.
     /// * `estimated_costs_only_with_layer_info`: Estimated costs with layer info.

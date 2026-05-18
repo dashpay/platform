@@ -82,15 +82,24 @@ impl Drive {
 
         // next we need to store a reference to the document for each index
         for (name, sub_level) in index_level.sub_levels() {
-            let sub_level_range_countable = sub_level
-                .has_index_with_type()
+            // Property-name tree-type composition mirrors the
+            // insert side's top-level walker. See
+            // `add_indices_for_top_index_level_for_contract_operations_v0`
+            // for the four-way dispatch table.
+            let sub_level_info = sub_level.has_index_with_type();
+            let sub_level_range_countable = sub_level_info
                 .map(|info| info.range_countable)
                 .unwrap_or(false);
-            let property_name_tree_type = if sub_level_range_countable {
-                TreeType::ProvableCountTree
-            } else {
-                TreeType::NormalTree
-            };
+            let sub_level_range_summable = sub_level_info
+                .map(|info| info.range_summable)
+                .unwrap_or(false);
+            let property_name_tree_type =
+                match (sub_level_range_countable, sub_level_range_summable) {
+                    (true, true) => TreeType::ProvableCountProvableSumTree,
+                    (true, false) => TreeType::ProvableCountTree,
+                    (false, true) => TreeType::ProvableSumTree,
+                    (false, false) => TreeType::NormalTree,
+                };
 
             // at this point the contract path is to the contract documents
             // for each index the top index component will already have been added

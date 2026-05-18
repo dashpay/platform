@@ -20,6 +20,14 @@ pub use proof::document_split_count::DocumentSplitCounts;
 // directly just to name the entry type returned by
 // `verify_distinct_count_proof` and `DocumentSplitCounts::from_verified`.
 pub use drive::query::SplitCountEntry;
+/// Verified sum result types. Sum-side analogs of `DocumentCount` /
+/// `DocumentSplitCounts`; see their respective module docs for the
+/// grovedb PR 670 dependency status.
+pub use proof::document_split_sum::{DocumentSplitSums, SplitSumEntry};
+pub use proof::document_sum::DocumentSum;
+// Re-export the rs-drive `SumEntry` at the proof-verifier crate
+// root, paralleling `SplitCountEntry` above.
+pub use drive::query::SumEntry;
 pub use proof::{FromProof, Length};
 
 // Re-export context provider types from dash-context-provider

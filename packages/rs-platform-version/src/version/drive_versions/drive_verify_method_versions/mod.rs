@@ -7,6 +7,7 @@ pub struct DriveVerifyMethodVersions {
     pub contract: DriveVerifyContractMethodVersions,
     pub document: DriveVerifyDocumentMethodVersions,
     pub document_count: DriveVerifyDocumentCountMethodVersions,
+    pub document_sum: DriveVerifyDocumentSumMethodVersions,
     pub identity: DriveVerifyIdentityMethodVersions,
     pub group: DriveVerifyGroupMethodVersions,
     pub token: DriveVerifyTokenMethodVersions,
@@ -56,6 +57,28 @@ pub struct DriveVerifyDocumentCountMethodVersions {
     pub verify_distinct_count_proof: FeatureVersion,
     pub verify_point_lookup_count_proof: FeatureVersion,
     pub verify_primary_key_count_tree_proof: FeatureVersion,
+}
+
+/// Versions for the `GetDocumentsSum` prove-path verifiers.
+/// Mirror of [`DriveVerifyDocumentCountMethodVersions`] for the sum
+/// surface. All methods are implemented on
+/// [`drive::query::drive_document_sum_query::DriveDocumentSumQuery`]
+/// and return `(RootHash, T)` with `i64` payloads.
+///
+/// **Pre-stage status**: the carrier-sum verifier bodies are stubbed
+/// pending grovedb's `verify_aggregate_sum_query_per_key` (mirror of
+/// count's `verify_aggregate_count_query_per_key` from grovedb
+/// PR #663). Only `0` is a valid version here today.
+#[derive(Clone, Debug, Default)]
+pub struct DriveVerifyDocumentSumMethodVersions {
+    pub verify_carrier_aggregate_sum_proof: FeatureVersion,
+    pub verify_carrier_aggregate_count_and_sum_proof: FeatureVersion,
+    /// Leaf-PCPS `AggregateCountAndSumOnRange` proof verifier.
+    /// Returns `(root_hash, u64 count, i64 sum)`. Load-bearing
+    /// for the average-range surface — client divides `sum / count`
+    /// to recover the verified average. Only `0` is a valid version
+    /// today; same dispatch arm as the carrier variant.
+    pub verify_aggregate_count_and_sum_proof: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

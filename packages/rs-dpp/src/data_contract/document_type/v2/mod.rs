@@ -73,6 +73,23 @@ pub struct DocumentTypeV2 {
     /// When true, the primary key tree uses a ProvableCountTree enabling range countable.
     /// Implies documents_countable = true.
     pub(in crate::data_contract) range_countable: bool,
+    /// When `Some(property_name)`, the primary key tree is a `SumTree` (or
+    /// `ProvableSumTree` if [`Self::range_summable`] is also set) summing
+    /// the named integer property across every document of this type.
+    /// Enables O(log n) `GetDocumentsSum` queries with no `where` filter.
+    ///
+    /// The named property must be `type: integer` and listed in
+    /// [`Self::required_fields`]; the parser enforces this at contract
+    /// creation. Composes orthogonally with `documents_countable` —
+    /// setting both yields a `CountSumTree` (or `ProvableCountSumTree`)
+    /// that carries both a count and a sum, queryable independently.
+    pub(in crate::data_contract) documents_summable: Option<String>,
+    /// When true, the primary key sum tree is a `ProvableSumTree`
+    /// (committing aggregated sub-sums to every internal merk node),
+    /// enabling O(log n) `AggregateSumOnRange` queries. Implies
+    /// [`Self::documents_summable`] is `Some` — enforced by
+    /// [`crate::data_contract::document_type::accessors::DocumentTypeV2Setters::set_range_summable`].
+    pub(in crate::data_contract) range_summable: bool,
 }
 
 impl DocumentTypeBasicMethods for DocumentTypeV2 {}
@@ -135,6 +152,8 @@ impl From<DocumentTypeV0> for DocumentTypeV2 {
             token_costs: TokenCosts::V0(Default::default()),
             documents_countable: false,
             range_countable: false,
+            documents_summable: None,
+            range_summable: false,
         }
     }
 }
@@ -169,6 +188,8 @@ impl From<DocumentTypeV1> for DocumentTypeV2 {
             token_costs: value.token_costs,
             documents_countable: false,
             range_countable: false,
+            documents_summable: None,
+            range_summable: false,
         }
     }
 }

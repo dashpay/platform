@@ -36,7 +36,7 @@ impl Drive {
             0 => self.batch_insert_empty_tree_if_not_exists_v0(
                 path_key_info,
                 tree_type,
-                false, // wrap_in_non_counted
+                None, // aggregating_parent_tree_type — non-aggregating insert, no wrap
                 storage_flags,
                 apply_type,
                 transaction,
@@ -52,23 +52,32 @@ impl Drive {
         }
     }
 
-    /// Pushes an "insert empty `tree_type` wrapped in `Element::NonCounted`"
-    /// operation to `drive_operations`, but only if the path/key doesn't
-    /// already exist (in current state OR in pending operations).
+    /// Pushes an "insert empty `tree_type` wrapped in the appropriate
+    /// `Element::NonCounted` / `Element::NotSummed` / `Element::NotCountedOrSummed`
+    /// wrapper" operation to `drive_operations`, but only if the path/key
+    /// doesn't already exist (in current state OR in pending operations).
     ///
-    /// Used by the index walker for sibling continuations that live inside a
-    /// `range_countable` value tree (a `CountTree`). Without the `NonCounted`
-    /// wrapper, an empty child tree would contribute 1 to the parent
-    /// `CountTree`'s aggregate (per grovedb's default
-    /// `count_value_or_default()`); the wrapper makes it contribute 0 so the
-    /// value tree's count cleanly reflects "documents at this value" rather
-    /// than "documents + sibling-continuation-trees". `tree_type` is left
-    /// general so nested-`range_countable` shapes can pass `CountTree` /
-    /// `ProvableCountTree` continuations through the same helper.
+    /// Used by the index walker for sibling continuations that live inside
+    /// an aggregating value tree. The wrapper variant is picked based on
+    /// the parent's `aggregating_parent_tree_type`:
+    /// - count-only parents (CountTree / ProvableCountTree) → `NonCounted`
+    /// - sum-only parents (SumTree / ProvableSumTree / BigSumTree) → `NotSummed`
+    /// - combined count+sum parents (CountSumTree / ProvableCountSumTree /
+    ///   ProvableCountProvableSumTree) → `NotCountedOrSummed`
+    ///
+    /// Without the wrapper, an empty child tree would contribute 1 to the
+    /// parent's `count_value_or_default()` and/or its own aggregate would
+    /// be added to the parent's sum; the wrapper makes it contribute 0 on
+    /// each suppressed axis so the value tree's aggregates cleanly reflect
+    /// "documents at this value" rather than "documents + sibling-
+    /// continuation-trees". `tree_type` is left general so nested-
+    /// `range_countable`/`range_summable` shapes can pass through any
+    /// aggregating continuation variant.
     #[allow(clippy::too_many_arguments)]
-    pub fn batch_insert_empty_non_counted_tree_if_not_exists<const N: usize>(
+    pub fn batch_insert_empty_tree_under_aggregating_parent_if_not_exists<const N: usize>(
         &self,
         path_key_info: PathKeyInfo<N>,
+        aggregating_parent_tree_type: TreeType,
         tree_type: TreeType,
         storage_flags: Option<&StorageFlags>,
         apply_type: BatchInsertTreeApplyType,
@@ -85,7 +94,7 @@ impl Drive {
             0 => self.batch_insert_empty_tree_if_not_exists_v0(
                 path_key_info,
                 tree_type,
-                true, // wrap_in_non_counted
+                Some(aggregating_parent_tree_type),
                 storage_flags,
                 apply_type,
                 transaction,
@@ -94,7 +103,8 @@ impl Drive {
                 drive_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-                method: "batch_insert_empty_non_counted_tree_if_not_exists".to_string(),
+                method: "batch_insert_empty_tree_under_aggregating_parent_if_not_exists"
+                    .to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

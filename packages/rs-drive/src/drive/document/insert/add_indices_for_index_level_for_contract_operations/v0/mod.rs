@@ -20,17 +20,29 @@ use std::collections::HashMap;
 impl Drive {
     /// Adds indices for an index level and recurses.
     ///
-    /// `parent_value_tree_is_count_tree` reflects whether the value tree at
-    /// `index_path_info` is a `CountTree` (because the `IndexLevel` that
-    /// produced it is a countable terminator — i.e. `index.countable` is
-    /// `Countable` or `CountableAllowingOffset`). When true, every
-    /// continuation property-name tree we insert here as a child of that
-    /// `CountTree` is wrapped with `Element::NonCounted` so its storage
-    /// stays addressable but it contributes 0 to the parent count's
-    /// aggregate. Without this, compound continuations would each add 1 (a
-    /// `NormalTree` child) — or worse, their own count_value (a
-    /// `ProvableCountTree` child in nested-range_countable layouts) — and
-    /// double-count documents.
+    /// `parent_value_tree_type` carries the **exact `TreeType`** of the
+    /// value tree at `index_path_info`. The choice of wrapper for
+    /// continuation property-name trees stored as children of the
+    /// value tree depends on which axes (count, sum, or both) the
+    /// parent aggregates:
+    /// - `NormalTree` parent → no wrapping needed.
+    /// - `CountTree` / `ProvableCountTree` → `Element::NonCounted`.
+    /// - `SumTree` / `ProvableSumTree` / `BigSumTree` → `Element::NotSummed`.
+    /// - `CountSumTree` / `ProvableCountSumTree` /
+    ///   `ProvableCountProvableSumTree` → `Element::NotCountedOrSummed`.
+    ///
+    /// In every aggregating case the wrapped continuation contributes
+    /// 0 to the parent's per-axis aggregates, so the value tree's
+    /// `count_value` / `sum_value` / (count + sum) equals exactly the
+    /// contribution of the `[0]` ref-bucket and not the structural
+    /// overhead of compound continuations.
+    ///
+    /// Pre-v3 contracts only ever produce `NormalTree` / `CountTree` /
+    /// `ProvableCountTree` parents (the sum flags default to
+    /// `false`/`None`), so the extended logic is a bit-identical no-op
+    /// for them — the new sum-side wrapper arms stay dormant and the
+    /// produced grovedb layout matches what v0 (count-only) used to
+    /// emit.
     ///
     /// ## Why "countable" gates the value-tree type, not "range_countable"
     ///
@@ -43,16 +55,26 @@ impl Drive {
     /// `countable.is_countable()` rather than `range_countable` lets
     /// plain-countable indexes (e.g. `byBrand`) emit the same compact
     /// point-lookup proof shape as rangeCountable ones, without paying the
-    /// `ProvableCountTree` cost at the property-name level.
+    /// `ProvableCountTree` cost at the property-name level. The exact same
+    /// reasoning applies on the sum side: `summable.is_some()` gates the
+    /// value-tree type (NormalTree → SumTree), `range_summable: true`
+    /// additionally upgrades the property-name level (NormalTree →
+    /// ProvableSumTree) so `AggregateSumOnRange` queries land.
+    ///
+    /// When both flag families are set the choices compose into the
+    /// combined variants (`CountSumTree` / `ProvableCountSumTree`) via
+    /// the same dispatch table documented on
+    /// [`crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType::primary_key_tree_type`]'s
+    /// v1 arm.
     ///
     /// Continuation wrapping under the new rule: when the parent value tree
-    /// is a `CountTree` (now true for every countable terminator, not just
-    /// rangeCountable), every child continuation property-name tree gets
-    /// `Element::NonCounted`-wrapped so the parent's count_value equals
-    /// exactly the doc count from the `[0]` ref-bucket. Without the wrap,
-    /// each continuation would contribute its own `count_value_or_default`
-    /// (1 for `NormalTree`, > 0 for `ProvableCountTree`) and the parent
-    /// would over-count.
+    /// aggregates anything (count, sum, or both), every child continuation
+    /// property-name tree gets `Element::NonCounted`-wrapped so the
+    /// parent's aggregate equals exactly the contribution from the `[0]`
+    /// ref-bucket. Without the wrap, each continuation would contribute
+    /// its own aggregate (a single doc for `NormalTree`, a sub-count for
+    /// `ProvableCountTree`, a sub-sum for `ProvableSumTree`, etc.) and
+    /// the parent would over-aggregate.
     #[inline]
     #[allow(clippy::too_many_arguments)]
     pub(super) fn add_indices_for_index_level_for_contract_operations_v0(
@@ -62,7 +84,7 @@ impl Drive {
         index_level: &IndexLevel,
         mut any_fields_null: bool,
         mut all_fields_null: bool,
-        parent_value_tree_is_count_tree: bool,
+        parent_value_tree_type: TreeType,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         storage_flags: &Option<&StorageFlags>,
         estimated_costs_only_with_layer_info: &mut Option<
@@ -93,14 +115,18 @@ impl Drive {
 
         let sub_level_index_count = index_level.sub_levels().len() as u32;
 
-        // The current level (the value tree at index_path_info) is a CountTree
-        // when `parent_value_tree_is_count_tree`; otherwise NormalTree.
-        // This shows up in the layer info for the layer we're walking through.
-        let current_layer_tree_type = if parent_value_tree_is_count_tree {
-            TreeType::CountTree
-        } else {
-            TreeType::NormalTree
-        };
+        // The current level (the value tree at index_path_info) has
+        // exactly the TreeType the caller already computed — pass it
+        // through so the layer info, the recursive call, and the
+        // wrapper-choice for child continuations all agree on the
+        // exact variant (no lossy bool → CountTree projection).
+        let current_layer_tree_type = parent_value_tree_type;
+        // True iff the parent value tree aggregates anything (count,
+        // sum, or both). Matches the legacy bool semantic — used below
+        // to decide whether to NonCounted/NotSummed/NotCountedOrSummed-
+        // wrap continuation children. Non-aggregating parents emit
+        // plain empty trees via the unwrapped helper.
+        let parent_value_tree_aggregates = !matches!(parent_value_tree_type, TreeType::NormalTree);
 
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             // On this level we will have a 0 and all the top index paths
@@ -142,48 +168,97 @@ impl Drive {
             let sub_level_range_countable = sub_level_index_info
                 .map(|info| info.range_countable)
                 .unwrap_or(false);
+            // v3 sum-tree flags (default false/None on contracts written
+            // before the sum-tree feature; bit-identical no-op for them).
+            let sub_level_is_summable_terminator = sub_level_index_info
+                .map(|info| info.summable.is_some())
+                .unwrap_or(false);
+            let sub_level_range_summable = sub_level_index_info
+                .map(|info| info.range_summable)
+                .unwrap_or(false);
 
-            // The property-name tree below the current value tree. If the
-            // index sub_level is a range_countable terminator we need a
-            // `ProvableCountTree` so range queries over the property's
-            // distinct values can use grovedb's `AggregateCountOnRange`.
-            // Plain countable terminators keep `NormalTree` — they don't
-            // need the per-node count aggregation for range support.
-            let property_name_tree_type = if sub_level_range_countable {
-                TreeType::ProvableCountTree
-            } else {
-                TreeType::NormalTree
-            };
+            // Compose count and sum flags into the right TreeType for
+            // the property-name level (the level *above* the value
+            // trees, whose keys are this property's distinct values).
+            //
+            // The four upgrade paths:
+            // - `range_countable: true` → ProvableCountTree (existing)
+            // - `range_summable: true` → ProvableSumTree (new in v3)
+            // - both → ProvableCountSumTree (combined feature, grovedb
+            //   PR 670)
+            // - neither → NormalTree (default; matches v0 behavior)
+            //
+            // Plain-countable / plain-summable terminators don't upgrade
+            // the property-name level — only their value-tree level (see
+            // below). The range-* variants are what `AggregateCountOnRange`
+            // / `AggregateSumOnRange` walk over.
+            let property_name_tree_type =
+                match (sub_level_range_countable, sub_level_range_summable) {
+                    (true, true) => TreeType::ProvableCountProvableSumTree,
+                    (true, false) => TreeType::ProvableCountTree,
+                    (false, true) => TreeType::ProvableSumTree,
+                    (false, false) => TreeType::NormalTree,
+                };
 
             // The value tree (one per distinct property value, hosting the
-            // `[0]` reference subtree + sibling continuations) becomes a
-            // `CountTree` at any countable terminator — not just
-            // `range_countable` ones. This shortens the point-lookup count
-            // proof by one merk layer per resolved branch (the `[0]` child
-            // doesn't need to be descended; the value tree's own
-            // `count_value_or_default()` IS the per-branch doc count, with
-            // sibling continuations wrapped `NonCounted` to keep the count
-            // honest — see `wrap_property_name_tree_non_counted` below).
+            // `[0]` reference subtree + sibling continuations) becomes an
+            // aggregating tree at any countable / summable terminator.
+            // This shortens the point-lookup proof by one merk layer per
+            // resolved branch — the `[0]` child doesn't need to be
+            // descended; the value tree's own `count_value_or_default()`
+            // / `sum_value_or_default()` IS the per-branch aggregate,
+            // with sibling continuations wrapped `NonCounted` to keep
+            // it honest (see `wrap_property_name_tree_non_counted`
+            // below).
             //
-            // For non-terminator (pure prefix) levels — e.g. `brand` in a
-            // contract that has only `[brand, color]` and no standalone
-            // `[brand]` index — `sub_level_is_countable_terminator` is
-            // `false` and the value tree stays `NormalTree`. There's
-            // nothing to count at a prefix level, and the brand-value
-            // walks descend into the `color` sub-level which then carries
-            // its own (potentially count-flavored) tree.
-            let value_tree_type = if sub_level_is_countable_terminator {
-                TreeType::CountTree
-            } else {
-                TreeType::NormalTree
+            // For non-terminator (pure prefix) levels — e.g. `recipient`
+            // in a tip-jar contract that has a standalone `[recipient]`
+            // index AND a deeper `[recipient, sentAt]` — the standalone
+            // index's terminator IS this level so the flags are
+            // non-zero; for a contract that has only `[recipient,
+            // sentAt]` and no standalone `[recipient]`, the `recipient`
+            // level has no `has_index_with_type` and the value tree
+            // stays `NormalTree`. Pure prefix walks just descend.
+            //
+            // Combined feature: `documentsCountable + documentsSummable`
+            // at the doctype produces `CountSumTree` at the primary key
+            // level (see primary_key_tree_type's v1); the same
+            // composition logic applied here at the per-value level
+            // produces `CountSumTree` / `ProvableCountSumTree` at the
+            // value tree depending on whether the index opts into the
+            // range variants too.
+            let value_tree_type = match (
+                sub_level_is_countable_terminator,
+                sub_level_range_countable,
+                sub_level_is_summable_terminator,
+                sub_level_range_summable,
+            ) {
+                // Combined count+sum surfaces.
+                (true, true, true, true) => TreeType::ProvableCountProvableSumTree,
+                (true, false, true, false) => TreeType::CountSumTree,
+                (true, true, true, false) => TreeType::ProvableCountSumTree,
+                (true, false, true, true) => TreeType::ProvableCountProvableSumTree,
+                // Pure count surfaces.
+                (true, _, false, false) => TreeType::CountTree,
+                // Pure sum surfaces.
+                (false, false, true, _) => TreeType::SumTree,
+                // Pure NormalTree (no terminator at this level OR no
+                // aggregating index opts in).
+                (false, _, false, _) => TreeType::NormalTree,
+                // Catch-all: range_countable without countable, or
+                // range_summable without summable — caught earlier by
+                // the DPP validator, but be defensive.
+                _ => TreeType::NormalTree,
             };
 
-            // Wrap the property-name tree with `Element::NonCounted` iff its
-            // immediate parent (the value tree at `index_path_info`) is a
-            // CountTree. NonCounted-wrapping is independent of
-            // `property_name_tree_type` — it only affects the *parent's*
-            // count aggregation, not the wrapped element's internals.
-            let wrap_property_name_tree_non_counted = parent_value_tree_is_count_tree;
+            // Wrap the property-name tree iff its immediate parent
+            // (the value tree at `index_path_info`) aggregates count,
+            // sum, or both. The wrapper variant is keyed on
+            // `parent_value_tree_type` — the new helper
+            // `for_known_path_key_empty_tree_under_aggregating_parent`
+            // picks NonCounted / NotSummed / NotCountedOrSummed
+            // based on what axes the parent aggregates.
+            let wrap_property_name_tree_under_aggregating_parent = parent_value_tree_aggregates;
 
             let property_name_apply_type = if estimated_costs_only_with_layer_info.is_none() {
                 BatchInsertTreeApplyType::StatefulBatchInsertTree
@@ -229,9 +304,10 @@ impl Drive {
                 .add_path_info(sub_level_index_path_info.clone());
 
             // here we are inserting an empty tree that will have a subtree of all other index properties
-            if wrap_property_name_tree_non_counted {
-                self.batch_insert_empty_non_counted_tree_if_not_exists(
+            if wrap_property_name_tree_under_aggregating_parent {
+                self.batch_insert_empty_tree_under_aggregating_parent_if_not_exists(
                     path_key_info.clone(),
+                    parent_value_tree_type,
                     property_name_tree_type,
                     *storage_flags,
                     property_name_apply_type,
@@ -308,20 +384,19 @@ impl Drive {
             sub_level_index_path_info.push(document_index_field)?;
             // Iteration 1. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/
             // Iteration 2. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference/<accountReference>
-            // Propagate the new `parent_value_tree_is_count_tree` flag
-            // forward — it tracks whether the value tree we just wrote
-            // (the one the sub-level will recurse INTO) is a `CountTree`.
-            // That's now driven by `sub_level_is_countable_terminator`
-            // (any countable tier), not just `range_countable`. Drives
-            // the next level's continuation `NonCounted`-wrapping
-            // decision.
+            // Propagate the actual `value_tree_type` forward — it tracks
+            // the exact TreeType of the value tree we just wrote (the
+            // one the sub-level will recurse INTO). The next level
+            // reads it to pick the correct wrapper variant
+            // (NonCounted / NotSummed / NotCountedOrSummed) for its
+            // own continuation children.
             self.add_indices_for_index_level_for_contract_operations_v0(
                 document_and_contract_info,
                 sub_level_index_path_info,
                 sub_level,
                 any_fields_null,
                 all_fields_null,
-                sub_level_is_countable_terminator,
+                value_tree_type,
                 previous_batch_operations,
                 storage_flags,
                 estimated_costs_only_with_layer_info,

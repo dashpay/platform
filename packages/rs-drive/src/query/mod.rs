@@ -31,6 +31,14 @@ pub use {
 pub use drive_document_count_query::{
     DocumentCountRequest, DocumentCountResponse, RangeCountOptions, MAX_LIMIT_AS_FAILSAFE,
 };
+
+// Sum-query surface (parallels count). `DocumentSumRequest` / `SumMode`
+// / `DocumentSumResponse` are server-side executor inputs.
+#[cfg(feature = "server")]
+pub use drive_document_sum_query::{
+    DocumentSumRequest, DocumentSumResponse, DriveDocumentSumQuery, RangeSumOptions, SumEntry,
+    SumMode,
+};
 // Imports available when either "server" or "verify" features are enabled
 #[cfg(any(feature = "server", feature = "verify"))]
 use {
@@ -182,6 +190,14 @@ pub mod token_status_drive_query;
 /// A query to count documents using CountTree elements
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod drive_document_count_query;
+
+/// A query to sum an integer property across documents using SumTree
+/// elements. Parallels [`drive_document_count_query`] for the sum
+/// surface — see `book/src/drive/document-sum-trees.md` for the
+/// design and `book/src/drive/sum-index-examples.md` for the worked
+/// example contract.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod drive_document_sum_query;
 
 /// A Query Syntax Validation Result that contains data
 pub type QuerySyntaxValidationResult<TData> = ValidationResult<TData, QuerySyntaxError>;

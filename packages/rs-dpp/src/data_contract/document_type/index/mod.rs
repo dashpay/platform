@@ -373,6 +373,49 @@ pub struct Index {
     /// `range_countable: true` requires `countable` to be `Countable` or
     /// `CountableAllowingOffset` (it's additive, not a replacement).
     pub range_countable: bool,
+    /// When set to `Some(property_name)`, this index's value-tree is laid out
+    /// as a `SumTree` (or `CountSumTree` if [`Index::countable`] is also set
+    /// and [`Index::range_summable`] is false) and every reference under the
+    /// index path carries an `ItemWithSumItem` contribution equal to the
+    /// document's named-property value at insert time. The named property
+    /// must be `type: integer` and listed in the document type's `required`
+    /// array (the validator enforces this at contract creation), and must
+    /// match the doctype-level
+    /// [`DocumentTypeV2::documents_summable`] when both are set.
+    ///
+    /// O(1) `sum(named_property) WHERE <index_properties_exactly_covered>`
+    /// queries land on this index. See
+    /// `book/src/drive/document-sum-trees.md` and
+    /// `book/src/drive/sum-index-examples.md` for the worked example.
+    ///
+    /// **Note on `unique` indexes.** Same caveat as
+    /// [`IndexCountability::Countable`] on a unique index: the storage
+    /// effect is a no-op for documents whose indexed fields are *all*
+    /// non-null (the terminal is a bare reference at key `[0]`), and it
+    /// does meaningful sum-aggregation work only for null-bearing entries
+    /// (which take the same sum-tree branch a non-unique index uses).
+    pub summable: Option<String>,
+    /// When `true`, this index supports O(log n) range-sum queries on its
+    /// last property. The storage-layout effect mirrors
+    /// [`Index::range_countable`] but on the sum surface:
+    /// - The property-name level (the level *above* the last property's
+    ///   value-tree level) is laid out as a `ProvableSumTree`, so range
+    ///   queries over the last property's distinct values can be answered
+    ///   by walking the boundary nodes' committed sub-sums in O(log n).
+    /// - Each value tree under it is laid out as a `SumTree` (so the
+    ///   property-name aggregate combines per-value sums cleanly).
+    /// - Sibling continuations inside each value tree (compound-index
+    ///   suffixes) are wrapped with `Element::NonCountedItemWithSumItem`
+    ///   so their sums don't pollute the value tree's running sum.
+    ///
+    /// `range_summable: true` requires `summable` to be `Some` (it's
+    /// additive on top of summable, not a replacement). Mutually
+    /// compatible with `countable` and `range_countable` — combining
+    /// the flags promotes the tree to a `ProvableCountSumTree` so a
+    /// single tree carries both metrics. The dispatcher in
+    /// `packages/rs-drive/src/drive/document/primary_key_tree_type.rs`
+    /// picks the appropriate variant.
+    pub range_summable: bool,
 }
 
 impl Index {
@@ -549,6 +592,8 @@ impl TryFrom<&[(Value, Value)]> for Index {
         let mut index_properties: Vec<IndexProperty> = Vec::new();
         let mut countable = IndexCountability::NotCountable;
         let mut range_countable = false;
+        let mut summable: Option<String> = None;
+        let mut range_summable = false;
 
         for (key_value, value_value) in index_type_value_map {
             let key = key_value.to_str()?;
@@ -705,6 +750,34 @@ impl TryFrom<&[(Value, Value)]> for Index {
                                 "rangeCountable value must be a boolean".to_string(),
                             ))?;
                 }
+                "summable" => {
+                    // `summable` names the integer property whose value-per-
+                    // document contributes to the index's running sum. Two
+                    // accepted shapes:
+                    //   - `null` → not summable (same as omitting the key).
+                    //   - string → property name (must exist on the doctype,
+                    //     be `type: integer`, and appear in `required`;
+                    //     enforced by higher-level doctype validation).
+                    summable = match value_value {
+                        Value::Null => None,
+                        Value::Text(s) => Some(s.clone()),
+                        _ => {
+                            return Err(DataContractError::ValueWrongType(
+                                "summable value must be a string naming an integer property, \
+                                 or null"
+                                    .to_string(),
+                            ))
+                        }
+                    };
+                }
+                "rangeSummable" => {
+                    range_summable =
+                        value_value
+                            .as_bool()
+                            .ok_or(DataContractError::ValueWrongType(
+                                "rangeSummable value must be a boolean".to_string(),
+                            ))?;
+                }
                 "properties" => {
                     let properties =
                         value_value
@@ -752,6 +825,20 @@ impl TryFrom<&[(Value, Value)]> for Index {
             ));
         }
 
+        // `rangeSummable` is additive on top of `summable`: it changes how
+        // the index's tree is laid out (property-name → ProvableSumTree,
+        // value level → SumTree, sibling continuations →
+        // NonCountedItemWithSumItem) so that range-sum queries can be
+        // answered in O(log n). It's meaningless without the underlying
+        // summability.
+        if range_summable && summable.is_none() {
+            return Err(DataContractError::InvalidContractStructure(
+                "rangeSummable requires summable to be set to a property name; \
+                 range-sum queries only make sense on a sum-bearing index"
+                    .to_string(),
+            ));
+        }
+
         // if the index didn't have a name let's make one
         let name = name.unwrap_or_else(|| Alphanumeric.sample_string(&mut rand::thread_rng(), 24));
 
@@ -763,6 +850,8 @@ impl TryFrom<&[(Value, Value)]> for Index {
             contested_index,
             countable,
             range_countable,
+            summable,
+            range_summable,
         })
     }
 }
@@ -818,6 +907,8 @@ mod tests {
             contested_index: None,
             countable: IndexCountability::NotCountable,
             range_countable: false,
+            summable: None,
+            range_summable: false,
         }
     }
 

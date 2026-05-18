@@ -78,6 +78,18 @@ pub(crate) mod property_names {
     pub const DECRYPTION_KEY_REQUIREMENTS: &str = "decryptionKeyReqs";
     pub const DOCUMENTS_COUNTABLE: &str = "documentsCountable";
     pub const RANGE_COUNTABLE: &str = "rangeCountable";
+    /// Doctype-level flag naming the property whose values are summed into
+    /// the primary-key tree's running aggregate. When set, the primary-key
+    /// tree is a `SumTree` (or `ProvableSumTree` if [`RANGE_SUMMABLE`] is
+    /// also set), enabling O(1) `sum(named_property)` for the whole
+    /// document type. See `book/src/drive/document-sum-trees.md`.
+    pub const DOCUMENTS_SUMMABLE: &str = "documentsSummable";
+    /// Doctype-level flag upgrading the primary-key sum tree to its
+    /// provable variant (per-node aggregated sums committed to each
+    /// merk-internal node's hash), so range queries on the primary key
+    /// can be answered with an `AggregateSumOnRange` O(log n) proof.
+    /// Requires [`DOCUMENTS_SUMMABLE`] to be set.
+    pub const RANGE_SUMMABLE: &str = "rangeSummable";
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

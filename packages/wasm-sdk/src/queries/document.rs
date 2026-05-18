@@ -602,6 +602,72 @@ impl WasmSdk {
             map, metadata, proof,
         ))
     }
+
+    /// Get aggregated sums of an integer property across documents
+    /// matching a query, optionally grouped by an index field.
+    ///
+    /// Sum-side analog of [`Self::get_documents_count`]. One entry
+    /// point per `[plain | withProofInfo]` variant covers every sum
+    /// mode (`Aggregate` / `GroupByIn` / `GroupByRange` /
+    /// `GroupByCompound`); `DocumentSplitSums::fetch` dispatches
+    /// internally on the request shape.
+    ///
+    /// The map values are `bigint` (signed `i64` on the wire); the
+    /// `Aggregate` mode emits a single entry with empty-string key
+    /// carrying the total. `GroupByIn` / `GroupByRange` emit one
+    /// entry per matched group keyed by the hex-encoded canonical
+    /// bytes of the splitting property's value (same convention as
+    /// count's per-In / per-distinct-range maps).
+    ///
+    /// **Status**: skeleton — the `DocumentSplitSums::fetch`
+    /// `FromProof` impl in `drive-proof-verifier` currently returns
+    /// `Error::NotImplemented` until grovedb PR 670 lands the
+    /// `verify_aggregate_sum_query` primitive. The wasm wrapper is
+    /// here so JS / browser callers can encode against the stable
+    /// API surface; calls fail clean with the typed not-implemented
+    /// error until then.
+    #[wasm_bindgen(
+        js_name = "getDocumentsSum",
+        unchecked_return_type = "Map<string, bigint>"
+    )]
+    pub async fn get_documents_sum(
+        &self,
+        query: DocumentsQueryJs,
+        _sum_property: String,
+    ) -> Result<Map, WasmSdkError> {
+        let _ = query;
+        // TODO(sum-feature): mirror `get_documents_count` body —
+        // build a `DocumentQuery` via `parse_documents_count_query`
+        // (or a parallel `parse_documents_sum_query` that injects
+        // `Select::Sum` + `field = sum_property` into the parsed
+        // query), then call `DocumentSplitSums::fetch` and map the
+        // result via a `split_sums_to_js_map` helper paralleling
+        // `split_counts_to_js_map`.
+        Err(WasmSdkError::NotImplemented(
+            "getDocumentsSum — pending grovedb PR 670 (verify_aggregate_sum_query) \
+             and the rs-drive executor bodies in drive_document_sum_query/executors/. \
+             See the rs-drive `grovedb_pr_670` catalog module."
+                .to_string(),
+        ))
+    }
+
+    #[wasm_bindgen(
+        js_name = "getDocumentsSumWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<string, bigint>>"
+    )]
+    pub async fn get_documents_sum_with_proof_info(
+        &self,
+        query: DocumentsQueryJs,
+        _sum_property: String,
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
+        let _ = query;
+        // TODO(sum-feature): mirror `get_documents_count_with_proof_info`.
+        Err(WasmSdkError::NotImplemented(
+            "getDocumentsSumWithProofInfo — pending grovedb PR 670. See \
+             getDocumentsSum for the dependency note."
+                .to_string(),
+        ))
+    }
 }
 
 /// Convert an `Option<DocumentSplitCounts>` into a JS `Map<string, bigint>`.

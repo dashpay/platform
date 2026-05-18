@@ -152,12 +152,42 @@ fn validate_and_route(
             }
             Ok(RoutingDecision::Documents)
         }
-        SelectFunction::Sum => Err(not_yet_implemented(
-            "SELECT SUM (the wire surface accepts SUM(field) so callers \
-             can encode it ahead of server support landing, but the \
-             server doesn't yet evaluate numeric aggregates other than \
-             COUNT)",
-        )),
+        SelectFunction::Sum => {
+            // SELECT SUM(field): routes to
+            // `Drive::execute_document_sum_request` (in
+            // `packages/rs-drive/src/query/drive_document_sum_query/`).
+            // `field` must be non-empty and must name an integer
+            // property on the document type that's covered by either
+            // `documents_summable` (doctype level) or a `summable:
+            // "<field>"` index. Validation lives downstream in
+            // [`crate::query::drive_document_sum_query::drive_dispatcher::detect_sum_mode`].
+            //
+            // **Status**: server-side wiring is the
+            // `RoutingDecision::Sum(...)` variant below; the dispatch
+            // arm in the response-building section (~line 720) routes
+            // the resulting `DocumentSumResponse` into the
+            // `SumResults` proto message added to platform.proto.
+            //
+            // Until the executor bodies in
+            // `drive_document_sum_query/executors/*.rs` are filled in
+            // from their count-side templates, this arm returns
+            // `Error::Drive(DriveError::NotSupported)` from the
+            // dispatcher and the handler propagates it as a typed
+            // user error.
+            if select.field.is_empty() {
+                return Err(QueryError::InvalidArgument(
+                    "SELECT SUM requires a non-empty `field` naming the integer property \
+                     to sum (e.g. `SUM(amount)`). The contract must declare \
+                     `documentsSummable: \"<field>\"` at the document-type level OR a \
+                     `summable: \"<field>\"` index covering the where-clause shape; the \
+                     DPP validator enforces this at contract creation."
+                        .to_string(),
+                ));
+            }
+            Ok(RoutingDecision::Sum {
+                sum_property: select.field.clone(),
+            })
+        }
         SelectFunction::Avg => Err(not_yet_implemented(
             "SELECT AVG (the wire surface accepts AVG(field) so callers \
              can encode it ahead of server support landing, but the \
@@ -336,6 +366,16 @@ fn validate_and_route(
 enum RoutingDecision {
     Documents,
     Count(CountMode),
+    /// `SELECT SUM(field)` routing. `sum_property` is the integer
+    /// property to aggregate; the dispatcher in rs-drive will
+    /// validate that it matches the doctype's `documents_summable`
+    /// or a covering index's `summable: "<field>"`. Added alongside
+    /// the v3 sum-tree feature; the response path emits the
+    /// `SumResults` proto message added to platform.proto in the
+    /// same commit.
+    Sum {
+        sum_property: String,
+    },
 }
 
 /// Test-only: expose the routing decision for unit tests without
@@ -415,6 +455,10 @@ pub(super) fn validate_and_route_for_tests(
         RoutingDecision::Count(CountMode::GroupByIn) => "count_entries_via_in_field",
         RoutingDecision::Count(CountMode::GroupByRange) => "count_entries_via_range_field",
         RoutingDecision::Count(CountMode::GroupByCompound) => "count_entries_via_compound",
+        // v3 sum surface — single label for now (no sub-mode
+        // breakdown like count's). `dispatch_sum_v1` further routes
+        // by where-shape × prove flag.
+        RoutingDecision::Sum { .. } => "sum",
     })
 }
 
@@ -535,7 +579,74 @@ impl<C> Platform<C> {
                 platform_state,
                 platform_version,
             ),
+            RoutingDecision::Sum { sum_property } => self.dispatch_sum_v1(
+                data_contract_id,
+                document_type,
+                where_clauses,
+                order_by_clauses,
+                limit,
+                start,
+                prove,
+                sum_property,
+                platform_state,
+                platform_version,
+            ),
         }
+    }
+
+    /// Dispatch a `select = SUM(field)` request to
+    /// [`crate::query::DriveDocumentSumQuery`]'s server-side executor
+    /// and map the response into a `GetDocumentsResponseV1` carrying a
+    /// `SumResults` payload (or a `Proof` payload when prove=true).
+    ///
+    /// Parallels [`Self::dispatch_count_v1`] line-by-line — same
+    /// request construction, same error → typed-rejection mapping,
+    /// same prove vs no-prove split. Only the response shape mapping
+    /// differs: `DocumentSumResponse::Aggregate(i64)` →
+    /// `SumResults::aggregate_sum`, etc.
+    ///
+    /// **Status**: full body deferred to the same follow-up as the
+    /// rs-drive executor bodies. The skeleton below builds the
+    /// `DocumentSumRequest`, calls `execute_document_sum_request`,
+    /// and propagates the `NotSupported` error the executors
+    /// currently return until grovedb PR 670 lands.
+    #[allow(clippy::too_many_arguments)]
+    fn dispatch_sum_v1(
+        &self,
+        _data_contract_id: dpp::identifier::Identifier,
+        _document_type_name: String,
+        _where_clauses: Vec<crate::query::WhereClause>,
+        _order_by_clauses: Vec<crate::query::OrderClause>,
+        _limit: Option<u32>,
+        _start: Option<Vec<u8>>,
+        _prove: bool,
+        _sum_property: String,
+        _platform_state: &PlatformState,
+        _platform_version: &PlatformVersion,
+    ) -> Result<QueryValidationResult<GetDocumentsResponseV1>, Error> {
+        // TODO(sum-feature): mirror `dispatch_count_v1` body
+        // (~120 lines in this file). The shape:
+        //   1. Look up the contract via
+        //      `self.drive.fetch_contract(...)`.
+        //   2. Resolve the document type via the contract.
+        //   3. Build a `DocumentSumRequest` carrying the
+        //      `sum_property` plus the where/order/limit/start/prove
+        //      fields parsed above.
+        //   4. Call
+        //      `self.drive.execute_document_sum_request(request, None,
+        //       platform_version)`.
+        //   5. Map the `DocumentSumResponse` variants into the proto
+        //      response (`SumResults::aggregate_sum`,
+        //      `SumResults::entries`, or `Proof`).
+        Err(Error::Query(QueryError::NotYetImplemented(
+            "SELECT SUM dispatcher: routing landed; server-side execution waits on \
+             the rs-drive executor bodies in \
+             packages/rs-drive/src/query/drive_document_sum_query/executors/* \
+             being ported from their count-side analogs, and on grovedb PR 670 for \
+             the range-prove path. Track via the grovedb_pr_670.rs catalog in \
+             rs-drive."
+                .to_string(),
+        )))
     }
 
     /// Forward a `select = DOCUMENTS` request through the shared

@@ -486,6 +486,12 @@ impl LowLevelDriveOperation {
         tree_type: TreeType,
         storage_flags: Option<&StorageFlags>,
     ) -> Result<Self, Error> {
+        // Per grovedb PR 670, `Element::new_non_counted` only wraps
+        // count-bearing trees — provable-count parents reject the
+        // wrapper at the merk-layer insert guard, and sum-bearing
+        // trees use dedicated `NotSummed` / `NotCountedOrSummed`
+        // wrappers (see [`Self::for_known_path_key_empty_not_summed_tree`]
+        // / [`Self::for_known_path_key_empty_not_counted_or_summed_tree`]).
         let element_flags = storage_flags.map(|s| s.to_element_flags());
         let inner = match tree_type {
             TreeType::NormalTree => Element::empty_tree_with_flags(element_flags),
@@ -495,12 +501,181 @@ impl LowLevelDriveOperation {
             }
             _ => {
                 return Err(Error::Drive(DriveError::NotSupported(
-                    "NonCounted-wrapping is only supported for NormalTree, CountTree, and ProvableCountTree",
+                    "NonCounted-wrapping is only supported for NormalTree, CountTree, and \
+                     ProvableCountTree. For sum-bearing continuations under a sum or \
+                     count+sum parent, use `for_known_path_key_empty_not_summed_tree` or \
+                     `for_known_path_key_empty_not_counted_or_summed_tree` instead.",
                 )));
             }
         };
         let tree = Element::new_non_counted(inner)
-            .expect("new_non_counted only fails when wrapping another NonCounted");
+            .expect("new_non_counted only fails when wrapping another wrapper variant");
+        Ok(LowLevelDriveOperation::insert_for_known_path_key_element(
+            path, key, tree,
+        ))
+    }
+
+    /// Sets `GroveOperation` for inserting an empty sum-bearing tree
+    /// wrapped in `Element::NotSummed` (grovedb PR 670). The wrapper
+    /// makes the inserted subtree contribute 0 to a parent sum tree's
+    /// running sum while still allowing any count it carries to
+    /// propagate normally. Used by the index walker for continuation
+    /// property-name trees inside a `summable`-but-not-`countable`
+    /// value tree. For continuations under a count+sum parent, use
+    /// [`Self::for_known_path_key_empty_not_counted_or_summed_tree`].
+    pub fn for_known_path_key_empty_not_summed_tree(
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        tree_type: TreeType,
+        storage_flags: Option<&StorageFlags>,
+    ) -> Result<Self, Error> {
+        let element_flags = storage_flags.map(|s| s.to_element_flags());
+        let inner = match tree_type {
+            TreeType::SumTree => Element::empty_sum_tree_with_flags(element_flags),
+            TreeType::BigSumTree => Element::empty_big_sum_tree_with_flags(element_flags),
+            TreeType::ProvableSumTree => Element::empty_provable_sum_tree_with_flags(element_flags),
+            TreeType::CountSumTree => Element::empty_count_sum_tree_with_flags(element_flags),
+            TreeType::ProvableCountSumTree => {
+                Element::empty_provable_count_sum_tree_with_flags(element_flags)
+            }
+            TreeType::ProvableCountProvableSumTree => {
+                Element::empty_provable_count_provable_sum_tree_with_flags(element_flags)
+            }
+            _ => {
+                return Err(Error::Drive(DriveError::NotSupported(
+                    "NotSummed-wrapping is only supported for the six sum-bearing tree \
+                     variants (SumTree, BigSumTree, ProvableSumTree, CountSumTree, \
+                     ProvableCountSumTree, ProvableCountProvableSumTree).",
+                )));
+            }
+        };
+        let tree = Element::new_not_summed(inner).map_err(|_| {
+            Error::Drive(DriveError::NotSupported(
+                "Element::new_not_summed rejected the inner tree (unreachable given the \
+                 match above).",
+            ))
+        })?;
+        Ok(LowLevelDriveOperation::insert_for_known_path_key_element(
+            path, key, tree,
+        ))
+    }
+
+    /// Sets `GroveOperation` for inserting an empty inner tree wrapped
+    /// in the wrapper variant appropriate for an `aggregating_parent_tree_type`.
+    ///
+    /// Dispatcher around the three concrete wrapper helpers
+    /// ([`Self::for_known_path_key_empty_non_counted_tree`] /
+    /// [`Self::for_known_path_key_empty_not_summed_tree`] /
+    /// [`Self::for_known_path_key_empty_not_counted_or_summed_tree`])
+    /// keyed on **the parent's** tree type — the wrapper exists to
+    /// suppress contribution to the parent's aggregate, so the parent's
+    /// kind picks the wrapper:
+    /// - Pure count parents (`CountTree` / `ProvableCountTree`) →
+    ///   `Element::NonCounted`.
+    /// - Pure sum parents (`SumTree` / `BigSumTree` / `ProvableSumTree`)
+    ///   → `Element::NotSummed`.
+    /// - Combined count+sum parents (`CountSumTree` /
+    ///   `ProvableCountSumTree` / `ProvableCountProvableSumTree`) →
+    ///   `Element::NotCountedOrSummed`.
+    /// - Non-aggregating parents (`NormalTree`, etc.) — no wrapping
+    ///   needed; caller should use
+    ///   [`crate::fees::op::LowLevelDriveOperationTreeTypeConverter::empty_tree_operation_for_known_path_key`]
+    ///   directly. This dispatcher rejects them with `NotSupported`
+    ///   so an upstream bug surfaces immediately rather than silently
+    ///   emitting an unwrapped child that pollutes a future parent.
+    ///
+    /// `inner_tree_type` is the tree variant being inserted under the
+    /// parent — typically a property-name continuation tree
+    /// (`NormalTree` / `CountTree` / `ProvableCountTree` / their
+    /// sum-bearing siblings).
+    pub fn for_known_path_key_empty_tree_under_aggregating_parent(
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        aggregating_parent_tree_type: TreeType,
+        inner_tree_type: TreeType,
+        storage_flags: Option<&StorageFlags>,
+    ) -> Result<Self, Error> {
+        match aggregating_parent_tree_type {
+            // Count-only parents — wrap so the inner contributes 0 to
+            // the parent's count. The inner can be plain or itself
+            // count-bearing; the helper validates accepted variants.
+            TreeType::CountTree | TreeType::ProvableCountTree => {
+                Self::for_known_path_key_empty_non_counted_tree(
+                    path,
+                    key,
+                    inner_tree_type,
+                    storage_flags,
+                )
+            }
+            // Sum-only parents — wrap so the inner contributes 0 to
+            // the parent's sum. Inner must be sum-bearing (see
+            // `for_known_path_key_empty_not_summed_tree`'s accepted set).
+            TreeType::SumTree | TreeType::BigSumTree | TreeType::ProvableSumTree => {
+                Self::for_known_path_key_empty_not_summed_tree(
+                    path,
+                    key,
+                    inner_tree_type,
+                    storage_flags,
+                )
+            }
+            // Combined count+sum parents — wrap so both axes contribute
+            // 0. Inner must be sum-bearing.
+            TreeType::CountSumTree
+            | TreeType::ProvableCountSumTree
+            | TreeType::ProvableCountProvableSumTree => {
+                Self::for_known_path_key_empty_not_counted_or_summed_tree(
+                    path,
+                    key,
+                    inner_tree_type,
+                    storage_flags,
+                )
+            }
+            _ => Err(Error::Drive(DriveError::NotSupported(
+                "for_known_path_key_empty_tree_under_aggregating_parent called with a \
+                 non-aggregating parent tree type — caller should use the unwrapped \
+                 `empty_tree_operation_for_known_path_key` path instead.",
+            ))),
+        }
+    }
+
+    /// Sets `GroveOperation` for inserting an empty sum-bearing tree
+    /// wrapped in `Element::NotCountedOrSummed` (grovedb PR 670).
+    /// Suppresses BOTH count and sum propagation to the parent — used
+    /// for continuation property-name trees under a count+sum
+    /// aggregating value tree (CountSumTree / ProvableCountSumTree /
+    /// ProvableCountProvableSumTree). Same accepted inner-type set as
+    /// [`Self::for_known_path_key_empty_not_summed_tree`].
+    pub fn for_known_path_key_empty_not_counted_or_summed_tree(
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        tree_type: TreeType,
+        storage_flags: Option<&StorageFlags>,
+    ) -> Result<Self, Error> {
+        let element_flags = storage_flags.map(|s| s.to_element_flags());
+        let inner = match tree_type {
+            TreeType::SumTree => Element::empty_sum_tree_with_flags(element_flags),
+            TreeType::BigSumTree => Element::empty_big_sum_tree_with_flags(element_flags),
+            TreeType::ProvableSumTree => Element::empty_provable_sum_tree_with_flags(element_flags),
+            TreeType::CountSumTree => Element::empty_count_sum_tree_with_flags(element_flags),
+            TreeType::ProvableCountSumTree => {
+                Element::empty_provable_count_sum_tree_with_flags(element_flags)
+            }
+            TreeType::ProvableCountProvableSumTree => {
+                Element::empty_provable_count_provable_sum_tree_with_flags(element_flags)
+            }
+            _ => {
+                return Err(Error::Drive(DriveError::NotSupported(
+                    "NotCountedOrSummed-wrapping is only supported for the six sum-bearing \
+                     tree variants — see `for_known_path_key_empty_not_summed_tree`.",
+                )));
+            }
+        };
+        let tree = Element::new_not_counted_or_summed(inner).map_err(|_| {
+            Error::Drive(DriveError::NotSupported(
+                "Element::new_not_counted_or_summed rejected the inner tree (unreachable \
+                 given the match above).",
+            ))
+        })?;
         Ok(LowLevelDriveOperation::insert_for_known_path_key_element(
             path, key, tree,
         ))
@@ -518,6 +693,86 @@ impl LowLevelDriveOperation {
                 storage_flags.to_some_element_flags(),
             ),
             None => Element::empty_provable_count_tree(),
+        };
+
+        LowLevelDriveOperation::insert_for_known_path_key_element(path, key, tree)
+    }
+
+    /// Sets `GroveOperation` for inserting an empty provable sum tree at
+    /// the given path and key. The provable variant commits aggregated
+    /// sub-sums to every internal merk node, enabling O(log n)
+    /// `AggregateSumOnRange` proofs over range queries on the property
+    /// whose values feed the tree.
+    ///
+    /// Used by the index walker for property-name trees of indexes that
+    /// declare `rangeSummable: true` (mirrors the count-side
+    /// [`Self::for_known_path_key_empty_provable_count_tree`]).
+    pub fn for_known_path_key_empty_provable_sum_tree(
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        storage_flags: Option<&StorageFlags>,
+    ) -> Self {
+        let tree = match storage_flags {
+            Some(storage_flags) => Element::new_provable_sum_tree_with_flags(
+                None,
+                storage_flags.to_some_element_flags(),
+            ),
+            None => Element::empty_provable_sum_tree(),
+        };
+
+        LowLevelDriveOperation::insert_for_known_path_key_element(path, key, tree)
+    }
+
+    /// Sets `GroveOperation` for inserting an empty provable
+    /// count-sum tree at the given path and key. **Pre-PR-670
+    /// variant**: per-node counts committed to every internal merk
+    /// node, but the sum is only carried at the root (not per-node).
+    /// Use this when an index declares `rangeCountable: true` plus
+    /// non-range `summable: "<prop>"` — count queries get the
+    /// `AggregateCountOnRange` benefit while sum queries return only
+    /// the root total.
+    pub fn for_known_path_key_empty_provable_count_sum_tree(
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        storage_flags: Option<&StorageFlags>,
+    ) -> Self {
+        let tree = match storage_flags {
+            Some(storage_flags) => Element::new_provable_count_sum_tree_with_flags(
+                None,
+                storage_flags.to_some_element_flags(),
+            ),
+            None => Element::empty_provable_count_sum_tree(),
+        };
+
+        LowLevelDriveOperation::insert_for_known_path_key_element(path, key, tree)
+    }
+
+    /// Sets `GroveOperation` for inserting an empty
+    /// **provable-count-provable-sum** tree (PCPS) at the given path
+    /// and key. The grovedb PR 670 newcomer: **both** per-node counts
+    /// AND per-node sums committed to every internal merk node, so a
+    /// single tree can answer both `AggregateCountOnRange`,
+    /// `AggregateSumOnRange`, AND the new
+    /// `AggregateCountAndSumOnRange` (combined) range queries.
+    ///
+    /// Used by the index walker for property-name trees of indexes
+    /// that declare BOTH `rangeCountable: true` AND `rangeSummable:
+    /// true`, and for primary-key trees that declare both at the
+    /// doctype level. The dispatch table in
+    /// [`crate::drive::document::primary_key_tree_type`]'s v1 arm
+    /// picks `TreeType::ProvableCountProvableSumTree` for these
+    /// cases.
+    pub fn for_known_path_key_empty_provable_count_provable_sum_tree(
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        storage_flags: Option<&StorageFlags>,
+    ) -> Self {
+        let tree = match storage_flags {
+            Some(storage_flags) => Element::new_provable_count_provable_sum_tree_with_flags(
+                None,
+                storage_flags.to_some_element_flags(),
+            ),
+            None => Element::empty_provable_count_provable_sum_tree(),
         };
 
         LowLevelDriveOperation::insert_for_known_path_key_element(path, key, tree)
@@ -582,6 +837,59 @@ impl LowLevelDriveOperation {
                 Element::empty_provable_count_tree_with_flags(storage_flags.to_some_element_flags())
             }
             None => Element::empty_provable_count_tree(),
+        };
+
+        LowLevelDriveOperation::insert_for_estimated_path_key_element(path, key, tree)
+    }
+
+    /// Cost-estimation analog of
+    /// [`Self::for_known_path_key_empty_provable_sum_tree`]. See its doc.
+    pub fn for_estimated_path_key_empty_provable_sum_tree(
+        path: KeyInfoPath,
+        key: KeyInfo,
+        storage_flags: Option<&StorageFlags>,
+    ) -> Self {
+        let tree = match storage_flags {
+            Some(storage_flags) => {
+                Element::empty_provable_sum_tree_with_flags(storage_flags.to_some_element_flags())
+            }
+            None => Element::empty_provable_sum_tree(),
+        };
+
+        LowLevelDriveOperation::insert_for_estimated_path_key_element(path, key, tree)
+    }
+
+    /// Cost-estimation analog of
+    /// [`Self::for_known_path_key_empty_provable_count_sum_tree`]. See its
+    /// doc.
+    pub fn for_estimated_path_key_empty_provable_count_sum_tree(
+        path: KeyInfoPath,
+        key: KeyInfo,
+        storage_flags: Option<&StorageFlags>,
+    ) -> Self {
+        let tree = match storage_flags {
+            Some(storage_flags) => Element::empty_provable_count_sum_tree_with_flags(
+                storage_flags.to_some_element_flags(),
+            ),
+            None => Element::empty_provable_count_sum_tree(),
+        };
+
+        LowLevelDriveOperation::insert_for_estimated_path_key_element(path, key, tree)
+    }
+
+    /// Cost-estimation analog of
+    /// [`Self::for_known_path_key_empty_provable_count_provable_sum_tree`].
+    /// See its doc.
+    pub fn for_estimated_path_key_empty_provable_count_provable_sum_tree(
+        path: KeyInfoPath,
+        key: KeyInfo,
+        storage_flags: Option<&StorageFlags>,
+    ) -> Self {
+        let tree = match storage_flags {
+            Some(storage_flags) => Element::empty_provable_count_provable_sum_tree_with_flags(
+                storage_flags.to_some_element_flags(),
+            ),
+            None => Element::empty_provable_count_provable_sum_tree(),
         };
 
         LowLevelDriveOperation::insert_for_estimated_path_key_element(path, key, tree)
@@ -694,6 +1002,9 @@ impl LowLevelDriveOperationTreeTypeConverter for TreeType {
             }
             TreeType::ProvableCountSumTree => {
                 Element::empty_provable_count_sum_tree_with_flags(element_flags)
+            }
+            TreeType::ProvableCountProvableSumTree => {
+                Element::empty_provable_count_provable_sum_tree_with_flags(element_flags)
             }
             TreeType::ProvableSumTree => Element::empty_provable_sum_tree_with_flags(element_flags),
             TreeType::CommitmentTree(chunk_power) => {
