@@ -1,34 +1,46 @@
 //! Mock-based integration tests for the SDK count-fetch paths.
 //!
-//! Live-devnet end-to-end coverage requires test vectors generated against a
-//! running platform; for now we exercise the SDK ↔ mock-DAPI path which proves
-//! that:
-//!   - `DocumentCountQuery` builds + serializes through the mock transport
-//!     for every supported request shape (Total, `In`, distinct-range)
-//!   - `Fetch for DocumentCount` and `Fetch for DocumentSplitCounts`
-//!     correctly thread the query, response, and mock expectations
-//!   - `MockResponse for DocumentCount` round-trips a `u64` count
-//!   - `MockResponse for DocumentSplitCounts` round-trips per-`(in_key, key)`
-//!     entries (the split-count proof shape produced on `PointLookupProof` /
-//!     `RangeDistinctProof` server-side paths)
+//! `DocumentCount::fetch(sdk, query)` and
+//! `DocumentSplitCounts::fetch(sdk, query)` both consume a
+//! [`DocumentQuery`] (the same type used by
+//! `Document::fetch_many`), with the count-specific shape
+//! signalled via `.with_select(SelectProjection::count_star())` + optional
+//! `.with_group_by(…)`. This file exercises the SDK ↔ mock-DAPI
+//! seam:
 //!
-//! The mock transport short-circuits the wire-level verifier path, so these
-//! tests don't exercise proof bytes; they pin the SDK seam — query builder →
-//! `TryInto<GetDocumentsCountRequest>` → mock match → `MockResponse` decode →
-//! `Fetch` return type — which is exactly the surface that earlier SDK-only
-//! regressions on this PR slipped through unnoticed.
+//! - `DocumentQuery` builds + serializes through the mock
+//!   transport for every supported request shape (total, `In`-
+//!   grouped, distinct-range).
+//! - `Fetch for DocumentCount` and `Fetch for DocumentSplitCounts`
+//!   correctly thread the query, response, and mock expectations.
+//! - `MockResponse for DocumentCount` round-trips a `u64`.
+//! - `MockResponse for DocumentSplitCounts` round-trips
+//!   per-`(in_key, key)` entries.
+//!
+//! The mock transport short-circuits the wire-level verifier
+//! path, so these tests pin the SDK seam — query builder →
+//! `TryInto<GetDocumentsRequest>` → mock match → `MockResponse`
+//! decode → `Fetch` return type. Anything that ships only
+//! through the live-network path is out of scope here.
+//!
+//! Because `DocumentQuery` is the `Request` type for three
+//! different `Fetch` impls (`Document`, `DocumentCount`,
+//! `DocumentSplitCounts`), each `expect_fetch` call carries an
+//! explicit turbofish so the mock recorder knows which response
+//! type to register.
 
 use std::sync::Arc;
 
 use super::common::{mock_data_contract, mock_document_type};
 use dash_sdk::{
-    platform::{documents::document_count_query::DocumentCountQuery, Fetch},
+    platform::{documents::document_query::DocumentQuery, Fetch},
     Sdk,
 };
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::platform_value::Value;
 use drive::query::conditions::{WhereClause, WhereOperator};
 use drive::query::ordering::OrderClause;
+use drive::query::SelectProjection;
 use drive_proof_verifier::{DocumentCount, DocumentSplitCounts, SplitCountEntry};
 
 #[tokio::test]
@@ -37,13 +49,14 @@ async fn test_mock_fetch_document_count_returns_expected() {
 
     let document_type = mock_document_type();
     let data_contract = mock_data_contract(Some(&document_type));
-    let query = DocumentCountQuery::new(Arc::new(data_contract), document_type.name())
-        .expect("build DocumentCountQuery");
+    let query = DocumentQuery::new(Arc::new(data_contract), document_type.name())
+        .expect("build DocumentQuery")
+        .with_select(SelectProjection::count_star());
 
     let expected = DocumentCount(7);
 
     sdk.mock()
-        .expect_fetch(query.clone(), Some(expected.clone()))
+        .expect_fetch::<DocumentCount, _>(query.clone(), Some(expected.clone()))
         .await
         .expect("expectation should be added");
 
@@ -62,13 +75,14 @@ async fn test_mock_fetch_document_count_zero() {
 
     let document_type = mock_document_type();
     let data_contract = mock_data_contract(Some(&document_type));
-    let query = DocumentCountQuery::new(Arc::new(data_contract), document_type.name())
-        .expect("build DocumentCountQuery");
+    let query = DocumentQuery::new(Arc::new(data_contract), document_type.name())
+        .expect("build DocumentQuery")
+        .with_select(SelectProjection::count_star());
 
     let expected = DocumentCount(0);
 
     sdk.mock()
-        .expect_fetch(query.clone(), Some(expected.clone()))
+        .expect_fetch::<DocumentCount, _>(query.clone(), Some(expected.clone()))
         .await
         .expect("expectation should be added");
 
@@ -86,11 +100,12 @@ async fn test_mock_fetch_document_count_not_found() {
 
     let document_type = mock_document_type();
     let data_contract = mock_data_contract(Some(&document_type));
-    let query = DocumentCountQuery::new(Arc::new(data_contract), document_type.name())
-        .expect("build DocumentCountQuery");
+    let query = DocumentQuery::new(Arc::new(data_contract), document_type.name())
+        .expect("build DocumentQuery")
+        .with_select(SelectProjection::count_star());
 
     sdk.mock()
-        .expect_fetch(query.clone(), None as Option<DocumentCount>)
+        .expect_fetch::<DocumentCount, _>(query.clone(), None as Option<DocumentCount>)
         .await
         .expect("expectation should be added");
 
@@ -101,29 +116,22 @@ async fn test_mock_fetch_document_count_not_found() {
     assert!(retrieved.is_none());
 }
 
-/// `DocumentSplitCounts::fetch` with an `In` where-clause exercises the SDK
-/// seam that routes `(In, prove=true, no-range)` requests to the
-/// `PointLookupProof` server path and decodes the response as per-`In`-value
-/// entries.
-///
-/// Pins:
-/// - `DocumentCountQuery::with_where(in_clause)` builds and serializes
-///   through `TryInto<GetDocumentsCountRequest>` without rejecting the
-///   In operator.
-/// - `Fetch for DocumentSplitCounts` correctly returns the mocked
-///   per-`(in_key, key)` entries.
-/// - `MockResponse for DocumentSplitCounts` round-trips `Vec<SplitCountEntry>`
-///   with `in_key: None`, `key: <serialized_in_value>`, and `count` for the
-///   point-lookup shape (this is the on-the-wire shape produced by
-///   `verify_point_lookup_count_proof`).
+/// `DocumentSplitCounts::fetch` with an `In` where-clause +
+/// explicit `with_group_by("a")` exercises the SDK seam that
+/// routes `(In, prove=true, group_by=[in_field])` requests to
+/// the server's `PointLookupProof` dispatch and decodes the
+/// response as per-`In`-value entries. The same `(In, prove=true)`
+/// request with empty `group_by` would route to the aggregate
+/// path instead — the `group_by` field is what selects the
+/// per-value shape.
 #[tokio::test]
 async fn test_mock_fetch_document_split_counts_with_in_clause() {
     let mut sdk = Sdk::new_mock();
 
     let document_type = mock_document_type();
     let data_contract = mock_data_contract(Some(&document_type));
-    let query = DocumentCountQuery::new(Arc::new(data_contract), document_type.name())
-        .expect("build DocumentCountQuery")
+    let query = DocumentQuery::new(Arc::new(data_contract), document_type.name())
+        .expect("build DocumentQuery")
         .with_where(WhereClause {
             field: "a".to_string(),
             operator: WhereOperator::In,
@@ -131,26 +139,25 @@ async fn test_mock_fetch_document_split_counts_with_in_clause() {
                 Value::Text("alpha".to_string()),
                 Value::Text("beta".to_string()),
             ]),
-        });
+        })
+        .with_select(SelectProjection::count_star())
+        .with_group_by("a");
 
-    // Mock the wire-shape entries the SDK would receive from a server-side
-    // `PointLookupProof` proof verification: one entry per In branch with
-    // a non-zero count, sorted lex-asc by the point-lookup builder.
     let expected = DocumentSplitCounts::from_verified(vec![
         SplitCountEntry {
             in_key: None,
             key: b"alpha".to_vec(),
-            count: 7,
+            count: Some(7),
         },
         SplitCountEntry {
             in_key: None,
             key: b"beta".to_vec(),
-            count: 3,
+            count: Some(3),
         },
     ]);
 
     sdk.mock()
-        .expect_fetch(query.clone(), Some(expected.clone()))
+        .expect_fetch::<DocumentSplitCounts, _>(query.clone(), Some(expected.clone()))
         .await
         .expect("expectation should be added");
 
@@ -161,33 +168,22 @@ async fn test_mock_fetch_document_split_counts_with_in_clause() {
 
     assert_eq!(retrieved, expected);
     assert_eq!(retrieved.0.len(), 2);
-    let summed: u64 = retrieved.0.iter().map(|e| e.count).sum();
+    let summed: u64 = retrieved.0.iter().map(|e| e.count.unwrap_or(0)).sum();
     assert_eq!(summed, 10, "alpha(7) + beta(3) = 10 docs");
 }
 
-/// `DocumentSplitCounts::fetch` with `with_distinct_counts_in_range(true)`
-/// on a range query exercises the SDK seam that routes
-/// `(range, prove=true, distinct=true)` requests to the
-/// `RangeDistinctProof` server path and decodes the response as
-/// per-distinct-value entries.
-///
-/// Pins:
-/// - `DocumentCountQuery::with_distinct_counts_in_range(true)` + a range
-///   operator builds and serializes — both knobs reach the wire request.
-/// - `Fetch for DocumentSplitCounts` returns the mocked per-distinct-value
-///   entries unchanged.
-/// - `with_limit(Some(N))` and `with_order_by(desc)` thread through the
-///   query without altering the response decode path; the limit / direction
-///   are wire-level controls for the server-side walk, not client-side
-///   filtering.
+/// `DocumentSplitCounts::fetch` with a range clause + explicit
+/// `with_group_by(range_field)` exercises the SDK seam that
+/// routes `(range, prove=true, group_by=[range_field])`
+/// requests to the server's `RangeDistinctProof` dispatch.
 #[tokio::test]
 async fn test_mock_fetch_document_split_counts_with_distinct_range() {
     let mut sdk = Sdk::new_mock();
 
     let document_type = mock_document_type();
     let data_contract = mock_data_contract(Some(&document_type));
-    let query = DocumentCountQuery::new(Arc::new(data_contract), document_type.name())
-        .expect("build DocumentCountQuery")
+    let query = DocumentQuery::new(Arc::new(data_contract), document_type.name())
+        .expect("build DocumentQuery")
         .with_where(WhereClause {
             field: "a".to_string(),
             operator: WhereOperator::GreaterThan,
@@ -197,27 +193,25 @@ async fn test_mock_fetch_document_split_counts_with_distinct_range() {
             field: "a".to_string(),
             ascending: false,
         })
-        .with_distinct_counts_in_range(true)
-        .with_limit(Some(50));
+        .with_select(SelectProjection::count_star())
+        .with_group_by("a")
+        .with_limit(50);
 
-    // Mock the wire-shape entries from a server-side `RangeDistinctProof`
-    // proof verification: per-distinct-value-in-range entries, descending
-    // by terminator value because the request set `ascending: false`.
     let expected = DocumentSplitCounts::from_verified(vec![
         SplitCountEntry {
             in_key: None,
             key: b"red".to_vec(),
-            count: 12,
+            count: Some(12),
         },
         SplitCountEntry {
             in_key: None,
             key: b"green".to_vec(),
-            count: 8,
+            count: Some(8),
         },
     ]);
 
     sdk.mock()
-        .expect_fetch(query.clone(), Some(expected.clone()))
+        .expect_fetch::<DocumentSplitCounts, _>(query.clone(), Some(expected.clone()))
         .await
         .expect("expectation should be added");
 
@@ -227,55 +221,39 @@ async fn test_mock_fetch_document_split_counts_with_distinct_range() {
         .expect("split counts should be present");
 
     assert_eq!(retrieved, expected);
-    // Verify pagination knobs round-trip without disturbing the entry list.
     assert_eq!(retrieved.0.len(), 2);
     assert_eq!(retrieved.0[0].key, b"red");
     assert_eq!(retrieved.0[1].key, b"green");
 }
 
-/// `DocumentCount::fetch` with `with_distinct_counts_in_range(true)`
-/// on a range query exercises the SDK seam that routes through the
-/// `RangeDistinctProof` verifier and sums the verified per-key
-/// entries to produce a single aggregate count.
-///
-/// Before this fix, `FromProof<DocumentCountQuery> for DocumentCount`
-/// routed every range query through `verify_aggregate_count_proof`,
-/// ignoring `return_distinct_counts_in_range`. The server emits a
-/// regular range proof (`KVCount` ops) when `distinct = true`, not
-/// an `AggregateCountOnRange` proof, so the aggregate verifier
-/// rebuilds a different `PathQuery` and verification fails outright.
-///
-/// Pin: `DocumentCount::fetch` with `with_distinct_counts_in_range(true)`
-/// returns the correct aggregate (sum of per-key counts) via the
-/// mock transport. Any future regression to a single-verifier path
-/// would either misroute distinct queries back to the aggregate
-/// verifier (verification failure) or stop summing the per-key
-/// counts (wrong result).
+/// `DocumentCount::fetch` with a range clause + explicit
+/// `with_group_by(range_field)` exercises the SDK seam that
+/// routes through the `RangeDistinctProof` verifier and sums
+/// the verified per-key entries to produce a single aggregate
+/// count. The non-grouped range path returns an
+/// `AggregateCountOnRange` proof shape that's NOT interchangeable
+/// with the distinct path, so it matters that `group_by` drives
+/// the dispatch even when the caller asks for a single `u64`.
 #[tokio::test]
 async fn test_mock_fetch_document_count_with_distinct_range_sums_entries() {
     let mut sdk = Sdk::new_mock();
 
     let document_type = mock_document_type();
     let data_contract = mock_data_contract(Some(&document_type));
-    let query = DocumentCountQuery::new(Arc::new(data_contract), document_type.name())
-        .expect("build DocumentCountQuery")
+    let query = DocumentQuery::new(Arc::new(data_contract), document_type.name())
+        .expect("build DocumentQuery")
         .with_where(WhereClause {
             field: "a".to_string(),
             operator: WhereOperator::GreaterThan,
             value: Value::Text("blue".to_string()),
         })
-        .with_distinct_counts_in_range(true);
+        .with_select(SelectProjection::count_star())
+        .with_group_by("a");
 
-    // The mock transport short-circuits proof verification — we
-    // assert on the `DocumentCount` aggregate the SDK returns
-    // when the FromProof impl correctly dispatches to the distinct
-    // verifier path. With a sum of 12+8 = 20, a regression that
-    // routes back through the aggregate verifier would either
-    // return a different value or fail to decode at all.
     let expected = DocumentCount(20);
 
     sdk.mock()
-        .expect_fetch(query.clone(), Some(expected.clone()))
+        .expect_fetch::<DocumentCount, _>(query.clone(), Some(expected.clone()))
         .await
         .expect("expectation should be added");
 
@@ -286,4 +264,75 @@ async fn test_mock_fetch_document_count_with_distinct_range_sums_entries() {
 
     assert_eq!(retrieved, expected);
     assert_eq!(retrieved.0, 20);
+}
+
+/// `DocumentSplitCounts` round-trips entries carrying both
+/// `Some(_)` (verified) and `None` (caller asked but verifier was
+/// silent) through the mock transport.
+///
+/// The mock path doesn't exercise the SDK's synthesis logic (that
+/// requires a real proof + verifier), but it pins the wire/mock
+/// shape: a fixture built with mixed `Some` / `None` counts must
+/// survive the mock serialize/deserialize hop unchanged. Any
+/// regression that flattens `None` to `Some(0)` or drops `None`
+/// entries silently would fail here.
+#[tokio::test]
+async fn test_mock_fetch_document_split_counts_preserves_none_for_absent_in_values() {
+    let mut sdk = Sdk::new_mock();
+
+    let document_type = mock_document_type();
+    let data_contract = mock_data_contract(Some(&document_type));
+    let query = DocumentQuery::new(Arc::new(data_contract), document_type.name())
+        .expect("build DocumentQuery")
+        .with_where(WhereClause {
+            field: "a".to_string(),
+            operator: WhereOperator::In,
+            value: Value::Array(vec![
+                Value::Text("alpha".to_string()),
+                Value::Text("beta".to_string()),
+                Value::Text("gamma".to_string()),
+            ]),
+        })
+        .with_select(SelectProjection::count_star())
+        .with_group_by("a");
+
+    // Mixed-shape fixture: `alpha` has a verified count, `beta` is
+    // verified-zero (Some(0) from a hypothetical no-proof path or
+    // a future absence-proof-equipped verifier), `gamma` is
+    // verified-silent (None — the SDK synthesizes this on the
+    // proof path when an In value's CountTree element doesn't
+    // exist in the merk index).
+    let expected = DocumentSplitCounts::from_verified(vec![
+        SplitCountEntry {
+            in_key: None,
+            key: b"alpha".to_vec(),
+            count: Some(7),
+        },
+        SplitCountEntry {
+            in_key: None,
+            key: b"beta".to_vec(),
+            count: Some(0),
+        },
+        SplitCountEntry {
+            in_key: None,
+            key: b"gamma".to_vec(),
+            count: None,
+        },
+    ]);
+
+    sdk.mock()
+        .expect_fetch::<DocumentSplitCounts, _>(query.clone(), Some(expected.clone()))
+        .await
+        .expect("expectation should be added");
+
+    let retrieved = DocumentSplitCounts::fetch(&sdk, query)
+        .await
+        .expect("fetch should succeed")
+        .expect("split counts should be present");
+
+    assert_eq!(retrieved, expected);
+    assert_eq!(retrieved.0.len(), 3);
+    assert_eq!(retrieved.0[0].count, Some(7), "alpha verified count");
+    assert_eq!(retrieved.0[1].count, Some(0), "beta verified zero");
+    assert_eq!(retrieved.0[2].count, None, "gamma absent from proof");
 }

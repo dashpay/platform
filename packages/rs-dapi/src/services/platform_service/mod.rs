@@ -344,12 +344,6 @@ impl Platform for PlatformServiceImpl {
         dapi_grpc::platform::v0::GetDocumentsResponse
     );
 
-    drive_method!(
-        get_documents_count,
-        dapi_grpc::platform::v0::GetDocumentsCountRequest,
-        dapi_grpc::platform::v0::GetDocumentsCountResponse
-    );
-
     // System methods
     drive_method!(
         get_consensus_params,

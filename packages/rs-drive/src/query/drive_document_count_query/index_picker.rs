@@ -101,10 +101,36 @@ impl DriveDocumentCountQuery<'_> {
             .iter()
             .filter(|wc| Self::is_range_operator(wc.operator))
             .collect();
-        if range_clauses.len() != 1 {
-            return None;
-        }
-        let range_clause = range_clauses[0];
+        // Accept either:
+        // - 1 range clause (Q7 / G4 / G5 / G7 — the range is the
+        //   terminator; prefix props use `==` or `In`).
+        // - 2 range clauses on distinct fields (G8 — outer range on
+        //   an index prefix property, inner range on the terminator;
+        //   the carrier-aggregate proof shape introduced by grovedb
+        //   PR #664).
+        let (outer_range_field, terminator_range_clause) = match range_clauses.len() {
+            1 => (None, range_clauses[0]),
+            2 => {
+                // The two ranges must be on different fields — same-
+                // field two-sided ranges are flattened by the parser
+                // into `between*` and arrive with one clause.
+                if range_clauses[0].field == range_clauses[1].field {
+                    return None;
+                }
+                // One of the two must be on an index's terminator; the
+                // other becomes the outer carrier dimension. We pick
+                // the terminator below by walking each candidate
+                // index's property order — defer choosing here.
+                (
+                    Some((
+                        range_clauses[0].field.as_str(),
+                        range_clauses[1].field.as_str(),
+                    )),
+                    range_clauses[0], // placeholder, refined per-index below
+                )
+            }
+            _ => return None,
+        };
 
         // Reject any operator that's neither indexable (Equal/In) nor a
         // range operator — anything else has no defined count semantics.
@@ -125,8 +151,45 @@ impl DriveDocumentCountQuery<'_> {
                 continue;
             }
 
-            // Walk the index properties: prefix matches must come first,
-            // followed by the range property as the LAST element.
+            // For the two-range case, the terminator's field must be
+            // one of the two range fields, and the other range field
+            // must be the index's first property (the carrier
+            // dimension).
+            if let Some((field_a, field_b)) = outer_range_field {
+                let terminator = index.properties.last()?;
+                let first = index.properties.first()?;
+                // Determine which range field is the terminator.
+                let (outer_field, _terminator_field) = if terminator.name == field_a {
+                    (field_b, field_a)
+                } else if terminator.name == field_b {
+                    (field_a, field_b)
+                } else {
+                    continue;
+                };
+                if first.name != outer_field {
+                    continue;
+                }
+                // Any Equal/In prefix clauses must sit between the
+                // first (outer-range) and last (terminator-range)
+                // properties. For the widget contract there are no
+                // such middle properties on byBrandColor, but the
+                // builder handles the general case.
+                let mut intermediate_props_ok = true;
+                for prop in &index.properties[1..index.properties.len() - 1] {
+                    if !prefix_fields.contains(prop.name.as_str()) {
+                        intermediate_props_ok = false;
+                        break;
+                    }
+                }
+                if intermediate_props_ok {
+                    return Some(index);
+                }
+                continue;
+            }
+
+            // Single-range case (the original logic): prefix matches
+            // must come first, followed by the range property as the
+            // LAST element.
             let mut prefix_len = 0usize;
             for prop in &index.properties {
                 if prefix_fields.contains(prop.name.as_str()) {
@@ -143,7 +206,7 @@ impl DriveDocumentCountQuery<'_> {
                 continue;
             }
             let range_prop = &index.properties[prefix_len];
-            if range_prop.name == range_clause.field {
+            if range_prop.name == terminator_range_clause.field {
                 return Some(index);
             }
         }
