@@ -480,12 +480,10 @@ pub async fn setup_with_core_funded_test_wallet(duffs: u64) -> FrameworkResult<S
 
 /// Default deadline for the test wallet's confirmed Core balance to
 /// reach the funding amount in [`setup_with_core_funded_test_wallet`].
-/// 5 minutes mirrors the upper bound on testnet's IS-lock window the
-/// asset-lock manager uses internally
-/// (`asset_lock::manager::create_funded_asset_lock_proof` waits up to
-/// 300 s for a proof) — anything longer is symptomatic of a peer-list
-/// or mn-list problem the harness should surface, not paper over.
-pub const CORE_FUNDING_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+/// 180 s gives ~1.8x margin over the worst observed cold-testnet
+/// success (~100 s); anything longer only pads the failure path and
+/// hides a peer-list or mn-list problem the harness should surface.
+pub const CORE_FUNDING_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(180);
 
 /// Guard returned by [`setup_with_n_identities`]. Wraps the base
 /// [`SetupGuard`] plus the freshly-registered identities.

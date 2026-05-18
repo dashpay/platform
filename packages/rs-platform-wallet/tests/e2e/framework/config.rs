@@ -51,7 +51,7 @@ pub mod vars {
     /// non-zero — the SPV compact-filter scan must have walked past the
     /// bank's pre-funded UTXOs before tests like CR-* / ID-007 can
     /// observe them. Unset (default) enables the gate with a
-    /// [`DEFAULT_BANK_CORE_GATE_TIMEOUT`] (900s) deadline; `0` /
+    /// [`DEFAULT_BANK_CORE_GATE_TIMEOUT`] (180s) deadline; `0` /
     /// `disabled` / `false` / `off` opt out for Platform-only suites
     /// that don't need Core duffs; any positive integer overrides the
     /// timeout (in seconds).
@@ -97,10 +97,10 @@ pub mod vars {
 pub const DEFAULT_IDENTITY_SYNC_INTERVAL: Duration = Duration::from_secs(15);
 
 /// Default deadline for the bank Core funding gate when the env var is
-/// unset. Sized to fit a cold-cache compact-filter scan from genesis on
-/// testnet (~1.47M blocks ≈ 15 min); subsequent runs reuse the on-disk
-/// cache and clear the gate in seconds.
-pub const DEFAULT_BANK_CORE_GATE_TIMEOUT: Duration = Duration::from_secs(900);
+/// unset. 180 s gives ~1.8x margin over the worst observed cold-testnet
+/// success (~100 s); subsequent runs reuse the on-disk cache and clear
+/// the gate in seconds.
+pub const DEFAULT_BANK_CORE_GATE_TIMEOUT: Duration = Duration::from_secs(180);
 
 /// Default minimum bank balance in credits required to start the suite.
 ///
@@ -632,14 +632,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn bank_core_gate_unset_defaults_to_900s() {
+    fn bank_core_gate_unset_defaults_to_180s() {
         let (timeout, src) = parse_bank_core_gate(None);
         assert_eq!(timeout, Some(DEFAULT_BANK_CORE_GATE_TIMEOUT));
         assert_eq!(src, BankCoreGateSource::Default);
     }
 
     #[test]
-    fn bank_core_gate_empty_string_defaults_to_900s() {
+    fn bank_core_gate_empty_string_defaults_to_180s() {
         let (timeout, src) = parse_bank_core_gate(Some(""));
         assert_eq!(timeout, Some(DEFAULT_BANK_CORE_GATE_TIMEOUT));
         assert_eq!(src, BankCoreGateSource::Default);

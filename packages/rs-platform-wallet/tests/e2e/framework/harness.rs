@@ -45,7 +45,7 @@ const SPV_READY_TIMEOUT: Duration = Duration::from_secs(180);
 /// value — any non-zero observation proves the SPV compact-filter scan
 /// has walked far enough to see the bank's pre-funded UTXOs (Marvin's
 /// QA-001). The gate's *timeout* lives on [`Config::bank_core_gate_timeout`]
-/// and defaults to 900s; this constant is just the "any funding visible"
+/// and defaults to 180s; this constant is just the "any funding visible"
 /// floor.
 const BANK_CORE_GATE_MIN_DUFFS: u64 = 1;
 
@@ -431,7 +431,7 @@ impl E2eContext {
         // genesis (~15 min); without the gate, the harness samples
         // `core_balance_confirmed` while the scan is still ~52 s in
         // and any CR-* / ID-007 case using `send_core_to` fails on a
-        // false-zero balance. The gate is *default-on* (900s timeout)
+        // false-zero balance. The gate is *default-on* (180s timeout)
         // so fresh-workdir runs don't race the scan; opt out via
         // `PLATFORM_WALLET_E2E_BANK_CORE_GATE=0` for Platform-only
         // suites that don't need Core duffs.

@@ -3,7 +3,7 @@
 //! Spec: `tests/e2e/TEST_SPEC.md` (### Identity (ID) → ID-002b).
 //! Pinned status: STUB — full test body implemented, `#[ignore]`-tagged
 //! behind the `PLATFORM_WALLET_E2E_BANK_CORE_GATE` env var (same gate
-//! CR-003 uses; default-on, 900 s deadline). Bank Core (Layer-1)
+//! CR-003 uses; default-on, 180 s deadline). Bank Core (Layer-1)
 //! pre-funding required.
 //!
 //! Mirrors `CR-003` (asset-lock-funded registration) but drives the

@@ -46,7 +46,7 @@ const TOTAL_FUNDING: u64 = PER_UTXO_FUNDING * 2;
 
 /// Deadline for each post-broadcast wait. Matches CR-003's
 /// `CORE_FUNDING_TIMEOUT` so cold-cache SPV scans don't false-fail.
-const CORE_BALANCE_TIMEOUT: Duration = Duration::from_secs(300);
+const CORE_BALANCE_TIMEOUT: Duration = Duration::from_secs(180);
 
 /// Headroom (duffs) left unspent by the step-5 send so a real change
 /// UTXO survives on the BIP-32 account. Invariant: the headroom minus the
