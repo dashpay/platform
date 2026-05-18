@@ -52,12 +52,12 @@ enum-map = { version = "2.0.3", optional = true }
 intmap = { version = "3.0.1", features = ["serde"], optional = true }
 chrono = { version = "0.4.35", optional = true }
 itertools = { version = "0.13", optional = true }
-grovedb = { git = "https://github.com/dashpay/grovedb", rev = "e98bab5ff1aa4a5f60f33354646cdf75139a91a4", optional = true, default-features = false }
-grovedb-costs = { git = "https://github.com/dashpay/grovedb", rev = "e98bab5ff1aa4a5f60f33354646cdf75139a91a4", optional = true }
-grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "e98bab5ff1aa4a5f60f33354646cdf75139a91a4" }
-grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "e98bab5ff1aa4a5f60f33354646cdf75139a91a4", optional = true }
-grovedb-version = { git = "https://github.com/dashpay/grovedb", rev = "e98bab5ff1aa4a5f60f33354646cdf75139a91a4" }
-grovedb-epoch-based-storage-flags = { git = "https://github.com/dashpay/grovedb", rev = "e98bab5ff1aa4a5f60f33354646cdf75139a91a4" }
+grovedb = { git = "https://github.com/dashpay/grovedb", rev = "e47626e96288b0052614cffd0451cefcf4b1103d", optional = true, default-features = false }
+grovedb-costs = { git = "https://github.com/dashpay/grovedb", rev = "e47626e96288b0052614cffd0451cefcf4b1103d", optional = true }
+grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "e47626e96288b0052614cffd0451cefcf4b1103d" }
+grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "e47626e96288b0052614cffd0451cefcf4b1103d", optional = true }
+grovedb-version = { git = "https://github.com/dashpay/grovedb", rev = "e47626e96288b0052614cffd0451cefcf4b1103d" }
+grovedb-epoch-based-storage-flags = { git = "https://github.com/dashpay/grovedb", rev = "e47626e96288b0052614cffd0451cefcf4b1103d" }
 
 [dev-dependencies]
 criterion = "0.5"

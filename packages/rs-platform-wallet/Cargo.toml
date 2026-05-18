@@ -48,7 +48,7 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 zeroize = "1"
 
 # Shielded pool (optional, behind `shielded` feature)
-grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "e98bab5ff1aa4a5f60f33354646cdf75139a91a4", optional = true }
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "e47626e96288b0052614cffd0451cefcf4b1103d", optional = true }
 zip32 = { version = "0.2.0", default-features = false, optional = true }
 
 [dev-dependencies]

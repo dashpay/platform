@@ -230,14 +230,27 @@ impl Drive {
                                 .to_vec(),
                             max_size: DEFAULT_HASH_SIZE_U8,
                         },
-                        // TODO(sum-feature, cost): when sum_property_name.is_some(),
-                        // use `Element::required_item_with_sum_item_space` (8
-                        // extra bytes for the i64).
-                        Element::required_item_space(
-                            *max_size,
-                            STORAGE_FLAGS_SIZE,
-                            &drive_version.grove_version,
-                        )?,
+                        // Match the sum-bearing variant the live path
+                        // would have written: `make_document_reference_with_sum_item`
+                        // emits `Element::ReferenceWithSumItem` when
+                        // `sum_property_name.is_some()`. The sum-aware helper
+                        // reserves 10 worst-case bytes for the i64 sum_value.
+                        // Unconditional switch: this entire flow is v12+
+                        // gated (no v11 consensus baseline for sum-bearing
+                        // index refs).
+                        if sum_property_name.is_some() {
+                            Element::required_reference_with_sum_item_space(
+                                *max_size,
+                                STORAGE_FLAGS_SIZE,
+                                &drive_version.grove_version,
+                            )?
+                        } else {
+                            Element::required_item_space(
+                                *max_size,
+                                STORAGE_FLAGS_SIZE,
+                                &drive_version.grove_version,
+                            )?
+                        },
                     )),
                 };
 
@@ -275,13 +288,26 @@ impl Drive {
                                 .to_vec(),
                             max_size: 1,
                         },
-                        // TODO(sum-feature, cost): see the parallel
-                        // note on the non-unique branch above.
-                        Element::required_item_space(
-                            *estimated_size,
-                            STORAGE_FLAGS_SIZE,
-                            &drive_version.grove_version,
-                        )?,
+                        // Parallel to the non-unique branch above: unique
+                        // indexes with `summable: Some(_)` still write a
+                        // `ReferenceWithSumItem` at the terminal `[0]` slot
+                        // when there's any non-null entry (the unique-no-op
+                        // caveat applies only to all-non-null exact matches,
+                        // see book/document-sum-trees.md). The estimated
+                        // worst-case treats the sum-bearing variant.
+                        if sum_property_name.is_some() {
+                            Element::required_reference_with_sum_item_space(
+                                *estimated_size,
+                                STORAGE_FLAGS_SIZE,
+                                &drive_version.grove_version,
+                            )?
+                        } else {
+                            Element::required_item_space(
+                                *estimated_size,
+                                STORAGE_FLAGS_SIZE,
+                                &drive_version.grove_version,
+                            )?
+                        },
                     )),
                 };
 

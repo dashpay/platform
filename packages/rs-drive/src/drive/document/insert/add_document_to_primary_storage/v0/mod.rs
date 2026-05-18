@@ -582,25 +582,53 @@ impl Drive {
                         element,
                     ))
                 }
-                DocumentEstimatedAverageSize(max_size) => PathKeyUnknownElementSize((
-                    KeyInfoPath::from_known_path(primary_key_path),
-                    KeyInfo::MaxKeySize {
-                        unique_id: document_type.unique_id_for_storage().to_vec(),
-                        max_size: DEFAULT_HASH_SIZE_U8,
-                    },
-                    Element::required_item_space(
-                        *max_size,
-                        STORAGE_FLAGS_SIZE,
-                        &platform_version.drive.grove_version,
-                    )?,
-                )),
+                DocumentEstimatedAverageSize(max_size) => {
+                    // When the doctype's primary key tree is sum-bearing
+                    // (`documents_summable: Some(_)`), the inserted element
+                    // is `Element::ItemWithSumItem` — 10 extra bytes for the
+                    // `i64` sum_value over plain `Item`. Use the sum-aware
+                    // helper so dry-run fees match applied fees on
+                    // summable inserts. Unconditional switch is safe: this
+                    // branch only fires under `primary_key_sum_property.is_some()`,
+                    // which is v12+ gated (no v11 consensus baseline).
+                    let elem_size = if primary_key_sum_property.is_some() {
+                        Element::required_item_with_sum_item_space(
+                            *max_size,
+                            STORAGE_FLAGS_SIZE,
+                            &platform_version.drive.grove_version,
+                        )?
+                    } else {
+                        Element::required_item_space(
+                            *max_size,
+                            STORAGE_FLAGS_SIZE,
+                            &platform_version.drive.grove_version,
+                        )?
+                    };
+                    PathKeyUnknownElementSize((
+                        KeyInfoPath::from_known_path(primary_key_path),
+                        KeyInfo::MaxKeySize {
+                            unique_id: document_type.unique_id_for_storage().to_vec(),
+                            max_size: DEFAULT_HASH_SIZE_U8,
+                        },
+                        elem_size,
+                    ))
+                }
             };
             let apply_type = if estimated_costs_only_with_layer_info.is_none() {
                 BatchInsertApplyType::StatefulBatchInsert
             } else {
+                // Include the i64 sum_value (10-byte worst-case varint) in
+                // the stateless target size when the doctype is summable —
+                // mirrors the element-size adjustment above.
+                let base_target = document_type.estimated_size(platform_version)? as u32;
+                let target_size = if primary_key_sum_property.is_some() {
+                    base_target.saturating_add(10)
+                } else {
+                    base_target
+                };
                 BatchInsertApplyType::StatelessBatchInsert {
                     in_tree_type: primary_key_tree_type,
-                    target: QueryTargetValue(document_type.estimated_size(platform_version)? as u32),
+                    target: QueryTargetValue(target_size),
                 }
             };
             let inserted = self.batch_insert_if_not_exists(
