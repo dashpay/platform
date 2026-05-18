@@ -230,8 +230,7 @@ public class PlatformWalletPersistenceHandler {
     /// Utxo records so views observing via `@Query` update automatically.
     func persistWalletChangeset(walletId: Data, changeset: UnsafePointer<WalletChangeSetFFI>) {
         onQueue {
-            // Stale-callback guard — wallet has been deleted.
-            guard let wallet = ensureWalletRecord(walletId: walletId) else { return }
+            guard let wallet = findWalletRecord(walletId: walletId) else { return }
             let cs = changeset.pointee
 
             // Chain update.
@@ -264,14 +263,25 @@ public class PlatformWalletPersistenceHandler {
         }
     }
 
-    /// Find the `PersistentWallet` row for `walletId`. Non-creating —
-    /// returns `nil` when no row exists. The only path that creates a
-    /// row is `persistWalletMetadata`, which fires first in any
-    /// registration changeset (guaranteed by `FFIPersister::store`'s
-    /// dispatch order). Other callbacks arriving for a wallet whose
-    /// row doesn't exist are post-deletion stale callbacks and are
-    /// silently dropped.
-    private func ensureWalletRecord(walletId: Data) -> PersistentWallet? {
+    /// Find or create the `PersistentWallet` row for `walletId`.
+    /// Used only by `persistWalletMetadata`; every other write path
+    /// fetches via `findWalletRecord` and drops on missing so that
+    /// stale post-deletion callbacks can't resurrect a wiped wallet.
+    private func ensureWalletRecord(walletId: Data) -> PersistentWallet {
+        let descriptor = FetchDescriptor<PersistentWallet>(
+            predicate: #Predicate { $0.walletId == walletId }
+        )
+        if let existing = try? backgroundContext.fetch(descriptor).first {
+            return existing
+        }
+        let record = PersistentWallet(walletId: walletId, network: nil)
+        backgroundContext.insert(record)
+        return record
+    }
+
+    /// Find the `PersistentWallet` row for `walletId`. Returns `nil`
+    /// when no row exists.
+    private func findWalletRecord(walletId: Data) -> PersistentWallet? {
         let descriptor = FetchDescriptor<PersistentWallet>(
             predicate: #Predicate { $0.walletId == walletId }
         )
@@ -2026,22 +2036,9 @@ public class PlatformWalletPersistenceHandler {
     /// once at wallet registration with values the Rust side can
     /// contribute but Swift can't easily recompute (network is on the
     /// manager's SDK; birth height is SPV's confirmed tip at creation).
-    ///
-    /// This is the **only** persister callback that materializes a
-    /// `PersistentWallet` row — `FFIPersister::store` dispatches it
-    /// first in any registration changeset, before every other
-    /// per-kind callback. Other callbacks then find the row via
-    /// `ensureWalletRecord` and short-circuit if it's missing (a
-    /// stale callback for a deleted wallet).
     func persistWalletMetadata(walletId: Data, network: Network, birthHeight: UInt32) {
         onQueue {
-            let wallet: PersistentWallet
-            if let existing = ensureWalletRecord(walletId: walletId) {
-                wallet = existing
-            } else {
-                wallet = PersistentWallet(walletId: walletId, network: nil)
-                backgroundContext.insert(wallet)
-            }
+            let wallet = ensureWalletRecord(walletId: walletId)
             wallet.network = network
             wallet.birthHeight = birthHeight
             wallet.lastUpdated = Date()
@@ -2052,15 +2049,11 @@ public class PlatformWalletPersistenceHandler {
     /// Set the user-facing name on the `PersistentWallet` row.
     /// Called from `PlatformWalletManager.createWallet` after the FFI
     /// returns a wallet id; only Swift knows the name, so it doesn't
-    /// travel through a Rust-side callback.
-    ///
-    /// Silently skips if the row is missing — the registration round
-    /// is what creates the row, so a missing row here means the
-    /// wallet wasn't successfully registered and there's nothing to
-    /// name.
+    /// travel through a Rust-side callback. Silently skips if the row
+    /// is missing (wallet wasn't successfully registered).
     public func setWalletName(walletId: Data, name: String) {
         onQueue {
-            guard let wallet = ensureWalletRecord(walletId: walletId) else { return }
+            guard let wallet = findWalletRecord(walletId: walletId) else { return }
             wallet.name = name
             wallet.lastUpdated = Date()
             try? backgroundContext.save()
@@ -2157,8 +2150,7 @@ public class PlatformWalletPersistenceHandler {
     /// that uniquely identifies an account across variants.
     func persistAccount(walletId: Data, spec: AccountSpecFFI) {
         onQueue {
-            // Stale-callback guard — wallet has been deleted.
-            guard let wallet = ensureWalletRecord(walletId: walletId) else { return }
+            guard let wallet = findWalletRecord(walletId: walletId) else { return }
             let typeTag = UInt32(spec.type_tag)
             let index = spec.index
             let registrationIndex = spec.registration_index
