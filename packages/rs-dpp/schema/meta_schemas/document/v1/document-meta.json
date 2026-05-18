@@ -461,6 +461,10 @@
           "properties",
           "name"
         ],
+        "dependentRequired": {
+          "rangeCountable": ["countable"],
+          "rangeSummable": ["summable"]
+        },
         "additionalProperties": false
       },
       "minItems": 1,
@@ -684,5 +688,8 @@
     "properties",
     "additionalProperties"
   ],
+  "dependentRequired": {
+    "rangeSummable": ["documentsSummable"]
+  },
   "additionalProperties": false
 }

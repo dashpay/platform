@@ -643,11 +643,7 @@ impl WasmSdk {
         // query), then call `DocumentSplitSums::fetch` and map the
         // result via a `split_sums_to_js_map` helper paralleling
         // `split_counts_to_js_map`.
-        Err(WasmSdkError::generic(
-            "getDocumentsSum — not yet wired through the wasm-sdk layer. \
-             The rs-drive primitives are available; plumbing them up to the \
-             browser-facing API is the pending SDK fan-out follow-up.",
-        ))
+        Err(WasmSdkError::not_implemented("getDocumentsSum"))
     }
 
     #[wasm_bindgen(
@@ -661,9 +657,8 @@ impl WasmSdk {
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         let _ = query;
         // TODO(sum-feature): mirror `get_documents_count_with_proof_info`.
-        Err(WasmSdkError::generic(
-            "getDocumentsSumWithProofInfo — not yet wired through the \
-             wasm-sdk layer. See getDocumentsSum for the same note.",
+        Err(WasmSdkError::not_implemented(
+            "getDocumentsSumWithProofInfo",
         ))
     }
 
@@ -702,12 +697,7 @@ impl WasmSdk {
         //   3. Map the result via a `split_averages_to_js_map` helper
         //      paralleling `split_sums_to_js_map` — emit
         //      `{count: bigint, sum: bigint}` per entry.
-        Err(WasmSdkError::generic(
-            "getDocumentsAverage — not yet wired through the wasm-sdk layer. \
-             The rs-drive primitives are available; plumbing them up to the \
-             browser-facing API is the pending SDK fan-out follow-up, same as \
-             getDocumentsSum.",
-        ))
+        Err(WasmSdkError::not_implemented("getDocumentsAverage"))
     }
 
     #[wasm_bindgen(
@@ -721,9 +711,8 @@ impl WasmSdk {
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         let _ = query;
         // TODO(avg-feature): mirror `get_documents_sum_with_proof_info`.
-        Err(WasmSdkError::generic(
-            "getDocumentsAverageWithProofInfo — not yet wired through the \
-             wasm-sdk layer. See getDocumentsAverage for the same note.",
+        Err(WasmSdkError::not_implemented(
+            "getDocumentsAverageWithProofInfo",
         ))
     }
 }
