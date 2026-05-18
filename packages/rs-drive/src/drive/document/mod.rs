@@ -155,11 +155,13 @@ fn make_document_reference_with_sum_item(
 /// for use as the sum contribution in
 /// [`make_document_item_with_sum_item`].
 ///
-/// The DPP validator guarantees the named property exists, is in the
-/// document's `required` array, and is an integer type — so failure
-/// here means either contract data corruption or a logic bug. We
-/// return `Error::Drive(DriveError::CorruptedCodeExecution(...))`
-/// rather than a typed user-facing error.
+/// The DPP validator guarantees the named property exists and is in
+/// the document's `required` array — a missing value here means
+/// contract corruption (`CorruptedCodeExecution`). The integer
+/// conversion failure, however, IS reachable from valid user input:
+/// a U64-typed property whose schema allows values > i64::MAX would
+/// pass DPP validation and fail here, so that branch returns
+/// `DriveError::InvalidInput` (user-facing) rather than corruption.
 fn read_document_sum_contribution(
     document: &Document,
     sum_property: &str,
@@ -174,17 +176,18 @@ fn read_document_sum_contribution(
              contract validation must enforce that the named summable property is in `required`",
         ))
     })?;
-    // Static error string: `DriveError::CorruptedCodeExecution` takes
-    // `&'static str`, so we cannot interpolate the underlying conversion
-    // error without leaking the formatted string (`Box::leak`). The
-    // conversion error detail isn't load-bearing — contract validation
-    // is supposed to have caught this at parse time, so we just emit
-    // the static "shouldn't be reachable" message.
-    value.to_integer::<i64>().map_err(|_| {
-        Error::Drive(DriveError::CorruptedCodeExecution(
-            "summable property value out of i64 range or non-integer; \
-             contract validation should have caught this at parse time",
-        ))
+    // `value.to_integer::<i64>()` can fail on a u64 value above
+    // i64::MAX. The DPP-level cross-validation in
+    // `try_from_schema/v2/mod.rs` accepts U64 as a summable property
+    // type today (changing that would also require restructuring
+    // property-type inference — tracked follow-up), so this branch is
+    // reachable from valid input and the error must be user-facing.
+    value.to_integer::<i64>().map_err(|e| {
+        Error::Drive(DriveError::InvalidInput(format!(
+            "summable property \"{}\" value cannot be represented as i64 (grovedb sum trees \
+             use i64 aggregators; values above i64::MAX overflow the aggregator): {}",
+            sum_property, e
+        )))
     })
 }
 

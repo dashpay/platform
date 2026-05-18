@@ -110,7 +110,22 @@ impl DriveDocumentSumQuery<'_> {
                         &drive_version.grove_version,
                     );
                     let sum = value.map_err(|e| Error::GroveDB(Box::new(e)))?;
-                    total = total.saturating_add(sum);
+                    // Use `checked_add` rather than `saturating_add` so an
+                    // overflowed aggregate fails deterministically instead
+                    // of silently clamping at i64::MAX. The proof-side
+                    // verifier sees the same overflow at the same point
+                    // (the grovedb primitive itself returns i64), so
+                    // refusing here keeps prover and verifier in sync
+                    // on the rejection rather than letting the no-proof
+                    // path return a value the proof path would reject.
+                    total = total.checked_add(sum).ok_or_else(|| {
+                        Error::Query(QuerySyntaxError::Unsupported(
+                            "compound In-on-prefix range-sum overflowed i64 when summing \
+                             per-In aggregates. Narrow the query (smaller In set, narrower \
+                             range) or use multiple queries and combine client-side."
+                                .to_string(),
+                        ))
+                    })?;
                 }
                 return Ok(vec![SumEntry {
                     in_key: None,

@@ -9,6 +9,7 @@
 
 use super::{DriveDocumentSumQuery, SumEntry};
 use crate::drive::Drive;
+use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use dpp::version::PlatformVersion;
 use grovedb::query_result_type::{QueryResultElement, QueryResultType};
@@ -45,6 +46,12 @@ impl DriveDocumentSumQuery<'_> {
         // - Equal-only: 0 or 1 element (0 when the branch is absent).
         // - In at any position: one element per In branch that has at
         //   least one doc; missing branches contribute 0.
+        //
+        // Use `checked_add` so an overflowed aggregate fails
+        // deterministically with a typed query error rather than
+        // panicking (debug) or silently wrapping (release). The
+        // iterator `.sum::<i64>()` form would do `i64::Add` which has
+        // neither property in a stable consensus-level contract.
         let sum: i64 = results
             .elements
             .iter()
@@ -52,7 +59,15 @@ impl DriveDocumentSumQuery<'_> {
                 QueryResultElement::ElementResultItem(elem) => elem.sum_value_or_default(),
                 _ => 0,
             })
-            .sum();
+            .try_fold(0i64, |acc, v| acc.checked_add(v))
+            .ok_or_else(|| {
+                Error::Query(QuerySyntaxError::Unsupported(
+                    "point-lookup sum overflowed i64 when summing per-In branches. \
+                     Narrow the query (smaller In set) or use multiple queries and \
+                     combine client-side."
+                        .to_string(),
+                ))
+            })?;
         Ok(vec![SumEntry {
             in_key: None,
             key: vec![],

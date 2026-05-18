@@ -197,6 +197,18 @@ impl DocumentTypeV2 {
                         ),
                     ))
                 })?;
+                // TODO(sum-feature, overflow): U64 is currently accepted
+                // here, but a u64 value > i64::MAX would overflow grovedb's
+                // sum-tree i64 aggregator silently — DPP accepts the
+                // document and Drive returns `CorruptedCodeExecution`
+                // at insert time
+                // (`document/mod.rs::read_document_sum_contribution`).
+                // Properly bounding this requires either (a) preserving
+                // the schema's `maximum` on the inferred property type
+                // so we can require `max <= i64::MAX` at contract
+                // validation, or (b) adding a doc-level validator that
+                // rejects sum values above i64::MAX. Neither belongs
+                // in this PR — see Codex finding #2 follow-up.
                 if !matches!(
                     prop.property_type,
                     crate::data_contract::document_type::property::DocumentPropertyType::I64
