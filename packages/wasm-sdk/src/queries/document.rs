@@ -643,11 +643,10 @@ impl WasmSdk {
         // query), then call `DocumentSplitSums::fetch` and map the
         // result via a `split_sums_to_js_map` helper paralleling
         // `split_counts_to_js_map`.
-        Err(WasmSdkError::NotImplemented(
-            "getDocumentsSum — pending grovedb PR 670 (verify_aggregate_sum_query) \
-             and the rs-drive executor bodies in drive_document_sum_query/executors/. \
-             See the rs-drive `grovedb_pr_670` catalog module."
-                .to_string(),
+        Err(WasmSdkError::generic(
+            "getDocumentsSum — not yet wired through the wasm-sdk layer. \
+             The rs-drive primitives are available; plumbing them up to the \
+             browser-facing API is the pending SDK fan-out follow-up.",
         ))
     }
 
@@ -662,10 +661,9 @@ impl WasmSdk {
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         let _ = query;
         // TODO(sum-feature): mirror `get_documents_count_with_proof_info`.
-        Err(WasmSdkError::NotImplemented(
-            "getDocumentsSumWithProofInfo — pending grovedb PR 670. See \
-             getDocumentsSum for the dependency note."
-                .to_string(),
+        Err(WasmSdkError::generic(
+            "getDocumentsSumWithProofInfo — not yet wired through the \
+             wasm-sdk layer. See getDocumentsSum for the same note.",
         ))
     }
 }

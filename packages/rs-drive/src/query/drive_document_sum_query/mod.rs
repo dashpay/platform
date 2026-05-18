@@ -67,8 +67,6 @@ use crate::query::{WhereClause, WhereOperator};
 
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::{DocumentTypeRef, Index};
-#[cfg(any(feature = "server", feature = "verify"))]
-use dpp::platform_value::Value;
 
 #[cfg(feature = "server")]
 use crate::config::DriveConfig;

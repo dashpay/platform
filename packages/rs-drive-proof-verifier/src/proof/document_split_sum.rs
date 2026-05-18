@@ -47,6 +47,7 @@ impl DocumentSplitSums {
     }
 }
 
+#[allow(clippy::extra_unused_lifetimes)]
 impl<'dq, Q> FromProof<Q> for DocumentSplitSums
 where
     Q: Clone + 'dq,
@@ -74,12 +75,12 @@ where
         //      (compound In+range, one entry per branch).
         //   3. Verify tenderdash, map verified entries to
         //      `Vec<SplitSumEntry>`.
-        Err(Error::NotImplemented(
-            "DocumentSplitSums::FromProof — pending the same grovedb PR 670 \
-             dependencies as DocumentSum (verify_aggregate_sum_query, \
-             verify_aggregate_sum_query_per_key, verify_distinct_sum_proof). See \
-             document_sum.rs for the full dependency catalog."
+        Err(Error::DriveError {
+            error: "DocumentSplitSums::FromProof — not yet wired through this \
+                    higher-level SDK layer. The drive-side primitives are \
+                    available (verify_carrier_aggregate_sum_proof); plumbing \
+                    them up to FromProof is the pending SDK fan-out follow-up."
                 .to_string(),
-        ))
+        })
     }
 }

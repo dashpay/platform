@@ -97,8 +97,6 @@ impl DocumentTypePrimaryKeyTreeType for DocumentTypeRef<'_> {
                 let count_root_only = dc && !rc;
                 let sum_provable = rs;
                 let sum_root_only = ds && !rs;
-                let want_count = count_provable || count_root_only;
-                let want_sum = sum_provable || sum_root_only;
 
                 Ok(
                     match (count_provable, count_root_only, sum_provable, sum_root_only) {
@@ -115,15 +113,6 @@ impl DocumentTypePrimaryKeyTreeType for DocumentTypeRef<'_> {
                         (true, _, false, true) => TreeType::ProvableCountSumTree,
                         (true, _, true, _) => TreeType::ProvableCountProvableSumTree,
                         (false, true, true, _) => TreeType::ProvableCountProvableSumTree,
-                        _ => {
-                            // Defensive: any remaining (true, false, _, _)
-                            // shape implies count_provable without
-                            // count_root_only, which the outer pattern
-                            // arms above already cover. Reachable only
-                            // for the all-false case handled at top.
-                            let _ = (want_count, want_sum);
-                            TreeType::NormalTree
-                        }
                     },
                 )
             }

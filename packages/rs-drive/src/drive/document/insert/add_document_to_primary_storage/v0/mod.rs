@@ -48,7 +48,6 @@ use crate::drive::document::paths::{
 use crate::drive::document::read_document_sum_contribution;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
-use dpp::document::Document;
 use dpp::version::PlatformVersion;
 
 impl Drive {

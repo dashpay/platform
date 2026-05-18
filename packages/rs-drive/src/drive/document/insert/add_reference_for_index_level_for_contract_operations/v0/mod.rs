@@ -98,13 +98,8 @@ impl Drive {
                 (true, _, false, true) => TreeType::ProvableCountSumTree,
                 (true, _, true, _) => TreeType::ProvableCountProvableSumTree,
                 (false, true, true, _) => TreeType::ProvableCountProvableSumTree,
-                _ => {
-                    // Defensive: covered by patterns above. Silences the
-                    // exhaustiveness check.
-                    let _ = (want_count, want_sum);
-                    TreeType::NormalTree
-                }
             };
+        let _ = (want_count, want_sum); // computed for narrative parity with the dispatch table; no longer used after exhaustive match.
 
         // Element-shape selector. Under a summable index path the
         // reference element MUST be

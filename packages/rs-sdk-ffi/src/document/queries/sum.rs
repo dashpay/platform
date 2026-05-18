@@ -22,8 +22,7 @@
 //!  4. Return JSON of `{"sums": {"<hex-key>": <signed i64>, ...}}`
 //!     (signed to match grovedb's `SumValue = i64`).
 
-use crate::types::{DashSDKError, DashSDKErrorCode, DashSDKResult};
-use crate::{DataContractHandle, SDKHandle};
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DataContractHandle, SDKHandle};
 use std::os::raw::c_char;
 
 /// `SELECT SUM(<sum_property>)` over a where clause + optional group_by.
@@ -68,7 +67,7 @@ pub unsafe extern "C" fn dash_sdk_document_sum(
         limit,
     );
     DashSDKResult::error(DashSDKError::new(
-        DashSDKErrorCode::Unsupported,
+        DashSDKErrorCode::NotImplemented,
         "dash_sdk_document_sum: not yet implemented. Waits on grovedb PR 670 (\
              verify_aggregate_sum_query) and the rs-drive executor bodies in \
              drive_document_sum_query/executors/. See the rs-drive `grovedb_pr_670` \

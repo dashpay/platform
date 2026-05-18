@@ -92,11 +92,8 @@ impl Drive {
                     (true, _, false, true) => TreeType::ProvableCountSumTree,
                     (true, _, true, _) => TreeType::ProvableCountProvableSumTree,
                     (false, true, true, _) => TreeType::ProvableCountProvableSumTree,
-                    _ => {
-                        let _ = (want_count, want_sum);
-                        TreeType::NormalTree
-                    }
                 };
+            let _ = (want_count, want_sum); // narrative parity with the dispatch table.
 
             // TODO(sum-feature): on delete, the existing reference at
             // `[..., 0, doc_id]` is an `Element::ItemWithSumItem(doc_id,

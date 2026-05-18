@@ -316,9 +316,10 @@ impl IndexLevel {
     /// Recursively finds the first index path where a sum-affecting
     /// property (`summable` property-name or `range_summable`) differs
     /// between two IndexLevel trees. Both flags drive GroveDB tree-variant
-    /// choice at contract creation (NormalTree / SumTree / ProvableSumTree
-    /// + reference variant under each level), so toggling either after
-    /// creation would require rebuilding the index tree and is rejected.
+    /// choice at contract creation (NormalTree / SumTree / ProvableSumTree,
+    /// and the reference variant under each level), so toggling either
+    /// after creation would require rebuilding the index tree and is
+    /// rejected.
     ///
     /// Returns `None` if both properties are the same everywhere.
     #[cfg(feature = "validation")]

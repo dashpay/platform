@@ -613,12 +613,12 @@ impl<C> Platform<C> {
     #[allow(clippy::too_many_arguments)]
     fn dispatch_sum_v1(
         &self,
-        _data_contract_id: dpp::identifier::Identifier,
+        _data_contract_id: Vec<u8>,
         _document_type_name: String,
-        _where_clauses: Vec<crate::query::WhereClause>,
-        _order_by_clauses: Vec<crate::query::OrderClause>,
+        _where_clauses: Vec<WhereClause>,
+        _order_by_clauses: Vec<OrderClause>,
         _limit: Option<u32>,
-        _start: Option<Vec<u8>>,
+        _start: Option<RequestV1Start>,
         _prove: bool,
         _sum_property: String,
         _platform_state: &PlatformState,
@@ -638,14 +638,10 @@ impl<C> Platform<C> {
         //   5. Map the `DocumentSumResponse` variants into the proto
         //      response (`SumResults::aggregate_sum`,
         //      `SumResults::entries`, or `Proof`).
-        Err(Error::Query(QueryError::NotYetImplemented(
-            "SELECT SUM dispatcher: routing landed; server-side execution waits on \
-             the rs-drive executor bodies in \
-             packages/rs-drive/src/query/drive_document_sum_query/executors/* \
-             being ported from their count-side analogs, and on grovedb PR 670 for \
-             the range-prove path. Track via the grovedb_pr_670.rs catalog in \
-             rs-drive."
-                .to_string(),
+        Ok(QueryValidationResult::new_with_error(not_yet_implemented(
+            "SELECT SUM dispatcher (server-side execution; the rs-drive executor \
+             surface is in place but the platform-layer routing-through-to-bytes \
+             plumbing is the pending SDK fan-out follow-up)",
         )))
     }
 

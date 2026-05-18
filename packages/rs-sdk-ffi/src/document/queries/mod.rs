@@ -10,4 +10,6 @@ pub mod sum;
 pub use count::dash_sdk_document_count;
 pub use fetch::dash_sdk_document_fetch;
 pub use search::{dash_sdk_document_search, DashSDKDocumentSearchParams};
-pub use sum::dash_sdk_document_sum;
+// `sum::dash_sdk_document_sum` is exported via its `#[no_mangle] extern "C"`
+// declaration; no re-export needed (and clippy flags the re-export as unused
+// because nothing inside the crate calls it by path).

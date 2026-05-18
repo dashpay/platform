@@ -25,6 +25,7 @@ use dpp::version::PlatformVersion;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DocumentSum(pub i64);
 
+#[allow(clippy::extra_unused_lifetimes)]
 impl<'dq, Q> FromProof<Q> for DocumentSum
 where
     Q: Clone + 'dq,
@@ -57,13 +58,13 @@ where
         //   3. Verify tenderdash signature via
         //      `verify_tenderdash_proof`.
         //   4. Return the single i64 in a DocumentSum wrapper.
-        Err(Error::NotImplemented(
-            "DocumentSum::FromProof — waits on grovedb PR 670's \
-             verify_aggregate_sum_query and the rs-drive \
-             DriveDocumentSumQuery::verify_*_proof helpers (see \
-             drive_document_sum_query/executors/* for the executor \
-             scaffolding)."
+        Err(Error::DriveError {
+            error: "DocumentSum::FromProof — not yet wired through this \
+                    higher-level SDK layer. The drive-side primitives are \
+                    available (DriveDocumentSumQuery::verify_aggregate_sum_proof \
+                    + carrier variants); plumbing them up to FromProof is the \
+                    pending SDK fan-out follow-up."
                 .to_string(),
-        ))
+        })
     }
 }
