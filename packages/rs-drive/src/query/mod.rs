@@ -12,6 +12,11 @@ pub use {
     drive_document_count_query::{
         CountMode, DocumentCountMode, DriveDocumentCountQuery, SplitCountEntry,
     },
+    // Sum-query verifier-shareable types: `SumEntry` is the per-key
+    // entry type the verifier returns, `SumMode` / `DriveDocumentSumQuery`
+    // are shape inputs the verifier needs to rebuild the path query.
+    // Parallels the count-side exports above.
+    drive_document_sum_query::{DriveDocumentSumQuery, SumEntry, SumMode},
     grovedb::{PathQuery, Query, QueryItem, SizedQuery},
     having::{
         HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator, HavingRanking,
@@ -32,13 +37,11 @@ pub use drive_document_count_query::{
     DocumentCountRequest, DocumentCountResponse, RangeCountOptions, MAX_LIMIT_AS_FAILSAFE,
 };
 
-// Sum-query surface (parallels count). `DocumentSumRequest` / `SumMode`
-// / `DocumentSumResponse` are server-side executor inputs.
+// `DocumentSumRequest` / `DocumentSumResponse` / `RangeSumOptions` are
+// the server-side executor inputs and stay `server`-only (parallels
+// the count-side `DocumentCountRequest` etc. above).
 #[cfg(feature = "server")]
-pub use drive_document_sum_query::{
-    DocumentSumRequest, DocumentSumResponse, DriveDocumentSumQuery, RangeSumOptions, SumEntry,
-    SumMode,
-};
+pub use drive_document_sum_query::{DocumentSumRequest, DocumentSumResponse, RangeSumOptions};
 // Imports available when either "server" or "verify" features are enabled
 #[cfg(any(feature = "server", feature = "verify"))]
 use {
