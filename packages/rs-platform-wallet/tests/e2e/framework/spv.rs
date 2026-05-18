@@ -125,10 +125,12 @@ pub async fn wait_for_mn_list_synced(
 
     // Subscribe a fresh receiver to dash-spv's
     // `SyncEvent::ManagerError` stream via the constructor-injected
-    // `MnListErrorObserver`. It forwards Masternode-scoped errors so
-    // hard-stalls (QRInfo retry exhaustion, etc.) surface in O(ms)
-    // instead of waiting for the heuristic or the hard timeout. The
-    // receiver is dropped when this call returns — no leak.
+    // `MnListErrorObserver`. dash-spv emits one Masternode
+    // `ManagerError` per failed inbound message, so a persistent
+    // stall bursts many errors fast — both a single error and a
+    // ring-overflow (`Lagged`) are treated as stall signals so the
+    // wait fast-fails in O(ms) instead of burning the cold-cache
+    // floor. The receiver is dropped when this call returns — no leak.
     let mut err_rx = mn_list_observer.subscribe();
 
     let start = Instant::now();
@@ -146,25 +148,45 @@ pub async fn wait_for_mn_list_synced(
         tokio::select! {
             biased;
             maybe_err = err_rx.recv() => {
-                if let Ok(err) = maybe_err {
-                    tracing::error!(
-                        target: "platform_wallet::e2e::spv",
-                        error = %err,
-                        elapsed = ?start.elapsed(),
-                        "dash-spv reported ManagerError before mn-list synced"
-                    );
-                    return Err(FrameworkError::Spv(format!(
-                        "dash-spv reported ManagerError before mn-list synced: {err}. \
-                         Likely a stale workdir / testnet ChainLock cycle issue. \
-                         Try wiping spv-data/ and retry, or wait 10-20 min for the \
-                         next testnet ChainLock cycle."
-                    )));
+                match maybe_err {
+                    Ok(err) => {
+                        tracing::error!(
+                            target: "platform_wallet::e2e::spv",
+                            error = %err,
+                            elapsed = ?start.elapsed(),
+                            "dash-spv reported ManagerError before mn-list synced"
+                        );
+                        return Err(FrameworkError::Spv(format!(
+                            "dash-spv reported ManagerError before mn-list synced: {err}. \
+                             Likely a stale workdir / testnet ChainLock cycle issue. \
+                             Try wiping spv-data/ and retry, or wait 10-20 min for the \
+                             next testnet ChainLock cycle."
+                        )));
+                    }
+                    // Ring overflow: dash-spv emits one error per
+                    // failed inbound message, so a lagged burst is
+                    // itself definitive proof of a stall — fail fast.
+                    Err(broadcast::error::RecvError::Lagged(dropped)) => {
+                        tracing::error!(
+                            target: "platform_wallet::e2e::spv",
+                            dropped,
+                            elapsed = ?start.elapsed(),
+                            "dash-spv mn-list ManagerError burst overflowed the \
+                             observer ring before mn-list synced"
+                        );
+                        return Err(FrameworkError::Spv(format!(
+                            "dash-spv reported a burst of mn-list ManagerErrors \
+                             (>{dropped} dropped) before mn-list synced. \
+                             Likely a stale workdir / testnet ChainLock cycle issue. \
+                             Try wiping spv-data/ and retry, or wait 10-20 min for the \
+                             next testnet ChainLock cycle."
+                        )));
+                    }
+                    // Sender gone (observer outlives every wait via the
+                    // manager, so not expected) — not a stall; poll on
+                    // so the heuristic / hard timeout still applies.
+                    Err(broadcast::error::RecvError::Closed) => {}
                 }
-                // Lagged (ring overflow — Masternode errors are rare,
-                // so this is effectively unreachable) or Closed (the
-                // observer outlives every wait via the manager, so
-                // also unreachable). Fall through to a poll so the
-                // stall heuristic / hard timeout still applies.
             }
             _ = tokio::time::sleep(READINESS_POLL_INTERVAL) => {}
         }
@@ -263,10 +285,11 @@ pub async fn wait_for_mn_list_synced(
     }
 }
 
-/// Broadcast capacity for [`MnListErrorObserver`]. Masternode-scoped
-/// `ManagerError`s are rare by design, so a small ring is ample; if a
-/// wait loop ever lags far enough to drop one, the stall heuristic
-/// still backstops it.
+/// Broadcast capacity for [`MnListErrorObserver`]. dash-spv bursts one
+/// Masternode `ManagerError` per failed inbound message, so the ring
+/// can overflow during a stall; that `Lagged` is itself treated as a
+/// stall signal in [`wait_for_mn_list_synced`], so a modest size only
+/// needs to absorb non-stall transients.
 const MN_LIST_ERROR_CHANNEL_CAP: usize = 16;
 
 /// Single-purpose [`PlatformEventHandler`] that forwards
