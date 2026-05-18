@@ -666,6 +666,66 @@ impl WasmSdk {
              wasm-sdk layer. See getDocumentsSum for the same note.",
         ))
     }
+
+    /// Get the `(count, sum)` pair for the documents matching a query,
+    /// optionally grouped by an index field. Client computes
+    /// `avg = sum / count`.
+    ///
+    /// Average-side analog of [`Self::get_documents_sum`]. Returned
+    /// map values are `{count: bigint, sum: bigint}` per entry; the
+    /// `Aggregate` mode emits a single entry with empty-string key
+    /// carrying the totals. JS callers can divide with whichever
+    /// representation they want (`Number(sum) / Number(count)`,
+    /// BigInt division for integer-truncated, etc.) — the server
+    /// intentionally doesn't pre-divide.
+    ///
+    /// **Status**: skeleton — the `DocumentSplitAverages::fetch`
+    /// `FromProof` impl currently returns `Error::NotImplemented`
+    /// until grovedb PR 670 lands the
+    /// `verify_aggregate_count_and_sum_query` primitive. Same gating
+    /// as `getDocumentsSum`.
+    #[wasm_bindgen(
+        js_name = "getDocumentsAverage",
+        unchecked_return_type = "Map<string, {count: bigint, sum: bigint}>"
+    )]
+    pub async fn get_documents_average(
+        &self,
+        query: DocumentsQueryJs,
+        _sum_property: String,
+    ) -> Result<Map, WasmSdkError> {
+        let _ = query;
+        // TODO(avg-feature): mirror `get_documents_sum` body once it
+        // lands. The shape:
+        //   1. Build a `DocumentQuery` via a `parse_documents_average_query`
+        //      that injects `Select::Avg` + `field = sum_property`.
+        //   2. Call `DocumentSplitAverages::fetch`.
+        //   3. Map the result via a `split_averages_to_js_map` helper
+        //      paralleling `split_sums_to_js_map` — emit
+        //      `{count: bigint, sum: bigint}` per entry.
+        Err(WasmSdkError::generic(
+            "getDocumentsAverage — not yet wired through the wasm-sdk layer. \
+             The rs-drive primitives are available; plumbing them up to the \
+             browser-facing API is the pending SDK fan-out follow-up, same as \
+             getDocumentsSum.",
+        ))
+    }
+
+    #[wasm_bindgen(
+        js_name = "getDocumentsAverageWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<string, {count: bigint, sum: bigint}>>"
+    )]
+    pub async fn get_documents_average_with_proof_info(
+        &self,
+        query: DocumentsQueryJs,
+        _sum_property: String,
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
+        let _ = query;
+        // TODO(avg-feature): mirror `get_documents_sum_with_proof_info`.
+        Err(WasmSdkError::generic(
+            "getDocumentsAverageWithProofInfo — not yet wired through the \
+             wasm-sdk layer. See getDocumentsAverage for the same note.",
+        ))
+    }
 }
 
 /// Convert an `Option<DocumentSplitCounts>` into a JS `Map<string, bigint>`.

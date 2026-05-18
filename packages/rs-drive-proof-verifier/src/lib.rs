@@ -20,6 +20,12 @@ pub use proof::document_split_count::DocumentSplitCounts;
 // directly just to name the entry type returned by
 // `verify_distinct_count_proof` and `DocumentSplitCounts::from_verified`.
 pub use drive::query::SplitCountEntry;
+/// Verified average result types. Average-side analog of `DocumentSum`
+/// / `DocumentSplitSums`; carry the `(count, sum)` pair the verifier
+/// recovers from grovedb PR 670's `AggregateCountAndSumOnRange`
+/// primitive. Client computes `avg = sum / count`.
+pub use proof::document_average::DocumentAverage;
+pub use proof::document_split_average::{DocumentSplitAverages, SplitAverageEntry};
 /// Verified sum result types. Sum-side analogs of `DocumentCount` /
 /// `DocumentSplitCounts`; see their respective module docs for the
 /// grovedb PR 670 dependency status.

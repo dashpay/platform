@@ -1,4 +1,13 @@
+/// Verified average result. Holds the `(count, sum)` pair recovered
+/// from a `CountSumTree` / PCPS proof; client divides to obtain the
+/// average. Lights up alongside grovedb PR 670's
+/// `AggregateCountAndSumOnRange` primitive.
+pub mod document_average;
 pub mod document_count;
+/// Per-entry verified average result. One `(in_key, key, count, sum)`
+/// tuple per matched group; client divides per-entry to obtain
+/// per-group averages.
+pub mod document_split_average;
 pub mod document_split_count;
 /// Per-entry verified sum result (sum-side analog of
 /// `document_split_count`). One `(in_key, key, sum)` triple per

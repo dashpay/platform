@@ -675,3 +675,60 @@ impl MockResponse for drive_proof_verifier::DocumentSplitSums {
         drive_proof_verifier::DocumentSplitSums(entries)
     }
 }
+
+impl MockResponse for drive_proof_verifier::DocumentAverage {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        let bincode_config = standard();
+        bincode::encode_to_vec((self.count, self.sum), bincode_config)
+            .expect("encode DocumentAverage")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let bincode_config = standard();
+        let ((count, sum), _): ((u64, i64), _) =
+            bincode::decode_from_slice(buf, bincode_config).expect("decode DocumentAverage");
+        drive_proof_verifier::DocumentAverage { count, sum }
+    }
+}
+
+/// Wire shape for `DocumentSplitAverages` mock round-trip. Same
+/// `(in_key, key)` axes as the sum variant, but carries both
+/// `Option<u64>` (count) and `Option<i64>` (sum) so the verified-vs-
+/// absent state of each axis can roundtrip independently.
+type DocumentSplitAverageTuples = Vec<(Option<Vec<u8>>, Vec<u8>, Option<u64>, Option<i64>)>;
+
+impl MockResponse for drive_proof_verifier::DocumentSplitAverages {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        let bincode_config = standard();
+        let tuples: DocumentSplitAverageTuples = self
+            .0
+            .iter()
+            .map(|e| (e.in_key.clone(), e.key.clone(), e.count, e.sum))
+            .collect();
+        bincode::encode_to_vec(tuples, bincode_config).expect("encode DocumentSplitAverages")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let bincode_config = standard();
+        let (tuples, _): (DocumentSplitAverageTuples, _) =
+            bincode::decode_from_slice(buf, bincode_config).expect("decode DocumentSplitAverages");
+        let entries: Vec<drive_proof_verifier::SplitAverageEntry> = tuples
+            .into_iter()
+            .map(
+                |(in_key, key, count, sum)| drive_proof_verifier::SplitAverageEntry {
+                    in_key,
+                    key,
+                    count,
+                    sum,
+                },
+            )
+            .collect();
+        drive_proof_verifier::DocumentSplitAverages(entries)
+    }
+}

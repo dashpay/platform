@@ -1095,10 +1095,14 @@ message GetDocumentsResponse {
   // canonical without flattening to a three-variant oneof.
   //
   // Wire shape by `request.select` × `group_by` × `prove`:
-  //   - `select=DOCUMENTS` (no prove)         → `result.data.documents`.
-  //   - `select=COUNT, group_by=[]` (no prove) → `result.data.counts.aggregate_count`.
-  //   - `select=COUNT, group_by=[…]` (no prove) → `result.data.counts.entries`.
-  //   - any select (prove)                     → `result.proof`.
+  //   - `select=DOCUMENTS` (no prove)            → `result.data.documents`.
+  //   - `select=COUNT, group_by=[]` (no prove)   → `result.data.counts.aggregate_count`.
+  //   - `select=COUNT, group_by=[…]` (no prove)  → `result.data.counts.entries`.
+  //   - `select=SUM, group_by=[]` (no prove)     → `result.data.sums.aggregate_sum`.
+  //   - `select=SUM, group_by=[…]` (no prove)    → `result.data.sums.entries`.
+  //   - `select=AVG, group_by=[]` (no prove)     → `result.data.averages.aggregate_average`.
+  //   - `select=AVG, group_by=[…]` (no prove)    → `result.data.averages.entries`.
+  //   - any select (prove)                        → `result.proof`.
   //
   // `CountResults` / `CountEntry` / `CountEntries` are nested in
   // `GetDocumentsResponseV1` rather than re-exported from a
@@ -1183,9 +1187,60 @@ message GetDocumentsResponse {
       }
     }
 
+    // Average-side analog of `SumEntry` — one per matched key for
+    // `select=AVG, group_by=[…]` queries. Each entry carries BOTH
+    // the count and the sum for its group; the client divides
+    // `sum / count` to compute the actual average.
+    //
+    // Why no `average` field on the wire? Returning the (count, sum)
+    // pair preserves full precision and lets the client pick the
+    // representation it wants (integer-truncated division, floating-
+    // point, decimal). Returning a single pre-computed `average`
+    // would force the server to choose, and any choice loses
+    // information for callers that wanted a different one.
+    //
+    // This shape is produced by grovedb's `AggregateCountAndSumOnRange`
+    // primitive (one root-hash-committed traversal returning both
+    // metrics) which lands as part of grovedb PR 670 alongside the
+    // PCPS (`ProvableCountProvableSumTree`) tree element.
+    message AverageEntry {
+      optional bytes in_key = 1;
+      bytes key = 2;
+      // `jstype = JS_STRING` on both fields so JS/Web clients receive
+      // strings and don't lose precision on counts/sums exceeding
+      // `Number.MAX_SAFE_INTEGER`.
+      uint64 count = 3 [jstype = JS_STRING];
+      sint64 sum = 4 [jstype = JS_STRING];
+    }
+
+    message AverageEntries {
+      repeated AverageEntry entries = 1;
+    }
+
+    // Aggregate average across all matched documents (no group_by).
+    // Same `(count, sum)` shape as a single entry — the client
+    // computes `avg = sum / count` itself.
+    message AverageAggregate {
+      uint64 count = 1 [jstype = JS_STRING];
+      sint64 sum = 2 [jstype = JS_STRING];
+    }
+
+    // Non-proof average result. Same outer shape as
+    // `CountResults` / `SumResults`; the variants mirror them:
+    //   * `aggregate_average`: `select=AVG, group_by=[]` — single
+    //     `(count, sum)` pair with no per-key breakdown.
+    //   * `entries`: `select=AVG, group_by=[…]` — one AverageEntry
+    //     per distinct group, each carrying its own `(count, sum)`.
+    message AverageResults {
+      oneof variant {
+        AverageAggregate aggregate_average = 1;
+        AverageEntries entries = 2;
+      }
+    }
+
     // Non-proof result wrapper. The outer `oneof result` switches
     // between this and `proof`; this inner oneof switches between
-    // the three non-proof shapes the v1 surface can return.
+    // the four non-proof shapes the v1 surface can return.
     message ResultData {
       oneof variant {
         Documents documents = 1;
@@ -1194,9 +1249,17 @@ message GetDocumentsResponse {
         // `select.function == SUM` and the dispatcher's
         // [`DriveDocumentSumQuery`] (in rs-drive) returns a
         // non-proof variant. The schema field name (`sums`) parallels
-        // `counts` above; field numbers stay 1/2/3 per the proto-
+        // `counts` above; field numbers stay 1/2/3/4 per the proto-
         // wire-stability rule (additions only, never renumbers).
         SumResults sums = 3;
+        // Average-aggregate result. Routed when the request's
+        // `select.function == AVG`. The dispatcher returns the
+        // `(count, sum)` pair grovedb's `AggregateCountAndSumOnRange`
+        // primitive produces in one root-hash-committed traversal;
+        // the client divides to obtain the actual average. See
+        // `book/src/drive/average-index-examples.md` for the design
+        // and the grades-contract worked example.
+        AverageResults averages = 4;
       }
     }
 

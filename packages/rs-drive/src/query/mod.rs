@@ -3,6 +3,11 @@ use std::sync::Arc;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub use {
     conditions::{ValueClause, WhereClause, WhereOperator},
+    // Average-query verifier-shareable types — same split as sum:
+    // `AverageEntry` is the per-key `(count, sum)` pair the verifier
+    // returns; `AverageMode` is the SQL-shape input the verifier needs
+    // to rebuild the path query.
+    drive_document_average_query::{AverageEntry, AverageMode},
     // `CountMode` is the SQL-shape contract (Aggregate /
     // GroupByIn / GroupByRange / GroupByCompound) the prover
     // dispatches on; the verifier needs the same enum to route
@@ -42,6 +47,12 @@ pub use drive_document_count_query::{
 // the count-side `DocumentCountRequest` etc. above).
 #[cfg(feature = "server")]
 pub use drive_document_sum_query::{DocumentSumRequest, DocumentSumResponse, RangeSumOptions};
+
+// `DocumentAverageRequest` / `DocumentAverageResponse` are the
+// server-side executor inputs for the average surface and stay
+// `server`-only (parallels the sum-side server-only exports above).
+#[cfg(feature = "server")]
+pub use drive_document_average_query::{DocumentAverageRequest, DocumentAverageResponse};
 // Imports available when either "server" or "verify" features are enabled
 #[cfg(any(feature = "server", feature = "verify"))]
 use {
@@ -201,6 +212,15 @@ pub mod drive_document_count_query;
 /// example contract.
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod drive_document_sum_query;
+
+/// A query to compute the average of an integer property across
+/// documents using `CountSumTree` / `ProvableCountProvableSumTree`
+/// (PCPS) elements. Averages are NOT computed server-side; the
+/// response carries a `(count, sum)` pair (atomic per group) and the
+/// client divides. See `book/src/drive/average-index-examples.md` for
+/// the worked example contract.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod drive_document_average_query;
 
 /// A Query Syntax Validation Result that contains data
 pub type QuerySyntaxValidationResult<TData> = ValidationResult<TData, QuerySyntaxError>;

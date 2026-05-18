@@ -188,12 +188,42 @@ fn validate_and_route(
                 sum_property: select.field.clone(),
             })
         }
-        SelectFunction::Avg => Err(not_yet_implemented(
-            "SELECT AVG (the wire surface accepts AVG(field) so callers \
-             can encode it ahead of server support landing, but the \
-             server doesn't yet evaluate numeric aggregates other than \
-             COUNT)",
-        )),
+        SelectFunction::Avg => {
+            // SELECT AVG(field): routes to
+            // `Drive::execute_document_average_request` (in
+            // `packages/rs-drive/src/query/drive_document_average_query/`).
+            // `field` must be non-empty and must name an integer
+            // property covered by either `documents_summable` (doctype
+            // level) or a `summable: "<field>"` index — averages reuse
+            // sum-tree indexes (no separate `averageable` flag exists
+            // or is needed; the same `CountSumTree` / PCPS element
+            // backs both).
+            //
+            // **Status**: server-side wiring is the
+            // `RoutingDecision::Average(...)` variant below; the dispatch
+            // arm in the response-building section routes the resulting
+            // `DocumentAverageResponse` into the `AverageResults` proto
+            // message added to platform.proto. Like sum, the executor
+            // body currently returns `NotYetImplemented` — the wire
+            // surface lands ahead of execution so callers can encode
+            // AVG today and the SDK fan-out follow-up can flip the
+            // dispatch arm to the real executor without another version
+            // bump.
+            if select.field.is_empty() {
+                return Err(QueryError::InvalidArgument(
+                    "SELECT AVG requires a non-empty `field` naming the integer property \
+                     to average (e.g. `AVG(score)`). The contract must declare \
+                     `documentsSummable: \"<field>\"` at the document-type level OR a \
+                     `summable: \"<field>\"` index covering the where-clause shape; the \
+                     DPP validator enforces this at contract creation. Averages reuse \
+                     sum-tree indexes — no separate `averageable` flag is required."
+                        .to_string(),
+                ));
+            }
+            Ok(RoutingDecision::Average {
+                sum_property: select.field.clone(),
+            })
+        }
         SelectFunction::Min => Err(not_yet_implemented(
             "SELECT MIN (the wire surface accepts MIN(field) so callers \
              can encode it ahead of server support landing, but the \
@@ -376,6 +406,13 @@ enum RoutingDecision {
     Sum {
         sum_property: String,
     },
+    /// `SELECT AVG(field)` routing. Same field rules as `Sum` —
+    /// averages reuse sum-tree indexes and return a `(count, sum)`
+    /// pair the client divides. The response path emits the
+    /// `AverageResults` proto message added to platform.proto.
+    Average {
+        sum_property: String,
+    },
 }
 
 /// Test-only: expose the routing decision for unit tests without
@@ -459,6 +496,10 @@ pub(super) fn validate_and_route_for_tests(
         // breakdown like count's). `dispatch_sum_v1` further routes
         // by where-shape × prove flag.
         RoutingDecision::Sum { .. } => "sum",
+        // v3 average surface — single label like sum;
+        // `dispatch_average_v1` further routes by where-shape ×
+        // prove flag once the executor lands.
+        RoutingDecision::Average { .. } => "average",
     })
 }
 
@@ -591,6 +632,18 @@ impl<C> Platform<C> {
                 platform_state,
                 platform_version,
             ),
+            RoutingDecision::Average { sum_property } => self.dispatch_average_v1(
+                data_contract_id,
+                document_type,
+                where_clauses,
+                order_by_clauses,
+                limit,
+                start,
+                prove,
+                sum_property,
+                platform_state,
+                platform_version,
+            ),
         }
     }
 
@@ -642,6 +695,59 @@ impl<C> Platform<C> {
             "SELECT SUM dispatcher (server-side execution; the rs-drive executor \
              surface is in place but the platform-layer routing-through-to-bytes \
              plumbing is the pending SDK fan-out follow-up)",
+        )))
+    }
+
+    /// Dispatch a `select = AVG(field)` request to
+    /// [`crate::query::DriveDocumentAverageQuery`]'s server-side
+    /// executor and map the response into a `GetDocumentsResponseV1`
+    /// carrying an `AverageResults` payload (or a `Proof` payload when
+    /// prove=true).
+    ///
+    /// Parallels [`Self::dispatch_sum_v1`] line-by-line — same request
+    /// construction, same error → typed-rejection mapping, same prove
+    /// vs no-prove split. The response shape mapping differs:
+    /// `DocumentAverageResponse::Aggregate { count, sum }` →
+    /// `AverageResults::aggregate_average`,
+    /// `DocumentAverageResponse::Entries(_)` → `AverageResults::entries`,
+    /// `DocumentAverageResponse::Proof(_)` → outer `result.proof`.
+    ///
+    /// **Status**: full body deferred to the same follow-up as the
+    /// rs-drive executor bodies. The skeleton below propagates the
+    /// `NotYetImplemented` error the executor currently returns until
+    /// grovedb PR 670's `AggregateCountAndSumOnRange` proof primitive
+    /// is wired through.
+    #[allow(clippy::too_many_arguments)]
+    fn dispatch_average_v1(
+        &self,
+        _data_contract_id: Vec<u8>,
+        _document_type_name: String,
+        _where_clauses: Vec<WhereClause>,
+        _order_by_clauses: Vec<OrderClause>,
+        _limit: Option<u32>,
+        _start: Option<RequestV1Start>,
+        _prove: bool,
+        _sum_property: String,
+        _platform_state: &PlatformState,
+        _platform_version: &PlatformVersion,
+    ) -> Result<QueryValidationResult<GetDocumentsResponseV1>, Error> {
+        // TODO(avg-feature): mirror `dispatch_sum_v1` body once the
+        // rs-drive average executor lands. The shape:
+        //   1. Look up the contract via `self.drive.fetch_contract(...)`.
+        //   2. Resolve the document type via the contract.
+        //   3. Build a `DocumentAverageRequest` carrying the
+        //      `sum_property` plus the where/order/limit/start/prove
+        //      fields parsed above.
+        //   4. Call `self.drive.execute_document_average_request(
+        //      request, None, platform_version)`.
+        //   5. Map the `DocumentAverageResponse` variants into the
+        //      proto response (`AverageResults::aggregate_average`
+        //      with `(count, sum)`, `AverageResults::entries` with
+        //      per-group `(count, sum)` pairs, or `Proof`).
+        Ok(QueryValidationResult::new_with_error(not_yet_implemented(
+            "SELECT AVG dispatcher (server-side execution; the rs-drive executor \
+             surface is in place but the platform-layer routing-through-to-bytes \
+             plumbing is the pending SDK fan-out follow-up, same as SUM)",
         )))
     }
 
