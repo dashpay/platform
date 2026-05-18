@@ -444,17 +444,17 @@
           },
           "rangeCountable": {
             "type": "boolean",
-            "description": "When true, the property-name level becomes a ProvableCountTree and value trees become CountTrees so range-count queries on the indexed property are O(log n). Requires `countable` to be \"countable\" or \"countableAllowingOffset\". Per-protocol-version 12+; rejected on earlier protocol versions."
+            "description": "When true, the property-name level becomes a ProvableCountTree and value trees become CountTrees so range-count queries on the indexed property are O(log n). Requires `countable` to be \"countable\" or \"countableAllowingOffset\"."
           },
           "summable": {
             "type": "string",
             "minLength": 1,
             "maxLength": 64,
-            "description": "Name of an integer document property whose values are aggregated into a sum at the index. When set, the index's value trees become SumTrees and each per-document index reference is a ReferenceWithSumItem contributing the named property's value to ancestor sum-bearing trees. The property must exist on the document type, be in `required`, and have an integer type. Per-protocol-version 12+; rejected on earlier protocol versions."
+            "description": "Name of an integer document property whose values are aggregated into a sum at the index. When set, the index's value trees become SumTrees and each per-document index reference is a ReferenceWithSumItem contributing the named property's value to ancestor sum-bearing trees. The property must exist on the document type, be in `required`, and have an integer type."
           },
           "rangeSummable": {
             "type": "boolean",
-            "description": "When true, the property-name level becomes a ProvableSumTree (or ProvableCountProvableSumTree when paired with `rangeCountable: true`) so range-sum queries on the indexed property are O(log n) via the `AggregateSumOnRange` proof primitive. Requires `summable` to be set. Per-protocol-version 12+; rejected on earlier protocol versions."
+            "description": "When true, the property-name level becomes a ProvableSumTree (or ProvableCountProvableSumTree when paired with `rangeCountable: true`) so range-sum queries on the indexed property are O(log n) via the `AggregateSumOnRange` proof primitive. Requires `summable` to be set."
           }
         },
         "required": [
@@ -532,21 +532,21 @@
     },
     "documentsCountable": {
       "type": "boolean",
-      "description": "When true, the primary key tree uses a CountTree enabling O(1) total document count queries. Only effective from protocol version 12."
+      "description": "When true, the primary key tree uses a CountTree enabling O(1) total document count queries. Rarely useful on its own — most callers want per-index `countable` instead so counts can be filtered by where-clause. Set this only when you genuinely need the unfiltered total."
     },
     "rangeCountable": {
       "type": "boolean",
-      "description": "When true, the primary key tree uses a ProvableCountTree enabling range countable. Only effective from protocol version 12. Implies documentsCountable."
+      "description": "When true, the primary key tree uses a ProvableCountTree enabling range countable. Implies documentsCountable. Rarely useful on its own — most callers want per-index `rangeCountable` instead so range-count queries can be filtered. Set this only when you need a provable global count tree."
     },
     "documentsSummable": {
       "type": "string",
       "minLength": 1,
       "maxLength": 64,
-      "description": "Name of an integer document property aggregated into the primary-key SumTree (one sum per document type). Stores documents as `ItemWithSumItem` so the primary-key tree's root sum is the total of the named property across all docs of this type. Property must exist on the document type, be in `required`, and have an integer type. Only effective from protocol version 12."
+      "description": "Name of an integer document property aggregated into the primary-key SumTree (one sum per document type). Stores documents as `ItemWithSumItem` so the primary-key tree's root sum is the total of the named property across all docs of this type. Property must exist on the document type, be in `required`, and have an integer type. Rarely useful on its own — most callers want per-index `summable` instead so sums can be filtered by where-clause. Set this only when you genuinely need the unfiltered global total."
     },
     "rangeSummable": {
       "type": "boolean",
-      "description": "When true, the primary key tree uses a ProvableSumTree (or ProvableCountProvableSumTree paired with rangeCountable: true) enabling O(log n) range-sum queries over the primary axis. Requires `documentsSummable` to be set. Only effective from protocol version 12."
+      "description": "When true, the primary key tree uses a ProvableSumTree (or ProvableCountProvableSumTree paired with rangeCountable: true) enabling O(log n) range-sum queries over the primary axis. Requires `documentsSummable` to be set. Rarely useful on its own — most callers want per-index `rangeSummable` instead so range-sum queries can be filtered. Set this only when you need a provable global sum tree."
     },
     "tokenCost": {
       "type": "object",
