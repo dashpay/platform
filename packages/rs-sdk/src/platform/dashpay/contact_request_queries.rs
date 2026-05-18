@@ -41,7 +41,7 @@ impl Sdk {
         // Query for sent contact requests (where this identity is the owner)
         // Note: We need to filter by $ownerId to get only this identity's sent requests
         let query = DocumentQuery {
-            select: dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::Select::Documents,
+            select: drive::query::SelectProjection::documents(),
             data_contract: dashpay_contract,
             document_type_name: "contactRequest".to_string(),
             where_clauses: vec![WhereClause {
@@ -83,7 +83,7 @@ impl Sdk {
 
         // Query for received contact requests (where this identity is toUserId)
         let query = DocumentQuery {
-            select: dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::Select::Documents,
+            select: drive::query::SelectProjection::documents(),
             data_contract: dashpay_contract,
             document_type_name: "contactRequest".to_string(),
             where_clauses: vec![WhereClause {

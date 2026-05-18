@@ -13,12 +13,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          clean: true
+          clean: false
 
-      - name: Force clean working directory
+      - name: Clean working directory while preserving Rust build cache
         run: |
-          git clean -ffdx
           git reset --hard HEAD
+          git clean -ffdx \
+            -e target/ \
+            -e target/**
 
       - name: Debug - Show BaseViewModel.swift content
         run: |
@@ -42,17 +44,18 @@ jobs:
           xcodebuild -version
           swift --version
 
-      # Rust + Cargo cache to speed up FFI build
       - name: Set up Rust toolchain (stable)
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache cargo registry
-        uses: actions/cache@v5
+      - name: Restore cargo registry cache
+        uses: actions/cache/restore@v5
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
           key: cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-
 
       - name: Add iOS Rust targets
         run: |

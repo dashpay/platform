@@ -2,11 +2,11 @@ use crate::queries::utils::deserialize_required_query;
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use crate::WasmSdkError;
-use dash_sdk::dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::Select;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::document::Document;
 use dash_sdk::dpp::platform_value::Value;
 use dash_sdk::dpp::prelude::Identifier;
+use dash_sdk::drive::query::SelectProjection;
 use dash_sdk::platform::documents::document_query::DocumentQuery;
 use dash_sdk::platform::Fetch;
 use dash_sdk::platform::FetchMany;
@@ -256,7 +256,7 @@ async fn parse_documents_count_query(
     let base_query = build_documents_query(sdk, input).await?;
 
     Ok(base_query
-        .with_select(Select::Count)
+        .with_select(SelectProjection::count_star())
         .with_group_by_fields(group_by)
         .with_limit(limit))
 }

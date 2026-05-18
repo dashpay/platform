@@ -40,13 +40,17 @@ All proof-size and behaviour numbers below come from the same bench helper (`rep
 | # | Query | Filter + group_by | Complexity | Avg time | Proof size | Verified shape | Notes |
 |---|-------|-------------------|------------|----------|------------|----------------|-------|
 | G1 | [`In` on `byBrand`](#g1--in-on-bybrand-grouped-by-brand) | `brand IN ["brand_000", "brand_001"]` <br/> `group_by = [brand]` | O(k · log B) | 38.6 µs | 1 102 B | `Entries(2 groups, sum = 2 000)` | Byte-identical to [Q5](./count-index-examples.md#query-5--in-on-bybrand) |
+| G1a | [`In` on `byBrand` with an absent value](#g1a--in-on-bybrand-with-one-absent-value-grouped-by-brand) | `brand IN ["brand_000", "brand_100"]` <br/> `group_by = [brand]` | O(k · log B) | 44.4 µs | 1 357 B | `Entries(1 group, sum = 1 000)` | One In value (`brand_100`) is absent — proof grows by 255 B for the absence subproof; verifier omits the absent branch from entries |
+| G1b | [High-fanout `In` on `byBrand` (\|IN\| = B)](#g1b--high-fanout-in-on-bybrand-in--b-grouped-by-brand) | `brand IN [100 values]` <br/> `group_by = [brand]` | O(k · log B) | 1 532 µs | 10 038 B | `Entries(100 groups, sum = 100 000)` | Same shape as G1, scaled from `\|IN\| = 2` → `\|IN\| = 100`; reveals every byBrand entry when `\|IN\| = B` |
 | G2 | [`In` on `byColor`](#g2--in-on-bycolor-grouped-by-color) | `color IN ["color_00000000", "color_00000001"]` <br/> `group_by = [color]` | O(k · log C) | 62.1 µs | 1 381 B | `Entries(2 groups, sum = 200)` | Byte-identical to [Q6](./count-index-examples.md#query-6--in-on-bycolor-rangecountable) |
 | G3 | [Compound `In` + Equal](#g3--compound-in--equal-grouped-by-brand) | `brand IN [...] AND color == Y` <br/> `group_by = [brand]` | O(k · (log B + log C')) | 106.2 µs | 2 842 B | `Entries(2 groups, sum = 2)` | Per-In compound resolution; two parallel Q4 descents sharing L1–L6 |
 | G4 | [Range on `byColor`](#g4--range-on-bycolor-grouped-by-color) | `color > "color_00000500"` <br/> `group_by = [color]` | O(R · log C) | 762.9 µs | 10 992 B | `Entries(100 groups, sum = 10 000)` | `GroupByRange`: enumerates distinct in-range keys instead of Q7's boundary aggregate |
-| G5 | [Compound `In` + Range](#g5--compound-in--range-grouped-by-brand-color) | `brand IN [...] AND color > floor` <br/> `group_by = [brand, color]` | O(k · R' · log C') | 737.5 µs | 11 554 B | `Entries(100 groups, sum = 100)` | Compound In-fan-out × in-range distinct keys (G3 outer × G4 inner) |
-| G6 | [High-fanout `In` on `byBrand`](#g6--high-fanout-in-on-bybrand) | `brand IN [100 values]` <br/> `group_by = [brand]` | O(k · log B) | 1 532 µs | 10 038 B | `Entries(100 groups, sum = 100 000)` | Scales linearly with `\|IN\|`; reveals every byBrand entry when `\|IN\| = B` |
+| G5 | [Compound `In` + Range](#g5--compound-in--range-grouped-by-brand-color) | `brand IN [...] AND color > "color_00000500"` <br/> `group_by = [brand, color]` | O(k · R' · log C') | 737.5 µs | 11 554 B | `Entries(100 groups, sum = 100)` | Compound In-fan-out × in-range distinct keys (G3 outer × G4 inner) |
 | G7 | [Carrier `In` + Range (`byBrandColor`)](#g7--carrier-in--range-grouped-by-brand) | `brand IN [...] AND color > "color_00000500"` <br/> `group_by = [brand]` | O(k · (log B + log C')) | 255.9 µs | 4 332 B | `Entries(2 groups, sum = 998)` | Per-In aggregate via `AggregateCountOnRange` as a carrier subquery; one `u64` per branch |
 | G8 | [Carrier outer Range + Range (`byBrandColor`)](#g8--carrier-outer-range--range-grouped-by-brand) | `brand > "brand_050" AND color > "color_00000500"` <br/> `group_by = [brand]` | O(L · (log B + log C')) | 523 µs | 18 022 B | `Entries(10 groups, sum = 4 990)` | Outer-Range carrier with a platform-max `SizedQuery::limit` of 10; caller may pass smaller, can't pass larger |
+| G8a | [Bounded carrier + bounded ACOR, descending](#g8a--bounded-carrier--bounded-acor-grouped-by-brand-descending) | `brand > "brand_050" AND brand < "brand_065" AND color > "color_00000200" AND color < "color_00000400"` <br/> `group_by = [brand]`, `order_by = [(brand, desc)]` | O(L · (log B + log C')) | 807 µs | 29 010 B | `Entries(10 groups, sum = 1 990)` | Bounded ranges on both axes + descending walk; same carrier shape as G8, different op variants on both range commitments |
+| G8b | [Same carrier `where` but `group_by = [brand, color]`](#g8b--two-range-carrier-with-group_by--brand-color-rejected) | `brand > "brand_050" AND color > "color_00000500"` <br/> `group_by = [brand, color]` | — | — | **rejected** | `InvalidWhereClauseComponents("count query supports at most one range where-clause; …or use `group_by = [outer_range_field]` with `prove = true`…")` | Two-range carrier is opened only for `GroupByRange + single-field group_by`; the compound shape can't fan over both ranges |
+| G8c | [Same carrier `where` but `group_by = []`](#g8c--two-range-carrier-with-group_by---rejected) | `brand > "brand_050" AND color > "color_00000500"` <br/> `group_by = []` | — | — | **rejected** | `InvalidWhereClauseComponents("count query supports at most one range where-clause; …or use `group_by = [outer_range_field]` with `prove = true`…")` | Aggregate (no group_by) can't collapse the carrier's per-branch `u64`s into a single sum at the verifier |
 
 **Complexity variables.** `B` = distinct brands in the byBrand merk-tree (≈ 100); `C` = distinct colors in byColor (≈ 1 000); `C'` = distinct colors per brand in byBrandColor (≈ 1 000); `R` = distinct in-range values returned by `GroupByRange` (capped at 100 in this fixture by an implicit response-size limit); `R'` = distinct in-range values per fan-out branch (similarly capped); `k` = `|IN|` for the In-outer carrier shapes; `L` = the effective outer-walk limit for the Range-outer carrier shape (G8). The platform's `MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT = 10` is both the default (when the caller passes no `limit`) and a hard ceiling; callers may pass a smaller `limit` to truncate further. See [G8](#g8--carrier-outer-range--range-grouped-by-brand) for the rationale. As in [chapter 29](./count-index-examples.md#queries-in-this-chapter), the total document count `N` doesn't appear — count proofs read pre-committed `count_value`s rather than enumerating docs.
 
@@ -163,6 +167,328 @@ flowchart TB
 ### Diagram: per-layer merk-tree structure (Layer 5+)
 
 Identical to [Q5's Layer-5+ diagram](./count-index-examples.md#query-5--in-on-bybrand) — same merk ops, same byBrand binary tree, same two `KVValueHashFeatureTypeWithChildHash` targets. The only difference is what the verifier returns at the end (`Entries(...)` instead of `Aggregate(2000)`); the per-layer structure is unchanged. See chapter 29 for the diagram.
+
+## G1a — `In` on `byBrand` with one absent value, Grouped By `brand`
+
+```text
+select   = COUNT
+where    = brand IN ["brand_000", "brand_100"]
+group_by = [brand]
+prove    = true
+```
+
+The bench fixture has brands `brand_000` … `brand_099` (`BRAND_COUNT = 100`); `brand_100` is **deliberately outside** that range. G1a is G1's same-shape sibling: same path query, same `point_lookup_count_path_query` builder, same `CountMode::GroupByIn` dispatch. The only structural difference is one of the In keys doesn't exist in the byBrand merk tree.
+
+**Path query** (identical shape to G1; only the second key differs):
+
+```text
+path:         ["@", contract_id, 0x01, "widget", "brand"]
+query items:  [Key("brand_000"), Key("brand_100")]
+```
+
+**Verified payload** (note: only **one** entry — the absent branch is silently dropped):
+
+```text
+Entries([
+  ("brand_000", CountTree { count_value_or_default: 1000 }),
+])
+```
+
+This is the load-bearing behaviour to know about: grovedb's `verify_query` *without* `absence_proofs_for_non_existing_searched_keys: true` drops absent-Key branches from the elements stream. The drive-side verifier ([`verify_point_lookup_count_proof_v0`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/src/verify/document_count/verify_point_lookup_count_proof/v0/mod.rs)) uses the default (off) and so emits one entry per **present** In value, not one per **requested** In value. Test coverage: [`test_point_lookup_proof_omits_absent_in_branches_from_entries`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/src/query/drive_document_count_query/tests.rs).
+
+**Caller implication.** Callers MUST NOT assume `entries.len() == |In|`. To check whether a specific In value matched, demux entries by serialized key (the same `serialize_value_for_key(field, value)` the path-query builder uses for outer Keys) — see the test for the canonical pattern. A `0`-count vs absent-key distinction would require passing `absence_proofs_for_non_existing_searched_keys: true` end-to-end, which the platform doesn't expose today.
+
+**Proof size:** 1 357 B (**+255 B over G1's 1 102 B**). The delta is the absence subproof: grovedb walks the byBrand merk tree to commit the rightmost present key (`brand_099`) and the chain of `Child` ops that proves there's nothing between `brand_099` and end-of-tree. Even though the verifier drops the absent entry, the *prover* must cryptographically commit to the absence — otherwise a malicious prover could omit a present branch by claiming it's absent.
+
+**Mode:** `CountMode::GroupByIn` routed to `DocumentCountMode::PointLookupProof` — same as G1.
+
+**Proof display:**
+
+The absence-subproof shape is what makes G1a interesting. The L8 (byBrand value tree) layer commits both:
+
+1. The present branch (op 0): `Push(KVValueHashFeatureTypeWithChildHash(brand_000, CountTree(636f6c6f72, 1000, …)))` — `brand_000` as a CountTree with count = 1000, exactly as in G1.
+2. The absence commitment (op 36): `Push(KVDigest(brand_099, HASH[…]))` — the rightmost present brand in the byBrand merk tree, paired with a chain of `Child` ops (37–42) that the verifier replays to confirm there's no key strictly between `brand_099` and end-of-tree. `brand_100` would have to sort after `brand_099` (which is true: `brand_099` < `brand_100` lexicographically), so the verifier's merk-root recomputation succeeds with **no** `brand_100` element emitted.
+
+The bench's `[gproof] G1a` output dumps the full 1357-byte proof:
+
+<details>
+<summary>Expand to see the structured proof (L1–L8 for byBrand, with one present <code>CountTree</code> at L8 + one absence subproof at L8)</summary>
+
+```text
+GroveDBProofV1 {
+  LayerProof {                                          // L1: roots merk
+    proof: Merk(
+      0: Push(Hash(HASH[bd29…3b3]))                     // sibling: contracts subtree
+      1: Push(KVValueHash(@, Tree(4ed2…289), HASH[…]))  // KVValueHash of `@` (data-contract subtree root) — descend
+      2: Parent
+      3: Push(Hash(HASH[19c9…b71]))                     // sibling
+      4: Child)
+    lower_layers: {
+      @ => {
+        LayerProof {                                    // L2: `@` subtree
+          proof: Merk(
+            0: Push(KVValueHash(0x4ed2…289, Tree(01), HASH[…])))   // descend into contract-id subtree
+          lower_layers: {
+            0x4ed2…289 => {
+              LayerProof {                              // L3: contract-id subtree
+                proof: Merk(
+                  0: Push(Hash(HASH[49e7…df8]))         // sibling
+                  1: Push(KVValueHash(0x01, Tree(widget), HASH[…]))  // descend into doctype `widget`
+                  2: Parent)
+                lower_layers: {
+                  0x01 => {
+                    LayerProof {                        // L4: doctype-prefix subtree
+                      proof: Merk(
+                        0: Push(KVValueHash(widget, Tree(brand), HASH[…])))  // descend into byBrand index
+                      lower_layers: {
+                        widget => {
+                          LayerProof {                  // L5: widget subtree
+                            proof: Merk(
+                              0: Push(Hash(HASH[9862…9d9]))                // sibling
+                              1: Push(KVValueHash(brand, Tree(brand_063), HASH[…]))  // descend into byBrand value tree (rooted at `brand_063`)
+                              2: Parent
+                              3: Push(Hash(HASH[6c36…a86]))
+                              4: Child)
+                            lower_layers: {
+                              brand => {
+                                LayerProof {            // L6+L7+L8: byBrand value tree (binary search down to `brand_000` + absence walk to `brand_099`)
+                                  proof: Merk(
+                                    0: Push(KVValueHashFeatureTypeWithChildHash(brand_000, CountTree(color, 1000, flags), HASH[…], BasicMerkNode, HASH[…]))  // PRESENT — `brand_000` as CountTree(count=1000)
+                                    1: Push(KVHash(HASH[…]))
+                                    2: Parent
+                                    3: Push(Hash(HASH[…]))
+                                    4: Child
+                                    … (24 intermediate `KVHash`/`Hash`/`Parent`/`Child` ops walking the binary search)
+                                    35: Push(KVHash(HASH[…]))
+                                    36: Push(KVDigest(brand_099, HASH[…]))    // ABSENCE COMMITMENT — rightmost present brand
+                                    37: Child
+                                    38: Child
+                                    39: Child
+                                    40: Child
+                                    41: Child
+                                    42: Child)
+                                }}}}}}}}}}}}}}}}}
+```
+
+Op 36 (`KVDigest(brand_099, …)`) is the load-bearing piece. The verifier replays ops 37–42 (`Child`s) against the byBrand merk root committed at L5; any tampering — say, an honest `brand_099` swapped for a malicious `brand_100`-shaped commitment — would change the merk root and the verification would fail.
+
+</details>
+
+### Diagram: conceptual flow (where the absence proof sits)
+
+```mermaid
+flowchart TB
+  RQ["IN [brand_000, brand_100]"]:::request
+  RQ --> M["dispatcher → PointLookupProof<br/>(group_by = [brand])"]:::dispatch
+  M --> P["point_lookup_count_path_query<br/>outer Keys = [brand_000, brand_100]"]:::path
+  P --> V["grovedb walks byBrand merk tree"]:::engine
+  V --> P1["brand_000 ✓ present<br/>commit CountTree(count=1000)"]:::present
+  V --> P2["brand_100 ✗ absent<br/>commit rightmost present (brand_099)<br/>+ Child chain to end-of-tree"]:::absent
+  P1 --> R["Proof bytes: 1357 B<br/>(1102 B for the present branch +<br/>~255 B for the absence subproof)"]:::result
+  P2 --> R
+  R --> SDK["verify_point_lookup_count_proof<br/>(absence_proofs_for_non_existing_searched_keys = false)"]:::verify
+  SDK --> OUT["Entries([(brand_000, 1000)])<br/>brand_100 silently dropped"]:::sdk
+
+  classDef request fill:#1f6feb,color:#fff,stroke:#1f6feb,stroke-width:2px;
+  classDef dispatch fill:#21262d,color:#c9d1d9,stroke:#1f6feb;
+  classDef path fill:#6e7681,color:#fff,stroke:#1f6feb;
+  classDef engine fill:#21262d,color:#c9d1d9,stroke:#39c5cf;
+  classDef present fill:#39c5cf,color:#0d1117,stroke:#39c5cf,stroke-width:3px;
+  classDef absent fill:#d29922,color:#0d1117,stroke:#d29922,stroke-width:3px,stroke-dasharray: 6 3;
+  classDef result fill:#21262d,color:#c9d1d9,stroke:#39c5cf,stroke-width:2px;
+  classDef verify fill:#21262d,color:#c9d1d9,stroke:#a371f7,stroke-width:2px;
+  classDef sdk fill:#21262d,color:#39c5cf,stroke:#39c5cf,stroke-width:2px,stroke-dasharray: 4 2;
+```
+
+### Per-layer merk-tree structure (Layer 5+)
+
+```mermaid
+flowchart TB
+  L5["L5 — widget subtree:<br/>KVValueHash(brand, Tree(brand_063))"]:::path
+  L5 --> L6["L6 — byBrand value tree root:<br/>brand_063 (binary-search root)"]:::path
+  L6 --> L7L["brand_031 (left subtree boundary)"]:::sibling
+  L6 --> L7R["brand_095 (right subtree boundary)"]:::sibling
+  L7L --> P000["brand_000<br/>(present, CountTree count=1000)"]:::target
+  L7R --> A099["brand_099<br/>(rightmost present, absence-proof anchor)"]:::boundary
+  L7R -.-> A100["brand_100 (not in tree — absence proven<br/>by Child chain to end-of-tree)"]:::absent
+
+  classDef path fill:#6e7681,color:#fff,stroke:#1f6feb,stroke-width:2px;
+  classDef sibling fill:#6e7681,color:#fff,stroke:#6e7681;
+  classDef target fill:#39c5cf,color:#0d1117,stroke:#39c5cf,stroke-width:3px;
+  classDef boundary fill:#d29922,color:#0d1117,stroke:#d29922,stroke-width:2px;
+  classDef absent fill:#21262d,color:#d29922,stroke:#d29922,stroke-width:2px,stroke-dasharray: 6 3;
+```
+
+**Why absence-proof matters for count queries.** The drive count fast path treats absent branches as 0, but it does NOT trust the SDK to apply that rule on un-committed data — every count *or non-existence* the verifier reports must be cryptographically committed by the prover. If absent branches were silently summed into `0` without a proof, a malicious prover could omit a present branch (with positive count) and claim it's absent, shrinking the result without detection. The 255-B absence-subproof overhead is the price of that integrity — small in absolute terms, but it scales linearly with the number of absent In values, so callers building queries with many speculative In values pay per-absence overhead.
+
+## G1b — High-fanout `In` on `byBrand` (|IN| = B), Grouped By `brand`
+
+```text
+select   = COUNT
+where    = brand IN ["brand_000", "brand_001", ..., "brand_099"]
+group_by = [brand]
+prove    = true
+```
+
+**Path query** (same shape as G1, scaled to `|IN| = 100`):
+
+```text
+path:         ["@", contract_id, 0x01, "widget", "brand"]
+query items:  [Key("brand_000"), Key("brand_001"), ..., Key("brand_099")]
+```
+
+**Verified payload:**
+
+```text
+Entries(100 groups, sum = 100 000)
+```
+
+Every document in the fixture, partitioned by brand. Each `Entries[i]` carries `(brand_NNN, CountTree count=1000)`.
+
+**Proof size:** 10 038 B. **Mode:** `CountMode::GroupByIn`.
+
+Same structural shape as [G1](#g1--in-on-bybrand-grouped-by-brand), scaled from `|IN| = 2` to `|IN| = 100`. The byBrand merk binary tree at L6 emits all 100 brands as `KVValueHashFeatureTypeWithChildHash` targets — each ~100 B (key + leaf kv-hash + `CountTree(00, 1000, ...)` + `BasicMerkNode` feature + child-hash) — plus minimal boundary glue at the binary-tree corners. The proof grows linearly with `|IN|`: G1 (`|IN|=2`) was 1 102 B; G1b (`|IN|=100`) is 10 038 B; the slope is ~99 B per additional In value.
+
+Compare against the `byColor` equivalent (`group_by_color_in_proof_100_rangecountable_branches`, 10 512 B): the `ProvableCountTree` overhead from `byColor`'s `KVHashCount` running counts adds ~5 % to the byBrand baseline, even though those running counts aren't consumed by a point-lookup group_by. This is the same `ProvableCountTree` overhead [G2](#g2--in-on-bycolor-grouped-by-color) carried at the smaller scale (`|IN|=2`).
+
+**Proof display:**
+
+<details>
+<summary>Expand to see the structured proof (5 layers; bottom layer enumerates 100 brands as `KVValueHashFeatureTypeWithChildHash` targets — 192 merk ops total at L6 including binary-tree glue) — or <a href="https://dashpay.github.io/grovedb-proof-visualizer-widget/#f=text&d=H4sIAAhCBmoC_6WdWa91uXGe7_UrvksL0AWLrOIgIIFjB4mBDDBgQ7kwBIOjJUSQjLYUxwj83_PU7tbcS73W0lF36wz77LN3sfgOZLH4X7_6xf_Z__mv_varX_zi_Ei-_L_vffny3_u_7a8-3_h8-eXLP_vnP_zyP_ZX__svPt_48iX88Mvf_upffvIXf9P9P__p7_7mH8aKTU5staUz8skrxyChlqJ5dn6QupS6VqhbEt8aeUosu0nfKcc00o-___1vnlu-ee7_9qMf9Z_9an_-xF_-4Mvff7X3X-heMeaoxWIrsZ9WzijSx9GQy4hpZ15G7ll6iCfZiKHVKu2sndqKtX3_B18-r1a79VjnkKGBJ-zdH3vCshBLLutIirmOdTSXmmNZg2fgYWalz3XK77zayKvtX-2f__Kbr9MfRUbabFEJzNaSegvEQGssZYUhfHvOWddIa9YS5piSwi4lnbRK2914d7_9W_rDL3_9k5_-bH399c9-8a_7q3_8mY_Wv_zwm6H68uUvv_yH__ibL75lML_--JYh_f2B_d3gh__754b9m9EL8uv422hhy24WR9n7tJDmbGvE1fjNnZL2VE7Zoc6-tsWZR9w98feG5ZHViMn3f-d1f3sovnlHf_ar__2I_sm4fkd0ryaPtl2kSeAVlpia7VXiPCHtVlKrZa-dtzY1AmJFDwnCA-zo3GWTj_XHvxeNX3_It45lkG9Go5TcMgmeecrfjMtqPZy-aicDo-Vw6q7NwpRdtZez--h9RBmljVni2VPJZdVYVXfc59tfyG_myB__8E-N3K_HL8i3jcCNcbg1Gtd5_68_Xf-0f_lNtECBmCXv_JtY5WnBjqUT92C67pDCnLHPrjktHRpb3yPF0BsBHbVvEIW4hdRjHCPXP8jhZ1H5-uPrV3gdndsxehCpqxxuAGVtOiT3UBrwWc-aJzP55ohz-zyeldmmWds4M0_-VR6W2wi7rfbjy2j8qXweX_Wfrz8aIjsppJzSb4aqjtzK6q2tvHsJvaY9VErTNXsZPbVUgePe6hnHR20uUr6NNGyFc-J3v7Y_pIGrjz-mhzxTLrHtlob0JFDjYdrtWEmrTEqFzWtWWyNUkDGbCIkW4c82mYw1f_dr-33auPq4m3Nff3zi_l2J9zD9Hifh5dT9L7v_8ldf7b__t3_e_-unv_zJ593_Nl3-MYTwgy9__Ytf_fyXX-dNQq_MfEr8wRf5_Oz8rP8TQfgHPvV_fvzrPGokg2ub1hNMJdKs1SixQtq5lKgw1IplFCuImpBPmlVDaDlvtEUq48c_-PJX_V9-Ov3N_c9frP3N05JpVmtNU1vcCKaaZQ3ZuS9nhIZWaYJKSCn0Y1AZiFvzGo25tHIt9t0pcDmBvjNS8i5SWhXZJ2fonvUodLHllNo_VL8DZA-Nkd4mBKudEQTGi1Z4Q6NlixeRCuNIDDFBS0QcCbkGJDjFakI5wN81VWRmdh0xS5aWfSRaKxYIcWl3I3V3Ov_-pH4S1_gyrsDSCVoCSWKKaiD3FjKA998J5F6A7lDNG_0Y9ukyqrU4C2TeVpd8EdddlyVQKOgoR_tsLsGAyLX6IIok_Co9IedT7IqYFwVnJcRQe0A757tx_TUU3XqwvQhrejmxO_RtcPiEG7bUlBtz3Sx1bfz6romJmJjie4lNmIXpyFTvpnUQ3nYR1ujDZVm0aGhxpTS6z1hkKFSUg2ZQIp4aQgmo_lonQmqeVSztlaDJu2HNj9K1vIirvosr8qhVWZqRrjsBi31PBBMWKs8d46qNXJoWa6iCnG1EPKiBg3MhTMe5iCuyAs622HvtceUciLC1M6Ns_m2n6kanFmUOaJEJakKu_Am0rMrJ9W5c64tI2btIBailyyyhkVApVsARiseEHJ_VcZCYvWkmgepKKwYsY5eF0uxjpK16EalcyLVqPZ9ZEDJr7B0P0p38wumsmIdgTEUwoGMXIADraZuY4i5s7tuRao8yUN5wdn4XWCzmHu0guceaKREwRFZRYA57L4hQJ-zYRuXbaEaYArfY2igqrc8arjhbbB8MEtoNskEOlO4DGCODGDRJCWW0Mn25IMiIHduKg3U_K6HrnLc5W55ApsRHj35DXOXdMEDKsRPqEw4pzoBoWWjuELFRKIVKzufgJrc0kAFZzqctkI3gYUWRXwyDJeD6AARb8R3I5hgwWUG6KL_WkvWdwhmtAe5OmSfGFDYqO-SxV4i3h0GfJfgb7qovMbZKnXO5-3QsaD1uDXPxHg3iR5NuPMOZoERJe4KTPZ5zho2KT0MZXES296myRJKudJLsoNBdn6BGWZaNAK565h4R2VsBqAy0NqQCwkNam7e5S_KLULV3oRKLZWER-WcuKGlh9PhvbbI7Zj6ToEZaIKsR8ocRkQK_Z7TTPhVldBEqdZHVdiIChZzbSeMy0tBynni2UwCcjW6YgUGYc8ZFBGP0BZQO2PTboSrPkvAFfclLZxRHs5Dh3JMJQPSA2Ahx74DwX6sZUvWMVc0EuMRyY2PURlsVGNAtVyhrALSYMSp5Hnw5BIiUH7ORfRgm0hqJWsvkW2D4qTW4CggAbdkPdKm0J7gZX9CXvDRSfa1yKjapaw_NAMsY9EhjJmcrpdXe01nbFwiD9npqzK3qwkD6KrPuK12w1-DvT6e_jdQFd3sxRg3nYMtAxuqv0aqvPgQcxR6MKCp51kLqnttGSh6lbIwvIvvSSvlSZrKmoarBGAbgodRPGbYWLnNkcC1kPVA4_p3wt113NAuNAZlyFdltGLCj9SCxdvGh6SMajrWEI3nUXC3XXYxXCG63jBKZOC6EQfWJcd-iviBveWmPCgJ-dCUctqZZQc_s4vSQFoQKk6SlfZxi_WxjBgo8Dy2TsbJbudRQG0OERMrAravyhnSX3pnyU_GaZHgih6Fv8u-I5rLKEECV4eodL3s_CZ-Rd3xB3vLSIKGAeupLiWiog5lVYsjxFGa2I9l2ysW02MikUD8lzL4r3DU0ms5Tr4xnOLFkDT0r1DXKqCJkN__GFmsBrQ_GPjJA6QT1lyjbmhPYMD15345sfoSb5dGj66NHtxeD9tKr-WzOAUFvAV5vtViZpHldZlCRRUUPnbPw-tDhAVk2CYwMyIza6nIlI0KW4yKh7R6nw3MCSWSsjRnJsZ6jLjHQsB2JjFBp0xcRYkuV567n9jJgCs9Wt14sG8pLs9ZOyDnjZ9cZtaDpE1N-x35cVja874HSWqjrnFn5GIDDtBEx-ocIzSstW2sZG7UakMImKDvGi98gxDqsCiQXtmHOZsVV97kPeCdMQOwykkZuR_YNfZW3oUrQMqZp1rinkG-KjU0b7t6kYnB8jmToTn2fFD-CX2o9WQq-Pl0tWQ0QKQ9pLuOQa3JwVRMYJtXPSciMSBLm1nvDdGnq-LleFrw4t2pbt7VsSs-SUF9E9qWhaiirWSr2PkSCoBWOnsFXZNZgwi_3QssQTG3CgwjUriORl8s3AaRdrfLj-tvIQPLRyLOCEkAucxsFZxWMrxolmc1EWk7gnqiD8JPxO7i7dFsYJHuCm-mF_ZKX9msDYbFU24IrWhNnSUBPm7PmlQYZpaGtWSWAbNb4vIxxYHpJZGxccqllfR8aRFDpu-eBV0CEYfEmHIicWMc0lX6ab0VKKmU1Irp9YdYAl3I7sM_sV3phv-JL-zXIUOTTLLiwKhrPhi6Gb77gQK3jwdKWkpJC8zW0pGmhO3T02m310C8XuXBn2VdvefqK-I-NWZUlTjTtWBGUaQFJ6Ow0Eu427OIARJof6w_A4AV5x5eGCpevCMrSEEEl1NpjzjVsqEU_-6voV3wBpA4KJM2CFVJf_4AREoG7ws3SIGaZCV86UyJaBUbZp0pLXmuEbNtu2Do53w5onBocn1OqYGfn79_eQXlG3vqCvONLQ1U7kw6jatHwTeOoJTl7Q7UlB4x_9QVXEmWXEFZYkEdfGZArrndatUvyFqnixl-GZvwEc310pjupLKWlOPhlV7olLt85LY0_UOWMyCvAw92O7KO1U02PHv2CvuJLsybYTPXFOqn4Tj2hIqJKCuBp91K3OGQxg3FvULyaTNQBuhSw7Lj8feVrW56lr1baIeadv8GgkMttBI_ymWnDXHVuEB2dq4D6KIzaOb5ZvvT2grfaswR_wV_xrVmbISnJjAXe2VdOnPM3cWxlj8g_4WjrqAbsa4wj4Nt0LKx91QbKXG1qYxGaodRyBl2zL0qmo9P_EEAU0K2D3CaUKfWJ2D28Ch5VLfs22Jbbul9fbPzFlxYphlpEE5QEcadG0nS0TlVUzTjVSoKcjlfrdKktdywtRrWJkjQg775C2Xl8CQp0BsChublR6qNLCkfGsbwshlWmABkRI7aa7_pn8S1qNP6672u1PkvCN_z10iKdFpH54tvHQCuKZpfuW6ru5mvjGwEtqf30qBDcKvipqaiAZdn10NVGYc1eLbF2aUutWupLBIzYa0Sd0Dn6FvxGw6a4Q0gxx-MLCbiwD4iEu5G18KgE4A19vTRUJrylE3lX6ewSx0kYoeaVN0l6bjY6jltnWRDPDLKSKtnrBX9SBId6hZtYp4CD72Yq2LGAwrc5QkWx5h4cdiNxbsuwVwHOSqs33BRey2tXbtOXPatZsRfLh_GlocIXmRjhOr211g8uignMDC1n-aLr0VVHh4GQX3DSiVu7b2yfsQbAcLXItcwJbkSpwU2w9Ih1RaWJF1OojM2v98TwVSAhuHWTHNueIDZzZd5P2Tfk_dIixdx2Xh4pV9XIzk-ll0pDiVoqQOlwIN0JE7_RmKMeEhIe6qmQPlf1PTl9YktMU4Q_omQcKMEdwwW9Ta-LXL7aXXsYxHIkvD2mFJcUQq-3V1rtGXnbC_JOb2v3sJi-gI_l2YShH9JhB3Qk2blLIczYcKyOWsOB9h0ryHfM6yW8tu_KfFYvXCsGHJ9R5vKaHh_AqqskZOha0FkcumyTeowoWtdgw7xkYw3S7W1Se7R2ao_WTu3R7ld-hOD5BYKnl9ZuojaTnQNpjdEjwjNMACAXoHwA4DnM5gN0atKA1gDbca_N6oyjoGGvRMf2mkuVE07lF_DVoSRJXqs4XVLDiCtDkDKZs0xGS16VmAs8KgdWuV3F9QzB8wsET2_LDtuwgI2VmS3MIYr_Z0JBlWBFUF8bFE_sAsK0NXC_uUxQBoM3W6vz0lOILyr40Y4eli3FRmCUu5vCnENqJqiQqAWg99CC3LJMFwKZF11uw1J-geDppf1a8SCI8AgIh5ahIHR7mKI5lI7TnauYH3ApOS6F_4ocsgrW92L4Pu1qr8wPf5TQNWOBccygdM-EJkxfzOWZyWyMNyDuVW41KCKCcUGoIGGW3S_HyM8QPL9B8Jf2Cy7KOpskwUzgfnYcKyAr9tm4oLIzv33QpaEV3JgMwwKcOBFtCFoCcxHZVGDSOMhF8m1Aoi0FM98rsINaCHtDAmlBC3lU374FOJoXOfBDIq-3I_sIwfOL1cP00qzpwtFrdKsKazXe1dHTa90ZGgTodMe8C-IYhZZQDwaACtNUMjCIwLpauGkjYdhwbGcOktWY07EyZENDmxnjlohit9JHtVGQJshrqDPJCKeH2-uy-VnxYXlRvZHemjUvN0pM3O1VV_hgieLV8KGm44XAu-OJMVTVF1eORv61QXond7bhcqewNSAmnDUlkvoHHlvY3lNPAkYP0poPc0nXsnlN_dpp-OZi7-hg3OHdyJY35P3Sfi0MUcq-37KkewHsORZRTzbqkByY7lLSMB212SkD5TsW6diD7xTOc6XPJhPWhdxZPrld6Aae03cTDxqgGeqt9THVqz-TKVZZTrdVYPneer-9hF2ekXd5Q94v7deco05iN7Vt84pIMqJ8lgID1DrRrTxPaQLIqRXfxG4qOkc5yOCcLkuLCWSbq2njSb0CEHtF1DampMUeGulZscURwM65xIgDxPyFhYbgW-s2eZdHhwbKo92v8oa-Xlo73G6qwWsyc10nbMsindTDwwa0gaCctJKUvutHsNYeeOBzkEhYu5SuVg_9qMJu9VMTl32ZazY8sQ5xn5cwxKQyXmavUBRzCSyI-Wqk1NJt59slcuXZ7ld5wV_60tqZS8i1-q694tR4w02EmCBOMbcg6ujQWg_hU3TZc_TdXaulHjQmqXtp7YLrNzteHrcCY6Npz7xxAAg8-DAcP8s5cZOSxogwZ40Z9gy2T5r3UfbF6qG-tEhbQ2zTprSSTjAZGSnvdW5RmMsKEfVVI6kR5vos-fHuMvrIpldgjMvVQ8DYzCVoEx4eckcr9WyzI4IDrwttWne3yaBsL57pPNIXczM5z5-7fSDj2e5XfcFfGt_WFu-wFCGqR_aA3LvB914VTHpoXcy-MhafwTUaU941-CYhDrJPCPtq28U2HO8-VWIYuZmvveImVjJDQoAjSLbq69syeg5-Alfi_BQf7YTRuB_ZR7tf9QV96UtDhZtZJad6vAA4IQHcTfmMh8eY4uuzenhQD-SY7tQrdsfIX-QTUkrKVaELwSFVxyqrEmMwYTbG5Ow8dpxpSokrA8DReF4BCPqZlhMGNB4__347sM-KD-uL4kPVt4c01zj5YJ98d7VvM965MjVzK4Uwh69Xtqrv6hddQzFIiP5RhOkOJ12lbGZIOlMdliH1Z1I_JTv049RQCchVpFfMzm3aZwKK8PvidV4r9XV7vaS-IG99W_JXO0gFsI-U3QHlkuoMZSs4Zv6pVHj4U4w2S8MtbT_RUubws7stXJauIPilHfPyrRmarE8FN_HFtEpR41dLDd4VBO2QC_gZvOSWHETJyv0l7PqMvOsb8n5pkXo5C1QzJxzzkz7kV3GXeI5v9HWvylvo9yFQTBqNjB34mhRAPJjmqnSlkdGt-FkV5jWoiy7ojJwVmfG4twpeeLxj8HWVExFfra6Gbdql5FPvR_bR2ml7tHbaHp39ai-KD_WlWQMqofgYFYpHTC1JO1uDp87GpjAuTAjMhWSvxfACy5z86PrgoxyvdrlYMVgRbRywJ8Xbn-j8MJm0FbqX0YQQewOLvRxp7yVeXG-V-TIFl5jL7RqD9qz4sL1YPtSXZg3snHVC5rwxjC1KXr1GuyRrR9rY9dP-BQ0VGmJ0pLibjmPFiwUN_r86MRsHgn81Px9TW9mhYYJrO6C4K1uwlwlRJpo4JBkN0eJFjyjkgtCFFW5H9g19vTRU6hpnDt-RdRYzVPqIIaMQYihh-SmCFdzoBy_mBbXjrrCMlw1YB1Kvit6C7mLqedqJGCPgHaxGJQ3RDF6HiBLIuzFGpW8Ev1eHbWRdS75jfltxtWenttuL6g17a6jSQsFGL6Gcy0_D5JO8sKdq6xjJGaYvXJUOUR1DFvDW-zihC46BB15Vb_jpTrWysaWnMoWDnxgpR8jbk9VLDDbCdseyh61IRiI9aow9-ZLYub_S2h7tfrUX9svenuYiU1Q7kFWbVZ24RixoIKLnYP39KCXetSIv3RT47nVETEjkoWpE66r4MLne8or1rNtgOzH-xvAC5QGj6uwYMEt5acLpffwfukJdn50p9-s0eXMPz3m_MGD20oDZUhylmYm3EJkVSEM88LW3IPD1UPVOC2fU6Adjh8bTDAQNfs6rM6evJBrJxyQwfDEpW0at9Yy4rTRvXEI808zTT-_AUxLTQvL6woP3Mmutt3A_ti_42972u0BolTTcoK4A-uMm68TuzJi8SGL5ftWcyc9y5Yk_YgaKr0l5PxfTJJf9LmIFNLKkqA09nNdnC1BTRikPUpnJHyI5XsZce-QPFpCXM0niFen9WKWHefiCwe2lq_I-DbP0EXwhLswcas0L5zjDwK7jULHw3rYtrC2Qu1dr-gmOeWyCddeCNnuHC8UDWCm9nUxCr4y_CKl3ZU7vzORPJfiRoF5rWmjoNTAi5Gx_EttHK6iA9LOHv6Gxl6atxrbTihJLBEF9Z_SM42t0CMyE9kcIfLZfrccwxOuQWmx-ANSL5rVcnvDUHFNHI_QhlpIGuGkm5Kh6HefxtcU294p-KKx_mhMFRPIxzKKvDt4_lBzqwyx_w2QvbVuJfetZzGc_XpD8wHzBlW7-546-FMRS9ZTeE80JJAYvURR0wyZieiW-FKDuy1vpMUtmTqanf5qjKXRpfiBs4IQlHtWln91e7IJo6ZKyaVz322q82AW0l24pYN_RPcrMnLI96bx7opiQNjHglc7yI548QH2XJDoe-J5WrlnXylcrWI3BQx5NP7s8cpAJonpvi4A7WBUF508L9FVDXrXOEB1UcW74KyJXHsTq2SFukTdM9tYvleYKvMWA2GHautuHvjCDa8BmdaWiDofm0hTDEwZzcUsYQ7BElzXZmCTz4wvp08vR25ZsP_LlX9Thy6054rcguTxO7vucXkfCLbktQ07cR1t5dI5A5A2RvfRXuQ9E5e69Ms0BNGKXREr5iAKfnwFSn96T6IRYAhmbhkI2q1aUrF6dg5t-kPP4SmtbK1Y_xjoGz9N3L1p4YSUAqbEPlNrxPhLTV3gXGHBaD_eLfkTsYdq-WE_MLx0Wfj4GyVgrxZBiwZsXPOF-vP9dx3cT-y2bWGbvlpd041i9MJMkziDI1dKrn0YGQSVamnjdUVuL57TMHJhyYgVZQCMkCIYBEcZ73n7QWLwZR9D7nQTlBY3nl6bJ23wJQZJyzvJiB-gWmukadzS01knIrbJW91ai6r0yfJtuRRPs0-mXJ7amE4xXr68KeyzvYDKbN4ix3avXnhVAA_EAsmJqdww95BFsljwy6Xk_Vg9pXF7QeH57Zmt5dxomKwgp1sTyZxFlrc0zEOnqbYM-DbLyap_yoBFIMIIWq2_sX22ueFGkHx72g9X1iCzc7ZnT1qcTo6Y2vd0dKjaixj7706Q8GFP66jzz7djG8Kw91sNuWs_aacVnWB712cNfLK3ll_7QXQvA06WeWvcJqGKvqfXWEAWPPY-7PH7SvRATuNbqrfxa0TS7kSmXS2veZw2DdNrIjLstb2th_azlJ9jT9uZoGaL2YwHDYul9pTlWHbjwfv-krsRna2sS38DZS3-IxGttZz9eDuZ7mzImRsreca-Acudz0v4gqysibWORT0m6_HRvcxFytQbE_N0p2RJtC2vjtUt8Kq3I2p8-1JWnXOnUs8_K-SCfETE5oMfRMF3ux_bF5lB-6eBGNBSziyudYC5-wIygoB02EdEDcBeAWZZ3pykosdL8iBnosjO650qCoNMGaG5-3M78GOScPfuxxi1pBfHdyFmzeaXpGF6H57ug0e8DSMkPnt6P1cO-iOmFK8kvHVzYScIZPbQ1xAuGiWVoMfkBMHzV0DaT8j3cFbqaLPQDuH6LAd_tJ1429fF-SfAIsznu0pjVo07x9NsoGWiD_PTm6JthzF7_WSS1k86CM6as-3mYnmH5m94c-aXhQz6g1rzxqzYi5WfuMSZMct6_uIq2kLQCd22bQ-cuelLXT23YaJfq7iATsZE2mMK-UBxKGwexgquWqsfMb9to-BRvkDK9MqI3EKUY7qXL_TN68rA5h7zpzpHr2w7IB8_r5-xziYOZS-7mJX7sokxNGL3o7STVySQCph7UlHL0EpJu9Sq2qxYp3jnOryrxtsbmZrnvOJeL5J5gqMIQFRnbgnq1LtntTdq7-fnq-7F9Q-NvT5OJgnFM3ekV3itM37JS67nr9IsmsmZUnGGt_FaN7B0RjmDAmpKL4_LM0yjTDzWAGsWLHrCE6G8dOwMLU7191xp-JmE1Etz7nKk368OTe18TzffNcXpI4-kFjZeXDk69EdFYZFRSZ1Hz0iM_gOt9MdFOMW71M44h92QH61BWiCRq936Gc9llw17roManzIMs9zON2iMmse0Na4uXyVcCjTFGeq2DNPAu5wq5h8KD7se2PoPPR3UOoi-IrLz0h4AANC5wN06jxjR8zUJ26TX77gIyALPojY8a7J1Sxez0yJQWENRb8lwRGTiDMU_ezmRHmKwaksCvoJnNm_yBt-Ktwrt5y3RvR4HmAMgRwTjteX-dQh8ur-kLJisv_eEqG7V-eve1tdl0Le_Ud7qSphl-W2PphNyXHzGHekh60vFYWp_d26t6UYGVZj3eYDkySH4LT6kOPXH0480WfWl0b7I68pyrVG-TaqUH76SMALkf2xeFiuVtoWJTBLaXc4V9JB3faV0h-D1GIn6J1KzJ345L7xaaN5myYRvOQbkiOa-WxImm5XlWHJ8VzRnNMGPdu6aAqBJm3dsYgzq3Vl5px5n5YXX1xnMPlnn1YY9jfcFk5aVpClGdaHoLXg6wk6_NAqdngpcL6tmWRoCww0rDRvTN7dB1Wy-b9N2XjeSB12YtkVrJm3SQeCv3Du-XPdZaEcwI05vZkKte4oxxiIC6Ev8z71eJiT7bJXvTqqO89FheLgCP-5VTCBto3_tLbi211ZbdcXWx4-cZBySACKpYruxVtr4DtPu6PJ0fMaJM4EjOduLmDanOp0yha_cDDebLejsjTv3ImdVjJZt5W_8xwv3ltYe9OuRNs47y9vxXmAs427sm0lHi0P7psjNVP83jc_aLDlCe3qez4DQ_p51M5ipZsuU_sQO5QRuvt88TocYzAyoOxOonZUvN3txKAZ_Nj4_gvkTWCq1HLwG7HVt7Q-NvGxpq7U389rssdfqtBY6Ly7VO8gscQMu8vDyoqx97jQBp9P6DvKXmDd4uO8Sf5ccNuy3fAdsDdPArYhJqIGxMAU6sJBwYvqzCb97Jc_g1NNEbcZb7HeLtIY3bGxp_2yM-NQE75Qi84ScEsoy4-vCWZ4eUPGkZ_Grisz2ZH5oFWyXjLKd3RbjaymGiWlhI3oMcCGn7cXdv97SU-a5opZ4cQ4KuYK2pePl8b4jgiTUdD_Lw2cqqPVtZtWcVD2-6VpS3LRMXkiH4wdjpnSZlwmfm7mqO4q2QydPQK8QVsQfVO0VWK2ENhuGgR_vlpOBNe5dmPxc2XBc3nm-2CGZMYxTbBJURvT6i3m1VmYYhBQlW4gn39Zc9bFlvLxYXa3h7Ymf6FQhgQoaBCiGTT9Mk74J2ZvJ2EW6fizfjzBaQtyi30ar6ck4Wuezz6c3pvLe3-h0M01dvVUqoMfh9iqDwxAdOJO3s3Zc3xx75nFWKF1KO--Uh9oLI6tvWGjXWriiuuMkcWCt6J0PkqAbvgIznjX7NRlCgU-dBLnmvWSQr7zy2fbUQO-Y83QtAkxCrU8iudCRio09VnkxQ1GBWBOzjDGd2b6oYa0rGnIj3z5BKfli4-KZtSX3psTChYIpCTd4JyRcIpu3dippXxe6CMCftDmKh4IxO99aJBYk_ySsjY6_aSUP4Ef2PUfC-XcubA9c4SWv10SzB_MwPGYo-0YpJBmhWNtxF5tv5wQUez3bJ3vQtqW_rHH0HEj3hx0Yw-2fN1VfxRgPeKS3XT9_S6FcltEYUOilbwlmddCu-OnB5dgwg3OLbmWMl9av5EoOzELqposwkn7iD-7ZO-Nde0TTvutW71c15v942P7Rk-YUlq2_v9iJMG_t5mK7Fe6bGjDJDWvghr129R0zI3qLAi-5y570Er8LzFX-v3L-ETx-dpJv5v8pB6hWmxTkCv5HBBcU3kLxEPXU_ibaa9_YaAWFddICu92P7gsbr23aI2kovA_3tRSx-hI4MOsGbtPjZguUa1pdZvD9q4gGaEV2nxXmgBPDvaorvjmPy21XHLlGjeD3ZdFknyUtGlud7INZ5-MzuBPMsBK8Gq6PZ_UXr_JDG33QvqW8v-Np-7g6y8C6TTeKyFo9XBHotQ2y-YgpH-V0ohJ3kaU4vLj8_wLAv28IgorSaSyks6hgWgvdMMAyKN_CbyC1LUbMkn_PTL0TCy25vD9Nj3A9i-2xltTyreHjTwqO-dHC-oz_9avVc54DUqsvS6Hwmy0vsEZDF91TJShJQ_UTpZtTSCUfTLJe3KAZQxFDCKNueyjDZwEMuJDq2o2j0i61wM7N6l3q_dIg5lvuMfvhvPDjd8LCHh7xp4lFfOjhZM_VahBcZjy91Myf90EjMw1tNDRBlqR9RRSEcJPFBNPWRkp-1UcJ3tQDmvTsbihYzXHx_4fi9TH7oxBraFzmMrytkdypa-JtpMMUAKG9Rqbym-7F9sUVY317zdcA2v6vU2xd4jcUOZcEVI63j9ynrKXt6eWEFhHvirXlbMcP6nHhOvSxqkpjAVj81s6OfTvXTZQFianNXLANyrXqrCUAG5Z9j3mHXbucQTKTBfdNUHhYuvuli0t5uewkmvsRPi8gD6aoXYJxIZhTvpZ6ae0UMDfRd-w7Rz-I3wdd9jpFfXjsB01n3ixbGMtUZevYe6tnW7nEsX5HpCYQV-L5r8TL7MDLwDcpknfG-WC3lGXy-ILImbzsgYahMU97Lm9S3kMqn2cC0lAbKdAQymK9OEu93wBfTyzvxSTtYuyy6WhL0MDbFJZP5dalAtIqXYAGsCIyyTkvNdxUZQi3JPlvfzPMUe3-wj1UeFrvUF4uL7aXHSmn3z_I-RHFI4bMw8XGjnKLffYxCwreKb-kNPwUbwVe_yjv4jjXmUS6b-26MlZ8pAayary1qd1c2GwgE9vilYtZwB4XEY5qYL6kf3OuCn3K_L1bfdDJp6e0NCWEsFBOsmkqfffmp-zb8lOKoWEiZiMcGmBIjfxd1N79vpjUm_ZqXi4UxbF-ELUG1-x2JGLFWtfmi9fxMecK0P_esrPh1q3kgZfNHUHGdvL8fq4c0_qaZSXtb_FdWsWVJQiZPeh1xIm7mhFf3IQwRyq2ji19VWlT68BMFpXjpUPS-RVcLsb0TfRiN596tYAL8nAnGyDscRWveebJhan3nMOE5ku-3Ig2kyRnhwXGF-mxltT5bWX3T0aO9PRxWwL6EefVrjHJp6yTsnfSzMap5z-Tn6klzYqYM10al7rS8XsbvO92XXdEaGreMOZo3CsnJe4QnxvAQ5er3CgdhpP2CZU0bmbzi13eLB2jU-v0Ll6U-vQz0DZO97unBpEUJNbJxqjfXGJ9LPGfwdeYjQMhx8F1kYMk1Hj8vUoYfJkc3XZZtBr-OZmRvCzgrHsC3hQ5moETxshsv3e-fS5rQvPvwjGQ7A5ard-ut_QGCvFhZbW-3vWJfSMgU55TYYvGtP8AP9rEW8hhnmzN0HIgswBeMtTF0-VEb3r5c5WFSnO72bgfqff6wV3q88gjThXhLq-cpfnuA7-uuhc6aO0Uimo__ablfgd8erqy2N0z29nBY9Y7683jLZ78JPSQ7w69CSJ-LjOzwhvcqa1e_JZ0p-Slg3xr89jRA92qJanqfYu_PYaiH2lCsbej0Oo-jQ3xvMvgN7n6vjzaxudbGkLgRGMHT-3ZsX2wRtpemqR-kCVE4sUvoTQMKf33YYfoNsNCVN4jkjYwKjs2AJPUuRISiKfLpsgwgaDvbwS2MsryRV1e_c8qXCn0hwAuGvAnJanYQEfgEr_1x3ZUgRbtfDtyebRG2Z0TWnhFZe1bu0Z6Zkt_0t_ju0Pz79_6cn_-pn17_7Oon3_79b_vuH3_vD7_z-1__7le__fzXn339__7ff__ev3_v_wPod7yV8pAAAA">open interactively in the visualizer ↗</a></summary>
+
+```text
+GroveDBProofV1 {
+  LayerProof {
+    proof: Merk(
+      0: Push(Hash(HASH[bd291f29893fb6f6d6201087746ca1f23a178dd08e1346cb6c127e91ae3623b3]))
+      1: Push(KVValueHash(@, Tree(4ed22624752972af97fb71abf4067b23e6d296a61a02f35b2098819fde39d289), HASH[4a5a28cb1b40226aa35b2f0d502767df13268bdf4678627dbfde26a557acdf73]))
+      2: Parent
+      3: Push(Hash(HASH[19c924989e473a90d0848277d0b1498ccc8db3dc870cbc130e773f3d79ea5b71]))
+      4: Child)
+    lower_layers: {
+      // L2..L4 are byte-identical to every other query in this chapter
+      // (the @ / contract_id / 0x01 descent into widget); see chapter 29's
+      // Q1 verbatim for the full L1..L4 chain.
+      ...
+      widget => {
+        LayerProof {
+          proof: Merk(
+            // L5 widget doctype — `brand` queried, opaque siblings 9862 / 6c36
+            0: Push(Hash(HASH[9862894b16a0792688fdcf64edcb2ceade5c8b234649bfc6cfc6426869b0e9d9]))
+            1: Push(KVValueHash(brand, Tree(6272616e645f303633), HASH[68b697da99d6ea70a83eb41794dca7ba3938d0ba98fbfaeb3cd0c19b3b5d0ff2]))
+            2: Parent
+            3: Push(Hash(HASH[6c36729e93b1a316cbf60fe282eb630c0ed6e45db088e365110302b6c9caba86]))
+            4: Child)
+          lower_layers: {
+            brand => {
+              LayerProof {
+                proof: Merk(
+                  // L6 byBrand merk-tree — 100 targets + binary-tree glue
+                  // (192 merk ops total; structurally a fully-resolved in-order
+                  // traversal of all 100 brand entries in the byBrand merk tree)
+                  0: Push(KVValueHashFeatureTypeWithChildHash(brand_000, CountTree(636f6c6f72, 1000, flags: [0, 0, 0]), HASH[90ff6f6d9a3d901195982128130677243bfd27b75736206f3c8400966ef0d37b], BasicMerkNode, HASH[19b58883c492e746861db1e6ad07529a5a91cc8330af522682486db9346d6875]))
+                  1: Push(KVValueHashFeatureTypeWithChildHash(brand_001, CountTree(636f6c6f72, 1000, flags: [0, 0, 0]), HASH[484ca11fb4ec8f479be1f78af903ce0c9d4fe630517579fb0172c2576d6b9652], BasicMerkNode, HASH[0bf12023f8e067c12db4cec1583909a0283878d6d909c76196736299750b5879]))
+                  2: Parent
+                  3: Push(KVValueHashFeatureTypeWithChildHash(brand_002, CountTree(636f6c6f72, 1000, flags: [0, 0, 0]), HASH[4c19f047068654e71813dce7839a579edfdcb446e3d70efa1b8592c73259da16], BasicMerkNode, HASH[e8d5372904b7f4ac9334aeb4ddab619d9ad7a308732a4f231416e10208a0a356]))
+                  ...
+                  // 97 more KVValueHashFeatureTypeWithChildHash targets following
+                  // the same template — brand_003 ... brand_099 — interleaved with
+                  // Parent/Child ops glueing them into the byBrand merk binary tree.
+                  // Every target shares the structure:
+                  //   Push(KVValueHashFeatureTypeWithChildHash(
+                  //     brand_NNN,
+                  //     CountTree(636f6c6f72, 1000, flags: [0, 0, 0]),   // count_value=1000
+                  //     HASH[<per-brand leaf kv-hash>],
+                  //     BasicMerkNode,                                  // NormalTree (no count on the merk node)
+                  //     HASH[<per-brand subtree child hash>]
+                  //   ))
+                  ...
+                  189: Push(KVValueHashFeatureTypeWithChildHash(brand_097, CountTree(636f6c6f72, 1000, flags: [0, 0, 0]), HASH[92adee932cc12927cd76ad9fd25906bbfe547df2bf21e826845bb4d3b47f5314], BasicMerkNode, HASH[34b69e1e424aa023c74f61554db2823da6c19dcbc51bdd5dece32e3f6f9fd219]))
+                  190: Parent
+                  191: Push(KVValueHashFeatureTypeWithChildHash(brand_098, CountTree(636f6c6f72, 1000, flags: [0, 0, 0]), HASH[68e02fcf66f86797035fbc8d53290185fe3fed7de897a8654743cae4007c47c3], BasicMerkNode, HASH[acfc3a88b852e8895449b4c7e01f4b1cc25028e6a80e4915cdde578ff6eb029b]))
+                  192: Push(KVValueHashFeatureTypeWithChildHash(brand_099, CountTree(636f6c6f72, 1000, flags: [0, 0, 0]), HASH[af9667a8f2a10a9402b3d1fb0ac6e0b64d1e3dde5b8829c03b8d2c9cfc94e16d], BasicMerkNode, HASH[d049fe7e250b7dd763a4a5daa4227dcd2e41733dd95fd0758641ac06c63c3b51]))
+                  // + closing Parent/Child ops binding the last few entries
+                )
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+The 254-line full verbatim sits in the bench's `[gproof] G1b` output — same template (one `KVValueHashFeatureTypeWithChildHash` per brand, all with `CountTree count=1000` and `BasicMerkNode` feature) repeating 100 times. The schematic above shows the first 3 and last 3 targets so the structural pattern is clear without reproducing 100 near-identical lines.
+
+**Key observation:** `BasicMerkNode` (not `ProvableCountedMerkNode`) is the feature type on each L6 op. byBrand is a `NormalTree`, so its merk binary tree's internal nodes don't carry running counts — only the per-brand `CountTree count=1000` values stored *inside* each brand's element matter. Contrast this with G1b's `byColor` cousin (`group_by_color_in_proof_100_rangecountable_branches`, 10 512 B): there the L6 targets would carry `ProvableCountedMerkNode(...)` features because byColor IS a `ProvableCountTree`. The ~5 % size difference is exactly those count fields × 100 nodes.
+
+</details>
+
+```mermaid
+flowchart TB
+  WD["@/contract_id/0x01/widget"]:::tree
+  WD ==> BR["brand: NormalTree (100 entries)"]:::path
+  BR ==> B000["brand_000: CountTree count=1000"]:::target
+  BR ==> B001["brand_001: CountTree count=1000"]:::target
+  BR ==> BMore["... 96 more in-range targets<br/>(brand_002 ... brand_097)"]:::target
+  BR ==> B098["brand_098: CountTree count=1000"]:::target
+  BR ==> B099["brand_099: CountTree count=1000"]:::target
+
+  SDK["Entries(100 groups, sum=100 000):<br/>(&quot;brand_000&quot;, 1000),<br/>(&quot;brand_001&quot;, 1000),<br/>...<br/>(&quot;brand_099&quot;, 1000)"]:::sdk
+  B000 -.-> SDK
+  B099 -.-> SDK
+
+  classDef tree fill:#21262d,color:#c9d1d9,stroke:#1f6feb,stroke-width:2px;
+  classDef path fill:#6e7681,color:#fff,stroke:#1f6feb,stroke-width:2px;
+  classDef target fill:#39c5cf,color:#0d1117,stroke:#39c5cf,stroke-width:3px;
+  classDef sdk fill:#21262d,color:#39c5cf,stroke:#39c5cf,stroke-width:2px,stroke-dasharray: 4 2;
+
+  linkStyle 0 stroke:#1f6feb,stroke-width:3px;
+  linkStyle 1 stroke:#1f6feb,stroke-width:3px;
+  linkStyle 2 stroke:#1f6feb,stroke-width:3px;
+  linkStyle 3 stroke:#1f6feb,stroke-width:3px;
+  linkStyle 4 stroke:#1f6feb,stroke-width:3px;
+  linkStyle 5 stroke:#1f6feb,stroke-width:3px;
+```
+
+### Diagram: per-layer merk-tree structure (Layer 5+)
+
+Identical to [G1's L5–L6 shape](#g1--in-on-bybrand-grouped-by-brand), just with all 100 entries in the byBrand merk tree resolved as visible targets rather than just two. The byBrand binary tree has all 100 keys exposed — no opaque sibling subtrees (`Hash` ops) at all, only `KVValueHashFeatureTypeWithChildHash` (full reveal) plus `Parent` / `Child` glue.
+
+```mermaid
+flowchart TB
+  subgraph L5["Layer 5 — widget doctype merk-tree"]
+    direction TB
+    L5_q["<b>brand</b> (queried)<br/>kv_hash=HASH[68b6...]"]:::queried
+    L5_left["HASH[9862...]"]:::sibling
+    L5_right["HASH[6c36...]"]:::sibling
+    L5_q --> L5_left
+    L5_q --> L5_right
+  end
+
+  subgraph L6["Layer 6 — byBrand merk-tree (ALL 100 targets fully resolved)"]
+    direction TB
+    L6_t0["<b>brand_000</b><br/>CountTree count=1000<br/>BasicMerkNode"]:::target
+    L6_t1["<b>brand_001</b><br/>CountTree count=1000"]:::target
+    L6_tmid["... 97 more KVValueHashFeatureTypeWithChildHash<br/>targets, each CountTree count=1000<br/>(192 merk ops total: 100 Push + 92 Parent/Child)"]:::target
+    L6_t99["<b>brand_099</b><br/>CountTree count=1000"]:::target
+
+    L6_t0 --> L6_t1
+    L6_t1 --> L6_tmid
+    L6_tmid --> L6_t99
+  end
+
+  L5_q -. "Tree(merk_root[byBrand])" .-> L6_t0
+
+  classDef queried fill:#1f6feb,color:#fff,stroke:#1f6feb,stroke-width:2px;
+  classDef sibling fill:#6e7681,color:#fff,stroke:#6e7681;
+  classDef target fill:#39c5cf,color:#0d1117,stroke:#39c5cf,stroke-width:3px;
+```
+
+Because the In set covers *every* brand in the fixture, the proof has zero opaque-sibling subtree commitments at L6 — every binary-tree node is revealed as a `KVValueHashFeatureTypeWithChildHash` target. That's the most efficient byte-per-key shape `GroupByIn` can hit: at `|IN| = B` (where `B` is the total entries in the property tree), the proof bytes ≈ `B × (kv-hash + count + child-hash + glue)` ≈ `B × 100 B`. For `B = 100`, that's exactly the 10 038 B we observe.
+
+By contrast, smaller In sets (G1's `|IN| = 2`) pay the boundary-proof tax: the byBrand merk tree has ~98 unresolved entries, each contributing one `KVHash` (opaque-key commitment, ~33 B) or `Hash` (opaque-subtree commitment, ~33 B). The asymptotic crossover at which "reveal everything" becomes cheaper than "reveal-some-and-commit-the-rest" depends on the ratio of `|IN|` to `B` — for byBrand with `B = 100`, the crossover is around `|IN| ≈ 50`.
 
 ## G2 — `In` on `byColor`, Grouped By `color`
 
@@ -868,175 +1194,6 @@ flowchart TB
 
 The 50-targets-per-brand limit reflects the shared response-size cap. In the 2-brand case the cap kicks in at 50 colors per brand; if the In set had 1 brand it would be 100 colors; if it had 4 brands it would be 25 each. The dispatcher slices the cap evenly across the In fan-out so the *total* number of returned entries equals the limit, regardless of how many In branches share it. That's why the bench's `[matrix]` row for this case shows `Entries(len=100, sum=100)` rather than `len=200, sum=200`.
 
-## G6 — High-Fanout `In` on `byBrand`
-
-```text
-select   = COUNT
-where    = brand IN ["brand_000", "brand_001", ..., "brand_099"]
-group_by = [brand]
-prove    = true
-```
-
-**Path query** (same shape as G1, scaled to `|IN| = 100`):
-
-```text
-path:         ["@", contract_id, 0x01, "widget", "brand"]
-query items:  [Key("brand_000"), Key("brand_001"), ..., Key("brand_099")]
-```
-
-**Verified payload:**
-
-```text
-Entries(100 groups, sum = 100 000)
-```
-
-Every document in the fixture, partitioned by brand. Each `Entries[i]` carries `(brand_NNN, CountTree count=1000)`.
-
-**Proof size:** 10 038 B. **Mode:** `CountMode::GroupByIn`.
-
-Same structural shape as [G1](#g1--in-on-bybrand-grouped-by-brand), scaled from `|IN| = 2` to `|IN| = 100`. The byBrand merk binary tree at L6 emits all 100 brands as `KVValueHashFeatureTypeWithChildHash` targets — each ~100 B (key + leaf kv-hash + `CountTree(00, 1000, ...)` + `BasicMerkNode` feature + child-hash) — plus minimal boundary glue at the binary-tree corners. The proof grows linearly with `|IN|`: G1 (`|IN|=2`) was 1 102 B; G6 (`|IN|=100`) is 10 038 B; the slope is ~99 B per additional In value.
-
-Compare against the `byColor` equivalent (`group_by_color_in_proof_100_rangecountable_branches`, 10 512 B): the `ProvableCountTree` overhead from `byColor`'s `KVHashCount` running counts adds ~5 % to the byBrand baseline, even though those running counts aren't consumed by a point-lookup group_by. This is the same `ProvableCountTree` overhead [G2](#g2--in-on-bycolor-grouped-by-color) carried at the smaller scale (`|IN|=2`).
-
-**Proof display:**
-
-<details>
-<summary>Expand to see the structured proof (5 layers; bottom layer enumerates 100 brands as `KVValueHashFeatureTypeWithChildHash` targets — 192 merk ops total at L6 including binary-tree glue) — or <a href="https://dashpay.github.io/grovedb-proof-visualizer-widget/#f=text&d=H4sIAAhCBmoC_6WdWa91uXGe7_UrvksL0AWLrOIgIIFjB4mBDDBgQ7kwBIOjJUSQjLYUxwj83_PU7tbcS73W0lF36wz77LN3sfgOZLH4X7_6xf_Z__mv_varX_zi_Ei-_L_vffny3_u_7a8-3_h8-eXLP_vnP_zyP_ZX__svPt_48iX88Mvf_upffvIXf9P9P__p7_7mH8aKTU5staUz8skrxyChlqJ5dn6QupS6VqhbEt8aeUosu0nfKcc00o-___1vnlu-ee7_9qMf9Z_9an_-xF_-4Mvff7X3X-heMeaoxWIrsZ9WzijSx9GQy4hpZ15G7ll6iCfZiKHVKu2sndqKtX3_B18-r1a79VjnkKGBJ-zdH3vCshBLLutIirmOdTSXmmNZg2fgYWalz3XK77zayKvtX-2f__Kbr9MfRUbabFEJzNaSegvEQGssZYUhfHvOWddIa9YS5piSwi4lnbRK2914d7_9W_rDL3_9k5_-bH399c9-8a_7q3_8mY_Wv_zwm6H68uUvv_yH__ibL75lML_--JYh_f2B_d3gh__754b9m9EL8uv422hhy24WR9n7tJDmbGvE1fjNnZL2VE7Zoc6-tsWZR9w98feG5ZHViMn3f-d1f3sovnlHf_ar__2I_sm4fkd0ryaPtl2kSeAVlpia7VXiPCHtVlKrZa-dtzY1AmJFDwnCA-zo3GWTj_XHvxeNX3_It45lkG9Go5TcMgmeecrfjMtqPZy-aicDo-Vw6q7NwpRdtZez--h9RBmljVni2VPJZdVYVXfc59tfyG_myB__8E-N3K_HL8i3jcCNcbg1Gtd5_68_Xf-0f_lNtECBmCXv_JtY5WnBjqUT92C67pDCnLHPrjktHRpb3yPF0BsBHbVvEIW4hdRjHCPXP8jhZ1H5-uPrV3gdndsxehCpqxxuAGVtOiT3UBrwWc-aJzP55ohz-zyeldmmWds4M0_-VR6W2wi7rfbjy2j8qXweX_Wfrz8aIjsppJzSb4aqjtzK6q2tvHsJvaY9VErTNXsZPbVUgePe6hnHR20uUr6NNGyFc-J3v7Y_pIGrjz-mhzxTLrHtlob0JFDjYdrtWEmrTEqFzWtWWyNUkDGbCIkW4c82mYw1f_dr-33auPq4m3Nff3zi_l2J9zD9Hifh5dT9L7v_8ldf7b__t3_e_-unv_zJ593_Nl3-MYTwgy9__Ytf_fyXX-dNQq_MfEr8wRf5_Oz8rP8TQfgHPvV_fvzrPGokg2ub1hNMJdKs1SixQtq5lKgw1IplFCuImpBPmlVDaDlvtEUq48c_-PJX_V9-Ov3N_c9frP3N05JpVmtNU1vcCKaaZQ3ZuS9nhIZWaYJKSCn0Y1AZiFvzGo25tHIt9t0pcDmBvjNS8i5SWhXZJ2fonvUodLHllNo_VL8DZA-Nkd4mBKudEQTGi1Z4Q6NlixeRCuNIDDFBS0QcCbkGJDjFakI5wN81VWRmdh0xS5aWfSRaKxYIcWl3I3V3Ov_-pH4S1_gyrsDSCVoCSWKKaiD3FjKA998J5F6A7lDNG_0Y9ukyqrU4C2TeVpd8EdddlyVQKOgoR_tsLsGAyLX6IIok_Co9IedT7IqYFwVnJcRQe0A757tx_TUU3XqwvQhrejmxO_RtcPiEG7bUlBtz3Sx1bfz6romJmJjie4lNmIXpyFTvpnUQ3nYR1ujDZVm0aGhxpTS6z1hkKFSUg2ZQIp4aQgmo_lonQmqeVSztlaDJu2HNj9K1vIirvosr8qhVWZqRrjsBi31PBBMWKs8d46qNXJoWa6iCnG1EPKiBg3MhTMe5iCuyAs622HvtceUciLC1M6Ns_m2n6kanFmUOaJEJakKu_Am0rMrJ9W5c64tI2btIBailyyyhkVApVsARiseEHJ_VcZCYvWkmgepKKwYsY5eF0uxjpK16EalcyLVqPZ9ZEDJr7B0P0p38wumsmIdgTEUwoGMXIADraZuY4i5s7tuRao8yUN5wdn4XWCzmHu0guceaKREwRFZRYA57L4hQJ-zYRuXbaEaYArfY2igqrc8arjhbbB8MEtoNskEOlO4DGCODGDRJCWW0Mn25IMiIHduKg3U_K6HrnLc5W55ApsRHj35DXOXdMEDKsRPqEw4pzoBoWWjuELFRKIVKzufgJrc0kAFZzqctkI3gYUWRXwyDJeD6AARb8R3I5hgwWUG6KL_WkvWdwhmtAe5OmSfGFDYqO-SxV4i3h0GfJfgb7qovMbZKnXO5-3QsaD1uDXPxHg3iR5NuPMOZoERJe4KTPZ5zho2KT0MZXES296myRJKudJLsoNBdn6BGWZaNAK565h4R2VsBqAy0NqQCwkNam7e5S_KLULV3oRKLZWER-WcuKGlh9PhvbbI7Zj6ToEZaIKsR8ocRkQK_Z7TTPhVldBEqdZHVdiIChZzbSeMy0tBynni2UwCcjW6YgUGYc8ZFBGP0BZQO2PTboSrPkvAFfclLZxRHs5Dh3JMJQPSA2Ahx74DwX6sZUvWMVc0EuMRyY2PURlsVGNAtVyhrALSYMSp5Hnw5BIiUH7ORfRgm0hqJWsvkW2D4qTW4CggAbdkPdKm0J7gZX9CXvDRSfa1yKjapaw_NAMsY9EhjJmcrpdXe01nbFwiD9npqzK3qwkD6KrPuK12w1-DvT6e_jdQFd3sxRg3nYMtAxuqv0aqvPgQcxR6MKCp51kLqnttGSh6lbIwvIvvSSvlSZrKmoarBGAbgodRPGbYWLnNkcC1kPVA4_p3wt113NAuNAZlyFdltGLCj9SCxdvGh6SMajrWEI3nUXC3XXYxXCG63jBKZOC6EQfWJcd-iviBveWmPCgJ-dCUctqZZQc_s4vSQFoQKk6SlfZxi_WxjBgo8Dy2TsbJbudRQG0OERMrAravyhnSX3pnyU_GaZHgih6Fv8u-I5rLKEECV4eodL3s_CZ-Rd3xB3vLSIKGAeupLiWiog5lVYsjxFGa2I9l2ysW02MikUD8lzL4r3DU0ms5Tr4xnOLFkDT0r1DXKqCJkN__GFmsBrQ_GPjJA6QT1lyjbmhPYMD15345sfoSb5dGj66NHtxeD9tKr-WzOAUFvAV5vtViZpHldZlCRRUUPnbPw-tDhAVk2CYwMyIza6nIlI0KW4yKh7R6nw3MCSWSsjRnJsZ6jLjHQsB2JjFBp0xcRYkuV567n9jJgCs9Wt14sG8pLs9ZOyDnjZ9cZtaDpE1N-x35cVja874HSWqjrnFn5GIDDtBEx-ocIzSstW2sZG7UakMImKDvGi98gxDqsCiQXtmHOZsVV97kPeCdMQOwykkZuR_YNfZW3oUrQMqZp1rinkG-KjU0b7t6kYnB8jmToTn2fFD-CX2o9WQq-Pl0tWQ0QKQ9pLuOQa3JwVRMYJtXPSciMSBLm1nvDdGnq-LleFrw4t2pbt7VsSs-SUF9E9qWhaiirWSr2PkSCoBWOnsFXZNZgwi_3QssQTG3CgwjUriORl8s3AaRdrfLj-tvIQPLRyLOCEkAucxsFZxWMrxolmc1EWk7gnqiD8JPxO7i7dFsYJHuCm-mF_ZKX9msDYbFU24IrWhNnSUBPm7PmlQYZpaGtWSWAbNb4vIxxYHpJZGxccqllfR8aRFDpu-eBV0CEYfEmHIicWMc0lX6ab0VKKmU1Irp9YdYAl3I7sM_sV3phv-JL-zXIUOTTLLiwKhrPhi6Gb77gQK3jwdKWkpJC8zW0pGmhO3T02m310C8XuXBn2VdvefqK-I-NWZUlTjTtWBGUaQFJ6Ow0Eu427OIARJof6w_A4AV5x5eGCpevCMrSEEEl1NpjzjVsqEU_-6voV3wBpA4KJM2CFVJf_4AREoG7ws3SIGaZCV86UyJaBUbZp0pLXmuEbNtu2Do53w5onBocn1OqYGfn79_eQXlG3vqCvONLQ1U7kw6jatHwTeOoJTl7Q7UlB4x_9QVXEmWXEFZYkEdfGZArrndatUvyFqnixl-GZvwEc310pjupLKWlOPhlV7olLt85LY0_UOWMyCvAw92O7KO1U02PHv2CvuJLsybYTPXFOqn4Tj2hIqJKCuBp91K3OGQxg3FvULyaTNQBuhSw7Lj8feVrW56lr1baIeadv8GgkMttBI_ymWnDXHVuEB2dq4D6KIzaOb5ZvvT2grfaswR_wV_xrVmbISnJjAXe2VdOnPM3cWxlj8g_4WjrqAbsa4wj4Nt0LKx91QbKXG1qYxGaodRyBl2zL0qmo9P_EEAU0K2D3CaUKfWJ2D28Ch5VLfs22Jbbul9fbPzFlxYphlpEE5QEcadG0nS0TlVUzTjVSoKcjlfrdKktdywtRrWJkjQg775C2Xl8CQp0BsChublR6qNLCkfGsbwshlWmABkRI7aa7_pn8S1qNP6672u1PkvCN_z10iKdFpH54tvHQCuKZpfuW6ru5mvjGwEtqf30qBDcKvipqaiAZdn10NVGYc1eLbF2aUutWupLBIzYa0Sd0Dn6FvxGw6a4Q0gxx-MLCbiwD4iEu5G18KgE4A19vTRUJrylE3lX6ewSx0kYoeaVN0l6bjY6jltnWRDPDLKSKtnrBX9SBId6hZtYp4CD72Yq2LGAwrc5QkWx5h4cdiNxbsuwVwHOSqs33BRey2tXbtOXPatZsRfLh_GlocIXmRjhOr211g8uignMDC1n-aLr0VVHh4GQX3DSiVu7b2yfsQbAcLXItcwJbkSpwU2w9Ih1RaWJF1OojM2v98TwVSAhuHWTHNueIDZzZd5P2Tfk_dIixdx2Xh4pV9XIzk-ll0pDiVoqQOlwIN0JE7_RmKMeEhIe6qmQPlf1PTl9YktMU4Q_omQcKMEdwwW9Ta-LXL7aXXsYxHIkvD2mFJcUQq-3V1rtGXnbC_JOb2v3sJi-gI_l2YShH9JhB3Qk2blLIczYcKyOWsOB9h0ryHfM6yW8tu_KfFYvXCsGHJ9R5vKaHh_AqqskZOha0FkcumyTeowoWtdgw7xkYw3S7W1Se7R2ao_WTu3R7ld-hOD5BYKnl9ZuojaTnQNpjdEjwjNMACAXoHwA4DnM5gN0atKA1gDbca_N6oyjoGGvRMf2mkuVE07lF_DVoSRJXqs4XVLDiCtDkDKZs0xGS16VmAs8KgdWuV3F9QzB8wsET2_LDtuwgI2VmS3MIYr_Z0JBlWBFUF8bFE_sAsK0NXC_uUxQBoM3W6vz0lOILyr40Y4eli3FRmCUu5vCnENqJqiQqAWg99CC3LJMFwKZF11uw1J-geDppf1a8SCI8AgIh5ahIHR7mKI5lI7TnauYH3ApOS6F_4ocsgrW92L4Pu1qr8wPf5TQNWOBccygdM-EJkxfzOWZyWyMNyDuVW41KCKCcUGoIGGW3S_HyM8QPL9B8Jf2Cy7KOpskwUzgfnYcKyAr9tm4oLIzv33QpaEV3JgMwwKcOBFtCFoCcxHZVGDSOMhF8m1Aoi0FM98rsINaCHtDAmlBC3lU374FOJoXOfBDIq-3I_sIwfOL1cP00qzpwtFrdKsKazXe1dHTa90ZGgTodMe8C-IYhZZQDwaACtNUMjCIwLpauGkjYdhwbGcOktWY07EyZENDmxnjlohit9JHtVGQJshrqDPJCKeH2-uy-VnxYXlRvZHemjUvN0pM3O1VV_hgieLV8KGm44XAu-OJMVTVF1eORv61QXond7bhcqewNSAmnDUlkvoHHlvY3lNPAkYP0poPc0nXsnlN_dpp-OZi7-hg3OHdyJY35P3Sfi0MUcq-37KkewHsORZRTzbqkByY7lLSMB212SkD5TsW6diD7xTOc6XPJhPWhdxZPrld6Aae03cTDxqgGeqt9THVqz-TKVZZTrdVYPneer-9hF2ekXd5Q94v7deco05iN7Vt84pIMqJ8lgID1DrRrTxPaQLIqRXfxG4qOkc5yOCcLkuLCWSbq2njSb0CEHtF1DampMUeGulZscURwM65xIgDxPyFhYbgW-s2eZdHhwbKo92v8oa-Xlo73G6qwWsyc10nbMsindTDwwa0gaCctJKUvutHsNYeeOBzkEhYu5SuVg_9qMJu9VMTl32ZazY8sQ5xn5cwxKQyXmavUBRzCSyI-Wqk1NJt59slcuXZ7ld5wV_60tqZS8i1-q694tR4w02EmCBOMbcg6ujQWg_hU3TZc_TdXaulHjQmqXtp7YLrNzteHrcCY6Npz7xxAAg8-DAcP8s5cZOSxogwZ40Z9gy2T5r3UfbF6qG-tEhbQ2zTprSSTjAZGSnvdW5RmMsKEfVVI6kR5vos-fHuMvrIpldgjMvVQ8DYzCVoEx4eckcr9WyzI4IDrwttWne3yaBsL57pPNIXczM5z5-7fSDj2e5XfcFfGt_WFu-wFCGqR_aA3LvB914VTHpoXcy-MhafwTUaU941-CYhDrJPCPtq28U2HO8-VWIYuZmvveImVjJDQoAjSLbq69syeg5-Alfi_BQf7YTRuB_ZR7tf9QV96UtDhZtZJad6vAA4IQHcTfmMh8eY4uuzenhQD-SY7tQrdsfIX-QTUkrKVaELwSFVxyqrEmMwYTbG5Ow8dpxpSokrA8DReF4BCPqZlhMGNB4__347sM-KD-uL4kPVt4c01zj5YJ98d7VvM965MjVzK4Uwh69Xtqrv6hddQzFIiP5RhOkOJ12lbGZIOlMdliH1Z1I_JTv049RQCchVpFfMzm3aZwKK8PvidV4r9XV7vaS-IG99W_JXO0gFsI-U3QHlkuoMZSs4Zv6pVHj4U4w2S8MtbT_RUubws7stXJauIPilHfPyrRmarE8FN_HFtEpR41dLDd4VBO2QC_gZvOSWHETJyv0l7PqMvOsb8n5pkXo5C1QzJxzzkz7kV3GXeI5v9HWvylvo9yFQTBqNjB34mhRAPJjmqnSlkdGt-FkV5jWoiy7ojJwVmfG4twpeeLxj8HWVExFfra6Gbdql5FPvR_bR2ml7tHbaHp39ai-KD_WlWQMqofgYFYpHTC1JO1uDp87GpjAuTAjMhWSvxfACy5z86PrgoxyvdrlYMVgRbRywJ8Xbn-j8MJm0FbqX0YQQewOLvRxp7yVeXG-V-TIFl5jL7RqD9qz4sL1YPtSXZg3snHVC5rwxjC1KXr1GuyRrR9rY9dP-BQ0VGmJ0pLibjmPFiwUN_r86MRsHgn81Px9TW9mhYYJrO6C4K1uwlwlRJpo4JBkN0eJFjyjkgtCFFW5H9g19vTRU6hpnDt-RdRYzVPqIIaMQYihh-SmCFdzoBy_mBbXjrrCMlw1YB1Kvit6C7mLqedqJGCPgHaxGJQ3RDF6HiBLIuzFGpW8Ev1eHbWRdS75jfltxtWenttuL6g17a6jSQsFGL6Gcy0_D5JO8sKdq6xjJGaYvXJUOUR1DFvDW-zihC46BB15Vb_jpTrWysaWnMoWDnxgpR8jbk9VLDDbCdseyh61IRiI9aow9-ZLYub_S2h7tfrUX9svenuYiU1Q7kFWbVZ24RixoIKLnYP39KCXetSIv3RT47nVETEjkoWpE66r4MLne8or1rNtgOzH-xvAC5QGj6uwYMEt5acLpffwfukJdn50p9-s0eXMPz3m_MGD20oDZUhylmYm3EJkVSEM88LW3IPD1UPVOC2fU6Adjh8bTDAQNfs6rM6evJBrJxyQwfDEpW0at9Yy4rTRvXEI808zTT-_AUxLTQvL6woP3Mmutt3A_ti_42972u0BolTTcoK4A-uMm68TuzJi8SGL5ftWcyc9y5Yk_YgaKr0l5PxfTJJf9LmIFNLKkqA09nNdnC1BTRikPUpnJHyI5XsZce-QPFpCXM0niFen9WKWHefiCwe2lq_I-DbP0EXwhLswcas0L5zjDwK7jULHw3rYtrC2Qu1dr-gmOeWyCddeCNnuHC8UDWCm9nUxCr4y_CKl3ZU7vzORPJfiRoF5rWmjoNTAi5Gx_EttHK6iA9LOHv6Gxl6atxrbTihJLBEF9Z_SM42t0CMyE9kcIfLZfrccwxOuQWmx-ANSL5rVcnvDUHFNHI_QhlpIGuGkm5Kh6HefxtcU294p-KKx_mhMFRPIxzKKvDt4_lBzqwyx_w2QvbVuJfetZzGc_XpD8wHzBlW7-546-FMRS9ZTeE80JJAYvURR0wyZieiW-FKDuy1vpMUtmTqanf5qjKXRpfiBs4IQlHtWln91e7IJo6ZKyaVz322q82AW0l24pYN_RPcrMnLI96bx7opiQNjHglc7yI548QH2XJDoe-J5WrlnXylcrWI3BQx5NP7s8cpAJonpvi4A7WBUF508L9FVDXrXOEB1UcW74KyJXHsTq2SFukTdM9tYvleYKvMWA2GHautuHvjCDa8BmdaWiDofm0hTDEwZzcUsYQ7BElzXZmCTz4wvp08vR25ZsP_LlX9Thy6054rcguTxO7vucXkfCLbktQ07cR1t5dI5A5A2RvfRXuQ9E5e69Ms0BNGKXREr5iAKfnwFSn96T6IRYAhmbhkI2q1aUrF6dg5t-kPP4SmtbK1Y_xjoGz9N3L1p4YSUAqbEPlNrxPhLTV3gXGHBaD_eLfkTsYdq-WE_MLx0Wfj4GyVgrxZBiwZsXPOF-vP9dx3cT-y2bWGbvlpd041i9MJMkziDI1dKrn0YGQSVamnjdUVuL57TMHJhyYgVZQCMkCIYBEcZ73n7QWLwZR9D7nQTlBY3nl6bJ23wJQZJyzvJiB-gWmukadzS01knIrbJW91ai6r0yfJtuRRPs0-mXJ7amE4xXr68KeyzvYDKbN4ix3avXnhVAA_EAsmJqdww95BFsljwy6Xk_Vg9pXF7QeH57Zmt5dxomKwgp1sTyZxFlrc0zEOnqbYM-DbLyap_yoBFIMIIWq2_sX22ueFGkHx72g9X1iCzc7ZnT1qcTo6Y2vd0dKjaixj7706Q8GFP66jzz7djG8Kw91sNuWs_aacVnWB712cNfLK3ll_7QXQvA06WeWvcJqGKvqfXWEAWPPY-7PH7SvRATuNbqrfxa0TS7kSmXS2veZw2DdNrIjLstb2th_azlJ9jT9uZoGaL2YwHDYul9pTlWHbjwfv-krsRna2sS38DZS3-IxGttZz9eDuZ7mzImRsreca-Acudz0v4gqysibWORT0m6_HRvcxFytQbE_N0p2RJtC2vjtUt8Kq3I2p8-1JWnXOnUs8_K-SCfETE5oMfRMF3ux_bF5lB-6eBGNBSziyudYC5-wIygoB02EdEDcBeAWZZ3pykosdL8iBnosjO650qCoNMGaG5-3M78GOScPfuxxi1pBfHdyFmzeaXpGF6H57ug0e8DSMkPnt6P1cO-iOmFK8kvHVzYScIZPbQ1xAuGiWVoMfkBMHzV0DaT8j3cFbqaLPQDuH6LAd_tJ1429fF-SfAIsznu0pjVo07x9NsoGWiD_PTm6JthzF7_WSS1k86CM6as-3mYnmH5m94c-aXhQz6g1rzxqzYi5WfuMSZMct6_uIq2kLQCd22bQ-cuelLXT23YaJfq7iATsZE2mMK-UBxKGwexgquWqsfMb9to-BRvkDK9MqI3EKUY7qXL_TN68rA5h7zpzpHr2w7IB8_r5-xziYOZS-7mJX7sokxNGL3o7STVySQCph7UlHL0EpJu9Sq2qxYp3jnOryrxtsbmZrnvOJeL5J5gqMIQFRnbgnq1LtntTdq7-fnq-7F9Q-NvT5OJgnFM3ekV3itM37JS67nr9IsmsmZUnGGt_FaN7B0RjmDAmpKL4_LM0yjTDzWAGsWLHrCE6G8dOwMLU7191xp-JmE1Etz7nKk368OTe18TzffNcXpI4-kFjZeXDk69EdFYZFRSZ1Hz0iM_gOt9MdFOMW71M44h92QH61BWiCRq936Gc9llw17roManzIMs9zON2iMmse0Na4uXyVcCjTFGeq2DNPAu5wq5h8KD7se2PoPPR3UOoi-IrLz0h4AANC5wN06jxjR8zUJ26TX77gIyALPojY8a7J1Sxez0yJQWENRb8lwRGTiDMU_ezmRHmKwaksCvoJnNm_yBt-Ktwrt5y3RvR4HmAMgRwTjteX-dQh8ur-kLJisv_eEqG7V-eve1tdl0Le_Ud7qSphl-W2PphNyXHzGHekh60vFYWp_d26t6UYGVZj3eYDkySH4LT6kOPXH0480WfWl0b7I68pyrVG-TaqUH76SMALkf2xeFiuVtoWJTBLaXc4V9JB3faV0h-D1GIn6J1KzJ345L7xaaN5myYRvOQbkiOa-WxImm5XlWHJ8VzRnNMGPdu6aAqBJm3dsYgzq3Vl5px5n5YXX1xnMPlnn1YY9jfcFk5aVpClGdaHoLXg6wk6_NAqdngpcL6tmWRoCww0rDRvTN7dB1Wy-b9N2XjeSB12YtkVrJm3SQeCv3Du-XPdZaEcwI05vZkKte4oxxiIC6Ev8z71eJiT7bJXvTqqO89FheLgCP-5VTCBto3_tLbi211ZbdcXWx4-cZBySACKpYruxVtr4DtPu6PJ0fMaJM4EjOduLmDanOp0yha_cDDebLejsjTv3ImdVjJZt5W_8xwv3ltYe9OuRNs47y9vxXmAs427sm0lHi0P7psjNVP83jc_aLDlCe3qez4DQ_p51M5ipZsuU_sQO5QRuvt88TocYzAyoOxOonZUvN3txKAZ_Nj4_gvkTWCq1HLwG7HVt7Q-NvGxpq7U389rssdfqtBY6Ly7VO8gscQMu8vDyoqx97jQBp9P6DvKXmDd4uO8Sf5ccNuy3fAdsDdPArYhJqIGxMAU6sJBwYvqzCb97Jc_g1NNEbcZb7HeLtIY3bGxp_2yM-NQE75Qi84ScEsoy4-vCWZ4eUPGkZ_Grisz2ZH5oFWyXjLKd3RbjaymGiWlhI3oMcCGn7cXdv97SU-a5opZ4cQ4KuYK2pePl8b4jgiTUdD_Lw2cqqPVtZtWcVD2-6VpS3LRMXkiH4wdjpnSZlwmfm7mqO4q2QydPQK8QVsQfVO0VWK2ENhuGgR_vlpOBNe5dmPxc2XBc3nm-2CGZMYxTbBJURvT6i3m1VmYYhBQlW4gn39Zc9bFlvLxYXa3h7Ymf6FQhgQoaBCiGTT9Mk74J2ZvJ2EW6fizfjzBaQtyi30ar6ck4Wuezz6c3pvLe3-h0M01dvVUqoMfh9iqDwxAdOJO3s3Zc3xx75nFWKF1KO--Uh9oLI6tvWGjXWriiuuMkcWCt6J0PkqAbvgIznjX7NRlCgU-dBLnmvWSQr7zy2fbUQO-Y83QtAkxCrU8iudCRio09VnkxQ1GBWBOzjDGd2b6oYa0rGnIj3z5BKfli4-KZtSX3psTChYIpCTd4JyRcIpu3dippXxe6CMCftDmKh4IxO99aJBYk_ySsjY6_aSUP4Ef2PUfC-XcubA9c4SWv10SzB_MwPGYo-0YpJBmhWNtxF5tv5wQUez3bJ3vQtqW_rHH0HEj3hx0Yw-2fN1VfxRgPeKS3XT9_S6FcltEYUOilbwlmddCu-OnB5dgwg3OLbmWMl9av5EoOzELqposwkn7iD-7ZO-Nde0TTvutW71c15v942P7Rk-YUlq2_v9iJMG_t5mK7Fe6bGjDJDWvghr129R0zI3qLAi-5y570Er8LzFX-v3L-ETx-dpJv5v8pB6hWmxTkCv5HBBcU3kLxEPXU_ibaa9_YaAWFddICu92P7gsbr23aI2kovA_3tRSx-hI4MOsGbtPjZguUa1pdZvD9q4gGaEV2nxXmgBPDvaorvjmPy21XHLlGjeD3ZdFknyUtGlud7INZ5-MzuBPMsBK8Gq6PZ_UXr_JDG33QvqW8v-Np-7g6y8C6TTeKyFo9XBHotQ2y-YgpH-V0ohJ3kaU4vLj8_wLAv28IgorSaSyks6hgWgvdMMAyKN_CbyC1LUbMkn_PTL0TCy25vD9Nj3A9i-2xltTyreHjTwqO-dHC-oz_9avVc54DUqsvS6Hwmy0vsEZDF91TJShJQ_UTpZtTSCUfTLJe3KAZQxFDCKNueyjDZwEMuJDq2o2j0i61wM7N6l3q_dIg5lvuMfvhvPDjd8LCHh7xp4lFfOjhZM_VahBcZjy91Myf90EjMw1tNDRBlqR9RRSEcJPFBNPWRkp-1UcJ3tQDmvTsbihYzXHx_4fi9TH7oxBraFzmMrytkdypa-JtpMMUAKG9Rqbym-7F9sUVY317zdcA2v6vU2xd4jcUOZcEVI63j9ynrKXt6eWEFhHvirXlbMcP6nHhOvSxqkpjAVj81s6OfTvXTZQFianNXLANyrXqrCUAG5Z9j3mHXbucQTKTBfdNUHhYuvuli0t5uewkmvsRPi8gD6aoXYJxIZhTvpZ6ae0UMDfRd-w7Rz-I3wdd9jpFfXjsB01n3ixbGMtUZevYe6tnW7nEsX5HpCYQV-L5r8TL7MDLwDcpknfG-WC3lGXy-ILImbzsgYahMU97Lm9S3kMqn2cC0lAbKdAQymK9OEu93wBfTyzvxSTtYuyy6WhL0MDbFJZP5dalAtIqXYAGsCIyyTkvNdxUZQi3JPlvfzPMUe3-wj1UeFrvUF4uL7aXHSmn3z_I-RHFI4bMw8XGjnKLffYxCwreKb-kNPwUbwVe_yjv4jjXmUS6b-26MlZ8pAayary1qd1c2GwgE9vilYtZwB4XEY5qYL6kf3OuCn3K_L1bfdDJp6e0NCWEsFBOsmkqfffmp-zb8lOKoWEiZiMcGmBIjfxd1N79vpjUm_ZqXi4UxbF-ELUG1-x2JGLFWtfmi9fxMecK0P_esrPh1q3kgZfNHUHGdvL8fq4c0_qaZSXtb_FdWsWVJQiZPeh1xIm7mhFf3IQwRyq2ji19VWlT68BMFpXjpUPS-RVcLsb0TfRiN596tYAL8nAnGyDscRWveebJhan3nMOE5ku-3Ig2kyRnhwXGF-mxltT5bWX3T0aO9PRxWwL6EefVrjHJp6yTsnfSzMap5z-Tn6klzYqYM10al7rS8XsbvO92XXdEaGreMOZo3CsnJe4QnxvAQ5er3CgdhpP2CZU0bmbzi13eLB2jU-v0Ll6U-vQz0DZO97unBpEUJNbJxqjfXGJ9LPGfwdeYjQMhx8F1kYMk1Hj8vUoYfJkc3XZZtBr-OZmRvCzgrHsC3hQ5moETxshsv3e-fS5rQvPvwjGQ7A5ard-ut_QGCvFhZbW-3vWJfSMgU55TYYvGtP8AP9rEW8hhnmzN0HIgswBeMtTF0-VEb3r5c5WFSnO72bgfqff6wV3q88gjThXhLq-cpfnuA7-uuhc6aO0Uimo__ablfgd8erqy2N0z29nBY9Y7683jLZ78JPSQ7w69CSJ-LjOzwhvcqa1e_JZ0p-Slg3xr89jRA92qJanqfYu_PYaiH2lCsbej0Oo-jQ3xvMvgN7n6vjzaxudbGkLgRGMHT-3ZsX2wRtpemqR-kCVE4sUvoTQMKf33YYfoNsNCVN4jkjYwKjs2AJPUuRISiKfLpsgwgaDvbwS2MsryRV1e_c8qXCn0hwAuGvAnJanYQEfgEr_1x3ZUgRbtfDtyebRG2Z0TWnhFZe1bu0Z6Zkt_0t_ju0Pz79_6cn_-pn17_7Oon3_79b_vuH3_vD7_z-1__7le__fzXn339__7ff__ev3_v_wPod7yV8pAAAA">open interactively in the visualizer ↗</a></summary>
-
-```text
-GroveDBProofV1 {
-  LayerProof {
-    proof: Merk(
-      0: Push(Hash(HASH[bd291f29893fb6f6d6201087746ca1f23a178dd08e1346cb6c127e91ae3623b3]))
-      1: Push(KVValueHash(@, Tree(4ed22624752972af97fb71abf4067b23e6d296a61a02f35b2098819fde39d289), HASH[4a5a28cb1b40226aa35b2f0d502767df13268bdf4678627dbfde26a557acdf73]))
-      2: Parent
-      3: Push(Hash(HASH[19c924989e473a90d0848277d0b1498ccc8db3dc870cbc130e773f3d79ea5b71]))
-      4: Child)
-    lower_layers: {
-      // L2..L4 are byte-identical to every other query in this chapter
-      // (the @ / contract_id / 0x01 descent into widget); see chapter 29's
-      // Q1 verbatim for the full L1..L4 chain.
-      ...
-      widget => {
-        LayerProof {
-          proof: Merk(
-            // L5 widget doctype — `brand` queried, opaque siblings 9862 / 6c36
-            0: Push(Hash(HASH[9862894b16a0792688fdcf64edcb2ceade5c8b234649bfc6cfc6426869b0e9d9]))
-            1: Push(KVValueHash(brand, Tree(6272616e645f303633), HASH[68b697da99d6ea70a83eb41794dca7ba3938d0ba98fbfaeb3cd0c19b3b5d0ff2]))
-            2: Parent
-            3: Push(Hash(HASH[6c36729e93b1a316cbf60fe282eb630c0ed6e45db088e365110302b6c9caba86]))
-            4: Child)
-          lower_layers: {
-            brand => {
-              LayerProof {
-                proof: Merk(
-                  // L6 byBrand merk-tree — 100 targets + binary-tree glue
-                  // (192 merk ops total; structurally a fully-resolved in-order
-                  // traversal of all 100 brand entries in the byBrand merk tree)
-                  0: Push(KVValueHashFeatureTypeWithChildHash(brand_000, CountTree(636f6c6f72, 1000, flags: [0, 0, 0]), HASH[90ff6f6d9a3d901195982128130677243bfd27b75736206f3c8400966ef0d37b], BasicMerkNode, HASH[19b58883c492e746861db1e6ad07529a5a91cc8330af522682486db9346d6875]))
-                  1: Push(KVValueHashFeatureTypeWithChildHash(brand_001, CountTree(636f6c6f72, 1000, flags: [0, 0, 0]), HASH[484ca11fb4ec8f479be1f78af903ce0c9d4fe630517579fb0172c2576d6b9652], BasicMerkNode, HASH[0bf12023f8e067c12db4cec1583909a0283878d6d909c76196736299750b5879]))
-                  2: Parent
-                  3: Push(KVValueHashFeatureTypeWithChildHash(brand_002, CountTree(636f6c6f72, 1000, flags: [0, 0, 0]), HASH[4c19f047068654e71813dce7839a579edfdcb446e3d70efa1b8592c73259da16], BasicMerkNode, HASH[e8d5372904b7f4ac9334aeb4ddab619d9ad7a308732a4f231416e10208a0a356]))
-                  ...
-                  // 97 more KVValueHashFeatureTypeWithChildHash targets following
-                  // the same template — brand_003 ... brand_099 — interleaved with
-                  // Parent/Child ops glueing them into the byBrand merk binary tree.
-                  // Every target shares the structure:
-                  //   Push(KVValueHashFeatureTypeWithChildHash(
-                  //     brand_NNN,
-                  //     CountTree(636f6c6f72, 1000, flags: [0, 0, 0]),   // count_value=1000
-                  //     HASH[<per-brand leaf kv-hash>],
-                  //     BasicMerkNode,                                  // NormalTree (no count on the merk node)
-                  //     HASH[<per-brand subtree child hash>]
-                  //   ))
-                  ...
-                  189: Push(KVValueHashFeatureTypeWithChildHash(brand_097, CountTree(636f6c6f72, 1000, flags: [0, 0, 0]), HASH[92adee932cc12927cd76ad9fd25906bbfe547df2bf21e826845bb4d3b47f5314], BasicMerkNode, HASH[34b69e1e424aa023c74f61554db2823da6c19dcbc51bdd5dece32e3f6f9fd219]))
-                  190: Parent
-                  191: Push(KVValueHashFeatureTypeWithChildHash(brand_098, CountTree(636f6c6f72, 1000, flags: [0, 0, 0]), HASH[68e02fcf66f86797035fbc8d53290185fe3fed7de897a8654743cae4007c47c3], BasicMerkNode, HASH[acfc3a88b852e8895449b4c7e01f4b1cc25028e6a80e4915cdde578ff6eb029b]))
-                  192: Push(KVValueHashFeatureTypeWithChildHash(brand_099, CountTree(636f6c6f72, 1000, flags: [0, 0, 0]), HASH[af9667a8f2a10a9402b3d1fb0ac6e0b64d1e3dde5b8829c03b8d2c9cfc94e16d], BasicMerkNode, HASH[d049fe7e250b7dd763a4a5daa4227dcd2e41733dd95fd0758641ac06c63c3b51]))
-                  // + closing Parent/Child ops binding the last few entries
-                )
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-}
-```
-
-The 254-line full verbatim sits in the bench's `[gproof] G6` output — same template (one `KVValueHashFeatureTypeWithChildHash` per brand, all with `CountTree count=1000` and `BasicMerkNode` feature) repeating 100 times. The schematic above shows the first 3 and last 3 targets so the structural pattern is clear without reproducing 100 near-identical lines.
-
-**Key observation:** `BasicMerkNode` (not `ProvableCountedMerkNode`) is the feature type on each L6 op. byBrand is a `NormalTree`, so its merk binary tree's internal nodes don't carry running counts — only the per-brand `CountTree count=1000` values stored *inside* each brand's element matter. Contrast this with G6's `byColor` cousin (`group_by_color_in_proof_100_rangecountable_branches`, 10 512 B): there the L6 targets would carry `ProvableCountedMerkNode(...)` features because byColor IS a `ProvableCountTree`. The ~5 % size difference is exactly those count fields × 100 nodes.
-
-</details>
-
-```mermaid
-flowchart TB
-  WD["@/contract_id/0x01/widget"]:::tree
-  WD ==> BR["brand: NormalTree (100 entries)"]:::path
-  BR ==> B000["brand_000: CountTree count=1000"]:::target
-  BR ==> B001["brand_001: CountTree count=1000"]:::target
-  BR ==> BMore["... 96 more in-range targets<br/>(brand_002 ... brand_097)"]:::target
-  BR ==> B098["brand_098: CountTree count=1000"]:::target
-  BR ==> B099["brand_099: CountTree count=1000"]:::target
-
-  SDK["Entries(100 groups, sum=100 000):<br/>(&quot;brand_000&quot;, 1000),<br/>(&quot;brand_001&quot;, 1000),<br/>...<br/>(&quot;brand_099&quot;, 1000)"]:::sdk
-  B000 -.-> SDK
-  B099 -.-> SDK
-
-  classDef tree fill:#21262d,color:#c9d1d9,stroke:#1f6feb,stroke-width:2px;
-  classDef path fill:#6e7681,color:#fff,stroke:#1f6feb,stroke-width:2px;
-  classDef target fill:#39c5cf,color:#0d1117,stroke:#39c5cf,stroke-width:3px;
-  classDef sdk fill:#21262d,color:#39c5cf,stroke:#39c5cf,stroke-width:2px,stroke-dasharray: 4 2;
-
-  linkStyle 0 stroke:#1f6feb,stroke-width:3px;
-  linkStyle 1 stroke:#1f6feb,stroke-width:3px;
-  linkStyle 2 stroke:#1f6feb,stroke-width:3px;
-  linkStyle 3 stroke:#1f6feb,stroke-width:3px;
-  linkStyle 4 stroke:#1f6feb,stroke-width:3px;
-  linkStyle 5 stroke:#1f6feb,stroke-width:3px;
-```
-
-### Diagram: per-layer merk-tree structure (Layer 5+)
-
-Identical to [G1's L5–L6 shape](#g1--in-on-bybrand-grouped-by-brand), just with all 100 entries in the byBrand merk tree resolved as visible targets rather than just two. The byBrand binary tree has all 100 keys exposed — no opaque sibling subtrees (`Hash` ops) at all, only `KVValueHashFeatureTypeWithChildHash` (full reveal) plus `Parent` / `Child` glue.
-
-```mermaid
-flowchart TB
-  subgraph L5["Layer 5 — widget doctype merk-tree"]
-    direction TB
-    L5_q["<b>brand</b> (queried)<br/>kv_hash=HASH[68b6...]"]:::queried
-    L5_left["HASH[9862...]"]:::sibling
-    L5_right["HASH[6c36...]"]:::sibling
-    L5_q --> L5_left
-    L5_q --> L5_right
-  end
-
-  subgraph L6["Layer 6 — byBrand merk-tree (ALL 100 targets fully resolved)"]
-    direction TB
-    L6_t0["<b>brand_000</b><br/>CountTree count=1000<br/>BasicMerkNode"]:::target
-    L6_t1["<b>brand_001</b><br/>CountTree count=1000"]:::target
-    L6_tmid["... 97 more KVValueHashFeatureTypeWithChildHash<br/>targets, each CountTree count=1000<br/>(192 merk ops total: 100 Push + 92 Parent/Child)"]:::target
-    L6_t99["<b>brand_099</b><br/>CountTree count=1000"]:::target
-
-    L6_t0 --> L6_t1
-    L6_t1 --> L6_tmid
-    L6_tmid --> L6_t99
-  end
-
-  L5_q -. "Tree(merk_root[byBrand])" .-> L6_t0
-
-  classDef queried fill:#1f6feb,color:#fff,stroke:#1f6feb,stroke-width:2px;
-  classDef sibling fill:#6e7681,color:#fff,stroke:#6e7681;
-  classDef target fill:#39c5cf,color:#0d1117,stroke:#39c5cf,stroke-width:3px;
-```
-
-Because the In set covers *every* brand in the fixture, the proof has zero opaque-sibling subtree commitments at L6 — every binary-tree node is revealed as a `KVValueHashFeatureTypeWithChildHash` target. That's the most efficient byte-per-key shape `GroupByIn` can hit: at `|IN| = B` (where `B` is the total entries in the property tree), the proof bytes ≈ `B × (kv-hash + count + child-hash + glue)` ≈ `B × 100 B`. For `B = 100`, that's exactly the 10 038 B we observe.
-
-By contrast, smaller In sets (G1's `|IN| = 2`) pay the boundary-proof tax: the byBrand merk tree has ~98 unresolved entries, each contributing one `KVHash` (opaque-key commitment, ~33 B) or `Hash` (opaque-subtree commitment, ~33 B). The asymptotic crossover at which "reveal everything" becomes cheaper than "reveal-some-and-commit-the-rest" depends on the ratio of `|IN|` to `B` — for byBrand with `B = 100`, the crossover is around `|IN| ≈ 50`.
-
 ## G7 — Carrier `In` + Range, Grouped By `brand`
 
 ```text
@@ -1233,7 +1390,7 @@ G8 is G7's natural extension from "k specific outer keys" to "L outer keys from 
 
 The cap bounds the prove-path proof size; the *ceiling* is a hardcoded compile-time constant for prover/verifier-agreement reasons.
 
-1. **Proof-size bounding.** Proof bytes scale linearly with the limit (~1 700 B per outer match, exactly as for [G7](#g7--carrier-in--range-grouped-by-brand)). 10 keeps the worst-case proof under 20 KB (Tier-1 for the visualizer's shareable-link guidance) — enough for typical "top-N brands by an outer range" queries while avoiding pathological proof sizes. Callers that want a window above 10 entries call repeatedly with disjoint outer-range bounds; callers that want fewer pass a smaller `limit` (1 through 9). Limit 0 is rejected to keep the response shape non-trivial.
+1. **Proof-size bounding.** Proof bytes scale linearly with the limit (~1 700 B per outer match, exactly as for [G7](#g7--carrier-in--range-grouped-by-brand)). 10 keeps the worst-case proof under 20 KB (Tier-1 for the [GroveDB Proof Visualizer's shareable-link guidance](https://github.com/dashpay/grovedb-proof-visualizer-widget/blob/master/prompts/link-from-platform-book.md#size-guidance) — Tier-1 ≤ 20 KB works in every browser and link-preview surface; Tier-2 of 20–50 KB works in browsers but may be truncated in Slack/Discord previews; Tier-3 above 50 KB risks Safari's URL ceiling) — enough for typical "top-N brands by an outer range" queries while avoiding pathological proof sizes. Callers that want a window above 10 entries call repeatedly with disjoint outer-range bounds; callers that want fewer pass a smaller `limit` (1 through 9). Limit 0 is rejected to keep the response shape non-trivial.
 2. **Prover/verifier byte-for-byte agreement.** `SizedQuery::limit` is part of the serialized `PathQuery` and feeds the merk-root reconstruction; both prover and verifier must agree on its value. The caller's request carries `limit` over the wire, so its specific value (1..=10) is fine to vary. What can't vary is the platform's *default* when the caller passes nothing — that's why the ceiling is a hardcoded compile-time constant (`MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT`) rather than an operator-tunable runtime value. Same rationale as `RangeDistinctProof`'s use of `crate::config::DEFAULT_QUERY_LIMIT` rather than `drive_config.default_query_limit`.
 
 Caller semantics summary:
@@ -1357,6 +1514,207 @@ flowchart TB
 
 The slope vs G7 is the proof's whole story: G7's `k = 2` outer matches → ~4 KB; G8's `L = 10` outer matches → ~18 KB. The per-outer-match cost (~1 700 B) is the same; only the outer-walk count changes. The platform max of 10 keeps the worst-case proof under 20 KB (Tier-1 of the visualizer's shareable-link guidance); larger windows are unreachable without changing the constant — callers that want more results call repeatedly with disjoint outer-range windows.
 
+## G8a — Bounded carrier + bounded ACOR, grouped by `brand`, descending
+
+```text
+select   = COUNT
+where    = brand > "brand_050" AND brand < "brand_065"
+       AND color > "color_00000200" AND color < "color_00000400"
+group_by = [brand]
+order_by = [(brand, desc)]
+prove    = true
+```
+
+G8a stresses three carrier-ACOR dimensions G8 didn't: a **bounded** outer range (instead of half-open), a **bounded** inner ACOR (instead of `>` floor), and a **descending** walk (instead of left-to-right ascending). All three orthogonal. Same `RangeAggregateCarrierProof` mode, same path-query builder; the differences live entirely in the per-clause `QueryItem` variants and the carrier's `left_to_right` flag.
+
+**Path query** (the carrier query items differ from G8 in three ways: outer item is `RangeAfterTo` instead of `RangeAfter`, inner ACOR item is `RangeAfterTo` instead of `RangeAfter`, and `outer_query.left_to_right = false`):
+
+```text
+path:                  ["@", contract_id, 0x01, "widget", "brand"]
+outer query item:      RangeAfterTo("brand_050".."brand_065")  // exclusive bounds
+subquery_path:         ["color"]
+subquery items:        [AggregateCountOnRange([RangeAfterTo("color_00000200".."color_00000400")])]
+SizedQuery::limit:     10                                       // platform default
+outer Query.left_to_right: false                                // from order_by [(brand, desc)]
+```
+
+**Same-field range merging.** The caller's wire shape carries *four* range clauses (`brand >`, `brand <`, `color >`, `color <`). The dispatcher merges each same-field pair into a single `BetweenExcludeBounds` clause via [`merge_same_field_range_pairs`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/src/query/drive_document_count_query/drive_dispatcher.rs) before mode detection runs. After merging, the structure is identical to G8's two-range shape; mode detection routes to `RangeAggregateCarrierProof` for the same reasons.
+
+**Verified payload** (descending walk — outer keys come out from highest to lowest, capped at `L = 10`):
+
+```text
+[("brand_064", 199), ("brand_063", 199), …, ("brand_055", 199)]
+```
+
+The bench's 100-brand fixture has 14 brands strictly between `"brand_050"` and `"brand_065"` (i.e. `brand_051` through `brand_064`). The descending walk starts at `brand_064` and runs left-to-right=false through the byBrand merk tree; the `SizedQuery::limit = 10` halts the walk after 10 outer matches (`brand_064` down to `brand_055`). Each brand's inner ACOR over `color > "color_00000200" AND color < "color_00000400"` sums to **199** documents (199 colors `color_00000201` … `color_00000399`, one document per `(brand, color)` pair in the fixture). Total `sum = 10 × 199 = 1 990`.
+
+**Proof size:** 29 010 B. **Mode:** `CountMode::GroupByRange` routed to `DocumentCountMode::RangeAggregateCarrierProof`.
+
+G8a is structurally G8 with three independent variant changes, each adding a small amount of merk-proof overhead but no asymptotic complexity change:
+
+- **Bounded outer range** → the byBrand merk tree commits both bounds (`brand_050` lower-exclusive + `brand_065` upper-exclusive) as boundary `KVDigest` ops. G8's `>`-only outer commits one boundary; G8a's `>` AND `<` commits two. Modest size delta (~1 extra `KVDigest` per bound × the carrier's tree depth).
+- **Bounded inner ACOR** → each per-brand color subtree commits both bounds as `KVDigestCount` ops. G8's `>`-only ACOR walks `O(log C')` boundary nodes for the lower bound; G8a's two-sided ACOR walks `O(log C')` for both bounds. The asymptotic stays `O(L · (log B + log C'))`; the constant roughly doubles for the per-brand boundary walk.
+- **Descending walk** → grovedb emits `PushInverted(...)` op variants instead of `Push(...)` and walks the binary merk tree right-to-left. Same op count as ascending, slightly different serialized encoding (~1–2 bytes per op for the `PushInverted` opcode discriminant). The verifier's reconstruction is byte-identical given the same `left_to_right` flag in the `PathQuery`.
+
+Total proof bytes: **29 010 B** vs G8's **18 022 B**. Per-outer-match overhead: ~2 900 B (G8a) vs ~1 700 B (G8). The extra ~1 200 B per branch is the bounded-inner-ACOR cost — every per-brand subtree commits twice as many boundary `KVDigestCount` ops.
+
+**Proof display:**
+
+<details>
+<summary>Expand to see the structured proof (8 layers; L8 uses two-sided ACOR boundary walks per brand, `PushInverted` outer-walk ops for descending direction) — or <a href="https://dashpay.github.io/grovedb-proof-visualizer-widget/#f=text&d=H4sIAFHdBmoC_-y9X4-mR3Lld7-fgpcSMBeZGZH_BMhYexfwGmsbC9iQLxaCkH8lYQcag5rV2jD2u_t33iY5rHfI6WK1plFNdM-MRHZXVT9vPpER52SeOPE_f_u7fzn__n_6T9_-7nf3b-I3_9-_-eab_3X8v-fbx288_vWbb_5v_fNfffO_nW__y188fuObb8JfffOf_us__8Nf_Ieh__M__h__4T_PnXq8qbdud5ZbdkkhhlarlzX4Axuxtr1DO9H4rVlWTPX0OI6VZNP-9i__8rufHb_72f_xb_5m_Pa_nsdf8W9_883_-e05f-Fnp1SS15x6TeP2emeNY14Ppc5kp_AYZZQ4QrqWZwq9tdjvPtZ3av0vf_PN42l95JHamnF64AeOoa-9YeeQaqn7RkulzX291FZS3ZOfwJflXMfat_7oaRNPO749__T77_7d_mhlYl89OQtzvNrogTXwlmrdYUZ-e63V9rS9Wg1rrmjh1GrXdu1nZD7dH_4u_6tv_t0__ONv94d__-3v_tv59u9-q7f1z3_13av65pt_-81f_w8__MtPvMwPv37ilb58sT9e_PD_fOqyf_f2Qvx-_fPs4cTTc5r1nNuDrdX3TLvzncfMh9VbT2hr7JPTKjOdYfx9M5dZPLMmf_mj5_7ppfjuE33y079c0T-5rh9Z3Z_bPN5PjT0GnrAm6_nsmtYNdnq13urZpxzvnlmQXP0SIHxBvr5OPcRj-9sXq_H9r_iT7zLE795GraUXArzwI394L7uPcMdugwhMuYTbTus5rHiaj3rPmGPMFGftc9V0z3Ji2T0195PO_ekH-WGP_PEf_qk39_37C_Gn3sAr3sOr3sbPx_1_-8f99-f3360WWSCVWE75Ya3KyiHfbDedyXY9wcJaaazhxbZPT32caSmMzoLONg4ZhXULNlKas7SnGP5lq_Lh14cn_PnVefUa_YKV-rkY7iTK1n3GMkLtpM9297qFzbdmWkf7eDV2mxfv866y-J_zZaXPcPruf_uzq_Gn4nl-O_5p_9EryteCFbMfXlWbpdc9et_ljBpGszM91u57jTqHdWuk49HbnVdvbW1Cvk-beYd708ef7bkM_NyvPy4PZVmpqZ9uMw6LlMbLtjupEVaFkAqHZ_a8Z2hkxpJjJNAS9bMvNmMrH3-2l2Xj5369NuY-_Hqs-8cC7xeG3y8Owheh-L_807-cb39_9o-WdkUWkajLtqngPmam1KSVFhCFTdo2mW2y5B5snjlDrS3arTUlavwq4eNL-yIwf3iC__g3f3iGUAZ_3852alkltxju9jKHzzJnd56ml7Zt1lbbmYeCZK2HvMmuxzzaa5_hhwD8_ile9V32s2tXSGU7XWoDcbj7Jb2R0Gxq2w6e8u4K1KvNKdsxq5pG1nN7BVmd0V_93P4n1o6qQpJ1u0CoxNYMq5VVO9CIDNOCj04dL_UmPxdwxgrmFi5wMtXhrOlrnyG_ae3Kz67dqTfvsRK1oddwZiipZ6Dcyqms7WHctlhZvmYXcz5HbCPGugEBo9YxXvvc9U-s3aTiBIpNNUHt6fyVuaTLFjipO5gix5RZuLQaG6DXmYGbl02R46Y43dc-Q3vT2vWfXbu6WbeVWYtrPcZyia_bZk5x5VOAZ-u0lEZQvJUQ2FqCcgtEl1uPLb56z4Y_Wrx__49_f_759x9Kyt-Fkr8rHpPnieeONn2VNIrlnAvY9J6zAfaXnFEPZGezqVslECkrtlpf9ZSQ-6ujMMY3LWVMf_RBnsojn8V_882_-91__afff6iTBj9b5db0G5YhhN98c387_p6k_5_5R_33b7-vmynm3sGeN4daiu927qJcFaAneWHrt--9IY92WZFcD9TIWZS4gPc751d_dPuuRP2yT-5v-q78pu8qb_qu-op3Y297N9SnVk4gd1yAwQ39QlMnG72wdUZeFygBCIM23VsDWabt1iFAxObI5TV467vP8LYdHvsrPnp620dvlGeSls9Gtso95gLuTGFDk26Ji3RBta0TVMXnXGuTAwN8CRQFQo1WXl1Twys-Q3zj1hqjRfZQZAft23nqsdaBPKSTcvd1bdVR9x7Cx87nrHYWRDVHW-mOV7--9Laskl6TVcLbPnq1TLos-0Y_rEBoneQSKNi7zD5qu-TzA-Hciu_Vzc9YcbU0m1H_T331R39TVkn-8U-e-9s-eeGT9Xl49RvifvYV_Iy1BvGhFQD2x-cSPLwh1dDqsul1shItwLJfXUrS2xBNKq_46O2NH712KJ_1FMByQPK6etwL9Lb2XAksbtX7YEP74TV3VmZRQGOYMyY4ZXr1R39Fys31bZ8hwA4cRFxCAhEsndnMVYV-Fzz_LKB9d3AeFJfK6cmhH7zDC8n1vcvrA_dtKTe9IuXm8sY9m8ZxMP-h2M9jOhCtG1rPf5b1Wqk9p9280llA8NigqLukCBM4QrivpgMW3rJnLb7pu16R43J-Y4mC0dtOMUEmm7cGgJyXHFYK1aiclBQ997Y8UiC843Vq8wWFF_aG1_Pq9bK38T7_WQBOyEID2I5g3bvIQSHcuTYPu0nOOXtmUWoh6EPfVKgHf-kG7NA593p1kNubcJiVP8F5Wp0L9EPt8JLJmmuP2_OevWcIYc7Ul11XzdQbSGtK1-zknu6p-fI9r-ZdVt-26O1nFz32s3I1mGGk3PWxoLeTQqHTil4bcbTAeDxnGF7qmNlvII6SCuSApb_6yftbFt3Dn1h0O9vbyAdmBgfzsu3BL2c48LIGyGHJ8zzLclvkeIdPrLl7LscmzPjVQMbfBmQ8_eyiiwxP3T1Fy-DExGqyEUPwe6fbmIPy4ypNsPMzFFvhNEDYHImk318NI_1NOMSf2c1r_rJfdoj3o6M8ZbrXHee96VDvjUd7P3fWHIDKlsDC3YFSqZVxUmdD1xIq7yzyYbzZAFH5oTLZjG76by5m1pK_9s39_Lnz-t1vf_ftb77533_3T4_qQFyxGP8y5m_PT1WLx3n09__JxFv82frxQ8EdFsrxGFc2z22OCSBKmRRb4HrjeiFX7EFiIOWZXwoO5GEF2A9gsfVf9hH_xA3Nv2aoffj1WLtfEmyfEHKfFHh_HH7_1z_-_h8eL_gv_su__N0_8Bt__V3hWQNqNk7OxjsLqw2SYZjN8zLeFHmu7CYceGYL2a1kEr6NPkeMfaS__c03vz339x9-mEFcKzw1p0lk73QpqmGUUj0Xh3T1WS449OpqKRr_zTpFtgr22mt55Id9-49__w_f_TSHYeXJ9_HXHw-q5nxDbjaLzlApN-MWn0RXseAhVlCIFe9U_Njb0aMtfeC_Bsr8opB63jsfTtc-LN4jAv4u6Bc_9ruIvyk2IGbJG35Ycl7UkHt7qjfbaIvNbRbHIPOu0gt0P8waKeAVvs_WN5405fyGZ3zt3c2fvs35mdDQtQLAqI4zh9uuDmTWsUQIAiG2Rt9x8Qo2aakRJztY3cCp2muPvPUXoRFOv4M3luyc2ZNZjivWbBCp2G8K3vtwmEg9x22VkeJtoE1WkZfbz3wZGmGeAEYv2VZt1anTgwCJtwYAE3Xw1lwo6oqcG5bpVh4oS8YhQolD_yE0ir1h1f2jkdHjd5ERJwEx2U33kFPj6OuOCXberaQ5mi6yfV_T4vBkzrKBvL1endrOdhoP-rbozW-OjPKKyCiJnLB68RPChC2yMXkbzSltQxkdJkxZu3v3Etn8yTNxwocmYZQZw4vI8OW7rHoLX5VyhYzeEhM89MTWcw9pXl91jFD3A9qfKmnOHgEoCbhZLyOjnV3zyImiA9bfZzgBPKulK1J7ob19w2tm3SGCh2C7cHu-Z1o6Flf_ITLesuj144HRvz-aP5nS38mjbj5bd3GXSpqIawdyAm995GiB9Dt26F4AC0XSHg_JZ1eqjG_JGO3NcdE_9uGSUMEHIkbNOFKBtDFKNx2IrOJj2AJD1D14O_sSFQH43cbuMdyitH2UY-4jc8e3ZOzw8Uf8fmPuNHMDIpO6J_lo8lzJ9zECgV_EnkMJ7pnb-igEXFZ0rEVaacfXyTziW1LHH25Kfvm3po9vTB6TjRHJxTOMcA-FaID_6xS1tBLa4xgrdUtTp-mB_NsG0LPB0ay3-DJlf-Kvp5T96T_tu2r-lmX_nsf88u_0j8eUfX9yUnc-OUyAzu3UR3LgrXfnu1foQjx-o2rTBv7M0FeDCIS1-9grj-qXj_gmoPL2XB9fkezLYhu35WfecVWnO4BdyKzGVXs5kPu-iaq69nU_N7RmQEe2fjMqwX4RU-Tf2kjzDtrnl35EoSrslvm25brDpUyAjELIMO41qmmh1oo775vOy5iiDIEPwJcAB889USfisZ1DrR92LCx5SbJ4l3Du4EO0dQqkJta6evshpt60leubY6q9-TtfkYTrD4K4cQFsZFrzlPz48LKpo8ZmdyDp3oHqM-deqWeVSeWOHUcFepAgHhnuLXvtcfX0tnBM8ePhGCbRU3SsxFOvQ0WN6_L52inSqYIzF3UE4gpRWcATIuOhtDiEaKmzvwjHFgIBmImIGIfO0-DjNRC0fGEkWZIZWZKZ3GOvG2JuBQJbdcJVdKr1hD1g73D0c6E24M7tLtEwEB_kEk4ixMsusfCPI-_TKTaWKS4bDOCDyv-HFPcmLpDeGlXJPhpVyX4g9yu3GBvgn7WnWrIyt88FfcxtTFB8IznwRsYm8MYD8vN_d78zseFFdd6EuR93W2-MqvzxqAKYtDYXNC7FasNOhcQCbcM5B25ptvpYO1UpIwgG2Fsle5HMIBQEyHlJg90GvLbNe8V5B8Qnpb4DcHm2OHvTmuSVpRle4M-w27JkM68C_75PNJi055VCkgePMHV6wu8ModgIzeRvzxT8fBY8edx0gTNgqcyriE5ujn8onG_bzeXNUfXm_JjenB_Tx_Nj_l4ccyIsCwpryigsaAaMnwoL1WWfUsWauiNoMfMa7xEwH-mcVqlvJWStK1njDUtqb0-Q9ooEeXouczsAxBL5vgpbt3oXIUhw-4Fs2bxrSXzW-FK_haS0LAZqxCkv63WhYAyQew57CzhSP-eeUHejyEYq-czgTLvj-O4dug7d3ePUsWfq85m2z9BCvXWwgjHNwsrW7jxCl9poF6NebS8-fa1Qm3U4c4cKEfVXkr3yiSc639-a_Xx0WPs-z21pnQE6IYOgw-bF68h_ldNLPdTNpZMGaMwuQkW60ljd45YqDZRn481HOn-4Fvvl3-qvKJ--MrV-m_pIloOCVufZy7UN2trU0mknDPGCFYcUYnmdugr0iCjylwyBP6DImdWzs0XWKadKcWwJajujw-Z82d4ROn9Xt3733L1Bt3WCHNtTdKwBYQFEboKws6JOCZ1xrn7jmNB9I9B24I8p8afyMs4I_J2Edwlefhwdb1r3_NHg-IG8A9vBk3yUPnji0kCT414yxAE_wAdI2OyX7CCrdKydUMMqkQAHec5h4a3Q6nGF-MbY-OjZhP9A3-9uOnbzK5lLv8WJbKGnkRtAepd5zt7klXRzmwL0vJu1OmmGXMG_v5G-f3_J-Kce8Xv6Phq7bAeShxqQcmHTWWDNd6Q25kkpBaaNnBrF9ZRMVop278kdalHC48T1LShEl5BvfAH-isN4PsOQfOjeDWJafXZJTpRy4JEh7-jXoU-gRap8zXFJpgEYvrAf9lj-tdJ3j28FBJ4-HlPfp_x8R44Ca2xaMv9wSzB36CJVLwZ1AoJmSe8AMDvwDV5La02ZkwRF7L2RvvvbE76_IuGXqUuSclojdHrbUwJvPukFbaYH_tRVZF5waKvDFjEW8lrzkPNvji-Rrd_TdkjqnTpjNuoEAPN6DzXvoC4Qn2keQMBycUl-to9VBtw8d5L201ntLVCoG1eV9HaWpN45cBb0zVQGqloceQmg7rOsZzMWnbSTu4SEvK1Pou-e3xxT5eMx9T0J3zqWgFSbjVbBWetxtngSvw-Sj3GTUAFrx-_0Y-oAuOq04F3laCDOtx7zen17ULVXBBV0pac5SVgpA6LttGzHbEf197W7IxXCgAOrJfjiqnEAH8AaD4KSX2JMXQuQ6GIlRKwphE7eyTso1tJga2UKanwIdlogXmrzBeWpzp6rdp5IOJzIbjG4XIeG9rjWg3zWY9kI_JyswE3VOlgXAAPg3zNBtxPUlZgdn3QB4P2tQZXDm7_zoxeVHr_nPJDMe6x4TK3qum2dHFjSTim5PuMtunWbR-2Su4O6gzq14pXCpKX04DxvYu_57ReV-TU3ldtWmFFxk88hHRFER5cJ0ePIxEgEkiZ1z6ldVsxi71XKeJB4Xy_PhEhp0SHUU8czK1-pfzIxV6pRmgkmMn6AlhyL1rLUHKNl6A4RF0be9sTe7YqlUztmg32NBKW5xHElqoHhgQoeVFFItyNG4EoWm2CxidcJ2fo09p79zVH1UTjs_sP1dySQTs0T3M86xNBiYYFqhH_qNvjOorsUcNdJURQ6ZYcu1McpsHot3nzJ-XY8nOsrshzwvk0qzdW1_ZByKlXfl1wXcvOH-Pf0AY8mRHhz6q1JvPANHt7tKctVaq-TffqigoViVcdDlSy3CEgh1b7aoPiyYiRQcqACegJs5zzU0acsZ1Vi1d1za6PnfHiattPWeUaL6iKDOp24a07U5xEWLN5mdWXUpWPhT7sAz28-oMlvTpDlzQmyfDRB5vg9r6hFCm4IpTrfgN41m1TsqWz_cHH_Qfg6lk6Z3eY-KVDfeaMeoEOPa1l-4BvWtLw9RZZXpMgOYwouZwZQ2iRnkdKVKCFzpKDU2JTwo0sIlj4bSLDzRbFIHqkm8PEilq9007kDUnTxs8HHgQJeS8s5eiEdkGXLqZU6E7rz98DQ2DYLgDNKuPVlLPNnom5Dokog3gI1RFJka2TesMDbYcD_-0PzoyMC-OayHCYpnw90_nBszve8ZeFf12T8_Ou__5s_x9e-9itf93X__RepKMsXpKKkoPZAfaccgx3Ja5PcnNmt8ei65Z4ga5KTC2lxTjFkqjQJl7jyXM4XoKJ0hzgceBgVFeQQLJHYB-RhByFuONEN-rQQDBDGGCdOtpjdEF3AOH5VUX5GFeXVbViVrm21mgA2C37cgXgXjtRqH2Bqwu4sHWjCRnRODv2wna5Xqy9PVSn-kxcMS3mcmdYBxizi1LnVPGoTn64K_uSFdClF22zQxzqACmv40x35mNQ00zUpAB6svyhZQy39PTZZGYkhEUy5jlHGcmAZ0FiqSh369fn5VJR1x3AoohQAX6cAZKJQO5-oAm0kNQwVLAlnC1sNkkY54WtzyXE39sr7VFGSic6IxhtqLHrjRd6bYhwdmJxBa7vAXSi0cefYurfjqUsS3SEzE5z88vxFBgWxEQIdHp2yTvFb7hGoEqGvp-hUZ3VfJc4WzSEydbRASnTddD-FBqwG-txnFs0bcsbZ0sm13iYLXhdEsUx5xQizugEmm3oOQL0WeNT92VSUVy2yY-ZS8rjuQinyJpjEaa7zSE4LraijlMinARcMwrvmsB5Hdie_TxXlYPFDpjrt6zJdGCeJHqlQFVfCgLr21QE7I965fQfgaNWnvN7b9ZesNboyTdrLrGSJapP6jGW0FCJZY7Qd1Cm0IJcsXov3PjoACzCKgLzPVzEP54LSgutHhdPP4iXEy48-EiwKkyUYDTF3RhJEg9LwAcYizMv-XCrKk-cdfnzbeJh7GJEb4e02F-uaAbZ9lV3d2ExyTfGU1oT2V7ui3PNdqyh3uSk0Ca5KrYR6kDmdscZHJ1fD-KSrKKdnysQ5nnkzsG7pKfncj6Ly51ZR6pztnEvEUZ3gmDBg4iP4gAlQ6WzdcccpHf7ElxA_pPBZeSU9-7AR3qeKUk3OrevUvOw8e4YSDYjT0f-Fp5NOReNjh-3Xts-e8hBLUReTdfW6v6ooP0VFWaa8A263A_sE2F-1tgGl2-79-mw11CNpOMUgytvwdljhjDc2IaDHYd47VFFKEVbZy5Kgn6UCrrMF2ddUnfOlJsh32wGdgSLH7OzyuHdt_milf5KtUfWXdnwOLZzhxCB5f0XVe-KU79oy5tFyeGEtU7Mmb4Zutmqp42VMgQCI8zDZuCmeoAOCBigMrQELrlHpH7INfrOAxa5kGqNEONVdda8aftUqSip09O73qDsc3LNIwAq5UoCj5VxZa5IIWjkbHN8l6B0FMOYCK2fOd6qiXEtntruZxG7kO5VveHPqucjKYbe1V7xCWKuuTGqvZ4_RIQiQGRjmi3DsxAjA4Fa2aqtGio-yohtAEJObqqkhaoUh5TyFYp3e1OEjXKKegKdwpHzky5qnllnsecORjFBqLa9-4fmEMlQGFuNmO4MHKTZDxS92S7t_CSrKsBJ4W50eYfUy2bUwGQPkys5vwiYhZ1Qa6w752_uqP0FIrlFuIWj3vaooL6lImoXalukGxR8oFgSWTyyV-m8xywd0djAaKCbZ7Z5uc9HhdV_SYLZU0olkiK4WDNtlQ6Z8POzGnOR5N1SEXVYK0UliImZH05F4MvjOE6JNN1BTjBJuVRaEsequWoZ5fuMCrYRNnc_38N8wdvHY5gFcjRImf99XFeVPqyhjDbxiSxJJ5zgBRbx5C7Z3Wvvcww5uD53Q2LsNOGqlirP0ZB5J8_N7VVESQxDecyekHb6kpqUGZYdYVgiwRUHY7qWrqWP1XcCERXYwcUM2qO8vux7Y5bWVUL1WEloMgo-SBBu5DmLXdz-bmjE_GGGx6zeJ008NXQrI8nSicxeLbYQl1M1CLiOEHXr01aE2Czi6pJKIq_dQJDT2vpbk_VHtdPFzqijJzGmAStqS90a_t5ke5DS_6dhKM1vU0X9kDeYqpSnbS2ovvWns972qKOOamewxfdpMdxRZctQBkEpqhxkdzDWhlxS_a8pWdd8lqz35y8abX6K5mPda7cLEW0_UyV36LcMpm31n2cwCJ2YqD_VkmSPzt5KcCpiEjQhye4oOU--XNPmjJjWVNinEZ58UlyxDDhFFqFnLANIONQOIjlwTobjlWPT5VJR9ZpI4OP8GQkSdsAesyYPkMX1FtaB3k6Iwsj-upJM6h-gQe_aF7_LOVZSwYDlOU7h0N7x4aUddJLryDRTHofaVHqfXOJbW_siD5kQJBcAArX0GFWWpWaV4BqpmaUYdjF2_UtShCU8F6APJ2o5bGDFvyd5KlC_QGrbT-1RRgqk85JRji-2yVZwMLSTFvjgjgD9BGuSjBmyHWfJHYwRQQ05koeiWvqooP0VF6dL07ThzLKeNA3RjnW8uaQrPARTS6Kb-x5PjmeUOr8RYvD2NlIBh71NFCeWIRfZWQ77_Vk7PVuvwkTSIARqTHtf_MqgclveNOksvTv6u7m5P9N3HCUmFwbyRBeHte0NgHO6UBos1oQTU7UfeuFNuspBvmRJpDkV-loIsYtaprWNrMgTUq5PS28NLAPwy5JXA2mtsg25-yKk3stRsgFCD3_wFqCjNK9WvFYqXpKupAP1zUsdJ1l1FPOl0K8XLlUN1gR1QPFshr1FHKTnvVEUJ1UhEPoin3ZgAclnmGryjcQFwBpJryloXmOm5RPmjQk5qgVHflh6n138Iqpwg5vWhBdrAgy5_BoMuAyR7JRmOqoZJdiHJXS2K53qMOzRdXRIdT9Jc2De_1CqUZwDIhyG7SzUCDXLnhqxum0IN0NFmcaUgqGySL01jP_-qVZTztBBEDlsxy_X6uPGsnOWJLnv00Y4Q27QC2CcN2EgbQtlLoaxT2t-rihLAEnOGoakLsajBtdokMcc-6mmVdB0ruLevA64BAMy9V5KFw8PG6aVSnJUIWdNIVoUiimQfGLeBXVkG9RufbAMG0yxtHXeezpdsOaEDj3t_Cse4AVEDEpluuxJ0Vra3hYcNSUxLncs5QHNm9t0CQXn09_BR2D9QqPMlqCiHrvnWPOxWk_B-HvW1ANtZEYlBelwa-QL2ynIrgeWRAu-AYLQ17dF-8C5VlLk23li0Vmt0PklOoeUrpH95dwBLPk7IFR6YIdKrBGXxOHqYV2eET8qzBR2HQhB_1SrJvw3y_l3xqjLuIIBqmdVZOlALOp9ei4BKxA5p8wmOWX8UiRuzJhbs8qiKsPEDS9nq1F1y0OAFjCN7apY8gJJHTz6jhDxfVZQ_raLUOaB1tdXOwvssZwJrYtRpGpvTaiyDAmXDNSsiLOCgLhg0IoTk47W9WxWlBWkp2mMgy6H8UYxHJylCpm2mvXSKQ5bk3wNBUrYKQioj6eJn3_uyQQtGRYUOZZc2ezsU52xTlud1FwD07uZEXIRn7T6Sho09zoTlVznXaU8wEEjZU85Eua9eeAGlZPmRDB4N5HSWFCeRZ5bunO-2dvYZUdbN1j6cMX1VUf4rqCjrl6OipLgEYgwEA7HvM9heRuUE1O0UpbAB5TkkWWgnUl7PUhf81cS5C1QYX4CKMsuFLKzSVrJ9F1gDAOYphmlUUtlX1LUBZTduCS2veuCOW7uzUov7-Kqi_IwqSsgGr3NoZM66R0q4qAvJXtUmtykv6gEbd29qCFChDY3RmfdcicJ6e4kUHOwAlQoCqHUU8SDQbTW5j9V9x1ihPobVOfWnlduAnueYmhl9ttWenAs6e0KegnHKzhGCtnKRwzsbowy7_A67Jx92VFiqe_LJBu9MWWbaj0j2n11FeeRv1PeE7p2aNDtHkJ7tc4DYE6gegZVtXphkqmzuHkqOlUqwA7jnYfvzDlWUnuEiYDqdVfq9FieVMnW4ZrIFNDZ2d3EPayyxiTmklIur5EMwxVZfmlqARMq6XZqSMLI8zhOFs8rig3wnT6SuCUOAE_IF1HtRnjeIRQ05uZVnm1IZElJ-bUV-iOmEe1-i6JJhSrtySe8tDIIlelOrw_Juk6flL17nfj4vypBs3JDVcApaS6c8wO8o7JN0HOoRNoB6a_6p1zH20c2BVVdvBl_6PlWUQYccW6rrGxTDEEvv8c7Cq9XAwlzUwQi_iA3iGZvtmqEDRX4v8NNne7Ks-ZHgLFBck63lXPBJeCpZ4rA-njSxhXzkvOHED1i36lZtS6JgT0kj1iW8Fst0O8Rqv8YaR_45sKbWElsUrg0hultXSfxrOAkIyaa8rc3PpqKUM_vu68HRdkxja9pH8EZokzqWsLuGSAVdZsW9N0hB03BPvhuuft-1ilKDWdjDkyWnFkhqbUqJc5_GLmB7akc_Tk9vnE5-zLx0oLcMLgj3_RlUlPa4LiR8O6XpDGoGOD_7JGtP2W40s7hJIVkNVmQ3EI2SSymgl8hjvk8VZchsjkhCUYectGWUQa81TUl1JymlSjSZhj6IsxnvlOeppsckvqOMryrKT1FRnrzqEtDdWTMvRmwUPGkogzxp0tVLIRsuQH7bK2lSxsOLIZlm-Xp7nypKUFWSI5Ds88AAVo_OjQxwAJIBxowrA_naYrmLnV3Z1Cf5oKhXiz28vIZZpLezsnYX6TaB23aJsXa5Bwc_FnUmr_kbu47p-TQqTZPIl6Sue5ongRGVZZIZ5Z4x4zpF1zIxdLaouiXSEdGuUO3DH7fGTqcY-CqDSjB56l-1ihLSOKi51ENgFNSqH9BzCRUMDg4l1_XVogTUcg6ZEiTkoqJz5fCT4n6nKsoztgzpH1aHJ_UlWROUpGliMtDj6OxbI3F3kNNzJLx6B0iNXCHYPT759TiA5UQjE9rJpMudgDIp79Jk3WsFwisPjAIuPfLWt2SwpVEXQWR9Px1tauaY5MZWb2ojPDQhgOazew08hzqHyMDJa9Hld4-k59ssQAQiZXJ_CSpKtltuK5YQ3NSmFJb6Og7B5Zp1At6SEbJ7CYdykxqpz-2ebQ9rpZ7eqYoSaJnKo8lrxRqBnw2yCSAFr3RZfxe5aKtBq2vW8nG-Hu76sFqX1-RLFaUMR-fMAczvCzRcwXoPzxkqrMnSD6oywckSAiddaXfR7VArTzDhsU-OPUE2QbbjmcDk3q2N7kDadGMfBGirQefsQMVeyooxC4evKW367DnbVxXlT6soqQoxPtxGS85BZYhqkyXO6nIt0VEcZeJhy6S8yRJ39YiuWsGDQMT3qqIcHlMcN2UNYOP9i38K266Wib4FgO0H7sHm3f3A5Es9XcL6dojt_TRCQrMWQcijQ1X8yOv3AhsHadEnzKz2XWuQrkdXrh1cAJtJl_xIQNeRnjAgi0m4GkwrZTkOEdAxj7xXL1SpRUm-B0ZXhIcmJFITiFtO7CAA60zzM6oo1c0Jd2TTU1xkt61-DbswGLJ2Dh7nYVcuzRMZQAqfQnk51E72K7um96qinPINq5Z5FWRwmMJcwDteG1UvUjxDdupW7uCGR5sfYDWtLZka_DuGlwwh7axxSqC-xjLJH2xdZ6V4fwBGgK70YFMynUgx2JpXkqeTY29Skn26cF6STFDJu7pmR4Qx3uTyTx1Bhis7ytEM4pikaM9W1G_opkmnvJga8-dTUYbZKth-h91J8HKrZZF6kONRXzzYVvsK7GvUeaQv6V3tknwYWcPY4xbpPasop4ZCyTMz3piXXmwEURErRbf90txWak-1mnRoYTNW5RddfckX8SF2_nOrKEkynq_wPDVugVlXvOqGBL-uChiZDxqcgHUdsmUB-KsbQij8kq_tO1VRLu_lPnz9MrVHw6HCo8cxq-G0Lrn1kmecpEhKkowt8enkyFF3gKP5VxXlJ6koNYiE0lVuqXLPGVGHzEAoIHwqKUxrQDEJyIigKpF4KwU0oAFrOvB8nyrKzDaQrbOGvUXw7S4nTQJHzVC6Lr8kfCv9gQdU4EvXUegosCo-U3rJlyjygXpn0_dkaWDnGk51m3oTdX5JmoCAtsdN5TmslrBTIwcCvKQeeTqr1aDTYrpi1EjuxpYGIMP3NTVBF4K1yp0YfDFAKb5uPstO2KZOuZnCF6CiZFGufMP6DsuutT1j2Wqpstxa9wzDGBoypFuTCJxabp6lg4FMaezXO1VRaqSW_se2IPusW-G03RJ1AKKtE98kF4zlsOeyVoaVH73VWpr4or0MKnXjJlChT-d9T_lwBHhygi3LVke-fHGx78CFN8cJzIqwqvr4689-drTWKE5VJwd_HlCa5X7l7-cFuAALUxegbw1OX2CSqLsigAbsSe1nefRft4oyujTi_cYo6SsgsFjRYDj-QTcrxrKzc5daRKiZOfG2uvqt2Jajvn2SxJ9ZRdkga-RguAigC87Tr9SPsgZcW1JaWebPBBLrBpGfHRzvJBJSe8r8v5fs3WP3vR2kP1sESsRU5HjWjsVZ4hkO4R6SxMHwQyXHeZJb4M71BErCs6hXkt0S4ObbVpOlQRql7nonyLb0GUYilguspwJWZqmXFFjMNMReN6Bfgoqy51EInzlCfDhOpMhGrVdzrzTnOWpgZCQtTL5u3Ew1VZ-d7S11fH845LxLFaUC38LqMutv0h2M9ThepDpBSFIJS3NZhon8zC3wXxbv20Vea366TVnLqnye-XoKHmnfLJzV1OJdR5ubCP5QgdNjwEMJ5ZSpFlsyHYw6PDtMyWt9PWbtZXKYUtu--wZvgsUU6dQ0d486zJOO5nE9Gufjmexwq19VlD_jRbk1vbJIbg0cGaewx7tkgLc37wS9DttUoAgFqtncpepymT_dmeVO71dFCY7SYY3ay_J8dE26PEt1JjQLVONoKsk5A940BHlvLlEW0LLwmfdJEXzOco1KHAWYxv5mnVwDbS0DYtpwNbssAvO0li2fSxW_oEx5FKzwYF8_rtiQTagmOwZ6Nozw5ftY0wLvJOeucySBkwmEuimjWhW77mNh1bPHh8H5VxXlv4KKsn05KsooiCy3lVoh96OXJm96gIyR9zyMZtIjXR0kEeojTE2ik5-seuSvfwkTvUnWfUA5J-jNQL92ukeQw17jgCAeE2_OYxpwVnPHgobdRA1aasfY46sX5edUUQIMa8h3gwxJh-BoMm03ii6hKZt-wILzJeXO1m2E8t056825xhHXyzYeTQWtancKasmQH0ZaN955xvYyH-Nf9u4ydRmbQg8QsK1p9VDllep5MhyMR4ycHdFyUVcGETmETnq2QjhJoTUc9JAWWT-UCdMWwwefnkrFs8-nogRjyeLIoftptQtQpBClnuMRLZH6RmNjNZMXgD4zjDMkdU_VM8JND6j8DlWUN04Szppqrr_b4CdjLJkKQE7HY6pZ90Z1A0Kk2pPeB5HSZbdFQX1qOJQXTSyFlXJvG7qmpphGGA2XVE5e9xFut3VwW0mS586d5A5dLDf-8zS2QVeaAdBZE7C1wUrOsR0DfGbeYqOm3RZFOe0qE2gpVyj85sTZFh36bCrKdXV_PDUM1dJSS0W7xKm6sWwGXXJNKIY64njQLcNh-JtOgnnkWUJ6p16UoZksYYN3NrEcKShPaikJFltbaaqbRxM5duwQcd3WLZNyWG4nvbwU1lAKUwq3kFXKWiB82XQCo3ShPZZFKWr66Ks3LZRu8eqAfg7zfPu5T6z1QBYmrHrDp-djNsJOK1DN2n4Mb5C2xiXZI0AzNY0I29QpDeWRtYJ_NhXlgjU74SoHhWxjd-c_LU9Wq3mGbtnhGVPWzXjbTePXAplYRBVU-769KH1oNKo85zSKvM1BYS9q2LyN7JB3HV7no0m-qEE0bNs5DeNfQQHnIc3_c6soWyZrlawz8HYP2WdHTacvPrpGNlCMEjg9EdElU4E0KN5b56s1Dj495si_QxUlRMjZT05udkjd6su9JHg6qOtQImsJ1Et2ri6h8oFCwRj7utCgsPopX1WUn6KiXCX49g_-LL1eSQ2yJrc0UI4McLf6V9vM06HlWvaVpd0gXyaDkef3qaJsB1ZM-Y_slUThZyMA2HKlyM6pKYVFGj34cTrQ6b3ZReuQtY7VpaEnL30HfMsgrbelYiD_11NYnm3eKghiKOMbVfCS5KvIcmEXAkzPBGz2-hRT6di4Vy5u0nYZcX-bJj7NWM-N8rMCx1JlO7gibrayXDOmB1lwxeT9Vz7RO49Hp3QSbFcLKvjbgo8wdpT5xw1xUcN7a2HJin714YMszcrARNM7VVFadptTno633nSbpuvNotnlkii02jb7r3ijtNppVVNvJJ2KpnF9nl-emAcCuz2OZmqQXbi4BlHc4s3UpKMqFVQppKgKBsrJUtacdBrhNOxJRXknu1i0Pq6WbnRZlJXZncoB7OCRJlF6wxlNyTlr__NyoP8QYzbU-RJUlOMxfE8DfMMFn5gahJOrFcxGGrwE2VxAKYk0Ss2egDh1soTJZ7b2qJvv0otSvdN770KF3104xEg_VqLJzL6CZhevbkB0ajpX1pqxdN4lEFKpPbwUF51yR1bPT7PUNIzz9NW63PthzrXHc3ZUmjs97Q4jThe8XAIsQJqbp46x44Ed2zUS3nvxvspMGhTOWzGetDWAE5VcJ_OU96SDekme1CW_NG_sq4ryp1WUkEbNRwFSB6rwQ-nbeP1rhjjB2LrW4I-uW9iPtkFe516gVI0QMF7iu1VRnjQgz2C8RNpphA6pTNV75iV7M_lHksqg2OxhSw9tuUx7eiVFWXmZIDOJbjYNtK8rEPgaNLfbJqr3Xk6GJcHWeWM6QM8Y28N-duS0joahtqcWtwOzJVvzn4fu56S5WFG1m7hB5qaJnk1-wk2PLsMY1AUU40On0nr6jCrKqNS8ydC3gUbkJMMnXCHtVXX4JNnp5UugqEGmfHMQQ-rTMH7bYmrvVUXp3iBY1WRDyktN1SqcLFm8BfDksRr0u6iQRTAa1TCpF0A-YG1rvtzLQ52ko4ytQ59kIDRZ3ktvfMdRC0eS3C70Po7QYuWHC8dVqFZSQ3Z8SnQrZBXVmDZ5TWITYsFJlO7kv6GjtHZNLbtLgyM0vXnrQOmqIblDND-filIHTSV6ukDhOYFTZUNn7UQvfExJ3Ps9zXqIN6U0Nad1JzWA59SkLXnnKspRC5uOTZjYp7y0uqdrSltPmqvO6z6gLZnqqKU9pjQU-aU76XPft4-S-EUTvZemI95Qqk6HJ8-Wr44dl8CtDlCaCveqmp47pskXO88WNBjG7Yz5Tr0or6npR55udsuaEqVqdhP7huRYxpgnH20L-Q8ABaQOqtfnUmPkGV8nen-SijKnJEC3Bts4sU3tXDbCgpUOk6fWufIHLbwCcG5f6WEs6_KXguaW9k4nequZy-8cVsrWyK6ju5JRXKfjJGMjJbULKNWkkhAqm1kNI6lnPvJM-yWy1XQHCh18ACK_yODUQk28hVyuKKM7QHSP48QxakgVaLoI1zMrJK3ac1MFtE2zEbwAFdit0KZc2oKT5aWb_lmLeizk3i7L9mCCXQtGAWW6xX_s0_ZuVZQpT5lK1iK3GDZszAaeCgY5zHlTMMA6I2Z5XoNNgRhjLwhsF2k8_OE7VVHK5tGp4_nOOzqfpc6SJL0gGsoK0tIWGzFWWaD52Q0Sw-uvLjEHuO-lNHd7BS4M1wAIWHIgi8sA2TXnZB3J_Wai-sZTNd0wEBNX0g8wQfbR-xOKyA7tLKCFuzWuqoQ6NdprpTjlL341FxzkCqpUe2PhoXu0moIGma7w61ZRasxSX_HRTEA10VjA1cd2TSgBmbvMvQBY26S31rWel9OOGmhAgOtxQvEeVZQuYyZ3NWzOrvafAGYEdFJAs8Y-TLgQaX3aY1TDFZWLGtY9d8ryNXsZjp5dp5f7ysiEUGIrkiVnupKh8QeBmM5rE6MbJkiaJLL9wXe8hPt0U_n4m25nU99W2feBhJaASXO1TDqI0hrJ9ZLKww4AmTtcTJtlynhk3C9BRdkiu7CHw7ZXq9BgOXKFt8nCfJZ-TqMmFE3Xm1lu_TfLAWkrww1gXHm3KkpekEYuTLVZk7z6kUa8S_lAYEF9S9TEJFEmYICEpETb7Jkvze3WpwtwM9kE7FurjIhaDpfMP3cHrcp3QGp0uIOdtcR0fDy8iy_ht2G_f6SNsD3kS54yXMMijOvqEm2rjRZW4pRm9sQwXkxaRG8mlz46ciRbaLt9VVH-tIoyaaiAt3SuJ50GQzQP9cTGbH69Vnu022f5M62oWYisu9oH14C01mXvVkU51AVOOW0j6ThzaZp3F90uObZEtoyS68jzmwgNkvs06iZBXCZEfr68xeGzgh3LgE2VhyfDAAK4TM1YtwKK3KmORu6ce4Zs7B9pv2qOhxUDQT9P9A4QH_5ezcuyESKl2FdRp2Xi_8F1DMBZS4iWQ9tlWzhXsoAg49BjX1WU_zoqyv7lqChl1FXFz9RPuIg90qQMAHfUYIZx2ZuVzBqTnRkdHChbjCB52wQU3P0FqCgtlXMz9dJJNkNnX_fRSVQLP5TkvkfVgIHEB-9NV_sVhFHYIEuT2sr6qqL8jCpKWzaBdUFDZx4-XGWRyIjODng4spKbej2kTbvkS7KrvDjWOQmWA_d-qaJUI61M_muCop-9axnnqFFxPGziz4NClQy3qn3vPG3lo5MiuXPU5wF55ewqAxNJbkn7Y8TrpNOrph7NH9Ss6QMCvaAdDV8doWR1iIOpYWv1fj4VJSn9wRaPqZN-zzOkipNEMFIhYpQzU9qT6Kfo2K6Tjx57qj3KczvM96mihIfslQtbl11ZYgdYzHxAwNY9-cM8UiYBO7PRI0nNbehGEWDZT79P8onB7zjIU6Z6kUIpa86lUXSypDDyylQPFvSlAbKhtEtSscB6NWBi9vRMlUGbMcPUy13SsDbAIvgdNAC0rZrpCKpvBxY4YifhJBDPBv9m27yezzfRO-jQal_1aBbJSy_7KZ6iwX7L49asq1RNppwNDgiMkTUcaCLnMlvxdzrR-8IZTlJTjkYpBM1817i4qbfu8KSlcQpBt3nUEAhDeryVTHFTo0B_yVrPqDerm3mXlD2EE8KA595zpmkArBNuZ90Anq2zt6XxEvcxrPUU-3Al8WN6EVZ3zV6MeYinVZ5jyWomLx3yN3lkjiPjlJpDsRZ28Ko_vPUkyu3nUlFS_kCHZ5Mw-Bi6zUpb2o0DUsyrtLN72yxmPt3b1CDBFJ1ymTSmPvj79qK806FqD4ttJyX63JSM2MKVSRIkktdJ2q8k9DE1Vz2Eqfb4JvfKU-7nmOitqcIUKSrJGl0OMg0KSg0BsHe5JcvIDpTWZcUirTBUQ92HU31Wwfy9TvTOy6TE1QAR-blodHKjnEN2dC_TNG-5O3k21VzHoBCRig_xxX5o9uQb-FVF-QtVlDVFeTICqZKmtDbq5i1SzNQxyUdNJgqkSCDCcCcnDSn9epi5q9lon_eponwYdHTN-5mPIQ5b3ftB5n8dzq0stdT_kHrUfeYMMlcmZWlaDZjxvLyGWbpWX3l4WtbndpLgNZOjm2Z0wYMOfGgBFNX3OZauPjfQT14_MmJ7QohLKnregKfLl0O5yeaav-Y8QMj1MaFiNgMBLEJf6CJbtXsLH2Cv8-tWUVrWmLQZqW0SCoaUj5C5JnmIeI65VEb5_3edEvMFKGk-ZSoygUirvlMVZQNeNOVmUGR3WZbH7QMuKfCZVUgP6CRLERQt1XlMun3qqny_71wvHdLPWMAMai4LUi7VZ9XRADNpZBunyq0uj1XjGluDLC1Hdmo62yuMZTypKHs8MllPNUBU3DRAF6C7dI2x9noMfNqaHzayL3IEUMSEoEzSN5lwfwkqSvXbL4nv5a4gdgZtL9tlBSsnlWtS5oC8y4ISgOt09wJZVNnPqe7xTlWUw3kV0NT0GABSNZJqUjJXToVUHk-Xe3nXdB8SfLAqhJvqtR00uDu_bD8AzUuyFnVhsiKfnCocNQJoV4J3Xokn7YzbreugJUnEtk_L0kv2_Nh5L-6aF-QhS_b0MGlZTsRvZ2NLhm5me_AV8Ui6WVYZQ64rZaWVNvvex1cV5U-rKGe6cWmWggan6DAhT9UEjZAstctiWZ4mW76KlKN42e-mMzoNY9OEuPeqopSZjKZrE7mLQI21kH9qy9li62zYmkxSBLlge4yuJq2mwbdQIAMCv7z7gXDpGkFuUoBevkjWdAXev5o6o4o4a706xJBJyz26ddDEJb7DNXDmKZTVfqE5dpK95wydEcufUVaU0hPz5zBGqnpig2nkSJsBskwQSyvsn3Oi99a47tEcJllr7OroK0cHTGQ8ouTCBKw1ec5KOsAmXBBUuS5AEhoM4r2qKJt8qaHGt-r8RgNepY8tPmviTbQgL9AJxzy8-fhwHOTz8LVJJmBwpJdjJKoEusJz8AuZ9SfN_KBYyNm1EweFHBU0GIbsFUmFd9eHRPaUFuuazz0xyR_6sahT4K4uHSkbvDi1hlCR1anEv5nkVgiayh9fqLtZu-mDeO8zqShrhDIBWCOsll019gQ4rGkNpAHmdSOxRN9JD0vRI37lDVxcE3N3We_di9ILVf0MjcDs6kDq7Isi5tvUGhWpQQVC8_AtOcT-SqSWdQ7bWI3t-34GFWUfOU4dCNXUNNFqy3G9BMKi8EBzj6kujtDyiFP6EDX3S6Sl4yeCa7xPFWXXaLKR_GSAJ3lSl7fsTanHxmXTqmvtWkkjySGdDZzVmVoFINjITwL4ryrKX6iiBO8dEdJzNW51G2tcLBeDWoxurpuHqVZn8k2pIY14tuZeqxtblyf2PlWUM0q8BxxtsOmgebb8NwjusGWzzIHsgHz2tZggNxDBc2Z9iJQr5fklfdfQnK45wAXcK2vBuLoaHqSZO4FiYUP2QZobtgNrEkgMZPoaqSbA52dDrVAo-1CioBUPpzXIFxkyZdmEx6GeCrMC9xf-qBlmpYG4XQMrUm7xC1BR1i6bpbk1OCuabBY7H4slOrId2-t2DR6eKfF1HaJE_Yhll7pYQNLWfqcqSpnr-wRfDlggXFk2pO7NAcTm-yy7sB5dE6U1IOyuIwh4Y5gQKULHn86EsuuIhzI-JM0FhG5Ql7wS-8NsQ9bwm00IXJHfQe4qQ7fKhFdud0-JCmTDc-TD329iRf5wqlA3X4u9G7Tr3hvkz3KBI6ZeuApa8SwL8T1-1SpKFmdcXUUNi0MbVW3HPniDoWlJ0qP5OJEDLe5ze3-Q0lrZoUFu2-9URUlkRKjvPnG5_HuA7Is3OgHjW8eJM2h0iBEyMPmeQQvwnK0r7GwOfH1pjQr8qSaNwyRQYtvWs6aCt-pEZfIRpDpNqWnkrAxlZ3l4XwzRmpGfXD2KGpUr4Wv9tJQiKVJt84Hi3VKYTvCZ5jO2WxK15soD-OGZedvSScqXoKL0fo9dA79LQ8jnIeUtVmm0yD41TeQdwLIJf5w6iStXNhq1ZKuttfNuvSjjWifJoo_qtuCfsbIbIo8NNxkabVMufxQTqPfcXMl1ZKeqzi4q35hPk70KCUgmUNTjGtM1XaJK_ZtlLqLo2GcXXVZuOTEsqrGkDGoMJyjWkzh3Fa8nWVepbVBywO6R4ep2dTISk_CsJI6niepxrKJBa7vYFs2jdn9VUf7MRO9HjQJ7aHylWpr3sBUpyfeUENW-PA5cTw2eC5j0sGq6sNDItu5pv9-J3kejPezUknhKr3NE9cCQIE8mZDNcbsp0GHBHgoTbaaSXTh4rmark8ZL3uxwEAMJ7qOUy113Dg4YXwGSdpRcnD8Q0JSRSG96Oc2mSYt9h1hmfruwnAIldNePga6Jr0hQIUDbRwArfvAVI59XIKSWO-ehl99YLKZ5q9qMRTl9VlJ-ioizhC5roncUARIFvlkFTcpm9H5h-bvkGDYiCiDRqlMtKtomSpFUB1NlOSe0LUFFCNDN5RnesstmJEnOXAUda8sqFiuayrub_zQt5a3xm9fZOMpIuS9v9qqL8nCpKjVOqeydS1bg6qJln6Qw0k_r6jEljLNRkn8moI-pwlIS3b6w3eggvLyVT5yWPrZZ8NZSnvjW2dtc8JYTzZpe_QoIpoQmp5yj8ot8PYTyg9okPWfTCDukgC7L2naPJB3NdYKtk8zKjT6Fsmews3UDNBBUK26bU7Xt9PhVl3vIdlhVfW8DDHiHPLV3ZskBHBgRZ_5zXUtu0qYm6S8fSE3hGt3fvU0UZ890Qezgsr0F9VhS1qMHd3sYiPRVqZ0mAiUJ6CnmcSg2UAQsfsPfzMjT2NDWOjxxD7g2Qcli0Nqa6C3QrnqrMm12tOQbU5h9dU77jIKY2dObpwB1YLr_L3RY4YPnyJIsFyro0QhKl1LijvP1D6I8L8Ao4TQ-VFJzKPpuKcswKvhhxQLfW2jEIGegkRRZQGpc1hGTmsQrNiFEzJCtYptS4jlov3qeKsiQNId8leb0BmO9RV4zLomSUwzX4QBeRme2ec228eL5DstvS5Pn_UqwlW4zllIekI5hydkxZjqdLU-n6Q0Q5BsvEqp7UFkBLXKFIPp0gac-sdWz5AOX0mJrCuwcgSp855S-ouTF1HPm-3RbDZsfG3q-VB_lQe3_9XCpKHQU1ncXaPTlkjbLxfEiGBrkeWbdPpXfgYpiyozx7RekyHKoOwM_vW0V5Rtfsn3wLTEP3HFd2FgOuWUX2RpOQj9wh0y950_lMInm98lb3fkza_bOrKJd8bqYGGGWdpAHlH3L3cmTOImtKN133gmAiW7eTyEONOSVn9dcs71NFedqJudUqAV_0o4GVqy7b7E-odB5y9pNehE8Pq09F8_fS1VBQc_VPfFVRfoqKMvVC6jkglnsl9Dqat1pCBgAZNTJ7ucPVDE_KjEBkQp8KF2Kc8MdT-_tUUYJVykOlNmeUZkJDuA06m5WS8x5Dg6ELKH7wuVp4qJF1CrS7ul7vSxiQQRR7BIEIWHisDYqhm2gb6vLdZ66QYB4nih5dTxcq4VXqhCVV5RP_vvnqOP9SQIEOmhNZYS1JJ5Z5dTmIBRvywdCEMfki9z7Dvfy4rikU-1etolSn3pnkg56267pDtg6-Ww8U3AtOvjmoycdNqbnGYhqzOvkBlFVf9716UV55GlYZHDcQ3j5p9xEAfFMGJiEMv6sN6nuq-xA9RjVlJTQwnmpqT3a7ipbZZUosG4Zr0-6NGuQSjy3KQITC6DqbQPSji8NKfOeWfFEDzngmLKfXKD9BteCrQSrDgMOQp_uEu1O9q95DP1Kk9JUhXzlsV7MaaCV8CSpKAbPDSpRU-17SiQLD5tXw6DICSW2c3vhgxJWnIBPPWShCAfQNf3wMz3qPKspZyQo-qJByJBlLludJeiAAO6CWVA7ZCbypniGlQaLxEgRxElkq1JfmKmXpBJEk1mIerA_8CYynSYkZrhp4-WA7kE-UMb4P-RiEIFqoxtL1bDtQm0sWEqa8dqeu-KG6Gksqq7ZCjelqQ9RgqeaymQNYQj-l2Ak8wplfVZQ_raJ8DBoG-PRBYogQSLbq7Gzb0i5Vbu6Wvctc7eSSG6jv2KxSgvHfUdN5rypKu_7Ya7z7WJasP06lDF-QX9rs2iNzXbM52aAzbg29yyYNJWmrpKfh9GSt7Mnu4DtOW0u6nV03MKZsGdWE9nCdHbCX1YjyKlyf2T2gHfDys8wcWivpIVE_9Rw81mN-XY6XOE4Sxsvl85rGXO6enGcvVYNMNhGe12dUUZ50r-aOww00pG6vKgukc4ycAEnoG_KyIgRhkAxhBSXDIygnvkVvzn2vKkqim0-yqGB7KcAhDCVKPVkgZaCkKCmHeA7RAgVtYD9JXsFQsIVan3pijkS5cVYNIAVQLcLqOG81DZh3qL2BPOZpU2LNSwVeS7PP78xrlFifPClkG0AR8WaJorhlm21HludRQziHJhdFSKI6HVboK8r6Mhr1mXRdY-2fT0XJp6g-qRZ3zxBPubCn402nVmRmwMFsBTIp36IbKjBWmgSWk4qo-7b37kV5WwhZd1UbwKzJRKd4odjNMYKksvCVSSqQcIZITy3xsjVqBcZzD3nnM6gooeBjOCvMe1cTMugpVIAtqe9K0SCdEgEHTUlZTtIhdT6TuV8jwzy25ztUUc5cV9nbHgNs7iy7U3gKoAqWU2UlSAr2K5FSIYXzYcCpD_ZYzsM39KuK8lNUlDWmcOIMGiZVqI-EWNaMLu9Fgwy2dGKayXRgGGM2CfqUOjP4kDy58_tUUcJAbtRsu347-clm0L1chZJIEV0hzenRDllg63yUMXaOFIUg9_PQ4nriSzMueWZNJYjeVpmW1QX5sEdgj0UQMglO9zV7nFRBpRrzeIjY-OHU8scd7_xFd4J8gat-pDWyqrZIdvEt5uxiNW8EMEeh0Jrsnu6dMrhPzT_0sL17FeUVdmhXXvyFWvCY5JtX6Q-xwkp56xyFstf60QUFf7JV5pq8n1N-r16UhaBqRfO1AYJqNAu6s2hQaK_k1605JOXyemtKBXRACed309XFd1vzZaKSX0vw2Ga7No5acBPkemf1cg55-NepQaFQrTzh_R00Trmx3TTTIfSnTp28HcC4ertD7DQSSq2lWSb_qCG5qbUiOSWBH1ya3cE7mY-xo7fH_uv2ohzs9qIOPiFsidx4WRciWXZMJSoXBjNo6ADYOV-1UgesUUDFd8l971RFSQBJjpYD5E3REasrFAFeJwonXhmdUVU1WrYEsaOQwAYHXOAyP3saV5vvVdOr1BnTIxCCmgDWP-qGvUdh6NPzYdeKtPSqk6HQskzb0n7ugdy6YeiFpBZJWznLW8InTImIV0dQSmTTzqvoW1fmRGiDAC3NbeQR-5egooydrdOFbG8Gc03g8IZHNLhRKHMOG5XsrqnnV84ZeQy1zuVAucm8lf5eVZRrSAt5iQSHh6Qt2eeNstOE0VTNzYMgncPekMNTXySe3TSABRxMWnmZ5WaSxdRu-fDnml08l8xeR5f9oRo0VBhISOfqov1qOiNrXKQh09n1U-nMU46eH2TDJLSdhs4YodMll3mhy1dEvEt1phGMbGpX1I8qb9Rzy1cV5U-rKO1IopCzs2w18c6hyMLjIWV3aQ6VD5vdalQxk37QdQ8Oo9A582OMzPtUUa4IHY9J5qc1bA1Hba2GJhsK2w8Li6BGSkBJOjX0WqjC9e6srJpueumWZvLIo6aGDh-f5LNHEdW0Tw1-bNajPFfnGYrBHr6j7VAWont7eLrF2YRvV1M-IJGt5FGSjq75bKOMTs6F0uXD4mbJ4RJMs7AXq1e-od8zvqoo_3VUlPHLUVFSow_BWiisLmaQAlixzS1vacCzoI03uViMmuWuB1MhL9fTHzNW7vkCVJRC2IBmkMgGeJRma1FldBSzgWwTquQy7Omzzl1HdrUAuWugLXU4xPZVRfkZVZRqetO84UM6LP1xJnAeQwDDtH7iCbMMOVF7DnVOnbqq-A-1-RCO4Wn-U25pyzaAwrJD1smsjxiyfM_PIvOBNDQzYktFOSqMvs3aSbZQrwGSeMqucrO8Te2NdY0y5e8C8E1TzUFnH7K-7NUXP8883pXUbZaLl7RiT_t8PhVl3w1cvdWQCUO-_chboYNZWi55bYq0Dlo7n5YaXOz0rM89IqWg1Fvb-1RR2gQ9hEaGWis1eQkszUXOa64V-gQsH9VifULNAtF0BwkrDv9zKO_z3GZCyUZZ9wZ1mIYKoU0lR1JMWCubxlvnEAHh0mGAs3V0NaatA8t4BpF9alpq8dra0h1Y15H6AFXKR_UeI2dacg3iTTJLl40BXxAu8Bbg3sZnU1F26JjulmYOGkStJrQ4D1AWiuaaYk-GnHnCmVaVlGSfRHWYscpbe9R3qqLUpEBQj-5h2Lu35eTygJ0aWlV5I7zMuUqCbWjMAqT9yNAC7ngXH3W8vHOOx1vWkLfLV4jsaoRYiLqwrG24hiZEiNe2Wakl1AyNBrmANSpmqPVJyeBjQm8DEEy9Xiw-5MIMktv6SkZK0iOw4FmOGZ2kois9FptCPMgk53OpKMPh72uaDSQF5ZUSaYAOYdDlwnLSnjw75Z8cB51KleWU24WsVW8oD4eh96uizBVmCcqdGvvSNNA9F80s4C2cIQPONFssDsCu4UjGxxYOlxDqyWWH9hlUlAb82CNCGYhNSdiqLgNl0dbklgpJNc2G1fEvtekMjWt4THeqMIX8mCb0Hid6d8j9FmgsdZNpRyXJKOAJPCLMQ48jT_AXe866P6adkLYpmE1DQtNXFeWnqCi7gQHAOaf0Hc_tkZg_fd8ivSCMcrZRRGG7vLXraBeQrC2ijMV-GO9TRVmos0mHPJZLyBqBrDylCY27RGi3Ts_GHpITqI36McMLJsyOOf3kOJ5Ggsmc4UxZ86zWNeLllCgouR4XJnX66t1MGhZ2YFzBU9p7rOQT3PAkMCpzhKFp1bwDFdGxglxymnRN1_Q4rbLlR5sgTNmo3y4rapCAxiv7-lWrKAMoW44hRcLvSYwVXwJMsiJpg1SXZFcXKTFnzCJMnTOZGczexv0w7vw9qijv3ZpAHuLeUZc38pJckrZo8NSQw33OVVihlnQ1jWnVvNxr1pQkfyg3fuQ7oM5jqATc1kswyEYkZKsLqUPUAR6QDTu13jvln060d7VAbbmx5_2EPXrSqbuBPcm0EqU0OQrNtoErs9owGJXO4-QBl6j_vAaKP4VPZlWn1C9iorfGYzZdm1XddJ58A_hpaH508wrCGQsk3hd_VFX6b9HZczYXzwQevteJ3mDQPEduwMcl4xvIrh31G2yN1LgAgHAAu4tyOcponkkvOxJhEvSWp7mHzTW3Vm5qoDk5Xcv-NvD-Z8-6KDlAH_hTjgkKuFmedBrlYK-x6npGtGHryP3o9KUTVyTPoBGmxakuZWmWJOhRcwBIbUEZr2SeOT6G7olwflVR_rSKknwY1UCSeU_qHGUVIed9aySvUck1MjjIdSquc8dUP9iRgDtUl1R1vFcVZT7xNI2ZXhO2AE-OPC_sh00cKcq9lK7RI4NwWo_BfvXR-xh8Bw1knE8J8oJ6qcZEmSmqnEIxq3RscYE2I2GtyRJ3B80LVzyHQGFPj1Ej42mERNMxTol8S1Vb7WrrSLsRNQdNIxjYMx4kUct5XOcldNHItCpc4Tuq99kmesO6ygE69NJkUZqs9cpOBLdIW99JAZABdnM9YJ6y4PhSQpy5i8ly5r2qKC3r8riD5FLVKW265J1GOZO0AMrWT7hGUnK-JDZSoJQFIZ8UblanxUsVpdxO1WJbqWJS3kQd2xAWFMuYdYmiU8BNdaXugcR4udN0I_1ow9lPXpSmWZNdHplL5j1F_ZcOa--T0Fy3yM9s___tnWuOJDlyhP_rNKTzfRzSSd5Cd9dn0RA0FZrZhTBCIXtQ-5zurq7KzCDdzUhzs6KMxd11ujOGxZs16AYspeF_n4py384HBLZijbKkz1YGx4FiUebVNZaV3ha1P8QK8DrA3G38JUuxwIHtw1WUioVROJBcVlU8oqyGQlT9GLoJj-0u6AvAUde1PluByRSIJxs2xtm-QUV5UwHzX9mWqZzBQXTCZz0foF6GdWxtR_r2WEmOoTwHDQtpGMY6hf0zVZSF1m2lLblRzhVOOryJmLYCG4vR2hUjzfYFqgwhfTszQC2LQu5D3fFHRfl3VJRRdurGynFgQDhSSGp6-5z7SGjoqJFucACKlP0MWaB2Nh8tQxCi-4eqKKPTkUITzoSBlGmTXRurR1HtBr4Buacd9j0ZLMAvq2h723bSpEOXV5Tj9LgVIE99Z7VGbXpBBLmmrPnYBhYZqao-LnnY6cJghKXcsH1f1-eueGfagMMLZk6-pZcrsHZomXvkr1mVMQfVPXU5tSlHVxbXTYlDaf0Oid4BcNk1qeiwAo30gZBspwrnpH0sgFOJUhHCm1Rjb8tXkwQTKNUh5Z_qRbnnUaiajJdnAPz0k-nZ40mXUwzOPqfAnuj0NS3ea-bZAvpuOp4shLfBRgWH5K4AoH54zq1Gur60spoBBZ9vmqambeV6V62cA52_LNklxP6axYggHKiWQkBnS7osAJDOuxXbnYrClVnuk0VrrLMYwzrz8MnHOm4EdfyjVZTseLl498KWk5fTMDqJJmXkL1-kKm3KTyi2GtQna46JfTz7o7eMj4foJ6ooWWkWKRlL_hK0TGUSQn4bXJh3oIvjCVGfF-ZRjTfSqVYT1JZ1JHRepoG6D7Ijm-ulY1qgHdvTGj3Zy04G5r-Z3szHAhDdtoYCmnX5dW93Pqj3ESUlkm2wgFTF43ONmsLQeZT0bZq1DYLLIK2aRZ8GJINu33QjAt__LVSUMjT2lnt5Zjj7uAsOamw-pQzCImaBK6XZl0IGLiRBbvTyVSkqeP65id5VuuvbdBFJnUjybIZ6yP0ccupj06rs3HLv8Rl1htRlJzqBCub5622KdZ29ln4qXCaIVoJKN4UM6sAHkm2Fpr8_-VSuZvKqbtobUHZVjRG8RmtnV9YTgJD_xg0n3WtrB5gYKCVP9w-6fj1tQk1v2co_Sak3uwHY8qOi_HMVZc2aiwH6mTTkdGa7C4YcFUYvZ_jRygQBUltkrhhkLNHGqa0eYcD0wV6U425AXYCU2p7jdAeX5dJDYW1orNL9VNZMnmssOaspEyTEvGetIL4X7zdNXcoS5LCbNWfOex4HUPYoHduTEalIKykg6ehs-iJP9BqACGe-5x4SH7E9s0s0f-o1IEkzZFcfs3WrSuLRyagckqCmUJ4epGzntfve60dF-f-jorTfKNF7znZ9rDOGa6IrlwYQLc1AzTPUfCJL0FuQLNdPk6dslUPGrLlueTl8vopSapcKLbCZY75BDCvApuT_Ljvr0hfgO_Kmez1ysdGYu6yf6FizUf9_VJTfqKK0VEPdto-u_6iaK6bNc_EentlvGC6FDIYzV_A5-13jjn6pr1FzD-krH1JcHaSX4tpGXMpBUtLKKDvb1BlzT5u1Xw3KVfn-fvjKrucuUBvSiw9tyxHEqQgWYAnYjFcpx7vHa1IXXnKhZ5uMqDTcfbZO0OKeujyo64RvTPSuclS69ljILfattZ1pJ-FInhpB3zeUbUN28zI58F59QwuHZHX-zHt-oIrywvAb1DZvYMbsapjFAMkQqn6THO1NuttEq9ynZDnUzOx98Rs0xv31_IWmSu2II63eGoiDjqizQT62DILUDH_lYTtYU6nWdNxTwJGujE_d-b9uFiHvmr3uGi1kiSnYh1oKxmVtyoBSLpln1xpYXGI9im-WCh0kLxGIf5uKEu6mUB7XBPOyCs2wxlYrB2giW8wZYt1pADDAD1KEsmNGijuyrPev7OtP9KKEAC3oIGgfQjQc2gSOSvd0eVPM9oQO5QXS8jlK1KnQDF7lamK8za-sNfcIWdXIH-uCR9-fqqBNXQK_DwFmT9MVO2yVOkGHjFLiDspRyXm9rO53zqyCYrbLdrmOzSrrNG_yhaiFwgYcO6G5BBd-eF1AsV-mNM5mte9SUeqwKUdJyRMVgJfBL0sqNlkoUHvXIPx1XpafJ56-DE-3Q9urxhSfHPPPVVE28Q75hejMJvN6o03ZObX0iC34oFkYV2TxKEuu8KBAQQ5YYLnctL9BRel3WJQfi81y-H_3kExuA_4MTi2j4LGMFH3LZvTnBAbGTM9ra2bbn6mibJZGu7XBP86aYyTaToGtR-mIpOu7lffKO9ZMXbp7wv6TxC5siJNf6cs_Ksr_o4pyPt642si2QTNbVW_FLfVtoJ6dCgnUgXCxQs_iqYAKCjsigBH0RZ-pokxdcYyxBCopRddSpO7efPrjcgGM3xt2u5Z0bVL3yNmo7bXcQXwjfU1vSvPMk0aR_USPu4OAmutCvPaSLAYgBi1C8kfdL5y0js5w_fJPaRd7pTcdz6CRWluN-ZRgNoRhdfC-aBu-5E1TV8-TLUv9GZYeP_AQ11b45PxHqyj3qLorY7dHu53WKeNQYHkB7vMLX-DkzqdE10lHZ-rFjl8Dv9UKtP7URO-mM8NwAk-dqlyzsxhhE65WP24JDbBhStucYSuRbs_LJmTZ6QynzfiKJHXwxJhwHz6EPY1CqPl4zUBZoyDKUrDem-SPJQcButqOmomZCp57HQc1RdOzzdNOeQJooPquMd9c1MOPC2_cCdjNymK-UY-kRMVlacboj1Zrn6uiPK0pogpcUv0MOY7RajSgvTJoKwqNjzDhZTOepE_j5pQb_9EcXan9U70oYZSNJWVXYxWgAgiGhvrveMLZBcVoph1Cuo6umw8w4NqlnmgAZH917Gl7J_54Lk1Xd13pKD3HFA0-xsiqbmy_COLpWcN_ci5gt4J-IbXjvlYVZAncNOONSsqleKY1LBwJJOXn3yRRfQwzelomJ3c_1GaNsMpN6Jlz_FFR_omKMuUyNLlUDh_TUAaxFMAwtNuCZvJ9POaNtRRFt8Hh_Ia74JwQ-9iekc_PVFEC-6CRV0mbo9L7aqV9JuVi6A6HLQv9LGnWvh-C3WX0FBVadkHj_rVApmC682O1F1Yw7V2ehKqrcJSpy7606jgRZhaLLKhhab5cwqsm0-fX8KNcg4-SBM5OvCT-tlLM6PV8ziXI7XKHZa3IphW0ATA4Q6dM8hy6fX5nojeQzXfQmAGflH74oT3moaHOFR87m1jtKn1X4caWlRhUdT6VlxJU7VNVlFO28-CfKR0H_9XRQwb7ty1b_jUk9atDJermRn-i3vXdFRnCOir5q5WzjyxXS1jsLVlLI1HuzmqqkVEe_yyoU2h_bYbcQt3Jnhbhwsk3vVSUgOEYVdronQCT0XPpgEulgI3HdQ9I2IZ4u6S4lMQVlA66-b6zhBK-T0WZlBVdo3y8Jb2YvJb6OAbkGuUSc-TGbCxpNtfYQJNnxZyu4zIN-Xy4ihJMHRIPaSX2I0_k6GCndtMOlZz8aE5VssoKKIppKfOl3-U9uVLh-zeoKJfG_qyOPKniFLRnPnZZok2uxaL2darGVAsFZup6bgsRnjWqpu9P_UwV5QS70mO8PhaULKgtU3VALE8k6lBsV13jsu3Yr22zYaCPJ4Vj0kR7-FFR_h0VpcMvU4QyUWxaGXSzNlbSVXILpVmHEdSs_OU2HE5q0oVQ9el5bPKVPjTRe5YSnH7vGjc8UL7hg7cJ1tzxghfnaFTjreF-itZUWlhjm3SNlvTbvtL300IMdBCxpNGTfJh1eRTm0QllmvTP1hYFW8YXsocF9u_s9NFZzvCXTcaaglY7SB0czs7Nw5E-OKyR2lEALtRr83pXuHHAJPrKKQAOWPkwkvwbqCjrgN_BIekB7q6wrfb40d-wxwbsb7neWUlRN8JyrODLTWanymMt8VNVlBAVD2vfGa0PkDNlCCpbwJEr7g7wERunJIMw6XlwkhABzdChsuGCr3wSh5UDIzcdNp58THijVhZnO0U63w5KLWHEofix9kuP1WvLoPPL0n1P1rLaE0vENEWrUHm4m1KSjQXJywIAp1FZkXEXV0iWcGqPtDaah8X7z_aiDA3kDT3IAPZpN9RUS5hjiecE-U0Yn7Ruf6l0aT6JCRXSTn8B3bW-PlRFuUZXXO2Me8-Yl3q-jFTiokwYBS3D2_iXrhn3Y6fCCjnZR2L3jRG_-r1cpTilq5pZ8rIAzQHiU8ZovvkpSz5zd10l8qN8l90Bn3D8kRcf0js1zyXJyrnwYYOpddxjaU07o039CApC5bWyb55hiE612MBIOn5gwbb9O6gow5TBaen56gAsd_6xgk-8a6oKPqT55U6pgFtnSCTvtkCeZIJyNOZnn6qitJ0WpfvAVICOSiMHCwPRelHk1PQAR4q8V8D9dXCb7jZlup-sF-rUC44B44YG_Deb6jls4gGLnWtqwFeKllVPy41wi3mrAlpZTamybpUG-ZpHBNlODZdVemfKvQeXKl95tmCSMALruoSoKYUcm9ysYKVhtxbgeTyYHxXlXyR6h7Rr52PsfcSsgREZctOLO91Jz67NDplVEHZsSR2PUnN6z4MW4o-i70O9KC0FimS-Z4qM15vNFpVrATNMESKt3barA4Ipe7wdtzt0WNN1bu1fZ2sv-GWW1Lsi7rrrNlGe2qznpSBWAJvm6jJ_Pd3pO0nuceksoD0dHL2oBWUbMBoUQhZ0iVR1ABCaIFHSBE4dXToUDdZSUQAGYQMAdWAKBK37x4vy_0lFmX4jL8oRFX9Sb4CDxNrmo6ZQlGRiJYcFzDsdBt11VCs5EM27-Wwmf4xRfodE7yTvrB7PyVXptEqWrG01r6Ps3eKzXRXibFAlndsBkFcubGeFcsybflSU36iihFArfjeb1HBDYX7Hr7KWu7cVYXYDhrOvKZO7-sn0kHuPhgdjvzt8BaBBc4nSmARTDlaP9Z6sQWHv4tC5xv4kJWVI8dW83aRSzxVDqZ5-qWf-CED5bpTXehIws-vcnz7WwGhrasLnnADMPyXcRIUG6hReZt_gUlAtRXl9oxcljC5mSH4tPruGnHiv9JbS5MZdht1i4O4YpPLPSULVVeSQt0GU0LfPVFGOMxNw4caePKdbV210M3pY0IlI040g74hnAyakoVktoMrUZ15l8p-vB-53j81uD6ZA39jkD1ioeIFneW9Zvc-rHBFIXYmZhwvRkXBc1-VRXravM73Zxy0juWxhwtPsR7ER5BunW-mqQTrq62xpbClAFYnnN2XoPnRxfJuK8to98ShRugwFmSd5pRYlnhY-IsVaRfm3--TzoSzK3ZOPp5cjQ0a3-Jkqyimb7mypN95bVrxH2Z4zBP3ATJ94d2XhWeKhAqb4t225A0AgYIf7qx_UArXN6HISg1fyyehCzqQ3ZmeHo-64SlNOeF0GqbEZdZKpyOixp71UlPnuWyPfZSsCkWexvcgyU3b5pq5Tuk7sptJ2Q5SrudjQWnXpmez6bSpKb1OhQeyumDfvskb2jm1dslg1STrqI8nWmOLkY52uzdYGJHQB6z9aRfm4EcuYyk7f62h3O9s4jnSMHb8nb8up-3m5_Htd6ZSZ5QEBBH2P-A0qystHaUmOmfe65gQk4urnNKhwGLoOMnmZytnfB2SDEpWaMvA2LOCE9Jkqyr1SUB6yFPy76ASpJAghFbTbYR9RXURVerAoBWszy0t2O2MbFfP0HxXl31FRHolgDth-n168KofIYjsplhgGjc0pRhZ3o1z6SH1BDuXLTd0Zc1n5UBXlEe-91O1-U8wUq6LJqELZppTOmDuADk4LcxmNdwQqYJHtJv2xevjXNVWiZjNktkIxj1sWxp5rOlUpDiDO0eQiGWe-Hbo8p2s8e3Uqh1LB9ktgtO7wC7YsK6caigzkQitQF6HGYoGPVdYhp2xgx-L1LrY7P-Q2eQyG9Y9WUbp5kpFQi06vfuRBs5VgZYahTIzot1HzsgPc6Dt1ZUhYs7OPJpb8fKiKEsRvrAUQUtwrZIpbpnHuC0lOaayseCFZmfC889pW5fI9s9JmsyJa70vUO6EyA-CRrXkrSjtlzQ2bTULeeem4NOF9si5RAawarQXJ1t2qHKZe3ipNIqB7NfMFNB0OFr6sRBBqkNtbuXz8wL94qQwaEwfu2uIrhnm48bfwonQ--3koBRV8zXuEHYa6IHAgvQarAcrWlC47NkwZr0TN500WHk8LbO4fqqIsPIlwd9aJ6J3K485G2Yia0oIRZ0p3MJm7Jps1VEjopICbQ19KPyG_ilwDNDToxjNCFeLt1Keok0m6sEKiHg3Z3VFakCPHgaGbwvSowu0VdMu6pkTCW5LPrAyedHKOt25vEqx5MT7gFZxvYYc936DDcJydZtB9kP-oKP9cRXls-u0GY6dm7F171GQYbUkHDkUZWXNuCX_TXDWyi3kMMvfVtW6pT_P4SBVl7gu4cbRI1GGvRyujRPmglCJPKMgoa7qyyremPmGod-yU1wnWUv-6lNfz9kuS53MZ4GEf2zVDJ9PC0L2G4evA503-02XIhJpiKSvuUCy9l3KLK2kWNhapqhOvLQOAhCz6uqFNmbjmM5T6HJ5ongg1HK32GWPw71RR0i5dad696WTnXvhsyFFpXk1quA3Uq8FSkdFxGe5CLCOFZ3wY9H0-VUWZKWBUEFl7y3NIgxaQX3oZjSntlta17rPbtUjRbnH0tptu5pq1Ddz6Wui28C3fTqe4Suue9Dyvbgo8i5Q1hXs3ytGC18MIb8ntSX64Z1FlX-GHI5nOQ-ZVTnjoZtcXRN_2vayAvqnJzlrJOi_xckSWjZ9JZ73H4-Nw8U0qyjnhtK5pqSQBsosbKjNi2lkzQ6xSnyJega4ht5KzK7V4XHkiZPDFh6soYShRyShd0yT5sArybrIsrW2As9kElrYFJXrbAlmlXEVwpHtd7N77DSpKiFOUJLWf6gCNrNnaDta74C6qtStRvUZJEou87FJVhWEnP5pfmMlnqigH6NuyQx4NKF7nUmL50pl2F-sKLvtp9mONxXXOJeds3hIb-rYTX76BPyrK_6OKUik3h7KuHNLQ6DrgVbMiABt1tNmGbiB8mpJxMnW-UuHPdlYcn_4On6milKNDL0PqoQ2uja0UeQ-M2kfIo09lYsSsS5nMJkk1P6qASfXS0Xz8eorf2zQdSF5rT0J1iXXL-qVCxAYrk7IeV2857M5X0CU1In8CYCAvessLDlwQg3ssmmOWI9cAiFhrso41qk-r90bNUt4uk4z6-OJOfq-dwpZu83fwohygCGoiL5ePZHvWOQmcADZKV9zQgaJLLR9ZV0dhpRAOBVbTp1KE-YeqKGnV8QAvD09-lMmCajEWabv9SiYlAzf4Eu0ilSpVivaMLwr0orS1r2dCrdBBZwA3ySA9AjNKWVWkZoV9AIuD7TeLsS3BnrHVwEqqMgrTcPt4XQ1BPW_3zUNoG9IO1cqR5QX0PXJhp2ezLsEtrG6BUdDFZKVLSCgxR-__aBWlseZ0IxY0wqfkLzrmXK1N3nhmB87dpKeWRY61cfrIj55I53nDf2VvfKKKUnJP2QPuDH9WFDwLEGjOA15WLmv0NGDvXCbPTQrW0YyjMKSf4Xd9lbupqEN4YlPNgpt7Aii3bMBavtfl-1D5lHpiEs8Vvk_VYDgYb7Zd7LUcF7uCIpkTrLytnOKkgjVwMkzykZsfCH33AMHcc_YuX29KojxKaj9x_Q4qSract1wU3TDOHMX2LLr25r3r0K1XYLGccHRfX0JkY8eZYqgyWeEBfGyi95Ihbi4JFgTyHBCA4tDS48BJ-FG6sj4ACsh0c8uuMD5z2spOogS9tBGaCGhX1VG2pPeuNeSH2zOPfXlLe9FPQwFD60faE2sD_7ki7_2M18m3RjyLfgpwfOqj3ClBqHl5ZzZdPMy8FWsXQCsrZwj1Y17lgQUb5kg_Kso_V1E2eSZn5UfO8cRmLAcgVvkztOkK0bqai-cRKYlLsU5rlcmfKtGjP6Zin6mi3LFsqp44Est3yNmrSdpNZRt1SuIN079ySE37oe7pTkjFnGnMvcrXjq0bhQTxGnzRinvnIm3IqpUOsnSidvYpo43F6mXDDGetK0q8gG4E8F4qyg7EXiqHWvB7LPl2gYAMXjeb7xnYVGteGQSPJl9rDQPxSgvbx_9wbP6jovxbKsr8-6goR6kQBIN2SYSiRKZVfh3KS2iYKYLLR3vcqXLznhZ9GT4SzAftdcffQEWpq5McxwDGyEbLlSg5Ves1zs23bBbAKVfj7ydfmYiHbQaiq_Uo2PdHRfmNKsqyNAx3yw5360Sgwe54eo0Se3oFHQWHfOseWzRbVU0WK_SYK-K0vp65zxPGjbpdi4BNyHacToE-h-9soBBLFf5bvbXkWRefQ9fkBr_2lGDgr-p6ly4s66Z19Xk0yqYbJOCY3BVCrzqUZOEEGNaImg5pXeNHfFtx829M9L517qGIAMt0HKDSyXneAX8D44SmOfrMVwyJxWzJNuScoS6zdDM39meqKHM6SnEakq_BhtdRxiaPeNdxrj8mzDv3rcIUWs8XHhOewO-keMhX-JMGqkuWMd3a2flEaLulbynFhyYkVrSubrzrrmUVag04pUQ56Y9zor0P3GXZyLd0u9LVJYplPyB3kHm-fNMS2jAD_Y5Ow2_l5CPJhgzXFCP2fV6UCgJQFNVlccyg2ZZ4bbQWSy9Vkq0RIhQ15nRv1IWUbCH20OyTtTA-U0XJYyu2dMK1YKsSZOSoSR1IIMgyUu2bbB-PwxihqbI0uDNB1Pejq_zqRXk98adnlTQARSEn4590rybLknlrB-cB-e6JUNm4ZN-jGTAxTiBZftudQGfC7EeOpOwtXmnftCEtXNpnu-YeQGU0J42BwYWWnNaWDuV4Byd9l4pSSVP8SOXk3WIGpy6Qc_A4hZX3SDWskcUzdUyp48jhgNEadoxXH-_5aBWlDKiiLixYFqDpzKNU0gN7WrFuCWi-dxjDLgihR4vyidUiaKPyzKx9g4qSnqEB26Q5gWzlNLbZvVQprzOd6DMfHseq8lZOsZYpqXDv0u1Hh1t9poqyS3Wct6dcqEFlQNjl_XODjI8j1DDK0C-w5dilfUNf2Lre1819rJDWj4ry76gop5SqIqHj1itRwOxXNj3QUegkQGsl5WlCz1OFgCsib7cEYQQOxfgc4H6ginLDfSHFyrgxQIwSLIFYB5oCWQlybQ2L9guIU2QLPHpQn5bRkg9Iob7mbEAM1-h0W9413XUapOxM953t1Ic_NzBhkcuMSt9VJjLf7uZdu73cypUsGCjeZ-rMt6Sw2i7ghywnQj7dJP-oOE0RbXMBTlqiECknYu22kv2jVZQyswZp1JF0o1AV4dRr1e6nPcZ6lpIO4mPk0zRSq3groNcBu50UH7-IT1RRghF7cVZjf-wmMliqbyU4KVxPVlgnwV7DsBXUTe6AWGaZnTUIhr1me6R2MAWTrRL5IGJaI8KHlC7bvSsbwVlGCnSSsxZAYikvt9CjBXX8ZaYFgaL4Ug-UNwI2OeNMZ40C8tYVSdGx-BxsjDA0U3uuWTepWRIvrqbfQUUZagO6A6VcKa5XAS1Q-1mycF6LW5negJXsfJ7gNytbF6K5y_wDLG-f6kXZuo7_At1RhrtUnH5uzYVqJtOIui_cQWFLWfceAmBLh98sRR7qrySfPxS5CMbV3VOTEPyJvJMD25GS9MjgwPjlWEfAtMiZWyLJFYLPMNijr1V1TrC-WEbsTij35Bsdmf6OvensV1lDwFuQMoh2lwnEiVfwecaloa30o6L8Cy9KazQe8yyVbOQBl0J1bLnI7cszPFa244F9r5Teuzsdm-JCP78F8P6xKsriKc11B4VyQTOT3sKaNHCqZphavR0EsiAatIBEmw1pN12AQUlKvK_sJr9jnCXPAgpUO9nTUQSnTVnlw_bKiD7Wvo8ML9v1K1uN0LNGvt5elPxMmWGxy24Cg5piH_uhdQ-lqe8Mm6TTsyVK0hVVazqNmra8Dqk4vzPRu8dDITdFrmlqmK17FYNKy7nNi9-pyKtILbcjfUTU7UHr2uzF4pgfm-h9K2_s-F63ngjdDhJr8EwtnBwuz2AbNBw00OJMslypiYXf0ljGU6hfhxAm-Kz7aTeNmy-Awi40grqkiK415CTaKHeQ6yxLmqVjQR5ovafqXtXe7VPKEecHZXr3SokW00rMQ5ag4zgvY-y1YC8syty6WnC8WyfoAwy4v09FWSGzmlSjRpjMED1pSDdS2jP4yoP8q6uc_mG74Fr-5uyzgz_T7rns8-EqSoc1ztFlzdfjzY_N3GVfA6U1Tg91KUtkeAGcgrE9JMXgTyaPe6YQv0FFyU9iuSn1LVjk3ys9oUeNBzGS83FTS_ZOCl2vFCvg4eRpdU_DAf-xfKaKEpw6Yr8QpDppOoW9c4riGfmkAaKZ-hK9dTCADarxrhOyqWSjqUNQ8x8V5d9RUXpIXsH2BVaqM7h8QWjXDqAAFFhKkeVidRhCqLppHrqAprZBE3hGZ3yoFyWbph_aPRB99812_iUsUuxqo7PJzkTOLqHmDISPfhKb5U7K-Di8wS9rqnrQpPOZqdL3ikz5T7kbtg6cjWXRPejayonsCpqjF4QTqXmwe9dh29c1FTOdJ_wKgL0aVHMN-HZKyag1lPmEg3dNsuxxhyKZqxfdo7P8S5n2G6goY4_OW5MMoyr-us-Tzxgmt1PaxO5xnTz5lOTLecAYUSGFs3W7c_8a6v9EFaUIRzPKERWWx71S7SClKE1xMlZR6s2lsGS5OaCSpZR2nkoHo5Hc-9IXBZYUn8S9zyhjoMDlm9cwmLZNeGTSlGEBmp9KqbcTQ5MkbawhSPu2UfBw5TA55bwOzzZdrlzj5wNCIpxdocxFF--zLZpxd11Wm8lVVbEC_2gVZd0JBuDPWUatfXSaudQowLZMGzkQ3ppjg90cPrdVAfkzaMQ5sR1p_R-qomz9sAKLRLxUaOOlwpmDU4aU-xoeLaic0V22VRJkF-gHxcbot2ek9rXGXRA9y5GPp_juB5YUWN3nylNRZoKxwq6SckTt9JVXa6PMeWKCSJ36krvFZjpj4zvyTRYru-xHnLVY7AFEPTQRyV8ucggtsanv1ytj6ZAVQPE7qChpLKlQ0QJIHKQesvJ7dY8JTN-HDeZ8zC662KusbIIkMGy5HvcsVPdPVVHyhOTksikg5puOk1grComDgGjFKc-uHqjSOkNGnL3SUGXmtHX53L4meutSYLY6XNR56LtlSmhTwoPkDe2IOyuwsCgbXFmLIVLzqkLEdjovL8qxbmQN71ur99b6dbB55dWaRpmbRrb7FOZl3QZae5QZe5bnblRO-fhRUf65ivKyHUdL1Ao-KIvQCEX_6UonbUlQZUTe02r0Mh0Ub2U7CRIp_VKRPB-rorTSgVKlLDnsTk9UGKMKJT-AXYgUWGTnw-6tAXqkMVYbKUMyLBucyV-WWLOY3HWpW4dtX5XSs-gbI1YJMzSWrPNStn2HcwERKXIOjakl8wpe6fQbckzhbrl0GzcuGXRFpcGcqF0nF5jeqoDp3E2GanUDV-lXidfr7f6oKP_OV_37r_l3X_Gv__xf_elf_9lf_cmf__6f_e7__r3373z99R9_9T___N__9Ov_9b__-R__-R__BeGZnfHxuQEA">open interactively in the visualizer ↗</a></summary>
+
+```text
+GroveDBProofV1 {
+  LayerProof {
+    proof: Merk(... root-level descent, identical to every other chapter query ...)
+    lower_layers: {
+      @ => { ... contract_id descent ... }
+      // L2..L4 byte-identical to every 8-layer carrier query in this chapter
+    }
+  }
+  // L5 widget doctype: brand queried (same as G3 / G5 / G7 / G8)
+  // L6 byBrand merk-tree: walked LEFT-TO-RIGHT=FALSE (descending).
+  //                       Outer query item: RangeAfterTo("brand_050".."brand_065")
+  //                       Inlined targets: brand_064 → brand_063 → ... → brand_055
+  //                       via `PushInverted(KVValueHash(brand_NNN, CountTree, ...))` ops.
+  //                       Boundary KVDigest nodes name brand_065 (upper-exclusive cut)
+  //                       and brand_050 (lower-exclusive cut, capped by SizedQuery::limit).
+  // L7 brand_NNN's value tree: single key `color` with NonCounted(ProvableCountTree)
+  //    — repeated 10 times, once per resolved outer brand (in descending order).
+  // L8 brand_NNN's byBrandColor color subtree:
+  //    proof: Merk(
+  //      ... ACOR boundary walk for color > "color_00000200" AND color < "color_00000400"
+  //          (two-sided cut, ~2× the boundary ops of G8's one-sided ACOR),
+  //          summing to count = 199 per brand ...
+  //    )
+  //    — repeated 10 times in parallel, each with its own per-brand boundary hashes.
+}
+```
+
+The 902-line full verbatim sits in the bench's `[gproof] G8a` output. The schematic compresses the 10 parallel L7+L8 descents and the per-brand boundary commitments — they share the same template (single-key continuation + ~50-op two-sided ACOR boundary walk), differing only in per-brand hashes and the resulting subtree commits. Each per-brand L8 contributes ~2 800 B of ACOR boundary commitments (~1.6× G8's ~1 700 B due to the two-sided range walking both bounds).
+
+The most visually distinctive feature of the descending-walk proof: every L6 carrier op is `PushInverted(...)` rather than `Push(...)`, signalling grovedb's right-to-left binary-merk-tree iteration. Identical merk-root reconstruction given the same `Query.left_to_right = false` flag — but the wire-level encoding diverges so the verifier knows which direction to walk.
+
+</details>
+
+```mermaid
+flowchart TB
+  WD["@/contract_id/0x01/widget"]:::tree
+  WD ==> BR["brand: NormalTree (descending walk, left_to_right=false)"]:::path
+  BR ==> B064["brand_064: CountTree count=1000"]:::path
+  BR ==> BMore["brand_063 … brand_056<br/>(8 more in-range brands, descending)"]:::path
+  BR ==> B055["brand_055: CountTree count=1000"]:::path
+  BR -.-> BBelow["brand_051 … brand_054<br/>(in range but below cap — beyond limit, opaque)"]:::faded
+  BR -.-> BAbove["brand_065 (boundary key, excluded by &lt;)"]:::faded
+  BR -.-> BCapBelow["brand_000 … brand_050<br/>(below floor, opaque)"]:::faded
+
+  B064 ==> B064_C["brand_064/color: NonCounted(ProvableCountTree)<br/>two-sided ACOR (color > 200 AND color < 400)"]:::target
+  BMore ==> BMore_C["8 parallel two-sided ACOR walks<br/>(color > 200 AND color < 400)"]:::target
+  B055 ==> B055_C["brand_055/color: NonCounted(ProvableCountTree)<br/>two-sided ACOR (color > 200 AND color < 400)"]:::target
+
+  SDK["Entries(10 groups, sum=1 990) — DESCENDING:<br/>(&quot;brand_064&quot;, 199)<br/>(&quot;brand_063&quot;, 199)<br/>…<br/>(&quot;brand_055&quot;, 199)"]:::sdk
+  B064_C -.-> SDK
+  BMore_C -.-> SDK
+  B055_C -.-> SDK
+
+  classDef tree fill:#21262d,color:#c9d1d9,stroke:#1f6feb,stroke-width:2px;
+  classDef path fill:#6e7681,color:#fff,stroke:#1f6feb,stroke-width:2px;
+  classDef faded fill:#21262d,color:#6e7681,stroke:#484f58;
+  classDef target fill:#39c5cf,color:#0d1117,stroke:#39c5cf,stroke-width:3px;
+  classDef sdk fill:#21262d,color:#39c5cf,stroke:#39c5cf,stroke-width:2px,stroke-dasharray: 4 2;
+
+  linkStyle 0 stroke:#1f6feb,stroke-width:3px;
+  linkStyle 1 stroke:#1f6feb,stroke-width:3px;
+  linkStyle 2 stroke:#1f6feb,stroke-width:3px;
+  linkStyle 3 stroke:#1f6feb,stroke-width:3px;
+  linkStyle 7 stroke:#1f6feb,stroke-width:3px;
+  linkStyle 8 stroke:#1f6feb,stroke-width:3px;
+  linkStyle 9 stroke:#1f6feb,stroke-width:3px;
+```
+
+### Diagram: per-layer merk-tree structure (Layer 5+)
+
+L5 is identical to G7 / G8 (widget doctype with `brand` queried). L6 differs from G8 in two ways: the outer query item is `RangeAfterTo` (bounded) rather than `RangeAfter` (half-open), and every op is `PushInverted` rather than `Push` because of `left_to_right = false`. L7 + L8 fork into 10 parallel descents, each carrying a **two-sided** ACOR boundary walk over `color > "color_00000200" AND color < "color_00000400"` instead of G8's one-sided `color > "color_00000500"`.
+
+```mermaid
+flowchart TB
+  subgraph L5["Layer 5 — widget doctype merk-tree"]
+    direction TB
+    L5_q["<b>brand</b> (queried)<br/>kv_hash=HASH[68b6...]"]:::queried
+  end
+
+  subgraph L6["Layer 6 — byBrand merk-tree (bounded outer range, descending walk, 10 targets)"]
+    direction TB
+    L6_t064["<b>brand_064</b><br/>PushInverted(KVValueHash …)<br/>CountTree count=1000"]:::queried
+    L6_tmid["… 8 more in-range targets …<br/>(brand_063 → brand_056, descending)"]:::queried
+    L6_t055["<b>brand_055</b><br/>PushInverted(KVValueHash …)<br/>CountTree count=1000"]:::queried
+    L6_upper["Upper-bound commitment:<br/>KVDigest(brand_065, …) — excluded by &lt;"]:::boundary
+    L6_lower["Below-cap + below-floor commitments:<br/>brand_051 … brand_054 (capped)<br/>+ brand_000 … brand_050 (below floor)<br/>(opaque KVHash / Hash ops)"]:::sibling
+
+    L6_t064 --> L6_tmid
+    L6_tmid --> L6_t055
+    L6_t064 --> L6_upper
+    L6_t055 --> L6_lower
+  end
+
+  subgraph L7L8["Layers 7+8 — per-brand continuation + two-sided ACOR walk (×10)"]
+    direction TB
+    L7L8_each["For each of brand_064 … brand_055 (descending):<br/>L7: single-key `color` continuation (NonCounted(ProvableCountTree))<br/>L8: ~50 merk ops — two-sided ACOR boundary walk<br/>for color > 200 AND color < 400<br/>committing one `u64 = 199` per brand"]:::target
+  end
+
+  L5_q -. "byBrand" .-> L6_t064
+  L6_t064 -. "continuation × 10" .-> L7L8_each
+
+  classDef queried fill:#1f6feb,color:#fff,stroke:#1f6feb,stroke-width:2px;
+  classDef sibling fill:#6e7681,color:#fff,stroke:#6e7681;
+  classDef target fill:#39c5cf,color:#0d1117,stroke:#39c5cf,stroke-width:3px;
+  classDef boundary fill:#d29922,color:#0d1117,stroke:#d29922,stroke-width:2px,stroke-dasharray: 6 3;
+```
+
+**The size delta between G8 and G8a, per outer match**: ~1 700 B (G8) → ~2 800 B (G8a). The extra ~1 100 B per brand is roughly evenly split between (a) the bounded inner ACOR's second boundary walk and (b) the per-op `PushInverted` discriminant overhead. Both costs are linear in `L` (the platform-max outer cap), so doubling `L` doubles the delta. The asymptotic complexity stays `O(L · (log B + log C'))` — the bounded-vs-unbounded distinction is a constant-factor change in the per-walk boundary commit count, not a complexity-class change.
+
+**Reading the descending result**: the SDK returns `Vec<(Vec<u8>, u64)>` in the same wire order grovedb walked the outer dimension. For `left_to_right = false`, that's lex-descending serialized brand keys (`brand_064` before `brand_063` before … before `brand_055`). Callers that expect ascending output sort the result client-side; the prove-path guarantee is on the *contents* (which brands and which counts), not the client-visible ordering — though for chapter-fixture-deterministic proofs the ordering IS visible in the proof bytes via `Push` vs `PushInverted`, so the verifier knows which direction grovedb walked.
+
+## G8b — Two-range carrier with `group_by = [brand, color]` (rejected)
+
+```text
+select   = COUNT
+where    = brand > "brand_050" AND color > "color_00000500"
+group_by = [brand, color]
+prove    = true
+```
+
+**Outcome:** `Err(QuerySyntaxError::InvalidWhereClauseComponents("count query supports at most one range where-clause; combine two-sided ranges via `between*` instead of separate `>` / `<` clauses, or use `group_by = [outer_range_field]` with `prove = true` for the carrier-aggregate shape with one outer range and one inner ACOR range on a different field"))` — at [`detect_mode`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/src/query/drive_document_count_query/mode_detection.rs)'s `range_count > 1` short-circuit, before any index picking or path-query building.
+
+**Why.** The two-range carrier shape (`outer_range AND inner_range` on distinct fields) is opened by mode detection **only** when `mode == GroupByRange` *and* `group_by.len() == 1` *and* `prove = true`. G8b violates the first two: with `group_by = [brand, color]` the request maps to `CountMode::GroupByCompound`, which routes to `distinct_count_path_query` — a builder that knows how to walk an `In + range` fan-out but not a `range + range` cartesian product. Two design points:
+
+- **`GroupByCompound` is specifically the `(In, range)` shape.** Its path-query builder emits outer `Key(serialized_in_value)` items (one per In branch) and an inner `Range*` subquery; the walk is `|In|`-bounded by construction. Extending it to accept `range + range` would mean replacing the outer `Key`s with an outer `Range*` (and a `SizedQuery::limit` to bound the walk) **and** swapping the inner from "enumerate distinct values" to "single ACOR aggregate" — at which point the result shape stops being "per-distinct-value entries" and becomes "per-outer-key `u64`s," i.e. G8's shape with a redundant second group_by field. There's no information gain from adding `color` to the group_by — the carrier already commits one `u64` per outer `brand`, and the inner range collapses into that `u64` rather than being enumerated.
+- **The carrier primitive returns one `u64` per outer key, not per `(outer, inner)` pair.** Per-distinct-color counts inside an outer-range brand walk would require the alternative `RangeDistinctProof` shape (the G5 compound-distinct path) running on a `byBrandColor + rangeCountable: true` cartesian fan-out — which works for `In + range` (a finite outer key set) but would explode for `range + range` (potentially `B × C'` distinct entries, dwarfing the `MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT = 10` cap that bounds G8). The dispatcher rejects rather than silently routing to a path that'd produce a proof orders of magnitude larger than the caller likely expected.
+
+**What to use instead.**
+
+- If you want per-brand totals across an in-range color window (the most common interpretation of this request), use G8 (`group_by = [brand]`): one `u64` per brand, capped at 10 outer matches.
+- If you want per-`(brand, color)` distinct counts across both ranges, the dispatcher has no path today — you'd need a `byBrandColor + rangeCountable: true` index plus a new mode that extends `GroupByCompound` to `range + range` with a per-pair `SizedQuery::limit`. Out of scope for this contract.
+- If you want a single sum across the whole `brand > X AND color > Y` window, you'd need to call G8 and sum the returned `u64`s client-side (server-side aggregation across the carrier's per-branch counts isn't supported on the prove path — see G8c below).
+
+## G8c — Two-range carrier with `group_by = []` (rejected)
+
+```text
+select   = COUNT
+where    = brand > "brand_050" AND color > "color_00000500"
+group_by = []
+prove    = true
+```
+
+**Outcome:** same rejection as G8b — `Err(QuerySyntaxError::InvalidWhereClauseComponents("count query supports at most one range where-clause; …"))`. Mode-detection's `range_count > 1` short-circuit checks `mode == GroupByRange`, and the dispatcher maps `group_by = []` to `CountMode::Aggregate`, so the check fails for the same structural reason as G8b.
+
+**Why.** With no `group_by` the request asks for a single scalar `u64` covering every document matching both ranges. The carrier-ACOR primitive emits one `u64` *per outer-range key* (10 brands in G8's case), not a single sum across the whole walk. Two paths to a single sum, neither viable today:
+
+- **Server-side sum across the carrier's branches.** Would require a new grovedb primitive that takes the carrier shape and emits `Σ branch_counts` as a single ACOR-style aggregate. Not implemented — the carrier's commitment is *per branch*, which is what gives the verifier the cryptographic granularity to verify each entry independently. Summing in the server would lose that and force the verifier to trust the server's sum.
+- **Client-side sum after running G8.** Allowed and easy — call G8, get back `Vec<(brand, u64)>`, sum the `u64`s. The proof still cryptographically commits to each branch, and the client's sum is over verified data. This is the pragmatic path for "give me one number" callers; the chapter recommends it instead of opening up `Aggregate` for the two-range carrier shape.
+
+**The deeper reason `Aggregate` can't shortcut this.** Per [chapter 29's Q7 (Range Aggregate `byColor`)](./count-index-examples.md#query-7--range-aggregate-bycolor), `Aggregate + single range` uses the leaf-level `AggregateCountOnRange` primitive directly, which DOES return a single `u64`. That works because the range is rooted at the index's *terminator* property — there's a single CountTree under which the boundary walk runs. With G8c's two ranges, the *outer* range walks the byBrand merk tree (no `ProvableCountTree` involved) and only the inner range hits the rangeCountable terminator. Collapsing across the outer walk would mean a `ProvableCountTree` over CountTrees, which grovedb's primitive set doesn't have. The walk could in principle compute and emit a sum at the outer layer, but the verifier wouldn't be able to recompute the per-branch counts to check the sum — defeating the prove-path's whole point.
+
 ## Future Work
 
 This chapter now mirrors chapter 29's per-query structure: every section above carries a path query, verified payload, proof size, verbatim or schematic proof display, narrative, conceptual flowchart, and per-layer merk-tree diagram.
@@ -1368,9 +1726,9 @@ Two pieces of infrastructure made this possible:
 
 Open follow-ups:
 
-1. **Inline the full G4 / G5 / G6 verbatim** rather than the schematic-with-elision form. The bench captures every byte; the chapter's `<details>` blocks currently summarise the 100-target enumerations because reproducing 100 near-identical `KVValueHashFeatureTypeWithChildHash` lines per case is more noise than signal. If a reader needs byte-exact output, they can run the bench and grep `[gproof]`.
+1. **Inline the full G4 / G5 / G1b verbatim** rather than the schematic-with-elision form. The bench captures every byte; the chapter's `<details>` blocks currently summarise the 100-target enumerations because reproducing 100 near-identical `KVValueHashFeatureTypeWithChildHash` lines per case is more noise than signal. If a reader needs byte-exact output, they can run the bench and grep `[gproof]`.
 2. **Wire path-query reconstruction + verified-payload printing into `display_group_by_proofs`**. Today it only dumps the proof-display block; chapter 29's `display_proofs` also reconstructs the `PathQuery` and prints the verifier's structured result (the `verified:` block). Adding that to the group_by side would give the chapter parity with chapter 29's `verified:` sections — currently rendered manually from the `[matrix]` output's `Entries(len=N, sum=M)` figures.
-3. **A high-fanout byColor variant of G6** (`color IN [100 values]`, `group_by = [color]`) — captured implicitly in the bench's existing `group_by_color_in_proof_100_rangecountable_branches` (10 512 B) but not given its own G* section, since it's structurally G6 with `ProvableCountTree` overhead.
+3. **A high-fanout byColor variant of G1b** (`color IN [100 values]`, `group_by = [color]`) — captured implicitly in the bench's existing `group_by_color_in_proof_100_rangecountable_branches` (10 512 B) but not given its own G* section, since it's structurally G1b with `ProvableCountTree` overhead.
 
 ## Cross-Reference to Chapter 29
 

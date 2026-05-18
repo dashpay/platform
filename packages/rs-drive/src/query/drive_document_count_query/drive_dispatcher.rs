@@ -36,45 +36,41 @@ use grovedb::TransactionArg;
 
 /// All inputs required for the unified document-count entry point
 /// [`Drive::execute_document_count_request`]. Built by the gRPC
-/// handler from a `GetDocumentsCountRequestV0` after CBOR-decoding +
+/// handler from a `GetDocumentsRequestV1` after wire-decoding +
 /// contract lookup; drive owns everything past this point including
-/// mode detection, index picking, and per-mode dispatch.
+/// mode-detection-from-clauses, index picking, and per-mode dispatch.
 ///
-/// `raw_where_value` and `raw_order_by_value` arrive as CBOR-decoded
-/// `Value`s and the dispatcher parses them once into structured
-/// `Vec<WhereClause>` / `Vec<OrderClause>` for mode detection +
-/// per-mode executors. None of the count executors consume the raw
-/// `Value` form — the structured parse is the single source of
-/// truth past the dispatcher entry point.
+/// `where_clauses` and `order_clauses` arrive already structured —
+/// the v1 ABCI handler converts proto `repeated WhereClause` /
+/// `repeated OrderClause` upstream; benches and tests that want a
+/// `Value`-shape fixture call [`where_clauses_from_value`] /
+/// [`order_clauses_from_value`] to parse before constructing the
+/// request. The dispatcher entry point runs
+/// [`validate_and_canonicalize_where_clauses`] on the input so
+/// shape-validation rejection (duplicate equal, multiple In, …)
+/// and the `> AND <` → `between*` canonicalization happen
+/// regardless of upstream path.
 pub struct DocumentCountRequest<'a> {
     /// Live contract (already loaded by the handler).
     pub contract: &'a dpp::data_contract::DataContract,
     /// Resolved document type within `contract`.
     pub document_type: DocumentTypeRef<'a>,
-    /// Decoded `where` value as it came off the wire (after CBOR
-    /// decode). The dispatcher parses this into `Vec<WhereClause>`
-    /// once (`where_clauses_from_value`) for every downstream
-    /// consumer — mode detection, index picking, and the per-mode
-    /// executors all operate on the structured form.
-    ///
-    /// Mirrors how the regular `query_documents_v0` handler
-    /// delegates where-clause decomposition to drive: the abci
-    /// layer just CBOR-decodes and hands the raw value down.
-    pub raw_where_value: dpp::platform_value::Value,
-    /// Decoded `order_by` value as it came off the wire. Parsed
-    /// once via `order_clauses_from_value` into
-    /// `Vec<OrderClause>`. The first clause's direction governs
-    /// split-mode entry ordering (per-`In`-value / per-distinct-
-    /// value-in-range) and, on the `RangeDistinctProof` prove
-    /// path, is part of the path-query bytes the SDK reconstructs
-    /// to verify the proof. `PointLookupProof` and the no-proof
-    /// `Total` / `PerInValue` paths don't read order_by.
-    ///
-    /// `Value::Null` (empty `order_by` field on the wire) → no
-    /// clauses. The dispatcher synthesizes a default direction of
-    /// "ascending" for split-mode response ordering when no clauses
-    /// are present.
-    pub raw_order_by_value: dpp::platform_value::Value,
+    /// Structured `where` clauses. The dispatcher runs the same
+    /// [`WhereClause::group_clauses`] validator + same-field
+    /// range-pair merge the regular document-query path runs (see
+    /// [`validate_and_canonicalize_where_clauses`]'s docstring for
+    /// the catalog of rejections this enables and the In/range +
+    /// `between*` canonicalization rules) before mode detection.
+    pub where_clauses: Vec<WhereClause>,
+    /// Structured `order_by` clauses. The first clause's direction
+    /// governs split-mode entry ordering (per-`In`-value /
+    /// per-distinct-value-in-range) and, on the
+    /// `RangeDistinctProof` prove path, is part of the path-query
+    /// bytes the SDK reconstructs to verify the proof.
+    /// `PointLookupProof` and the no-proof `Total` / `PerInValue`
+    /// paths don't read order_by. Empty list → ascending default
+    /// for split-mode response ordering.
+    pub order_clauses: Vec<OrderClause>,
     /// SQL-shaped output mode — the caller's `(select, group_by)`
     /// contract resolved into one of four shapes (Aggregate,
     /// GroupByIn, GroupByRange, GroupByCompound). The dispatcher
@@ -171,7 +167,9 @@ pub enum DocumentCountResponse {
 /// triple that `group_clauses` returns. (The regular query path's
 /// `InternalClauses::extract_from_clauses` uses the triple; the
 /// count path doesn't.)
-fn where_clauses_from_value(value: &dpp::platform_value::Value) -> Result<Vec<WhereClause>, Error> {
+pub fn where_clauses_from_value(
+    value: &dpp::platform_value::Value,
+) -> Result<Vec<WhereClause>, Error> {
     let clauses: Vec<WhereClause> = match value {
         dpp::platform_value::Value::Null => Vec::new(),
         dpp::platform_value::Value::Array(clauses) => clauses
@@ -192,28 +190,168 @@ fn where_clauses_from_value(value: &dpp::platform_value::Value) -> Result<Vec<Wh
         }
     };
 
-    // Run the parsed clauses through the system-wide validator.
-    // The returned triple is discarded; we only care about the
-    // validation errors — see this function's docstring for the
-    // catalog of rejections this enables on the count endpoint.
-    //
-    // Exception: `MultipleRangeClauses` is intentionally tolerated
-    // here. The regular-query parser rejects two ranges on
-    // different fields wholesale (its callers expect
-    // `(equal_clauses, in_clause, range_clause)` triples), but the
-    // count-query path accepts the carrier-aggregate shape
-    // (`outer_range + inner_ACOR_range` on different fields, e.g.
-    // G8). Structural validation for that shape lives in
-    // [`DriveDocumentCountQuery::detect_mode`] (which knows about
-    // `CountMode::GroupByRange`-with-two-ranges and routes to
-    // `DocumentCountMode::RangeAggregateCarrierProof`); replicating
-    // it here would be redundant.
+    validate_and_canonicalize_where_clauses(clauses)
+}
+
+/// Run the system-wide where-clause validator on a structured
+/// `Vec<WhereClause>` and canonicalize same-field range pairs into
+/// their `between*` form. Single source of truth for the
+/// count-endpoint shape contract; called both from the legacy
+/// CBOR-decoded entry [`where_clauses_from_value`] and from the
+/// dispatcher's typed entry, [`Drive::execute_document_count_request`].
+///
+/// The validator (`WhereClause::group_clauses`) rejects:
+/// - Duplicate `Equal` clauses on the same field
+///   (`DuplicateNonGroupableClauseSameField`).
+/// - Multiple `In` clauses (`MultipleInClauses`).
+/// - Multiple non-groupable range clauses (`MultipleRangeClauses`).
+/// - Equality + `In` on the same field, range + equality/In on the
+///   same field (`DuplicateNonGroupableClauseSameField` /
+///   `InvalidWhereClauseComponents`).
+///
+/// Without this validation, downstream
+/// [`DriveDocumentCountQuery::find_countable_index_for_where_clauses`]
+/// collapses repeated fields into a `BTreeSet` and
+/// [`DriveDocumentCountQuery::point_lookup_count_path_query`]
+/// resolves each index property with a single `.find(...)` — both
+/// of which silently pick the first clause on a duplicated field
+/// and return a count for an arbitrarily reduced query rather than
+/// rejecting the malformed request.
+///
+/// **Exception**: `MultipleRangeClauses` is intentionally tolerated
+/// here. The regular-query parser rejects two ranges on different
+/// fields wholesale (its callers expect
+/// `(equal_clauses, in_clause, range_clause)` triples), but the
+/// count-query path accepts the carrier-aggregate shape
+/// (`outer_range + inner_ACOR_range` on different fields, e.g.
+/// G8). Structural validation for that shape lives in
+/// [`DriveDocumentCountQuery::detect_mode`] (which knows about
+/// `CountMode::GroupByRange`-with-two-ranges and routes to
+/// `DocumentCountMode::RangeAggregateCarrierProof`); replicating
+/// it here would be redundant.
+///
+/// After validation, [`merge_same_field_range_pairs`] collapses
+/// `[field > A, field < B]` (and analogous pairs with `>=` / `<=`)
+/// into the canonical `between*` operator that
+/// [`DriveDocumentCountQuery::range_clause_to_query_item`] knows
+/// how to convert into a single `QueryItem`. The regular-query
+/// parser does the same merge before its grouped-triple
+/// validation; for count queries we do it explicitly here so
+/// callers can pass either the bounded form (e.g.
+/// `[brand > A, brand < B]`) or the pre-merged form (e.g.
+/// `[brand BetweenExcludeBounds [A, B]]`) and get equivalent
+/// mode detection downstream. Without this merge, G8a's natural
+/// wire shape (four range clauses, two per field) would slip past
+/// the catch-`MultipleRangeClauses` block above and then get
+/// rejected by `detect_mode`'s `range_count > 1` structural check.
+pub fn validate_and_canonicalize_where_clauses(
+    clauses: Vec<WhereClause>,
+) -> Result<Vec<WhereClause>, Error> {
     match WhereClause::group_clauses(&clauses) {
         Ok(_) => {}
         Err(Error::Query(QuerySyntaxError::MultipleRangeClauses(_))) => {}
         Err(e) => return Err(e),
     }
-    Ok(clauses)
+    merge_same_field_range_pairs(clauses)
+}
+
+/// Collapse `[field > A, field < B]` (and analogous pairs with
+/// `>=` / `<=`) into a single `field between* [A, B]` clause per
+/// field. Equality / In clauses pass through unchanged.
+///
+/// Returns an error if a field has more than two range clauses
+/// (structurally meaningless — a third bound would either
+/// contradict an existing one or be redundant) or if the pair
+/// isn't one lower-bound + one upper-bound (e.g. two `>` on the
+/// same field).
+fn merge_same_field_range_pairs(clauses: Vec<WhereClause>) -> Result<Vec<WhereClause>, Error> {
+    use crate::query::conditions::WhereOperator::{
+        Between, BetweenExcludeBounds, BetweenExcludeLeft, BetweenExcludeRight, GreaterThan,
+        GreaterThanOrEquals, LessThan, LessThanOrEquals,
+    };
+    use std::collections::BTreeMap;
+
+    let mut by_field: BTreeMap<String, Vec<WhereClause>> = BTreeMap::new();
+    let mut non_range: Vec<WhereClause> = Vec::new();
+    for wc in clauses {
+        if DriveDocumentCountQuery::is_range_operator(wc.operator) {
+            by_field.entry(wc.field.clone()).or_default().push(wc);
+        } else {
+            non_range.push(wc);
+        }
+    }
+    let mut result = non_range;
+    for (field, mut ranges) in by_field {
+        match ranges.len() {
+            0 => {}
+            1 => result.push(ranges.remove(0)),
+            2 => {
+                let (mut lower, mut upper): (Option<WhereClause>, Option<WhereClause>) =
+                    (None, None);
+                for r in ranges {
+                    match r.operator {
+                        GreaterThan | GreaterThanOrEquals => {
+                            if lower.is_some() {
+                                return Err(Error::Query(QuerySyntaxError::MultipleRangeClauses(
+                                    "two lower-bound range clauses on the same field cannot be \
+                                     merged; combine via `between*` or remove the redundant clause",
+                                )));
+                            }
+                            lower = Some(r);
+                        }
+                        LessThan | LessThanOrEquals => {
+                            if upper.is_some() {
+                                return Err(Error::Query(QuerySyntaxError::MultipleRangeClauses(
+                                    "two upper-bound range clauses on the same field cannot be \
+                                     merged; combine via `between*` or remove the redundant clause",
+                                )));
+                            }
+                            upper = Some(r);
+                        }
+                        _ => {
+                            // The other range operators (Between*,
+                            // StartsWith) are themselves bounded
+                            // already; a second range clause on the
+                            // same field is structurally redundant.
+                            return Err(Error::Query(QuerySyntaxError::MultipleRangeClauses(
+                                "cannot pair a `between*`/`startsWith` range clause with \
+                                 another range on the same field; use the pre-merged form",
+                            )));
+                        }
+                    }
+                }
+                let lower = lower.ok_or(Error::Query(QuerySyntaxError::MultipleRangeClauses(
+                    "two range clauses on the same field require one lower bound (> or >=) \
+                     and one upper bound (< or <=)",
+                )))?;
+                let upper = upper.ok_or(Error::Query(QuerySyntaxError::MultipleRangeClauses(
+                    "two range clauses on the same field require one lower bound (> or >=) \
+                     and one upper bound (< or <=)",
+                )))?;
+                let merged_op = match (
+                    lower.operator == GreaterThanOrEquals,
+                    upper.operator == LessThanOrEquals,
+                ) {
+                    (true, true) => Between,                // [a, b]
+                    (false, false) => BetweenExcludeBounds, // (a, b)
+                    (true, false) => BetweenExcludeRight,   // [a, b)
+                    (false, true) => BetweenExcludeLeft,    // (a, b]
+                };
+                result.push(WhereClause {
+                    field,
+                    operator: merged_op,
+                    value: dpp::platform_value::Value::Array(vec![lower.value, upper.value]),
+                });
+            }
+            _ => {
+                return Err(Error::Query(QuerySyntaxError::MultipleRangeClauses(
+                    "more than two range clauses on the same field are not supported; a \
+                     bounded range needs exactly one lower bound and one upper bound",
+                )));
+            }
+        }
+    }
+    Ok(result)
 }
 
 /// Parse the decoded `order_by` value into structured [`OrderClause`]s.
@@ -223,7 +361,9 @@ fn where_clauses_from_value(value: &dpp::platform_value::Value) -> Result<Vec<Wh
 /// any other shape must be an outer array of `[field, direction]`
 /// inner arrays. Direction is `"asc"` / `"desc"` per
 /// `OrderClause::from_components`.
-fn order_clauses_from_value(value: &dpp::platform_value::Value) -> Result<Vec<OrderClause>, Error> {
+pub fn order_clauses_from_value(
+    value: &dpp::platform_value::Value,
+) -> Result<Vec<OrderClause>, Error> {
     match value {
         dpp::platform_value::Value::Null => Ok(Vec::new()),
         dpp::platform_value::Value::Array(clauses) => clauses
@@ -282,13 +422,15 @@ impl Drive {
     ) -> Result<DocumentCountResponse, Error> {
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
-        // Parse where clauses out of the raw decoded `Value` once,
-        // then thread them through the per-mode executors. Mirrors
-        // how the regular `query_documents_v0` handler delegates this
-        // to `DriveDocumentQuery::from_decomposed_values` —
-        // where-clause decomposition is a drive concern, not abci's.
-        let where_clauses = where_clauses_from_value(&request.raw_where_value)?;
-        let order_clauses = order_clauses_from_value(&request.raw_order_by_value)?;
+        // Validate + canonicalize the structured `where_clauses` —
+        // same rejections the regular document-query path runs,
+        // applied here so the count endpoint's shape contract is
+        // independent of whether the caller arrived via the CBOR-
+        // shaped legacy path or the v1 typed-proto path. See
+        // [`validate_and_canonicalize_where_clauses`]'s docstring
+        // for the catalog of rejections / canonicalization rules.
+        let where_clauses = validate_and_canonicalize_where_clauses(request.where_clauses)?;
+        let order_clauses = request.order_clauses;
 
         // Split-mode entry direction is whatever the first orderBy
         // clause specifies. Empty orderBy → ascending default. Used
@@ -531,6 +673,14 @@ impl Drive {
                     }
                     None
                 };
+                // Outer-walk direction: ascending by default (the
+                // grovedb invariant for serialized-key carriers), or
+                // descending when the caller's `order_by` first
+                // clause is `desc`. Carried byte-identically through
+                // `Query::left_to_right` so the verifier rebuilds the
+                // exact same `PathQuery` — same load-bearing pattern
+                // as the `RangeDistinctProof` arm above.
+                let left_to_right = order_by_ascending;
                 Ok(DocumentCountResponse::Proof(
                     self.execute_document_count_range_aggregate_carrier_proof(
                         contract_id,
@@ -538,6 +688,7 @@ impl Drive {
                         document_type_name,
                         where_clauses,
                         effective_limit,
+                        left_to_right,
                         transaction,
                         platform_version,
                     )?,

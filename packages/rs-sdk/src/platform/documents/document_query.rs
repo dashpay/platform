@@ -3,14 +3,18 @@
 use std::sync::Arc;
 
 use crate::{error::Error, sdk::Sdk};
-use ciborium::Value as CborValue;
 use dapi_grpc::platform::v0::get_documents_request::Version::V1;
 use dapi_grpc::platform::v0::{
     self as platform_proto,
     get_documents_request::{
+        document_field_value,
         get_documents_request_v0::Start,
-        get_documents_request_v1::{Select, Start as V1Start},
-        GetDocumentsRequestV1,
+        get_documents_request_v1::{select, Select as ProtoSelect, Start as V1Start},
+        having_aggregate, having_clause, having_ranking, order_clause,
+        DocumentFieldValue as ProtoDocumentFieldValue, GetDocumentsRequestV1,
+        HavingAggregate as ProtoHavingAggregate, HavingClause as ProtoHavingClause,
+        HavingRanking as ProtoHavingRanking, OrderClause as ProtoOrderClause,
+        WhereClause as ProtoWhereClause, WhereOperator as ProtoWhereOperator,
     },
     GetDocumentsRequest, Proof, ResponseMetadata,
 };
@@ -26,7 +30,11 @@ use dpp::{
     prelude::{DataContract, Identifier},
     InvalidVectorSizeError, ProtocolError,
 };
-use drive::query::{DriveDocumentQuery, InternalClauses, OrderClause, WhereClause, WhereOperator};
+use drive::query::{
+    DriveDocumentQuery, HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator,
+    HavingRanking, HavingRankingKind, HavingRightOperand, InternalClauses, OrderClause,
+    SelectFunction, SelectProjection, WhereClause, WhereOperator,
+};
 use drive_proof_verifier::{types::Documents, FromProof};
 use rs_dapi_client::transport::{
     AppliedRequestSettings, BoxFuture, TransportError, TransportRequest,
@@ -45,23 +53,24 @@ use crate::platform::Fetch;
 #[derive(Debug, Clone, PartialEq, dash_platform_macros::Mockable)]
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub struct DocumentQuery {
-    /// SQL-shaped `SELECT` projection. `Documents` returns matched
-    /// rows; `Count` returns either a single aggregate (empty
-    /// `group_by`) or per-group entries (non-empty `group_by`).
-    /// Defaults to `Documents` so callers that don't opt into the
-    /// count surface get plain document fetch semantics.
+    /// SQL-shaped `SELECT` projection — `(function, field)` pair.
+    /// `Documents` returns matched rows; `Count` / `Sum` / `Avg`
+    /// return either a single aggregate (empty `group_by`) or
+    /// per-group entries (non-empty `group_by`). Defaults to
+    /// `SelectProjection::documents()` so callers that don't opt
+    /// into the SQL-shaped surface get plain document-fetch
+    /// semantics.
     ///
     /// `#[serde(default)]` here (and on `group_by` / `having`
     /// below) is wire-format-compat for mock vectors captured
-    /// before the SQL-shaped surface was added: `Select::default()
-    /// == Select::Documents` (the proto-generated enum's 0-value
-    /// variant), `Vec` and `Vec<u8>` default to empty — together
-    /// those mean an old fixture without these fields
-    /// deserializes to the documents-fetch shape it was originally
-    /// captured under. New fixtures should serialize the fields
-    /// explicitly.
+    /// before the SQL-shaped surface was added: default
+    /// `SelectProjection` is `documents()`, `Vec` defaults to
+    /// empty — together those mean an old fixture without these
+    /// fields deserializes to the documents-fetch shape it was
+    /// originally captured under. New fixtures should serialize
+    /// the fields explicitly.
     #[cfg_attr(feature = "mocks", serde(default))]
-    pub select: Select,
+    pub select: SelectProjection,
     /// Data contract
     pub data_contract: Arc<DataContract>,
     /// Document type for the data contract
@@ -74,15 +83,23 @@ pub struct DocumentQuery {
     /// `select=Documents` is rejected by the server as unsupported.
     #[cfg_attr(feature = "mocks", serde(default))]
     pub group_by: Vec<String>,
-    /// SQL `HAVING` clauses, CBOR-encoded the same way as
-    /// `where_clauses`. Non-empty values are rejected by the
-    /// server with
+    /// SQL `HAVING` clauses — aggregate filters that apply to the
+    /// grouped rows produced by `select = Count`, `group_by =
+    /// […]`. Unlike `where_clauses`, the left side is an aggregate
+    /// (`COUNT(*)`, `SUM(field)`, `AVG(field)`, `MIN`/`MAX`,
+    /// `TOP`/`BOTTOM` for N-th-element selection) rather than a
+    /// raw row field. See [`HavingClause`] /
+    /// [`drive::query::HavingAggregate`] /
+    /// [`drive::query::HavingOperator`] for the catalogs. Multiple
+    /// entries combine with implicit `AND`.
+    ///
+    /// Non-empty values are rejected by the server today with
     /// `QuerySyntaxError::Unsupported("HAVING clause is not yet
-    /// implemented")`. The wire field is reserved so the SDK
-    /// can encode `HAVING` once the server gains support, without
-    /// another version bump.
+    /// implemented")` — the typed builder exists so callers can
+    /// encode the full aggregate-filter surface ahead of server
+    /// support landing without a wire-format change.
     #[cfg_attr(feature = "mocks", serde(default))]
-    pub having: Vec<u8>,
+    pub having: Vec<HavingClause>,
     /// `order_by` clauses for the query
     pub order_by_clauses: Vec<OrderClause>,
     /// queryset limit. `0` is the sentinel for "unset / default" and
@@ -105,7 +122,7 @@ impl DocumentQuery {
             .map_err(ProtocolError::DataContractError)?;
 
         Ok(Self {
-            select: Select::Documents,
+            select: SelectProjection::documents(),
             data_contract: Arc::clone(&contract),
             document_type_name: document_type_name.to_string(),
             where_clauses: vec![],
@@ -172,14 +189,22 @@ impl DocumentQuery {
 
     /// Set the SQL-shaped `SELECT` projection.
     ///
-    /// - [`Select::Documents`] (the default) returns matched
-    ///   rows via `Document::fetch_many` and friends.
-    /// - [`Select::Count`] switches to the count surface:
-    ///   pair it with [`DocumentCount::fetch`] for a single
-    ///   aggregate (empty `group_by`) or
-    ///   [`DocumentSplitCounts::fetch`] for per-group entries
-    ///   (non-empty `group_by`).
-    pub fn with_select(mut self, select: Select) -> Self {
+    /// Construct the [`SelectProjection`] via its helpers:
+    /// [`SelectProjection::documents`] (the default — matched
+    /// rows), [`SelectProjection::count_star`] for `COUNT(*)`,
+    /// [`SelectProjection::count_field`] for `COUNT(field)`,
+    /// [`SelectProjection::sum`] for `SUM(field)`,
+    /// [`SelectProjection::avg`] for `AVG(field)`. Pair the
+    /// count/sum/avg projections with [`DocumentCount::fetch`]
+    /// (single aggregate, empty `group_by`) or
+    /// [`DocumentSplitCounts::fetch`] (per-group entries,
+    /// non-empty `group_by`).
+    ///
+    /// `SUM` / `AVG` and `COUNT(field)` are accepted by the SDK
+    /// but the server rejects them today with `Unsupported("…
+    /// is not yet implemented")` — the surface is shipped first
+    /// and execution lands later.
+    pub fn with_select(mut self, select: SelectProjection) -> Self {
         self.select = select;
         self
     }
@@ -188,8 +213,9 @@ impl DocumentQuery {
     ///
     /// Convenience wrapper around [`Self::with_group_by_fields`].
     /// Replaces any previously set `group_by`. Pair with
-    /// [`Self::with_select`]`(Select::Count)` for the per-group
-    /// entries shape.
+    /// [`Self::with_select`] (e.g.
+    /// `with_select(SelectProjection::count_star())`) for the
+    /// per-group entries shape.
     pub fn with_group_by<S: Into<String>>(mut self, field: S) -> Self {
         self.group_by = vec![field.into()];
         self
@@ -211,15 +237,14 @@ impl DocumentQuery {
         self
     }
 
-    /// Set the `HAVING` clause CBOR bytes (replaces any prior
-    /// value).
+    /// Set the `HAVING` clauses (replaces any prior value).
     ///
     /// Non-empty values are rejected by the server with
     /// `QuerySyntaxError::Unsupported("HAVING clause is not yet
     /// implemented")`. The builder exists so SDK callers can
     /// encode `HAVING` ahead of server support landing without
     /// another version bump.
-    pub fn with_having(mut self, having: Vec<u8>) -> Self {
+    pub fn with_having(mut self, having: Vec<HavingClause>) -> Self {
         self.having = having;
         self
     }
@@ -260,9 +285,24 @@ impl TransportRequest for DocumentQuery {
         client: &'c mut Self::Client,
         settings: &AppliedRequestSettings,
     ) -> BoxFuture<'c, Result<Self::Response, TransportError>> {
-        let request: GetDocumentsRequest = self
-            .try_into()
-            .expect("DocumentQuery should always be valid");
+        // `TryFrom<DocumentQuery> for GetDocumentsRequest` became
+        // fallible once `where_clause_to_proto` / `having_clause_to_proto`
+        // / `value_to_proto` started rejecting `Value` variants
+        // that have no wire-format counterpart (`Map`, future
+        // `Value` additions, …). Propagate the conversion failure
+        // as a `TransportError::Grpc(Status::invalid_argument(...))`
+        // so the SDK surfaces a normal request error instead of
+        // panicking the process.
+        let request: GetDocumentsRequest = match self.try_into() {
+            Ok(r) => r,
+            Err(e) => {
+                let status = dapi_grpc::tonic::Status::invalid_argument(format!(
+                    "DocumentQuery contains values that can't be encoded on the v1 \
+                     wire: {e}"
+                ));
+                return Box::pin(async move { Err(TransportError::Grpc(status)) });
+            }
+        };
         request.execute_transport(client, settings)
     }
 }
@@ -341,22 +381,41 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
 impl TryFrom<DocumentQuery> for platform_proto::GetDocumentsRequest {
     type Error = Error;
     fn try_from(dapi_request: DocumentQuery) -> Result<Self, Self::Error> {
-        let where_clauses = serialize_vec_to_cbor(dapi_request.where_clauses.clone())
-            .expect("where clauses serialization should never fail");
-        let order_by = serialize_vec_to_cbor(dapi_request.order_by_clauses.clone())?;
+        // `try_from` owns `dapi_request` — destructure once and
+        // consume the owned vectors below (no `.clone()` per field).
+        let DocumentQuery {
+            select,
+            data_contract,
+            document_type_name,
+            where_clauses,
+            group_by,
+            having,
+            order_by_clauses,
+            limit,
+            start,
+        } = dapi_request;
+
+        let where_clauses = where_clauses
+            .into_iter()
+            .map(where_clause_to_proto)
+            .collect::<Result<Vec<_>, _>>()?;
+        let order_by = order_by_clauses
+            .into_iter()
+            .map(order_clause_to_proto)
+            .collect();
+        let having = having
+            .into_iter()
+            .map(having_clause_to_proto)
+            .collect::<Result<Vec<_>, _>>()?;
         // `limit: u32` with `0` sentinel → `optional uint32` on the
         // V1 wire. `None` lets the server apply its own default;
         // explicit `0` would be a strange "return zero rows" request.
-        let limit = if dapi_request.limit == 0 {
-            None
-        } else {
-            Some(dapi_request.limit)
-        };
+        let limit = if limit == 0 { None } else { Some(limit) };
         // V0 and V1 ship separate `Start` enums even though the
         // shape is identical. Translate at the wire boundary so the
         // `DocumentQuery.start` field stays stable for callers
         // already using the V0 type.
-        let start_v1 = dapi_request.start.clone().map(|s| match s {
+        let start_v1 = start.map(|s| match s {
             Start::StartAfter(b) => V1Start::StartAfter(b),
             Start::StartAt(b) => V1Start::StartAt(b),
         });
@@ -364,9 +423,9 @@ impl TryFrom<DocumentQuery> for platform_proto::GetDocumentsRequest {
         //todo: transform this into PlatformVersionedTryFrom
         Ok(GetDocumentsRequest {
             version: Some(V1(GetDocumentsRequestV1 {
-                data_contract_id: dapi_request.data_contract.id().to_vec(),
-                document_type: dapi_request.document_type_name.clone(),
-                r#where: where_clauses,
+                data_contract_id: data_contract.id().to_vec(),
+                document_type: document_type_name,
+                where_clauses,
                 order_by,
                 limit,
                 // Document fetch always proves via this conversion.
@@ -380,9 +439,18 @@ impl TryFrom<DocumentQuery> for platform_proto::GetDocumentsRequest {
                 // are disabled.
                 prove: true,
                 start: start_v1,
-                select: dapi_request.select as i32,
-                group_by: dapi_request.group_by.clone(),
-                having: dapi_request.having.clone(),
+                // `repeated Select selects` on the wire — single
+                // projection wraps in a one-element vec; the SDK's
+                // `DocumentQuery` carries a single
+                // `SelectProjection` because multi-projection is
+                // wire-only today.
+                selects: vec![select_to_proto(select)],
+                group_by,
+                having,
+                // `offset` is wire-reserved for future row-based
+                // pagination; the SDK doesn't surface it yet, so
+                // we always emit `None` here.
+                offset: None,
             })),
         })
     }
@@ -409,7 +477,7 @@ impl<'a> From<&'a DriveDocumentQuery<'a>> for DocumentQuery {
             // `DriveDocumentQuery` has no SELECT/GROUP BY/HAVING
             // concept — it's a documents-only query. Default to the
             // v1 documents shape.
-            select: Select::Documents,
+            select: SelectProjection::documents(),
             data_contract: Arc::new(data_contract),
             document_type_name: document_type_name.to_string(),
             where_clauses,
@@ -443,7 +511,7 @@ impl<'a> From<DriveDocumentQuery<'a>> for DocumentQuery {
             // `DriveDocumentQuery` has no SELECT/GROUP BY/HAVING
             // concept — it's a documents-only query. Default to the
             // v1 documents shape.
-            select: Select::Documents,
+            select: SelectProjection::documents(),
             data_contract: Arc::new(data_contract),
             document_type_name: document_type_name.to_string(),
             where_clauses,
@@ -515,20 +583,243 @@ impl<'a> TryFrom<&'a DocumentQuery> for DriveDocumentQuery<'a> {
     }
 }
 
-fn serialize_vec_to_cbor<T: Into<Value>>(input: Vec<T>) -> Result<Vec<u8>, Error> {
-    let values = Value::Array(
-        input
-            .into_iter()
-            .map(|v| v.into() as Value)
-            .collect::<Vec<Value>>(),
-    );
+/// Convert a drive [`WhereClause`] into its wire-format proto
+/// counterpart. The proto value variant is picked from the
+/// `dpp::platform_value::Value` variant by primitive type — schema-
+/// agnostic, matching the inverse direction the rs-drive-abci v1
+/// handler runs via its `conversions::value_from_proto`.
+///
+/// Errors only on `Value` variants that have no wire-format
+/// counterpart (`Map`, `EnumU8`, `EnumString`) — these aren't
+/// produced by the SDK's typical WhereClause builders, so a
+/// rejection here flags an unsupported caller construction at the
+/// wire boundary rather than silently dropping the value.
+fn where_clause_to_proto(clause: WhereClause) -> Result<ProtoWhereClause, Error> {
+    Ok(ProtoWhereClause {
+        field: clause.field,
+        operator: where_operator_to_proto(clause.operator) as i32,
+        value: Some(value_to_proto(clause.value)?),
+    })
+}
 
-    let cbor_values: CborValue = TryInto::<CborValue>::try_into(values)
-        .map_err(|e| Error::Protocol(dpp::ProtocolError::EncodingError(e.to_string())))?;
+fn order_clause_to_proto(clause: OrderClause) -> ProtoOrderClause {
+    // Drive's `OrderClause` carries a plain `field: String` —
+    // emit the field-target variant of the wire's `target` oneof.
+    // The aggregate-target variant (`ORDER BY COUNT(*)`) is
+    // wire-only today; when drive's `OrderClause` gains an
+    // aggregate target the SDK gets a parallel builder.
+    ProtoOrderClause {
+        target: Some(order_clause::Target::Field(clause.field)),
+        ascending: clause.ascending,
+    }
+}
 
-    let mut serialized = Vec::new();
-    ciborium::ser::into_writer(&cbor_values, &mut serialized)
-        .map_err(|e| Error::Protocol(dpp::ProtocolError::EncodingError(e.to_string())))?;
+/// Convert a drive [`HavingClause`] into its wire-format proto
+/// counterpart. The inverse of `rs-drive-abci`'s
+/// `having_clause_from_proto`. Errors only on `Value` variants
+/// the underlying `value_to_proto` can't represent — every
+/// `HavingOperator` / `HavingAggregateFunction` /
+/// `HavingRankingKind` discriminant has a 1:1 wire counterpart
+/// and is always convertible.
+fn having_clause_to_proto(clause: HavingClause) -> Result<ProtoHavingClause, Error> {
+    let right = match clause.right {
+        HavingRightOperand::Value(v) => having_clause::Right::Value(value_to_proto(v)?),
+        HavingRightOperand::Ranking(r) => having_clause::Right::Ranking(having_ranking_to_proto(r)),
+    };
+    Ok(ProtoHavingClause {
+        aggregate: Some(having_aggregate_to_proto(clause.aggregate)),
+        operator: having_operator_to_proto(clause.operator) as i32,
+        right: Some(right),
+    })
+}
 
-    Ok(serialized)
+fn having_aggregate_to_proto(aggregate: HavingAggregate) -> ProtoHavingAggregate {
+    ProtoHavingAggregate {
+        function: having_function_to_proto(aggregate.function) as i32,
+        field: aggregate.field,
+    }
+}
+
+fn having_function_to_proto(function: HavingAggregateFunction) -> having_aggregate::Function {
+    match function {
+        HavingAggregateFunction::Count => having_aggregate::Function::Count,
+        HavingAggregateFunction::Sum => having_aggregate::Function::Sum,
+        HavingAggregateFunction::Avg => having_aggregate::Function::Avg,
+    }
+}
+
+fn having_ranking_to_proto(ranking: HavingRanking) -> ProtoHavingRanking {
+    ProtoHavingRanking {
+        kind: having_ranking_kind_to_proto(ranking.kind) as i32,
+        n: ranking.n,
+    }
+}
+
+fn having_ranking_kind_to_proto(kind: HavingRankingKind) -> having_ranking::Kind {
+    match kind {
+        HavingRankingKind::Min => having_ranking::Kind::Min,
+        HavingRankingKind::Max => having_ranking::Kind::Max,
+        HavingRankingKind::Top => having_ranking::Kind::Top,
+        HavingRankingKind::Bottom => having_ranking::Kind::Bottom,
+    }
+}
+
+/// Convert a drive [`SelectProjection`] into its wire-format
+/// proto counterpart. Inverse of `rs-drive-abci`'s
+/// `select_from_proto`. Always succeeds — every
+/// `SelectFunction` discriminant has a 1:1 wire counterpart.
+fn select_to_proto(select: SelectProjection) -> ProtoSelect {
+    ProtoSelect {
+        function: select_function_to_proto(select.function) as i32,
+        field: select.field,
+    }
+}
+
+fn select_function_to_proto(function: SelectFunction) -> select::Function {
+    match function {
+        SelectFunction::Documents => select::Function::Documents,
+        SelectFunction::Count => select::Function::Count,
+        SelectFunction::Sum => select::Function::Sum,
+        SelectFunction::Avg => select::Function::Avg,
+        SelectFunction::Min => select::Function::Min,
+        SelectFunction::Max => select::Function::Max,
+    }
+}
+
+fn having_operator_to_proto(op: HavingOperator) -> having_clause::Operator {
+    match op {
+        HavingOperator::Equal => having_clause::Operator::Equal,
+        HavingOperator::NotEqual => having_clause::Operator::NotEqual,
+        HavingOperator::GreaterThan => having_clause::Operator::GreaterThan,
+        HavingOperator::GreaterThanOrEquals => having_clause::Operator::GreaterThanOrEquals,
+        HavingOperator::LessThan => having_clause::Operator::LessThan,
+        HavingOperator::LessThanOrEquals => having_clause::Operator::LessThanOrEquals,
+        HavingOperator::Between => having_clause::Operator::Between,
+        HavingOperator::BetweenExcludeBounds => having_clause::Operator::BetweenExcludeBounds,
+        HavingOperator::BetweenExcludeLeft => having_clause::Operator::BetweenExcludeLeft,
+        HavingOperator::BetweenExcludeRight => having_clause::Operator::BetweenExcludeRight,
+        HavingOperator::In => having_clause::Operator::In,
+    }
+}
+
+fn where_operator_to_proto(op: WhereOperator) -> ProtoWhereOperator {
+    match op {
+        WhereOperator::Equal => ProtoWhereOperator::Equal,
+        WhereOperator::GreaterThan => ProtoWhereOperator::GreaterThan,
+        WhereOperator::GreaterThanOrEquals => ProtoWhereOperator::GreaterThanOrEquals,
+        WhereOperator::LessThan => ProtoWhereOperator::LessThan,
+        WhereOperator::LessThanOrEquals => ProtoWhereOperator::LessThanOrEquals,
+        WhereOperator::Between => ProtoWhereOperator::Between,
+        WhereOperator::BetweenExcludeBounds => ProtoWhereOperator::BetweenExcludeBounds,
+        WhereOperator::BetweenExcludeLeft => ProtoWhereOperator::BetweenExcludeLeft,
+        WhereOperator::BetweenExcludeRight => ProtoWhereOperator::BetweenExcludeRight,
+        WhereOperator::In => ProtoWhereOperator::In,
+        WhereOperator::StartsWith => ProtoWhereOperator::StartsWith,
+    }
+}
+
+/// Map `dpp::platform_value::Value` onto the wire-shape
+/// [`ProtoDocumentFieldValue`]. The schema-driven decode on the
+/// server side resolves the actual indexed type — this layer just
+/// names the primitive.
+///
+/// Mapping rules:
+/// - `Bool` → `BoolValue`
+/// - `I8`/`I16`/`I32`/`I64` → `Int64Value` (widened)
+/// - `U8`/`U16`/`U32`/`U64` → `Uint64Value` (widened)
+/// - `Float` → `DoubleValue`
+/// - `Text` → `Text`
+/// - `Bytes`/`Bytes20`/`Bytes32`/`Bytes36`/`Identifier` → `BytesValue`
+/// - `U128`/`I128` → `Text` (decimal string). **Not yet
+///   round-trippable against `U128`/`I128`-typed indexed fields**:
+///   the v1 typed-decode path (`v1/conversions.rs::value_from_proto`)
+///   passes the text through as `Value::Text`, and the
+///   downstream executor's strict `Value::to_integer()` then
+///   rejects it. Schema-aware coercion (the
+///   `DocumentPropertyType::value_from_string` path the v0 SQL
+///   parser uses) hasn't been threaded through to the typed
+///   path yet. The encoding is shipped because the proto needs a
+///   home for 128-bit values; no production system contract
+///   indexes `U128`/`I128` today. Tracked in the v1 follow-up
+///   issue.
+/// - `Array` → `List` (recursive, but only one level deep —
+///   `value_to_proto` rejects nested arrays with
+///   `EncodingError("nested DocumentFieldValue.list …")` to
+///   match the server-side depth cap in
+///   `v1/conversions.rs::value_from_proto_at_depth`, so wire-
+///   malformed shapes fail at request-construction time with a
+///   deterministic local error rather than after a transport
+///   round-trip.
+/// - `Null` → `NullValue(true)` (the `bool` payload is a
+///   placeholder per the proto-side comment; only the variant
+///   discriminant carries meaning)
+/// - `Map`/`EnumU8`/`EnumString` → `Error` (no wire-format
+///   counterpart for these shapes in a WhereClause operand)
+fn value_to_proto(value: Value) -> Result<ProtoDocumentFieldValue, Error> {
+    value_to_proto_at_depth(value, 0)
+}
+
+/// Recursion-bounded form of [`value_to_proto`]. Mirrors the
+/// server-side `value_from_proto_at_depth` contract so encoder
+/// and decoder agree on the supported `Value` subset: `depth = 0`
+/// is the clause-level operand; `Array` is legal once (the flat
+/// list of scalars for `IN` / `BETWEEN*`); any deeper nesting
+/// rejects locally instead of producing a request the server
+/// would round-trip just to reject.
+fn value_to_proto_at_depth(value: Value, depth: u8) -> Result<ProtoDocumentFieldValue, Error> {
+    let variant = match value {
+        Value::Null => document_field_value::Variant::NullValue(true),
+        Value::Bool(b) => document_field_value::Variant::BoolValue(b),
+        Value::I8(i) => document_field_value::Variant::Int64Value(i as i64),
+        Value::I16(i) => document_field_value::Variant::Int64Value(i as i64),
+        Value::I32(i) => document_field_value::Variant::Int64Value(i as i64),
+        Value::I64(i) => document_field_value::Variant::Int64Value(i),
+        Value::U8(u) => document_field_value::Variant::Uint64Value(u as u64),
+        Value::U16(u) => document_field_value::Variant::Uint64Value(u as u64),
+        Value::U32(u) => document_field_value::Variant::Uint64Value(u as u64),
+        Value::U64(u) => document_field_value::Variant::Uint64Value(u),
+        Value::Float(f) => document_field_value::Variant::DoubleValue(f),
+        Value::Text(s) => document_field_value::Variant::Text(s),
+        Value::Bytes(b) => document_field_value::Variant::BytesValue(b),
+        Value::Bytes20(b) => document_field_value::Variant::BytesValue(b.to_vec()),
+        Value::Bytes32(b) => document_field_value::Variant::BytesValue(b.to_vec()),
+        Value::Bytes36(b) => document_field_value::Variant::BytesValue(b.to_vec()),
+        Value::Identifier(b) => document_field_value::Variant::BytesValue(b.to_vec()),
+        // u128 / i128 don't fit in `int64_value`/`uint64_value`;
+        // encode as a decimal string. See the function-level
+        // docstring for the U128/I128 round-trip caveat.
+        Value::U128(u) => document_field_value::Variant::Text(u.to_string()),
+        Value::I128(i) => document_field_value::Variant::Text(i.to_string()),
+        Value::Array(items) => {
+            if depth >= 1 {
+                return Err(Error::Protocol(dpp::ProtocolError::EncodingError(
+                    "nested DocumentFieldValue.list is not supported on the v1 \
+                     query surface; `IN` / `BETWEEN*` candidate lists are flat \
+                     scalars only"
+                        .to_string(),
+                )));
+            }
+            document_field_value::Variant::List(document_field_value::ValueList {
+                values: items
+                    .into_iter()
+                    .map(|v| value_to_proto_at_depth(v, depth + 1))
+                    .collect::<Result<Vec<_>, _>>()?,
+            })
+        }
+        // Catches both `Value::Map(_)` / `Value::EnumU8(_)` /
+        // `Value::EnumString(_)` (no wire-format counterpart for
+        // these shapes in a WhereClause operand) and any
+        // future-added variant — `dpp::platform_value::Value` is
+        // `#[non_exhaustive]`, so the SDK fails loudly rather
+        // than silently dropping data the moment upstream adds a
+        // variant we don't yet know how to encode.
+        _ => {
+            return Err(Error::Protocol(dpp::ProtocolError::EncodingError(format!(
+                "Value variant has no `DocumentFieldValue` wire-format counterpart: {value:?}"
+            ))));
+        }
+    };
+    Ok(ProtoDocumentFieldValue {
+        variant: Some(variant),
+    })
 }

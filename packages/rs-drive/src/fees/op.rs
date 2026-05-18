@@ -654,6 +654,10 @@ impl LowLevelDriveOperation {
             reference_path_type,
             max_reference_hop,
             flags,
+            // Drive only refreshes plain (counted) references; the
+            // non-counted/`ReferenceWithSumItem` variants added in grovedb
+            // are not used by platform.
+            false,
             trust_refresh_reference,
         ))
     }
@@ -691,6 +695,7 @@ impl LowLevelDriveOperationTreeTypeConverter for TreeType {
             TreeType::ProvableCountSumTree => {
                 Element::empty_provable_count_sum_tree_with_flags(element_flags)
             }
+            TreeType::ProvableSumTree => Element::empty_provable_sum_tree_with_flags(element_flags),
             TreeType::CommitmentTree(chunk_power) => {
                 Element::empty_commitment_tree_with_flags(*chunk_power, element_flags)?
             }
@@ -1545,6 +1550,32 @@ mod tests {
             result.is_err(),
             "expected overflow error for loaded bytes cost"
         );
+    }
+
+    /// Covers the `TreeType::ProvableSumTree` arm of
+    /// `LowLevelDriveOperationTreeTypeConverter::empty_tree_operation_for_known_path_key`
+    /// added by the grovedb#661 bump. Drive doesn't currently construct
+    /// `ProvableSumTree` anywhere else, so without this test the new arm is
+    /// uncovered.
+    #[test]
+    fn empty_tree_operation_for_known_path_key_provable_sum_tree() {
+        use grovedb::batch::GroveOp;
+
+        let op = TreeType::ProvableSumTree
+            .empty_tree_operation_for_known_path_key(vec![b"root".to_vec()], b"k".to_vec(), None)
+            .expect("empty_tree_operation_for_known_path_key");
+
+        match op {
+            LowLevelDriveOperation::GroveOperation(grove_op) => match grove_op.op {
+                GroveOp::InsertOrReplace { element } => assert!(
+                    matches!(element, Element::ProvableSumTree(..)),
+                    "expected ProvableSumTree element, got: {:?}",
+                    element
+                ),
+                other => panic!("expected GroveOp::InsertOrReplace, got: {:?}", other),
+            },
+            other => panic!("expected GroveOperation, got: {:?}", other),
+        }
     }
 
     #[test]

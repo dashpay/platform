@@ -501,12 +501,14 @@ fn test_aggregate_count_in_fan_out_ignores_default_query_limit() {
         ..Default::default()
     };
 
-    // Wire-shape `where` value the dispatcher CBOR-decodes: a single
-    // `In` clause on `age` with all 8 values.
-    let raw_where_value = Value::Array(vec![Value::Array(vec![
-        Value::Text("age".to_string()),
-        Value::Text("in".to_string()),
-        Value::Array(vec![
+    // Typed `In` clause on `age` with all 8 values. The dispatcher
+    // runs the same validate-and-canonicalize step the CBOR-shaped
+    // path runs (see [`validate_and_canonicalize_where_clauses`]),
+    // so structurally identical to the legacy fixture.
+    let where_clauses = vec![WhereClause {
+        field: "age".to_string(),
+        operator: WhereOperator::In,
+        value: Value::Array(vec![
             Value::U64(30),
             Value::U64(40),
             Value::U64(50),
@@ -516,13 +518,13 @@ fn test_aggregate_count_in_fan_out_ignores_default_query_limit() {
             Value::U64(90),
             Value::U64(100),
         ]),
-    ])]);
+    }];
 
     let request = DocumentCountRequest {
         contract: &data_contract,
         document_type,
-        raw_where_value,
-        raw_order_by_value: Value::Null,
+        where_clauses,
+        order_clauses: Vec::new(),
         mode: CountMode::Aggregate,
         // Aggregate rejects explicit `limit` upstream; the
         // dispatcher must not substitute `default_query_limit` for
@@ -1303,26 +1305,26 @@ fn test_compound_range_in_summed_no_proof_uses_per_in_aggregate_fanout() {
     // which loops over the In values and issues
     // `query_aggregate_count` per branch.
     let drive_config = DriveConfig::default();
-    let raw_where_value = Value::Array(vec![
-        Value::Array(vec![
-            Value::Text("brand".to_string()),
-            Value::Text("in".to_string()),
-            Value::Array(vec![
+    let where_clauses = vec![
+        WhereClause {
+            field: "brand".to_string(),
+            operator: WhereOperator::In,
+            value: Value::Array(vec![
                 Value::Text("acme".to_string()),
                 Value::Text("contoso".to_string()),
             ]),
-        ]),
-        Value::Array(vec![
-            Value::Text("color".to_string()),
-            Value::Text(">".to_string()),
-            Value::Text("blue".to_string()),
-        ]),
-    ]);
+        },
+        WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: Value::Text("blue".to_string()),
+        },
+    ];
     let request = DocumentCountRequest {
         contract: &data_contract,
         document_type,
-        raw_where_value,
-        raw_order_by_value: Value::Null,
+        where_clauses,
+        order_clauses: Vec::new(),
         mode: CountMode::Aggregate,
         limit: None,
         prove: false,
@@ -1379,24 +1381,24 @@ fn test_count_request_with_duplicate_equality_clauses_is_rejected() {
     // so the answer should be 0, but a regression would return
     // count("firstName = Alice") or count("firstName = Bob")
     // depending on iteration order.
-    let raw_where_value = Value::Array(vec![
-        Value::Array(vec![
-            Value::Text("firstName".to_string()),
-            Value::Text("==".to_string()),
-            Value::Text("Alice".to_string()),
-        ]),
-        Value::Array(vec![
-            Value::Text("firstName".to_string()),
-            Value::Text("==".to_string()),
-            Value::Text("Bob".to_string()),
-        ]),
-    ]);
+    let where_clauses = vec![
+        WhereClause {
+            field: "firstName".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text("Alice".to_string()),
+        },
+        WhereClause {
+            field: "firstName".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text("Bob".to_string()),
+        },
+    ];
     let drive_config = DriveConfig::default();
     let request = DocumentCountRequest {
         contract: &data_contract,
         document_type,
-        raw_where_value,
-        raw_order_by_value: Value::Null,
+        where_clauses,
+        order_clauses: Vec::new(),
         mode: CountMode::Aggregate,
         limit: None,
         prove: false,
@@ -1579,19 +1581,19 @@ fn test_range_distinct_proof_uses_compile_time_default_query_limit_not_operator_
         ..Default::default()
     };
 
-    // Range clause `color > "blue"` as wire-shape (Value::Array of
-    // [field, op, value] tuples) — the dispatcher CBOR-decodes
-    // this internally into structured WhereClauses.
-    let raw_where_value = Value::Array(vec![Value::Array(vec![
-        Value::Text("color".to_string()),
-        Value::Text(">".to_string()),
-        Value::Text("blue".to_string()),
-    ])]);
+    // Range clause `color > "blue"` as a typed WhereClause —
+    // the dispatcher runs validate-and-canonicalize internally and
+    // dispatches to the RangeDistinctProof path on `prove=true`.
+    let where_clauses = vec![WhereClause {
+        field: "color".to_string(),
+        operator: WhereOperator::GreaterThan,
+        value: Value::Text("blue".to_string()),
+    }];
     let request = DocumentCountRequest {
         contract: &data_contract,
         document_type,
-        raw_where_value,
-        raw_order_by_value: Value::Null,
+        where_clauses,
+        order_clauses: Vec::new(),
         mode: CountMode::GroupByRange,
         limit: None,
         prove: true,

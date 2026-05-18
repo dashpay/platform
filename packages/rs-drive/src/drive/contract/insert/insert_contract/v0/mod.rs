@@ -3938,14 +3938,15 @@ mod range_countable_index_e2e_tests {
             .expect("apply contract");
         let document_type = contract.document_type_for_name("car").expect("car doctype");
 
-        // Build a where-clause `Value::Array` of one range clause:
-        // [["lot", ">", "b"]]. Mirrors the wire shape the abci
-        // handler hands to drive after CBOR-decoding.
-        let where_clause_value = Value::Array(vec![Value::Array(vec![
-            Value::Text("lot".to_string()),
-            Value::Text(">".to_string()),
-            Value::Text("b".to_string()),
-        ])]);
+        // Single range clause `lot > "b"` as a typed `WhereClause`.
+        // The dispatcher runs the same validate-and-canonicalize
+        // step the CBOR-shaped path runs.
+        use crate::query::{WhereClause, WhereOperator};
+        let where_clauses = vec![WhereClause {
+            field: "lot".to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: Value::Text("b".to_string()),
+        }];
 
         let drive_config = crate::config::DriveConfig::default();
         let too_large = drive_config.max_query_limit as u32 + 1;
@@ -3953,8 +3954,8 @@ mod range_countable_index_e2e_tests {
         let request = DocumentCountRequest {
             contract: &contract,
             document_type,
-            raw_where_value: where_clause_value,
-            raw_order_by_value: dpp::platform_value::Value::Null,
+            where_clauses,
+            order_clauses: Vec::new(),
             mode: crate::query::CountMode::GroupByRange,
             limit: Some(too_large),
             prove: true,

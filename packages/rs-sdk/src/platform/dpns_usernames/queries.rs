@@ -47,7 +47,7 @@ impl Sdk {
 
         // Query for domains with this identity in records.identity (the only indexed identity field)
         let records_identity_query = DocumentQuery {
-            select: dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::Select::Documents,
+            select: drive::query::SelectProjection::documents(),
             data_contract: dpns_contract,
             document_type_name: "domain".to_string(),
             where_clauses: vec![WhereClause {
@@ -126,7 +126,7 @@ impl Sdk {
         let normalized_prefix = convert_to_homograph_safe_chars(prefix);
 
         let query = DocumentQuery {
-            select: dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::Select::Documents,
+            select: drive::query::SelectProjection::documents(),
             data_contract: dpns_contract,
             document_type_name: "domain".to_string(),
             where_clauses: vec![

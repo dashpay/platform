@@ -1662,10 +1662,18 @@ mod nft_tests {
         assert_eq!(buyers_balance, dash_to_credits!(0.9) - 68691480);
     }
 
-    #[tokio::test]
-    async fn test_document_set_price_and_try_purchase_at_different_amount() {
-        let platform_version = PlatformVersion::latest();
+    /// Helper for the paired Purchase-at-wrong-price test. Same scenario at
+    /// PROTOCOL_VERSION_11 (legacy bump-only fee — Purchase paths don't emit
+    /// per-tx bumps in v0 of the transformer) and PROTOCOL_VERSION_12+ (bump
+    /// emission active for every per-tx failure). Both versions land as
+    /// PaidConsensusError; only the fee differs.
+    async fn run_document_set_price_and_try_purchase_at_different_amount_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+    ) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let (mut platform, contract) = TestPlatformBuilder::new()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_initial_state_structure()
             .with_crypto_card_game_nft(TradeMode::DirectPurchase);
@@ -1847,7 +1855,12 @@ mod nft_tests {
             .unwrap()
             .expect("expected to commit transaction");
 
-        assert_eq!(processing_result.invalid_paid_count(), 1);
+        assert_eq!(
+            processing_result.invalid_paid_count(),
+            1,
+            "PROTOCOL_VERSION_{}: must land as PaidConsensusError",
+            protocol_version,
+        );
 
         let result = processing_result.into_execution_results().remove(0);
 
@@ -1859,6 +1872,23 @@ mod nft_tests {
             panic!("expected a paid consensus error");
         };
         assert_eq!(consensus_error.to_string(), "5rJccTdtJfg6AxSKyrptWUug3PWjveEitTTLqBn9wHdk document can not be purchased for 35000000000, it's sale price is 50000000000 (in credits)");
+    }
+
+    /// PROTOCOL_VERSION_12+: bump emission active on Purchase failure paths.
+    #[tokio::test]
+    async fn test_document_set_price_and_try_purchase_at_different_amount() {
+        run_document_set_price_and_try_purchase_at_different_amount_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_11: legacy bump-only fee (Purchase paths don't emit
+    /// per-tx bumps in v0 of the transformer; the empty action still flows as
+    /// PaidConsensusError via the legacy `Some(empty_vec)` aggregator).
+    #[tokio::test]
+    async fn test_document_set_price_and_try_purchase_at_different_amount_protocol_version_11() {
+        run_document_set_price_and_try_purchase_at_different_amount_at_protocol_version(11).await;
     }
 
     #[tokio::test]
@@ -2057,12 +2087,19 @@ mod nft_tests {
         assert_eq!(consensus_error.to_string(), "Document transition action on document type: card identity trying to purchase a document that is already owned by the purchaser is not supported");
     }
 
-    #[tokio::test]
-    async fn test_document_set_price_and_purchase_then_try_buy_back() {
+    /// Helper for the paired Purchase-then-buy-back test. Same scenario at
+    /// PROTOCOL_VERSION_11 (legacy bump-only fee) and PROTOCOL_VERSION_12+
+    /// (bump emission active for every per-tx failure). Both versions land
+    /// as PaidConsensusError; only the fee differs.
+    async fn run_document_set_price_and_purchase_then_try_buy_back_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+    ) {
         // In this test we try to buy back a document after it has been sold
 
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let (mut platform, contract) = TestPlatformBuilder::new()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_initial_state_structure()
             .with_crypto_card_game_nft(TradeMode::DirectPurchase);
@@ -2355,7 +2392,12 @@ mod nft_tests {
             .unwrap()
             .expect("expected to commit transaction");
 
-        assert_eq!(processing_result.invalid_paid_count(), 1);
+        assert_eq!(
+            processing_result.invalid_paid_count(),
+            1,
+            "PROTOCOL_VERSION_{}: must land as PaidConsensusError",
+            protocol_version,
+        );
 
         let result = processing_result.into_execution_results().remove(0);
 
@@ -2370,6 +2412,23 @@ mod nft_tests {
             consensus_error.to_string(),
             "5rJccTdtJfg6AxSKyrptWUug3PWjveEitTTLqBn9wHdk document not for sale"
         );
+    }
+
+    /// PROTOCOL_VERSION_12+: bump emission active on Purchase failure paths.
+    #[tokio::test]
+    async fn test_document_set_price_and_purchase_then_try_buy_back() {
+        run_document_set_price_and_purchase_then_try_buy_back_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_11: legacy bump-only fee (Purchase paths don't emit
+    /// per-tx bumps in v0 of the transformer; the empty action still flows as
+    /// PaidConsensusError via the legacy `Some(empty_vec)` aggregator).
+    #[tokio::test]
+    async fn test_document_set_price_and_purchase_then_try_buy_back_protocol_version_11() {
+        run_document_set_price_and_purchase_then_try_buy_back_at_protocol_version(11).await;
     }
 
     #[tokio::test]
@@ -2652,10 +2711,28 @@ mod nft_tests {
         assert_eq!(processing_result.aggregated_fees().processing_fee, 0);
     }
 
-    #[tokio::test]
-    async fn test_document_set_price_on_not_owned_document() {
-        let platform_version = PlatformVersion::latest();
+    /// Helper for the paired set-price-on-not-owned-document test.
+    ///
+    /// - **PROTOCOL_VERSION_11**: lands as `PaidConsensusError` via the
+    ///   legacy `flatten_v0` / `merge_many_v0` aggregators lifting the
+    ///   empty errors-only result to `Some(empty_vec)` — preserved for
+    ///   chain reproducibility. The contract nonce is *not* actually
+    ///   advanced (no bump action's drive op is created).
+    /// - **PROTOCOL_VERSION_12+**: lands as `PaidConsensusError` because
+    ///   the per-tx failure path now emits a
+    ///   `BumpIdentityDataContractNonce` action
+    ///   (`failed_per_transition_action: 1`). The contract nonce
+    ///   advances and the user pays for the fetch + ownership check.
+    ///
+    /// Only the fee differs between the two versions.
+    async fn run_document_set_price_on_not_owned_document_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        expected_processing_fee: dpp::fee::Credits,
+    ) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let (mut platform, contract) = TestPlatformBuilder::new()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_initial_state_structure()
             .with_crypto_card_game_nft(TradeMode::DirectPurchase);
@@ -2782,13 +2859,34 @@ mod nft_tests {
             .unwrap()
             .expect("expected to commit transaction");
 
-        assert_eq!(processing_result.invalid_paid_count(), 1);
-
+        // UpdatePrice on a not-owned doc: the per-tx ownership check fails.
+        // Both protocol versions land as PaidConsensusError, but for
+        // different reasons:
+        // - v11: `failed_per_transition_action` is 0, helper returns
+        //   errors-only; legacy `flatten_v0`/`merge_many_v0` lift to
+        //   `Some(empty_vec)`, recorded as Paid with the bump-only fee
+        //   (no actual nonce advance — the v11 footgun preserved for
+        //   chain reproducibility).
+        // - v12: helper emits `BumpIdentityDataContractNonce`; aggregator
+        //   wraps as `Some([bump])`; recorded as Paid; nonce advances.
+        // See the helper doc on
+        // `run_document_set_price_on_not_owned_document_at_protocol_version`
+        // for the full split.
+        assert_eq!(
+            processing_result.invalid_paid_count(),
+            1,
+            "PROTOCOL_VERSION_{}: ownership-mismatch UpdatePrice must land as PaidConsensusError",
+            protocol_version,
+        );
         assert_eq!(processing_result.invalid_unpaid_count(), 0);
-
         assert_eq!(processing_result.valid_count(), 0);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 36200);
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            expected_processing_fee,
+            "PROTOCOL_VERSION_{}: processing fee must match the version-specific baseline",
+            protocol_version,
+        );
 
         let sender_documents_sql_string =
             format!("select * from card where $ownerId == '{}'", identity.id());
@@ -2816,6 +2914,24 @@ mod nft_tests {
                 .expect("expected None"),
             None
         );
+    }
+
+    /// PROTOCOL_VERSION_12+: bump emission charges the user for the fetch +
+    /// ownership check that ran before the failure.
+    #[tokio::test]
+    async fn test_document_set_price_on_not_owned_document() {
+        run_document_set_price_on_not_owned_document_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            571240,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_11: pre-fix bump-only fee. Pinned so v11 chain
+    /// history stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_document_set_price_on_not_owned_document_protocol_version_11() {
+        run_document_set_price_on_not_owned_document_at_protocol_version(11, 36200).await;
     }
 
     #[tokio::test]
