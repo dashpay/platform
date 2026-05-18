@@ -646,7 +646,7 @@ func readIdentityBalanceCredits(
     timeout: TimeInterval = 30,
     file: StaticString = #filePath,
     line: UInt = #line
-) -> UInt64 {
+) -> Int64 {
     let label = app.descendants(matching: .any)
         .matching(identifier: Identifier.IdentityDetail.balanceLabel)
         .firstMatch
@@ -664,19 +664,18 @@ func readIdentityBalanceCredits(
         )
         return 0
     }
-    // iOS may apply locale-aware thousand separators to the accessibility
-    // value string (e.g. "79 750 667 720" in French/German locales,
-    // "79,750,667,720" in en-US). Strip non-digit characters before
-    // parsing — we know the underlying value is a UInt64 credit count.
+    // Strip locale-aware thousand separators; capture the sign first so
+    // a negative balance survives the digit filter.
+    let negative = raw.trimmingCharacters(in: .whitespaces).hasPrefix("-")
     let digits = raw.filter { $0.isASCII && $0.isNumber }
-    guard !digits.isEmpty, let credits = UInt64(digits) else {
+    guard !digits.isEmpty, let magnitude = Int64(digits) else {
         XCTFail(
-            "Could not parse \"\(raw)\" as UInt64 credits. Display label was \"\(displayLabel)\".",
+            "Could not parse \"\(raw)\" as Int64 credits. Display label was \"\(displayLabel)\".",
             file: file, line: line
         )
         return 0
     }
-    return credits
+    return negative ? -magnitude : magnitude
 }
 
 // MARK: - Pre-import cleanup
