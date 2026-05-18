@@ -67,8 +67,8 @@ public class PlatformWalletPersistenceHandler {
     /// recursive entry. The internal helpers in this file all
     /// assume they are already on the queue and call
     /// `backgroundContext` directly.
-    private func onQueue<T>(_ body: () -> T) -> T {
-        serialQueue.sync(execute: body)
+    private func onQueue<T>(_ body: () throws -> T) rethrows -> T {
+        try serialQueue.sync(execute: body)
     }
 
     // MARK: - Platform Address Balances
@@ -230,10 +230,9 @@ public class PlatformWalletPersistenceHandler {
     /// Utxo records so views observing via `@Query` update automatically.
     func persistWalletChangeset(walletId: Data, changeset: UnsafePointer<WalletChangeSetFFI>) {
         onQueue {
+            // Stale-callback guard — wallet has been deleted.
+            guard let wallet = ensureWalletRecord(walletId: walletId) else { return }
             let cs = changeset.pointee
-
-            // Ensure PersistentWallet exists (lightweight upsert).
-            let wallet = ensureWalletRecord(walletId: walletId)
 
             // Chain update.
             if cs.has_chain {
@@ -265,17 +264,18 @@ public class PlatformWalletPersistenceHandler {
         }
     }
 
-    /// Find or create the `PersistentWallet` record for this wallet id.
-    private func ensureWalletRecord(walletId: Data) -> PersistentWallet {
+    /// Find the `PersistentWallet` row for `walletId`. Non-creating —
+    /// returns `nil` when no row exists. The only path that creates a
+    /// row is `persistWalletMetadata`, which fires first in any
+    /// registration changeset (guaranteed by `FFIPersister::store`'s
+    /// dispatch order). Other callbacks arriving for a wallet whose
+    /// row doesn't exist are post-deletion stale callbacks and are
+    /// silently dropped.
+    private func ensureWalletRecord(walletId: Data) -> PersistentWallet? {
         let descriptor = FetchDescriptor<PersistentWallet>(
             predicate: #Predicate { $0.walletId == walletId }
         )
-        if let existing = try? backgroundContext.fetch(descriptor).first {
-            return existing
-        }
-        let record = PersistentWallet(walletId: walletId, network: nil)
-        backgroundContext.insert(record)
-        return record
+        return try? backgroundContext.fetch(descriptor).first
     }
 
     /// Look up a `PersistentWallet` to hang on
@@ -2026,9 +2026,22 @@ public class PlatformWalletPersistenceHandler {
     /// once at wallet registration with values the Rust side can
     /// contribute but Swift can't easily recompute (network is on the
     /// manager's SDK; birth height is SPV's confirmed tip at creation).
+    ///
+    /// This is the **only** persister callback that materializes a
+    /// `PersistentWallet` row — `FFIPersister::store` dispatches it
+    /// first in any registration changeset, before every other
+    /// per-kind callback. Other callbacks then find the row via
+    /// `ensureWalletRecord` and short-circuit if it's missing (a
+    /// stale callback for a deleted wallet).
     func persistWalletMetadata(walletId: Data, network: Network, birthHeight: UInt32) {
         onQueue {
-            let wallet = ensureWalletRecord(walletId: walletId)
+            let wallet: PersistentWallet
+            if let existing = ensureWalletRecord(walletId: walletId) {
+                wallet = existing
+            } else {
+                wallet = PersistentWallet(walletId: walletId, network: nil)
+                backgroundContext.insert(wallet)
+            }
             wallet.network = network
             wallet.birthHeight = birthHeight
             wallet.lastUpdated = Date()
@@ -2040,12 +2053,99 @@ public class PlatformWalletPersistenceHandler {
     /// Called from `PlatformWalletManager.createWallet` after the FFI
     /// returns a wallet id; only Swift knows the name, so it doesn't
     /// travel through a Rust-side callback.
+    ///
+    /// Silently skips if the row is missing — the registration round
+    /// is what creates the row, so a missing row here means the
+    /// wallet wasn't successfully registered and there's nothing to
+    /// name.
     public func setWalletName(walletId: Data, name: String) {
         onQueue {
-            let wallet = ensureWalletRecord(walletId: walletId)
+            guard let wallet = ensureWalletRecord(walletId: walletId) else { return }
             wallet.name = name
             wallet.lastUpdated = Date()
             try? backgroundContext.save()
+        }
+    }
+
+    public func identityIdsForWallet(walletId: Data) throws -> [Data] {
+        try onQueue {
+            let descriptor = FetchDescriptor<PersistentWallet>(
+                predicate: PersistentWallet.predicate(walletId: walletId)
+            )
+            guard let walletRow = try backgroundContext.fetch(descriptor).first else {
+                return []
+            }
+            return walletRow.identities.map { $0.identityId }
+        }
+    }
+
+    /// Wipe a wallet's SwiftData footprint.
+    public func deleteWalletData(walletId: Data) throws {
+        try onQueue {
+            do {
+                let walletDescriptor = FetchDescriptor<PersistentWallet>(
+                    predicate: PersistentWallet.predicate(walletId: walletId)
+                )
+                let walletRow = try backgroundContext.fetch(walletDescriptor).first
+                let walletNetwork = walletRow?.network
+
+                if let walletRow = walletRow {
+                    // Wallet identity relationships are `.nullify`; this delete path cascades them explicitly.
+                    let identitiesToDelete = Array(walletRow.identities)
+                    let identityIds = identitiesToDelete.map { $0.identityId }
+
+                    for identityId in identityIds {
+                        let balanceDescriptor = FetchDescriptor<PersistentTokenBalance>(
+                            predicate: PersistentTokenBalance.predicate(identityId: identityId)
+                        )
+                        for row in try backgroundContext.fetch(balanceDescriptor) {
+                            backgroundContext.delete(row)
+                        }
+                    }
+
+                    for identity in identitiesToDelete {
+                        backgroundContext.delete(identity)
+                    }
+                    backgroundContext.delete(walletRow)
+                }
+
+                let pendingDescriptor = FetchDescriptor<PersistentPendingInput>(
+                    predicate: #Predicate<PersistentPendingInput> { $0.walletId == walletId }
+                )
+                for row in try backgroundContext.fetch(pendingDescriptor) {
+                    backgroundContext.delete(row)
+                }
+
+                let txRows = try backgroundContext.fetch(FetchDescriptor<PersistentTransaction>())
+                for tx in txRows where tx.outputs.isEmpty &&
+                    tx.inputs.isEmpty &&
+                    tx.pendingInputs.isEmpty {
+                    backgroundContext.delete(tx)
+                }
+
+                if let walletNetwork = walletNetwork {
+                    let networkRaw = walletNetwork.rawValue
+                    let siblingDescriptor = FetchDescriptor<PersistentWallet>(
+                        predicate: #Predicate<PersistentWallet> { $0.networkRaw == networkRaw }
+                    )
+                    let remaining = try backgroundContext.fetch(siblingDescriptor)
+                        .filter { $0.walletId != walletId }
+                    if remaining.isEmpty {
+                        let scopeId = syncStateScopeId(for: walletNetwork)
+                        let syncDescriptor = FetchDescriptor<PersistentPlatformAddressesSyncState>(
+                            predicate: #Predicate { $0.walletId == scopeId }
+                        )
+                        if let syncRow = try backgroundContext.fetch(syncDescriptor).first {
+                            backgroundContext.delete(syncRow)
+                        }
+                    }
+                }
+
+                try backgroundContext.save()
+            } catch {
+                backgroundContext.rollback()
+                throw error
+            }
         }
     }
 
@@ -2057,78 +2157,79 @@ public class PlatformWalletPersistenceHandler {
     /// that uniquely identifies an account across variants.
     func persistAccount(walletId: Data, spec: AccountSpecFFI) {
         onQueue {
-        let wallet = ensureWalletRecord(walletId: walletId)
-        let typeTag = UInt32(spec.type_tag)
-        let index = spec.index
-        let registrationIndex = spec.registration_index
-        let keyClass = spec.key_class
-        var userIdentityId = Data(count: 32)
-        withUnsafeBytes(of: spec.user_identity_id) { src in
-            userIdentityId.withUnsafeMutableBytes { dst in
-                dst.copyMemory(from: src)
+            // Stale-callback guard — wallet has been deleted.
+            guard let wallet = ensureWalletRecord(walletId: walletId) else { return }
+            let typeTag = UInt32(spec.type_tag)
+            let index = spec.index
+            let registrationIndex = spec.registration_index
+            let keyClass = spec.key_class
+            var userIdentityId = Data(count: 32)
+            withUnsafeBytes(of: spec.user_identity_id) { src in
+                userIdentityId.withUnsafeMutableBytes { dst in
+                    dst.copyMemory(from: src)
+                }
             }
-        }
-        var friendIdentityId = Data(count: 32)
-        withUnsafeBytes(of: spec.friend_identity_id) { src in
-            friendIdentityId.withUnsafeMutableBytes { dst in
-                dst.copyMemory(from: src)
+            var friendIdentityId = Data(count: 32)
+            withUnsafeBytes(of: spec.friend_identity_id) { src in
+                friendIdentityId.withUnsafeMutableBytes { dst in
+                    dst.copyMemory(from: src)
+                }
             }
-        }
-        let xpubBytes: Data
-        if let xpubPtr = spec.account_xpub_bytes, spec.account_xpub_bytes_len > 0 {
-            xpubBytes = Data(bytes: xpubPtr, count: Int(spec.account_xpub_bytes_len))
-        } else {
-            xpubBytes = Data()
-        }
+            let xpubBytes: Data
+            if let xpubPtr = spec.account_xpub_bytes, spec.account_xpub_bytes_len > 0 {
+                xpubBytes = Data(bytes: xpubPtr, count: Int(spec.account_xpub_bytes_len))
+            } else {
+                xpubBytes = Data()
+            }
 
-        // Upsert keyed by the full account identity. We can't easily
-        // express the identity tuple in a #Predicate with local `Data`
-        // captures, so fetch by (walletId, accountType, accountIndex)
-        // and verify the richer fields in Swift.
-        let descriptor = FetchDescriptor<PersistentAccount>(
-            predicate: #Predicate {
-                $0.wallet.walletId == walletId
-                    && $0.accountType == typeTag
-                    && $0.accountIndex == index
-            }
-        )
-        let existing = (try? backgroundContext.fetch(descriptor)) ?? []
-        let match = existing.first { acc in
-            // `standardTag` splits Standard accounts into BIP44 (0)
-            // and BIP32 (1) variants. Without it, the second emit
-            // (whichever the Rust side serializes last) silently
-            // aliases onto the first row and the BIP32 account is
-            // never persisted as its own record.
-            acc.standardTag == spec.standard_tag
-                && acc.registrationIndex == registrationIndex
-                && acc.keyClass == keyClass
-                && acc.userIdentityId == userIdentityId
-                && acc.friendIdentityId == friendIdentityId
-        }
-        let account: PersistentAccount
-        if let match = match {
-            account = match
-        } else {
-            account = PersistentAccount(
-                wallet: wallet,
-                accountType: typeTag,
-                accountIndex: index,
-                accountTypeName: accountTypeName(
-                    for: spec.type_tag,
-                    standardTag: spec.standard_tag
-                )
+            // Upsert keyed by the full account identity. We can't easily
+            // express the identity tuple in a #Predicate with local `Data`
+            // captures, so fetch by (walletId, accountType, accountIndex)
+            // and verify the richer fields in Swift.
+            let descriptor = FetchDescriptor<PersistentAccount>(
+                predicate: #Predicate {
+                    $0.wallet.walletId == walletId
+                        && $0.accountType == typeTag
+                        && $0.accountIndex == index
+                }
             )
-            backgroundContext.insert(account)
+            let existing = (try? backgroundContext.fetch(descriptor)) ?? []
+            let match = existing.first { acc in
+                // `standardTag` splits Standard accounts into BIP44 (0)
+                // and BIP32 (1) variants. Without it, the second emit
+                // (whichever the Rust side serializes last) silently
+                // aliases onto the first row and the BIP32 account is
+                // never persisted as its own record.
+                acc.standardTag == spec.standard_tag
+                    && acc.registrationIndex == registrationIndex
+                    && acc.keyClass == keyClass
+                    && acc.userIdentityId == userIdentityId
+                    && acc.friendIdentityId == friendIdentityId
+            }
+            let account: PersistentAccount
+            if let match = match {
+                account = match
+            } else {
+                account = PersistentAccount(
+                    wallet: wallet,
+                    accountType: typeTag,
+                    accountIndex: index,
+                    accountTypeName: accountTypeName(
+                        for: spec.type_tag,
+                        standardTag: spec.standard_tag
+                    )
+                )
+                backgroundContext.insert(account)
+            }
+            account.standardTag = spec.standard_tag
+            account.registrationIndex = registrationIndex
+            account.keyClass = keyClass
+            account.userIdentityId = userIdentityId
+            account.friendIdentityId = friendIdentityId
+            account.accountExtendedPubKeyBytes = xpubBytes
+            account.lastUpdated = Date()
+            if !self.inChangeset { try? backgroundContext.save() }
         }
-        account.standardTag = spec.standard_tag
-        account.registrationIndex = registrationIndex
-        account.keyClass = keyClass
-        account.userIdentityId = userIdentityId
-        account.friendIdentityId = friendIdentityId
-        account.accountExtendedPubKeyBytes = xpubBytes
-        account.lastUpdated = Date()
-        if !self.inChangeset { try? backgroundContext.save() }
-        }  // onQueue
     }
 
     // MARK: - Watch-only Restore: Load

@@ -322,6 +322,56 @@ public class PlatformWalletManager: ObservableObject {
         return restored
     }
 
+    // MARK: - Wallet deletion
+
+    /// Fully wipe a wallet's Rust, SwiftData, and Keychain footprint.
+    ///
+    /// Requires the manager to have been `configure`d with a
+    /// `ModelContainer` — the per-identity Keychain sweep needs the
+    /// wallet's identity ids, which only the persistence handler can
+    /// resolve. The no-persistence configuration mode is rejected
+    /// here rather than silently leaving identity key material behind.
+    ///
+    /// Deleting an already-removed wallet succeeds unless an
+    /// operation fails.
+    public func deleteWallet(walletId: Data) throws {
+        try ensureConfigured()
+        guard walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "walletId must be 32 bytes, got \(walletId.count)"
+            )
+        }
+        guard let persistenceHandler = persistenceHandler else {
+            throw PlatformWalletError.invalidHandle(
+                "deleteWallet requires a persistence handler — configure the manager with a ModelContainer"
+            )
+        }
+
+        try walletId.withUnsafeBytes { raw in
+            guard let base = raw.baseAddress?.assumingMemoryBound(to: FFIByteTuple32.self) else {
+                throw PlatformWalletError.nullPointer(
+                    "wallet_id buffer base address was nil"
+                )
+            }
+            try platform_wallet_manager_remove_wallet(handle, base).check()
+        }
+
+        wallets.removeValue(forKey: walletId)
+
+        let identityIds = try persistenceHandler.identityIdsForWallet(walletId: walletId)
+        for identityId in identityIds {
+            try KeychainManager.shared.deleteAllKeychainItems(forIdentityId: identityId)
+        }
+        try KeychainManager.shared.deleteAllIdentityPrivateKeys(forWalletId: walletId)
+
+        try persistenceHandler.deleteWalletData(walletId: walletId)
+
+        let storage = WalletStorage()
+        // Delete metadata first so the mnemonic remains available for retry.
+        try storage.deleteMetadata(for: walletId)
+        try storage.deleteMnemonic(for: walletId)
+    }
+
     // MARK: - Per-wallet lookup
 
     /// Return the managed wallet with the given 32-byte id, or `nil`
