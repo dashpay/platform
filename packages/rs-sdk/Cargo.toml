@@ -18,7 +18,7 @@ drive = { path = "../rs-drive", default-features = false, features = [
 ] }
 
 drive-proof-verifier = { path = "../rs-drive-proof-verifier", default-features = false }
-grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "dbd83dce59fbcf2866e9dd06be4ce6c320e37908", features = ["client", "sqlite"], optional = true }
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "352c2f5504fba8795e8ed1056753bfd73c13b4cc", features = ["client", "sqlite"], optional = true }
 dash-async = { path = "../rs-dash-async" }
 dash-context-provider = { path = "../rs-context-provider", default-features = false }
 dash-platform-macros = { path = "../rs-dash-platform-macros" }
@@ -28,7 +28,6 @@ thiserror = "2.0.17"
 tokio = { version = "1.40", features = ["macros", "time"] }
 tokio-util = { version = "0.7.12" }
 async-trait = { version = "0.1.83" }
-ciborium = { version = "0.2.2" }
 serde = { version = "1.0.219", default-features = false, features = [
   "rc",
 ], optional = true }

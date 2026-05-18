@@ -584,11 +584,30 @@ impl MockResponse for drive_proof_verifier::DocumentCount {
     }
 }
 
+/// Wire shape for `DocumentSplitCounts` mock round-trip:
+/// `(in_key, key, count)` triples preserving the In dimension
+/// AND the verified-vs-absent count distinction. Shared by
+/// `mock_serialize`/`mock_deserialize` below — single source of
+/// truth so the encode/decode generics align by construction,
+/// and clippy's `type_complexity` lint (CI runs with
+/// `-D warnings`) doesn't fire on the inline form.
+type DocumentSplitCountTriples = Vec<(Option<Vec<u8>>, Vec<u8>, Option<u64>)>;
+
 impl MockResponse for drive_proof_verifier::DocumentSplitCounts {
     fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
         let bincode_config = standard();
-        let pairs: Vec<(Vec<u8>, u64)> = self.0.iter().map(|(k, v)| (k.clone(), *v)).collect();
-        bincode::encode_to_vec(pairs, bincode_config).expect("encode DocumentSplitCounts")
+        // Serialize as `(in_key, key, count)` triples so the In
+        // dimension AND the verified-vs-absent count distinction
+        // both survive the mock roundtrip. Required for compound
+        // (`In + range + distinct`) test fixtures to keep their
+        // `in_key` values, and for GroupByIn-absent-branch
+        // fixtures to keep their `None` counts.
+        let triples: DocumentSplitCountTriples = self
+            .0
+            .iter()
+            .map(|e| (e.in_key.clone(), e.key.clone(), e.count))
+            .collect();
+        bincode::encode_to_vec(triples, bincode_config).expect("encode DocumentSplitCounts")
     }
 
     fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
@@ -596,8 +615,14 @@ impl MockResponse for drive_proof_verifier::DocumentSplitCounts {
         Self: Sized,
     {
         let bincode_config = standard();
-        let (pairs, _): (Vec<(Vec<u8>, u64)>, _) =
+        let (triples, _): (DocumentSplitCountTriples, _) =
             bincode::decode_from_slice(buf, bincode_config).expect("decode DocumentSplitCounts");
-        drive_proof_verifier::DocumentSplitCounts(pairs.into_iter().collect())
+        let entries: Vec<drive_proof_verifier::SplitCountEntry> = triples
+            .into_iter()
+            .map(
+                |(in_key, key, count)| drive_proof_verifier::SplitCountEntry { in_key, key, count },
+            )
+            .collect();
+        drive_proof_verifier::DocumentSplitCounts::from_verified(entries)
     }
 }

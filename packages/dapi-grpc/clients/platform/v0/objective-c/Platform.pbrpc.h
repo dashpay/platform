@@ -42,12 +42,8 @@
 @class GetDataContractResponse;
 @class GetDataContractsRequest;
 @class GetDataContractsResponse;
-@class GetDocumentsCountRequest;
-@class GetDocumentsCountResponse;
 @class GetDocumentsRequest;
 @class GetDocumentsResponse;
-@class GetDocumentsSplitCountRequest;
-@class GetDocumentsSplitCountResponse;
 @class GetEpochsInfoRequest;
 @class GetEpochsInfoResponse;
 @class GetEvonodesProposedEpochBlocksByIdsRequest;
@@ -233,14 +229,6 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark getDocuments(GetDocumentsRequest) returns (GetDocumentsResponse)
 
 - (GRPCUnaryProtoCall *)getDocumentsWithMessage:(GetDocumentsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
-
-#pragma mark getDocumentsCount(GetDocumentsCountRequest) returns (GetDocumentsCountResponse)
-
-- (GRPCUnaryProtoCall *)getDocumentsCountWithMessage:(GetDocumentsCountRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
-
-#pragma mark getDocumentsSplitCount(GetDocumentsSplitCountRequest) returns (GetDocumentsSplitCountResponse)
-
-- (GRPCUnaryProtoCall *)getDocumentsSplitCountWithMessage:(GetDocumentsSplitCountRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark getIdentityByPublicKeyHash(GetIdentityByPublicKeyHashRequest) returns (GetIdentityByPublicKeyHashResponse)
 
@@ -569,20 +557,6 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)getDocumentsWithRequest:(GetDocumentsRequest *)request handler:(void(^)(GetDocumentsResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetDocumentsWithRequest:(GetDocumentsRequest *)request handler:(void(^)(GetDocumentsResponse *_Nullable response, NSError *_Nullable error))handler;
-
-
-#pragma mark getDocumentsCount(GetDocumentsCountRequest) returns (GetDocumentsCountResponse)
-
-- (void)getDocumentsCountWithRequest:(GetDocumentsCountRequest *)request handler:(void(^)(GetDocumentsCountResponse *_Nullable response, NSError *_Nullable error))handler;
-
-- (GRPCProtoCall *)RPCTogetDocumentsCountWithRequest:(GetDocumentsCountRequest *)request handler:(void(^)(GetDocumentsCountResponse *_Nullable response, NSError *_Nullable error))handler;
-
-
-#pragma mark getDocumentsSplitCount(GetDocumentsSplitCountRequest) returns (GetDocumentsSplitCountResponse)
-
-- (void)getDocumentsSplitCountWithRequest:(GetDocumentsSplitCountRequest *)request handler:(void(^)(GetDocumentsSplitCountResponse *_Nullable response, NSError *_Nullable error))handler;
-
-- (GRPCProtoCall *)RPCTogetDocumentsSplitCountWithRequest:(GetDocumentsSplitCountRequest *)request handler:(void(^)(GetDocumentsSplitCountResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 #pragma mark getIdentityByPublicKeyHash(GetIdentityByPublicKeyHashRequest) returns (GetIdentityByPublicKeyHashResponse)

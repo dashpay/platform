@@ -52,7 +52,6 @@ members = [
 dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "cfb01fa751951b628a7272558e93278348b2cd1f" }
 dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "cfb01fa751951b628a7272558e93278348b2cd1f" }
 dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "cfb01fa751951b628a7272558e93278348b2cd1f" }
-dash-spv-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "cfb01fa751951b628a7272558e93278348b2cd1f" }
 key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "cfb01fa751951b628a7272558e93278348b2cd1f" }
 key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "cfb01fa751951b628a7272558e93278348b2cd1f" }
 key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "cfb01fa751951b628a7272558e93278348b2cd1f" }

@@ -2250,6 +2250,11 @@ export class GetDocumentsRequest extends jspb.Message {
   getV0(): GetDocumentsRequest.GetDocumentsRequestV0 | undefined;
   setV0(value?: GetDocumentsRequest.GetDocumentsRequestV0): void;
 
+  hasV1(): boolean;
+  clearV1(): void;
+  getV1(): GetDocumentsRequest.GetDocumentsRequestV1 | undefined;
+  setV1(value?: GetDocumentsRequest.GetDocumentsRequestV1): void;
+
   getVersionCase(): GetDocumentsRequest.VersionCase;
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): GetDocumentsRequest.AsObject;
@@ -2264,6 +2269,305 @@ export class GetDocumentsRequest extends jspb.Message {
 export namespace GetDocumentsRequest {
   export type AsObject = {
     v0?: GetDocumentsRequest.GetDocumentsRequestV0.AsObject,
+    v1?: GetDocumentsRequest.GetDocumentsRequestV1.AsObject,
+  }
+
+  export class DocumentFieldValue extends jspb.Message {
+    hasBoolValue(): boolean;
+    clearBoolValue(): void;
+    getBoolValue(): boolean;
+    setBoolValue(value: boolean): void;
+
+    hasInt64Value(): boolean;
+    clearInt64Value(): void;
+    getInt64Value(): string;
+    setInt64Value(value: string): void;
+
+    hasUint64Value(): boolean;
+    clearUint64Value(): void;
+    getUint64Value(): string;
+    setUint64Value(value: string): void;
+
+    hasDoubleValue(): boolean;
+    clearDoubleValue(): void;
+    getDoubleValue(): number;
+    setDoubleValue(value: number): void;
+
+    hasText(): boolean;
+    clearText(): void;
+    getText(): string;
+    setText(value: string): void;
+
+    hasBytesValue(): boolean;
+    clearBytesValue(): void;
+    getBytesValue(): Uint8Array | string;
+    getBytesValue_asU8(): Uint8Array;
+    getBytesValue_asB64(): string;
+    setBytesValue(value: Uint8Array | string): void;
+
+    hasList(): boolean;
+    clearList(): void;
+    getList(): GetDocumentsRequest.DocumentFieldValue.ValueList | undefined;
+    setList(value?: GetDocumentsRequest.DocumentFieldValue.ValueList): void;
+
+    hasNullValue(): boolean;
+    clearNullValue(): void;
+    getNullValue(): boolean;
+    setNullValue(value: boolean): void;
+
+    getVariantCase(): DocumentFieldValue.VariantCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): DocumentFieldValue.AsObject;
+    static toObject(includeInstance: boolean, msg: DocumentFieldValue): DocumentFieldValue.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: DocumentFieldValue, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): DocumentFieldValue;
+    static deserializeBinaryFromReader(message: DocumentFieldValue, reader: jspb.BinaryReader): DocumentFieldValue;
+  }
+
+  export namespace DocumentFieldValue {
+    export type AsObject = {
+      boolValue: boolean,
+      int64Value: string,
+      uint64Value: string,
+      doubleValue: number,
+      text: string,
+      bytesValue: Uint8Array | string,
+      list?: GetDocumentsRequest.DocumentFieldValue.ValueList.AsObject,
+      nullValue: boolean,
+    }
+
+    export class ValueList extends jspb.Message {
+      clearValuesList(): void;
+      getValuesList(): Array<GetDocumentsRequest.DocumentFieldValue>;
+      setValuesList(value: Array<GetDocumentsRequest.DocumentFieldValue>): void;
+      addValues(value?: GetDocumentsRequest.DocumentFieldValue, index?: number): GetDocumentsRequest.DocumentFieldValue;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): ValueList.AsObject;
+      static toObject(includeInstance: boolean, msg: ValueList): ValueList.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: ValueList, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): ValueList;
+      static deserializeBinaryFromReader(message: ValueList, reader: jspb.BinaryReader): ValueList;
+    }
+
+    export namespace ValueList {
+      export type AsObject = {
+        valuesList: Array<GetDocumentsRequest.DocumentFieldValue.AsObject>,
+      }
+    }
+
+    export enum VariantCase {
+      VARIANT_NOT_SET = 0,
+      BOOL_VALUE = 1,
+      INT64_VALUE = 2,
+      UINT64_VALUE = 3,
+      DOUBLE_VALUE = 4,
+      TEXT = 5,
+      BYTES_VALUE = 6,
+      LIST = 7,
+      NULL_VALUE = 8,
+    }
+  }
+
+  export class WhereClause extends jspb.Message {
+    getField(): string;
+    setField(value: string): void;
+
+    getOperator(): GetDocumentsRequest.WhereOperatorMap[keyof GetDocumentsRequest.WhereOperatorMap];
+    setOperator(value: GetDocumentsRequest.WhereOperatorMap[keyof GetDocumentsRequest.WhereOperatorMap]): void;
+
+    hasValue(): boolean;
+    clearValue(): void;
+    getValue(): GetDocumentsRequest.DocumentFieldValue | undefined;
+    setValue(value?: GetDocumentsRequest.DocumentFieldValue): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): WhereClause.AsObject;
+    static toObject(includeInstance: boolean, msg: WhereClause): WhereClause.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: WhereClause, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): WhereClause;
+    static deserializeBinaryFromReader(message: WhereClause, reader: jspb.BinaryReader): WhereClause;
+  }
+
+  export namespace WhereClause {
+    export type AsObject = {
+      field: string,
+      operator: GetDocumentsRequest.WhereOperatorMap[keyof GetDocumentsRequest.WhereOperatorMap],
+      value?: GetDocumentsRequest.DocumentFieldValue.AsObject,
+    }
+  }
+
+  export class HavingAggregate extends jspb.Message {
+    getFunction(): GetDocumentsRequest.HavingAggregate.FunctionMap[keyof GetDocumentsRequest.HavingAggregate.FunctionMap];
+    setFunction(value: GetDocumentsRequest.HavingAggregate.FunctionMap[keyof GetDocumentsRequest.HavingAggregate.FunctionMap]): void;
+
+    getField(): string;
+    setField(value: string): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): HavingAggregate.AsObject;
+    static toObject(includeInstance: boolean, msg: HavingAggregate): HavingAggregate.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: HavingAggregate, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): HavingAggregate;
+    static deserializeBinaryFromReader(message: HavingAggregate, reader: jspb.BinaryReader): HavingAggregate;
+  }
+
+  export namespace HavingAggregate {
+    export type AsObject = {
+      pb_function: GetDocumentsRequest.HavingAggregate.FunctionMap[keyof GetDocumentsRequest.HavingAggregate.FunctionMap],
+      field: string,
+    }
+
+    export interface FunctionMap {
+      COUNT: 0;
+      SUM: 1;
+      AVG: 2;
+    }
+
+    export const Function: FunctionMap;
+  }
+
+  export class HavingRanking extends jspb.Message {
+    getKind(): GetDocumentsRequest.HavingRanking.KindMap[keyof GetDocumentsRequest.HavingRanking.KindMap];
+    setKind(value: GetDocumentsRequest.HavingRanking.KindMap[keyof GetDocumentsRequest.HavingRanking.KindMap]): void;
+
+    hasN(): boolean;
+    clearN(): void;
+    getN(): string;
+    setN(value: string): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): HavingRanking.AsObject;
+    static toObject(includeInstance: boolean, msg: HavingRanking): HavingRanking.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: HavingRanking, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): HavingRanking;
+    static deserializeBinaryFromReader(message: HavingRanking, reader: jspb.BinaryReader): HavingRanking;
+  }
+
+  export namespace HavingRanking {
+    export type AsObject = {
+      kind: GetDocumentsRequest.HavingRanking.KindMap[keyof GetDocumentsRequest.HavingRanking.KindMap],
+      n: string,
+    }
+
+    export interface KindMap {
+      MIN: 0;
+      MAX: 1;
+      TOP: 2;
+      BOTTOM: 3;
+    }
+
+    export const Kind: KindMap;
+  }
+
+  export class HavingClause extends jspb.Message {
+    hasAggregate(): boolean;
+    clearAggregate(): void;
+    getAggregate(): GetDocumentsRequest.HavingAggregate | undefined;
+    setAggregate(value?: GetDocumentsRequest.HavingAggregate): void;
+
+    getOperator(): GetDocumentsRequest.HavingClause.OperatorMap[keyof GetDocumentsRequest.HavingClause.OperatorMap];
+    setOperator(value: GetDocumentsRequest.HavingClause.OperatorMap[keyof GetDocumentsRequest.HavingClause.OperatorMap]): void;
+
+    hasValue(): boolean;
+    clearValue(): void;
+    getValue(): GetDocumentsRequest.DocumentFieldValue | undefined;
+    setValue(value?: GetDocumentsRequest.DocumentFieldValue): void;
+
+    hasRanking(): boolean;
+    clearRanking(): void;
+    getRanking(): GetDocumentsRequest.HavingRanking | undefined;
+    setRanking(value?: GetDocumentsRequest.HavingRanking): void;
+
+    getRightCase(): HavingClause.RightCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): HavingClause.AsObject;
+    static toObject(includeInstance: boolean, msg: HavingClause): HavingClause.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: HavingClause, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): HavingClause;
+    static deserializeBinaryFromReader(message: HavingClause, reader: jspb.BinaryReader): HavingClause;
+  }
+
+  export namespace HavingClause {
+    export type AsObject = {
+      aggregate?: GetDocumentsRequest.HavingAggregate.AsObject,
+      operator: GetDocumentsRequest.HavingClause.OperatorMap[keyof GetDocumentsRequest.HavingClause.OperatorMap],
+      value?: GetDocumentsRequest.DocumentFieldValue.AsObject,
+      ranking?: GetDocumentsRequest.HavingRanking.AsObject,
+    }
+
+    export interface OperatorMap {
+      EQUAL: 0;
+      NOT_EQUAL: 1;
+      GREATER_THAN: 2;
+      GREATER_THAN_OR_EQUALS: 3;
+      LESS_THAN: 4;
+      LESS_THAN_OR_EQUALS: 5;
+      BETWEEN: 6;
+      BETWEEN_EXCLUDE_BOUNDS: 7;
+      BETWEEN_EXCLUDE_LEFT: 8;
+      BETWEEN_EXCLUDE_RIGHT: 9;
+      IN: 10;
+    }
+
+    export const Operator: OperatorMap;
+
+    export enum RightCase {
+      RIGHT_NOT_SET = 0,
+      VALUE = 3,
+      RANKING = 4,
+    }
+  }
+
+  export class OrderClause extends jspb.Message {
+    hasField(): boolean;
+    clearField(): void;
+    getField(): string;
+    setField(value: string): void;
+
+    hasAggregate(): boolean;
+    clearAggregate(): void;
+    getAggregate(): GetDocumentsRequest.HavingAggregate | undefined;
+    setAggregate(value?: GetDocumentsRequest.HavingAggregate): void;
+
+    getAscending(): boolean;
+    setAscending(value: boolean): void;
+
+    getTargetCase(): OrderClause.TargetCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): OrderClause.AsObject;
+    static toObject(includeInstance: boolean, msg: OrderClause): OrderClause.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: OrderClause, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): OrderClause;
+    static deserializeBinaryFromReader(message: OrderClause, reader: jspb.BinaryReader): OrderClause;
+  }
+
+  export namespace OrderClause {
+    export type AsObject = {
+      field: string,
+      aggregate?: GetDocumentsRequest.HavingAggregate.AsObject,
+      ascending: boolean,
+    }
+
+    export enum TargetCase {
+      TARGET_NOT_SET = 0,
+      FIELD = 1,
+      AGGREGATE = 3,
+    }
   }
 
   export class GetDocumentsRequestV0 extends jspb.Message {
@@ -2335,9 +2639,156 @@ export namespace GetDocumentsRequest {
     }
   }
 
+  export class GetDocumentsRequestV1 extends jspb.Message {
+    getDataContractId(): Uint8Array | string;
+    getDataContractId_asU8(): Uint8Array;
+    getDataContractId_asB64(): string;
+    setDataContractId(value: Uint8Array | string): void;
+
+    getDocumentType(): string;
+    setDocumentType(value: string): void;
+
+    clearWhereClausesList(): void;
+    getWhereClausesList(): Array<GetDocumentsRequest.WhereClause>;
+    setWhereClausesList(value: Array<GetDocumentsRequest.WhereClause>): void;
+    addWhereClauses(value?: GetDocumentsRequest.WhereClause, index?: number): GetDocumentsRequest.WhereClause;
+
+    clearOrderByList(): void;
+    getOrderByList(): Array<GetDocumentsRequest.OrderClause>;
+    setOrderByList(value: Array<GetDocumentsRequest.OrderClause>): void;
+    addOrderBy(value?: GetDocumentsRequest.OrderClause, index?: number): GetDocumentsRequest.OrderClause;
+
+    hasLimit(): boolean;
+    clearLimit(): void;
+    getLimit(): number;
+    setLimit(value: number): void;
+
+    hasStartAfter(): boolean;
+    clearStartAfter(): void;
+    getStartAfter(): Uint8Array | string;
+    getStartAfter_asU8(): Uint8Array;
+    getStartAfter_asB64(): string;
+    setStartAfter(value: Uint8Array | string): void;
+
+    hasStartAt(): boolean;
+    clearStartAt(): void;
+    getStartAt(): Uint8Array | string;
+    getStartAt_asU8(): Uint8Array;
+    getStartAt_asB64(): string;
+    setStartAt(value: Uint8Array | string): void;
+
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
+    clearSelectsList(): void;
+    getSelectsList(): Array<GetDocumentsRequest.GetDocumentsRequestV1.Select>;
+    setSelectsList(value: Array<GetDocumentsRequest.GetDocumentsRequestV1.Select>): void;
+    addSelects(value?: GetDocumentsRequest.GetDocumentsRequestV1.Select, index?: number): GetDocumentsRequest.GetDocumentsRequestV1.Select;
+
+    clearGroupByList(): void;
+    getGroupByList(): Array<string>;
+    setGroupByList(value: Array<string>): void;
+    addGroupBy(value: string, index?: number): string;
+
+    clearHavingList(): void;
+    getHavingList(): Array<GetDocumentsRequest.HavingClause>;
+    setHavingList(value: Array<GetDocumentsRequest.HavingClause>): void;
+    addHaving(value?: GetDocumentsRequest.HavingClause, index?: number): GetDocumentsRequest.HavingClause;
+
+    hasOffset(): boolean;
+    clearOffset(): void;
+    getOffset(): number;
+    setOffset(value: number): void;
+
+    getStartCase(): GetDocumentsRequestV1.StartCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetDocumentsRequestV1.AsObject;
+    static toObject(includeInstance: boolean, msg: GetDocumentsRequestV1): GetDocumentsRequestV1.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetDocumentsRequestV1, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetDocumentsRequestV1;
+    static deserializeBinaryFromReader(message: GetDocumentsRequestV1, reader: jspb.BinaryReader): GetDocumentsRequestV1;
+  }
+
+  export namespace GetDocumentsRequestV1 {
+    export type AsObject = {
+      dataContractId: Uint8Array | string,
+      documentType: string,
+      whereClausesList: Array<GetDocumentsRequest.WhereClause.AsObject>,
+      orderByList: Array<GetDocumentsRequest.OrderClause.AsObject>,
+      limit: number,
+      startAfter: Uint8Array | string,
+      startAt: Uint8Array | string,
+      prove: boolean,
+      selectsList: Array<GetDocumentsRequest.GetDocumentsRequestV1.Select.AsObject>,
+      groupByList: Array<string>,
+      havingList: Array<GetDocumentsRequest.HavingClause.AsObject>,
+      offset: number,
+    }
+
+    export class Select extends jspb.Message {
+      getFunction(): GetDocumentsRequest.GetDocumentsRequestV1.Select.FunctionMap[keyof GetDocumentsRequest.GetDocumentsRequestV1.Select.FunctionMap];
+      setFunction(value: GetDocumentsRequest.GetDocumentsRequestV1.Select.FunctionMap[keyof GetDocumentsRequest.GetDocumentsRequestV1.Select.FunctionMap]): void;
+
+      getField(): string;
+      setField(value: string): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): Select.AsObject;
+      static toObject(includeInstance: boolean, msg: Select): Select.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: Select, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): Select;
+      static deserializeBinaryFromReader(message: Select, reader: jspb.BinaryReader): Select;
+    }
+
+    export namespace Select {
+      export type AsObject = {
+        pb_function: GetDocumentsRequest.GetDocumentsRequestV1.Select.FunctionMap[keyof GetDocumentsRequest.GetDocumentsRequestV1.Select.FunctionMap],
+        field: string,
+      }
+
+      export interface FunctionMap {
+        DOCUMENTS: 0;
+        COUNT: 1;
+        SUM: 2;
+        AVG: 3;
+        MIN: 4;
+        MAX: 5;
+      }
+
+      export const Function: FunctionMap;
+    }
+
+    export enum StartCase {
+      START_NOT_SET = 0,
+      START_AFTER = 6,
+      START_AT = 7,
+    }
+  }
+
+  export interface WhereOperatorMap {
+    EQUAL: 0;
+    GREATER_THAN: 1;
+    GREATER_THAN_OR_EQUALS: 2;
+    LESS_THAN: 3;
+    LESS_THAN_OR_EQUALS: 4;
+    BETWEEN: 5;
+    BETWEEN_EXCLUDE_BOUNDS: 6;
+    BETWEEN_EXCLUDE_LEFT: 7;
+    BETWEEN_EXCLUDE_RIGHT: 8;
+    IN: 9;
+    STARTS_WITH: 10;
+  }
+
+  export const WhereOperator: WhereOperatorMap;
+
   export enum VersionCase {
     VERSION_NOT_SET = 0,
     V0 = 1,
+    V1 = 2,
   }
 }
 
@@ -2346,6 +2797,11 @@ export class GetDocumentsResponse extends jspb.Message {
   clearV0(): void;
   getV0(): GetDocumentsResponse.GetDocumentsResponseV0 | undefined;
   setV0(value?: GetDocumentsResponse.GetDocumentsResponseV0): void;
+
+  hasV1(): boolean;
+  clearV1(): void;
+  getV1(): GetDocumentsResponse.GetDocumentsResponseV1 | undefined;
+  setV1(value?: GetDocumentsResponse.GetDocumentsResponseV1): void;
 
   getVersionCase(): GetDocumentsResponse.VersionCase;
   serializeBinary(): Uint8Array;
@@ -2361,6 +2817,7 @@ export class GetDocumentsResponse extends jspb.Message {
 export namespace GetDocumentsResponse {
   export type AsObject = {
     v0?: GetDocumentsResponse.GetDocumentsResponseV0.AsObject,
+    v1?: GetDocumentsResponse.GetDocumentsResponseV1.AsObject,
   }
 
   export class GetDocumentsResponseV0 extends jspb.Message {
@@ -2428,103 +2885,11 @@ export namespace GetDocumentsResponse {
     }
   }
 
-  export enum VersionCase {
-    VERSION_NOT_SET = 0,
-    V0 = 1,
-  }
-}
-
-export class GetDocumentsCountRequest extends jspb.Message {
-  hasV0(): boolean;
-  clearV0(): void;
-  getV0(): GetDocumentsCountRequest.GetDocumentsCountRequestV0 | undefined;
-  setV0(value?: GetDocumentsCountRequest.GetDocumentsCountRequestV0): void;
-
-  getVersionCase(): GetDocumentsCountRequest.VersionCase;
-  serializeBinary(): Uint8Array;
-  toObject(includeInstance?: boolean): GetDocumentsCountRequest.AsObject;
-  static toObject(includeInstance: boolean, msg: GetDocumentsCountRequest): GetDocumentsCountRequest.AsObject;
-  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
-  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-  static serializeBinaryToWriter(message: GetDocumentsCountRequest, writer: jspb.BinaryWriter): void;
-  static deserializeBinary(bytes: Uint8Array): GetDocumentsCountRequest;
-  static deserializeBinaryFromReader(message: GetDocumentsCountRequest, reader: jspb.BinaryReader): GetDocumentsCountRequest;
-}
-
-export namespace GetDocumentsCountRequest {
-  export type AsObject = {
-    v0?: GetDocumentsCountRequest.GetDocumentsCountRequestV0.AsObject,
-  }
-
-  export class GetDocumentsCountRequestV0 extends jspb.Message {
-    getDataContractId(): Uint8Array | string;
-    getDataContractId_asU8(): Uint8Array;
-    getDataContractId_asB64(): string;
-    setDataContractId(value: Uint8Array | string): void;
-
-    getDocumentType(): string;
-    setDocumentType(value: string): void;
-
-    getWhere(): Uint8Array | string;
-    getWhere_asU8(): Uint8Array;
-    getWhere_asB64(): string;
-    setWhere(value: Uint8Array | string): void;
-
-    getProve(): boolean;
-    setProve(value: boolean): void;
-
-    serializeBinary(): Uint8Array;
-    toObject(includeInstance?: boolean): GetDocumentsCountRequestV0.AsObject;
-    static toObject(includeInstance: boolean, msg: GetDocumentsCountRequestV0): GetDocumentsCountRequestV0.AsObject;
-    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
-    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-    static serializeBinaryToWriter(message: GetDocumentsCountRequestV0, writer: jspb.BinaryWriter): void;
-    static deserializeBinary(bytes: Uint8Array): GetDocumentsCountRequestV0;
-    static deserializeBinaryFromReader(message: GetDocumentsCountRequestV0, reader: jspb.BinaryReader): GetDocumentsCountRequestV0;
-  }
-
-  export namespace GetDocumentsCountRequestV0 {
-    export type AsObject = {
-      dataContractId: Uint8Array | string,
-      documentType: string,
-      where: Uint8Array | string,
-      prove: boolean,
-    }
-  }
-
-  export enum VersionCase {
-    VERSION_NOT_SET = 0,
-    V0 = 1,
-  }
-}
-
-export class GetDocumentsCountResponse extends jspb.Message {
-  hasV0(): boolean;
-  clearV0(): void;
-  getV0(): GetDocumentsCountResponse.GetDocumentsCountResponseV0 | undefined;
-  setV0(value?: GetDocumentsCountResponse.GetDocumentsCountResponseV0): void;
-
-  getVersionCase(): GetDocumentsCountResponse.VersionCase;
-  serializeBinary(): Uint8Array;
-  toObject(includeInstance?: boolean): GetDocumentsCountResponse.AsObject;
-  static toObject(includeInstance: boolean, msg: GetDocumentsCountResponse): GetDocumentsCountResponse.AsObject;
-  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
-  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-  static serializeBinaryToWriter(message: GetDocumentsCountResponse, writer: jspb.BinaryWriter): void;
-  static deserializeBinary(bytes: Uint8Array): GetDocumentsCountResponse;
-  static deserializeBinaryFromReader(message: GetDocumentsCountResponse, reader: jspb.BinaryReader): GetDocumentsCountResponse;
-}
-
-export namespace GetDocumentsCountResponse {
-  export type AsObject = {
-    v0?: GetDocumentsCountResponse.GetDocumentsCountResponseV0.AsObject,
-  }
-
-  export class GetDocumentsCountResponseV0 extends jspb.Message {
-    hasCount(): boolean;
-    clearCount(): void;
-    getCount(): number;
-    setCount(value: number): void;
+  export class GetDocumentsResponseV1 extends jspb.Message {
+    hasData(): boolean;
+    clearData(): void;
+    getData(): GetDocumentsResponse.GetDocumentsResponseV1.ResultData | undefined;
+    setData(value?: GetDocumentsResponse.GetDocumentsResponseV1.ResultData): void;
 
     hasProof(): boolean;
     clearProof(): void;
@@ -2536,212 +2901,177 @@ export namespace GetDocumentsCountResponse {
     getMetadata(): ResponseMetadata | undefined;
     setMetadata(value?: ResponseMetadata): void;
 
-    getResultCase(): GetDocumentsCountResponseV0.ResultCase;
+    getResultCase(): GetDocumentsResponseV1.ResultCase;
     serializeBinary(): Uint8Array;
-    toObject(includeInstance?: boolean): GetDocumentsCountResponseV0.AsObject;
-    static toObject(includeInstance: boolean, msg: GetDocumentsCountResponseV0): GetDocumentsCountResponseV0.AsObject;
+    toObject(includeInstance?: boolean): GetDocumentsResponseV1.AsObject;
+    static toObject(includeInstance: boolean, msg: GetDocumentsResponseV1): GetDocumentsResponseV1.AsObject;
     static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
     static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-    static serializeBinaryToWriter(message: GetDocumentsCountResponseV0, writer: jspb.BinaryWriter): void;
-    static deserializeBinary(bytes: Uint8Array): GetDocumentsCountResponseV0;
-    static deserializeBinaryFromReader(message: GetDocumentsCountResponseV0, reader: jspb.BinaryReader): GetDocumentsCountResponseV0;
+    static serializeBinaryToWriter(message: GetDocumentsResponseV1, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetDocumentsResponseV1;
+    static deserializeBinaryFromReader(message: GetDocumentsResponseV1, reader: jspb.BinaryReader): GetDocumentsResponseV1;
   }
 
-  export namespace GetDocumentsCountResponseV0 {
+  export namespace GetDocumentsResponseV1 {
     export type AsObject = {
-      count: number,
+      data?: GetDocumentsResponse.GetDocumentsResponseV1.ResultData.AsObject,
       proof?: Proof.AsObject,
       metadata?: ResponseMetadata.AsObject,
     }
 
-    export enum ResultCase {
-      RESULT_NOT_SET = 0,
-      COUNT = 1,
-      PROOF = 2,
-    }
-  }
+    export class Documents extends jspb.Message {
+      clearDocumentsList(): void;
+      getDocumentsList(): Array<Uint8Array | string>;
+      getDocumentsList_asU8(): Array<Uint8Array>;
+      getDocumentsList_asB64(): Array<string>;
+      setDocumentsList(value: Array<Uint8Array | string>): void;
+      addDocuments(value: Uint8Array | string, index?: number): Uint8Array | string;
 
-  export enum VersionCase {
-    VERSION_NOT_SET = 0,
-    V0 = 1,
-  }
-}
-
-export class GetDocumentsSplitCountRequest extends jspb.Message {
-  hasV0(): boolean;
-  clearV0(): void;
-  getV0(): GetDocumentsSplitCountRequest.GetDocumentsSplitCountRequestV0 | undefined;
-  setV0(value?: GetDocumentsSplitCountRequest.GetDocumentsSplitCountRequestV0): void;
-
-  getVersionCase(): GetDocumentsSplitCountRequest.VersionCase;
-  serializeBinary(): Uint8Array;
-  toObject(includeInstance?: boolean): GetDocumentsSplitCountRequest.AsObject;
-  static toObject(includeInstance: boolean, msg: GetDocumentsSplitCountRequest): GetDocumentsSplitCountRequest.AsObject;
-  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
-  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-  static serializeBinaryToWriter(message: GetDocumentsSplitCountRequest, writer: jspb.BinaryWriter): void;
-  static deserializeBinary(bytes: Uint8Array): GetDocumentsSplitCountRequest;
-  static deserializeBinaryFromReader(message: GetDocumentsSplitCountRequest, reader: jspb.BinaryReader): GetDocumentsSplitCountRequest;
-}
-
-export namespace GetDocumentsSplitCountRequest {
-  export type AsObject = {
-    v0?: GetDocumentsSplitCountRequest.GetDocumentsSplitCountRequestV0.AsObject,
-  }
-
-  export class GetDocumentsSplitCountRequestV0 extends jspb.Message {
-    getDataContractId(): Uint8Array | string;
-    getDataContractId_asU8(): Uint8Array;
-    getDataContractId_asB64(): string;
-    setDataContractId(value: Uint8Array | string): void;
-
-    getDocumentType(): string;
-    setDocumentType(value: string): void;
-
-    getWhere(): Uint8Array | string;
-    getWhere_asU8(): Uint8Array;
-    getWhere_asB64(): string;
-    setWhere(value: Uint8Array | string): void;
-
-    getSplitCountByIndexProperty(): string;
-    setSplitCountByIndexProperty(value: string): void;
-
-    getProve(): boolean;
-    setProve(value: boolean): void;
-
-    serializeBinary(): Uint8Array;
-    toObject(includeInstance?: boolean): GetDocumentsSplitCountRequestV0.AsObject;
-    static toObject(includeInstance: boolean, msg: GetDocumentsSplitCountRequestV0): GetDocumentsSplitCountRequestV0.AsObject;
-    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
-    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-    static serializeBinaryToWriter(message: GetDocumentsSplitCountRequestV0, writer: jspb.BinaryWriter): void;
-    static deserializeBinary(bytes: Uint8Array): GetDocumentsSplitCountRequestV0;
-    static deserializeBinaryFromReader(message: GetDocumentsSplitCountRequestV0, reader: jspb.BinaryReader): GetDocumentsSplitCountRequestV0;
-  }
-
-  export namespace GetDocumentsSplitCountRequestV0 {
-    export type AsObject = {
-      dataContractId: Uint8Array | string,
-      documentType: string,
-      where: Uint8Array | string,
-      splitCountByIndexProperty: string,
-      prove: boolean,
-    }
-  }
-
-  export enum VersionCase {
-    VERSION_NOT_SET = 0,
-    V0 = 1,
-  }
-}
-
-export class GetDocumentsSplitCountResponse extends jspb.Message {
-  hasV0(): boolean;
-  clearV0(): void;
-  getV0(): GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0 | undefined;
-  setV0(value?: GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0): void;
-
-  getVersionCase(): GetDocumentsSplitCountResponse.VersionCase;
-  serializeBinary(): Uint8Array;
-  toObject(includeInstance?: boolean): GetDocumentsSplitCountResponse.AsObject;
-  static toObject(includeInstance: boolean, msg: GetDocumentsSplitCountResponse): GetDocumentsSplitCountResponse.AsObject;
-  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
-  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-  static serializeBinaryToWriter(message: GetDocumentsSplitCountResponse, writer: jspb.BinaryWriter): void;
-  static deserializeBinary(bytes: Uint8Array): GetDocumentsSplitCountResponse;
-  static deserializeBinaryFromReader(message: GetDocumentsSplitCountResponse, reader: jspb.BinaryReader): GetDocumentsSplitCountResponse;
-}
-
-export namespace GetDocumentsSplitCountResponse {
-  export type AsObject = {
-    v0?: GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.AsObject,
-  }
-
-  export class GetDocumentsSplitCountResponseV0 extends jspb.Message {
-    hasSplitCounts(): boolean;
-    clearSplitCounts(): void;
-    getSplitCounts(): GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCounts | undefined;
-    setSplitCounts(value?: GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCounts): void;
-
-    hasProof(): boolean;
-    clearProof(): void;
-    getProof(): Proof | undefined;
-    setProof(value?: Proof): void;
-
-    hasMetadata(): boolean;
-    clearMetadata(): void;
-    getMetadata(): ResponseMetadata | undefined;
-    setMetadata(value?: ResponseMetadata): void;
-
-    getResultCase(): GetDocumentsSplitCountResponseV0.ResultCase;
-    serializeBinary(): Uint8Array;
-    toObject(includeInstance?: boolean): GetDocumentsSplitCountResponseV0.AsObject;
-    static toObject(includeInstance: boolean, msg: GetDocumentsSplitCountResponseV0): GetDocumentsSplitCountResponseV0.AsObject;
-    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
-    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-    static serializeBinaryToWriter(message: GetDocumentsSplitCountResponseV0, writer: jspb.BinaryWriter): void;
-    static deserializeBinary(bytes: Uint8Array): GetDocumentsSplitCountResponseV0;
-    static deserializeBinaryFromReader(message: GetDocumentsSplitCountResponseV0, reader: jspb.BinaryReader): GetDocumentsSplitCountResponseV0;
-  }
-
-  export namespace GetDocumentsSplitCountResponseV0 {
-    export type AsObject = {
-      splitCounts?: GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCounts.AsObject,
-      proof?: Proof.AsObject,
-      metadata?: ResponseMetadata.AsObject,
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): Documents.AsObject;
+      static toObject(includeInstance: boolean, msg: Documents): Documents.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: Documents, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): Documents;
+      static deserializeBinaryFromReader(message: Documents, reader: jspb.BinaryReader): Documents;
     }
 
-    export class SplitCountEntry extends jspb.Message {
+    export namespace Documents {
+      export type AsObject = {
+        documentsList: Array<Uint8Array | string>,
+      }
+    }
+
+    export class CountEntry extends jspb.Message {
+      hasInKey(): boolean;
+      clearInKey(): void;
+      getInKey(): Uint8Array | string;
+      getInKey_asU8(): Uint8Array;
+      getInKey_asB64(): string;
+      setInKey(value: Uint8Array | string): void;
+
       getKey(): Uint8Array | string;
       getKey_asU8(): Uint8Array;
       getKey_asB64(): string;
       setKey(value: Uint8Array | string): void;
 
-      getCount(): number;
-      setCount(value: number): void;
+      getCount(): string;
+      setCount(value: string): void;
 
       serializeBinary(): Uint8Array;
-      toObject(includeInstance?: boolean): SplitCountEntry.AsObject;
-      static toObject(includeInstance: boolean, msg: SplitCountEntry): SplitCountEntry.AsObject;
+      toObject(includeInstance?: boolean): CountEntry.AsObject;
+      static toObject(includeInstance: boolean, msg: CountEntry): CountEntry.AsObject;
       static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
       static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-      static serializeBinaryToWriter(message: SplitCountEntry, writer: jspb.BinaryWriter): void;
-      static deserializeBinary(bytes: Uint8Array): SplitCountEntry;
-      static deserializeBinaryFromReader(message: SplitCountEntry, reader: jspb.BinaryReader): SplitCountEntry;
+      static serializeBinaryToWriter(message: CountEntry, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): CountEntry;
+      static deserializeBinaryFromReader(message: CountEntry, reader: jspb.BinaryReader): CountEntry;
     }
 
-    export namespace SplitCountEntry {
+    export namespace CountEntry {
       export type AsObject = {
+        inKey: Uint8Array | string,
         key: Uint8Array | string,
-        count: number,
+        count: string,
       }
     }
 
-    export class SplitCounts extends jspb.Message {
+    export class CountEntries extends jspb.Message {
       clearEntriesList(): void;
-      getEntriesList(): Array<GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCountEntry>;
-      setEntriesList(value: Array<GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCountEntry>): void;
-      addEntries(value?: GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCountEntry, index?: number): GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCountEntry;
+      getEntriesList(): Array<GetDocumentsResponse.GetDocumentsResponseV1.CountEntry>;
+      setEntriesList(value: Array<GetDocumentsResponse.GetDocumentsResponseV1.CountEntry>): void;
+      addEntries(value?: GetDocumentsResponse.GetDocumentsResponseV1.CountEntry, index?: number): GetDocumentsResponse.GetDocumentsResponseV1.CountEntry;
 
       serializeBinary(): Uint8Array;
-      toObject(includeInstance?: boolean): SplitCounts.AsObject;
-      static toObject(includeInstance: boolean, msg: SplitCounts): SplitCounts.AsObject;
+      toObject(includeInstance?: boolean): CountEntries.AsObject;
+      static toObject(includeInstance: boolean, msg: CountEntries): CountEntries.AsObject;
       static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
       static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-      static serializeBinaryToWriter(message: SplitCounts, writer: jspb.BinaryWriter): void;
-      static deserializeBinary(bytes: Uint8Array): SplitCounts;
-      static deserializeBinaryFromReader(message: SplitCounts, reader: jspb.BinaryReader): SplitCounts;
+      static serializeBinaryToWriter(message: CountEntries, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): CountEntries;
+      static deserializeBinaryFromReader(message: CountEntries, reader: jspb.BinaryReader): CountEntries;
     }
 
-    export namespace SplitCounts {
+    export namespace CountEntries {
       export type AsObject = {
-        entriesList: Array<GetDocumentsSplitCountResponse.GetDocumentsSplitCountResponseV0.SplitCountEntry.AsObject>,
+        entriesList: Array<GetDocumentsResponse.GetDocumentsResponseV1.CountEntry.AsObject>,
+      }
+    }
+
+    export class CountResults extends jspb.Message {
+      hasAggregateCount(): boolean;
+      clearAggregateCount(): void;
+      getAggregateCount(): string;
+      setAggregateCount(value: string): void;
+
+      hasEntries(): boolean;
+      clearEntries(): void;
+      getEntries(): GetDocumentsResponse.GetDocumentsResponseV1.CountEntries | undefined;
+      setEntries(value?: GetDocumentsResponse.GetDocumentsResponseV1.CountEntries): void;
+
+      getVariantCase(): CountResults.VariantCase;
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): CountResults.AsObject;
+      static toObject(includeInstance: boolean, msg: CountResults): CountResults.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: CountResults, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): CountResults;
+      static deserializeBinaryFromReader(message: CountResults, reader: jspb.BinaryReader): CountResults;
+    }
+
+    export namespace CountResults {
+      export type AsObject = {
+        aggregateCount: string,
+        entries?: GetDocumentsResponse.GetDocumentsResponseV1.CountEntries.AsObject,
+      }
+
+      export enum VariantCase {
+        VARIANT_NOT_SET = 0,
+        AGGREGATE_COUNT = 1,
+        ENTRIES = 2,
+      }
+    }
+
+    export class ResultData extends jspb.Message {
+      hasDocuments(): boolean;
+      clearDocuments(): void;
+      getDocuments(): GetDocumentsResponse.GetDocumentsResponseV1.Documents | undefined;
+      setDocuments(value?: GetDocumentsResponse.GetDocumentsResponseV1.Documents): void;
+
+      hasCounts(): boolean;
+      clearCounts(): void;
+      getCounts(): GetDocumentsResponse.GetDocumentsResponseV1.CountResults | undefined;
+      setCounts(value?: GetDocumentsResponse.GetDocumentsResponseV1.CountResults): void;
+
+      getVariantCase(): ResultData.VariantCase;
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): ResultData.AsObject;
+      static toObject(includeInstance: boolean, msg: ResultData): ResultData.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: ResultData, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): ResultData;
+      static deserializeBinaryFromReader(message: ResultData, reader: jspb.BinaryReader): ResultData;
+    }
+
+    export namespace ResultData {
+      export type AsObject = {
+        documents?: GetDocumentsResponse.GetDocumentsResponseV1.Documents.AsObject,
+        counts?: GetDocumentsResponse.GetDocumentsResponseV1.CountResults.AsObject,
+      }
+
+      export enum VariantCase {
+        VARIANT_NOT_SET = 0,
+        DOCUMENTS = 1,
+        COUNTS = 2,
       }
     }
 
     export enum ResultCase {
       RESULT_NOT_SET = 0,
-      SPLIT_COUNTS = 1,
+      DATA = 1,
       PROOF = 2,
     }
   }
@@ -2749,6 +3079,7 @@ export namespace GetDocumentsSplitCountResponse {
   export enum VersionCase {
     VERSION_NOT_SET = 0,
     V0 = 1,
+    V1 = 2,
   }
 }
 

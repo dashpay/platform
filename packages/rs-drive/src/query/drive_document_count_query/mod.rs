@@ -1,33 +1,130 @@
-use std::collections::{BTreeMap, BTreeSet};
+//! Types and module structure for the `GetDocumentsCount` query.
+//!
+//! The implementation is split across siblings:
+//! - [`mode_detection`] — operator classification + `detect_mode`.
+//! - [`index_picker`] — covering-index pickers
+//!   (`find_countable_index_*`, `find_range_countable_index_*`).
+//! - [`path_query`] — the load-bearing prover/verifier-agreement
+//!   path-query builders (`aggregate_count_path_query`,
+//!   `distinct_count_path_query`, `range_clause_to_query_item`).
+//! - [`execute_point_lookup`] — Equal/In point-lookup execution
+//!   (`execute_no_proof`, `execute_with_proof`).
+//! - [`execute_range_count`] — range-mode execution + `RangeCountOptions`.
+//! - [`drive_dispatcher`] — `impl Drive` per-mode dispatchers +
+//!   `DocumentCountRequest` / `DocumentCountResponse` +
+//!   `execute_document_count_request`.
+//! - [`tests`] (cfg `server` + `test`) — integration tests.
+//!
+//! This file owns the three public types every other submodule
+//! references and the corresponding `mod` / `pub use` plumbing.
 
-#[cfg(feature = "server")]
-use crate::drive::Drive;
-#[cfg(feature = "server")]
-use crate::error::query::QuerySyntaxError;
-#[cfg(feature = "server")]
-use crate::error::Error;
-#[cfg(feature = "server")]
-use crate::util::grove_operations::DirectQueryType;
-#[cfg(feature = "server")]
-use dpp::version::drive_versions::DriveVersion;
-#[cfg(feature = "server")]
-use grovedb::query_result_type::QueryResultType;
-#[cfg(feature = "server")]
-use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
-#[cfg(feature = "server")]
-use grovedb_path::SubtreePath;
-
-#[cfg(feature = "server")]
-use crate::drive::RootTree;
-#[cfg(feature = "server")]
-use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
-#[cfg(feature = "server")]
-use dpp::data_contract::document_type::IndexProperty;
 use dpp::data_contract::document_type::{DocumentTypeRef, Index};
-#[cfg(feature = "server")]
-use dpp::version::PlatformVersion;
 
-use super::conditions::{WhereClause, WhereOperator};
+use super::conditions::WhereClause;
+
+// Re-exports for the submodules and the `tests` module's
+// `use super::*;`. `WhereOperator` is used by every submodule that
+// builds path queries or executes; `QuerySyntaxError` is the canonical
+// error variant the mode detector and dispatchers surface.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub use super::conditions::WhereOperator;
+#[cfg(any(feature = "server", feature = "verify"))]
+pub use crate::error::query::QuerySyntaxError;
+
+pub mod mode_detection;
+// Index pickers + path-query builders are reachable from both the
+// server prove path and the SDK proof verifier; their submodule cfgs
+// match.
+pub mod index_picker;
+pub mod path_query;
+
+// Server-side execution paths.
+#[cfg(feature = "server")]
+pub mod drive_dispatcher;
+#[cfg(feature = "server")]
+pub mod execute_point_lookup;
+#[cfg(feature = "server")]
+pub mod execute_range_count;
+#[cfg(feature = "server")]
+pub mod executors;
+
+#[cfg(feature = "server")]
+pub use drive_dispatcher::{DocumentCountRequest, DocumentCountResponse};
+#[cfg(feature = "server")]
+pub use execute_range_count::RangeCountOptions;
+
+/// Hard cap on entries the count fan-out arms ask the executor
+/// to return.
+///
+/// Count fan-out (`PerInValue`, and the Aggregate + range
+/// sub-case of `RangeNoProof`) emits at most one entry per `In`
+/// value, and `In` is structurally capped at 100 by
+/// [`super::conditions::WhereClause::in_values`]. This cap sits
+/// well above the real bound. Two reasons to pin it explicitly
+/// instead of leaning on the operator-tunable
+/// `default_query_limit`:
+///
+/// 1. `default_query_limit` is a documents-fetch knob — applying
+///    it to count fan-out can truncate aggregate sums below |In|
+///    under tighter operator tuning, silently producing wrong
+///    totals.
+/// 2. Pinning a number here keeps the dispatcher's correctness
+///    independent of operator configuration.
+///
+/// `1024` is high enough that the cap never fires under the
+/// current `WhereClause::in_values` policy. If a future code
+/// change makes it reachable, treat that as a signal to revisit
+/// the bound before raising the constant.
+///
+/// # Pattern: failsafe cap for structurally-bounded ops
+///
+/// This is the prototype of a small project convention: when an
+/// executor-level operation has a structural upper bound enforced
+/// upstream (here, `WhereClause::in_values()`'s 100-cap on the In
+/// array), pin a failsafe cap at the executor boundary that sits
+/// well above the upstream bound rather than reusing an unrelated
+/// operator-tunable limit. The failsafe never fires under the
+/// upstream constraint — it exists to (a) keep behavior
+/// independent of operator config, and (b) localize the blast
+/// radius if the upstream constraint ever loosens. Constants
+/// added under this pattern should follow the
+/// `MAX_<OPERATION>_AS_FAILSAFE` naming so the role is visible
+/// at the use site.
+#[cfg(feature = "server")]
+pub const MAX_LIMIT_AS_FAILSAFE: u32 = 1024;
+
+/// Platform-wide **maximum** outer-walk cap for carrier-aggregate
+/// range-outer proofs (chapter 30 G8: `outer_range_field > X AND
+/// inner_acor_field > Y` with `group_by = [outer_range_field]` and
+/// `prove = true`).
+///
+/// The cap bounds the proof size: bytes grow linearly with the
+/// number of outer matches (~1 700 B per outer key in this
+/// chapter's widget fixture; `10 × 1 700 B ≈ 17 KB` worst case).
+/// 10 keeps the worst-case proof comfortably inside Tier-1 of the
+/// visualizer's shareable-link guidance (< 20 KB).
+///
+/// **Caller semantics:**
+/// - `request.limit = None` → server uses `MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT`
+///   (the default).
+/// - `request.limit = Some(n)` with `n ≤ MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT`
+///   → accepted; the dispatcher passes `n` through to
+///   `SizedQuery::limit` so the prover walks exactly `n` outer matches.
+/// - `request.limit = Some(n)` with `n > MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT`
+///   → rejected with `InvalidLimit`. The cap is a hard ceiling: callers
+///   that want more results must call repeatedly with disjoint
+///   outer-range windows.
+///
+/// Why the ceiling is a hardcoded compile-time constant rather
+/// than `drive_config.max_query_limit` (the operator-tunable
+/// runtime value): on the prove path, `SizedQuery::limit` is
+/// part of the serialized `PathQuery` and feeds the merk-root
+/// reconstruction. Anchoring the ceiling to a compile-time
+/// constant guarantees prover and verifier agree on what the
+/// "default when None" value is, regardless of operator config
+/// (same rationale as `RangeDistinctProof`'s use of
+/// `crate::config::DEFAULT_QUERY_LIMIT`).
+pub const MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT: u16 = 10;
 
 #[cfg(feature = "server")]
 #[cfg(test)]
@@ -36,8 +133,7 @@ mod tests;
 /// A query to count documents using CountTree elements in the index path.
 ///
 /// This struct encapsulates all the information needed to perform a count
-/// query on a document type's countable index, including optional split-by
-/// functionality for getting per-value counts.
+/// query on a document type's countable index.
 #[derive(Debug, Clone)]
 pub struct DriveDocumentCountQuery<'a> {
     /// The document type to count
@@ -50,693 +146,279 @@ pub struct DriveDocumentCountQuery<'a> {
     pub index: &'a Index,
     /// The equality where clauses that match index prefix properties
     pub where_clauses: Vec<WhereClause>,
-    /// Optional property to split counts by. When set, returns per-value
-    /// counts for this property instead of a single total count.
-    pub split_by_property: Option<String>,
 }
 
-/// An entry in a split count result, containing the serialized key
-/// and the count of documents matching that key value.
-#[derive(Debug, Clone, PartialEq)]
+/// An entry in a split count result, containing the serialized
+/// key(s) and the count of documents matching them.
+///
+/// For flat queries (per-`In`-value mode without a range, or
+/// per-distinct-value-in-range mode without an `In` on prefix) only
+/// `key` is meaningful and `in_key` is `None`.
+///
+/// For compound range-distinct queries (an `In` clause on a prefix
+/// property plus a range on the terminator) BOTH keys are carried:
+/// `in_key` is the In-fork's prefix value and `key` is the
+/// terminator value. Cross-fork aggregation is intentionally NOT
+/// done server-side — emitting the unmerged per-(in_key, key) shape
+/// lets `limit` push directly into grovedb (no pre-merge issue),
+/// keeps proof verification straightforward (no absence-proof
+/// gymnastics for omitted In branches), and gives callers strictly
+/// more information than a flat histogram. Callers reduce
+/// client-side when they want the sum.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SplitCountEntry {
-    /// The serialized key bytes for this value
+    /// The serialized prefix key for compound queries (the `In`
+    /// value for this fork). `None` for flat queries.
+    pub in_key: Option<Vec<u8>>,
+    /// The serialized terminator/value key for this entry.
     pub key: Vec<u8>,
-    /// The count of documents matching this key value
-    pub count: u64,
+    /// The count of documents matching this `(in_key, key)` tuple
+    /// (or just `key` for flat queries).
+    ///
+    /// Three-valued by design:
+    /// - `Some(n)` with `n > 0` — verified count for an entry the
+    ///   underlying data path materialized.
+    /// - `Some(0)` — caller queried this branch and the executor
+    ///   confirmed zero matching documents. Emitted by the no-proof
+    ///   point-lookup path's aggregated total wrapper (a single
+    ///   summed entry whose value can be 0) and by the no-proof range
+    ///   executors when their walk returns nothing. Not emitted
+    ///   per-In-branch under the current shape — see `None` below.
+    /// - `None` — reserved for a future absence-proof variant. The
+    ///   current `point_lookup_count_path_query` doesn't set
+    ///   `absence_proofs_for_non_existing_searched_keys: true`, so
+    ///   absent In branches are **omitted from the verified entry
+    ///   list entirely** (grovedb's `verify_query` doesn't surface
+    ///   `(path, key, None)` triples for them). Callers that need to
+    ///   distinguish "queried but absent" diff the request's In array
+    ///   against the returned entries by key. The variant exists in
+    ///   the type signature so a future path-query change that flips
+    ///   the flag surfaces absences via `count: None` without a
+    ///   breaking struct change — distinguishable from `Some(0)`
+    ///   (which a zero-count CountTree could never produce on its own
+    ///   since zero-count CountTrees aren't materialized in merk).
+    pub count: Option<u64>,
 }
 
-impl<'a> DriveDocumentCountQuery<'a> {
-    /// Returns `true` if the where-clause operator is one the count fast path
-    /// can serve via point-lookups in a CountTree.
+/// SQL-shaped count-query mode — names the response shape the
+/// caller asked for via `(select, group_by)` on the wire.
+///
+/// **Two count-mode enums coexist in this module.** This one names
+/// the *output shape* the request produces (single aggregate vs
+/// per-group entries). [`DocumentCountMode`] below names the
+/// *executor strategy* (which proof primitive / which walk path
+/// Drive uses to compute that shape). `CountMode` lives on
+/// [`DocumentCountRequest`] as the caller-supplied contract;
+/// `DocumentCountMode` is derived from `(CountMode, where_clauses,
+/// prove)` by [`DriveDocumentCountQuery::detect_mode`] just before
+/// dispatch.
+///
+/// **Result shape vs. executor strategy.** Each variant names a
+/// result shape — the per-variant docstring lists the
+/// where-clause shapes that route to that result shape and
+/// notes which executor strategy
+/// [`DriveDocumentCountQuery::detect_mode`] picks for each.
+/// `(in_field, range_field)` combinations on the same request
+/// are accepted on multiple `CountMode` variants — the executor
+/// strategy distinguishes them. Upstream routing
+/// (drive-abci's `validate_and_route`) picks the `CountMode`
+/// from the caller's `group_by`; downstream `detect_mode`
+/// converts the `(CountMode, where_clauses, prove)` triple into
+/// the resolved [`DocumentCountMode`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CountMode {
+    /// `select=COUNT, group_by=[]`. Single u64 result.
     ///
-    /// Today that's `Equal` (one path) and `In` (cartesian fork over the listed
-    /// values). Range operators (`>`, `<`, `Between*`, `StartsWith`) need a
-    /// boundary walk that the current PathQuery infrastructure cannot express;
-    /// callers detect those via [`Self::has_unsupported_operator`] and surface
-    /// an error instead of silently returning a wrong count.
-    fn is_indexable_for_count(op: WhereOperator) -> bool {
-        matches!(op, WhereOperator::Equal | WhereOperator::In)
-    }
-
-    /// Returns `true` if any where clause uses an operator the count fast path
-    /// cannot serve. Callers should treat this as a query-rejection signal.
-    pub fn has_unsupported_operator(where_clauses: &[WhereClause]) -> bool {
-        where_clauses
-            .iter()
-            .any(|wc| !Self::is_indexable_for_count(wc.operator))
-    }
-
-    /// Finds a countable index whose properties form a prefix that matches the
-    /// indexable (Equal / In) where-clause fields. For a count query:
-    /// - All indexable where-clause fields must appear as a prefix of the index properties
-    /// - The index must have `countable = true`
-    /// - Returns `None` if any where clause uses an operator other than `Equal` / `In`
-    /// - Among matching indexes, we prefer the one with the most properties
-    ///   matched by where clauses (most specific)
-    pub fn find_countable_index_for_where_clauses<'b>(
-        indexes: &'b BTreeMap<String, Index>,
-        where_clauses: &[WhereClause],
-    ) -> Option<&'b Index> {
-        if Self::has_unsupported_operator(where_clauses) {
-            return None;
-        }
-
-        let indexable_fields: BTreeSet<&str> = where_clauses
-            .iter()
-            .filter(|wc| Self::is_indexable_for_count(wc.operator))
-            .map(|wc| wc.field.as_str())
-            .collect();
-
-        let mut best_match: Option<(&Index, usize)> = None;
-
-        for index in indexes.values() {
-            if !index.countable.is_countable() {
-                continue;
-            }
-
-            // Check that the indexable where-clause fields form a prefix of
-            // the index properties.
-            let mut prefix_len = 0;
-            for prop in &index.properties {
-                if indexable_fields.contains(prop.name.as_str()) {
-                    prefix_len += 1;
-                } else {
-                    break;
-                }
-            }
-
-            // All indexable where-clause fields must be consumed as a prefix.
-            if prefix_len < indexable_fields.len() {
-                continue;
-            }
-
-            // Prefer the index with the longest matching prefix (most specific).
-            match &best_match {
-                None => best_match = Some((index, prefix_len)),
-                Some((_, best_len)) if prefix_len > *best_len => {
-                    best_match = Some((index, prefix_len));
-                }
-                _ => {}
-            }
-        }
-
-        best_match.map(|(index, _)| index)
-    }
-
-    /// Finds a countable index where:
-    /// - The indexable (Equal / In) where-clause fields form a prefix of the index properties
-    /// - The `split_property` is the next property after the covered prefix
-    /// - The index has `countable = true`
-    /// - Returns `None` if any where clause uses an operator other than `Equal` / `In`
-    pub fn find_countable_index_for_split<'b>(
-        indexes: &'b BTreeMap<String, Index>,
-        where_clauses: &[WhereClause],
-        split_property: &str,
-    ) -> Option<&'b Index> {
-        if Self::has_unsupported_operator(where_clauses) {
-            return None;
-        }
-
-        let indexable_fields: BTreeSet<&str> = where_clauses
-            .iter()
-            .filter(|wc| Self::is_indexable_for_count(wc.operator))
-            .map(|wc| wc.field.as_str())
-            .collect();
-
-        for index in indexes.values() {
-            if !index.countable.is_countable() {
-                continue;
-            }
-
-            // Check that indexable where-clause fields form a prefix.
-            let mut prefix_len = 0;
-            for prop in &index.properties {
-                if indexable_fields.contains(prop.name.as_str()) {
-                    prefix_len += 1;
-                } else {
-                    break;
-                }
-            }
-
-            if prefix_len < indexable_fields.len() {
-                continue;
-            }
-
-            // The split property must be the next property after the prefix.
-            if let Some(next_prop) = index.properties.get(prefix_len) {
-                if next_prop.name == split_property {
-                    return Some(index);
-                }
-            }
-        }
-
-        None
-    }
-
-    /// Executes the count query without generating a proof.
+    /// Where-clause shapes accepted:
+    /// - empty (relies on a `documentsCountable: true` doctype),
+    /// - Equal-only (fully covered by a `countable: true` index),
+    /// - one `In` (per-In fan-out, summed server-side),
+    /// - one range (uses `AggregateCountOnRange` for prove,
+    ///   `RangeNoProof` for no-proof),
+    /// - one `In` + one range on the no-proof path (per-In fan-out
+    ///   each doing a range walk; prove is rejected).
     ///
-    /// When `split_by_property` is `None`, returns the total count as a single
-    /// `SplitCountEntry` with an empty key.
+    /// `limit` is structurally meaningless (aggregate is one row)
+    /// and is rejected upstream when set.
+    Aggregate,
+
+    /// `select=COUNT, group_by=[in_field]`. One entry per `In` value.
     ///
-    /// When `split_by_property` is `Some`, returns per-value counts for the
-    /// split property.
-    #[cfg(feature = "server")]
-    pub fn execute_no_proof(
-        &self,
-        drive: &Drive,
-        transaction: TransactionArg,
-        platform_version: &PlatformVersion,
-    ) -> Result<Vec<SplitCountEntry>, Error> {
-        if self.split_by_property.is_some() {
-            self.execute_split_count(drive, transaction, platform_version)
-        } else {
-            let count = self.execute_total_count(drive, transaction, platform_version)?;
-            Ok(vec![SplitCountEntry { key: vec![], count }])
-        }
-    }
-
-    /// Executes the count query and generates a GroveDB proof.
+    /// Where-clause shapes accepted:
+    /// - one `In` clause on `group_by[0]` (no range clause): the
+    ///   canonical shape — routes to `PointLookupProof` on the
+    ///   prove path, `PerInValue` on the no-proof path.
+    /// - one `In` on `group_by[0]` AND a range clause on a
+    ///   different field: routes to
+    ///   `RangeAggregateCarrierProof` on the prove path
+    ///   (grovedb #663 carrier-ACOR — one verified `u64` per
+    ///   In branch, range collapsed) and `RangeNoProof` on the
+    ///   no-prove path (per-In-branch range walk). Both produce
+    ///   entries that line up with the caller's GROUP BY shape.
     ///
-    /// Returns the raw proof bytes. The caller is responsible for verifying
-    /// the proof and extracting the count from the verified result.
-    #[cfg(feature = "server")]
-    pub fn execute_with_proof(
-        &self,
-        drive: &Drive,
-        transaction: TransactionArg,
-        platform_version: &PlatformVersion,
-    ) -> Result<Vec<u8>, Error> {
-        let drive_version = &platform_version.drive;
+    /// `limit` is rejected upstream when set. The In array is
+    /// already capped at 100 entries by `WhereClause::in_values()`,
+    /// so the result size is bounded by construction; a separate
+    /// `limit` would either be redundant (≤ 100) or would silently
+    /// truncate the proof to fewer In branches than the caller
+    /// asked for (because the PointLookupProof path can't represent
+    /// a partial-In-array selection in its `SizedQuery`). Callers
+    /// that want fewer branches narrow the In array directly.
+    GroupByIn,
 
-        // Build the same path as execute_no_proof
-        let mut path = vec![
-            vec![RootTree::DataContractDocuments as u8],
-            self.contract_id.to_vec(),
-            vec![1u8],
-            self.document_type_name.as_bytes().to_vec(),
-        ];
-
-        // Walk the index properties, pushing property keys and equality values
-        for prop in &self.index.properties {
-            let matching_clause = self
-                .where_clauses
-                .iter()
-                .find(|wc| wc.field == prop.name && wc.operator == WhereOperator::Equal);
-
-            if let Some(clause) = matching_clause {
-                path.push(prop.name.as_bytes().to_vec());
-                let serialized_value = self.document_type.serialize_value_for_key(
-                    prop.name.as_str(),
-                    &clause.value,
-                    platform_version,
-                )?;
-                path.push(serialized_value);
-            } else {
-                break;
-            }
-        }
-
-        // Build a path query that covers the count tree and its contents
-        let mut query = Query::new();
-        query.insert_all();
-
-        let path_query = PathQuery::new(path, SizedQuery::new(query, None, None));
-
-        let proof = drive
-            .grove
-            .get_proved_path_query(&path_query, None, transaction, &drive_version.grove_version)
-            .unwrap()
-            .map_err(|e| Error::GroveDB(Box::new(e)))?;
-
-        Ok(proof)
-    }
-
-    /// Executes the total count query, returning a single u64 count.
+    /// `select=COUNT, group_by=[range_field]`. One entry per distinct
+    /// value within the range.
     ///
-    /// Walks the index level-by-level, branching on `In` clauses (each value
-    /// adds a path) and falling through to [`Self::count_recursive`] for any
-    /// trailing index properties that have no matching where clause.
-    #[cfg(feature = "server")]
-    fn execute_total_count(
-        &self,
-        drive: &Drive,
-        transaction: TransactionArg,
-        platform_version: &PlatformVersion,
-    ) -> Result<u64, Error> {
-        // Build the base path: [DataContractDocuments, contract_id, 1, doc_type_name]
-        let base_path = vec![
-            vec![RootTree::DataContractDocuments as u8],
-            self.contract_id.to_vec(),
-            vec![1u8],
-            self.document_type_name.as_bytes().to_vec(),
-        ];
-
-        self.expand_paths_and_count(drive, base_path, 0, transaction, platform_version)
-    }
-
-    /// Recursive helper for [`Self::execute_total_count`].
+    /// Where-clause shapes accepted:
+    /// - one range clause on `group_by[0]` (no `In` clause):
+    ///   canonical RangeDistinctProof / RangeNoProof distinct.
+    /// - one range on `group_by[0]` AND an `In` clause on a
+    ///   different field: prove path keeps `RangeDistinctProof`
+    ///   with In-fanout via grovedb subquery; no-prove path uses
+    ///   `RangeNoProof` distinct on the merged result. Per-
+    ///   distinct-value entries cover both branches of the In.
+    /// - two range clauses on different fields, the second
+    ///   being `group_by[0]`: routes to
+    ///   `RangeAggregateCarrierProof` (outer range + inner-ACOR
+    ///   carrier per grovedb #664 outer-range cap). See
+    ///   `outer_range_plus_inner_range_with_prove_and_group_by_range_routes_to_carrier_proof`
+    ///   for the regression test pinning this shape.
     ///
-    /// Visits the index property at `prop_idx`. If a matching where clause is
-    /// found:
-    /// - `Equal` → extend the current path with `(prop_name, value)` and recurse.
-    /// - `In` → for each value in the clause's array, clone the path, extend
-    ///   with that value, recurse, and sum the per-branch counts. This is the
-    ///   cartesian fork.
-    /// - anything else → unreachable; the index picker rejects the query.
+    /// `limit` caps the number of distinct values; on the prove
+    /// path it's validated-not-clamped (oversized values rejected
+    /// with `InvalidLimit`).
+    GroupByRange,
+
+    /// `select=COUNT, group_by=[in_field, range_field]`. One entry
+    /// per `(in_key, range_key)` pair.
     ///
-    /// If no clause matches the current property, hand off to
-    /// [`Self::count_recursive`] which sums all sub-counts at the remaining
-    /// levels.
-    #[cfg(feature = "server")]
-    fn expand_paths_and_count(
-        &self,
-        drive: &Drive,
-        current_path: Vec<Vec<u8>>,
-        prop_idx: usize,
-        transaction: TransactionArg,
-        platform_version: &PlatformVersion,
-    ) -> Result<u64, Error> {
-        let drive_version = &platform_version.drive;
+    /// Where-clause invariants: an `In` clause on `group_by[0]`
+    /// AND a range clause on `group_by[1]` (match-any over
+    /// the where-clauses list — clause ordering on the wire
+    /// doesn't affect routing).
+    /// `limit` is a **global cap on the emitted `(in_key, key)` lex
+    /// stream**, not per-In-branch. The executor pushes a single
+    /// `SizedQuery::limit` over the compound walk, so a request
+    /// with `|In| = 3` and `limit = 5` returns at most 5 entries
+    /// total across all In branches (ordered by `(in_key, key)`,
+    /// direction from the first `order_by` clause). On the prove
+    /// path it's validated-not-clamped (oversized values rejected
+    /// with `InvalidLimit`).
+    GroupByCompound,
+}
 
-        if prop_idx == self.index.properties.len() {
-            // All index properties resolved to a fixed key — O(1) read.
-            return Self::fetch_count_at_path(drive, &current_path, transaction, drive_version);
-        }
-
-        let prop = &self.index.properties[prop_idx];
-        let matching_clause = self.where_clauses.iter().find(|wc| wc.field == prop.name);
-
-        let Some(clause) = matching_clause else {
-            // No clause for this property. Walk all values at the remaining
-            // levels and sum.
-            let remaining = &self.index.properties[prop_idx..];
-            return Self::count_recursive(
-                drive,
-                current_path,
-                remaining,
-                transaction,
-                drive_version,
-            );
-        };
-
-        match clause.operator {
-            WhereOperator::Equal => {
-                let mut new_path = current_path;
-                new_path.push(prop.name.as_bytes().to_vec());
-                new_path.push(self.document_type.serialize_value_for_key(
-                    prop.name.as_str(),
-                    &clause.value,
-                    platform_version,
-                )?);
-                self.expand_paths_and_count(
-                    drive,
-                    new_path,
-                    prop_idx + 1,
-                    transaction,
-                    platform_version,
-                )
-            }
-            WhereOperator::In => {
-                let values = clause.value.as_array().ok_or_else(|| {
-                    Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
-                        "In where-clause value must be an array",
-                    ))
-                })?;
-
-                // `In` is set-membership: serialize each value to the canonical
-                // index key and dedupe before forking. Without this, a query
-                // like `age in [30, 30]` would visit and sum the same subtree
-                // twice (Codex review finding #3).
-                let mut seen_keys: BTreeSet<Vec<u8>> = BTreeSet::new();
-                let mut total: u64 = 0;
-                for v in values {
-                    let serialized = self.document_type.serialize_value_for_key(
-                        prop.name.as_str(),
-                        v,
-                        platform_version,
-                    )?;
-                    if !seen_keys.insert(serialized.clone()) {
-                        continue;
-                    }
-                    let mut new_path = current_path.clone();
-                    new_path.push(prop.name.as_bytes().to_vec());
-                    new_path.push(serialized);
-                    total = total.saturating_add(self.expand_paths_and_count(
-                        drive,
-                        new_path,
-                        prop_idx + 1,
-                        transaction,
-                        platform_version,
-                    )?);
-                }
-                Ok(total)
-            }
-            _ => Err(Error::Query(
-                QuerySyntaxError::InvalidWhereClauseComponents(
-                    "count fast path supports only Equal and In where-clause operators",
-                ),
-            )),
-        }
+impl CountMode {
+    /// `true` for [`Self::Aggregate`] (single-row response);
+    /// `false` for the three grouped variants. See each variant's
+    /// docstring for the per-shape semantics.
+    pub fn is_aggregate(self) -> bool {
+        matches!(self, Self::Aggregate)
     }
 
-    /// Executes a split count query, returning per-value counts for the
-    /// split property.
+    /// `true` for [`Self::GroupByRange`] and [`Self::GroupByCompound`]
+    /// — the two variants whose proof shape requires per-distinct-
+    /// value `KVCount` ops. See each variant's docstring for the
+    /// per-shape proof routing.
+    pub fn requires_distinct_walk(self) -> bool {
+        matches!(self, Self::GroupByRange | Self::GroupByCompound)
+    }
+
+    /// `true` for [`Self::GroupByRange`] and [`Self::GroupByCompound`]
+    /// — the two variants whose result size isn't structurally
+    /// bounded. [`Self::Aggregate`] and [`Self::GroupByIn`] reject
+    /// `limit` upstream; see each variant's docstring for the
+    /// per-shape reasoning.
+    pub fn accepts_limit(self) -> bool {
+        matches!(self, Self::GroupByRange | Self::GroupByCompound)
+    }
+}
+
+/// Classification of a count query's shape, used to dispatch to the
+/// right executor. Returned by
+/// [`DriveDocumentCountQuery::detect_mode`].
+///
+/// The discriminator is purely a function of the where-clause
+/// operators + the caller's [`CountMode`] + `prove`; it does not
+/// depend on the contract's index set. Picking a covering index for
+/// the chosen mode is a separate step that requires the document
+/// type's `BTreeMap<String, Index>`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DocumentCountMode {
+    /// No range, no `In` — single summed entry with empty key. Reads
+    /// the `CountTree` count directly at the indexed path.
+    Total,
+    /// Exactly one `In` clause, no range — one entry per (deduped)
+    /// `In` value, each computed as the count at that single value.
+    /// The `In` doubles as the per-value split signal.
+    PerInValue,
+    /// Exactly one range clause, no proof — walks the property-name
+    /// `ProvableCountTree`'s children inside the range. Returns either
+    /// a single summed entry or per-distinct-value entries depending
+    /// on whether the caller's [`CountMode`] requires a distinct walk
+    /// ([`CountMode::GroupByRange`] / [`CountMode::GroupByCompound`])
+    /// or not ([`CountMode::Aggregate`]).
+    RangeNoProof,
+    /// Exactly one range clause + `prove = true` +
+    /// [`CountMode::Aggregate`] — produces a grovedb
+    /// `AggregateCountOnRange` proof that verifies to a single u64.
+    /// The merk-level primitive returns one aggregate; per-distinct-
+    /// value entries with proof go through [`Self::RangeDistinctProof`]
+    /// instead.
+    RangeProof,
+    /// Exactly one range clause + `prove = true` +
+    /// [`CountMode::GroupByRange`] or [`CountMode::GroupByCompound`]
+    /// — produces a regular range proof against the property-name
+    /// `ProvableCountTree`. The
+    /// proof's `KVCount(key, value, count)` ops carry per-distinct-
+    /// value counts, each cryptographically committed via
+    /// `node_hash_with_count` to the merk root. The verifier walks the
+    /// proof op stream and emits a per-key count map, no opt-in
+    /// aggregate-collapse wrapper. Proof size is O(distinct values
+    /// matched) rather than the O(log n) of [`Self::RangeProof`], but
+    /// still much smaller than materialize-and-count.
+    RangeDistinctProof,
+    /// No range clause + `prove = true` — produces a per-branch
+    /// `Element::CountTree` proof. Either an unfiltered total
+    /// (`documents_countable: true` fast path, proving the
+    /// doctype's primary-key CountTree directly) or a covered
+    /// Equal/`In` lookup against a `countable: true` index (proving
+    /// one CountTree element per matched branch via
+    /// [`DriveDocumentCountQuery::point_lookup_count_path_query`]).
+    /// Proof size is O(k × log n) where k is the number of covered
+    /// branches (1 for the empty-where fast path and Equal-only
+    /// fully-covered case; ≤ |In values| for In-on-prefix). No
+    /// document materialization, no `u16::MAX` matching-docs cap —
+    /// the merk-level `count_value` IS the result, the SDK
+    /// extracts it via `verify_point_lookup_count_proof`.
+    PointLookupProof,
+    /// Exactly one `In` clause + one range clause + `prove = true`
+    /// + [`CountMode::GroupByIn`] — produces a grovedb carrier
+    /// `AggregateCountOnRange` proof: one outer-key descent per
+    /// `In` value, each terminating in an ACOR boundary walk over
+    /// the per-branch range subtree. Returns one `(in_key, u64)`
+    /// pair per resolved In branch — same per-key aggregate
+    /// semantics as the no-proof per-In fan-out, just verifiable.
     ///
-    /// Walks the index prefix that precedes `split_by_property` level by
-    /// level, branching on `In` clauses. For each fully-resolved prefix,
-    /// runs the per-split-value sub-query (see [`Self::collect_split_at_prefix`])
-    /// and merges the results by split key, summing counts.
-    #[cfg(feature = "server")]
-    fn execute_split_count(
-        &self,
-        drive: &Drive,
-        transaction: TransactionArg,
-        platform_version: &PlatformVersion,
-    ) -> Result<Vec<SplitCountEntry>, Error> {
-        let split_property = self
-            .split_by_property
-            .as_deref()
-            .expect("split_by_property must be Some when calling execute_split_count");
-
-        let split_prop_idx = self
-            .index
-            .properties
-            .iter()
-            .position(|p| p.name == split_property)
-            .unwrap_or(0);
-
-        let base_path = vec![
-            vec![RootTree::DataContractDocuments as u8],
-            self.contract_id.to_vec(),
-            vec![1u8],
-            self.document_type_name.as_bytes().to_vec(),
-        ];
-
-        let mut merged: BTreeMap<Vec<u8>, u64> = BTreeMap::new();
-        self.expand_split_prefix_paths(
-            drive,
-            base_path,
-            0,
-            split_prop_idx,
-            split_property,
-            transaction,
-            platform_version,
-            &mut merged,
-        )?;
-
-        Ok(merged
-            .into_iter()
-            .filter(|(_, count)| *count > 0)
-            .map(|(key, count)| SplitCountEntry { key, count })
-            .collect())
-    }
-
-    /// Walks the index up to `split_prop_idx`, branching on `In`. At each
-    /// fully-resolved prefix, calls [`Self::collect_split_at_prefix`] to
-    /// gather the per-split-value counts, and accumulates them into `merged`.
-    #[cfg(feature = "server")]
-    #[allow(clippy::too_many_arguments)]
-    fn expand_split_prefix_paths(
-        &self,
-        drive: &Drive,
-        current_path: Vec<Vec<u8>>,
-        prop_idx: usize,
-        split_prop_idx: usize,
-        split_property: &str,
-        transaction: TransactionArg,
-        platform_version: &PlatformVersion,
-        merged: &mut BTreeMap<Vec<u8>, u64>,
-    ) -> Result<(), Error> {
-        if prop_idx == split_prop_idx {
-            // Reached the split property level under this prefix. Run the
-            // per-split-value sub-query and merge entries by key.
-            return self.collect_split_at_prefix(
-                drive,
-                current_path,
-                split_prop_idx,
-                split_property,
-                transaction,
-                platform_version,
-                merged,
-            );
-        }
-
-        let prop = &self.index.properties[prop_idx];
-        let clause = self
-            .where_clauses
-            .iter()
-            .find(|wc| wc.field == prop.name)
-            .ok_or_else(|| {
-                // The index picker guarantees every property before the split
-                // property has a matching clause; missing one indicates a
-                // mis-picked index.
-                Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
-                    "split count: missing where clause for an index property preceding the split property",
-                ))
-            })?;
-
-        match clause.operator {
-            WhereOperator::Equal => {
-                let mut new_path = current_path;
-                new_path.push(prop.name.as_bytes().to_vec());
-                new_path.push(self.document_type.serialize_value_for_key(
-                    prop.name.as_str(),
-                    &clause.value,
-                    platform_version,
-                )?);
-                self.expand_split_prefix_paths(
-                    drive,
-                    new_path,
-                    prop_idx + 1,
-                    split_prop_idx,
-                    split_property,
-                    transaction,
-                    platform_version,
-                    merged,
-                )
-            }
-            WhereOperator::In => {
-                let values = clause.value.as_array().ok_or_else(|| {
-                    Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
-                        "In where-clause value must be an array",
-                    ))
-                })?;
-
-                // Same dedup as in `expand_paths_and_count`: serialize each
-                // value to the canonical index key and skip duplicates.
-                // Without this, a duplicated `In` value on the prefix would
-                // visit the same prefix subtree twice and double its
-                // contribution to the merged split counts.
-                let mut seen_keys: BTreeSet<Vec<u8>> = BTreeSet::new();
-                for v in values {
-                    let serialized = self.document_type.serialize_value_for_key(
-                        prop.name.as_str(),
-                        v,
-                        platform_version,
-                    )?;
-                    if !seen_keys.insert(serialized.clone()) {
-                        continue;
-                    }
-                    let mut new_path = current_path.clone();
-                    new_path.push(prop.name.as_bytes().to_vec());
-                    new_path.push(serialized);
-                    self.expand_split_prefix_paths(
-                        drive,
-                        new_path,
-                        prop_idx + 1,
-                        split_prop_idx,
-                        split_property,
-                        transaction,
-                        platform_version,
-                        merged,
-                    )?;
-                }
-                Ok(())
-            }
-            _ => Err(Error::Query(
-                QuerySyntaxError::InvalidWhereClauseComponents(
-                    "split count fast path supports only Equal and In where-clause operators",
-                ),
-            )),
-        }
-    }
-
-    /// Reads all per-value sub-counts for `split_property` under
-    /// `prefix_path`, summing per-key counts into `merged`. Mirrors the
-    /// original (pre-`In`-support) loop; factored out so the prefix-walk
-    /// recursion can call it once per resolved prefix.
-    #[cfg(feature = "server")]
-    #[allow(clippy::too_many_arguments)]
-    fn collect_split_at_prefix(
-        &self,
-        drive: &Drive,
-        prefix_path: Vec<Vec<u8>>,
-        split_prop_idx: usize,
-        split_property: &str,
-        transaction: TransactionArg,
-        platform_version: &PlatformVersion,
-        merged: &mut BTreeMap<Vec<u8>, u64>,
-    ) -> Result<(), Error> {
-        let drive_version = &platform_version.drive;
-
-        // Push the split-property key onto the prefix to address the per-value
-        // subtree level.
-        let mut path = prefix_path;
-        path.push(split_property.as_bytes().to_vec());
-
-        let mut query = Query::new();
-        query.insert_all();
-        let path_query = PathQuery::new(path.clone(), SizedQuery::new(query, None, None));
-
-        let mut drive_operations = vec![];
-        let result = drive.grove_get_raw_path_query(
-            &path_query,
-            transaction,
-            QueryResultType::QueryKeyElementPairResultType,
-            &mut drive_operations,
-            drive_version,
-        );
-
-        let (elements, _) = match result {
-            Ok(result) => result,
-            Err(Error::GroveDB(e))
-                if matches!(
-                    e.as_ref(),
-                    grovedb::Error::PathNotFound(_)
-                        | grovedb::Error::PathParentLayerNotFound(_)
-                        | grovedb::Error::PathKeyNotFound(_)
-                ) =>
-            {
-                // No documents under this prefix; nothing to merge.
-                return Ok(());
-            }
-            Err(e) => return Err(e),
-        };
-
-        let key_elements = elements.to_key_elements();
-        if key_elements.is_empty() {
-            return Ok(());
-        }
-
-        let remaining_properties = &self.index.properties[split_prop_idx + 1..];
-
-        for (key, _element) in key_elements {
-            let mut value_path = path.clone();
-            value_path.push(key.clone());
-
-            let count = if remaining_properties.is_empty() {
-                Self::fetch_count_at_path(drive, &value_path, transaction, drive_version)?
-            } else {
-                Self::count_recursive(
-                    drive,
-                    value_path,
-                    remaining_properties,
-                    transaction,
-                    drive_version,
-                )?
-            };
-
-            if count == 0 {
-                continue;
-            }
-            *merged.entry(key).or_insert(0) += count;
-        }
-
-        Ok(())
-    }
-
-    /// Fetches the CountTree element count at the given path.
-    /// The CountTree element is at key [0] under the path.
-    #[cfg(feature = "server")]
-    fn fetch_count_at_path(
-        drive: &Drive,
-        path: &[Vec<u8>],
-        transaction: TransactionArg,
-        drive_version: &DriveVersion,
-    ) -> Result<u64, Error> {
-        let mut drive_operations = vec![];
-        let path_refs: Vec<&[u8]> = path.iter().map(|p| p.as_slice()).collect();
-        let element = drive.grove_get_raw_optional(
-            SubtreePath::from(path_refs.as_slice()),
-            &[0],
-            DirectQueryType::StatefulDirectQuery,
-            transaction,
-            &mut drive_operations,
-            drive_version,
-        )?;
-
-        Ok(element.map_or(0, |e| e.count_value_or_default()))
-    }
-
-    /// Recursively descends through remaining index property levels,
-    /// iterating over all values at each level, and sums the CountTree
-    /// counts at the terminal level.
-    #[cfg(feature = "server")]
-    fn count_recursive(
-        drive: &Drive,
-        current_path: Vec<Vec<u8>>,
-        remaining_properties: &[IndexProperty],
-        transaction: TransactionArg,
-        drive_version: &DriveVersion,
-    ) -> Result<u64, Error> {
-        if remaining_properties.is_empty() {
-            return Self::fetch_count_at_path(drive, &current_path, transaction, drive_version);
-        }
-
-        let prop = &remaining_properties[0];
-        let rest = &remaining_properties[1..];
-
-        // Push the index property key to descend into that level
-        let mut property_path = current_path;
-        property_path.push(prop.name.as_bytes().to_vec());
-
-        // Query all children (value subtrees) at this property level
-        let mut query = Query::new();
-        query.insert_all();
-
-        let path_query = PathQuery::new(property_path.clone(), SizedQuery::new(query, None, None));
-
-        let mut drive_operations = vec![];
-        let result = drive.grove_get_raw_path_query(
-            &path_query,
-            transaction,
-            QueryResultType::QueryKeyElementPairResultType,
-            &mut drive_operations,
-            drive_version,
-        );
-
-        let (elements, _) = match result {
-            Ok(result) => result,
-            Err(Error::GroveDB(e))
-                if matches!(
-                    e.as_ref(),
-                    grovedb::Error::PathNotFound(_)
-                        | grovedb::Error::PathParentLayerNotFound(_)
-                        | grovedb::Error::PathKeyNotFound(_)
-                ) =>
-            {
-                return Ok(0);
-            }
-            Err(e) => return Err(e),
-        };
-
-        let key_elements = elements.to_key_elements();
-
-        if key_elements.is_empty() {
-            return Ok(0);
-        }
-
-        let mut total_count: u64 = 0;
-
-        for (key, _element) in key_elements {
-            let mut value_path = property_path.clone();
-            value_path.push(key);
-
-            let sub_count =
-                Self::count_recursive(drive, value_path, rest, transaction, drive_version)?;
-            total_count = total_count.saturating_add(sub_count);
-        }
-
-        Ok(total_count)
-    }
+    /// Proof size is `O(|In values| · (log B + log C'))` where `B`
+    /// is the In-property's distinct-value count and `C'` is the
+    /// terminator subtree's distinct-value count. Smaller than the
+    /// alternative [`Self::RangeDistinctProof`] (which scales with
+    /// the number of distinct in-range terminator values per
+    /// branch, not per-branch log-bound boundary nodes) and
+    /// preserves per-In aggregate granularity that GROUP BY
+    /// `[in_field, range_field]` can't express.
+    ///
+    /// Path-query shape (see
+    /// [`DriveDocumentCountQuery::carrier_aggregate_count_path_query`]):
+    /// outer Keys = serialized In values; subquery_path = ranged
+    /// property name; subquery = ACOR(range). Verified via
+    /// [`grovedb::GroveDb::verify_aggregate_count_query_per_key`]
+    /// (returns `Vec<(Vec<u8>, u64)>`).
+    ///
+    /// Enabled by grovedb PR #663 ("allow AggregateCountOnRange as
+    /// carrier subquery"). Before that PR this shape was rejected
+    /// in [`Self::detect_mode`] with the message "range count
+    /// queries with an `in` clause are not supported on the
+    /// aggregate prove path".
+    RangeAggregateCarrierProof,
 }

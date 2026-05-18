@@ -77,7 +77,7 @@ pub enum QuerySyntaxError {
     InvalidParameter(String),
     /// Query invalid format for where clause error
     #[error("query invalid format for where clause error: {0}")]
-    InvalidFormatWhereClause(&'static str),
+    InvalidFormatWhereClause(String),
 
     /// Conflicting conditions error
     #[error("conflicting conditions error: {0}")]
