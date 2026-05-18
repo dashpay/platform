@@ -2099,7 +2099,13 @@ public class PlatformWalletPersistenceHandler {
                     for identity in identitiesToDelete {
                         backgroundContext.delete(identity)
                     }
-                    backgroundContext.delete(walletRow)
+                }
+
+                let txoDescriptor = FetchDescriptor<PersistentTxo>(
+                    predicate: #Predicate<PersistentTxo> { $0.walletId == walletId }
+                )
+                for row in try backgroundContext.fetch(txoDescriptor) {
+                    backgroundContext.delete(row)
                 }
 
                 let pendingDescriptor = FetchDescriptor<PersistentPendingInput>(
@@ -2108,6 +2114,12 @@ public class PlatformWalletPersistenceHandler {
                 for row in try backgroundContext.fetch(pendingDescriptor) {
                     backgroundContext.delete(row)
                 }
+
+                if let walletRow = walletRow {
+                    backgroundContext.delete(walletRow)
+                }
+
+                try backgroundContext.save()
 
                 let txRows = try backgroundContext.fetch(FetchDescriptor<PersistentTransaction>())
                 for tx in txRows where tx.outputs.isEmpty &&
