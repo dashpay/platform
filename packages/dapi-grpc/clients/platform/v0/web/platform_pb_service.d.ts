@@ -139,15 +139,6 @@ type PlatformgetDocuments = {
   readonly responseType: typeof platform_pb.GetDocumentsResponse;
 };
 
-type PlatformgetDocumentsCount = {
-  readonly methodName: string;
-  readonly service: typeof Platform;
-  readonly requestStream: false;
-  readonly responseStream: false;
-  readonly requestType: typeof platform_pb.GetDocumentsCountRequest;
-  readonly responseType: typeof platform_pb.GetDocumentsCountResponse;
-};
-
 type PlatformgetIdentityByPublicKeyHash = {
   readonly methodName: string;
   readonly service: typeof Platform;
@@ -588,7 +579,6 @@ export class Platform {
   static readonly getDataContractHistory: PlatformgetDataContractHistory;
   static readonly getDataContracts: PlatformgetDataContracts;
   static readonly getDocuments: PlatformgetDocuments;
-  static readonly getDocumentsCount: PlatformgetDocumentsCount;
   static readonly getIdentityByPublicKeyHash: PlatformgetIdentityByPublicKeyHash;
   static readonly getIdentityByNonUniquePublicKeyHash: PlatformgetIdentityByNonUniquePublicKeyHash;
   static readonly waitForStateTransitionResult: PlatformwaitForStateTransitionResult;
@@ -804,15 +794,6 @@ export class PlatformClient {
   getDocuments(
     requestMessage: platform_pb.GetDocumentsRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetDocumentsResponse|null) => void
-  ): UnaryResponse;
-  getDocumentsCount(
-    requestMessage: platform_pb.GetDocumentsCountRequest,
-    metadata: grpc.Metadata,
-    callback: (error: ServiceError|null, responseMessage: platform_pb.GetDocumentsCountResponse|null) => void
-  ): UnaryResponse;
-  getDocumentsCount(
-    requestMessage: platform_pb.GetDocumentsCountRequest,
-    callback: (error: ServiceError|null, responseMessage: platform_pb.GetDocumentsCountResponse|null) => void
   ): UnaryResponse;
   getIdentityByPublicKeyHash(
     requestMessage: platform_pb.GetIdentityByPublicKeyHashRequest,

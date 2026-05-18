@@ -206,14 +206,6 @@ impl_transport_request_grpc!(
 );
 
 impl_transport_request_grpc!(
-    platform_proto::GetDocumentsCountRequest,
-    platform_proto::GetDocumentsCountResponse,
-    PlatformGrpcClient,
-    RequestSettings::default(),
-    get_documents_count
-);
-
-impl_transport_request_grpc!(
     platform_proto::GetDataContractRequest,
     platform_proto::GetDataContractResponse,
     PlatformGrpcClient,
