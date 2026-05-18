@@ -91,10 +91,12 @@ impl Drive {
     /// `sum_value_or_default()`. Used by the `documents_summable:
     /// Some(_)` fast path on the total-sum flow.
     ///
-    /// Returns 0 when the element doesn't exist (e.g. fresh contract
-    /// with no documents inserted).
-    ///
-    /// Mirror of count's `read_primary_key_count_tree`.
+    /// `insert_contract_operations_v0` unconditionally creates a
+    /// sum-bearing tree at `[..., doctype, 0]` for every applied
+    /// document type whose `documents_summable` is set, so a missing
+    /// element here indicates contract-state corruption or a
+    /// mis-applied contract — fail fast rather than silently
+    /// returning 0.
     pub(super) fn read_primary_key_sum_tree(
         &self,
         contract_id: &[u8; 32],
@@ -110,14 +112,21 @@ impl Drive {
             document_type_name.as_bytes(),
         ];
         let mut drive_operations = vec![];
-        let element = self.grove_get_raw_optional(
-            grovedb_path::SubtreePath::from(path.as_slice()),
-            &[0],
-            crate::util::grove_operations::DirectQueryType::StatefulDirectQuery,
-            transaction,
-            &mut drive_operations,
-            drive_version,
-        )?;
-        Ok(element.map_or(0, |e| e.sum_value_or_default()))
+        let element = self
+            .grove_get_raw_optional(
+                grovedb_path::SubtreePath::from(path.as_slice()),
+                &[0],
+                crate::util::grove_operations::DirectQueryType::StatefulDirectQuery,
+                transaction,
+                &mut drive_operations,
+                drive_version,
+            )?
+            .ok_or_else(|| {
+                Error::Drive(crate::error::drive::DriveError::CorruptedCodeExecution(
+                    "missing primary-key sum tree for an applied document type — \
+                     insert_contract_operations_v0 must have created it",
+                ))
+            })?;
+        Ok(element.sum_value_or_default())
     }
 }

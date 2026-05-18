@@ -67,7 +67,13 @@ The named property must be `type: integer` and listed in the document type's `re
 Selection lives in `DocumentTypePrimaryKeyTreeType::primary_key_tree_type` — the same dispatcher that picks the count-tree variant — extended to consider sum flags alongside count flags:
 
 ```rust
-// proposed v1 selection logic; the v0 count-only logic stays in place behind a version bump
+// proposed v1 selection logic — **sum-only projection** for chapter clarity.
+// The real dispatcher also picks the combined count+sum variants
+// (`CountSumTree`, `ProvableCountSumTree`,
+// `ProvableCountProvableSumTree`) when count flags are set alongside
+// the sum flags — those branches are omitted here and covered in
+// "Choosing What to Set" below. The v0 count-only logic stays in
+// place behind a version bump.
 match (range_summable, documents_summable, range_countable, documents_countable) {
     (true,  _,    _,    _)    => Ok(TreeType::ProvableSumTree),
     (false, true, _,    _)    => Ok(TreeType::SumTree),

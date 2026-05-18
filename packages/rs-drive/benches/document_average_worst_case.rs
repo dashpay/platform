@@ -2172,8 +2172,9 @@ fn fixture_path(row_count: u64) -> PathBuf {
 }
 
 fn fixture_marker(row_count: u64) -> String {
+    let protocol_version = PlatformVersion::latest().protocol_version;
     format!(
-        "schema_version={FIXTURE_SCHEMA_VERSION}\nrows={row_count}\nstudents={STUDENT_COUNT}\nclasses={CLASS_COUNT}\nsemesters={SEMESTER_COUNT}\n"
+        "schema_version={FIXTURE_SCHEMA_VERSION}\nprotocol_version={protocol_version}\nrows={row_count}\nstudents={STUDENT_COUNT}\nclasses={CLASS_COUNT}\nsemesters={SEMESTER_COUNT}\n"
     )
 }
 
