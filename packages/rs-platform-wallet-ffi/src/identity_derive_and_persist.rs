@@ -405,8 +405,8 @@ mod tests {
     use super::*;
     use crate::derive_and_persist_callbacks::{
         dash_sdk_identity_key_persister_create, dash_sdk_identity_key_persister_destroy,
-        dash_sdk_mnemonic_resolver_create, dash_sdk_mnemonic_resolver_destroy,
     };
+    use rs_sdk_ffi::{dash_sdk_mnemonic_resolver_create, dash_sdk_mnemonic_resolver_destroy};
     use std::ffi::CStr;
     use std::sync::Mutex;
 

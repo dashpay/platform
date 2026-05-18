@@ -237,9 +237,7 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_resolver_and_path(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::derive_and_persist_callbacks::{
-        dash_sdk_mnemonic_resolver_create, dash_sdk_mnemonic_resolver_destroy,
-    };
+    use rs_sdk_ffi::{dash_sdk_mnemonic_resolver_create, dash_sdk_mnemonic_resolver_destroy};
     use std::ffi::CString;
 
     /// English BIP-39 test vector (all-zero entropy).
