@@ -19,6 +19,51 @@ structured so a future `SecretStore` (currently sketched in
   safe under a concurrent writer.
 - **No private-key material.** See [`SECRETS.md`](./SECRETS.md).
 - `Send + Sync`; usable behind `Arc<dyn PlatformWalletPersistence>`.
+- Writers use `prepare_cached` so each INSERT/UPDATE is parsed once
+  per `Connection` lifetime; subsequent flushes hit the cache.
+
+## Flush semantics
+
+`flush()` and `Immediate`-mode `store()` succeed-or-restore: on a
+transient SQLite failure (`SQLITE_BUSY` / `SQLITE_LOCKED`) the
+buffered changeset is merged back into the per-wallet buffer (LWW
+with anything `store()`-d during the failed transaction) and the
+call returns a `PersistenceError::Backend(_)` whose payload contains
+the marker `flush failed transiently`. **Retry the call** — do not
+discard state. Fatal failures (integrity check, encode error, mutex
+poison, …) drop the buffer and surface verbatim.
+
+The full classification lives on
+[`WalletStorageError::is_transient`](src/sqlite/error.rs); the
+boundary mapping into `PersistenceError::Backend(String)` flattens
+the `Display` chain so operators can grep for variant names + hex
+wallet ids in production logs.
+
+## load() reconstruction
+
+`SqlitePersister::load()` returns the base `ClientStartState`
+(plain struct, two slots — no `#[non_exhaustive]`):
+
+| Slot | Reader | Status |
+|---|---|---|
+| `platform_addresses` | `schema::platform_addrs::load_all` (a `wallet_meta::list_ids` → `load_state` loop) | populated |
+| `wallets`            | — | empty pending upstream `Wallet::from_persisted` |
+
+The `identities` / `contacts` / `asset_locks` per-area readers exist
+as hardened dormant helpers (`schema::<area>::load_state`) but are not
+wired into `load()` — `ClientStartState` carries no slot for them.
+
+Loading is **fail-hard**: any row that fails to decode, or a stored
+`wallet_id` that is not exactly 32 bytes, aborts the whole call with a
+typed [`WalletStorageError`](src/sqlite/error.rs)
+(`BincodeDecode` / `BlobDecode` / `InvalidWalletIdLength`). There is no
+corruption tolerance, no per-row skip, and no partial `Ok` — a corrupt
+database surfaces as an error rather than silently losing rows.
+
+The summary `tracing::info!` carries `wallets_seen`,
+`addresses_loaded`, `wallets_rehydrated`, and
+`wallets_pending_rehydration` (the count of wallets that *would* be
+rehydrated once upstream provides `Wallet::from_persisted`).
 
 ## Library usage
 
@@ -30,7 +75,7 @@ use platform_wallet_storage::{SqlitePersister, SqlitePersisterConfig};
 let config = SqlitePersisterConfig::new("/tmp/wallets.db");
 let persister: Arc<dyn PlatformWalletPersistence> =
     Arc::new(SqlitePersister::open(config)?);
-# Ok::<_, platform_wallet_storage::SqlitePersisterError>(())
+# Ok::<_, platform_wallet_storage::WalletStorageError>(())
 ```
 
 The same types are also reachable via their canonical submodule path —
@@ -71,7 +116,7 @@ validation failure (e.g. corrupt backup source).
 | `sqlite` | yes | SQLite persister (`platform_wallet_storage::sqlite`) and all of its native deps (`rusqlite`, `refinery`, `dpp`, `dash-sdk`, `key-wallet`, etc.) |
 | `cli` | yes | Maintenance binary `platform-wallet-storage`. Implies `sqlite`. |
 | `secrets` | no | Reserved for the future `SecretStore` submodule. No code lands today. |
-| `test-helpers` | no | Crate-private `lock_conn_for_test` / `config_for_test` accessors. Downstream MUST NOT enable. |
+| `__test-helpers` | no | Crate-private `lock_conn_for_test` / `config_for_test` accessors. The double-underscore prefix follows Cargo's "do not enable from downstream" convention; the methods are also `#[doc(hidden)]`. |
 
 `cargo build -p platform-wallet-storage --no-default-features` builds
 the crate with neither the SQLite backend nor the CLI compiled in.

@@ -42,6 +42,7 @@ rusqlite = { version = "0.38", features = [
     "backup",
     "blob",
     "hooks",
+    "trace",
 ], optional = true }
 refinery = { version = "0.9", default-features = false, features = [
     "rusqlite",
@@ -72,7 +73,9 @@ assert_cmd = "2"
 predicates = "3"
 static_assertions = "1"
 filetime = "0.2"
-platform-wallet-storage = { path = ".", features = ["sqlite", "cli", "test-helpers"] }
+tracing-test = { version = "0.2", features = ["no-env-filter"] }
+serial_test = "3"
+platform-wallet-storage = { path = ".", features = ["sqlite", "cli", "__test-helpers"] }
 
 [features]
 default = ["sqlite", "cli"]
@@ -106,6 +109,8 @@ cli = [
 # beyond a `// pub mod secrets;` marker in `src/lib.rs`.
 secrets = []
 # Exposes `lock_conn_for_test` / `config_for_test` accessors on
-# `SqlitePersister` so this crate's own integration tests can probe the
-# write connection. Downstream code MUST NOT enable this feature.
-test-helpers = ["sqlite"]
+# `SqlitePersister` so this crate's own integration tests can probe
+# the write connection. The double-underscore prefix follows Cargo's
+# convention for "MUST NOT enable from downstream" features
+# (https://doc.rust-lang.org/cargo/reference/features.html#feature-resolver-version-2).
+__test-helpers = ["sqlite"]

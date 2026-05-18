@@ -337,3 +337,211 @@ fn tc023_one_flush_is_one_transaction() {
         commits.load(Ordering::SeqCst)
     );
 }
+
+// ---------------------------------------------------------------------------
+// P2 — retry-safe flush
+// ---------------------------------------------------------------------------
+
+use platform_wallet::changeset::PersistenceError;
+use platform_wallet_storage::WalletStorageError;
+use rusqlite::ErrorCode;
+
+fn make_busy_error() -> WalletStorageError {
+    WalletStorageError::Sqlite(rusqlite::Error::SqliteFailure(
+        rusqlite::ffi::Error {
+            code: ErrorCode::DatabaseBusy,
+            extended_code: rusqlite::ffi::SQLITE_BUSY,
+        },
+        Some("database is busy".into()),
+    ))
+}
+
+fn make_fatal_error() -> WalletStorageError {
+    WalletStorageError::IntegrityCheckFailed {
+        report: "simulated fatal".into(),
+    }
+}
+
+fn install_commit_counter(
+    persister: &platform_wallet_storage::SqlitePersister,
+) -> std::sync::Arc<std::sync::atomic::AtomicUsize> {
+    use std::sync::atomic::Ordering;
+    use std::sync::Arc;
+    let counter = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counter_clone = Arc::clone(&counter);
+    let conn = persister.lock_conn_for_test();
+    conn.commit_hook(Some(move || {
+        counter_clone.fetch_add(1, Ordering::SeqCst);
+        false
+    }))
+    .expect("install commit hook");
+    counter
+}
+
+fn read_synced_height(path: &std::path::Path, w: &[u8; 32]) -> Option<i64> {
+    use rusqlite::OptionalExtension;
+    ro_conn(path)
+        .query_row(
+            "SELECT synced_height FROM core_sync_state WHERE wallet_id = ?1",
+            rusqlite::params![w.as_slice()],
+            |row| row.get(0),
+        )
+        .optional()
+        .unwrap()
+}
+
+/// TC-P2-001 — happy-path flush is one transaction; second flush is a no-op.
+#[test]
+fn tc_p2_001_happy_path_one_tx_then_noop() {
+    use std::sync::atomic::Ordering;
+    let (persister, _tmp, path) = fresh_persister_with_mode(FlushMode::Manual);
+    let w = wid(0xC1);
+    ensure_wallet_meta(&persister, &w);
+    persister
+        .store(w, changeset(core_with_height(5, 5)))
+        .unwrap();
+    let commits = install_commit_counter(&persister);
+    persister.flush(w).expect("first flush ok");
+    persister.flush(w).expect("second flush ok (no-op)");
+    assert_eq!(
+        commits.load(Ordering::SeqCst),
+        1,
+        "expected exactly one COMMIT — buffer was empty on the second flush"
+    );
+    assert_eq!(read_synced_height(&path, &w), Some(5));
+}
+
+/// TC-P2-002 — transient failure restores the buffer for retry.
+#[test]
+fn tc_p2_002_transient_failure_restores_buffer() {
+    let (persister, _tmp, path) = fresh_persister_with_mode(FlushMode::Manual);
+    let w = wid(0xC2);
+    ensure_wallet_meta(&persister, &w);
+    persister
+        .store(w, changeset(core_with_height(7, 7)))
+        .unwrap();
+    persister.force_next_flush_to_fail(make_busy_error());
+    let err = persister.flush(w).expect_err("first flush must fail");
+    let msg = match err {
+        PersistenceError::Backend(s) => s,
+        other => panic!("expected Backend(_), got {other:?}"),
+    };
+    assert!(
+        msg.contains("flush failed transiently"),
+        "expected FlushRetryable in message, got {msg}"
+    );
+    // No injected error this time → second flush commits the buffered data.
+    persister.flush(w).expect("second flush ok");
+    assert_eq!(read_synced_height(&path, &w), Some(7));
+}
+
+/// TC-P2-003 — store-during-failed-flush merges via LWW.
+///
+/// Documented `Merge for CoreChangeSet` semantics (see
+/// `platform_wallet/changeset/changeset.rs:150-220`): `synced_height`
+/// and `last_processed_height` use monotonic-max merging, so the
+/// final values are `max(A, B)` per field regardless of order.
+#[test]
+fn tc_p2_003_store_during_failed_flush_lww() {
+    let (persister, _tmp, path) = fresh_persister_with_mode(FlushMode::Manual);
+    let w = wid(0xC3);
+    ensure_wallet_meta(&persister, &w);
+    persister
+        .store(w, changeset(core_with_height(10, 10)))
+        .unwrap();
+    persister.force_next_flush_to_fail(make_busy_error());
+    let _err = persister.flush(w).expect_err("first flush must fail");
+    // B arrives between failed flush and retry.
+    persister
+        .store(w, changeset(core_with_height(20, 5)))
+        .unwrap();
+    persister.flush(w).expect("retry must succeed");
+    assert_eq!(read_synced_height(&path, &w), Some(20));
+    let lp: Option<i64> = {
+        use rusqlite::OptionalExtension;
+        ro_conn(&path)
+            .query_row(
+                "SELECT last_processed_height FROM core_sync_state WHERE wallet_id = ?1",
+                rusqlite::params![w.as_slice()],
+                |row| row.get(0),
+            )
+            .optional()
+            .unwrap()
+    };
+    assert_eq!(lp, Some(10), "monotonic-max merge must keep 10");
+}
+
+/// TC-P2-004 — fatal failure WIPES the buffer.
+#[test]
+fn tc_p2_004_fatal_failure_wipes_buffer() {
+    let (persister, _tmp, path) = fresh_persister_with_mode(FlushMode::Manual);
+    let w = wid(0xC4);
+    ensure_wallet_meta(&persister, &w);
+    persister
+        .store(w, changeset(core_with_height(9, 9)))
+        .unwrap();
+    persister.force_next_flush_to_fail(make_fatal_error());
+    let _err = persister.flush(w).expect_err("first flush must fail");
+    // Buffer wiped — second flush is a no-op, no row written.
+    persister.flush(w).expect("second flush ok (no-op)");
+    assert_eq!(
+        read_synced_height(&path, &w),
+        None,
+        "fatal failure must drop the buffered changeset"
+    );
+}
+
+/// TC-P2-006 — `FlushMode::Immediate` surfaces `FlushRetryable`.
+#[test]
+fn tc_p2_006_immediate_surfaces_flush_retryable() {
+    let (persister, _tmp, path) = fresh_persister_with_mode(FlushMode::Immediate);
+    let w = wid(0xC6);
+    ensure_wallet_meta(&persister, &w);
+    persister.force_next_flush_to_fail(make_busy_error());
+    let err = persister
+        .store(w, changeset(core_with_height(3, 3)))
+        .expect_err("immediate store must surface the error");
+    let msg = match err {
+        PersistenceError::Backend(s) => s,
+        other => panic!("expected Backend(_), got {other:?}"),
+    };
+    assert!(
+        msg.contains("flush failed transiently"),
+        "Immediate mode must surface FlushRetryable, got {msg}"
+    );
+    // The store buffered the data via take_for_flush + restore. Issue
+    // a flush directly — the second attempt commits.
+    persister.flush(w).expect("retry ok");
+    assert_eq!(read_synced_height(&path, &w), Some(3));
+}
+
+/// TC-P2-007 — restore emits a structured `tracing::warn!`.
+#[tracing_test::traced_test]
+#[test]
+fn tc_p2_007_warn_on_restore_with_structured_fields() {
+    let (persister, _tmp, _path) = fresh_persister_with_mode(FlushMode::Manual);
+    let w = wid(0xC7);
+    ensure_wallet_meta(&persister, &w);
+    persister
+        .store(w, changeset(core_with_height(8, 8)))
+        .unwrap();
+    persister.force_next_flush_to_fail(make_busy_error());
+    let _ = persister.flush(w).expect_err("first flush must fail");
+    // tracing-test exposes a per-test buffer via `logs_contain`.
+    assert!(
+        logs_contain("flush failed transiently"),
+        "WARN message missing"
+    );
+    assert!(
+        logs_contain("error_kind=\"sqlite_busy\""),
+        "structured error_kind missing"
+    );
+    assert!(
+        logs_contain("restored_field_count=1"),
+        "structured restored_field_count missing"
+    );
+    assert!(
+        logs_contain(&hex::encode(w)),
+        "structured wallet_id missing"
+    );
+}

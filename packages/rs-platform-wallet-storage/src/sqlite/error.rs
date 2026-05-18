@@ -188,21 +188,28 @@ pub enum WalletStorageError {
         target: SafeCastTarget,
     },
 
-    /// A `load()` call succeeded but skipped some sub-areas because
-    /// their reconstruction is not yet implemented. The `unimplemented`
-    /// list names the affected `ClientStartState` field paths so
-    /// callers can decide whether to proceed.
+    /// Flush failed transiently (e.g. `SQLITE_BUSY` / `SQLITE_LOCKED`)
+    /// for `wallet_id`. The buffered changeset has been restored — the
+    /// next `flush(wallet_id)` will retry the same data merged with
+    /// anything stored in between. Callers should back off and retry
+    /// rather than dropping state.
     ///
-    /// `load()` itself returns `Ok(ClientStartState)` and surfaces
-    /// the same information via `tracing::warn!`; this variant exists
-    /// for callers that route through trait-error propagation paths
-    /// or explicitly want partial-completion as a value.
+    /// **Use exponential backoff; do NOT tight-loop on this error** —
+    /// hammering the persister at full speed turns a transient lock
+    /// contention into a hot CPU spin and delays whoever holds the
+    /// lock from releasing it.
+    ///
+    /// The variant name `FlushRetryable` is intentionally embedded in
+    /// the `Display` output so operators grepping production logs can
+    /// match on the variant directly.
     #[error(
-        "load() did not reconstruct {} sub-area(s); unimplemented: {unimplemented:?}",
-        unimplemented.len()
+        "FlushRetryable: flush failed transiently for wallet {}; buffer preserved for retry",
+        hex::encode(wallet_id)
     )]
-    LoadIncomplete {
-        unimplemented: &'static [&'static str],
+    FlushRetryable {
+        wallet_id: [u8; 32],
+        #[source]
+        source: rusqlite::Error,
     },
 }
 
@@ -246,6 +253,100 @@ impl WalletStorageError {
     /// (e.g. an outpoint column that isn't 36 bytes).
     pub(crate) fn blob_decode(reason: &'static str) -> Self {
         Self::BlobDecode { reason }
+    }
+
+    /// `true` when the underlying failure is safe to retry — the
+    /// caller should preserve in-flight state and call again. Today
+    /// only `SQLITE_BUSY` / `SQLITE_LOCKED` (raw or wrapped via
+    /// [`Self::FlushRetryable`]) qualify; every other variant is
+    /// fatal.
+    ///
+    /// The match is intentionally wildcard-free: `WalletStorageError`
+    /// MUST NOT gain `#[non_exhaustive]`, otherwise adding a future
+    /// variant would skip this gate (it'd silently fall into a
+    /// catch-all instead of forcing the author to classify it).
+    pub fn is_transient(&self) -> bool {
+        use rusqlite::ErrorCode;
+        match self {
+            Self::Sqlite(rusqlite::Error::SqliteFailure(e, _)) => {
+                matches!(e.code, ErrorCode::DatabaseBusy | ErrorCode::DatabaseLocked)
+            }
+            Self::FlushRetryable { .. } => true,
+            // Every other rusqlite variant — non-`SqliteFailure` (e.g.
+            // `ToSqlConversionFailure`, `InvalidColumnIndex`) — is a
+            // logic bug, not a contention failure.
+            Self::Sqlite(_) => false,
+            Self::Io(_)
+            | Self::Migration(_)
+            | Self::MigrationDirty { .. }
+            | Self::IntegrityCheckFailed { .. }
+            | Self::IntegrityCheckRunFailed { .. }
+            | Self::SourceOpenFailed { .. }
+            | Self::SchemaHistoryMissing
+            | Self::SchemaVersionUnsupported { .. }
+            | Self::AutoBackupDisabled { .. }
+            | Self::AutoBackupDirUnwritable { .. }
+            | Self::WalletNotFound { .. }
+            // TODO(qa): TC-P2-008 — `LockPoisoned` is classified as
+            // fatal here, but the end-to-end mutex-poison flow has no
+            // automated test (the spec deferred it as race-prone — a
+            // panicking thread + join is hard to reproduce
+            // deterministically). Manual verification only via the
+            // table-driven test in `tests/sqlite_error_classification`.
+            // If you change this classification, re-derive
+            // `handle_flush_error`'s fatal-branch behavior to match.
+            | Self::LockPoisoned
+            | Self::RestoreDestinationLocked
+            | Self::InvalidWalletIdHex { .. }
+            | Self::InvalidWalletIdLength { .. }
+            | Self::ConfigInvalid { .. }
+            | Self::BincodeEncode { .. }
+            | Self::BincodeDecode { .. }
+            | Self::BlobDecode { .. }
+            | Self::HashDecode { .. }
+            | Self::ConsensusCodec { .. }
+            | Self::BackupDestinationExists { .. }
+            | Self::IntegerOverflow { .. } => false,
+        }
+    }
+
+    /// Short, lowercase, snake-case tag for tracing fields. One tag
+    /// per variant family — readers grep for these in production
+    /// logs.
+    pub fn error_kind_str(&self) -> &'static str {
+        use rusqlite::ErrorCode;
+        match self {
+            Self::Sqlite(rusqlite::Error::SqliteFailure(e, _)) => match e.code {
+                ErrorCode::DatabaseBusy => "sqlite_busy",
+                ErrorCode::DatabaseLocked => "sqlite_locked",
+                _ => "sqlite_other",
+            },
+            Self::Sqlite(_) => "sqlite_other",
+            Self::FlushRetryable { .. } => "flush_retryable",
+            Self::Io(_) => "io",
+            Self::Migration(_) => "migration",
+            Self::MigrationDirty { .. } => "migration_dirty",
+            Self::IntegrityCheckFailed { .. } => "integrity_check_failed",
+            Self::IntegrityCheckRunFailed { .. } => "integrity_check_run_failed",
+            Self::SourceOpenFailed { .. } => "source_open_failed",
+            Self::SchemaHistoryMissing => "schema_history_missing",
+            Self::SchemaVersionUnsupported { .. } => "schema_version_unsupported",
+            Self::AutoBackupDisabled { .. } => "auto_backup_disabled",
+            Self::AutoBackupDirUnwritable { .. } => "auto_backup_dir_unwritable",
+            Self::WalletNotFound { .. } => "wallet_not_found",
+            Self::LockPoisoned => "lock_poisoned",
+            Self::RestoreDestinationLocked => "restore_destination_locked",
+            Self::InvalidWalletIdHex { .. } => "invalid_wallet_id_hex",
+            Self::InvalidWalletIdLength { .. } => "invalid_wallet_id_length",
+            Self::ConfigInvalid { .. } => "config_invalid",
+            Self::BincodeEncode { .. } => "bincode_encode",
+            Self::BincodeDecode { .. } => "bincode_decode",
+            Self::BlobDecode { .. } => "blob_decode",
+            Self::HashDecode { .. } => "hash_decode",
+            Self::ConsensusCodec { .. } => "consensus_codec",
+            Self::BackupDestinationExists { .. } => "backup_destination_exists",
+            Self::IntegerOverflow { .. } => "integer_overflow",
+        }
     }
 }
 

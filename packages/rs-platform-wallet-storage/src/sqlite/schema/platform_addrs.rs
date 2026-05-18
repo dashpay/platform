@@ -16,8 +16,8 @@ pub fn apply(
     wallet_id: &WalletId,
     cs: &PlatformAddressChangeSet,
 ) -> Result<(), WalletStorageError> {
-    for entry in &cs.addresses {
-        tx.execute(
+    if !cs.addresses.is_empty() {
+        let mut stmt = tx.prepare_cached(
             "INSERT INTO platform_addresses \
                 (wallet_id, account_index, address_index, address, balance, nonce) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
@@ -26,15 +26,17 @@ pub fn apply(
                 address_index = excluded.address_index, \
                 balance = excluded.balance, \
                 nonce = excluded.nonce",
-            params![
+        )?;
+        for entry in &cs.addresses {
+            stmt.execute(params![
                 wallet_id.as_slice(),
                 i64::from(entry.account_index),
                 i64::from(entry.address_index),
                 entry.address.as_bytes(),
                 safe_cast::u64_to_i64("platform_addresses.balance", entry.funds.balance)?,
                 i64::from(entry.funds.nonce),
-            ],
-        )?;
+            ])?;
+        }
     }
     if cs.sync_height.is_some()
         || cs.sync_timestamp.is_some()
@@ -191,4 +193,34 @@ pub fn count_per_wallet(
         |row| row.get(0),
     )?;
     Ok(usize::try_from(n).unwrap_or(usize::MAX))
+}
+
+/// One row of [`load_all`] aggregated state per wallet:
+/// `(sync_state, address_row_count)`.
+///
+/// `address_row_count` mirrors what [`count_per_wallet`] would return —
+/// folding the count into the bulk scan saves a per-wallet query.
+pub type LoadAllEntry = (PlatformAddressSyncStartState, usize);
+
+/// Bulk reader for `load()`: one [`load_state`] + [`count_per_wallet`]
+/// pair per wallet id listed in `wallet_metadata`. Constant-query
+/// w.r.t. the number of wallets per call site (FR-P4-6).
+///
+/// Driven by [`wallet_meta::list_ids`](crate::sqlite::schema::wallet_meta::list_ids):
+/// orphaned `platform_addresses` / `platform_address_sync` rows whose
+/// `wallet_id` is absent from `wallet_metadata` are intentionally NOT
+/// surfaced. FK triggers prevent such orphans; a future re-wire that
+/// needs them must restore the id-union over the area tables.
+pub fn load_all(
+    conn: &Connection,
+) -> Result<std::collections::BTreeMap<WalletId, LoadAllEntry>, WalletStorageError> {
+    use std::collections::BTreeMap;
+
+    let mut out: BTreeMap<WalletId, LoadAllEntry> = BTreeMap::new();
+    for wallet_id in crate::sqlite::schema::wallet_meta::list_ids(conn)? {
+        let sync = load_state(conn, &wallet_id)?;
+        let count = count_per_wallet(conn, &wallet_id)?;
+        out.insert(wallet_id, (sync, count));
+    }
+    Ok(out)
 }

@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use rusqlite::{Connection, OptionalExtension};
 
 use platform_wallet::changeset::{
-    ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+    ClientStartState, Merge, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
 
@@ -21,8 +21,9 @@ use crate::sqlite::util::safe_cast;
 
 /// Sub-areas of `ClientStartState` that `load()` does not yet
 /// reconstruct (blocked on upstream `Wallet::from_persisted`).
-/// Surfaced via the [`WalletStorageError::LoadIncomplete`] variant
-/// and a `tracing::warn!` whenever `load` returns.
+///
+/// Surfaced via the structured `tracing::info!` summary on every
+/// `load()` (`unimplemented` + `wallets_pending_rehydration` fields).
 pub(crate) const LOAD_UNIMPLEMENTED: &[&str] = &["ClientStartState::wallets"];
 
 /// Outcome of a `prune_backups` call.
@@ -85,6 +86,12 @@ pub struct SqlitePersister {
     // the same WAL-mode file is the planned follow-up.
     conn: Arc<Mutex<Connection>>,
     buffer: Buffer,
+    /// Test-only one-shot injector for `flush_inner`. Lives on the
+    /// struct so `force_next_flush_to_fail` can survive across `&self`
+    /// calls. Production builds keep the slot but never write to it
+    /// (no public setter outside `#[cfg(any(test, feature = "__test-helpers"))]`).
+    #[cfg(any(test, feature = "__test-helpers"))]
+    primed_flush_error: Mutex<Option<WalletStorageError>>,
 }
 
 impl SqlitePersister {
@@ -151,6 +158,8 @@ impl SqlitePersister {
             config,
             conn: Arc::new(Mutex::new(conn)),
             buffer: Buffer::new(),
+            #[cfg(any(test, feature = "__test-helpers"))]
+            primed_flush_error: Mutex::new(None),
         })
     }
 
@@ -386,22 +395,20 @@ impl SqlitePersister {
             .map_err(|_| WalletStorageError::LockPoisoned)
     }
 
-    // INTENTIONAL(PROJ-005): downstream cannot meaningfully enable
-    // test-helpers because the methods are
-    // `#[cfg(any(test, feature = "test-helpers"))]`; the feature
-    // exists only so this crate's own integration tests can pull
-    // themselves in via dev-deps with the feature on. Naming
-    // convention warning (Cargo convention is `__test-helpers`) is
-    // acknowledged and not adopted — see Cargo.toml.
+    // The feature is named with Cargo's `__` prefix convention to
+    // signal "not part of the public API; downstream MUST NOT enable
+    // it" (https://doc.rust-lang.org/cargo/reference/features.html).
+    // The methods themselves are `#[doc(hidden)]` so they don't show
+    // up on docs.rs even when the feature is on.
     /// Test-only: borrow the write connection.
     ///
     /// Tests use this to seed `wallet_metadata` rows directly, run
     /// SELECTs against tables that aren't part of the public surface,
     /// or probe `PRAGMA foreign_keys` / `PRAGMA journal_mode`. Gated
-    /// behind `cfg(test)` and the `test-helpers` feature — downstream
-    /// crates cannot reach it.
+    /// behind `cfg(test)` and the `__test-helpers` feature —
+    /// downstream crates MUST NOT enable it.
     #[doc(hidden)]
-    #[cfg(any(test, feature = "test-helpers"))]
+    #[cfg(any(test, feature = "__test-helpers"))]
     pub fn lock_conn_for_test(&self) -> MutexGuard<'_, Connection> {
         self.conn.lock().expect("conn mutex poisoned")
     }
@@ -409,7 +416,7 @@ impl SqlitePersister {
     /// Test-only: read the resolved config. Same visibility rules as
     /// [`lock_conn_for_test`](Self::lock_conn_for_test).
     #[doc(hidden)]
-    #[cfg(any(test, feature = "test-helpers"))]
+    #[cfg(any(test, feature = "__test-helpers"))]
     pub fn config_for_test(&self) -> &SqlitePersisterConfig {
         &self.config
     }
@@ -417,47 +424,62 @@ impl SqlitePersister {
     fn flush_inner(&self, wallet_id: &WalletId) -> Result<(), PersistenceError> {
         let cs = self
             .buffer
-            .drain(wallet_id)
+            .take_for_flush(wallet_id)
             .map_err(PersistenceError::from)?;
         let Some(cs) = cs else { return Ok(()) };
-        let mut conn = self.conn().map_err(PersistenceError::from)?;
-        let tx = conn
-            .transaction()
-            .map_err(WalletStorageError::from)
-            .map_err(PersistenceError::from)?;
+
+        // Test-only injector: surface a primed failure without ever
+        // touching SQL so take/restore semantics are exercised end-to-end.
+        #[cfg(any(test, feature = "__test-helpers"))]
+        if let Some(injected) = self.consume_primed_flush_error() {
+            return self.handle_flush_error(wallet_id, cs, injected);
+        }
+
+        match self.write_changeset_in_one_tx(wallet_id, &cs) {
+            Ok(()) => Ok(()),
+            Err(e) => self.handle_flush_error(wallet_id, cs, e),
+        }
+    }
+
+    /// Apply every populated sub-changeset under one transaction and
+    /// commit. Returned `Err` is the per-area / commit failure verbatim
+    /// — classification + buffer restore happen one level up.
+    fn write_changeset_in_one_tx(
+        &self,
+        wallet_id: &WalletId,
+        cs: &PlatformWalletChangeSet,
+    ) -> Result<(), WalletStorageError> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
         if let Some(meta) = cs.wallet_metadata.as_ref() {
-            schema::wallet_meta::upsert(&tx, wallet_id, meta).map_err(PersistenceError::from)?;
+            schema::wallet_meta::upsert(&tx, wallet_id, meta)?;
         }
         if !cs.account_registrations.is_empty() {
-            schema::accounts::apply_registrations(&tx, wallet_id, &cs.account_registrations)
-                .map_err(PersistenceError::from)?;
+            schema::accounts::apply_registrations(&tx, wallet_id, &cs.account_registrations)?;
         }
         if !cs.account_address_pools.is_empty() {
-            schema::accounts::apply_pools(&tx, wallet_id, &cs.account_address_pools)
-                .map_err(PersistenceError::from)?;
+            schema::accounts::apply_pools(&tx, wallet_id, &cs.account_address_pools)?;
         }
         if let Some(core) = cs.core.as_ref() {
-            schema::core_state::apply(&tx, wallet_id, core).map_err(PersistenceError::from)?;
+            schema::core_state::apply(&tx, wallet_id, core)?;
         }
         if let Some(identities) = cs.identities.as_ref() {
-            schema::identities::apply(&tx, wallet_id, identities)
-                .map_err(PersistenceError::from)?;
+            schema::identities::apply(&tx, wallet_id, identities)?;
         }
         if let Some(keys) = cs.identity_keys.as_ref() {
-            schema::identity_keys::apply(&tx, wallet_id, keys).map_err(PersistenceError::from)?;
+            schema::identity_keys::apply(&tx, wallet_id, keys)?;
         }
         if let Some(contacts) = cs.contacts.as_ref() {
-            schema::contacts::apply(&tx, wallet_id, contacts).map_err(PersistenceError::from)?;
+            schema::contacts::apply(&tx, wallet_id, contacts)?;
         }
         if let Some(addrs) = cs.platform_addresses.as_ref() {
-            schema::platform_addrs::apply(&tx, wallet_id, addrs).map_err(PersistenceError::from)?;
+            schema::platform_addrs::apply(&tx, wallet_id, addrs)?;
         }
         if let Some(locks) = cs.asset_locks.as_ref() {
-            schema::asset_locks::apply(&tx, wallet_id, locks).map_err(PersistenceError::from)?;
+            schema::asset_locks::apply(&tx, wallet_id, locks)?;
         }
         if let Some(balances) = cs.token_balances.as_ref() {
-            schema::token_balances::apply(&tx, wallet_id, balances)
-                .map_err(PersistenceError::from)?;
+            schema::token_balances::apply(&tx, wallet_id, balances)?;
         }
         if cs.dashpay_profiles.is_some() || cs.dashpay_payments_overlay.is_some() {
             schema::dashpay::apply(
@@ -465,13 +487,102 @@ impl SqlitePersister {
                 wallet_id,
                 cs.dashpay_profiles.as_ref(),
                 cs.dashpay_payments_overlay.as_ref(),
-            )
-            .map_err(PersistenceError::from)?;
+            )?;
         }
-        tx.commit()
-            .map_err(WalletStorageError::from)
-            .map_err(PersistenceError::from)?;
+        tx.commit()?;
         Ok(())
+    }
+
+    /// Classify the failure: transient errors restore the buffer and
+    /// surface as `FlushRetryable`; everything else drops the
+    /// changeset and returns the original variant.
+    //
+    // TODO(qa): TC-P2-008 — the fatal branch below covers
+    // `LockPoisoned`, but no end-to-end mutex-poison test exists. The
+    // spec deferred it as race-prone (a panicking thread plus a join
+    // is hard to reproduce deterministically); manually verified via
+    // `Mutex::lock` failure injection at the typed-error layer
+    // (`tc_p2_005_is_transient_table::lock_poisoned`). Anyone touching
+    // the classification policy or this branch must reconfirm by hand.
+    fn handle_flush_error(
+        &self,
+        wallet_id: &WalletId,
+        cs: PlatformWalletChangeSet,
+        err: WalletStorageError,
+    ) -> Result<(), PersistenceError> {
+        let field_count = populated_field_count(&cs);
+        let kind = err.error_kind_str();
+        if err.is_transient() {
+            // A failed restore (e.g. poisoned buffer mutex) means the
+            // buffered changeset is gone — that is itself fatal and
+            // must surface, not be masked by the transient signal.
+            if let Err(restore_err) = self.buffer.restore(*wallet_id, cs) {
+                tracing::error!(
+                    wallet_id = %hex::encode(wallet_id),
+                    error_kind = restore_err.error_kind_str(),
+                    restored_field_count = field_count,
+                    "buffer restore failed after transient flush error — changeset lost"
+                );
+                return Err(PersistenceError::from(restore_err));
+            }
+            // Narrow the error to its rusqlite source per D-9 — only
+            // `Sqlite(SqliteFailure(BUSY|LOCKED, _))` qualifies for
+            // surfacing as `FlushRetryable`.
+            let source = match err {
+                WalletStorageError::Sqlite(rusq) => rusq,
+                WalletStorageError::FlushRetryable { source, .. } => source,
+                other => {
+                    // Defensive: classifier said "transient" but source
+                    // isn't rusqlite. Surface unwrapped — better than
+                    // lying about the source type.
+                    tracing::warn!(
+                        wallet_id = %hex::encode(wallet_id),
+                        error_kind = kind,
+                        restored_field_count = field_count,
+                        "transient classification with non-sqlite source — propagating raw"
+                    );
+                    return Err(PersistenceError::from(other));
+                }
+            };
+            tracing::warn!(
+                wallet_id = %hex::encode(wallet_id),
+                error_kind = kind,
+                restored_field_count = field_count,
+                "flush failed transiently — buffer restored for retry"
+            );
+            Err(PersistenceError::from(WalletStorageError::FlushRetryable {
+                wallet_id: *wallet_id,
+                source,
+            }))
+        } else {
+            tracing::error!(
+                wallet_id = %hex::encode(wallet_id),
+                error_kind = kind,
+                dropped_field_count = field_count,
+                "flush failed fatally — buffer wiped"
+            );
+            // `cs` dropped here.
+            drop(cs);
+            Err(PersistenceError::from(err))
+        }
+    }
+
+    /// Test-only: arm a one-shot injection consumed by the next
+    /// `flush_inner`. Higher-level than `FailingConnection`; useful
+    /// when the test doesn't care which SQL error fires, only how the
+    /// wrapper reacts.
+    #[doc(hidden)]
+    #[cfg(any(test, feature = "__test-helpers"))]
+    pub fn force_next_flush_to_fail(&self, err: WalletStorageError) {
+        *self.primed_flush_error.lock().expect("primed_flush_error") = Some(err);
+    }
+
+    #[cfg(any(test, feature = "__test-helpers"))]
+    fn consume_primed_flush_error(&self) -> Option<WalletStorageError> {
+        self.primed_flush_error
+            .lock()
+            .expect("primed_flush_error")
+            .take()
     }
 }
 
@@ -496,38 +607,77 @@ impl PlatformWalletPersistence for SqlitePersister {
 
     /// Load every wallet's start-state from disk.
     ///
-    /// **Partial reconstruction caveat.** Today the implementation
-    /// populates `ClientStartState::platform_addresses` and leaves
-    /// `ClientStartState::wallets` empty — the latter requires an
-    /// upstream `Wallet::from_persisted` constructor that doesn't
-    /// exist yet. The data IS persisted in the SQLite schema and is
-    /// recoverable via direct queries; only the rehydrated
-    /// `(Wallet, ManagedWalletInfo)` pair is unavailable.
+    /// Populates `platform_addresses` per wallet. `wallets` stays empty
+    /// pending an upstream `key_wallet::Wallet::from_persisted`
+    /// constructor — the count of wallets that *would* be rehydrated is
+    /// surfaced as the structured field `wallets_pending_rehydration`
+    /// on the `tracing::info!` summary.
     ///
-    /// Callers needing the partial-completion signal as a typed
-    /// value should call `inspect_counts` after a successful `load`
-    /// — non-zero counts in non-empty start-state buckets indicate
-    /// the sub-area is persisted but not yet reconstructed. The
-    /// `LOAD_UNIMPLEMENTED` constant names the affected
-    /// `ClientStartState` field paths.
+    /// Fail-hard: any row that fails to decode (or carries a malformed
+    /// `wallet_id`) aborts the whole load with a typed
+    /// [`WalletStorageError`]. Corruption is never silently skipped.
     ///
-    /// A `tracing::warn!` is emitted on every `load` call until the
-    /// reconstruction lands.
+    /// **Query budget (FR-P4-6).** Constant-query w.r.t. wallet count:
+    /// one `SELECT` over `wallet_metadata` for the wallet-id list, then
+    /// per-wallet sync-header + count reads bounded by that list.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use std::sync::Arc;
+    /// use platform_wallet::changeset::PlatformWalletPersistence;
+    /// use platform_wallet_storage::{SqlitePersister, SqlitePersisterConfig};
+    ///
+    /// # fn main() -> Result<(), platform_wallet_storage::WalletStorageError> {
+    /// // Per-test isolated path — no shared state, no real wallet data.
+    /// let dir = std::env::temp_dir().join(format!(
+    ///     "platform-wallet-storage-doctest-{}-{}",
+    ///     std::process::id(),
+    ///     std::time::SystemTime::now()
+    ///         .duration_since(std::time::UNIX_EPOCH)
+    ///         .unwrap()
+    ///         .as_nanos()
+    /// ));
+    /// std::fs::create_dir_all(&dir).unwrap();
+    /// let db_path = dir.join("wallets.db");
+    ///
+    /// let config = SqlitePersisterConfig::new(&db_path);
+    /// let persister: Arc<dyn PlatformWalletPersistence> =
+    ///     Arc::new(SqlitePersister::open(config)?);
+    ///
+    /// // Empty database → empty start-state, no error.
+    /// let state = persister.load().expect("load");
+    /// assert!(state.platform_addresses.is_empty());
+    /// assert!(state.wallets.is_empty());
+    ///
+    /// // Cleanup — the doctest owns the directory.
+    /// drop(persister);
+    /// let _ = std::fs::remove_dir_all(&dir);
+    /// # Ok(())
+    /// # }
+    /// ```
     fn load(&self) -> Result<ClientStartState, PersistenceError> {
         let conn = self.conn().map_err(PersistenceError::from)?;
         let mut state = ClientStartState::default();
-        for wallet_id in schema::wallet_meta::list_ids(&conn).map_err(PersistenceError::from)? {
-            let addrs = schema::platform_addrs::load_state(&conn, &wallet_id)
-                .map_err(PersistenceError::from)?;
-            let count = schema::platform_addrs::count_per_wallet(&conn, &wallet_id)
-                .map_err(PersistenceError::from)?;
+
+        let addrs_all = schema::platform_addrs::load_all(&conn).map_err(PersistenceError::from)?;
+        let wallets_seen = addrs_all.len();
+        let mut addresses_loaded: usize = 0;
+
+        for (wallet_id, (addrs, count)) in addrs_all {
             if count > 0 || addrs.sync_height > 0 || addrs.sync_timestamp > 0 {
+                addresses_loaded += count;
                 state.platform_addresses.insert(wallet_id, addrs);
             }
         }
-        tracing::warn!(
+
+        tracing::info!(
+            wallets_seen,
+            addresses_loaded,
+            wallets_rehydrated = 0usize,
+            wallets_pending_rehydration = wallets_seen,
             unimplemented = ?LOAD_UNIMPLEMENTED,
-            "load() returned a partial ClientStartState — see SqlitePersister::load rustdoc"
+            "load() summary"
         );
         Ok(state)
     }
@@ -546,6 +696,34 @@ impl PlatformWalletPersistence for SqlitePersister {
 }
 
 // ----- Helpers -----
+
+/// Count of top-level slots that carry any data. Feeds the persister's
+/// `restored_field_count` / `dropped_field_count` tracing fields so
+/// operators can see how much was kept or dropped on a flush retry /
+/// fatal failure. Computed here from the public `PlatformWalletChangeSet`
+/// fields + `Merge::is_empty()` so no storage-only helper leaks into
+/// the `rs-platform-wallet` public API.
+fn populated_field_count(cs: &PlatformWalletChangeSet) -> usize {
+    [
+        cs.core.is_empty(),
+        cs.identities.is_empty(),
+        cs.identity_keys.is_empty(),
+        cs.contacts.is_empty(),
+        cs.platform_addresses.is_empty(),
+        cs.asset_locks.is_empty(),
+        cs.token_balances.is_empty(),
+        cs.dashpay_profiles.as_ref().is_none_or(|m| m.is_empty()),
+        cs.dashpay_payments_overlay
+            .as_ref()
+            .is_none_or(|m| m.is_empty()),
+        cs.wallet_metadata.is_none(),
+        cs.account_registrations.is_empty(),
+        cs.account_address_pools.is_empty(),
+    ]
+    .iter()
+    .filter(|empty| !**empty)
+    .count()
+}
 
 fn validate_config(config: &SqlitePersisterConfig) -> Result<(), WalletStorageError> {
     if config.synchronous == Synchronous::Off {

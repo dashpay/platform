@@ -19,37 +19,51 @@ pub fn apply(
     payments: Option<&BTreeMap<Identifier, BTreeMap<String, PaymentEntry>>>,
 ) -> Result<(), WalletStorageError> {
     if let Some(profiles) = profiles {
-        for (identity_id, profile) in profiles {
-            match profile {
-                None => {
-                    tx.execute(
-                        "DELETE FROM dashpay_profiles WHERE wallet_id = ?1 AND identity_id = ?2",
-                        params![wallet_id.as_slice(), identity_id.as_slice()],
-                    )?;
-                }
-                Some(p) => {
-                    let payload = blob::encode(p)?;
-                    tx.execute(
-                        "INSERT INTO dashpay_profiles (wallet_id, identity_id, profile_blob) \
-                         VALUES (?1, ?2, ?3) \
-                         ON CONFLICT(wallet_id, identity_id) DO UPDATE SET profile_blob = excluded.profile_blob",
-                        params![wallet_id.as_slice(), identity_id.as_slice(), payload],
-                    )?;
+        if !profiles.is_empty() {
+            let mut delete_stmt = tx.prepare_cached(
+                "DELETE FROM dashpay_profiles WHERE wallet_id = ?1 AND identity_id = ?2",
+            )?;
+            let mut insert_stmt = tx.prepare_cached(
+                "INSERT INTO dashpay_profiles (wallet_id, identity_id, profile_blob) \
+                 VALUES (?1, ?2, ?3) \
+                 ON CONFLICT(wallet_id, identity_id) DO UPDATE SET profile_blob = excluded.profile_blob",
+            )?;
+            for (identity_id, profile) in profiles {
+                match profile {
+                    None => {
+                        delete_stmt
+                            .execute(params![wallet_id.as_slice(), identity_id.as_slice()])?;
+                    }
+                    Some(p) => {
+                        let payload = blob::encode(p)?;
+                        insert_stmt.execute(params![
+                            wallet_id.as_slice(),
+                            identity_id.as_slice(),
+                            payload
+                        ])?;
+                    }
                 }
             }
         }
     }
     if let Some(payments) = payments {
-        for (identity_id, by_tx) in payments {
-            for (tx_id, entry) in by_tx {
-                let payload = blob::encode(entry)?;
-                tx.execute(
-                    "INSERT INTO dashpay_payments_overlay \
-                        (wallet_id, identity_id, payment_id, overlay_blob) \
-                     VALUES (?1, ?2, ?3, ?4) \
-                     ON CONFLICT(wallet_id, identity_id, payment_id) DO UPDATE SET overlay_blob = excluded.overlay_blob",
-                    params![wallet_id.as_slice(), identity_id.as_slice(), tx_id, payload],
-                )?;
+        if !payments.is_empty() {
+            let mut stmt = tx.prepare_cached(
+                "INSERT INTO dashpay_payments_overlay \
+                    (wallet_id, identity_id, payment_id, overlay_blob) \
+                 VALUES (?1, ?2, ?3, ?4) \
+                 ON CONFLICT(wallet_id, identity_id, payment_id) DO UPDATE SET overlay_blob = excluded.overlay_blob",
+            )?;
+            for (identity_id, by_tx) in payments {
+                for (tx_id, entry) in by_tx {
+                    let payload = blob::encode(entry)?;
+                    stmt.execute(params![
+                        wallet_id.as_slice(),
+                        identity_id.as_slice(),
+                        tx_id,
+                        payload
+                    ])?;
+                }
             }
         }
     }

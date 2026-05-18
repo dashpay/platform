@@ -13,27 +13,30 @@ pub fn apply_registrations(
     wallet_id: &WalletId,
     entries: &[AccountRegistrationEntry],
 ) -> Result<(), WalletStorageError> {
-    for entry in entries {
-        let account_type = account_type_db_label(&entry.account_type);
-        let account_index = account_index(&entry.account_type);
-        // `account_xpub_bytes` carries the bincode-serde encoded
-        // `AccountRegistrationEntry` (xpub + account_type). The
-        // separate `account_type` / `account_index` columns mirror
-        // the entry for direct SQL lookups.
-        let payload = blob::encode(entry)?;
-        tx.execute(
-            "INSERT INTO account_registrations \
+    if entries.is_empty() {
+        return Ok(());
+    }
+    // `account_xpub_bytes` carries the bincode-serde encoded
+    // `AccountRegistrationEntry` (xpub + account_type). The
+    // separate `account_type` / `account_index` columns mirror
+    // the entry for direct SQL lookups.
+    let mut stmt = tx.prepare_cached(
+        "INSERT INTO account_registrations \
                 (wallet_id, account_type, account_index, account_xpub_bytes) \
              VALUES (?1, ?2, ?3, ?4) \
              ON CONFLICT(wallet_id, account_type, account_index) DO UPDATE SET \
                 account_xpub_bytes = excluded.account_xpub_bytes",
-            params![
-                wallet_id.as_slice(),
-                account_type,
-                i64::from(account_index),
-                payload,
-            ],
-        )?;
+    )?;
+    for entry in entries {
+        let account_type = account_type_db_label(&entry.account_type);
+        let account_index = account_index(&entry.account_type);
+        let payload = blob::encode(entry)?;
+        stmt.execute(params![
+            wallet_id.as_slice(),
+            account_type,
+            i64::from(account_index),
+            payload,
+        ])?;
     }
     Ok(())
 }
@@ -43,25 +46,28 @@ pub fn apply_pools(
     wallet_id: &WalletId,
     entries: &[AccountAddressPoolEntry],
 ) -> Result<(), WalletStorageError> {
+    if entries.is_empty() {
+        return Ok(());
+    }
+    let mut stmt = tx.prepare_cached(
+        "INSERT INTO account_address_pools \
+                (wallet_id, account_type, account_index, pool_type, snapshot_blob) \
+             VALUES (?1, ?2, ?3, ?4, ?5) \
+             ON CONFLICT(wallet_id, account_type, account_index, pool_type) DO UPDATE SET \
+                snapshot_blob = excluded.snapshot_blob",
+    )?;
     for entry in entries {
         let account_type = account_type_db_label(&entry.account_type);
         let account_index = account_index(&entry.account_type);
         let pool_type = pool_type_db_label(&entry.pool_type);
         let payload = blob::encode(entry)?;
-        tx.execute(
-            "INSERT INTO account_address_pools \
-                (wallet_id, account_type, account_index, pool_type, snapshot_blob) \
-             VALUES (?1, ?2, ?3, ?4, ?5) \
-             ON CONFLICT(wallet_id, account_type, account_index, pool_type) DO UPDATE SET \
-                snapshot_blob = excluded.snapshot_blob",
-            params![
-                wallet_id.as_slice(),
-                account_type,
-                i64::from(account_index),
-                pool_type,
-                payload,
-            ],
-        )?;
+        stmt.execute(params![
+            wallet_id.as_slice(),
+            account_type,
+            i64::from(account_index),
+            pool_type,
+            payload,
+        ])?;
     }
     Ok(())
 }

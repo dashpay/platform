@@ -13,34 +13,38 @@ pub fn apply(
     wallet_id: &WalletId,
     cs: &TokenBalanceChangeSet,
 ) -> Result<(), WalletStorageError> {
-    let now = chrono::Utc::now().timestamp();
-    for ((identity_id, token_id), balance) in &cs.balances {
-        tx.execute(
+    if !cs.balances.is_empty() {
+        let now = chrono::Utc::now().timestamp();
+        let mut stmt = tx.prepare_cached(
             "INSERT INTO token_balances \
                 (wallet_id, identity_id, token_id, balance, updated_at) \
              VALUES (?1, ?2, ?3, ?4, ?5) \
              ON CONFLICT(wallet_id, identity_id, token_id) DO UPDATE SET \
                 balance = excluded.balance, \
                 updated_at = excluded.updated_at",
-            params![
+        )?;
+        for ((identity_id, token_id), balance) in &cs.balances {
+            stmt.execute(params![
                 wallet_id.as_slice(),
                 identity_id.as_slice(),
                 token_id.as_slice(),
                 safe_cast::u64_to_i64("token_balances.balance", *balance)?,
                 now,
-            ],
-        )?;
+            ])?;
+        }
     }
-    for (identity_id, token_id) in &cs.removed_balances {
-        tx.execute(
+    if !cs.removed_balances.is_empty() {
+        let mut stmt = tx.prepare_cached(
             "DELETE FROM token_balances \
              WHERE wallet_id = ?1 AND identity_id = ?2 AND token_id = ?3",
-            params![
+        )?;
+        for (identity_id, token_id) in &cs.removed_balances {
+            stmt.execute(params![
                 wallet_id.as_slice(),
                 identity_id.as_slice(),
                 token_id.as_slice()
-            ],
-        )?;
+            ])?;
+        }
     }
     Ok(())
 }
