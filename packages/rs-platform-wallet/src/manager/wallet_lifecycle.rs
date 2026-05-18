@@ -229,9 +229,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // entry point — backends (FFI, SQLite, in-memory) see one
         // atomic round rather than three side-channel calls.
         //
-        // Failures are logged but don't abort wallet registration —
-        // the persister is a best-effort channel, not a source of
-        // truth in steady state.
+        // This round is the only record a wallet can be rebuilt
+        // watch-only from on next launch, so it is load-bearing: a
+        // `store` error rolls back the in-memory insert and aborts
+        // registration — same shape as the `load_persisted` /
+        // `initialize_from_persisted` failure paths below.
 
         // `birth_height` was resolved at the top of `register_wallet`
         // and seeded into `ManagedWalletInfo`; reuse it here so the
@@ -279,6 +281,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 error = %e,
                 "failed to persist wallet registration changeset"
             );
+            let mut wm = self.wallet_manager.write().await;
+            let _ = wm.remove_wallet(&wallet_id);
+            return Err(PlatformWalletError::WalletCreation(format!(
+                "Failed to persist wallet registration changeset: {}",
+                e
+            )));
         }
 
         // Build the PlatformWallet handle.
