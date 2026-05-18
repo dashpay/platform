@@ -359,12 +359,13 @@ public class PlatformWalletManager: ObservableObject {
         wallets.removeValue(forKey: walletId)
 
         let identityIds = try persistenceHandler.identityIdsForWallet(walletId: walletId)
+
+        try persistenceHandler.deleteWalletData(walletId: walletId)
+
         for identityId in identityIds {
             try KeychainManager.shared.deleteAllKeychainItems(forIdentityId: identityId)
         }
         try KeychainManager.shared.deleteAllIdentityPrivateKeys(forWalletId: walletId)
-
-        try persistenceHandler.deleteWalletData(walletId: walletId)
 
         let storage = WalletStorage()
         // Delete metadata first so the mnemonic remains available for retry.
