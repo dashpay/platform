@@ -144,14 +144,21 @@ pub fn find_range_summable_index_for_where_clauses<'b>(
             if first.name != outer_field {
                 continue;
             }
+            let intermediate_props = &index.properties[1..index.properties.len() - 1];
             let mut intermediate_props_ok = true;
-            for prop in &index.properties[1..index.properties.len() - 1] {
+            for prop in intermediate_props {
                 if !prefix_fields.contains(prop.name.as_str()) {
                     intermediate_props_ok = false;
                     break;
                 }
             }
-            if intermediate_props_ok {
+            // Strict-coverage check: every Equal/In prefix field must
+            // appear in the index's intermediate properties. Without
+            // this `intermediate_props.len() == prefix_fields.len()`
+            // guard, a query with extra prefix fields would silently
+            // pick an index that *doesn't* cover them, producing an
+            // over-broad result.
+            if intermediate_props_ok && intermediate_props.len() == prefix_fields.len() {
                 return Some(index);
             }
             continue;

@@ -52,16 +52,22 @@ impl DriveDocumentSumQuery<'_> {
 
         if !options.return_distinct_sums_in_range {
             if has_in_on_prefix {
-                let in_clause = self
+                // Enforce exactly one `In` clause. Without this, a request
+                // with multiple In filters would silently use only the
+                // first and drop the rest, producing an over-broad total.
+                let in_clauses: Vec<&WhereClause> = self
                     .where_clauses
                     .iter()
-                    .find(|wc| wc.operator == WhereOperator::In)
-                    .ok_or_else(|| {
-                        Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
-                            "compound summed range sum path requires an `in` clause; \
-                             dispatcher bug if reached without one",
-                        ))
-                    })?;
+                    .filter(|wc| wc.operator == WhereOperator::In)
+                    .collect();
+                if in_clauses.len() != 1 {
+                    return Err(Error::Query(
+                        QuerySyntaxError::InvalidWhereClauseComponents(
+                            "compound summed range sum path requires exactly one `in` clause",
+                        ),
+                    ));
+                }
+                let in_clause = in_clauses[0];
                 let in_values = in_clause.in_values().into_data_with_error()??;
                 let other_clauses: Vec<WhereClause> = self
                     .where_clauses

@@ -174,14 +174,17 @@ fn read_document_sum_contribution(
              contract validation must enforce that the named summable property is in `required`",
         ))
     })?;
-    value.to_integer::<i64>().map_err(|e| {
-        Error::Drive(DriveError::CorruptedCodeExecution(Box::leak(
-            format!(
-                "summable property value out of i64 range or non-integer: {e}; \
-                 contract validation should have caught this at parse time"
-            )
-            .into_boxed_str(),
-        )))
+    // Static error string: `DriveError::CorruptedCodeExecution` takes
+    // `&'static str`, so we cannot interpolate the underlying conversion
+    // error without leaking the formatted string (`Box::leak`). The
+    // conversion error detail isn't load-bearing — contract validation
+    // is supposed to have caught this at parse time, so we just emit
+    // the static "shouldn't be reachable" message.
+    value.to_integer::<i64>().map_err(|_| {
+        Error::Drive(DriveError::CorruptedCodeExecution(
+            "summable property value out of i64 range or non-integer; \
+             contract validation should have caught this at parse time",
+        ))
     })
 }
 

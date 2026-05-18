@@ -162,9 +162,9 @@ impl DocumentTypeV2 {
         if full_validation {
             let mut canonical: Option<String> = documents_summable.clone();
             for index in v2.indices.values() {
-                if let Some(name) = &index.summable {
+                if let Some(index_sum_property) = &index.summable {
                     match &canonical {
-                        Some(existing) if existing != name => {
+                        Some(existing) if existing != index_sum_property => {
                             return Err(ProtocolError::DataContractError(
                                 DataContractError::InvalidContractStructure(format!(
                                     "all `summable` declarations on document type \"{}\" \
@@ -172,11 +172,11 @@ impl DocumentTypeV2 {
                                      Sum trees aggregate i64 per merk node and have no \
                                      per-tree property tag — mixed sum properties would \
                                      produce a meaningless aggregation.",
-                                    name, existing, name,
+                                    name, existing, index_sum_property,
                                 )),
                             ));
                         }
-                        None => canonical = Some(name.clone()),
+                        None => canonical = Some(index_sum_property.clone()),
                         _ => {}
                     }
                 }

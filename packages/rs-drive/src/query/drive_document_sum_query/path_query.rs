@@ -235,13 +235,27 @@ impl<'a> DriveDocumentSumQuery<'a> {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
+        // Bind the range clause to the index's *terminator* property so a
+        // request with multiple range-like clauses (e.g. `prefix > x AND
+        // terminator > y`) picks the right one. The previous predicate
+        // returned the first range operator and could pick the prefix.
+        let terminator_prop_name = &self
+            .index
+            .properties
+            .last()
+            .ok_or(Error::Query(
+                QuerySyntaxError::InvalidWhereClauseComponents(
+                    "range_summable index must have at least one property",
+                ),
+            ))?
+            .name;
         let range_clause = self
             .where_clauses
             .iter()
-            .find(|wc| is_range_operator(wc.operator))
+            .find(|wc| wc.field == *terminator_prop_name && is_range_operator(wc.operator))
             .ok_or(Error::Query(
                 QuerySyntaxError::InvalidWhereClauseComponents(
-                    "aggregate_sum_path_query requires a range where-clause",
+                    "aggregate_sum_path_query requires a range where-clause on the index terminator property",
                 ),
             ))?;
         let query_item = self.range_clause_to_query_item(range_clause, platform_version)?;
@@ -313,13 +327,25 @@ impl<'a> DriveDocumentSumQuery<'a> {
             )));
         }
 
+        // Bind to the terminator property — see the sibling
+        // `aggregate_sum_path_query` comment.
+        let terminator_prop_name = &self
+            .index
+            .properties
+            .last()
+            .ok_or(Error::Query(
+                QuerySyntaxError::InvalidWhereClauseComponents(
+                    "PCPS index must have at least one property",
+                ),
+            ))?
+            .name;
         let range_clause = self
             .where_clauses
             .iter()
-            .find(|wc| is_range_operator(wc.operator))
+            .find(|wc| wc.field == *terminator_prop_name && is_range_operator(wc.operator))
             .ok_or(Error::Query(
                 QuerySyntaxError::InvalidWhereClauseComponents(
-                    "aggregate_count_and_sum_path_query requires a range where-clause",
+                    "aggregate_count_and_sum_path_query requires a range where-clause on the index terminator property",
                 ),
             ))?;
         let query_item = self.range_clause_to_query_item(range_clause, platform_version)?;
@@ -454,16 +480,30 @@ impl<'a> DriveDocumentSumQuery<'a> {
             WhereOperator::StartsWith => {
                 let left_key = serialize(&clause.value)?;
                 let mut right_key = left_key.clone();
-                let last = right_key.last_mut().ok_or_else(|| {
-                    Error::Query(QuerySyntaxError::InvalidStartsWithClause(
+                if right_key.is_empty() {
+                    return Err(Error::Query(QuerySyntaxError::InvalidStartsWithClause(
                         "startsWith prefix must have at least one byte",
-                    ))
-                })?;
-                *last = last.checked_add(1).ok_or_else(|| {
-                    Error::Query(QuerySyntaxError::InvalidStartsWithClause(
-                        "startsWith prefix ends in 0xFF; cannot form half-open upper bound",
-                    ))
-                })?;
+                    )));
+                }
+                // Byte-wise carry propagation. Strip trailing 0xFFs (they
+                // already cover the entire byte range) and increment the
+                // first non-0xFF byte from the right. This correctly
+                // handles prefixes like [0x12, 0xFF] → upper bound [0x13].
+                // Only fail if every byte is 0xFF (no representable
+                // exclusive upper bound).
+                let mut i = right_key.len();
+                while i > 0 && right_key[i - 1] == 0xFF {
+                    i -= 1;
+                }
+                if i == 0 {
+                    return Err(Error::Query(QuerySyntaxError::InvalidStartsWithClause(
+                        "startsWith prefix is all 0xFF bytes; cannot form half-open upper bound",
+                    )));
+                }
+                right_key.truncate(i);
+                *right_key
+                    .last_mut()
+                    .expect("non-empty after truncate to non-zero length") += 1;
                 QueryItem::Range(left_key..right_key)
             }
             _ => {

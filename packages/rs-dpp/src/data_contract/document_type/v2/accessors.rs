@@ -243,13 +243,10 @@ impl DocumentTypeV2Setters for DocumentTypeV2 {
     }
 
     fn set_range_summable(&mut self, range_summable: bool) {
-        // `range_summable` requires a property to sum on. We don't fabricate
-        // one here — silently no-op if `documents_summable` isn't set. Setters
-        // are advisory; the parser validates the full struct shape at
-        // contract creation.
-        if range_summable && self.documents_summable.is_none() {
-            return;
-        }
-        self.range_summable = range_summable;
+        // Normalize unconditionally: `range_summable` requires a property
+        // to sum on, so clamp to false when `documents_summable` is unset.
+        // This way an existing-true-but-inconsistent state can't survive
+        // a setter call — the invariant always holds after this returns.
+        self.range_summable = range_summable && self.documents_summable.is_some();
     }
 }

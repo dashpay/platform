@@ -13,7 +13,11 @@ pub trait DocumentTypeV2Getters {
     /// the primary-key tree's running aggregate, or `None` if this document
     /// type doesn't opt into sum-tree behavior. When `Some`, the primary-key
     /// tree is a `SumTree` (or `ProvableSumTree` if [`Self::range_summable`]
-    /// is also true), enabling O(log n) `GetDocumentsSum` queries.
+    /// is also true). The doctype-level total-sum fast path reads the root
+    /// aggregate in **O(1)**; per-key range sums via `AggregateSumOnRange`
+    /// require [`Self::range_summable`] = true and run in **O(log n)** over
+    /// the in-range merk descent — both surfaced through the `GetDocumentsSum`
+    /// endpoint.
     fn documents_summable(&self) -> Option<&str>;
 
     /// Returns whether this document type supports range summable. When

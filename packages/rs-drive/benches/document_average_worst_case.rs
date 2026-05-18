@@ -240,7 +240,17 @@ struct AvgBenchFixture {
     data_contract: DataContract,
     #[allow(dead_code)]
     drive_config: DriveConfig,
+    /// Maximum possible `(student, class, semester)` triples the bench
+    /// walked. Used by [`fixture_marker`] / [`fixture_path`] so cached
+    /// fixtures with the same triple count are reused across runs.
     row_count: u64,
+    /// **Actual number of grade documents inserted** after the
+    /// `is_enrolled` filter dropped non-enrolled triples. This is the
+    /// load-bearing number for Criterion throughput and the bench's
+    /// `[proof-size]` headers — without it the published numbers would
+    /// overstate the dataset size by ~30 % (the walked triple count vs.
+    /// the actually-inserted grade count). Set by [`populate_fixture`].
+    inserted_count: u64,
     /// Semester range floor used by the Q5 / Q7 range proofs.
     /// `semester > 20204` covers semesters 20205..20209 = exactly half
     /// the semester range. Predictable count + sum targets in the
@@ -276,7 +286,18 @@ impl AvgBenchFixture {
             );
             let (drive, _) = Drive::open(&fixture_path, Some(drive_config.clone()))
                 .expect("expected to open existing average bench fixture");
-            return Self::new(drive, data_contract, drive_config, row_count);
+            // Recount inserted grades by re-walking `is_enrolled`. The
+            // function is deterministic and constant-time, so re-counting
+            // 50 000 walks is a few microseconds — cheaper than persisting
+            // the count to the marker file.
+            let inserted_count = recount_enrolled(row_count);
+            return Self::new(
+                drive,
+                data_contract,
+                drive_config,
+                row_count,
+                inserted_count,
+            );
         }
 
         if fixture_path.exists() {
@@ -310,17 +331,25 @@ impl AvgBenchFixture {
             )
             .expect("expected to apply grades contract");
 
-        populate_fixture(&drive, &data_contract, row_count, platform_version);
+        let inserted_count = populate_fixture(&drive, &data_contract, row_count, platform_version);
         fs::write(&ready_marker, expected_marker)
             .expect("expected to mark average bench fixture ready");
 
         eprintln!(
-            "built document-average fixture with {} rows in {:.2?}",
+            "built document-average fixture with {} actual grades \
+             (from {} possible triples) in {:.2?}",
+            inserted_count,
             row_count,
             started.elapsed()
         );
 
-        Self::new(drive, data_contract, drive_config, row_count)
+        Self::new(
+            drive,
+            data_contract,
+            drive_config,
+            row_count,
+            inserted_count,
+        )
     }
 
     fn new(
@@ -328,6 +357,7 @@ impl AvgBenchFixture {
         data_contract: DataContract,
         drive_config: DriveConfig,
         row_count: u64,
+        inserted_count: u64,
     ) -> Self {
         // Semester floor: 20204. With semesters laid out as 20200..20209,
         // `semester > 20204` covers 20205..20209 = 5 of 10 semesters
@@ -343,9 +373,26 @@ impl AvgBenchFixture {
             data_contract,
             drive_config,
             row_count,
+            inserted_count,
             range_floor,
         }
     }
+}
+
+/// Recompute the number of `(student, class, semester)` triples that
+/// `is_enrolled` accepts, without touching the populated grovedb.
+/// Used by the cache-reuse path on fixture load so the bench knows
+/// the actual stored grade count even when it doesn't repopulate.
+fn recount_enrolled(row_count: u64) -> u64 {
+    let row_total = row_count.min(STUDENT_COUNT * CLASS_COUNT * SEMESTER_COUNT);
+    (0..row_total)
+        .filter(|row| {
+            let student_idx = row % STUDENT_COUNT;
+            let class_idx = (row / STUDENT_COUNT) % CLASS_COUNT;
+            let semester_idx = row / (STUDENT_COUNT * CLASS_COUNT);
+            is_enrolled(student_idx, class_idx, semester_idx)
+        })
+        .count() as u64
 }
 
 /// Load the grades contract from disk. The schema is the source of
@@ -400,7 +447,7 @@ fn populate_fixture(
     data_contract: &DataContract,
     row_count: u64,
     platform_version: &PlatformVersion,
-) {
+) -> u64 {
     let document_type = data_contract
         .document_type_for_name(DOCUMENT_TYPE_NAME)
         .expect("expected grade document type");
@@ -467,6 +514,7 @@ fn populate_fixture(
         }
     }
     eprintln!("populated {inserted} actual grade documents (of {row_total} possible triples)");
+    inserted
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -572,7 +620,10 @@ fn document_average_worst_case(c: &mut Criterion) {
     // Criterion timing for the four headline shapes.
     let mut group = c.benchmark_group("document_average_worst_case");
     group.sample_size(10);
-    group.throughput(criterion::Throughput::Elements(fixture.row_count));
+    // Throughput uses the actually-inserted grade count, not the walked
+    // triple count — the enrollment filter discards ~30 % of triples,
+    // so reporting `row_count` would overstate the dataset's size.
+    group.throughput(criterion::Throughput::Elements(fixture.inserted_count));
 
     let document_type = fixture
         .data_contract
@@ -1027,9 +1078,12 @@ fn report_shape<F>(
     let median = time_median(5, || {
         let _ = produce();
     });
+    // `rows=` reports the actually-inserted grade count (not the walked
+    // triple count) so the proof-size header reflects the dataset's
+    // real cardinality. See `AvgBenchFixture::inserted_count` doc.
     eprintln!(
         "[proof-size] rows={} {label}: {bytes} bytes  median={:.1} µs",
-        fixture.row_count,
+        fixture.inserted_count,
         median.as_secs_f64() * 1_000_000.0,
     );
 }

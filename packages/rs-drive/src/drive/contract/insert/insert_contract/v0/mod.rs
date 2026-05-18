@@ -2,9 +2,10 @@ use crate::drive::contract::paths;
 
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
 use crate::drive::{contract_documents_path, votes, Drive, RootTree};
-use crate::util::object_size_info::DriveKeyInfo::{Key, KeyRef};
+use crate::util::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
 use crate::util::storage_flags::StorageFlags;
 
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
@@ -308,6 +309,70 @@ impl Drive {
                     &mut batch_operations,
                     &platform_version.drive,
                 )?,
+                // Sum-capable variants — route to the matching helper so the
+                // doctype's primary-key tree is created with the correct
+                // sum-bearing element variant at contract apply time. Without
+                // these arms the previous catch-all `_` arm would create a
+                // plain `NormalTree`, and subsequent sum-aware document
+                // inserts / range proofs would operate on the wrong element
+                // type.
+                TreeType::SumTree => self.batch_insert_empty_sum_tree(
+                    type_path,
+                    key_info,
+                    storage_flags.as_ref(),
+                    &mut batch_operations,
+                    &platform_version.drive,
+                )?,
+                TreeType::ProvableSumTree => self.batch_insert_empty_provable_sum_tree(
+                    type_path,
+                    key_info,
+                    storage_flags.as_ref(),
+                    &mut batch_operations,
+                    &platform_version.drive,
+                )?,
+                TreeType::ProvableCountSumTree => self.batch_insert_empty_provable_count_sum_tree(
+                    type_path,
+                    key_info,
+                    storage_flags.as_ref(),
+                    &mut batch_operations,
+                    &platform_version.drive,
+                )?,
+                TreeType::ProvableCountProvableSumTree => self
+                    .batch_insert_empty_provable_count_provable_sum_tree(
+                        type_path,
+                        key_info,
+                        storage_flags.as_ref(),
+                        &mut batch_operations,
+                        &platform_version.drive,
+                    )?,
+                // `CountSumTree` doesn't have a dedicated `batch_insert_empty_*`
+                // helper yet (no `range_*` flags ⇒ root-only aggregation), so
+                // fall through to the lower-level `for_known_path_key_*` op
+                // constructor in `fees/op.rs` directly. The shape is identical
+                // to the other arms: the operation gets pushed onto
+                // `batch_operations` and applied alongside the rest of the
+                // contract's tree-creation ops.
+                TreeType::CountSumTree => {
+                    let path_items: Vec<Vec<u8>> =
+                        type_path.iter().map(|seg| seg.to_vec()).collect();
+                    let key_bytes = match key_info {
+                        Key(k) => k,
+                        KeyRef(k) => k.to_vec(),
+                        KeySize(_) => {
+                            return Err(Error::Drive(DriveError::NotSupportedPrivate(
+                                "CountSumTree primary-key tree creation \
+                                 doesn't support size-only key info",
+                            )));
+                        }
+                    };
+                    batch_operations.push(
+                        LowLevelDriveOperation::for_known_path_key_empty_count_sum_tree(
+                            path_items,
+                            key_bytes,
+                            storage_flags.as_ref(),
+                        ),
+                    );
+                }
                 _ => self.batch_insert_empty_tree(
                     type_path,
                     key_info,

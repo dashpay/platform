@@ -34,15 +34,21 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<SumEntry>, Error> {
-        let in_clause = where_clauses
+        // Enforce exactly one `In` clause. The previous `find` would
+        // silently use the first In and drop any others, producing
+        // incorrect per-value sums.
+        let in_clauses: Vec<&WhereClause> = where_clauses
             .iter()
-            .find(|wc| wc.operator == WhereOperator::In)
-            .ok_or_else(|| {
-                Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
+            .filter(|wc| wc.operator == WhereOperator::In)
+            .collect();
+        if in_clauses.len() != 1 {
+            return Err(Error::Query(
+                QuerySyntaxError::InvalidWhereClauseComponents(
                     "execute_document_sum_per_in_value_no_proof requires exactly one `in` clause",
-                ))
-            })?
-            .clone();
+                ),
+            ));
+        }
+        let in_clause = in_clauses[0].clone();
         let in_values = in_clause.in_values().into_data_with_error()??;
 
         let other_clauses: Vec<WhereClause> = where_clauses

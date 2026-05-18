@@ -121,10 +121,20 @@ impl Drive {
                 )?,
             )),
             DocumentSumMode::RangeDistinctProof => {
+                // Clamp the caller-supplied limit against the drive config's
+                // max before narrowing to u16. The previous `as u16` cast
+                // silently truncated values >= 65 536 and bypassed the
+                // max-limit policy from `drive_config`.
                 let effective_limit = request
                     .limit
-                    .unwrap_or(crate::config::DEFAULT_QUERY_LIMIT as u32);
-                let limit_u16 = effective_limit as u16;
+                    .unwrap_or(request.drive_config.default_query_limit as u32)
+                    .min(request.drive_config.max_query_limit as u32);
+                let limit_u16 = u16::try_from(effective_limit).map_err(|_| {
+                    Error::Query(crate::error::query::QuerySyntaxError::Unsupported(format!(
+                        "limit {} exceeds u16::MAX for range-distinct sum proof",
+                        effective_limit
+                    )))
+                })?;
                 Ok(DocumentSumResponse::Proof(
                     self.execute_document_sum_range_distinct_proof(
                         contract_id,
@@ -151,7 +161,24 @@ impl Drive {
                 )?,
             )),
             DocumentSumMode::RangeAggregateCarrierProof => {
-                let limit_u16 = request.limit.map(|l| l as u16);
+                // Same clamp-then-try_into pattern as RangeDistinctProof
+                // above. Carrier proofs commit `(outer_key, sum)` pairs;
+                // a truncated outer-walk cap would silently change which
+                // pairs end up in the proof.
+                let limit_u16 = request
+                    .limit
+                    .map(|l| l.min(request.drive_config.max_query_limit as u32))
+                    .map(|l| {
+                        u16::try_from(l).map_err(|_| {
+                            Error::Query(crate::error::query::QuerySyntaxError::Unsupported(
+                                format!(
+                                    "limit {} exceeds u16::MAX for carrier-aggregate sum proof",
+                                    l
+                                ),
+                            ))
+                        })
+                    })
+                    .transpose()?;
                 Ok(DocumentSumResponse::Proof(
                     self.execute_document_sum_range_aggregate_carrier_proof(
                         contract_id,

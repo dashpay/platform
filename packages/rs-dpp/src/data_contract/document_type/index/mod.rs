@@ -760,7 +760,14 @@ impl TryFrom<&[(Value, Value)]> for Index {
                     //     enforced by higher-level doctype validation).
                     summable = match value_value {
                         Value::Null => None,
-                        Value::Text(s) => Some(s.clone()),
+                        Value::Text(s) if !s.is_empty() => Some(s.clone()),
+                        Value::Text(_) => {
+                            return Err(DataContractError::ValueWrongType(
+                                "summable value must be a non-empty string naming an integer \
+                                 property, or null"
+                                    .to_string(),
+                            ))
+                        }
                         _ => {
                             return Err(DataContractError::ValueWrongType(
                                 "summable value must be a string naming an integer property, \
