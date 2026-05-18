@@ -269,7 +269,7 @@ impl WasmSdk {
         let dpns_contract = self.get_dpns_contract().await?;
 
         let query = DocumentQuery {
-            select: dash_sdk::dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::Select::Documents,
+            select: dash_sdk::drive::query::SelectProjection::documents(),
             data_contract: dpns_contract,
             document_type_name: DPNS_DOCUMENT_TYPE.to_string(),
             where_clauses: vec![WhereClause {

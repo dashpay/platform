@@ -14,7 +14,6 @@
 //! [`DocumentSplitCounts`]: drive_proof_verifier::DocumentSplitCounts
 
 use crate::platform::documents::document_query::DocumentQuery;
-use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::Select;
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dash_context_provider::ContextProvider;
@@ -23,27 +22,39 @@ use dpp::{
     data_contract::accessors::v0::DataContractV0Getters,
     data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters},
 };
-use drive::query::DriveDocumentCountQuery;
+use drive::query::{
+    CountMode, DocumentCountMode, DriveDocumentCountQuery, SelectFunction, WhereOperator,
+};
 use drive_proof_verifier::{
-    verify_aggregate_count_proof, verify_distinct_count_proof, verify_point_lookup_count_proof,
+    verify_aggregate_count_proof, verify_carrier_aggregate_count_proof,
+    verify_distinct_count_proof, verify_point_lookup_count_proof,
     verify_primary_key_count_tree_proof, SplitCountEntry,
 };
 
 /// Validate that the caller-built [`DocumentQuery`] actually
-/// targets the count surface. Without this check a caller who
-/// forgets `.with_select(Select::Count)` would silently send a
-/// `Documents` request and fail later inside the proof verifier
-/// with an inscrutable "wrong wire shape" error; this surfaces
-/// the misuse at the SDK boundary with a clear pointer to the
-/// fix.
+/// targets the count surface AND uses the `COUNT(*)` shape — the
+/// only shape today's verifier can reproduce. The verifier in
+/// `verify_count_query()` rebuilds a `DriveDocumentCountQuery`
+/// without threading the selected `field`, so an accepted
+/// `COUNT(field)` request would verify as `COUNT(*)` (different
+/// result for nullable fields). Reject `COUNT(field)` upstream
+/// until the verifier carries the counted field; the
+/// not-yet-implemented gate already rejects it server-side, so
+/// this check is the SDK-side mirror.
 pub(super) fn assert_select_is_count(
     request: &DocumentQuery,
 ) -> Result<(), drive_proof_verifier::Error> {
-    if request.select != Select::Count {
+    if request.select.function != SelectFunction::Count || !request.select.field.is_empty() {
         return Err(drive_proof_verifier::Error::RequestError {
             error: format!(
-                "DocumentCount / DocumentSplitCounts require `select = Count`, got {:?}. \
-                 Call `.with_select(Select::Count)` on the DocumentQuery before fetching.",
+                "DocumentCount / DocumentSplitCounts currently require \
+                 `SelectProjection::count_star()` (i.e. `COUNT(*)`); got {:?}. \
+                 `COUNT(field)` is not verifiable today because the proof \
+                 query doesn't carry the counted field — `COUNT(field)` \
+                 against a nullable field would verify as `COUNT(*)` and \
+                 return a different total. Call \
+                 `.with_select(SelectProjection::count_star())` on the \
+                 DocumentQuery before fetching.",
                 request.select
             ),
         });
@@ -82,32 +93,44 @@ fn limit_to_u16_or_default(limit: u32) -> Result<u16, drive_proof_verifier::Erro
 
 /// Verify a count-shape proof and return per-branch entries.
 ///
-/// Single source of truth for the four-way count-proof dispatch:
+/// Single source of truth for the count-proof dispatch. Picks
+/// the verifier primitive by **drive's resolved
+/// [`DocumentCountMode`]** rather than a clause-shape heuristic,
+/// so the SDK's routing decision matches the server's exactly.
+/// Mismatch here was previously possible — e.g. `group_by =
+/// [in_field]` with a co-present range clause on the prove path
+/// produces a carrier-aggregate proof server-side but the old
+/// `has_range && !group_by.is_empty()` heuristic routed it to
+/// `verify_distinct_count_proof` (different primitive ⇒
+/// verification fails).
 ///
-/// 1. **range + non-empty `group_by`** → `RangeDistinctProof`.
-///    Emits one entry per distinct value via
-///    `verify_distinct_count_proof`. Path-query reconstruction
-///    uses [`limit_to_u16_or_default`] anchored to the shared
-///    `DEFAULT_QUERY_LIMIT` so proof bytes are deterministic
-///    across operators.
-/// 2. **range + empty `group_by`** → `AggregateCountOnRange`.
-///    Primitive emits a single u64; wrapped here as a single
-///    empty-key entry so callers see a uniform `Vec<...>` shape.
-/// 3. **no range + empty `where` + `documents_countable`** →
-///    primary-key CountTree fast path. `verify_primary_key_count_tree_proof`
-///    returns a `u64`; wrapped here as a single empty-key entry.
-/// 4. **no range + covering `countable: true` index** →
-///    `PointLookupProof`. `verify_point_lookup_count_proof`
-///    emits one entry per **present** queried branch. Absent
-///    In values are omitted from the returned list (the current
-///    path query doesn't request absence proofs); callers that
-///    need to surface "queried but absent" diff their request's
-///    In array against the returned entries by key. See
-///    `verify_point_lookup_count_proof_v0`'s docstring for the
-///    forward-compat path to per-branch `count: None`.
+/// **Routing**: build a [`CountMode`] from `(group_by,
+/// where_clauses)` matching the abci handler's
+/// `validate_and_route` logic, then call
+/// [`DriveDocumentCountQuery::detect_mode`] with `prove = true`
+/// to get the resolved [`DocumentCountMode`]. Branch by the
+/// resolved mode:
 ///
-/// Wrapping (2) and (3) as single empty-key entries is the only
-/// shape massage this helper does — the underlying primitives
+/// - [`DocumentCountMode::PointLookupProof`] (no range, with or
+///   without `In`) → `verify_point_lookup_count_proof`.
+///   Special-case: `documents_countable: true` doctype + empty
+///   where → `verify_primary_key_count_tree_proof`.
+/// - [`DocumentCountMode::RangeProof`] (range, no In, no
+///   distinct) → `verify_aggregate_count_proof` → single
+///   empty-key entry.
+/// - [`DocumentCountMode::RangeDistinctProof`] (range + distinct
+///   walk via `GroupByRange` / `GroupByCompound`) →
+///   `verify_distinct_count_proof`.
+/// - [`DocumentCountMode::RangeAggregateCarrierProof`] (`In +
+///   range + group_by=[in_field]` on the prove path; grovedb #663
+///   carrier primitive) → `verify_carrier_aggregate_count_proof`.
+/// - `Total` / `PerInValue` / `RangeNoProof` are no-proof modes
+///   and would be unreachable here (`prove=true`); reject as
+///   `Internal` if they ever bubble through.
+///
+/// Wrapping aggregate primitives (`RangeProof`, primary-key
+/// CountTree) as single empty-key entries is the only shape
+/// massage this helper does — the underlying primitives
 /// genuinely emit `u64`s, and consumers ([`DocumentCount`] sums,
 /// [`DocumentSplitCounts`] passes through) want a uniform
 /// per-entry vec regardless.
@@ -136,62 +159,36 @@ pub(super) fn verify_count_query(
         .metadata()
         .or(Err(drive_proof_verifier::Error::EmptyResponseMetadata))?;
 
-    let has_range = request
-        .where_clauses
-        .iter()
-        .any(|wc| DriveDocumentCountQuery::is_range_operator(wc.operator));
+    // Resolve the SQL-shape `CountMode` the request implies. Same
+    // decision tree as `validate_and_route` in the abci handler —
+    // single source of truth would be nicer but the SDK can't
+    // depend on rs-drive-abci, and drive doesn't expose this
+    // helper because `validate_and_route` also folds in the
+    // unrelated `select` projection check.
+    let count_mode = resolve_count_mode(&request.group_by, &request.where_clauses)?;
 
-    if has_range {
-        // Range path: either RangeDistinctProof (entries) or
-        // AggregateCountOnRange (single u64 wrapped as one entry).
-        let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
-            document_type.indexes(),
-            &request.where_clauses,
-        )
-        .ok_or_else(|| drive_proof_verifier::Error::RequestError {
-            error: "range count requires a `range_countable: true` index whose last \
-                    property matches the range field"
-                .to_string(),
-        })?;
-        let count_query = DriveDocumentCountQuery {
-            document_type,
-            contract_id: request.data_contract.id().to_buffer(),
-            document_type_name: request.document_type_name.clone(),
-            index,
-            where_clauses: request.where_clauses.clone(),
-        };
+    // Translate the SQL-shape mode + where-clause shape into the
+    // resolved `DocumentCountMode` the prover would dispatch on.
+    // Driver-side detect_mode is the single source of truth — the
+    // SDK calling it directly is what keeps the verifier in sync
+    // with whatever new prove-mode lands next.
+    let resolved_mode =
+        DriveDocumentCountQuery::detect_mode(&request.where_clauses, count_mode, true).map_err(
+            |e| drive_proof_verifier::Error::RequestError {
+                error: format!("count-mode detection failed: {e}"),
+            },
+        )?;
 
-        if !request.group_by.is_empty() {
-            let limit_u16 = limit_to_u16_or_default(request.limit)?;
-            let left_to_right = request
-                .order_by_clauses
-                .first()
-                .map(|c| c.ascending)
-                .unwrap_or(true);
-            let entries = verify_distinct_count_proof(
-                &count_query,
-                proof,
-                mtd,
-                limit_u16,
-                left_to_right,
-                platform_version,
-                provider,
-            )?;
-            return Ok((Some(entries), mtd.clone(), proof.clone()));
-        }
-
-        let count =
-            verify_aggregate_count_proof(&count_query, proof, mtd, platform_version, provider)?;
-        return Ok((
-            Some(single_empty_key_entry(count)),
-            mtd.clone(),
-            proof.clone(),
-        ));
-    }
-
-    // No range: documents_countable fast path or covering
-    // countable index.
-    if request.where_clauses.is_empty() && document_type.documents_countable() {
+    // Special-case: empty where-clauses on a `documents_countable`
+    // doctype proves the primary-key CountTree element directly,
+    // skipping the per-index covering walk. This lives outside
+    // `detect_mode`'s output because the contract-level
+    // `documents_countable` flag isn't part of mode detection;
+    // pre-empt it here before falling through to PointLookupProof.
+    if matches!(resolved_mode, DocumentCountMode::PointLookupProof)
+        && request.where_clauses.is_empty()
+        && document_type.documents_countable()
+    {
         let contract_id = request.data_contract.id().to_buffer();
         let count = verify_primary_key_count_tree_proof(
             contract_id,
@@ -208,16 +205,40 @@ pub(super) fn verify_count_query(
         ));
     }
 
-    let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
-        document_type.indexes(),
-        &request.where_clauses,
-    )
-    .ok_or_else(|| drive_proof_verifier::Error::RequestError {
-        error: "prove count requires a `countable: true` index whose properties \
-                exactly match the where clause fields, or `documentsCountable: \
-                true` on the document type for unfiltered total counts"
-            .to_string(),
-    })?;
+    // Pick the index the prover would have picked. Range modes
+    // need a `range_countable: true` index; everything else uses
+    // the regular `countable: true` resolver. Mismatch here would
+    // produce a path-query different from the prover's, so the
+    // index lookup matches drive's `range_count_path_query` /
+    // `point_lookup_count_path_query` dispatch.
+    let needs_range_index = matches!(
+        resolved_mode,
+        DocumentCountMode::RangeProof
+            | DocumentCountMode::RangeDistinctProof
+            | DocumentCountMode::RangeAggregateCarrierProof
+    );
+    let index = if needs_range_index {
+        DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
+            document_type.indexes(),
+            &request.where_clauses,
+        )
+        .ok_or_else(|| drive_proof_verifier::Error::RequestError {
+            error: "range count requires a `range_countable: true` index whose last \
+                    property matches the range field"
+                .to_string(),
+        })?
+    } else {
+        DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+            document_type.indexes(),
+            &request.where_clauses,
+        )
+        .ok_or_else(|| drive_proof_verifier::Error::RequestError {
+            error: "prove count requires a `countable: true` index whose properties \
+                    exactly match the where clause fields, or `documentsCountable: \
+                    true` on the document type for unfiltered total counts"
+                .to_string(),
+        })?
+    };
     let count_query = DriveDocumentCountQuery {
         document_type,
         contract_id: request.data_contract.id().to_buffer(),
@@ -225,9 +246,149 @@ pub(super) fn verify_count_query(
         index,
         where_clauses: request.where_clauses.clone(),
     };
-    let entries =
-        verify_point_lookup_count_proof(&count_query, proof, mtd, platform_version, provider)?;
-    Ok((Some(entries), mtd.clone(), proof.clone()))
+
+    match resolved_mode {
+        DocumentCountMode::PointLookupProof => {
+            let entries = verify_point_lookup_count_proof(
+                &count_query,
+                proof,
+                mtd,
+                platform_version,
+                provider,
+            )?;
+            Ok((Some(entries), mtd.clone(), proof.clone()))
+        }
+        DocumentCountMode::RangeProof => {
+            let count =
+                verify_aggregate_count_proof(&count_query, proof, mtd, platform_version, provider)?;
+            Ok((
+                Some(single_empty_key_entry(count)),
+                mtd.clone(),
+                proof.clone(),
+            ))
+        }
+        DocumentCountMode::RangeDistinctProof => {
+            let limit_u16 = limit_to_u16_or_default(request.limit)?;
+            let left_to_right = request
+                .order_by_clauses
+                .first()
+                .map(|c| c.ascending)
+                .unwrap_or(true);
+            let entries = verify_distinct_count_proof(
+                &count_query,
+                proof,
+                mtd,
+                limit_u16,
+                left_to_right,
+                platform_version,
+                provider,
+            )?;
+            Ok((Some(entries), mtd.clone(), proof.clone()))
+        }
+        DocumentCountMode::RangeAggregateCarrierProof => {
+            // Carrier-ACOR (grovedb #663) — one verified `u64` per
+            // present In branch. `limit` cap on the per-branch
+            // walk follows the same `validate-don't-clamp`
+            // contract the distinct path uses; pass through what
+            // the caller asked for (with the `0` → default
+            // sentinel) so the path-query bytes match the
+            // server's exactly.
+            let limit_u16 = if request.limit == 0 {
+                None
+            } else {
+                Some(limit_to_u16_or_default(request.limit)?)
+            };
+            let left_to_right = request
+                .order_by_clauses
+                .first()
+                .map(|c| c.ascending)
+                .unwrap_or(true);
+            let entries = verify_carrier_aggregate_count_proof(
+                &count_query,
+                proof,
+                mtd,
+                limit_u16,
+                left_to_right,
+                platform_version,
+                provider,
+            )?;
+            Ok((Some(entries), mtd.clone(), proof.clone()))
+        }
+        // The three no-proof modes are unreachable under `prove =
+        // true`. `detect_mode` would only return them when called
+        // with `prove = false`. If we ever see one here it means
+        // drive's detect_mode contract changed unexpectedly;
+        // surface a clear internal error rather than crash.
+        DocumentCountMode::Total
+        | DocumentCountMode::PerInValue
+        | DocumentCountMode::RangeNoProof => Err(drive_proof_verifier::Error::RequestError {
+            error: format!(
+                "unexpected no-proof DocumentCountMode {resolved_mode:?} returned for a \
+                 prove=true request — drive's detect_mode contract may have changed"
+            ),
+        }),
+    }
+}
+
+/// Build the SQL-shape [`CountMode`] from `(group_by,
+/// where_clauses)`. Mirrors the abci handler's
+/// `validate_and_route` logic so the SDK side picks the same
+/// mode the server would have routed to, which keeps
+/// [`DriveDocumentCountQuery::detect_mode`]'s output (and the
+/// proof-verification primitive) in sync end-to-end.
+///
+/// Match-any semantics on the field lookups (`is_in_field` /
+/// `is_range_field`) — clause ordering on the wire must not
+/// affect routing, same fix as the abci handler's round-3
+/// regression.
+fn resolve_count_mode(
+    group_by: &[String],
+    where_clauses: &[drive::query::WhereClause],
+) -> Result<CountMode, drive_proof_verifier::Error> {
+    let is_in_field = |field: &str| {
+        where_clauses
+            .iter()
+            .any(|wc| wc.operator == WhereOperator::In && wc.field == field)
+    };
+    let is_range_field = |field: &str| {
+        where_clauses
+            .iter()
+            .any(|wc| DriveDocumentCountQuery::is_range_operator(wc.operator) && wc.field == field)
+    };
+    let unsupported = |feature: String| drive_proof_verifier::Error::RequestError {
+        error: format!("{feature} (see issue #3655 for the v1 wire surface follow-ups)"),
+    };
+    match group_by {
+        [] => Ok(CountMode::Aggregate),
+        [field] => {
+            if is_in_field(field) {
+                Ok(CountMode::GroupByIn)
+            } else if is_range_field(field) {
+                Ok(CountMode::GroupByRange)
+            } else {
+                Err(drive_proof_verifier::Error::RequestError {
+                    error: format!(
+                        "GROUP BY on field '{field}' which is not constrained by an `In` \
+                         or range where clause is not yet implemented (see issue #3655)"
+                    ),
+                })
+            }
+        }
+        [first, second] => {
+            if is_in_field(first) && is_range_field(second) {
+                Ok(CountMode::GroupByCompound)
+            } else {
+                Err(unsupported(
+                    "two-field GROUP BY outside the `(In, range)` compound shape \
+                     is not yet implemented"
+                        .to_string(),
+                ))
+            }
+        }
+        _ => Err(unsupported(
+            "GROUP BY with more than two fields is not yet implemented".to_string(),
+        )),
+    }
 }
 
 /// Wrap a single `u64` from an aggregate proof primitive

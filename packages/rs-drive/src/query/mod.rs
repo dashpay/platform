@@ -3,19 +3,33 @@ use std::sync::Arc;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub use {
     conditions::{ValueClause, WhereClause, WhereOperator},
-    drive_document_count_query::{DocumentCountMode, DriveDocumentCountQuery, SplitCountEntry},
+    // `CountMode` is the SQL-shape contract (Aggregate /
+    // GroupByIn / GroupByRange / GroupByCompound) the prover
+    // dispatches on; the verifier needs the same enum to route
+    // proof verification to the matching primitive
+    // (`DocumentCountMode`). Available under either `server`
+    // (executor input) or `verify` (proof-decode input).
+    drive_document_count_query::{
+        CountMode, DocumentCountMode, DriveDocumentCountQuery, SplitCountEntry,
+    },
     grovedb::{PathQuery, Query, QueryItem, SizedQuery},
+    having::{
+        HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator, HavingRanking,
+        HavingRankingKind, HavingRightOperand,
+    },
     ordering::OrderClause,
+    projection::{SelectFunction, SelectProjection},
     single_document_drive_query::SingleDocumentDriveQuery,
     single_document_drive_query::SingleDocumentDriveQueryContestedStatus,
     vote_polls_by_end_date_query::VotePollsByEndDateDriveQuery,
     vote_query::IdentityBasedVoteDriveQuery,
 };
 
+// `DocumentCountRequest` / `RangeCountOptions` are the
+// server-side executor inputs and stay `server`-only.
 #[cfg(feature = "server")]
 pub use drive_document_count_query::{
-    CountMode, DocumentCountRequest, DocumentCountResponse, RangeCountOptions,
-    MAX_LIMIT_AS_FAILSAFE,
+    DocumentCountRequest, DocumentCountResponse, RangeCountOptions, MAX_LIMIT_AS_FAILSAFE,
 };
 // Imports available when either "server" or "verify" features are enabled
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -77,7 +91,11 @@ pub mod conditions;
 #[cfg(any(feature = "server", feature = "verify"))]
 mod defaults;
 #[cfg(any(feature = "server", feature = "verify"))]
+pub mod having;
+#[cfg(any(feature = "server", feature = "verify"))]
 pub mod ordering;
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod projection;
 #[cfg(any(feature = "server", feature = "verify"))]
 mod single_document_drive_query;
 
@@ -762,19 +780,6 @@ impl<'a> DriveDocumentQuery<'a> {
         document_type: DocumentTypeRef<'a>,
         config: &DriveConfig,
     ) -> Result<Self, Error> {
-        let limit = maybe_limit
-            .map_or(Some(config.default_query_limit), |limit_value| {
-                if limit_value == 0 || limit_value > config.default_query_limit {
-                    None
-                } else {
-                    Some(limit_value)
-                }
-            })
-            .ok_or(Error::Query(QuerySyntaxError::InvalidLimit(format!(
-                "limit greater than max limit {}",
-                config.max_query_limit
-            ))))?;
-
         let all_where_clauses: Vec<WhereClause> = match where_clause {
             Value::Null => Ok(vec![]),
             Value::Array(clauses) => clauses
@@ -794,28 +799,101 @@ impl<'a> DriveDocumentQuery<'a> {
             ))),
         }?;
 
-        let internal_clauses = InternalClauses::extract_from_clauses(all_where_clauses)?;
-
-        let order_by: IndexMap<String, OrderClause> = order_by
-            .map_or(vec![], |id_cbor| {
-                if let Value::Array(clauses) = id_cbor {
-                    clauses
-                        .iter()
-                        .filter_map(|order_clause| {
-                            if let Value::Array(clauses_components) = order_clause {
-                                OrderClause::from_components(clauses_components).ok()
-                            } else {
-                                None
-                            }
+        // Malformed `order_by` payloads reject the request — the
+        // pre-existing `filter_map(... .ok())` here silently dropped
+        // bad clauses (or the whole field for non-array shapes),
+        // which could mutate result ordering and (on the prove
+        // path) proof bytes without telling the caller. Tighten the
+        // contract: every clause must parse, and the top-level
+        // shape must be `Value::Null` or `Value::Array`.
+        let order_by_clauses: Vec<OrderClause> = match order_by {
+            None | Some(Value::Null) => Vec::new(),
+            Some(Value::Array(clauses)) => clauses
+                .iter()
+                .map(|order_clause| match order_clause {
+                    Value::Array(components) => {
+                        OrderClause::from_components(components).map_err(|_| {
+                            Error::Query(QuerySyntaxError::InvalidOrderByProperties(
+                                "invalid order_by clause components",
+                            ))
                         })
-                        .collect()
+                    }
+                    _ => Err(Error::Query(QuerySyntaxError::InvalidOrderByProperties(
+                        "order_by clause must be an array",
+                    ))),
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+            Some(_) => {
+                return Err(Error::Query(QuerySyntaxError::InvalidOrderByProperties(
+                    "order_by must be an array",
+                )));
+            }
+        };
+
+        Self::from_typed_clauses(
+            all_where_clauses,
+            order_by_clauses,
+            maybe_limit,
+            start_at,
+            start_at_included,
+            block_time_ms,
+            contract,
+            document_type,
+            config,
+        )
+    }
+
+    /// Build a `DriveDocumentQuery` from already-structured where /
+    /// order_by clauses. This is the typed-input twin of
+    /// [`Self::from_decomposed_values`] — same downstream shape, just
+    /// without the `Value::Array(...)` parse step.
+    ///
+    /// Used by the v1 `getDocuments` ABCI handler whose wire format
+    /// carries `repeated WhereClause` / `repeated OrderClause`
+    /// natively (no CBOR envelope). The v0 path keeps using
+    /// `from_decomposed_values` so its CBOR-decoded inputs flow
+    /// through the existing `WhereClause::from_components` parser
+    /// for shape validation; the typed path expects that validation
+    /// (or the equivalent proto→drive conversion) to have run
+    /// upstream.
+    ///
+    /// Limit semantics mirror `from_decomposed_values`:
+    /// `maybe_limit = None` or `Some(0)` falls back to
+    /// `config.default_query_limit`; `Some(N)` with `N >
+    /// config.default_query_limit` is rejected as
+    /// `QuerySyntaxError::InvalidLimit`.
+    #[cfg(any(feature = "server", feature = "verify"))]
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_typed_clauses(
+        where_clauses: Vec<WhereClause>,
+        order_by_clauses: Vec<OrderClause>,
+        maybe_limit: Option<u16>,
+        start_at: Option<[u8; 32]>,
+        start_at_included: bool,
+        block_time_ms: Option<u64>,
+        contract: &'a DataContract,
+        document_type: DocumentTypeRef<'a>,
+        config: &DriveConfig,
+    ) -> Result<Self, Error> {
+        let limit = maybe_limit
+            .map_or(Some(config.default_query_limit), |limit_value| {
+                if limit_value == 0 || limit_value > config.default_query_limit {
+                    None
                 } else {
-                    vec![]
+                    Some(limit_value)
                 }
             })
-            .iter()
-            .map(|order_clause| Ok((order_clause.field.clone(), order_clause.to_owned())))
-            .collect::<Result<IndexMap<String, OrderClause>, Error>>()?;
+            .ok_or(Error::Query(QuerySyntaxError::InvalidLimit(format!(
+                "limit greater than max limit {}",
+                config.max_query_limit
+            ))))?;
+
+        let internal_clauses = InternalClauses::extract_from_clauses(where_clauses)?;
+
+        let order_by: IndexMap<String, OrderClause> = order_by_clauses
+            .into_iter()
+            .map(|c| (c.field.clone(), c))
+            .collect();
 
         Ok(DriveDocumentQuery {
             contract,

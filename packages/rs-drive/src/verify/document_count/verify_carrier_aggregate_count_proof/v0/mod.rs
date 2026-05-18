@@ -34,9 +34,11 @@ impl DriveDocumentCountQuery<'_> {
         &self,
         proof: &[u8],
         limit: Option<u16>,
+        left_to_right: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Vec<(Vec<u8>, u64)>), Error> {
-        let path_query = self.carrier_aggregate_count_path_query(limit, platform_version)?;
+        let path_query =
+            self.carrier_aggregate_count_path_query(limit, left_to_right, platform_version)?;
         let (root_hash, entries) = GroveDb::verify_aggregate_count_query_per_key(
             proof,
             &path_query,

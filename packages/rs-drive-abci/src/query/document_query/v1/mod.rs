@@ -5,15 +5,14 @@
 //!
 //! ## What this handler is
 //!
-//! **Wire-format unification.** Phase 1 ships no new server-side
-//! execution capability: every supported request shape reaches an
-//! existing drive executor (`DriveDocumentQuery` for `DOCUMENTS`,
-//! `Drive::execute_document_count_request` for `COUNT`) and produces
-//! the same proof bytes / response data the now-removed
-//! `getDocumentsCount` v0 endpoint did. The v1 surface just makes
-//! the SQL semantics explicit on the wire so callers don't have to
-//! reverse-engineer "this where clause shape happens to produce
-//! per-value entries."
+//! **Wire-format unification.** Every supported request shape
+//! reaches an existing drive executor (`DriveDocumentQuery` for
+//! `DOCUMENTS`, `Drive::execute_document_count_request` for
+//! `COUNT`) and produces the same proof bytes / response data
+//! the now-removed `getDocumentsCount` v0 endpoint did. The v1
+//! surface just makes the SQL semantics explicit on the wire so
+//! callers don't have to reverse-engineer "this where clause
+//! shape happens to produce per-value entries."
 //!
 //! ## What it rejects
 //!
@@ -25,8 +24,9 @@
 //! can keep these requests around in code and they'll start working
 //! once the capability lands without a wire-format change. See the
 //! message-level docstring on `GetDocumentsRequestV1` in
-//! `platform.proto` for the full Phase 1 supported/rejected shape
-//! table.
+//! `platform.proto` for the full supported / rejected shape table.
+
+mod conversions;
 
 use crate::error::query::QueryError;
 use crate::error::Error;
@@ -35,12 +35,8 @@ use crate::platform_types::platform_state::PlatformState;
 use crate::query::response_metadata::CheckpointUsed;
 use crate::query::QueryValidationResult;
 use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v0::Start as RequestV0Start;
-use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::{
-    Select, Start as RequestV1Start,
-};
-use dapi_grpc::platform::v0::get_documents_request::{
-    GetDocumentsRequestV0, GetDocumentsRequestV1,
-};
+use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::Start as RequestV1Start;
+use dapi_grpc::platform::v0::get_documents_request::GetDocumentsRequestV1;
 use dapi_grpc::platform::v0::get_documents_response::get_documents_response_v1::{
     count_results, result_data, CountEntries, CountEntry, CountResults, Documents, ResultData,
 };
@@ -50,20 +46,19 @@ use dapi_grpc::platform::v0::get_documents_response::{
 use dpp::check_validation_result_with_data;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::identifier::Identifier;
-use dpp::platform_value::Value;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::error::query::QuerySyntaxError;
 use drive::query::{
-    CountMode, DocumentCountRequest, DocumentCountResponse, SplitCountEntry, WhereClause,
-    WhereOperator,
+    CountMode, DocumentCountRequest, DocumentCountResponse, OrderClause, SelectFunction,
+    SelectProjection, SplitCountEntry, WhereClause, WhereOperator,
 };
 use drive::util::grove_operations::GroveDBToUse;
 
 /// Build a `QuerySyntaxError::Unsupported` carrying a stable
 /// "<feature> is not yet implemented" message. The wording is
-/// deliberate — Phase 1 of v1 publishes a SQL-shaped surface that
-/// the server only partially implements; the rejected shapes signal
+/// deliberate — v1 publishes a SQL-shaped surface that the server
+/// only partially implements today; the rejected shapes signal
 /// future capability, not malformed requests, and callers can keep
 /// the request structure unchanged when the capability lands.
 fn not_yet_implemented(feature: &str) -> QueryError {
@@ -73,92 +68,19 @@ fn not_yet_implemented(feature: &str) -> QueryError {
     )))
 }
 
-/// Parse the raw CBOR-encoded `where` bytes into structured
-/// [`WhereClause`]s. v1 needs the structured form to enforce
-/// `group_by` ↔ where-field cross-checks before delegating.
-fn decode_where_clauses(where_bytes: &[u8]) -> Result<Vec<WhereClause>, QueryError> {
-    if where_bytes.is_empty() {
-        return Ok(Vec::new());
-    }
-    let value: Value = ciborium::de::from_reader(where_bytes).map_err(|_| {
-        QueryError::Query(QuerySyntaxError::DeserializationError(
-            "unable to decode 'where' query from cbor".to_string(),
-        ))
-    })?;
-    let array = match value {
-        Value::Array(a) => a,
-        Value::Null => return Ok(Vec::new()),
-        _ => {
-            return Err(QueryError::Query(
-                QuerySyntaxError::InvalidFormatWhereClause(
-                    "where clause must be an array".to_string(),
-                ),
-            ));
-        }
-    };
-    let mut clauses = Vec::with_capacity(array.len());
-    for entry in array {
-        let components = match entry {
-            Value::Array(c) => c,
-            _ => {
-                return Err(QueryError::Query(
-                    QuerySyntaxError::InvalidFormatWhereClause(
-                        "where clause must be an array".to_string(),
-                    ),
-                ));
-            }
-        };
-        let clause = WhereClause::from_components(&components).map_err(|e| {
-            QueryError::Query(QuerySyntaxError::InvalidFormatWhereClause(format!(
-                "invalid where clause components: {e}"
-            )))
-        })?;
-        clauses.push(clause);
-    }
-    Ok(clauses)
-}
-
-/// Re-decode the CBOR-encoded `order_by` bytes into a `Value` for
-/// drive's count dispatcher (which accepts the raw `Value` form to
-/// avoid re-imposing a parse). `Value::Null` (empty `order_by` on
-/// the wire) → no clauses.
-fn decode_order_by_value(order_by_bytes: &[u8]) -> Result<Value, QueryError> {
-    if order_by_bytes.is_empty() {
-        return Ok(Value::Null);
-    }
-    ciborium::de::from_reader(order_by_bytes).map_err(|_| {
-        QueryError::Query(QuerySyntaxError::DeserializationError(
-            "unable to decode 'order_by' query from cbor".to_string(),
-        ))
-    })
-}
-
 /// Validate the `select` × `group_by` × `having` combination
-/// against the Phase 1 supported-shape table. Returns the routing
-/// decision so the handler knows whether to dispatch to the
-/// documents-fetch path or the count path, and which response
-/// shape to produce.
+/// against the supported-shape table (see the message-level
+/// docstring on `GetDocumentsRequestV1` in `platform.proto`).
+/// Returns the routing decision so the handler knows whether to
+/// dispatch to the documents-fetch path or the count path, and
+/// which response shape to produce.
 fn validate_and_route(
-    request_v1: &GetDocumentsRequestV1,
+    select: &SelectProjection,
+    limit: Option<u32>,
+    having_non_empty: bool,
+    group_by: &[String],
     where_clauses: &[WhereClause],
 ) -> Result<RoutingDecision, QueryError> {
-    // An unknown integer here is malformed wire input (a
-    // discriminant the `Select` proto enum doesn't define), NOT a
-    // future capability — there's no future protocol value that
-    // would map a garbage integer to a valid behavior. Use
-    // `InvalidArgument` so clients can distinguish "garbage in this
-    // field" from `not_yet_implemented`'s "valid request shape, just
-    // not wired yet" contract (see [`not_yet_implemented`] above).
-    let select = Select::try_from(request_v1.select).map_err(|_| {
-        QueryError::InvalidArgument(format!(
-            "select value {} is not a valid `Select` enum discriminant \
-             (expected {} = DOCUMENTS or {} = COUNT)",
-            request_v1.select,
-            Select::Documents as i32,
-            Select::Count as i32,
-        ))
-    })?;
-
     // Centralized `limit: Some(0)` rejection.
     //
     // `limit` is `optional uint32` on the wire, so `Some(0)` is a
@@ -182,7 +104,7 @@ fn validate_and_route(
     // at the validation boundary so callers see a single,
     // mode-independent contract: `None` for "use server default",
     // `Some(N > 0)` for an explicit cap, `Some(0)` is invalid.
-    if request_v1.limit == Some(0) {
+    if limit == Some(0) {
         return Err(QueryError::Query(QuerySyntaxError::InvalidLimit(
             "limit = 0 is not a valid wire value on the v1 \
              `optional uint32` field; omit `limit` (None) to use the \
@@ -193,83 +115,159 @@ fn validate_and_route(
         )));
     }
 
-    if !request_v1.having.is_empty() {
+    if having_non_empty {
         return Err(not_yet_implemented("HAVING clause"));
     }
 
-    match select {
-        Select::Documents => {
-            if !request_v1.group_by.is_empty() {
-                return Err(not_yet_implemented(
-                    "GROUP BY with SELECT DOCUMENTS (use SELECT COUNT with GROUP BY \
-                     for per-group counts, or SELECT DOCUMENTS without GROUP BY for \
-                     matched documents)",
-                ));
+    match select.function {
+        SelectFunction::Documents => {
+            if !select.field.is_empty() {
+                return Err(QueryError::InvalidArgument(format!(
+                    "SELECT DOCUMENTS does not accept a projection field; \
+                     got field='{}' (omit the field for plain document fetch, \
+                     or use SELECT COUNT / SUM / AVG to project a value)",
+                    select.field
+                )));
+            }
+            if !group_by.is_empty() {
+                // GROUP BY with SELECT DOCUMENTS is structurally
+                // nonsensical — GROUP BY produces one row per
+                // distinct key, but SELECT DOCUMENTS returns the
+                // underlying rows; the two contracts can't be
+                // reconciled. Callers wanting per-group output use
+                // SELECT COUNT / SUM / AVG / MIN / MAX. Classify
+                // as `InvalidArgument` rather than
+                // `not_yet_implemented` because this isn't a
+                // future capability — no protocol version will
+                // make this combination meaningful.
+                return Err(QueryError::InvalidArgument(format!(
+                    "GROUP BY with SELECT DOCUMENTS is not a valid SQL shape: \
+                     GROUP BY produces one row per distinct key, but SELECT \
+                     DOCUMENTS returns the underlying rows themselves. Use \
+                     SELECT COUNT / SUM / AVG / MIN / MAX with GROUP BY for \
+                     per-group output, or SELECT DOCUMENTS without GROUP BY \
+                     for plain document fetch. Got group_by={:?}.",
+                    group_by
+                )));
             }
             Ok(RoutingDecision::Documents)
         }
-        Select::Count => {
-            let in_field: Option<&str> = where_clauses
-                .iter()
-                .find(|wc| wc.operator == WhereOperator::In)
-                .map(|wc| wc.field.as_str());
-            let range_field: Option<&str> = where_clauses
-                .iter()
-                .find(|wc| {
-                    matches!(
-                        wc.operator,
-                        WhereOperator::GreaterThan
-                            | WhereOperator::GreaterThanOrEquals
-                            | WhereOperator::LessThan
-                            | WhereOperator::LessThanOrEquals
-                            | WhereOperator::Between
-                            | WhereOperator::BetweenExcludeBounds
-                            | WhereOperator::BetweenExcludeLeft
-                            | WhereOperator::BetweenExcludeRight
-                            | WhereOperator::StartsWith
-                    )
-                })
-                .map(|wc| wc.field.as_str());
+        SelectFunction::Sum => Err(not_yet_implemented(
+            "SELECT SUM (the wire surface accepts SUM(field) so callers \
+             can encode it ahead of server support landing, but the \
+             server doesn't yet evaluate numeric aggregates other than \
+             COUNT)",
+        )),
+        SelectFunction::Avg => Err(not_yet_implemented(
+            "SELECT AVG (the wire surface accepts AVG(field) so callers \
+             can encode it ahead of server support landing, but the \
+             server doesn't yet evaluate numeric aggregates other than \
+             COUNT)",
+        )),
+        SelectFunction::Min => Err(not_yet_implemented(
+            "SELECT MIN (the wire surface accepts MIN(field) so callers \
+             can encode it ahead of server support landing, but the \
+             server doesn't yet evaluate per-group MIN; semantically \
+             distinct from `HavingRanking::Min` which is a cross-group \
+             ranking primitive)",
+        )),
+        SelectFunction::Max => Err(not_yet_implemented(
+            "SELECT MAX (the wire surface accepts MAX(field) so callers \
+             can encode it ahead of server support landing, but the \
+             server doesn't yet evaluate per-group MAX; semantically \
+             distinct from `HavingRanking::Max` which is a cross-group \
+             ranking primitive)",
+        )),
+        SelectFunction::Count => {
+            if !select.field.is_empty() {
+                return Err(not_yet_implemented(
+                    "SELECT COUNT(field) — counting non-null values of a \
+                     specific field (the wire surface accepts the field so \
+                     callers can encode it ahead of server support landing, \
+                     but today only COUNT(*) — empty `field` — is evaluated)",
+                ));
+            }
+            // Field-membership predicates on the request's where
+            // clauses. **Match-any, not match-first** — a request
+            // may carry two range clauses on different fields
+            // (the executor's `RangeAggregateCarrierProof` path
+            // is built for exactly that shape; see
+            // `outer_range_plus_inner_range_with_prove_and_group_by_range_routes_to_carrier_proof`
+            // in `drive/query/drive_document_count_query/tests.rs`).
+            // A `find(...).map(field).map(eq)` test against a
+            // hard-coded first range clause would make the routing
+            // decision depend on clause ordering on the wire,
+            // which is wrong — `WHERE a > x AND b > y GROUP BY a`
+            // and `WHERE b > y AND a > x GROUP BY a` must produce
+            // the same routing.
+            //
+            // For `In` the practical effect is the same because
+            // `validate_and_canonicalize_where_clauses` rejects
+            // multiple `In` clauses upstream (`MultipleInClauses`),
+            // but the `any` shape is used here too so the routing
+            // logic doesn't bake in an assumption that could go
+            // stale if that validator's contract ever relaxes.
+            let is_range_op = |op: WhereOperator| {
+                matches!(
+                    op,
+                    WhereOperator::GreaterThan
+                        | WhereOperator::GreaterThanOrEquals
+                        | WhereOperator::LessThan
+                        | WhereOperator::LessThanOrEquals
+                        | WhereOperator::Between
+                        | WhereOperator::BetweenExcludeBounds
+                        | WhereOperator::BetweenExcludeLeft
+                        | WhereOperator::BetweenExcludeRight
+                        | WhereOperator::StartsWith
+                )
+            };
+            let is_in_field = |field: &str| {
+                where_clauses
+                    .iter()
+                    .any(|wc| wc.operator == WhereOperator::In && wc.field == field)
+            };
+            let is_range_field = |field: &str| {
+                where_clauses
+                    .iter()
+                    .any(|wc| is_range_op(wc.operator) && wc.field == field)
+            };
 
             // Compute the SQL-shape mode from `(group_by, where)`
             // first; check `limit` validity against the mode after
             // so the rejection lives in one place keyed off
             // `CountMode::accepts_limit()`.
-            let mode = match request_v1.group_by.as_slice() {
+            let mode = match group_by {
                 [] => CountMode::Aggregate,
                 [field] => {
-                    if Some(field.as_str()) == in_field {
-                        // Single-field GROUP BY on the `In` field is
-                        // only well-defined when no range clause is
-                        // also constraining the result; otherwise
-                        // Drive's compound walk emits unmerged
-                        // `(in_key, key)` entries that don't match
-                        // the caller's stated grouping. Force them
-                        // to spell out the compound shape with a
-                        // two-element `group_by`.
-                        if range_field.is_some() {
-                            return Err(not_yet_implemented(
-                                "single-field GROUP BY when both `In` and range \
-                                 clauses are present (use a two-element GROUP BY \
-                                 `[in_field, range_field]` for the compound shape, \
-                                 or drop the other constraint)",
-                            ));
-                        }
+                    if is_in_field(field) {
+                        // Single-field GROUP BY on an `In`-constrained
+                        // field routes to `CountMode::GroupByIn`.
+                        // When a range clause is also present,
+                        // drive's [`detect_mode`] picks the right
+                        // submode — `RangeAggregateCarrierProof`
+                        // on the prove path (one count per In
+                        // branch via the grovedb #663 carrier
+                        // primitive) or `RangeNoProof` on the
+                        // no-prove path (per-In-branch entries
+                        // from the range walk). Both produce
+                        // entries that line up with the
+                        // caller-stated GROUP BY shape, so no
+                        // additional gating here is needed.
                         CountMode::GroupByIn
-                    } else if Some(field.as_str()) == range_field {
-                        // Same compound-shape concern as the In
-                        // branch above — `group_by=[range_field]`
-                        // with an active `In` clause produces
-                        // compound rows from Drive that don't match
-                        // the caller's grouping.
-                        if in_field.is_some() {
-                            return Err(not_yet_implemented(
-                                "single-field GROUP BY when both `In` and range \
-                                 clauses are present (use a two-element GROUP BY \
-                                 `[in_field, range_field]` for the compound shape, \
-                                 or drop the other constraint)",
-                            ));
-                        }
+                    } else if is_range_field(field) {
+                        // Symmetric to the In branch above:
+                        // `group_by=[range_field]` routes to
+                        // `CountMode::GroupByRange`. With a
+                        // *second* range clause on a different
+                        // field this drives the
+                        // `RangeAggregateCarrierProof` carrier
+                        // shape (drive's outer-range + inner-ACOR
+                        // primitive). With an `In` on a different
+                        // field it's `RangeDistinctProof` on the
+                        // prove path (per-distinct-value counts
+                        // with In-fanout on the prefix) or
+                        // `RangeNoProof` distinct on the no-prove
+                        // path.
                         CountMode::GroupByRange
                     } else {
                         return Err(not_yet_implemented(&format!(
@@ -280,7 +278,7 @@ fn validate_and_route(
                     }
                 }
                 [first, second] => {
-                    if Some(first.as_str()) == in_field && Some(second.as_str()) == range_field {
+                    if is_in_field(first) && is_range_field(second) {
                         CountMode::GroupByCompound
                     } else {
                         return Err(not_yet_implemented(
@@ -301,7 +299,7 @@ fn validate_and_route(
             // selection in its `SizedQuery`. Either way silent
             // truncation or fan-out summing would mislead callers
             // who set a `limit`.
-            if request_v1.limit.is_some() && !mode.accepts_limit() {
+            if limit.is_some() && !mode.accepts_limit() {
                 let reason = match mode {
                     CountMode::Aggregate => {
                         "`limit` is not valid for SELECT COUNT with empty GROUP BY \
@@ -341,13 +339,77 @@ enum RoutingDecision {
 }
 
 /// Test-only: expose the routing decision for unit tests without
-/// needing a full `Platform` setup.
+/// needing a full `Platform` setup. Mirrors **both the rejection
+/// messages and the gate ordering** of [`Platform::query_documents_v1`]
+/// so a test that pins a first-fail message also pins the order
+/// gates fire in, not just which gate eventually fires.
+///
+/// Sequence (same as the real handler at
+/// [`Platform::query_documents_v1`]):
+/// 1. `offset.is_some()` → `not_yet_implemented("OFFSET …")`
+/// 2. `where_clauses_from_proto` → propagate `InvalidArgument` /
+///    `Unsupported` decode errors
+/// 3. `order_clauses_from_proto` → propagate aggregate-target
+///    rejection / `InvalidArgument` decode errors
+/// 4. `selects.len() > 1` → `not_yet_implemented("multi-projection …")`
+/// 5. `select_from_proto` (first element, or default documents)
+/// 6. [`validate_and_route`] — which itself runs `limit == Some(0)`
+///    → `having_non_empty` → per-function gates → mode pick.
+///
+/// Treats an unset `select` (proto-default) the same way the
+/// handler does — as `SelectProjection::documents()`.
 #[cfg(test)]
 pub(super) fn validate_and_route_for_tests(
     request_v1: &GetDocumentsRequestV1,
     where_clauses: &[WhereClause],
 ) -> Result<&'static str, QueryError> {
-    validate_and_route(request_v1, where_clauses).map(|d| match d {
+    // 1. OFFSET pagination — rejected before any decoding.
+    if request_v1.offset.is_some() {
+        return Err(not_yet_implemented(
+            "OFFSET pagination (use cursor pagination via `start_after` / \
+             `start_at` instead)",
+        ));
+    }
+    // 2. WHERE decoding — wire-malformed shapes (unknown operator
+    //    discriminant, nested `DocumentFieldValue.list` beyond
+    //    depth 1, …) reject as `InvalidArgument`. Runs even
+    //    though the caller passes a separate pre-decoded
+    //    `where_clauses` slice for the routing decision, because
+    //    the depth-cap and similar decode-time contracts aren't
+    //    exercisable otherwise.
+    conversions::where_clauses_from_proto(request_v1.where_clauses.clone())?;
+    // 3. ORDER BY decoding — aggregate-target reject as
+    //    `Unsupported("ORDER BY on aggregate keys …")`.
+    conversions::order_clauses_from_proto(request_v1.order_by.clone())?;
+    // 4. Multi-projection SELECT rejection.
+    if request_v1.selects.len() > 1 {
+        return Err(not_yet_implemented(
+            "multi-projection SELECT (the wire accepts `repeated Select` so \
+             callers can encode `SELECT COUNT(*), SUM(amount), AVG(rating)` \
+             ahead of server support landing, but today only single-projection \
+             requests are evaluated; the response shape will gain a parallel \
+             `repeated AggregateValue values` field when multi-projection \
+             lands)",
+        ));
+    }
+    // 5. Decode the single Select (or default to documents).
+    let select = request_v1
+        .selects
+        .first()
+        .cloned()
+        .map(conversions::select_from_proto)
+        .transpose()?
+        .unwrap_or_else(SelectProjection::documents);
+    // 6. `validate_and_route` runs the inner `limit` / `having` /
+    //    per-function gates.
+    validate_and_route(
+        &select,
+        request_v1.limit,
+        !request_v1.having.is_empty(),
+        &request_v1.group_by,
+        where_clauses,
+    )
+    .map(|d| match d {
         RoutingDecision::Documents => "documents",
         RoutingDecision::Count(CountMode::Aggregate) => "count_aggregate",
         RoutingDecision::Count(CountMode::GroupByIn) => "count_entries_via_in_field",
@@ -363,57 +425,158 @@ impl<C> Platform<C> {
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetDocumentsResponseV1>, Error> {
-        let where_clauses = match decode_where_clauses(&request_v1.r#where) {
+        // Destructure the proto request once; the rest of the
+        // pipeline consumes the individual fields by name.
+        let GetDocumentsRequestV1 {
+            data_contract_id,
+            document_type,
+            where_clauses: proto_where_clauses,
+            order_by: proto_order_by,
+            limit,
+            start,
+            prove,
+            selects: proto_selects,
+            group_by,
+            having,
+            offset,
+        } = request_v1;
+
+        // OFFSET pagination is not yet implemented — cursor
+        // pagination via `start_after` / `start_at` is the
+        // supported path today. Reject any non-None offset
+        // before doing further work; same `not_yet_implemented`
+        // contract as HAVING / SUM / AVG.
+        if offset.is_some() {
+            return Ok(QueryValidationResult::new_with_error(not_yet_implemented(
+                "OFFSET pagination (use cursor pagination via `start_after` / \
+                 `start_at` instead)",
+            )));
+        }
+
+        // Decode the proto-typed `repeated WhereClause` / `repeated
+        // OrderClause` into drive's structured forms once, up
+        // front. Both the routing decision and the downstream
+        // executor consume the typed clauses directly — no CBOR
+        // envelope on the v1 path.
+        //
+        // `having` is checked for non-empty before decoding rather
+        // than after: the server rejects non-empty HAVING
+        // wholesale today, so decoding the clauses just to
+        // discard them is pure overhead and the downstream
+        // dispatchers don't accept the decoded vec yet. When
+        // HAVING execution lands, the `is_empty()` short-circuit
+        // gives way to a full `having_clauses_from_proto` call
+        // that threads into the dispatchers — and at that point
+        // wire-malformed HAVING (bad discriminant, missing
+        // aggregate, …) starts surfacing as `InvalidArgument`
+        // automatically.
+        let where_clauses = match conversions::where_clauses_from_proto(proto_where_clauses) {
             Ok(c) => c,
             Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
         };
-
-        let routing = match validate_and_route(&request_v1, &where_clauses) {
-            Ok(r) => r,
+        let order_by_clauses = match conversions::order_clauses_from_proto(proto_order_by) {
+            Ok(c) => c,
             Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
         };
+        let having_non_empty = !having.is_empty();
+
+        // `selects` is `repeated Select` on the wire. Empty
+        // list → default-construct a `documents()` projection
+        // (keeps v0-style callers that don't opt into SELECT on
+        // the documents path). `len > 1` is wire-only today —
+        // multi-projection routing + response shape are deferred
+        // to a follow-up; reject here with the standard
+        // `not_yet_implemented` contract.
+        if proto_selects.len() > 1 {
+            return Ok(QueryValidationResult::new_with_error(not_yet_implemented(
+                "multi-projection SELECT (the wire accepts `repeated Select` so \
+                 callers can encode `SELECT COUNT(*), SUM(amount), AVG(rating)` \
+                 ahead of server support landing, but today only single-projection \
+                 requests are evaluated; the response shape will gain a parallel \
+                 `repeated AggregateValue values` field when multi-projection \
+                 lands)",
+            )));
+        }
+        let select = match proto_selects.into_iter().next() {
+            Some(s) => match conversions::select_from_proto(s) {
+                Ok(s) => s,
+                Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
+            },
+            None => SelectProjection::documents(),
+        };
+
+        let routing =
+            match validate_and_route(&select, limit, having_non_empty, &group_by, &where_clauses) {
+                Ok(r) => r,
+                Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
+            };
 
         match routing {
-            RoutingDecision::Documents => {
-                self.dispatch_documents_v1(request_v1, platform_state, platform_version)
-            }
-            RoutingDecision::Count(mode) => {
-                self.dispatch_count_v1(request_v1, mode, platform_state, platform_version)
-            }
+            RoutingDecision::Documents => self.dispatch_documents_v1(
+                data_contract_id,
+                document_type,
+                where_clauses,
+                order_by_clauses,
+                limit,
+                start,
+                prove,
+                platform_state,
+                platform_version,
+            ),
+            RoutingDecision::Count(mode) => self.dispatch_count_v1(
+                data_contract_id,
+                document_type,
+                where_clauses,
+                order_by_clauses,
+                limit,
+                start,
+                prove,
+                mode,
+                platform_state,
+                platform_version,
+            ),
         }
     }
 
-    /// Forward a `select = DOCUMENTS` request through the v0
-    /// handler. v1 doesn't add any documents-side capability — the
-    /// SQL-shaped fields (`select`, `group_by`, `having`) are all
-    /// validated as documents-compatible above (empty `group_by`,
-    /// empty `having`, etc.) before reaching here.
+    /// Forward a `select = DOCUMENTS` request through the shared
+    /// `query_documents_typed` helper that v0 also dispatches into.
+    /// v1 doesn't add any documents-side capability — the SQL-shaped
+    /// fields (`select`, `group_by`, `having`) are all validated as
+    /// documents-compatible above (empty `group_by`, empty `having`,
+    /// etc.) before reaching here.
+    #[allow(clippy::too_many_arguments)]
     fn dispatch_documents_v1(
         &self,
-        request_v1: GetDocumentsRequestV1,
+        data_contract_id: Vec<u8>,
+        document_type: String,
+        where_clauses: Vec<WhereClause>,
+        order_by_clauses: Vec<OrderClause>,
+        limit: Option<u32>,
+        start: Option<RequestV1Start>,
+        prove: bool,
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetDocumentsResponseV1>, Error> {
-        let start = request_v1.start.map(|s| match s {
+        let start = start.map(|s| match s {
             RequestV1Start::StartAfter(b) => RequestV0Start::StartAfter(b),
             RequestV1Start::StartAt(b) => RequestV0Start::StartAt(b),
         });
-        // `limit` is `optional uint32` on v1 vs unwrapped `uint32`
-        // (default 0) on v0. `None` on v1 → 0 on v0 (v0 reads `0`
-        // as "use the server's `default_query_limit`"). `Some(0)`
+        // `limit` is `optional uint32` on v1; the typed helper takes
+        // `Option<u32>` directly (`None` → server default). `Some(0)`
         // can't reach here — `validate_and_route` rejects it for
         // every SELECT mode so the v1 contract is uniform; only
         // `None` or `Some(N > 0)` survive.
-        let request_v0 = GetDocumentsRequestV0 {
-            data_contract_id: request_v1.data_contract_id,
-            document_type: request_v1.document_type,
-            r#where: request_v1.r#where,
-            order_by: request_v1.order_by,
-            limit: request_v1.limit.unwrap_or(0),
-            prove: request_v1.prove,
+        let result = self.query_documents_typed(
+            data_contract_id,
+            document_type,
+            where_clauses,
+            order_by_clauses,
+            limit,
+            prove,
             start,
-        };
-        let result = self.query_documents_v0(request_v0, platform_state, platform_version)?;
+            platform_state,
+            platform_version,
+        )?;
         Ok(result.map(translate_documents_v0_to_v1))
     }
 
@@ -425,26 +588,33 @@ impl<C> Platform<C> {
     /// group entries. The wire response is `GetDocumentsResponseV1`
     /// with the inner `ResultData.counts` variant for non-proof
     /// results.
+    #[allow(clippy::too_many_arguments)]
     fn dispatch_count_v1(
         &self,
-        request_v1: GetDocumentsRequestV1,
+        data_contract_id: Vec<u8>,
+        document_type_name: String,
+        where_clauses: Vec<WhereClause>,
+        order_clauses: Vec<OrderClause>,
+        limit: Option<u32>,
+        start: Option<RequestV1Start>,
+        prove: bool,
         mode: CountMode,
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetDocumentsResponseV1>, Error> {
-        if request_v1.start.is_some() {
+        if start.is_some() {
             return Ok(QueryValidationResult::new_with_error(not_yet_implemented(
                 "start_after / start_at with SELECT COUNT (paginate by narrowing the \
                  range clause itself)",
             )));
         }
 
-        let contract_id: Identifier = check_validation_result_with_data!(request_v1
-            .data_contract_id
-            .try_into()
-            .map_err(|_| QueryError::InvalidArgument(
-                "id must be a valid identifier (32 bytes long)".to_string()
-            )));
+        let contract_id: Identifier =
+            check_validation_result_with_data!(data_contract_id.try_into().map_err(|_| {
+                QueryError::InvalidArgument(
+                    "id must be a valid identifier (32 bytes long)".to_string(),
+                )
+            }));
 
         let (_, contract_fetch_info) = self.drive.get_contract_with_fetch_info_and_fee(
             contract_id.to_buffer(),
@@ -460,37 +630,20 @@ impl<C> Platform<C> {
         ));
         let contract_ref = &contract_fetch_info.contract;
         let document_type = check_validation_result_with_data!(contract_ref
-            .document_type_for_name(request_v1.document_type.as_str())
+            .document_type_for_name(document_type_name.as_str())
             .map_err(|_| QueryError::InvalidArgument(format!(
                 "document type {} not found for contract {}",
-                request_v1.document_type, contract_id
+                document_type_name, contract_id
             ))));
-
-        let where_value = if request_v1.r#where.is_empty() {
-            Value::Null
-        } else {
-            check_validation_result_with_data!(ciborium::de::from_reader(
-                request_v1.r#where.as_slice()
-            )
-            .map_err(
-                |_| QueryError::Query(QuerySyntaxError::DeserializationError(
-                    "unable to decode 'where' query from cbor".to_string()
-                ))
-            ))
-        };
-        let order_by_value = match decode_order_by_value(&request_v1.order_by) {
-            Ok(v) => v,
-            Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
-        };
 
         let drive_request = DocumentCountRequest {
             contract: contract_ref,
             document_type,
-            raw_where_value: where_value,
-            raw_order_by_value: order_by_value,
+            where_clauses,
+            order_clauses,
             mode,
-            limit: request_v1.limit,
-            prove: request_v1.prove,
+            limit,
+            prove,
             drive_config: &self.config.drive,
         };
         let drive_response =

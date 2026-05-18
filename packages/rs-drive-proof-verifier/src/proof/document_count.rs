@@ -222,6 +222,83 @@ pub fn verify_primary_key_count_tree_proof(
     Ok(count)
 }
 
+/// Verify a **carrier** `AggregateCountOnRange` proof against a
+/// `rangeCountable: true` index and return the per-`In`-branch
+/// counts.
+///
+/// Thin tenderdash-composition wrapper over
+/// [`DriveDocumentCountQuery::verify_carrier_aggregate_count_proof`]
+/// in rs-drive. Used by the prove path when the request shape
+/// is `select=COUNT, group_by=[in_field], where = In(in_field) +
+/// range(other_field), prove=true` — drive's `detect_mode` routes
+/// that shape to `DocumentCountMode::RangeAggregateCarrierProof`
+/// (grovedb PR #663's carrier-ACOR primitive), which collapses
+/// each In branch's range into a single committed `u64` rather
+/// than emitting per-distinct-key entries. Result is one
+/// [`SplitCountEntry`] per **present** In branch:
+/// `in_key = <serialized In value>`, `key = []` (no terminator —
+/// the count is for the whole range slice under that In branch),
+/// `count = Some(n)`. Absent In branches are omitted; callers
+/// that need to surface "queried but absent" diff their In array
+/// against the returned `in_key`s.
+///
+/// ## Trade-off vs. `verify_distinct_count_proof`
+///
+/// Both shapes verify range-count queries with an In on the
+/// prefix. The distinct variant emits one `KVCount` op per
+/// `(in_key, range_key)` pair — proof size scales with the
+/// number of distinct values matched. The carrier variant emits
+/// one `u64` per In branch — proof size scales with `|In|`,
+/// independent of how many distinct range values each branch
+/// covers. Drive picks between them based on whether the caller
+/// asked for distinct entries (`GroupByCompound`) or per-In
+/// aggregates (`GroupByIn`).
+///
+/// ## Limit semantics
+///
+/// `limit: Option<u16>` mirrors the prover's `SizedQuery::limit`
+/// — caps the per-branch carrier walk. The verifier
+/// reconstructs the same path query bytes from `(query, limit)`,
+/// so the value passed here must match what the server used to
+/// generate the proof (validate-don't-clamp on the prove path,
+/// same contract as `verify_distinct_count_proof`).
+pub fn verify_carrier_aggregate_count_proof(
+    query: &DriveDocumentCountQuery,
+    proof: &Proof,
+    mtd: &ResponseMetadata,
+    limit: Option<u16>,
+    left_to_right: bool,
+    platform_version: &PlatformVersion,
+    provider: &dyn ContextProvider,
+) -> Result<Vec<SplitCountEntry>, Error> {
+    let (root_hash, per_key_counts) = query
+        .verify_carrier_aggregate_count_proof(
+            &proof.grovedb_proof,
+            limit,
+            left_to_right,
+            platform_version,
+        )
+        .map_drive_error(proof, mtd)?;
+
+    verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+    // Map drive's `Vec<(Vec<u8>, u64)>` carrier shape onto the
+    // SDK's `Vec<SplitCountEntry>` so the call sites can stay
+    // uniform across `verify_distinct_count_proof` /
+    // `verify_point_lookup_count_proof` / this. `key` is empty
+    // because the carrier variant doesn't emit terminator keys —
+    // each entry's `in_key` is the only routable handle.
+    let entries = per_key_counts
+        .into_iter()
+        .map(|(in_key, count)| SplitCountEntry {
+            in_key: Some(in_key),
+            key: Vec::new(),
+            count: Some(count),
+        })
+        .collect();
+    Ok(entries)
+}
+
 #[cfg(test)]
 mod tests {
     //! Local-only tests for parts of this module that don't need a
