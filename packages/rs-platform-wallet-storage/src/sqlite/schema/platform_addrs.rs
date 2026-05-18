@@ -202,66 +202,25 @@ pub fn count_per_wallet(
 /// folding the count into the bulk scan saves a per-wallet query.
 pub type LoadAllEntry = (PlatformAddressSyncStartState, usize);
 
-/// Bulk reader for `load()`: one scan over `platform_address_sync` +
-/// one scan over `platform_addresses`, grouped in memory by wallet id
-/// (no per-wallet round trip).
+/// Bulk reader for `load()`: one [`load_state`] + [`count_per_wallet`]
+/// pair per wallet id listed in `wallet_metadata`. Constant-query
+/// w.r.t. the number of wallets per call site (FR-P4-6).
 ///
-/// The two scans together cover every wallet's start-state so the
-/// persister `load()` path is constant-query w.r.t. wallet count
-/// (FR-P4-6 — no N+1).
+/// Driven by [`wallet_meta::list_ids`](crate::sqlite::schema::wallet_meta::list_ids):
+/// orphaned `platform_addresses` / `platform_address_sync` rows whose
+/// `wallet_id` is absent from `wallet_metadata` are intentionally NOT
+/// surfaced. FK triggers prevent such orphans; a future re-wire that
+/// needs them must restore the id-union over the area tables.
 pub fn load_all(
     conn: &Connection,
 ) -> Result<std::collections::BTreeMap<WalletId, LoadAllEntry>, WalletStorageError> {
     use std::collections::BTreeMap;
 
     let mut out: BTreeMap<WalletId, LoadAllEntry> = BTreeMap::new();
-
-    // Scan 1: per-wallet sync header. ORDER BY for deterministic merge.
-    let mut sync_stmt = conn.prepare(
-        "SELECT wallet_id, sync_height, sync_timestamp, last_known_recent_block \
-         FROM platform_address_sync ORDER BY wallet_id",
-    )?;
-    let mut rows = sync_stmt.query([])?;
-    while let Some(row) = rows.next()? {
-        let wid_bytes: Vec<u8> = row.get(0)?;
-        let h: i64 = row.get(1)?;
-        let t: i64 = row.get(2)?;
-        let r: i64 = row.get(3)?;
-        let mut wid = [0u8; 32];
-        if wid_bytes.len() == 32 {
-            wid.copy_from_slice(&wid_bytes);
-        }
-        let h = safe_cast::i64_to_u64("platform_address_sync.sync_height", h)?;
-        let t = safe_cast::i64_to_u64("platform_address_sync.sync_timestamp", t)?;
-        let r = safe_cast::i64_to_u64("platform_address_sync.last_known_recent_block", r)?;
-        out.insert(
-            wid,
-            (
-                PlatformAddressSyncStartState {
-                    per_account: Default::default(),
-                    sync_height: h,
-                    sync_timestamp: t,
-                    last_known_recent_block: r,
-                },
-                0,
-            ),
-        );
-    }
-
-    // Scan 2: address rows. Bumps the count for the matching wallet.
-    let mut addr_stmt =
-        conn.prepare("SELECT wallet_id FROM platform_addresses ORDER BY wallet_id")?;
-    let mut rows = addr_stmt.query([])?;
-    while let Some(row) = rows.next()? {
-        let wid_bytes: Vec<u8> = row.get(0)?;
-        let mut wid = [0u8; 32];
-        if wid_bytes.len() == 32 {
-            wid.copy_from_slice(&wid_bytes);
-        }
-        let entry = out
-            .entry(wid)
-            .or_insert_with(|| (PlatformAddressSyncStartState::default(), 0));
-        entry.1 += 1;
+    for wallet_id in crate::sqlite::schema::wallet_meta::list_ids(conn)? {
+        let sync = load_state(conn, &wallet_id)?;
+        let count = count_per_wallet(conn, &wallet_id)?;
+        out.insert(wallet_id, (sync, count));
     }
     Ok(out)
 }

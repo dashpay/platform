@@ -1,18 +1,46 @@
 //! `contacts_sent` / `contacts_recv` / `contacts_established` writers
 //! and per-wallet reader.
 
+use std::collections::BTreeMap;
+
 use rusqlite::{params, Connection, Transaction};
 
 use dpp::prelude::Identifier;
 use platform_wallet::changeset::{
-    ContactChangeSet, ContactRequestEntry, ContactsStartState, ReceivedContactRequestKey,
-    SentContactRequestKey,
+    ContactChangeSet, ContactRequestEntry, ReceivedContactRequestKey, SentContactRequestKey,
 };
 use platform_wallet::wallet::identity::EstablishedContact;
 use platform_wallet::wallet::platform_wallet::WalletId;
 
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::blob;
+
+/// Storage-internal snapshot of one wallet's `contacts_*` rows.
+///
+/// Mirrors the populated-only subset of
+/// [`ContactChangeSet`](platform_wallet::changeset::ContactChangeSet);
+/// `removed_*` are absent because deletes never reach storage as rows
+/// (the writer applies them as `DELETE`s). Crate-internal on purpose —
+/// rs-platform-wallet's `ClientStartState` does not carry a contacts
+/// slot, so this type is never re-exported across the crate boundary.
+/// Promoted to `pub` only under `__test-helpers` so this crate's own
+/// integration tests can assert on the hardened reader directly.
+#[derive(Debug, Default, PartialEq)]
+#[cfg(not(feature = "__test-helpers"))]
+pub(crate) struct ContactsRecords {
+    pub sent_requests: BTreeMap<SentContactRequestKey, ContactRequestEntry>,
+    pub incoming_requests: BTreeMap<ReceivedContactRequestKey, ContactRequestEntry>,
+    pub established: BTreeMap<SentContactRequestKey, EstablishedContact>,
+}
+
+/// See the `not(__test-helpers)` definition for the canonical docs.
+#[derive(Debug, Default, PartialEq)]
+#[cfg(feature = "__test-helpers")]
+pub struct ContactsRecords {
+    pub sent_requests: BTreeMap<SentContactRequestKey, ContactRequestEntry>,
+    pub incoming_requests: BTreeMap<ReceivedContactRequestKey, ContactRequestEntry>,
+    pub established: BTreeMap<SentContactRequestKey, EstablishedContact>,
+}
 
 pub fn apply(
     tx: &Transaction<'_>,
@@ -94,16 +122,14 @@ pub fn apply(
     Ok(())
 }
 
-/// Build a [`ContactsStartState`] for one wallet from the three
-/// `contacts_*` tables. Rows that fail to decode are skipped — the
-/// skip count is returned so callers can surface it via the `load()`
-/// summary log.
-pub fn load_state(
+/// Build a [`ContactsRecords`] for one wallet from the three
+/// `contacts_*` tables. Any row that fails to decode is a hard error —
+/// corruption is never silently dropped.
+pub(crate) fn load_state(
     conn: &Connection,
     wallet_id: &WalletId,
-) -> Result<(ContactsStartState, usize), WalletStorageError> {
-    let mut state = ContactsStartState::default();
-    let mut skipped = 0usize;
+) -> Result<ContactsRecords, WalletStorageError> {
+    let mut state = ContactsRecords::default();
 
     let mut sent_stmt = conn.prepare(
         "SELECT owner_id, recipient_id, entry_blob FROM contacts_sent WHERE wallet_id = ?1",
@@ -113,26 +139,15 @@ pub fn load_state(
         let owner: Vec<u8> = row.get(0)?;
         let recipient: Vec<u8> = row.get(1)?;
         let payload: Vec<u8> = row.get(2)?;
-        let key = match decode_pair_key(&owner, &recipient) {
-            Ok((o, r)) => SentContactRequestKey {
-                owner_id: o,
-                recipient_id: r,
+        let (owner_id, recipient_id) = decode_pair_key(&owner, &recipient)?;
+        let entry: ContactRequestEntry = blob::decode(&payload)?;
+        state.sent_requests.insert(
+            SentContactRequestKey {
+                owner_id,
+                recipient_id,
             },
-            Err(e) => {
-                warn_skip(wallet_id, "contacts_sent", &e);
-                skipped += 1;
-                continue;
-            }
-        };
-        let entry: ContactRequestEntry = match blob::decode(&payload) {
-            Ok(e) => e,
-            Err(e) => {
-                warn_skip(wallet_id, "contacts_sent", &e);
-                skipped += 1;
-                continue;
-            }
-        };
-        state.sent_requests.insert(key, entry);
+            entry,
+        );
     }
 
     let mut recv_stmt = conn.prepare(
@@ -143,26 +158,15 @@ pub fn load_state(
         let owner: Vec<u8> = row.get(0)?;
         let sender: Vec<u8> = row.get(1)?;
         let payload: Vec<u8> = row.get(2)?;
-        let key = match decode_pair_key(&owner, &sender) {
-            Ok((o, s)) => ReceivedContactRequestKey {
-                owner_id: o,
-                sender_id: s,
+        let (owner_id, sender_id) = decode_pair_key(&owner, &sender)?;
+        let entry: ContactRequestEntry = blob::decode(&payload)?;
+        state.incoming_requests.insert(
+            ReceivedContactRequestKey {
+                owner_id,
+                sender_id,
             },
-            Err(e) => {
-                warn_skip(wallet_id, "contacts_recv", &e);
-                skipped += 1;
-                continue;
-            }
-        };
-        let entry: ContactRequestEntry = match blob::decode(&payload) {
-            Ok(e) => e,
-            Err(e) => {
-                warn_skip(wallet_id, "contacts_recv", &e);
-                skipped += 1;
-                continue;
-            }
-        };
-        state.incoming_requests.insert(key, entry);
+            entry,
+        );
     }
 
     let mut est_stmt = conn.prepare(
@@ -173,159 +177,39 @@ pub fn load_state(
         let owner: Vec<u8> = row.get(0)?;
         let contact: Vec<u8> = row.get(1)?;
         let payload: Vec<u8> = row.get(2)?;
-        let key = match decode_pair_key(&owner, &contact) {
-            Ok((o, c)) => SentContactRequestKey {
-                owner_id: o,
-                recipient_id: c,
+        let (owner_id, recipient_id) = decode_pair_key(&owner, &contact)?;
+        let value: EstablishedContact = blob::decode(&payload)?;
+        state.established.insert(
+            SentContactRequestKey {
+                owner_id,
+                recipient_id,
             },
-            Err(e) => {
-                warn_skip(wallet_id, "contacts_established", &e);
-                skipped += 1;
-                continue;
-            }
-        };
-        let value: EstablishedContact = match blob::decode(&payload) {
-            Ok(e) => e,
-            Err(e) => {
-                warn_skip(wallet_id, "contacts_established", &e);
-                skipped += 1;
-                continue;
-            }
-        };
-        state.established.insert(key, value);
+            value,
+        );
     }
 
-    Ok((state, skipped))
+    Ok(state)
 }
 
-/// Bulk reader for `load()`: three scans (one per `contacts_*`
-/// subtable), grouped in memory by wallet id. Returns per-wallet
-/// `(ContactsStartState, skipped_rows)` so the persister `load()` path
-/// is constant-query w.r.t. wallet count (FR-P4-6 — no N+1).
-pub fn load_all(
+/// Bulk reader: one [`load_state`] call per wallet id listed in
+/// `wallet_metadata`. Constant-query w.r.t. the number of wallets
+/// touched per call site (FR-P4-6).
+///
+/// Driven by [`wallet_meta::list_ids`](crate::sqlite::schema::wallet_meta::list_ids):
+/// orphaned `contacts_*` rows whose `wallet_id` is absent from
+/// `wallet_metadata` are intentionally NOT surfaced. FK triggers
+/// prevent such orphans; a future re-wire that needs them must restore
+/// the id-union over the area tables.
+// Dormant sibling of `load_state` — kept for API symmetry with the
+// other area readers; `load()` no longer fans out to it.
+#[allow(dead_code)]
+pub(crate) fn load_all(
     conn: &Connection,
-) -> Result<std::collections::BTreeMap<WalletId, (ContactsStartState, usize)>, WalletStorageError> {
-    use std::collections::BTreeMap;
-
-    let mut out: BTreeMap<WalletId, (ContactsStartState, usize)> = BTreeMap::new();
-
-    let mut sent_stmt = conn.prepare(
-        "SELECT wallet_id, owner_id, recipient_id, entry_blob \
-         FROM contacts_sent ORDER BY wallet_id",
-    )?;
-    let mut rows = sent_stmt.query([])?;
-    while let Some(row) = rows.next()? {
-        let wid_bytes: Vec<u8> = row.get(0)?;
-        let owner: Vec<u8> = row.get(1)?;
-        let recipient: Vec<u8> = row.get(2)?;
-        let payload: Vec<u8> = row.get(3)?;
-        let mut wid = [0u8; 32];
-        if wid_bytes.len() == 32 {
-            wid.copy_from_slice(&wid_bytes);
-        }
-        let slot = out
-            .entry(wid)
-            .or_insert_with(|| (ContactsStartState::default(), 0));
-        let key = match decode_pair_key(&owner, &recipient) {
-            Ok((o, r)) => SentContactRequestKey {
-                owner_id: o,
-                recipient_id: r,
-            },
-            Err(e) => {
-                warn_skip(&wid, "contacts_sent", &e);
-                slot.1 += 1;
-                continue;
-            }
-        };
-        let entry: ContactRequestEntry = match blob::decode(&payload) {
-            Ok(e) => e,
-            Err(e) => {
-                warn_skip(&wid, "contacts_sent", &e);
-                slot.1 += 1;
-                continue;
-            }
-        };
-        slot.0.sent_requests.insert(key, entry);
+) -> Result<BTreeMap<WalletId, ContactsRecords>, WalletStorageError> {
+    let mut out = BTreeMap::new();
+    for wallet_id in crate::sqlite::schema::wallet_meta::list_ids(conn)? {
+        out.insert(wallet_id, load_state(conn, &wallet_id)?);
     }
-
-    let mut recv_stmt = conn.prepare(
-        "SELECT wallet_id, owner_id, sender_id, entry_blob \
-         FROM contacts_recv ORDER BY wallet_id",
-    )?;
-    let mut rows = recv_stmt.query([])?;
-    while let Some(row) = rows.next()? {
-        let wid_bytes: Vec<u8> = row.get(0)?;
-        let owner: Vec<u8> = row.get(1)?;
-        let sender: Vec<u8> = row.get(2)?;
-        let payload: Vec<u8> = row.get(3)?;
-        let mut wid = [0u8; 32];
-        if wid_bytes.len() == 32 {
-            wid.copy_from_slice(&wid_bytes);
-        }
-        let slot = out
-            .entry(wid)
-            .or_insert_with(|| (ContactsStartState::default(), 0));
-        let key = match decode_pair_key(&owner, &sender) {
-            Ok((o, s)) => ReceivedContactRequestKey {
-                owner_id: o,
-                sender_id: s,
-            },
-            Err(e) => {
-                warn_skip(&wid, "contacts_recv", &e);
-                slot.1 += 1;
-                continue;
-            }
-        };
-        let entry: ContactRequestEntry = match blob::decode(&payload) {
-            Ok(e) => e,
-            Err(e) => {
-                warn_skip(&wid, "contacts_recv", &e);
-                slot.1 += 1;
-                continue;
-            }
-        };
-        slot.0.incoming_requests.insert(key, entry);
-    }
-
-    let mut est_stmt = conn.prepare(
-        "SELECT wallet_id, owner_id, contact_id, entry_blob \
-         FROM contacts_established ORDER BY wallet_id",
-    )?;
-    let mut rows = est_stmt.query([])?;
-    while let Some(row) = rows.next()? {
-        let wid_bytes: Vec<u8> = row.get(0)?;
-        let owner: Vec<u8> = row.get(1)?;
-        let contact: Vec<u8> = row.get(2)?;
-        let payload: Vec<u8> = row.get(3)?;
-        let mut wid = [0u8; 32];
-        if wid_bytes.len() == 32 {
-            wid.copy_from_slice(&wid_bytes);
-        }
-        let slot = out
-            .entry(wid)
-            .or_insert_with(|| (ContactsStartState::default(), 0));
-        let key = match decode_pair_key(&owner, &contact) {
-            Ok((o, c)) => SentContactRequestKey {
-                owner_id: o,
-                recipient_id: c,
-            },
-            Err(e) => {
-                warn_skip(&wid, "contacts_established", &e);
-                slot.1 += 1;
-                continue;
-            }
-        };
-        let value: EstablishedContact = match blob::decode(&payload) {
-            Ok(e) => e,
-            Err(e) => {
-                warn_skip(&wid, "contacts_established", &e);
-                slot.1 += 1;
-                continue;
-            }
-        };
-        slot.0.established.insert(key, value);
-    }
-
     Ok(out)
 }
 
@@ -337,11 +221,13 @@ fn decode_pair_key(a: &[u8], b: &[u8]) -> Result<(Identifier, Identifier), Walle
     Ok((Identifier::from(a32), Identifier::from(b32)))
 }
 
-fn warn_skip(wallet_id: &WalletId, table: &'static str, err: &WalletStorageError) {
-    tracing::warn!(
-        wallet_id = %hex::encode(wallet_id),
-        table,
-        error = %err,
-        "skipping undecodable contacts row"
-    );
+/// Test-helper wrapper over [`load_state`] so this crate's integration
+/// tests can assert on the hardened (fail-hard) contacts reader without
+/// promoting the production surface beyond `pub(crate)`.
+#[cfg(feature = "__test-helpers")]
+pub fn load_state_for_test(
+    conn: &Connection,
+    wallet_id: &WalletId,
+) -> Result<ContactsRecords, WalletStorageError> {
+    load_state(conn, wallet_id)
 }

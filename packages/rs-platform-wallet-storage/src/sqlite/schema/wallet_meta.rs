@@ -42,17 +42,16 @@ pub fn ensure_exists(conn: &Connection, wallet_id: &WalletId) -> Result<(), Wall
 /// All known wallet ids (used by `delete_wallet`, `load`, `inspect`).
 pub fn list_ids(conn: &Connection) -> Result<Vec<WalletId>, WalletStorageError> {
     let mut stmt = conn.prepare("SELECT wallet_id FROM wallet_metadata ORDER BY wallet_id")?;
-    let rows = stmt.query_map([], |row| {
-        let bytes: Vec<u8> = row.get(0)?;
-        let mut wid = [0u8; 32];
-        if bytes.len() == 32 {
-            wid.copy_from_slice(&bytes);
-        }
-        Ok(wid)
-    })?;
+    let rows = stmt.query_map([], |row| row.get::<_, Vec<u8>>(0))?;
     let mut out = Vec::new();
     for r in rows {
-        out.push(r?);
+        let bytes = r?;
+        let wid = <[u8; 32]>::try_from(bytes.as_slice()).map_err(|_| {
+            WalletStorageError::InvalidWalletIdLength {
+                actual: bytes.len(),
+            }
+        })?;
+        out.push(wid);
     }
     Ok(out)
 }

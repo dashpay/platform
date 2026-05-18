@@ -1,9 +1,4 @@
 #![allow(clippy::field_reassign_with_default)]
-// `LoadIncomplete` is `#[deprecated]` (soft signal only — see error.rs)
-// but the test must still construct + match it because the production
-// `match` is wildcard-free and shipping the variant without test
-// coverage would defeat the exhaustiveness gate.
-#![allow(deprecated)]
 
 //! TC-P2-005 — `WalletStorageError::is_transient` and
 //! `error_kind_str` exhaustiveness check via wildcard-free `match`.
@@ -127,7 +122,6 @@ fn samples() -> Vec<WalletStorageError> {
             value: u64::MAX,
             target: SafeCastTarget::U64,
         },
-        WalletStorageError::LoadIncomplete { unimplemented: &[] },
         WalletStorageError::FlushRetryable {
             wallet_id: [0xAB; 32],
             source: SqlErr::SqliteFailure(
@@ -196,7 +190,6 @@ fn tc_p2_005_is_transient_table() {
                 (false, "backup_destination_exists")
             }
             WalletStorageError::IntegerOverflow { .. } => (false, "integer_overflow"),
-            WalletStorageError::LoadIncomplete { .. } => (false, "load_incomplete"),
         }
     }
 

@@ -222,10 +222,16 @@ fn contact_request_entry(sender: u8, recipient: u8) -> ContactRequestEntry {
     }
 }
 
-/// TC-P4-003: identities round-trip per wallet, exact equality on
-/// `id`s.
+/// TC-P4-003: identities reader round-trips per wallet, exact equality
+/// on `id`s.
+///
+/// `persister.load()` no longer surfaces the identities slot (the
+/// `ClientStartState` revert dropped it), so this exercises the
+/// hardened dormant reader `schema::identities::load_state` directly —
+/// keeping its fail-hard behaviour genuinely covered.
 #[test]
 fn tc_p4_003_load_identities_two_wallets() {
+    use platform_wallet_storage::sqlite::schema::identities;
     use std::collections::BTreeMap;
     let (persister, _tmp, path) = fresh_persister();
     let a = wid(0xAA);
@@ -262,9 +268,11 @@ fn tc_p4_003_load_identities_two_wallets() {
     drop(persister);
 
     let p2 = reopen(&path);
-    let state = p2.load().unwrap();
-    assert_eq!(state.identities.len(), 2);
-    let a_state = &state.identities[&a];
+    let conn = p2.lock_conn_for_test();
+    let a_state = identities::load_state(&conn, &a).expect("load_state A");
+    let b_state = identities::load_state(&conn, &b).expect("load_state B");
+    drop(conn);
+
     // Both stored under identity_index 0 and 1 — wallet bucket.
     let bucket_a = a_state.wallet_identities.get(&a).expect("bucket A");
     assert_eq!(bucket_a.len(), 2);
@@ -275,7 +283,6 @@ fn tc_p4_003_load_identities_two_wallets() {
     expect_ids.sort();
     assert_eq!(got_ids, expect_ids);
 
-    let b_state = &state.identities[&b];
     let bucket_b = b_state.wallet_identities.get(&b).expect("bucket B");
     assert_eq!(bucket_b.len(), 1);
     assert_eq!(bucket_b.values().next().unwrap().identity.id(), e_b1.id);
@@ -333,15 +340,19 @@ fn tc_p4_004_load_contacts_two_wallets() {
     drop(persister);
 
     let p2 = reopen(&path);
-    let state = p2.load().unwrap();
-    assert_eq!(state.contacts.len(), 2);
-    let got_a = state.contacts[&a].sent_requests.get(&key_a).expect("a");
+    let conn = p2.lock_conn_for_test();
+    let a_state = platform_wallet_storage::sqlite::schema::contacts::load_state_for_test(&conn, &a)
+        .expect("contacts load_state A");
+    let b_state = platform_wallet_storage::sqlite::schema::contacts::load_state_for_test(&conn, &b)
+        .expect("contacts load_state B");
+    drop(conn);
+    let got_a = a_state.sent_requests.get(&key_a).expect("a");
     assert_eq!(got_a.request.sender_id, entry_a.request.sender_id);
     assert_eq!(
         got_a.request.core_height_created_at,
         entry_a.request.core_height_created_at
     );
-    let got_b = state.contacts[&b].sent_requests.get(&key_b).expect("b");
+    let got_b = b_state.sent_requests.get(&key_b).expect("b");
     assert_eq!(got_b.request.sender_id, entry_b.request.sender_id);
 }
 
@@ -418,12 +429,16 @@ fn tc_p4_005_load_asset_locks_bucketed() {
     drop(persister);
 
     let p2 = reopen(&path);
-    let state = p2.load().unwrap();
-    let a_buckets = &state.asset_locks[&a];
+    let conn = p2.lock_conn_for_test();
+    let a_buckets = platform_wallet_storage::sqlite::schema::asset_locks::load_state(&conn, &a)
+        .expect("asset_locks load_state A");
+    let b_buckets = platform_wallet_storage::sqlite::schema::asset_locks::load_state(&conn, &b)
+        .expect("asset_locks load_state B");
+    drop(conn);
     assert_eq!(a_buckets.len(), 2, "expected 2 account buckets for A");
     assert_eq!(a_buckets[&0].len(), 2);
     assert_eq!(a_buckets[&5].len(), 1);
-    assert_eq!(state.asset_locks[&b][&0].len(), 1);
+    assert_eq!(b_buckets[&0].len(), 1);
 }
 
 /// TC-P4-006: empty wallets emit `wallets_pending_rehydration = N`
@@ -446,7 +461,7 @@ fn tc_p4_006_pending_rehydration_count() {
 /// TC-P4-007: load() summary carries every counter, including zeros.
 #[tracing_test::traced_test]
 #[test]
-fn tc_p4_007_summary_log_with_six_counters() {
+fn tc_p4_007_summary_log_counters() {
     let (persister, _tmp, path) = fresh_persister();
     ensure_wallet_meta(&persister, &wid(0x10));
     ensure_wallet_meta(&persister, &wid(0x11));
@@ -456,19 +471,19 @@ fn tc_p4_007_summary_log_with_six_counters() {
     for field in [
         "wallets_seen=2",
         "addresses_loaded=0",
-        "identities_loaded=0",
-        "contacts_loaded=0",
-        "asset_locks_loaded=0",
         "wallets_rehydrated=0",
+        "wallets_pending_rehydration=2",
     ] {
         assert!(logs_contain(field), "missing structured field: {field}");
     }
 }
 
-/// TC-P4-008: corrupted blob → partial state + WARN; second wallet intact.
-#[tracing_test::traced_test]
+/// TC-P4-008: a corrupted blob is a HARD failure. The hardened reader
+/// returns `Err` for the corrupt wallet (no silent skip) while the
+/// second, intact wallet still decodes cleanly.
 #[test]
-fn tc_p4_008_corruption_skipped_load_succeeds() {
+fn tc_p4_008_corruption_is_hard_error() {
+    use platform_wallet_storage::sqlite::schema::identities;
     use std::collections::BTreeMap;
     let (persister, _tmp, path) = fresh_persister();
     let a = wid(0xCA);
@@ -514,33 +529,34 @@ fn tc_p4_008_corruption_skipped_load_succeeds() {
     }
     drop(persister);
     let p2 = reopen(&path);
-    let state = p2.load().expect("load must NOT fail");
-    // A's identities slot is absent or empty; B's is intact.
-    let a_present = state
-        .identities
-        .get(&a)
-        .map(|s| s.wallet_identities.values().any(|m| !m.is_empty()))
-        .unwrap_or(false);
-    assert!(!a_present, "A's identities must be empty after corruption");
-    let b_state = state.identities.get(&b).expect("B intact");
+    let conn = p2.lock_conn_for_test();
+    let a_result = identities::load_state(&conn, &a);
+    let b_state = identities::load_state(&conn, &b).expect("B must decode cleanly");
+    drop(conn);
+    assert!(
+        a_result.is_err(),
+        "corrupt identity blob must be a hard error, not a silent skip"
+    );
     assert_eq!(b_state.wallet_identities.get(&b).map(|m| m.len()), Some(1));
-    assert!(logs_contain("table=\"identities\""));
-    assert!(logs_contain("skipped_rows="));
 }
 
-/// TC-P4-012 (FR-P4-6): `load()` is constant-query w.r.t. wallet
-/// count. The bulk readers use one scan per per-wallet table; growing
-/// the wallet count must NOT inflate the query count.
+/// TC-P4-012: `load()` query cost is bounded per wallet.
+///
+/// `load()` now drives the platform-address reader off
+/// `wallet_meta::list_ids` and issues a fixed, small number of
+/// statements per listed wallet (the dedup collapse traded the old
+/// constant-query bulk scans for the fail-hard per-wallet readers).
+/// This pins the per-wallet statement count so a future regression
+/// that fans out into an unbounded per-row round trip is caught.
 ///
 /// Verified by enabling `sqlite3_trace_v2` on the persister's
 /// connection, counting `Stmt` events for the duration of one
-/// `load()`, and asserting the count is identical for N=1 and N=10.
-/// `serial_test::serial` because the trace counter is a process-wide
-/// `AtomicUsize` (`Connection::trace_v2`'s callback must be a `fn`,
-/// not a `Fn`).
+/// `load()`. `serial_test::serial` because the trace counter is a
+/// process-wide `AtomicUsize` (`Connection::trace_v2`'s callback must
+/// be a `fn`, not a `Fn`).
 #[test]
 #[serial_test::serial]
-fn tc_p4_012_load_query_count_constant() {
+fn tc_p4_012_load_query_count_bounded() {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     static COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -593,18 +609,19 @@ fn tc_p4_012_load_query_count_constant() {
     seed_wallets(&p10, 10);
     let count_ten = count_load_queries(&p10);
 
+    // Per wallet `load()` issues exactly two statements
+    // (`platform_addrs::load_state` sync header + `count_per_wallet`),
+    // plus one shared `wallet_meta::list_ids`: total = 1 + 2*N. Pinning
+    // the per-wallet delta to 2 catches any unbounded per-row fan-out.
+    let per_wallet = (count_ten - count_one) as f64 / 9.0;
     assert_eq!(
-        count_one, count_ten,
-        "load() must issue the same number of queries regardless of wallet count \
-         (N=1 → {count_one}, N=10 → {count_ten})"
+        per_wallet, 2.0,
+        "load() must issue a fixed 2 statements per wallet \
+         (N=1 → {count_one}, N=10 → {count_ten}, per-wallet → {per_wallet})"
     );
-    // Sanity bound: today this is 1 (wallet_meta::list_ids) + 2 (platform_addrs:
-    // sync + addresses) + 1 (identities) + 3 (contacts_*) + 1 (asset_locks) = 8.
-    // Allow some headroom for future single-shot scans.
-    assert!(
-        count_one <= 12,
-        "load() query count {count_one} exceeds expected upper bound (12); \
-         did a per-wallet round trip leak back in?"
+    assert_eq!(
+        count_one, 3,
+        "load() with one wallet must be 1 (list_ids) + 2 (per-wallet) = 3, got {count_one}"
     );
 }
 
@@ -619,9 +636,4 @@ fn tc_p4_010_empty_db_default_state() {
     assert!(state.is_empty());
     assert!(logs_contain("wallets_seen=0"));
     assert!(logs_contain("wallets_pending_rehydration=0"));
-    // No corruption skip warning expected.
-    assert!(
-        !logs_contain("corrupt rows skipped"),
-        "empty db must not emit corruption warning"
-    );
 }

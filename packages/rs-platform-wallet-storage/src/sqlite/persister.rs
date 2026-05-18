@@ -23,11 +23,7 @@ use crate::sqlite::util::safe_cast;
 /// reconstruct (blocked on upstream `Wallet::from_persisted`).
 ///
 /// Surfaced via the structured `tracing::info!` summary on every
-/// `load()` (`wallets_pending_rehydration` field) and via a
-/// `tracing::warn!` whenever `load()` skipped any rows. Currently NOT
-/// returned via [`WalletStorageError::LoadIncomplete`] — that variant
-/// is reserved for a future `try_load()` API; today partial
-/// reconstruction is a soft signal observable through `tracing` only.
+/// `load()` (`unimplemented` + `wallets_pending_rehydration` fields).
 pub(crate) const LOAD_UNIMPLEMENTED: &[&str] = &["ClientStartState::wallets"];
 
 /// Outcome of a `prune_backups` call.
@@ -517,10 +513,18 @@ impl SqlitePersister {
         let field_count = cs.populated_field_count();
         let kind = err.error_kind_str();
         if err.is_transient() {
-            // Restore on a best-effort basis: a poisoned mutex during
-            // restore is itself reportable, but we still want the
-            // original transient signal at the top of the chain.
-            let _ = self.buffer.restore(*wallet_id, cs);
+            // A failed restore (e.g. poisoned buffer mutex) means the
+            // buffered changeset is gone — that is itself fatal and
+            // must surface, not be masked by the transient signal.
+            if let Err(restore_err) = self.buffer.restore(*wallet_id, cs) {
+                tracing::error!(
+                    wallet_id = %hex::encode(wallet_id),
+                    error_kind = restore_err.error_kind_str(),
+                    restored_field_count = field_count,
+                    "buffer restore failed after transient flush error — changeset lost"
+                );
+                return Err(PersistenceError::from(restore_err));
+            }
             // Narrow the error to its rusqlite source per D-9 — only
             // `Sqlite(SqliteFailure(BUSY|LOCKED, _))` qualifies for
             // surfacing as `FlushRetryable`.
@@ -603,26 +607,19 @@ impl PlatformWalletPersistence for SqlitePersister {
 
     /// Load every wallet's start-state from disk.
     ///
-    /// Populates `platform_addresses`, `identities`, `contacts`, and
-    /// `asset_locks` per wallet. `wallets` stays empty pending an
-    /// upstream `key_wallet::Wallet::from_persisted` constructor —
-    /// the count of wallets that *would* be rehydrated is surfaced as
-    /// the structured field `wallets_pending_rehydration` on the
-    /// `tracing::info!` summary.
+    /// Populates `platform_addresses` per wallet. `wallets` stays empty
+    /// pending an upstream `key_wallet::Wallet::from_persisted`
+    /// constructor — the count of wallets that *would* be rehydrated is
+    /// surfaced as the structured field `wallets_pending_rehydration`
+    /// on the `tracing::info!` summary.
     ///
-    /// Corruption tolerance: rows that fail to decode are skipped
-    /// individually (the per-area reader logs a `WARN` with
-    /// `wallet_id` + `table` + `error`); the call still returns
-    /// `Ok(state)` carrying everything that *did* decode. A
-    /// `skipped_rows` counter on the summary log surfaces the count.
+    /// Fail-hard: any row that fails to decode (or carries a malformed
+    /// `wallet_id`) aborts the whole load with a typed
+    /// [`WalletStorageError`]. Corruption is never silently skipped.
     ///
-    /// **Query budget (FR-P4-6).** The implementation is
-    /// constant-query w.r.t. wallet count: one `SELECT` over
-    /// `wallet_metadata` for the wallet-id list, plus one bulk scan
-    /// per per-wallet table (`platform_address_sync`,
-    /// `platform_addresses`, `identities`, `contacts_sent`,
-    /// `contacts_recv`, `contacts_established`, `asset_locks`). No
-    /// per-wallet round trip.
+    /// **Query budget (FR-P4-6).** Constant-query w.r.t. wallet count:
+    /// one `SELECT` over `wallet_metadata` for the wallet-id list, then
+    /// per-wallet sync-header + count reads bounded by that list.
     ///
     /// # Examples
     ///
@@ -651,9 +648,7 @@ impl PlatformWalletPersistence for SqlitePersister {
     /// // Empty database → empty start-state, no error.
     /// let state = persister.load().expect("load");
     /// assert!(state.platform_addresses.is_empty());
-    /// assert!(state.identities.is_empty());
-    /// assert!(state.contacts.is_empty());
-    /// assert!(state.asset_locks.is_empty());
+    /// assert!(state.wallets.is_empty());
     ///
     /// // Cleanup — the doctest owns the directory.
     /// drop(persister);
@@ -665,93 +660,25 @@ impl PlatformWalletPersistence for SqlitePersister {
         let conn = self.conn().map_err(PersistenceError::from)?;
         let mut state = ClientStartState::default();
 
-        // Bulk readers — one scan per per-wallet table; everything
-        // grouped in memory by wallet_id. Constant query cost
-        // regardless of wallet count (FR-P4-6).
-        let wallet_ids = schema::wallet_meta::list_ids(&conn).map_err(PersistenceError::from)?;
-        let mut addrs_all =
-            schema::platform_addrs::load_all(&conn).map_err(PersistenceError::from)?;
-        let mut identities_all =
-            schema::identities::load_all(&conn).map_err(PersistenceError::from)?;
-        let mut contacts_all = schema::contacts::load_all(&conn).map_err(PersistenceError::from)?;
-        let mut asset_locks_all =
-            schema::asset_locks::load_all(&conn).map_err(PersistenceError::from)?;
-
-        let wallets_seen = wallet_ids.len();
+        let addrs_all = schema::platform_addrs::load_all(&conn).map_err(PersistenceError::from)?;
+        let wallets_seen = addrs_all.len();
         let mut addresses_loaded: usize = 0;
-        let mut identities_loaded: usize = 0;
-        let mut contacts_loaded: usize = 0;
-        let mut asset_locks_loaded: usize = 0;
-        let mut skipped_rows: usize = 0;
 
-        // Merge in the order: every known wallet id (so wallets with
-        // only metadata still surface), plus any extras that the area
-        // scans found but `wallet_metadata` doesn't list (defensive —
-        // FK triggers should prevent this).
-        let mut all_ids: std::collections::BTreeSet<WalletId> =
-            wallet_ids.iter().copied().collect();
-        all_ids.extend(addrs_all.keys().copied());
-        all_ids.extend(identities_all.keys().copied());
-        all_ids.extend(contacts_all.keys().copied());
-        all_ids.extend(asset_locks_all.keys().copied());
-
-        for wallet_id in all_ids {
-            if let Some((addrs, count)) = addrs_all.remove(&wallet_id) {
-                if count > 0 || addrs.sync_height > 0 || addrs.sync_timestamp > 0 {
-                    addresses_loaded += count;
-                    state.platform_addresses.insert(wallet_id, addrs);
-                }
-            }
-            if let Some((identities_state, skipped)) = identities_all.remove(&wallet_id) {
-                skipped_rows += skipped;
-                let total: usize = identities_state.out_of_wallet_identities.len()
-                    + identities_state
-                        .wallet_identities
-                        .values()
-                        .map(|m| m.len())
-                        .sum::<usize>();
-                if total > 0 {
-                    identities_loaded += total;
-                    state.identities.insert(wallet_id, identities_state);
-                }
-            }
-            if let Some((contacts_state, skipped)) = contacts_all.remove(&wallet_id) {
-                skipped_rows += skipped;
-                let total = contacts_state.sent_requests.len()
-                    + contacts_state.incoming_requests.len()
-                    + contacts_state.established.len();
-                if total > 0 {
-                    contacts_loaded += total;
-                    state.contacts.insert(wallet_id, contacts_state);
-                }
-            }
-            if let Some((asset_locks_state, skipped)) = asset_locks_all.remove(&wallet_id) {
-                skipped_rows += skipped;
-                let total: usize = asset_locks_state.values().map(|m| m.len()).sum();
-                if total > 0 {
-                    asset_locks_loaded += total;
-                    state.asset_locks.insert(wallet_id, asset_locks_state);
-                }
+        for (wallet_id, (addrs, count)) in addrs_all {
+            if count > 0 || addrs.sync_height > 0 || addrs.sync_timestamp > 0 {
+                addresses_loaded += count;
+                state.platform_addresses.insert(wallet_id, addrs);
             }
         }
+
         tracing::info!(
             wallets_seen,
             addresses_loaded,
-            identities_loaded,
-            contacts_loaded,
-            asset_locks_loaded,
             wallets_rehydrated = 0usize,
             wallets_pending_rehydration = wallets_seen,
-            skipped_rows,
+            unimplemented = ?LOAD_UNIMPLEMENTED,
             "load() summary"
         );
-        if skipped_rows > 0 {
-            tracing::warn!(
-                skipped_rows,
-                unimplemented = ?LOAD_UNIMPLEMENTED,
-                "load() returned a partial ClientStartState — corrupt rows skipped"
-            );
-        }
         Ok(state)
     }
 

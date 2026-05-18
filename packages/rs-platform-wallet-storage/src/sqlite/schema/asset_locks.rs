@@ -106,14 +106,13 @@ fn decode_row(
     Ok((account_index, outpoint, tracked))
 }
 
-/// Build the per-wallet asset-lock slice for [`ClientStartState`] from
-/// the `asset_locks` table. Decode failures are skipped per-row (with
-/// a `tracing::warn!`); the skip count is returned so callers can
-/// surface it via the `load()` summary log.
+/// Build the per-wallet asset-lock slice for `ClientStartState` from
+/// the `asset_locks` table. Any row that fails to read or decode is a
+/// hard error — corruption is never silently dropped.
 pub fn load_state(
     conn: &Connection,
     wallet_id: &WalletId,
-) -> Result<(AssetLocksByAccount, usize), WalletStorageError> {
+) -> Result<AssetLocksByAccount, WalletStorageError> {
     let mut stmt = conn.prepare(
         "SELECT outpoint, account_index, lifecycle_blob \
          FROM asset_locks WHERE wallet_id = ?1",
@@ -125,76 +124,29 @@ pub fn load_state(
         Ok((op_bytes, account_index, blob_bytes))
     })?;
     let mut out: AssetLocksByAccount = BTreeMap::new();
-    let mut skipped = 0usize;
     for r in rows {
-        let (op_bytes, account_index, blob_bytes) = match r {
-            Ok(t) => t,
-            Err(e) => {
-                tracing::warn!(
-                    wallet_id = %hex::encode(wallet_id),
-                    table = "asset_locks",
-                    error = %e,
-                    "skipping unreadable asset_locks row"
-                );
-                skipped += 1;
-                continue;
-            }
-        };
-        match decode_row(&op_bytes, account_index, &blob_bytes) {
-            Ok((acct, outpoint, tracked)) => {
-                out.entry(acct).or_default().insert(outpoint, tracked);
-            }
-            Err(e) => {
-                tracing::warn!(
-                    wallet_id = %hex::encode(wallet_id),
-                    table = "asset_locks",
-                    error = %e,
-                    "skipping undecodable asset_locks row"
-                );
-                skipped += 1;
-            }
-        }
+        let (op_bytes, account_index, blob_bytes) = r?;
+        let (acct, outpoint, tracked) = decode_row(&op_bytes, account_index, &blob_bytes)?;
+        out.entry(acct).or_default().insert(outpoint, tracked);
     }
-    Ok((out, skipped))
+    Ok(out)
 }
 
-/// Bulk reader for `load()`: ONE scan over `asset_locks`, grouped in
-/// memory by wallet id. Returns per-wallet
-/// `(AssetLocksByAccount, skipped_rows)` so the persister `load()`
-/// path is constant-query w.r.t. wallet count (FR-P4-6 — no N+1).
+/// Bulk reader for `load()`: one [`load_state`] call per wallet id
+/// listed in `wallet_metadata`. Constant-query w.r.t. the number of
+/// wallets touched per call site (FR-P4-6).
+///
+/// Driven by [`wallet_meta::list_ids`](crate::sqlite::schema::wallet_meta::list_ids):
+/// orphaned `asset_locks` rows whose `wallet_id` is absent from
+/// `wallet_metadata` are intentionally NOT surfaced. FK triggers
+/// prevent such orphans; a future re-wire that needs them must restore
+/// the id-union over the area table.
 pub fn load_all(
     conn: &Connection,
-) -> Result<BTreeMap<WalletId, (AssetLocksByAccount, usize)>, WalletStorageError> {
-    let mut out: BTreeMap<WalletId, (AssetLocksByAccount, usize)> = BTreeMap::new();
-    let mut stmt = conn.prepare(
-        "SELECT wallet_id, outpoint, account_index, lifecycle_blob \
-         FROM asset_locks ORDER BY wallet_id",
-    )?;
-    let mut rows = stmt.query([])?;
-    while let Some(row) = rows.next()? {
-        let wid_bytes: Vec<u8> = row.get(0)?;
-        let op_bytes: Vec<u8> = row.get(1)?;
-        let account_index: i64 = row.get(2)?;
-        let blob_bytes: Vec<u8> = row.get(3)?;
-        let mut wid = [0u8; 32];
-        if wid_bytes.len() == 32 {
-            wid.copy_from_slice(&wid_bytes);
-        }
-        let slot = out.entry(wid).or_insert_with(|| (BTreeMap::new(), 0));
-        match decode_row(&op_bytes, account_index, &blob_bytes) {
-            Ok((acct, outpoint, tracked)) => {
-                slot.0.entry(acct).or_default().insert(outpoint, tracked);
-            }
-            Err(e) => {
-                tracing::warn!(
-                    wallet_id = %hex::encode(wid),
-                    table = "asset_locks",
-                    error = %e,
-                    "skipping undecodable asset_locks row"
-                );
-                slot.1 += 1;
-            }
-        }
+) -> Result<BTreeMap<WalletId, AssetLocksByAccount>, WalletStorageError> {
+    let mut out: BTreeMap<WalletId, AssetLocksByAccount> = BTreeMap::new();
+    for wallet_id in crate::sqlite::schema::wallet_meta::list_ids(conn)? {
+        out.insert(wallet_id, load_state(conn, &wallet_id)?);
     }
     Ok(out)
 }

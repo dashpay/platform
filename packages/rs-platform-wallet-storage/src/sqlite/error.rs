@@ -188,27 +188,6 @@ pub enum WalletStorageError {
         target: SafeCastTarget,
     },
 
-    /// Soft signal — currently unused as a returned error.
-    ///
-    /// `load()` surfaces partial-reconstruction information via
-    /// `tracing::info!` / `tracing::warn!` (see
-    /// [`crate::sqlite::persister::LOAD_UNIMPLEMENTED`]) and always
-    /// returns `Ok(ClientStartState)`. This variant is reserved for a
-    /// future `try_load() -> Result<(ClientStartState,
-    /// Vec<LoadWarning>), _>` API that will hand callers a typed value
-    /// instead of forcing them to consume `tracing` events.
-    #[deprecated(
-        since = "3.1.0-dev.1",
-        note = "load() surfaces partial reconstruction via tracing only; this variant is reserved for a future try_load() API"
-    )]
-    #[error(
-        "load() did not reconstruct {} sub-area(s); unimplemented: {unimplemented:?}",
-        unimplemented.len()
-    )]
-    LoadIncomplete {
-        unimplemented: &'static [&'static str],
-    },
-
     /// Flush failed transiently (e.g. `SQLITE_BUSY` / `SQLITE_LOCKED`)
     /// for `wallet_id`. The buffered changeset has been restored — the
     /// next `flush(wallet_id)` will retry the same data merged with
@@ -286,7 +265,6 @@ impl WalletStorageError {
     /// MUST NOT gain `#[non_exhaustive]`, otherwise adding a future
     /// variant would skip this gate (it'd silently fall into a
     /// catch-all instead of forcing the author to classify it).
-    #[allow(deprecated)] // exhaustive match must mention LoadIncomplete
     pub fn is_transient(&self) -> bool {
         use rusqlite::ErrorCode;
         match self {
@@ -328,15 +306,13 @@ impl WalletStorageError {
             | Self::HashDecode { .. }
             | Self::ConsensusCodec { .. }
             | Self::BackupDestinationExists { .. }
-            | Self::IntegerOverflow { .. }
-            | Self::LoadIncomplete { .. } => false,
+            | Self::IntegerOverflow { .. } => false,
         }
     }
 
     /// Short, lowercase, snake-case tag for tracing fields. One tag
     /// per variant family — readers grep for these in production
     /// logs.
-    #[allow(deprecated)] // exhaustive match must mention LoadIncomplete
     pub fn error_kind_str(&self) -> &'static str {
         use rusqlite::ErrorCode;
         match self {
@@ -370,7 +346,6 @@ impl WalletStorageError {
             Self::ConsensusCodec { .. } => "consensus_codec",
             Self::BackupDestinationExists { .. } => "backup_destination_exists",
             Self::IntegerOverflow { .. } => "integer_overflow",
-            Self::LoadIncomplete { .. } => "load_incomplete",
         }
     }
 }

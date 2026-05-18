@@ -2,7 +2,7 @@
 
 //! TC-076, TC-077, TC-078 — compile-time assertions.
 //! TC-P1-003 — every writer call site uses `prepare_cached`.
-//! TC-P4-011 — `ClientStartState` carries `#[non_exhaustive]`.
+//! TC-P4-011 — `ClientStartState` keeps the base public shape.
 
 use std::sync::Arc;
 
@@ -147,18 +147,20 @@ fn tc_p1_003_prepare_cached_in_writers() {
     );
 }
 
-/// TC-P4-011: `ClientStartState` is `#[non_exhaustive]` so future
-/// slots can be added without a breaking-change wave for callers that
-/// destructure exhaustively.
+/// TC-P4-011: `ClientStartState` keeps the base public shape — plain
+/// (NOT `#[non_exhaustive]`) and carrying exactly the two wired-up
+/// slots `platform_addresses` + `wallets`. The persister populates
+/// only `platform_addresses`; any reintroduction of `#[non_exhaustive]`
+/// or extra slots is a breaking-API regression for downstream callers
+/// that destructure the struct exhaustively.
 #[test]
-fn tc_p4_011_client_start_state_non_exhaustive() {
-    // Source-level grep — the attribute is per-decl, not exposed via
-    // reflection. Locate the upstream file relative to this crate.
+fn tc_p4_011_client_start_state_base_shape() {
     let upstream = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .expect("packages/")
         .join("rs-platform-wallet/src/changeset/client_start_state.rs");
     let body = std::fs::read_to_string(&upstream).expect("read client_start_state.rs");
+
     let mut prev_non_exhaustive = false;
     let mut found = false;
     for line in body.lines() {
@@ -170,13 +172,12 @@ fn tc_p4_011_client_start_state_non_exhaustive() {
         if trimmed.starts_with("pub struct ClientStartState") {
             found = true;
             assert!(
-                prev_non_exhaustive,
-                "`pub struct ClientStartState` must be preceded by `#[non_exhaustive]`"
+                !prev_non_exhaustive,
+                "`ClientStartState` must NOT be `#[non_exhaustive]` — the \
+                 base public shape was restored (PR #3643 thread #7)"
             );
             break;
         }
-        // Reset only if we see another item attribute or a non-trivial
-        // declaration line — derive-only lines preserve the marker.
         if !trimmed.is_empty()
             && !trimmed.starts_with("///")
             && !trimmed.starts_with("//")
@@ -189,4 +190,17 @@ fn tc_p4_011_client_start_state_non_exhaustive() {
         found,
         "did not encounter `pub struct ClientStartState` declaration"
     );
+
+    for field in ["platform_addresses:", "wallets:"] {
+        assert!(
+            body.contains(field),
+            "base `ClientStartState` must keep the `{field}` slot"
+        );
+    }
+    for removed in ["identities:", "contacts:", "asset_locks:"] {
+        assert!(
+            !body.contains(removed),
+            "`ClientStartState` must not carry the reverted `{removed}` slot"
+        );
+    }
 }
