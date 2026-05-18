@@ -134,25 +134,6 @@ pub fn load_state(
     Ok(out)
 }
 
-/// Bulk reader for `load()`: one [`load_state`] call per wallet id
-/// listed in `wallet_metadata`. Constant-query w.r.t. the number of
-/// wallets touched per call site (FR-P4-6).
-///
-/// Driven by [`wallet_meta::list_ids`](crate::sqlite::schema::wallet_meta::list_ids):
-/// orphaned `asset_locks` rows whose `wallet_id` is absent from
-/// `wallet_metadata` are intentionally NOT surfaced. FK triggers
-/// prevent such orphans; a future re-wire that needs them must restore
-/// the id-union over the area table.
-pub fn load_all(
-    conn: &Connection,
-) -> Result<BTreeMap<WalletId, AssetLocksByAccount>, WalletStorageError> {
-    let mut out: BTreeMap<WalletId, AssetLocksByAccount> = BTreeMap::new();
-    for wallet_id in crate::sqlite::schema::wallet_meta::list_ids(conn)? {
-        out.insert(wallet_id, load_state(conn, &wallet_id)?);
-    }
-    Ok(out)
-}
-
 /// Return non-`Used` asset locks per wallet, bucketed by account
 /// index. Every status variant the changeset writes is considered
 /// "active": consumed locks leave via [`AssetLockChangeSet::removed`].

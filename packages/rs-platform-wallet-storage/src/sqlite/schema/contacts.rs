@@ -191,28 +191,6 @@ pub(crate) fn load_state(
     Ok(state)
 }
 
-/// Bulk reader: one [`load_state`] call per wallet id listed in
-/// `wallet_metadata`. Constant-query w.r.t. the number of wallets
-/// touched per call site (FR-P4-6).
-///
-/// Driven by [`wallet_meta::list_ids`](crate::sqlite::schema::wallet_meta::list_ids):
-/// orphaned `contacts_*` rows whose `wallet_id` is absent from
-/// `wallet_metadata` are intentionally NOT surfaced. FK triggers
-/// prevent such orphans; a future re-wire that needs them must restore
-/// the id-union over the area tables.
-// Dormant sibling of `load_state` — kept for API symmetry with the
-// other area readers; `load()` no longer fans out to it.
-#[allow(dead_code)]
-pub(crate) fn load_all(
-    conn: &Connection,
-) -> Result<BTreeMap<WalletId, ContactsRecords>, WalletStorageError> {
-    let mut out = BTreeMap::new();
-    for wallet_id in crate::sqlite::schema::wallet_meta::list_ids(conn)? {
-        out.insert(wallet_id, load_state(conn, &wallet_id)?);
-    }
-    Ok(out)
-}
-
 fn decode_pair_key(a: &[u8], b: &[u8]) -> Result<(Identifier, Identifier), WalletStorageError> {
     let a32 = <[u8; 32]>::try_from(a)
         .map_err(|_| WalletStorageError::blob_decode("contacts.id column is not 32 bytes"))?;

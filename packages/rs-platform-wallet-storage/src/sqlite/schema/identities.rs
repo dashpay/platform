@@ -112,30 +112,6 @@ pub fn load_state(
     Ok(state)
 }
 
-/// Bulk reader for `load()`: one [`load_state`] call per wallet id
-/// listed in `wallet_metadata`. Constant-query w.r.t. the number of
-/// wallets touched per call site (FR-P4-6).
-///
-/// Driven by [`wallet_meta::list_ids`](crate::sqlite::schema::wallet_meta::list_ids):
-/// orphaned `identities` rows whose `wallet_id` is absent from
-/// `wallet_metadata` are intentionally NOT surfaced. FK triggers
-/// prevent such orphans; a future re-wire that needs them must restore
-/// the id-union over the area table.
-pub fn load_all(
-    conn: &Connection,
-) -> Result<
-    std::collections::BTreeMap<WalletId, platform_wallet::changeset::IdentityManagerStartState>,
-    WalletStorageError,
-> {
-    use std::collections::BTreeMap;
-
-    let mut out = BTreeMap::new();
-    for wallet_id in crate::sqlite::schema::wallet_meta::list_ids(conn)? {
-        out.insert(wallet_id, load_state(conn, &wallet_id)?);
-    }
-    Ok(out)
-}
-
 /// Reconstruct a [`ManagedIdentity`] from a persisted [`IdentityEntry`]
 /// using a freshly minted V0 [`Identity`] for `(id, balance, revision)`.
 /// Live runtime fields (contacts maps, public-key derivations) are

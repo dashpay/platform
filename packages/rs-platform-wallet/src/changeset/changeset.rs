@@ -1044,61 +1044,6 @@ impl Merge for PlatformWalletChangeSet {
     }
 }
 
-impl PlatformWalletChangeSet {
-    /// Count of top-level slots that carry any data. Used by the
-    /// persister's tracing fields (`restored_field_count`,
-    /// `dropped_field_count`) so operators can see how much was kept
-    /// or dropped on a flush retry / fatal failure.
-    pub fn populated_field_count(&self) -> usize {
-        let mut n = 0usize;
-        if !self.core.is_empty() {
-            n += 1;
-        }
-        if !self.identities.is_empty() {
-            n += 1;
-        }
-        if !self.identity_keys.is_empty() {
-            n += 1;
-        }
-        if !self.contacts.is_empty() {
-            n += 1;
-        }
-        if !self.platform_addresses.is_empty() {
-            n += 1;
-        }
-        if !self.asset_locks.is_empty() {
-            n += 1;
-        }
-        if !self.token_balances.is_empty() {
-            n += 1;
-        }
-        if self
-            .dashpay_profiles
-            .as_ref()
-            .is_some_and(|m| !m.is_empty())
-        {
-            n += 1;
-        }
-        if self
-            .dashpay_payments_overlay
-            .as_ref()
-            .is_some_and(|m| !m.is_empty())
-        {
-            n += 1;
-        }
-        if self.wallet_metadata.is_some() {
-            n += 1;
-        }
-        if !self.account_registrations.is_empty() {
-            n += 1;
-        }
-        if !self.account_address_pools.is_empty() {
-            n += 1;
-        }
-        n
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use rusqlite::{Connection, OptionalExtension};
 
 use platform_wallet::changeset::{
-    ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+    ClientStartState, Merge, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
 
@@ -510,7 +510,7 @@ impl SqlitePersister {
         cs: PlatformWalletChangeSet,
         err: WalletStorageError,
     ) -> Result<(), PersistenceError> {
-        let field_count = cs.populated_field_count();
+        let field_count = populated_field_count(&cs);
         let kind = err.error_kind_str();
         if err.is_transient() {
             // A failed restore (e.g. poisoned buffer mutex) means the
@@ -696,6 +696,34 @@ impl PlatformWalletPersistence for SqlitePersister {
 }
 
 // ----- Helpers -----
+
+/// Count of top-level slots that carry any data. Feeds the persister's
+/// `restored_field_count` / `dropped_field_count` tracing fields so
+/// operators can see how much was kept or dropped on a flush retry /
+/// fatal failure. Computed here from the public `PlatformWalletChangeSet`
+/// fields + `Merge::is_empty()` so no storage-only helper leaks into
+/// the `rs-platform-wallet` public API.
+fn populated_field_count(cs: &PlatformWalletChangeSet) -> usize {
+    [
+        cs.core.is_empty(),
+        cs.identities.is_empty(),
+        cs.identity_keys.is_empty(),
+        cs.contacts.is_empty(),
+        cs.platform_addresses.is_empty(),
+        cs.asset_locks.is_empty(),
+        cs.token_balances.is_empty(),
+        cs.dashpay_profiles.as_ref().is_none_or(|m| m.is_empty()),
+        cs.dashpay_payments_overlay
+            .as_ref()
+            .is_none_or(|m| m.is_empty()),
+        cs.wallet_metadata.is_none(),
+        cs.account_registrations.is_empty(),
+        cs.account_address_pools.is_empty(),
+    ]
+    .iter()
+    .filter(|empty| !**empty)
+    .count()
+}
 
 fn validate_config(config: &SqlitePersisterConfig) -> Result<(), WalletStorageError> {
     if config.synchronous == Synchronous::Off {

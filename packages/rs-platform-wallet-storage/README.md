@@ -41,30 +41,29 @@ wallet ids in production logs.
 
 ## load() reconstruction
 
-`SqlitePersister::load()` populates `ClientStartState` with every
-sub-area that has a wired-up reader today:
+`SqlitePersister::load()` returns the base `ClientStartState`
+(plain struct, two slots — no `#[non_exhaustive]`):
 
 | Slot | Reader | Status |
 |---|---|---|
-| `platform_addresses` | `schema::platform_addrs::load_state` | covered |
-| `identities`         | `schema::identities::load_state`     | covered |
-| `contacts`           | `schema::contacts::load_state`       | covered |
-| `asset_locks`        | `schema::asset_locks::load_state`    | covered |
+| `platform_addresses` | `schema::platform_addrs::load_all` (a `wallet_meta::list_ids` → `load_state` loop) | populated |
 | `wallets`            | — | empty pending upstream `Wallet::from_persisted` |
 
-`ClientStartState` is `#[non_exhaustive]` — initialise via
-`Default::default()` and overwrite individual slots; do not
-exhaustively destructure. A future slot addition is non-breaking for
-callers that respect the marker.
+The `identities` / `contacts` / `asset_locks` per-area readers exist
+as hardened dormant helpers (`schema::<area>::load_state`) but are not
+wired into `load()` — `ClientStartState` carries no slot for them.
 
-Each reader skips per-row decode failures (corruption tolerance):
-the call still returns `Ok(state)` with the partial result, every
-skipped row emits a structured `tracing::warn!` with `wallet_id` +
-`table` + `error`, and the load summary log carries a
-`skipped_rows` counter alongside `wallets_seen`,
-`addresses_loaded`, `identities_loaded`, `contacts_loaded`,
-`asset_locks_loaded`, `wallets_rehydrated`, and
-`wallets_pending_rehydration`.
+Loading is **fail-hard**: any row that fails to decode, or a stored
+`wallet_id` that is not exactly 32 bytes, aborts the whole call with a
+typed [`WalletStorageError`](src/sqlite/error.rs)
+(`BincodeDecode` / `BlobDecode` / `InvalidWalletIdLength`). There is no
+corruption tolerance, no per-row skip, and no partial `Ok` — a corrupt
+database surfaces as an error rather than silently losing rows.
+
+The summary `tracing::info!` carries `wallets_seen`,
+`addresses_loaded`, `wallets_rehydrated`, and
+`wallets_pending_rehydration` (the count of wallets that *would* be
+rehydrated once upstream provides `Wallet::from_persisted`).
 
 ## Library usage
 
