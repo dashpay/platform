@@ -259,10 +259,18 @@ impl PlatformAddressWallet {
             key_wallet::KeySource::Public(xpub)
         };
 
-        let address = managed_account
+        // Reserve the address on hand-out (Found-026): platform-payment
+        // `used` only flips on a positive synced balance, so without
+        // marking it here a concurrent caller's `next_unused` would
+        // re-hand the same index before the sync pass. `mark_index_used`
+        // is idempotent — a later real sync hit on this index is a
+        // no-op, so gap-limit/`highest_used` accounting isn't doubled.
+        let info = managed_account
             .addresses
-            .next_unused(&key_source, true)
+            .next_unused_with_info(&key_source, true)
             .map_err(|e| PlatformWalletError::AddressSync(e.to_string()))?;
+        let address = info.address.clone();
+        managed_account.addresses.mark_index_used(info.index);
 
         PlatformAddress::try_from(address).map_err(|e| {
             PlatformWalletError::AddressSync(format!("Failed to convert to PlatformAddress: {e}"))
@@ -326,5 +334,145 @@ impl std::fmt::Debug for PlatformAddressWallet {
         f.debug_struct("PlatformAddressWallet")
             .field("network", &self.sdk.network)
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod found_026_tests {
+    use super::*;
+    use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
+    use key_wallet::account::account_collection::PlatformPaymentAccountKey;
+    use key_wallet::wallet::initialization::{
+        PlatformPaymentAccountSpec, WalletAccountCreationOptions,
+    };
+    use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+    use key_wallet::{Network, Wallet};
+    use key_wallet_manager::WalletManager;
+    use std::collections::{BTreeMap, BTreeSet};
+
+    const ACCOUNT_KEY: PlatformPaymentAccountKey = PlatformPaymentAccountKey {
+        account: 0,
+        key_class: 0,
+    };
+
+    /// Build a network-free `PlatformAddressWallet` over one DIP-17
+    /// platform-payment account (account 0, key_class 0). Mirrors the
+    /// `register_wallet` path: `ManagedWalletInfo::from_wallet` +
+    /// `insert_wallet`, no SPV / no funding.
+    fn wallet_with_platform_account() -> PlatformAddressWallet {
+        let mut pp = BTreeSet::new();
+        pp.insert(PlatformPaymentAccountSpec {
+            account: 0,
+            key_class: 0,
+        });
+        let opts = WalletAccountCreationOptions::AllAccounts(
+            BTreeSet::new(),
+            BTreeSet::new(),
+            BTreeSet::new(),
+            BTreeSet::new(),
+            pp,
+        );
+        let wallet = Wallet::new_random(Network::Testnet, opts).expect("wallet");
+
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let info = PlatformWalletInfo {
+            core_wallet: ManagedWalletInfo::from_wallet(&wallet, 0),
+            balance: Arc::new(crate::wallet::core::WalletBalance::new()),
+            identity_manager: crate::wallet::identity::IdentityManager::new(),
+            tracked_asset_locks: BTreeMap::new(),
+        };
+        let wallet_manager = Arc::new(RwLock::new(WalletManager::new(Network::Testnet)));
+        let wallet_id = wallet_manager
+            .try_write()
+            .expect("uncontended")
+            .insert_wallet(wallet, info)
+            .expect("insert");
+        let persister = WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence));
+        PlatformAddressWallet::new(sdk, wallet_manager, wallet_id, persister)
+    }
+
+    /// Found-026 durable guard: two `next_unused_receive_address` calls
+    /// with NO intervening sync/balance update must return DISTINCT
+    /// addresses. Pre-fix, `next_unused` re-hands index 0 (its `used`
+    /// flag only flips on a positive synced balance) → identical
+    /// addresses → this assertion fails. Post-fix the first call
+    /// reserves index 0 via `mark_index_used`, so the second yields
+    /// index 1.
+    #[tokio::test]
+    async fn found_026_back_to_back_handout_returns_distinct_addresses() {
+        let wallet = wallet_with_platform_account();
+
+        let a = wallet
+            .next_unused_receive_address(ACCOUNT_KEY)
+            .await
+            .expect("first hand-out");
+        let b = wallet
+            .next_unused_receive_address(ACCOUNT_KEY)
+            .await
+            .expect("second hand-out");
+
+        assert_ne!(
+            a, b,
+            "back-to-back hand-out with no sync re-handed the same address (Found-026)"
+        );
+    }
+
+    /// Found-026: K repeated hand-outs advance `highest_used` /
+    /// `used_indices` by exactly K (no double-count, no skipped index,
+    /// no panic), all addresses distinct; and a subsequent
+    /// `mark_index_used` on an already-reserved index is a no-op
+    /// (idempotency — the later real sync hit must not double-count).
+    #[tokio::test]
+    async fn found_026_repeated_handouts_advance_gap_limit_exactly_k() {
+        const K: u32 = 5;
+        let wallet = wallet_with_platform_account();
+
+        let mut seen = BTreeSet::new();
+        for _ in 0..K {
+            let addr = wallet
+                .next_unused_receive_address(ACCOUNT_KEY)
+                .await
+                .expect("hand-out");
+            assert!(seen.insert(addr), "duplicate address handed out");
+        }
+        assert_eq!(seen.len(), K as usize);
+
+        let mut wm = wallet.wallet_manager.write().await;
+        let (_, info) = wm
+            .get_wallet_mut_and_info_mut(&wallet.wallet_id)
+            .expect("wallet present");
+        let pool = &mut info
+            .core_wallet
+            .platform_payment_managed_account_at_index_mut(ACCOUNT_KEY.account)
+            .expect("managed account")
+            .addresses;
+
+        assert_eq!(
+            pool.highest_used,
+            Some(K - 1),
+            "highest_used must advance to exactly K-1 (no double-count / skip)"
+        );
+        assert_eq!(
+            pool.used_indices.len(),
+            K as usize,
+            "exactly K indices reserved"
+        );
+
+        // Idempotency: re-marking an already-reserved index (the shape
+        // of a later real sync hit on a handed-out address) is a no-op.
+        assert!(
+            !pool.mark_index_used(0),
+            "re-marking a reserved index must be a no-op (idempotent)"
+        );
+        assert_eq!(
+            pool.highest_used,
+            Some(K - 1),
+            "no-op re-mark must not perturb highest_used"
+        );
+        assert_eq!(
+            pool.used_indices.len(),
+            K as usize,
+            "no-op re-mark must not perturb used_indices"
+        );
     }
 }
