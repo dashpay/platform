@@ -536,21 +536,21 @@
     },
     "documentsCountable": {
       "type": "boolean",
-      "description": "When true, the primary key tree uses a CountTree enabling O(1) total document count queries. Rarely useful on its own — most callers want per-index `countable` instead so counts can be filtered by where-clause. Set this only when you genuinely need the unfiltered total."
+      "description": "When true, the primary key tree uses a CountTree enabling O(1) total document count queries."
     },
     "rangeCountable": {
       "type": "boolean",
-      "description": "When true, the primary key tree uses a ProvableCountTree enabling range countable. Implies documentsCountable. Rarely useful on its own — most callers want per-index `rangeCountable` instead so range-count queries can be filtered. Set this only when you need a provable global count tree."
+      "description": "When true, the primary key tree uses a ProvableCountTree enabling range countable. Implies documentsCountable."
     },
     "documentsSummable": {
       "type": "string",
       "minLength": 1,
       "maxLength": 64,
-      "description": "Name of an integer document property aggregated into the primary-key SumTree (one sum per document type). Stores documents as `ItemWithSumItem` so the primary-key tree's root sum is the total of the named property across all docs of this type. Property must exist on the document type, be in `required`, and have an integer type. Rarely useful on its own — most callers want per-index `summable` instead so sums can be filtered by where-clause. Set this only when you genuinely need the unfiltered global total."
+      "description": "Name of an integer document property aggregated into the primary-key SumTree (one sum per document type). Stores documents as `ItemWithSumItem` so the primary-key tree's root sum is the total of the named property across all docs of this type. Property must exist on the document type, be in `required`, and have an integer type."
     },
     "rangeSummable": {
       "type": "boolean",
-      "description": "When true, the primary key tree uses a ProvableSumTree (or ProvableCountProvableSumTree paired with rangeCountable: true) enabling O(log n) range-sum queries over the primary axis. Requires `documentsSummable` to be set. Rarely useful on its own — most callers want per-index `rangeSummable` instead so range-sum queries can be filtered. Set this only when you need a provable global sum tree."
+      "description": "When true, the primary key tree uses a ProvableSumTree (or ProvableCountProvableSumTree paired with rangeCountable: true) enabling O(log n) range-sum queries over the primary axis. Requires `documentsSummable` to be set. Rarely useful — range-sum on the primary key with no where-clause filter is unusual; most callers want per-index `rangeSummable` instead. Set this only when you need a provable global range-sum tree."
     },
     "tokenCost": {
       "type": "object",
