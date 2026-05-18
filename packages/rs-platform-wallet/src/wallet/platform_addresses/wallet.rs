@@ -259,10 +259,18 @@ impl PlatformAddressWallet {
             key_wallet::KeySource::Public(xpub)
         };
 
-        let address = managed_account
+        // Reserve the address on hand-out (Found-026): platform-payment
+        // `used` only flips on a positive synced balance, so without
+        // marking it here a concurrent caller's `next_unused` would
+        // re-hand the same index before the sync pass. `mark_index_used`
+        // is idempotent — a later real sync hit on this index is a
+        // no-op, so gap-limit/`highest_used` accounting isn't doubled.
+        let info = managed_account
             .addresses
-            .next_unused(&key_source, true)
+            .next_unused_with_info(&key_source, true)
             .map_err(|e| PlatformWalletError::AddressSync(e.to_string()))?;
+        let address = info.address.clone();
+        managed_account.addresses.mark_index_used(info.index);
 
         PlatformAddress::try_from(address).map_err(|e| {
             PlatformWalletError::AddressSync(format!("Failed to convert to PlatformAddress: {e}"))
