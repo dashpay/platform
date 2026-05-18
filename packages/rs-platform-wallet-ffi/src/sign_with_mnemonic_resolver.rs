@@ -45,10 +45,10 @@ use dashcore::secp256k1::Secp256k1;
 use key_wallet::bip32::{DerivationPath, ExtendedPrivKey};
 use zeroize::Zeroizing;
 
+use crate::identity_keys_from_mnemonic::parse_mnemonic_any_language;
 use rs_sdk_ffi::{
     mnemonic_resolver_result, MnemonicResolverHandle, MNEMONIC_RESOLVER_BUFFER_CAPACITY,
 };
-use crate::identity_keys_from_mnemonic::parse_mnemonic_any_language;
 
 // One-byte error tags. Mirror the shape of
 // `signer_simple::SIGN_WITH_MNEMONIC_ERR_*` so call sites already
@@ -275,9 +275,7 @@ mod tests {
 
     unsafe extern "C" fn noop_destroy(_ctx: *mut c_void) {}
 
-    fn make_resolver(
-        cb: rs_sdk_ffi::MnemonicResolveCallback,
-    ) -> *mut MnemonicResolverHandle {
+    fn make_resolver(cb: rs_sdk_ffi::MnemonicResolveCallback) -> *mut MnemonicResolverHandle {
         unsafe { dash_sdk_mnemonic_resolver_create(std::ptr::null_mut(), cb, noop_destroy) }
     }
 

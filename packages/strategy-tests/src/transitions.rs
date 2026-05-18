@@ -1227,17 +1227,18 @@ where
             amount_range,
             rng,
         );
-        let identity_create_transition = IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
-            &identity.clone(),
-            asset_lock_proof,
-            &pk,
-            signer,
-            &NativeBlsModule,
-            0,
-            platform_version,
-        )
-        .await
-        .expect("expected to transform identity into identity create transition");
+        let identity_create_transition =
+            IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
+                &identity.clone(),
+                asset_lock_proof,
+                &pk,
+                signer,
+                &NativeBlsModule,
+                0,
+                platform_version,
+            )
+            .await
+            .expect("expected to transform identity into identity create transition");
         identity.set_id(
             identity_create_transition
                 .owner_id()
@@ -1276,17 +1277,18 @@ pub async fn create_state_transitions_for_identities_and_proofs(
 ) -> Vec<(Identity, StateTransition)> {
     let mut results = Vec::with_capacity(identities_with_proofs.len());
     for (mut identity, private_key, asset_lock_proof) in identities_with_proofs.into_iter() {
-        let identity_create_transition = IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
-            &identity.clone(),
-            asset_lock_proof,
-            &private_key,
-            signer,
-            &NativeBlsModule,
-            0,
-            platform_version,
-        )
-        .await
-        .expect("expected to transform identity into identity create transition");
+        let identity_create_transition =
+            IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
+                &identity.clone(),
+                asset_lock_proof,
+                &private_key,
+                signer,
+                &NativeBlsModule,
+                0,
+                platform_version,
+            )
+            .await
+            .expect("expected to transform identity into identity create transition");
         identity.set_id(
             identity_create_transition
                 .owner_id()

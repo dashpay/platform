@@ -1336,10 +1336,9 @@ impl StateTransition {
         // Pre-image transform matches `dashcore::signer::sign`: double-SHA256
         // of the signable bytes is the actual ECDSA message digest.
         let data_hash = double_sha(&data);
-        let digest: [u8; 32] = data_hash
-            .as_slice()
-            .try_into()
-            .map_err(|_| ProtocolError::Generic("double_sha did not return 32 bytes".to_string()))?;
+        let digest: [u8; 32] = data_hash.as_slice().try_into().map_err(|_| {
+            ProtocolError::Generic("double_sha did not return 32 bytes".to_string())
+        })?;
 
         let (signature, public_key) = signer
             .sign_ecdsa(path, digest)
@@ -3332,10 +3331,7 @@ mod tests {
                 Ok((sig, self.public))
             }
 
-            async fn public_key(
-                &self,
-                _path: &DerivationPath,
-            ) -> Result<PublicKey, Self::Error> {
+            async fn public_key(&self, _path: &DerivationPath) -> Result<PublicKey, Self::Error> {
                 Ok(self.public)
             }
         }

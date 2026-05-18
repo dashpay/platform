@@ -28,7 +28,9 @@ use std::ffi::CString;
 use std::os::raw::c_void;
 use std::slice;
 
-use crate::asset_lock_persistence::{build_asset_lock_entries, outpoint_to_bytes, AssetLockEntryFFI};
+use crate::asset_lock_persistence::{
+    build_asset_lock_entries, outpoint_to_bytes, AssetLockEntryFFI,
+};
 use crate::contact_persistence::{
     free_contact_requests_ffi, ContactRequestFFI, ContactRequestRemovalFFI,
 };
@@ -764,8 +766,7 @@ impl PlatformWalletPersistence for FFIPersister {
                 let upsert_refs: Vec<&platform_wallet::changeset::AssetLockEntry> =
                     al_cs.asset_locks.values().collect();
                 let (upserts, _storage) = build_asset_lock_entries(&upsert_refs);
-                let removed: Vec<[u8; 36]> =
-                    al_cs.removed.iter().map(outpoint_to_bytes).collect();
+                let removed: Vec<[u8; 36]> = al_cs.removed.iter().map(outpoint_to_bytes).collect();
                 if !upserts.is_empty() || !removed.is_empty() {
                     let result = unsafe {
                         cb(
@@ -1793,8 +1794,7 @@ fn build_wallet_start_state(
     // chainlock arrival will overwrite the field with a valid value
     // and the failure window for the metadata fallback is the SPV
     // catch-up latency, same as if the column had been empty.
-    if !entry.last_applied_chain_lock_bytes.is_null()
-        && entry.last_applied_chain_lock_bytes_len > 0
+    if !entry.last_applied_chain_lock_bytes.is_null() && entry.last_applied_chain_lock_bytes_len > 0
     {
         let cl_slice = unsafe {
             slice::from_raw_parts(
@@ -1802,11 +1802,10 @@ fn build_wallet_start_state(
                 entry.last_applied_chain_lock_bytes_len,
             )
         };
-        match dpp::bincode::decode_from_slice::<
-            dashcore::ephemerealdata::chain_lock::ChainLock,
-            _,
-        >(cl_slice, dpp::bincode::config::standard())
-        {
+        match dpp::bincode::decode_from_slice::<dashcore::ephemerealdata::chain_lock::ChainLock, _>(
+            cl_slice,
+            dpp::bincode::config::standard(),
+        ) {
             Ok((cl, _)) => {
                 wallet_info.metadata.last_applied_chain_lock = Some(cl);
             }
@@ -2053,8 +2052,7 @@ fn build_wallet_start_state(
             }
         };
     if !unresolved_recs.is_empty() {
-        let stats =
-            restore_unresolved_asset_lock_tx_records(&mut wallet_info, unresolved_recs)?;
+        let stats = restore_unresolved_asset_lock_tx_records(&mut wallet_info, unresolved_recs)?;
         if stats.restored > 0 || stats.dropped() > 0 {
             tracing::info!(
                 wallet_id = %hex::encode(entry.wallet_id),
@@ -2295,15 +2293,12 @@ fn build_unused_asset_locks(
             // SAFETY: Same lifetime contract as `transaction_bytes`.
             let proof_bytes =
                 unsafe { slice::from_raw_parts(spec.proof_bytes, spec.proof_bytes_len) };
-            let (proof, _) = dpp::bincode::decode_from_slice::<
-                dpp::prelude::AssetLockProof,
-                _,
-            >(proof_bytes, config::standard())
+            let (proof, _) = dpp::bincode::decode_from_slice::<dpp::prelude::AssetLockProof, _>(
+                proof_bytes,
+                config::standard(),
+            )
             .map_err(|e| {
-                PersistenceError::from(format!(
-                    "tracked asset lock: failed to decode proof: {}",
-                    e
-                ))
+                PersistenceError::from(format!("tracked asset lock: failed to decode proof: {}", e))
             })?;
             Some(proof)
         };
@@ -2700,11 +2695,12 @@ fn restore_unresolved_asset_lock_tx_records(
         // observed IS-lock or block confirmation).
         let context = match rec.context_raw {
             2 => {
-                let block_hash = dashcore::BlockHash::from_slice(&rec.block_hash)
-                    .map_err(|e| format!(
+                let block_hash = dashcore::BlockHash::from_slice(&rec.block_hash).map_err(|e| {
+                    format!(
                         "load: malformed block_hash on unresolved asset-lock tx record: {}",
                         e
-                    ))?;
+                    )
+                })?;
                 TransactionContext::InBlock(BlockInfo::new(
                     rec.block_height,
                     block_hash,
@@ -2712,11 +2708,12 @@ fn restore_unresolved_asset_lock_tx_records(
                 ))
             }
             3 => {
-                let block_hash = dashcore::BlockHash::from_slice(&rec.block_hash)
-                    .map_err(|e| format!(
+                let block_hash = dashcore::BlockHash::from_slice(&rec.block_hash).map_err(|e| {
+                    format!(
                         "load: malformed block_hash on unresolved asset-lock tx record: {}",
                         e
-                    ))?;
+                    )
+                })?;
                 TransactionContext::InChainLockedBlock(BlockInfo::new(
                     rec.block_height,
                     block_hash,
@@ -2785,13 +2782,13 @@ mod tests {
     use dashcore::blockdata::transaction::txout::TxOut;
     use dashcore::blockdata::transaction::Transaction;
     use dashcore::consensus::encode::serialize;
+    use dashcore::secp256k1::Secp256k1;
     use dashcore::{Network, ScriptBuf};
     use key_wallet::account::{Account, AccountType, StandardAccountType};
     use key_wallet::bip32::{ExtendedPrivKey, ExtendedPubKey};
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
     use key_wallet::mnemonic::{Language, Mnemonic};
     use key_wallet::wallet::Wallet;
-    use dashcore::secp256k1::Secp256k1;
 
     /// Pins the contract that an `InBlock` unresolved-asset-lock row
     /// projects onto the matching BIP44 account's in-memory

@@ -85,9 +85,6 @@ use zeroize::{Zeroize, Zeroizing};
 use crate::derive_and_persist_callbacks::{
     IdentityKeyPersisterHandle, PersistKeyArgs, PERSIST_KEY_SUCCESS,
 };
-use rs_sdk_ffi::{
-    mnemonic_resolver_result, MnemonicResolverHandle, MNEMONIC_RESOLVER_BUFFER_CAPACITY,
-};
 use crate::error::*;
 use crate::identity_key_preview::IdentityKeyPreviewFFI;
 use crate::identity_keys_from_mnemonic::{
@@ -95,6 +92,9 @@ use crate::identity_keys_from_mnemonic::{
 };
 use crate::identity_registration_with_signer::IdentityRegistrationKeyDerivationsFFI;
 use crate::{check_ptr, unwrap_result_or_return};
+use rs_sdk_ffi::{
+    mnemonic_resolver_result, MnemonicResolverHandle, MNEMONIC_RESOLVER_BUFFER_CAPACITY,
+};
 
 /// DPP `KeyType::ECDSA_SECP256K1` discriminant byte.
 const KEY_TYPE_ECDSA_SECP256K1: u8 = 0;

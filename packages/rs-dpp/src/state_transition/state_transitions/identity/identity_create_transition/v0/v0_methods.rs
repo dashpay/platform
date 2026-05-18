@@ -129,7 +129,9 @@ impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransitionV0 {
             .zip(identity.public_keys().iter())
         {
             if public_key.key_type().is_unique_key_type() {
-                let signature = identity_signer.sign(public_key, &key_signable_bytes).await?;
+                let signature = identity_signer
+                    .sign(public_key, &key_signable_bytes)
+                    .await?;
                 public_key_with_witness.set_signature(signature);
             }
         }

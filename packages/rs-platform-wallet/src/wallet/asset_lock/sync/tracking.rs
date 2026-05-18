@@ -81,9 +81,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // wallet-manager write lock across that.
         let cs = {
             let mut wm = self.wallet_manager.write().await;
-            let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
-                PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id))
-            })?;
+            let info = wm
+                .get_wallet_info_mut(&self.wallet_id)
+                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
             let mut cs = AssetLockChangeSet::default();
             if let Some(mut entry) = info.tracked_asset_locks.remove(out_point) {
                 entry.status = AssetLockStatus::Consumed;

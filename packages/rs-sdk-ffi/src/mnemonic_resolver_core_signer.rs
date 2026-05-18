@@ -47,8 +47,8 @@ use std::ffi::c_void;
 use std::os::raw::c_char;
 
 use async_trait::async_trait;
-use key_wallet::dashcore::secp256k1::{self, Secp256k1};
 use key_wallet::bip32::{DerivationPath, ExtendedPrivKey};
+use key_wallet::dashcore::secp256k1::{self, Secp256k1};
 use key_wallet::signer::{Signer, SignerMethod};
 use key_wallet::Network;
 use thiserror::Error;
@@ -274,12 +274,11 @@ impl MnemonicResolverCoreSigner {
         drop(mnemonic);
 
         let secp = Secp256k1::new();
-        let master = ExtendedPrivKey::new_master(self.network, seed.as_ref()).map_err(|e| {
-            MnemonicResolverSignerError::DerivationFailed(format!("master: {e}"))
-        })?;
-        let derived = master.derive_priv(&secp, path).map_err(|e| {
-            MnemonicResolverSignerError::DerivationFailed(format!("path: {e}"))
-        })?;
+        let master = ExtendedPrivKey::new_master(self.network, seed.as_ref())
+            .map_err(|e| MnemonicResolverSignerError::DerivationFailed(format!("master: {e}")))?;
+        let derived = master
+            .derive_priv(&secp, path)
+            .map_err(|e| MnemonicResolverSignerError::DerivationFailed(format!("path: {e}")))?;
 
         // `secret_bytes()` returns a plain `[u8; 32]`; wrap in
         // `Zeroizing` so the caller (and any panic-unwind path)
@@ -389,7 +388,8 @@ mod tests {
     #[tokio::test]
     async fn sign_ecdsa_round_trips_and_verifies() {
         let resolver = make_resolver(english_resolve);
-        let signer = unsafe { MnemonicResolverCoreSigner::new(resolver, [0u8; 32], Network::Testnet) };
+        let signer =
+            unsafe { MnemonicResolverCoreSigner::new(resolver, [0u8; 32], Network::Testnet) };
 
         let sighash = [0x42u8; 32];
         let (sig, pk) = signer
@@ -408,7 +408,8 @@ mod tests {
     #[tokio::test]
     async fn public_key_matches_sign_ecdsa_pubkey() {
         let resolver = make_resolver(english_resolve);
-        let signer = unsafe { MnemonicResolverCoreSigner::new(resolver, [0u8; 32], Network::Testnet) };
+        let signer =
+            unsafe { MnemonicResolverCoreSigner::new(resolver, [0u8; 32], Network::Testnet) };
 
         let path = test_path();
         let pk_only = signer.public_key(&path).await.expect("public_key succeeds");
@@ -428,7 +429,8 @@ mod tests {
     #[tokio::test]
     async fn missing_resolver_surfaces_not_found_error() {
         let resolver = make_resolver(missing_resolve);
-        let signer = unsafe { MnemonicResolverCoreSigner::new(resolver, [0u8; 32], Network::Testnet) };
+        let signer =
+            unsafe { MnemonicResolverCoreSigner::new(resolver, [0u8; 32], Network::Testnet) };
 
         let err = signer
             .sign_ecdsa(&test_path(), [0u8; 32])

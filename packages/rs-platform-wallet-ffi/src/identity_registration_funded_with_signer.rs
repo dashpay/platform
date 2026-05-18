@@ -29,13 +29,13 @@ use rs_sdk_ffi::{SignerHandle, VTableSigner};
 
 use crate::check_ptr;
 use crate::core_wallet_types::OutPointFFI;
-use rs_sdk_ffi::MnemonicResolverHandle;
 use crate::error::*;
 use crate::handle::*;
 use crate::identity_registration_with_signer::{decode_contract_bounds, IdentityPubkeyFFI};
-use rs_sdk_ffi::MnemonicResolverCoreSigner;
 use crate::runtime::block_on_worker;
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
+use rs_sdk_ffi::MnemonicResolverCoreSigner;
+use rs_sdk_ffi::MnemonicResolverHandle;
 
 /// Decode the C-side `IdentityPubkeyFFI` rows into the
 /// `BTreeMap<u32, IdentityPublicKey>` shape that
@@ -166,8 +166,7 @@ pub unsafe extern "C" fn platform_wallet_register_identity_with_funding_signer(
         block_on_worker(async move {
             // SAFETY: see the fn-level safety doc — both handles are
             // pinned alive for the duration of this FFI call.
-            let identity_signer: &VTableSigner =
-                unsafe { &*(signer_addr as *const VTableSigner) };
+            let identity_signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };
             let asset_lock_signer = unsafe {
                 MnemonicResolverCoreSigner::new(
                     core_signer_addr as *mut MnemonicResolverHandle,
@@ -279,8 +278,7 @@ pub unsafe extern "C" fn platform_wallet_resume_identity_with_existing_asset_loc
         block_on_worker(async move {
             // SAFETY: see the fn-level safety doc — both handles are
             // pinned alive for the duration of this FFI call.
-            let identity_signer: &VTableSigner =
-                unsafe { &*(signer_addr as *const VTableSigner) };
+            let identity_signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };
             let asset_lock_signer = unsafe {
                 MnemonicResolverCoreSigner::new(
                     core_signer_addr as *mut MnemonicResolverHandle,

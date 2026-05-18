@@ -473,10 +473,9 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// Chain: carried directly as `out_point`).
     pub(super) fn out_point_from_proof(proof: &AssetLockProof) -> dashcore::OutPoint {
         match proof {
-            AssetLockProof::Instant(instant) => dashcore::OutPoint::new(
-                instant.transaction().txid(),
-                instant.output_index(),
-            ),
+            AssetLockProof::Instant(instant) => {
+                dashcore::OutPoint::new(instant.transaction().txid(), instant.output_index())
+            }
             AssetLockProof::Chain(chain) => chain.out_point,
         }
     }

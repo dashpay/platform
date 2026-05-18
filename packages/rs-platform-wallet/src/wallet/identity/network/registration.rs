@@ -417,8 +417,7 @@ impl IdentityWallet {
                 }
                 None => {
                     return Err(PlatformWalletError::InvalidIdentityData(
-                        "keys_map must include key id=0 with MASTER security level"
-                            .to_string(),
+                        "keys_map must include key id=0 with MASTER security level".to_string(),
                     ));
                 }
             }

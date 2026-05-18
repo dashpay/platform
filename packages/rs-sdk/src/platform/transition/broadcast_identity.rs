@@ -147,7 +147,9 @@ impl<S: Signer<IdentityPublicKey>>
         platform_version: &PlatformVersion,
         settings: Option<PutSettings>,
     ) -> Result<(StateTransition, BroadcastStateTransitionRequest), Error> {
-        let user_fee_increase = settings.and_then(|s| s.user_fee_increase).unwrap_or_default();
+        let user_fee_increase = settings
+            .and_then(|s| s.user_fee_increase)
+            .unwrap_or_default();
         let identity_create_transition =
             IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
                 self,
@@ -177,7 +179,9 @@ impl<S: Signer<IdentityPublicKey>>
     where
         AS: dpp::key_wallet::signer::Signer + Send + Sync,
     {
-        let user_fee_increase = settings.and_then(|s| s.user_fee_increase).unwrap_or_default();
+        let user_fee_increase = settings
+            .and_then(|s| s.user_fee_increase)
+            .unwrap_or_default();
         let identity_create_transition = IdentityCreateTransition::try_from_identity_with_signers(
             self,
             asset_lock_proof,

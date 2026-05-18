@@ -485,8 +485,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                             };
                             let networks_match =
                                 matches!(wallet_network, Some(n) if n == self.sdk.network);
-                            if matches!(wallet_cl_height, Some(h) if h >= height)
-                                && networks_match
+                            if matches!(wallet_cl_height, Some(h) if h >= height) && networks_match
                             {
                                 tracing::info!(
                                     "Building ChainLock proof for tx {} from wallet's \

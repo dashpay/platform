@@ -125,8 +125,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             }
             AssetLockCreditKeys::Private(_) => {
                 return Err(PlatformWalletError::AssetLockTransaction(
-                    "Builder returned Private keys; signer-driven path expected Public"
-                        .to_string(),
+                    "Builder returned Private keys; signer-driven path expected Public".to_string(),
                 ));
             }
         };
@@ -310,8 +309,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         funding_type: AssetLockFundingType,
         identity_index: u32,
         signer: &S,
-    ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError>
-    {
+    ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError> {
         // 1. Build the asset lock transaction.
         let (tx, path) = self
             .build_asset_lock_transaction(

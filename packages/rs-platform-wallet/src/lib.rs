@@ -60,8 +60,8 @@ pub use wallet::identity::{
     calculate_account_reference, derive_auto_accept_private_key, derive_contact_payment_address,
     derive_contact_payment_addresses, derive_contact_xpub, BlockTime, ContactRequest,
     ContactXpubData, DashPayProfile, DpnsNameInfo, EstablishedContact, IdentityFunding,
-    IdentityLocation, IdentityManager, IdentityStatus, KeyStorage, ManagedIdentity,
-    PrivateKeyData, ProfileUpdate, RegistrationIndex, DEFAULT_CONTACT_GAP_LIMIT,
+    IdentityLocation, IdentityManager, IdentityStatus, KeyStorage, ManagedIdentity, PrivateKeyData,
+    ProfileUpdate, RegistrationIndex, DEFAULT_CONTACT_GAP_LIMIT,
 };
 pub use wallet::platform_wallet::PlatformWalletInfo;
 pub use wallet::PlatformAddressTag;

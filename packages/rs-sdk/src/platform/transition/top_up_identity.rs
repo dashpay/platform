@@ -56,7 +56,9 @@ impl TopUpIdentity for Identity {
         asset_lock_proof_private_key: &PrivateKey,
         settings: Option<PutSettings>,
     ) -> Result<u64, Error> {
-        let user_fee_increase = settings.and_then(|s| s.user_fee_increase).unwrap_or_default();
+        let user_fee_increase = settings
+            .and_then(|s| s.user_fee_increase)
+            .unwrap_or_default();
         let state_transition = IdentityTopUpTransition::try_from_identity_with_private_key(
             self,
             asset_lock_proof,
@@ -85,7 +87,9 @@ impl TopUpIdentity for Identity {
     where
         AS: dpp::key_wallet::signer::Signer + Send + Sync,
     {
-        let user_fee_increase = settings.and_then(|s| s.user_fee_increase).unwrap_or_default();
+        let user_fee_increase = settings
+            .and_then(|s| s.user_fee_increase)
+            .unwrap_or_default();
         let state_transition = IdentityTopUpTransition::try_from_identity_with_signer(
             self,
             asset_lock_proof,
