@@ -316,14 +316,28 @@ impl Drive {
                             contract.id_ref().as_bytes(),
                             document_type,
                         );
-                    PathKeyUnknownElementSize((
-                        document_id_in_primary_path,
-                        KnownKey(encoded_time.clone()),
+                    // Mirror the live path on `primary_key_sum_property`:
+                    // summable doctypes write `Element::ItemWithSumItem`
+                    // (~10 extra bytes for the i64 sum_value varint), so
+                    // the estimation must use the sum-aware helper to
+                    // avoid undercharging keep-history inserts.
+                    let elem_size = if primary_key_sum_property.is_some() {
+                        Element::required_item_with_sum_item_space(
+                            *max_size,
+                            STORAGE_FLAGS_SIZE,
+                            &platform_version.drive.grove_version,
+                        )?
+                    } else {
                         Element::required_item_space(
                             *max_size,
                             STORAGE_FLAGS_SIZE,
                             &platform_version.drive.grove_version,
-                        )?,
+                        )?
+                    };
+                    PathKeyUnknownElementSize((
+                        document_id_in_primary_path,
+                        KnownKey(encoded_time.clone()),
+                        elem_size,
                     ))
                 }
             };
@@ -448,18 +462,34 @@ impl Drive {
                         element,
                     ))
                 }
-                DocumentEstimatedAverageSize(average_size) => PathKeyUnknownElementSize((
-                    KeyInfoPath::from_known_path(primary_key_path),
-                    KeyInfo::MaxKeySize {
-                        unique_id: document_type.unique_id_for_storage().to_vec(),
-                        max_size: DEFAULT_HASH_SIZE_U8,
-                    },
-                    Element::required_item_space(
-                        *average_size,
-                        STORAGE_FLAGS_SIZE,
-                        &platform_version.drive.grove_version,
-                    )?,
-                )),
+                DocumentEstimatedAverageSize(average_size) => {
+                    // Same sum-aware branch as the keep-history and
+                    // trailing-else arms: summable doctypes write
+                    // `ItemWithSumItem` (~10 extra bytes for the i64
+                    // sum_value) so the estimation must match to avoid
+                    // undercharging the `insert_without_check` path.
+                    let elem_size = if primary_key_sum_property.is_some() {
+                        Element::required_item_with_sum_item_space(
+                            *average_size,
+                            STORAGE_FLAGS_SIZE,
+                            &platform_version.drive.grove_version,
+                        )?
+                    } else {
+                        Element::required_item_space(
+                            *average_size,
+                            STORAGE_FLAGS_SIZE,
+                            &platform_version.drive.grove_version,
+                        )?
+                    };
+                    PathKeyUnknownElementSize((
+                        KeyInfoPath::from_known_path(primary_key_path),
+                        KeyInfo::MaxKeySize {
+                            unique_id: document_type.unique_id_for_storage().to_vec(),
+                            max_size: DEFAULT_HASH_SIZE_U8,
+                        },
+                        elem_size,
+                    ))
+                }
                 DocumentOwnedInfo((document, storage_flags)) => {
                     let serialized_document = document.serialize(
                         document_and_contract_info.document_type,

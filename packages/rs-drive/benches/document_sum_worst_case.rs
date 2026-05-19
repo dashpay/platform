@@ -193,7 +193,10 @@ fn tip_jar_contract() -> DataContract {
                 "position": 0,
                 "contentMediaType": "application/x.dash.dpp.identifier"
             },
-            "amount": {"type": "integer", "minimum": 1, "position": 1},
+            // `maximum` bounds the property to u32::MAX so DPP infers
+            // `U32` (an accepted summable type) — U64 is rejected
+            // because it would overflow grovedb's i64 sum aggregator.
+            "amount": {"type": "integer", "minimum": 1, "maximum": 4294967295i64, "position": 1},
             "sentAt": {"type": "integer", "minimum": 0, "position": 2},
             "note": {"type": "string", "maxLength": 280, "position": 3}
         },

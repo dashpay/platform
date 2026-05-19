@@ -46,6 +46,7 @@
         "amount": {
           "type": "integer",
           "minimum": 1,
+          "maximum": 4294967295,
           "position": 1
         },
         "sentAt": {

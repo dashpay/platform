@@ -197,22 +197,29 @@ impl DocumentTypeV2 {
                         ),
                     ))
                 })?;
-                // TODO(sum-feature, overflow): U64 is currently accepted
-                // here, but a u64 value > i64::MAX would overflow grovedb's
-                // sum-tree i64 aggregator silently — DPP accepts the
-                // document and Drive returns `CorruptedCodeExecution`
-                // at insert time
-                // (`document/mod.rs::read_document_sum_contribution`).
-                // Properly bounding this requires either (a) preserving
-                // the schema's `maximum` on the inferred property type
-                // so we can require `max <= i64::MAX` at contract
-                // validation, or (b) adding a doc-level validator that
-                // rejects sum values above i64::MAX. Neither belongs
-                // in this PR — see Codex finding #2 follow-up.
+                // U64 is intentionally NOT accepted: grovedb's sum-tree
+                // aggregates `i64`, so a u64 value > i64::MAX would
+                // overflow the aggregator silently. Authors who want
+                // unbounded positive integers as summable should set
+                // the schema's `maximum` explicitly to `i64::MAX`
+                // (9_223_372_036_854_775_807) — that bound forces the
+                // property-type inference at
+                // `property/mod.rs::find_unsigned_integer_type_for_max_value`
+                // through `find_integer_type_for_min_and_max_values`'s
+                // unsigned branch (still U64 today because max > U32),
+                // BUT we also reject U64 unconditionally here so the
+                // rule is enforced regardless of the inference path.
+                //
+                // The accepted list (I64 + I32/U32 + I16/U16 + I8/U8) is
+                // the set of integer types that fit losslessly into
+                // grovedb's i64 sum value. Without an explicit `maximum
+                // <= i64::MAX` on the property, no integer schema
+                // currently infers I64 — authors must add either
+                // `maximum: 9223372036854775807` or pick a smaller
+                // signed/unsigned type that's not U64.
                 if !matches!(
                     prop.property_type,
                     crate::data_contract::document_type::property::DocumentPropertyType::I64
-                        | crate::data_contract::document_type::property::DocumentPropertyType::U64
                         | crate::data_contract::document_type::property::DocumentPropertyType::I32
                         | crate::data_contract::document_type::property::DocumentPropertyType::U32
                         | crate::data_contract::document_type::property::DocumentPropertyType::I16
@@ -223,7 +230,14 @@ impl DocumentTypeV2 {
                     return Err(ProtocolError::DataContractError(
                         DataContractError::InvalidContractStructure(format!(
                             "summable property \"{}\" on document type \"{}\" must be an \
-                             integer type (i8..i64 / u8..u64); got {:?}",
+                             integer type whose values fit in i64 (i8..i64 / u8..u32); got \
+                             {:?}. U64 is rejected because values above i64::MAX would \
+                             overflow grovedb's i64 sum aggregator. To use a positive-only \
+                             integer property as summable, either pick u8/u16/u32, OR set the \
+                             property's schema `maximum` to 9223372036854775807 (i64::MAX) \
+                             AND have it parse as i64 (today this requires a negative \
+                             `minimum` to force the signed inference branch; tracked as a \
+                             property-inference follow-up).",
                             prop_name, name, prop.property_type,
                         )),
                     ));

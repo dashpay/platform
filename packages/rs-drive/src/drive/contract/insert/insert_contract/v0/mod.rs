@@ -4388,7 +4388,11 @@ mod range_summable_index_e2e_tests {
             "type": "object",
             "properties": {
                 "sentAt": {"type": "integer", "minimum": 0, "position": 0},
-                "amount": {"type": "integer", "minimum": 1, "position": 1},
+                // `maximum` bounds the property to u32::MAX so DPP infers
+                // `U32` (an accepted summable type) rather than the default
+                // `U64` (rejected — would overflow grovedb's i64
+                // aggregator). Test values stay well under 2^32.
+                "amount": {"type": "integer", "minimum": 1, "maximum": 4294967295i64, "position": 1},
             },
             "required": ["sentAt", "amount"],
             "indices": Value::Array(vec![Value::Map(index_map)]),

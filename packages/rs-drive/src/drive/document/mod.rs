@@ -113,7 +113,7 @@ fn make_document_reference(
 /// no need to re-read the source document (its `sum_property` field
 /// may have drifted, or the doc may not be deserializable in the
 /// delete-by-id paths).
-fn make_document_reference_with_sum_item(
+pub(crate) fn make_document_reference_with_sum_item(
     document: &Document,
     document_type: DocumentTypeRef,
     // `grovedb::SumValue = i64` per `grovedb-element/src/element/mod.rs`,
@@ -162,7 +162,7 @@ fn make_document_reference_with_sum_item(
 /// a U64-typed property whose schema allows values > i64::MAX would
 /// pass DPP validation and fail here, so that branch returns
 /// `DriveError::InvalidInput` (user-facing) rather than corruption.
-fn read_document_sum_contribution(
+pub(crate) fn read_document_sum_contribution(
     document: &Document,
     sum_property: &str,
 ) -> Result<i64, crate::error::Error> {
