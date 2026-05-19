@@ -12,29 +12,45 @@ Keystore, OS keyring, encrypted file vault). They are re-derived as
 needed via the wallet's BIP-32/BIP-39 plumbing and never touch the
 SQLite file the persister writes.
 
-## Future `secrets` submodule sketch
+## The `secrets` submodule
 
-This crate is structured so the `SecretStore` trait can land as a
-submodule (`platform_wallet_storage::secrets`) gated behind a `secrets`
-Cargo feature, sharing the crate-level error type and config
-conventions. The module slot is reserved in `src/lib.rs` with a
-commented-out `pub mod secrets;` line; the feature flag exists today
-but flips no code.
+`platform_wallet_storage::secrets` is gated behind the opt-in `secrets`
+Cargo feature (never enabled by `default`). Enabling the feature
+activates the module: it pulls the pinned crypto/keyring dependencies
+and compiles `src/secrets/`. Secrets reach a backend only through this
+trait — never through the SQLite persister DTO.
 
 ```rust
-trait SecretStore: Send + Sync {
-    fn put(&self, wallet_id: WalletId, label: &str, bytes: &[u8]) -> Result<()>;
-    fn get(&self, wallet_id: WalletId, label: &str) -> Result<Option<Vec<u8>>>;
-    fn delete(&self, wallet_id: WalletId, label: &str) -> Result<()>;
+pub trait SecretStore: Send + Sync {
+    fn put(&self, wallet_id: WalletId, label: &str, bytes: &[u8])
+        -> Result<(), SecretStoreError>;
+    fn get(&self, wallet_id: WalletId, label: &str)
+        -> Result<Option<SecretBytes>, SecretStoreError>;
+    fn delete(&self, wallet_id: WalletId, label: &str)
+        -> Result<(), SecretStoreError>;
 }
 ```
 
-Reference backends to plan for:
+`get` returns `Option<SecretBytes>` — a zeroize-on-drop wrapper, never
+a bare `Vec<u8>`. `label` is validated against
+`^[A-Za-z0-9._-]{1,64}$`; `wallet_id` is a fixed 32-byte newtype.
+`SecretStoreError` is a concrete `thiserror` enum carrying no secret
+bytes.
 
-- `KeyringStore` (default) — OS-native keyring; recoverable across
-  reinstalls when the keyring is.
-- `EncryptedFileStore` — Argon2id + XChaCha20-Poly1305 over a passphrase.
-- `MemoryStore` — tests only.
+Backends:
+
+- `KeyringStore` — OS-native keyring (`keyring-core 1.0.0` + the
+  per-platform store crates). Recommended default on desktop OSes;
+  fails closed (`BackendUnavailable`) on headless Linux with no Secret
+  Service — never a silent plaintext fallback.
+- `EncryptedFileStore` — Argon2id + XChaCha20-Poly1305 vault file with
+  a header-stored passphrase-verification token. Recommended default
+  on headless / server hosts.
+- `MemoryStore` — tests only, gated behind `__secrets-test-helpers` so
+  it is unreachable from production builds.
+
+Backend selection is an explicit operator decision; there is no
+automatic fallback between backends.
 
 ## What the SQLite backend WILL refuse to store
 
