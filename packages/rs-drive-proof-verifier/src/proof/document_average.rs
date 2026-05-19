@@ -102,10 +102,11 @@ pub fn verify_aggregate_count_and_sum_proof(
 ///
 /// Thin tenderdash-composition wrapper over
 /// [`DriveDocumentSumQuery::verify_primary_key_count_sum_tree_proof`].
-/// Used by the prove path's AVG fast path on a `documentsCountable
-/// + documentsSummable` doctype with empty where clauses — the
-/// server proves the primary-key element directly and the SDK
-/// extracts both metrics from one verified element.
+/// Used by the prove path's AVG fast path on a doctype that has
+/// both `documentsCountable: true` and `documentsSummable: "<prop>"`
+/// set, with empty where clauses — the server proves the
+/// primary-key element directly and the SDK extracts both metrics
+/// from one verified element.
 pub fn verify_primary_key_count_sum_tree_proof(
     contract_id: [u8; 32],
     document_type_name: &str,

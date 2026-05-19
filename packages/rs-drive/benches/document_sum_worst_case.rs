@@ -781,7 +781,7 @@ fn document_sum_worst_case(c: &mut Criterion) {
 /// proof (or any byte payload). One warmup iteration discards the
 /// cold-cache hit; the remaining `iters` samples feed a sort+pick
 /// median. Returns the median `Duration`. Used by `report_proof_sizes`
-/// + `display_proofs` to publish per-query "Avg time" numbers into
+/// and `display_proofs` to publish per-query "Avg time" numbers into
 /// the [Sum Index Examples](../../../../../book/src/drive/sum-index-examples.md)
 /// chapter without spinning up a full Criterion harness per case
 /// (Criterion's already running on the load-bearing N=100 shapes;
