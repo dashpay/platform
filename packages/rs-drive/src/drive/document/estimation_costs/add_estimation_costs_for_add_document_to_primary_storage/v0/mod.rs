@@ -121,6 +121,8 @@ impl Drive {
                             AVERAGE_NUMBER_OF_UPDATES,
                         )),
                         references_size: Some((1, reference_size, average_flags_size, 1)),
+                        items_with_sum_item_size: None,
+                        references_with_sum_item_size: None,
                     },
                 },
             );

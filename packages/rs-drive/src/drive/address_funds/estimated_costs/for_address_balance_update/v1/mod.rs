@@ -1,46 +1,35 @@
+use crate::drive::address_funds::estimated_costs::for_address_balance_update::v0::{
+    AVERAGE_NONCE_SIZE, PLATFORM_ADDRESS_KEY_SIZE,
+};
 use crate::drive::constants::AVERAGE_BALANCE_SIZE;
 use crate::drive::Drive;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{EstimatedLevel, PotentiallyAtMaxElements};
-use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
+use grovedb::EstimatedLayerSizes::{AllItemsWithSumItem, AllSubtrees};
 use grovedb::EstimatedSumTrees::SomeSumTrees;
 use grovedb::{EstimatedLayerInformation, TreeType};
 use std::collections::HashMap;
 
-/// Size of a PlatformAddress key (1 byte type + 20 bytes hash)
-pub const PLATFORM_ADDRESS_KEY_SIZE: u32 = 21;
-
-/// Average size of nonce stored with balance (8 bytes for u64)
-pub const AVERAGE_NONCE_SIZE: u32 = 8;
-
 impl Drive {
-    /// Adds estimation costs for address balance updates in version 0.
+    /// Adds estimation costs for address balance updates in version 1.
     ///
-    /// This function provides cost estimation for the address balances tree structure:
-    /// - Root level: Contains AddressBalances sum tree
-    /// - AddressBalances level: Contains CLEAR_ADDRESS_POOL sum tree
-    /// - CLEAR_ADDRESS_POOL level: Contains address entries with balance and nonce
+    /// Sole behavioral diff vs v0 (and the load-bearing reason for the
+    /// version split): the leaves at `CLEAR_ADDRESS_POOL` are
+    /// `Element::ItemWithSumItem(nonce_bytes, balance, flags)` — the
+    /// `i64` sum_value adds ~10 worst-case varint bytes on top of the
+    /// plain-item layout. v0 (consensus-locked to protocol v11 prod)
+    /// uses `AllItems(...)` which undercharges; v1 (active at v12+)
+    /// uses `AllItemsWithSumItem(...)` which is sum-aware (grovedb
+    /// PR #674).
     ///
-    /// # Parameters
-    /// * `estimated_costs_only_with_layer_info`: A mutable reference to a `HashMap`
-    ///   that stores estimated layer information based on the key information path.
-    pub(super) fn add_estimation_costs_for_address_balance_update_v0(
+    /// Everything else — the root and AddressBalances layer estimations
+    /// — is byte-identical to v0. Those layers don't carry sum-bearing
+    /// leaves; they're `AllSubtrees(...)` with weighted child mixes
+    /// that grovedb's `SomeSumTrees` already covers correctly.
+    pub(super) fn add_estimation_costs_for_address_balance_update_v1(
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
     ) {
-        //                                                                                DataContract_Documents 64
-        //                                 /                                                                                                       \
-        //                       Identities 32                                                                                                 Balances 96
-        //             /                            \                                                                        /                                                       \
-        //       Tokens 16                    Pools 48                                                    WithdrawalTransactions 80                                                Votes  112
-        //       /      \                           /                     \                                         /                           \                            /                          \
-        //     NUPKH->I 8 UPKH->I 24   PreFundedSpecializedBalances 40  AddressBalances 56              SpentAssetLockTransactions 72    GroupActions 88             Misc 104                        Versions 120
-
-        // Root level estimation
-        // Path to AddressBalances (56): DataContractDocuments (64) → Identities (32) → Pools (48) → AddressBalances (56)
-        // - DataContractDocuments: Normal tree
-        // - Identities: Normal tree
-        // - Pools: Sum tree
-        // - AddressBalances: Sum tree
+        // Root level estimation (identical to v0).
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_path([]),
             EstimatedLayerInformation {
@@ -64,8 +53,7 @@ impl Drive {
             },
         );
 
-        // AddressBalances level estimation (path: [[0x8c]])
-        // This sum tree contains the CLEAR_ADDRESS_POOL subtree
+        // AddressBalances level estimation (identical to v0).
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_owned_path(Self::addresses_path()),
             EstimatedLayerInformation {
@@ -89,15 +77,16 @@ impl Drive {
             },
         );
 
-        // CLEAR_ADDRESS_POOL level estimation (path: [[0x8c], [0x63]])
-        // This sum tree contains the actual address entries
-        // Keys are 21-byte PlatformAddress, values are ItemWithSumItem (nonce + balance)
+        // CLEAR_ADDRESS_POOL level estimation — **diff vs v0** is on this
+        // layer. Leaves are ItemWithSumItem (nonce + balance), so use
+        // the sum-aware layer-size variant to include the i64 sum_value
+        // in the per-element cost.
         estimated_costs_only_with_layer_info.insert(
             KeyInfoPath::from_known_owned_path(Self::clear_addresses_path()),
             EstimatedLayerInformation {
                 tree_type: TreeType::CountSumTree,
                 estimated_layer_count: PotentiallyAtMaxElements,
-                estimated_layer_sizes: AllItems(
+                estimated_layer_sizes: AllItemsWithSumItem(
                     PLATFORM_ADDRESS_KEY_SIZE as u8,
                     AVERAGE_NONCE_SIZE + AVERAGE_BALANCE_SIZE,
                     None,

@@ -107,29 +107,29 @@ impl Drive {
         }
 
         for (document_type_name, document_type) in contract.document_types() {
-            // Compute the (count, non-count) child mix at this doctype's
+            // Compute the child-tree-type distribution at this doctype's
             // layer. Mirror what `insert_contract_v0` actually creates:
             //
             //   - key `[0]` (the primary-key tree) → tree type from
-            //     `primary_key_tree_type()` (count-bearing iff
-            //     `documents_countable` or `range_countable` is set).
-            //   - each top-level index key → `ProvableCountTree` iff its
-            //     terminator level reports `range_countable = true`,
-            //     `NormalTree` otherwise.
+            //     `primary_key_tree_type()` (any of the 9 variants from
+            //     NormalTree through ProvableCountProvableSumTree depending
+            //     on `documents_countable` / `documents_summable` /
+            //     `range_countable` / `range_summable`).
+            //   - each top-level index key → tree type at the index's
+            //     terminator level, derived from the terminator's flags
+            //     via [`property_name_tree_type_from_flags`] below.
+            //     Mirror of the dispatch in
+            //     `add_indices_for_index_level_for_contract_operations`.
             //
-            // The boolean below routes both `CountTree` and
-            // `ProvableCountTree` into the same `count_trees_weight` slot
-            // (see the doc comment on this method for why that's
-            // byte-accurate).
+            // Each child is tallied into its matching weight slot in the
+            // `SomeSumTrees` struct. `EstimatedSumTrees::estimated_size`
+            // multiplies each weight by `TreeType::*.inner_node_type().cost()`
+            // to compute the average-case per-node cost.
             let document_type_ref = document_type.as_ref();
             let pk_tree_type = document_type_ref.primary_key_tree_type(platform_version)?;
-            let pk_is_count_bearing = matches!(
-                pk_tree_type,
-                TreeType::CountTree | TreeType::ProvableCountTree
-            );
 
-            let mut count_children: u8 = if pk_is_count_bearing { 1 } else { 0 };
-            let mut non_count_children: u8 = if pk_is_count_bearing { 0 } else { 1 };
+            let mut tree_weights = TreeTypeWeights::default();
+            tree_weights.tally(pk_tree_type);
 
             let index_structure = document_type_ref.index_structure();
             let mut seen_indexes: HashSet<&[u8]> = HashSet::new();
@@ -138,30 +138,16 @@ impl Drive {
                 if !seen_indexes.insert(index_bytes) {
                     continue;
                 }
-                let property_name_is_range_countable_terminator = index_structure
+                let terminator_tree_type = index_structure
                     .sub_levels()
                     .get(index.name.as_str())
                     .and_then(|level| level.has_index_with_type())
-                    .map(|info| info.range_countable)
-                    .unwrap_or(false);
-                if property_name_is_range_countable_terminator {
-                    count_children = count_children.saturating_add(1);
-                } else {
-                    non_count_children = non_count_children.saturating_add(1);
-                }
+                    .map(property_name_tree_type_from_flags)
+                    .unwrap_or(TreeType::NormalTree);
+                tree_weights.tally(terminator_tree_type);
             }
 
-            let estimated_sum_trees = if count_children == 0 {
-                NoSumTrees
-            } else {
-                SomeSumTrees {
-                    sum_trees_weight: 0,
-                    big_sum_trees_weight: 0,
-                    count_trees_weight: count_children,
-                    count_sum_trees_weight: 0,
-                    non_sum_trees_weight: non_count_children,
-                }
-            };
+            let estimated_sum_trees = tree_weights.to_estimated_sum_trees();
 
             estimated_costs_only_with_layer_info.insert(
                 KeyInfoPath::from_known_path(contract_document_type_path(
@@ -205,12 +191,119 @@ impl Drive {
                             AVERAGE_NUMBER_OF_UPDATES,
                         )),
                         references_size: Some((1, reference_size, storage_flags, 1)),
+                        items_with_sum_item_size: None,
+                        references_with_sum_item_size: None,
                     },
                 },
             );
         }
 
         Ok(())
+    }
+}
+
+/// Per-tree-type weight tally used by [`Drive::add_estimation_costs_for_contract_insertion_v1`].
+/// Mirrors every `TreeType` variant the contract apply path can write at
+/// the doctype's children layer: the primary-key tree (`[0]`) plus each
+/// top-level index's terminator tree.
+#[derive(Debug, Default, Clone, Copy)]
+struct TreeTypeWeights {
+    normal: u8,
+    count: u8,
+    provable_count: u8,
+    sum: u8,
+    big_sum: u8,
+    provable_sum: u8,
+    count_sum: u8,
+    provable_count_sum: u8,
+    provable_count_provable_sum: u8,
+}
+
+impl TreeTypeWeights {
+    fn tally(&mut self, tree_type: TreeType) {
+        match tree_type {
+            TreeType::NormalTree => self.normal = self.normal.saturating_add(1),
+            TreeType::CountTree => self.count = self.count.saturating_add(1),
+            TreeType::ProvableCountTree => {
+                self.provable_count = self.provable_count.saturating_add(1)
+            }
+            TreeType::SumTree => self.sum = self.sum.saturating_add(1),
+            TreeType::BigSumTree => self.big_sum = self.big_sum.saturating_add(1),
+            TreeType::ProvableSumTree => self.provable_sum = self.provable_sum.saturating_add(1),
+            TreeType::CountSumTree => self.count_sum = self.count_sum.saturating_add(1),
+            TreeType::ProvableCountSumTree => {
+                self.provable_count_sum = self.provable_count_sum.saturating_add(1)
+            }
+            TreeType::ProvableCountProvableSumTree => {
+                self.provable_count_provable_sum =
+                    self.provable_count_provable_sum.saturating_add(1)
+            }
+            // Other tree variants (e.g. CommitmentTree) don't appear at
+            // the doctype's children layer — they're shielded-pool-only.
+            // Bucket them with `normal` (zero per-node aggregate cost) so
+            // the tally stays exhaustive.
+            _ => self.normal = self.normal.saturating_add(1),
+        }
+    }
+
+    /// Convert the tally into an [`EstimatedSumTrees`]. Returns
+    /// `NoSumTrees` only when every aggregate-bearing tally is zero
+    /// (preserving the existing v0/v1-output contract for purely-normal
+    /// doctypes — see the regression test in this module).
+    fn to_estimated_sum_trees(self) -> grovedb::EstimatedSumTrees {
+        let any_aggregate = self.count
+            | self.provable_count
+            | self.sum
+            | self.big_sum
+            | self.provable_sum
+            | self.count_sum
+            | self.provable_count_sum
+            | self.provable_count_provable_sum;
+        if any_aggregate == 0 {
+            NoSumTrees
+        } else {
+            SomeSumTrees {
+                sum_trees_weight: self.sum,
+                big_sum_trees_weight: self.big_sum,
+                count_trees_weight: self.count,
+                count_sum_trees_weight: self.count_sum,
+                non_sum_trees_weight: self.normal,
+                provable_sum_trees_weight: self.provable_sum,
+                provable_count_trees_weight: self.provable_count,
+                provable_count_sum_trees_weight: self.provable_count_sum,
+                provable_count_provable_sum_trees_weight: self.provable_count_provable_sum,
+            }
+        }
+    }
+}
+
+/// Derive the property-name tree type of a top-level index from its
+/// terminator's flags. Mirror of the selection in
+/// `add_indices_for_index_level_for_contract_operations` — when the
+/// terminator opts into a range axis (`range_countable` or
+/// `range_summable`) the property-name level gets a `Provable*` tree;
+/// otherwise it gets the root-only-aggregate variant. The combinations
+/// follow the same matrix the document-storage primary-key dispatcher
+/// uses, see
+/// [`DocumentTypePrimaryKeyTreeType::primary_key_tree_type`].
+fn property_name_tree_type_from_flags(
+    info: &dpp::data_contract::document_type::IndexLevelTypeInfo,
+) -> TreeType {
+    let summable = info.summable.is_some();
+    let countable = info.countable.is_countable();
+    match (
+        info.range_summable,
+        info.range_countable,
+        summable,
+        countable,
+    ) {
+        (true, true, _, _) => TreeType::ProvableCountProvableSumTree,
+        (true, false, _, _) => TreeType::ProvableSumTree,
+        (false, true, _, _) => TreeType::ProvableCountTree,
+        (false, false, true, true) => TreeType::CountSumTree,
+        (false, false, true, false) => TreeType::SumTree,
+        (false, false, false, true) => TreeType::CountTree,
+        (false, false, false, false) => TreeType::NormalTree,
     }
 }
 
@@ -336,6 +429,7 @@ mod tests {
                     sum_trees_weight,
                     big_sum_trees_weight,
                     count_sum_trees_weight,
+                    ..
                 },
                 _,
             ) => {
@@ -358,11 +452,17 @@ mod tests {
         }
     }
 
-    /// `rangeCountable` on the `byColor` index → primary-key tree is
-    /// `ProvableCountTree` AND the `byColor` index tree is also a
-    /// `ProvableCountTree`, so both children should map onto
-    /// `count_trees_weight` (per the doc comment on the v1 method —
-    /// `CountNode` and `ProvableCountNode` have the same per-feature cost).
+    /// `documentsCountable: true` (doctype level) + `rangeCountable: true`
+    /// on the `byColor` index → primary-key tree is `CountTree` (from the
+    /// doctype-level countable flag; no doctype-level range so it's not
+    /// the *Provable* variant) AND the `byColor` index tree is a
+    /// `ProvableCountTree` (from the index's `rangeCountable: true`).
+    ///
+    /// The v12 refactor that took advantage of grovedb #674's
+    /// finer-grained weights now tallies each variant separately:
+    /// `count_trees_weight` carries the CountTree primary key,
+    /// `provable_count_trees_weight` carries the ProvableCountTree
+    /// index. Pre-refactor both collapsed into `count_trees_weight: 2`.
     #[test]
     fn range_countable_index_contract_counts_both_pk_and_index_as_count_children() {
         let pv = PlatformVersion::latest();
@@ -384,15 +484,19 @@ mod tests {
                 _,
                 SomeSumTrees {
                     count_trees_weight,
+                    provable_count_trees_weight,
                     non_sum_trees_weight,
                     ..
                 },
                 _,
             ) => {
                 assert_eq!(
-                    count_trees_weight, 2,
-                    "primary-key ProvableCountTree + byColor ProvableCountTree → 2 count-tree \
-                     children"
+                    count_trees_weight, 1,
+                    "primary-key CountTree (from documentsCountable)"
+                );
+                assert_eq!(
+                    provable_count_trees_weight, 1,
+                    "byColor ProvableCountTree (from index rangeCountable)"
                 );
                 assert_eq!(non_sum_trees_weight, 0, "no non-count children");
             }

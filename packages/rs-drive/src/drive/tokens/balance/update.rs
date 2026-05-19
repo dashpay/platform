@@ -299,10 +299,16 @@ mod tests {
                 )
                 .expect("expected to get estimated costs to update an identity balance");
 
+            // v12 processing fee shifted from 4_278_840 → 4_378_100 when
+            // grovedb #674 landed the sum-aware `AllItemsWithSumItem` /
+            // `AllReferencesWithSumItem` variants + the four new
+            // `provable_*_weight` fields on `SomeSumTrees`. See the
+            // matching note on `should_add_to_balance_latest_version_estimated`
+            // in `drive/identity/balance/update.rs`.
             assert_eq!(
                 fee_result,
                 FeeResult {
-                    processing_fee: 4278840,
+                    processing_fee: 4378100,
                     ..Default::default()
                 }
             );
