@@ -557,7 +557,7 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 64,
-      "description": "Name of an integer document property aggregated into the primary-key SumTree (one sum per document type). Stores documents as `ItemWithSumItem` so the primary-key tree's root sum is the total of the named property across all docs of this type. Property must exist on the document type, be in `required`, and have an integer type."
+      "description": "Name of an integer document property aggregated into the primary-key SumTree (one sum per document type). Stores documents as `ItemWithSumItem` so the primary-key tree's root sum is the total of the named property across all docs of this type. Property must exist on the document type, be in `required`, and have an integer type. Incompatible with `documentsKeepHistory: true` — keep-history doctypes store every version under a per-document subtree, so sums can't propagate to the doctype-level root aggregate."
     },
     "rangeSummable": {
       "type": "boolean",
@@ -567,7 +567,7 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 64,
-      "description": "Syntactic sugar: `documentsAverageable: \"<prop>\"` is shorthand for `documentsCountable: true` + `documentsSummable: \"<prop>\"`. Enables doctype-wide average queries (returns `(count, sum)` the client divides) without authors having to compose the count + sum flags. Same on-disk layout. If you set both `documentsAverageable` and `documentsSummable`, they must name the same property."
+      "description": "Syntactic sugar: `documentsAverageable: \"<prop>\"` is shorthand for `documentsCountable: true` + `documentsSummable: \"<prop>\"`. Enables doctype-wide average queries (returns `(count, sum)` the client divides) without authors having to compose the count + sum flags. Same on-disk layout. If you set both `documentsAverageable` and `documentsSummable`, they must name the same property. Inherits the `documentsKeepHistory: true` incompatibility from its `documentsSummable` half."
     },
     "rangeAverageable": {
       "type": "boolean",

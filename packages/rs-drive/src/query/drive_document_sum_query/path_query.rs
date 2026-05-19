@@ -31,7 +31,6 @@ use crate::query::{WhereClause, WhereOperator};
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
-use dpp::platform_value::Value;
 use dpp::version::PlatformVersion;
 use grovedb::{PathQuery, Query, QueryItem, SizedQuery};
 
@@ -1515,11 +1514,3 @@ mod carrier_path_query_tests {
         assert!(msg.contains("carrier dimension"), "unexpected error: {msg}");
     }
 }
-
-/// Suppress an unused-import warning that surfaces when only the cfg-gated
-/// `verify` feature is enabled. The `Value` import isn't actually used by
-/// the current public surface but stays in the use-block so the prove-side
-/// extensions (which read structured `Value`s in the carrier-aggregate
-/// builder) can be added with no further import churn.
-#[allow(dead_code)]
-fn _value_import_anchor(_: Value) {}

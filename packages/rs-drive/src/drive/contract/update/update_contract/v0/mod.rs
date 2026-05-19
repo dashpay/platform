@@ -353,27 +353,71 @@ impl Drive {
                 // primary_key_tree_type() so contract update, document inserts,
                 // deletes, and estimation paths all see the same tree-variant
                 // selection (under whichever drive method version is active).
+                // Must stay in lock-step with the matching dispatch in
+                // `insert_contract_v0::insert_contract_operations_v0`: a fresh
+                // insert and a contract-update that adds the same doctype must
+                // materialize the same on-disk tree variant, otherwise later
+                // sum/range-sum reads + fee logic operate against the wrong
+                // tree type for updated contracts.
+                let key_info = KeyRef(&[0]);
                 match document_type
                     .as_ref()
                     .primary_key_tree_type(platform_version)?
                 {
                     TreeType::ProvableCountTree => self.batch_insert_empty_provable_count_tree(
                         type_path,
-                        KeyRef(&[0]),
+                        key_info,
                         storage_flags.as_ref().map(|flags| flags.as_ref()),
                         &mut batch_operations,
                         drive_version,
                     )?,
                     TreeType::CountTree => self.batch_insert_empty_count_tree(
                         type_path,
-                        KeyRef(&[0]),
+                        key_info,
                         storage_flags.as_ref().map(|flags| flags.as_ref()),
                         &mut batch_operations,
                         drive_version,
                     )?,
+                    TreeType::SumTree => self.batch_insert_empty_sum_tree(
+                        type_path,
+                        key_info,
+                        storage_flags.as_ref().map(|flags| flags.as_ref()),
+                        &mut batch_operations,
+                        drive_version,
+                    )?,
+                    TreeType::ProvableSumTree => self.batch_insert_empty_provable_sum_tree(
+                        type_path,
+                        key_info,
+                        storage_flags.as_ref().map(|flags| flags.as_ref()),
+                        &mut batch_operations,
+                        drive_version,
+                    )?,
+                    TreeType::CountSumTree => self.batch_insert_empty_count_sum_tree(
+                        type_path,
+                        key_info,
+                        storage_flags.as_ref().map(|flags| flags.as_ref()),
+                        &mut batch_operations,
+                        drive_version,
+                    )?,
+                    TreeType::ProvableCountSumTree => self
+                        .batch_insert_empty_provable_count_sum_tree(
+                            type_path,
+                            key_info,
+                            storage_flags.as_ref().map(|flags| flags.as_ref()),
+                            &mut batch_operations,
+                            drive_version,
+                        )?,
+                    TreeType::ProvableCountProvableSumTree => self
+                        .batch_insert_empty_provable_count_provable_sum_tree(
+                            type_path,
+                            key_info,
+                            storage_flags.as_ref().map(|flags| flags.as_ref()),
+                            &mut batch_operations,
+                            drive_version,
+                        )?,
                     _ => self.batch_insert_empty_tree(
                         type_path,
-                        KeyRef(&[0]),
+                        key_info,
                         storage_flags.as_ref().map(|flags| flags.as_ref()),
                         &mut batch_operations,
                         drive_version,
@@ -381,18 +425,60 @@ impl Drive {
                 }
 
                 let mut index_cache: HashSet<&[u8]> = HashSet::new();
+                let document_type_ref = document_type.as_ref();
+                let index_structure = document_type_ref.index_structure();
                 // for each type we should insert the indices that are top level
                 for index in document_type.as_ref().top_level_indices() {
-                    // toDo: change this to be a reference by index
                     let index_bytes = index.name.as_bytes();
                     if !index_cache.contains(index_bytes) {
-                        self.batch_insert_empty_tree(
-                            type_path,
-                            KeyRef(index.name.as_bytes()),
-                            storage_flags.as_ref().map(|flags| flags.as_ref()),
-                            &mut batch_operations,
-                            drive_version,
-                        )?;
+                        // Top-level index tree variant is selected from the
+                        // index's `(range_countable, range_summable)` pair —
+                        // identical 4-way dispatch as
+                        // `insert_contract_operations_v0`. Without this dispatch
+                        // the previous unconditional `batch_insert_empty_tree`
+                        // would materialize a plain `NormalTree` for any new
+                        // sum- or range-countable top-level index added via
+                        // contract update, diverging on-disk layout from
+                        // fresh-insert contracts.
+                        let index_info = index_structure
+                            .sub_levels()
+                            .get(index.name.as_str())
+                            .and_then(|level| level.has_index_with_type());
+                        let range_countable =
+                            index_info.map(|info| info.range_countable).unwrap_or(false);
+                        let range_summable =
+                            index_info.map(|info| info.range_summable).unwrap_or(false);
+                        match (range_countable, range_summable) {
+                            (true, true) => self
+                                .batch_insert_empty_provable_count_provable_sum_tree(
+                                    type_path,
+                                    KeyRef(index_bytes),
+                                    storage_flags.as_ref().map(|flags| flags.as_ref()),
+                                    &mut batch_operations,
+                                    drive_version,
+                                )?,
+                            (true, false) => self.batch_insert_empty_provable_count_tree(
+                                type_path,
+                                KeyRef(index_bytes),
+                                storage_flags.as_ref().map(|flags| flags.as_ref()),
+                                &mut batch_operations,
+                                drive_version,
+                            )?,
+                            (false, true) => self.batch_insert_empty_provable_sum_tree(
+                                type_path,
+                                KeyRef(index_bytes),
+                                storage_flags.as_ref().map(|flags| flags.as_ref()),
+                                &mut batch_operations,
+                                drive_version,
+                            )?,
+                            (false, false) => self.batch_insert_empty_tree(
+                                type_path,
+                                KeyRef(index_bytes),
+                                storage_flags.as_ref().map(|flags| flags.as_ref()),
+                                &mut batch_operations,
+                                drive_version,
+                            )?,
+                        }
                         index_cache.insert(index_bytes);
                     }
                 }
@@ -444,6 +530,168 @@ mod tests {
         }
 
         schema
+    }
+
+    /// Sum-bearing doctype: a single integer property `score` listed in
+    /// `required`, exposed via `documentsSummable`. Adding `rangeSummable`
+    /// also turns it into a range-sum doctype, which under
+    /// `primary_key_tree_type()` resolves to `ProvableSumTree`.
+    fn score_document_schema(documents_summable: bool, range_summable: bool) -> Value {
+        let mut schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "score": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 100,
+                    "position": 0,
+                },
+            },
+            "required": ["score"],
+            "additionalProperties": false,
+        });
+        let schema_map = schema.as_map_mut().expect("schema should be a map");
+        if documents_summable {
+            schema_map.push((
+                Value::Text("documentsSummable".to_string()),
+                Value::Text("score".to_string()),
+            ));
+        }
+        if range_summable {
+            schema_map.push((Value::Text("rangeSummable".to_string()), Value::Bool(true)));
+        }
+        schema
+    }
+
+    /// Sum-bearing doctype via the `documentsAverageable` shorthand —
+    /// desugars to `documentsCountable: true + documentsSummable: "score"`,
+    /// so `primary_key_tree_type()` resolves to `CountSumTree`. Adding
+    /// `rangeAverageable: true` promotes to
+    /// `ProvableCountProvableSumTree` (range-count + range-sum carrier).
+    fn averageable_document_schema(range_averageable: bool) -> Value {
+        let mut schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "score": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 100,
+                    "position": 0,
+                },
+            },
+            "required": ["score"],
+            "additionalProperties": false,
+            "documentsAverageable": "score",
+        });
+        if range_averageable {
+            let schema_map = schema.as_map_mut().expect("schema should be a map");
+            schema_map.push((
+                Value::Text("rangeAverageable".to_string()),
+                Value::Bool(true),
+            ));
+        }
+        schema
+    }
+
+    /// Document type carrying a single top-level `indices` entry whose
+    /// `summable`/`rangeSummable`/`countable`/`rangeCountable` knobs are
+    /// configurable. The integer property `amount` is summed; the
+    /// indexed property `userId` is what we walk through to read the
+    /// per-user tree under `[..doctype, "byUser"]`.
+    fn schema_with_indexed_summable(
+        index_summable: bool,
+        index_range_summable: bool,
+        index_countable: bool,
+        index_range_countable: bool,
+    ) -> Value {
+        let mut index_map: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("name".to_string()),
+                Value::Text("byUser".to_string()),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("userId".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+        ];
+        if index_summable {
+            index_map.push((
+                Value::Text("summable".to_string()),
+                Value::Text("amount".to_string()),
+            ));
+        }
+        if index_range_summable {
+            index_map.push((Value::Text("rangeSummable".to_string()), Value::Bool(true)));
+        }
+        if index_countable {
+            index_map.push((
+                Value::Text("countable".to_string()),
+                Value::Text("countable".to_string()),
+            ));
+        }
+        if index_range_countable {
+            index_map.push((Value::Text("rangeCountable".to_string()), Value::Bool(true)));
+        }
+        let mut schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "userId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "position": 0,
+                },
+                "amount": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000,
+                    "position": 1,
+                },
+            },
+            "required": ["userId", "amount"],
+            "additionalProperties": false,
+        });
+        let schema_map = schema.as_map_mut().expect("schema should be a map");
+        schema_map.push((
+            Value::Text("indices".to_string()),
+            Value::Array(vec![Value::Map(index_map)]),
+        ));
+        schema
+    }
+
+    /// Read a top-level index tree element from
+    /// `[..doctype, "<index_name>"]`.
+    fn read_top_level_index_tree(
+        drive: &Drive,
+        contract: &dpp::prelude::DataContract,
+        document_type_name: &str,
+        index_name: &str,
+    ) -> Element {
+        let platform_version = PlatformVersion::latest();
+        let contract_id = contract.id();
+        let path: [&[u8]; 4] = [
+            &[RootTree::DataContractDocuments as u8],
+            contract_id.as_bytes(),
+            &[1],
+            document_type_name.as_bytes(),
+        ];
+
+        drive
+            .grove_get_raw(
+                (&path).into(),
+                index_name.as_bytes(),
+                DirectQueryType::StatefulDirectQuery,
+                None,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("expected grove_get_raw to succeed")
+            .expect("top-level index tree element should exist")
     }
 
     fn update_contract_with_new_document_type(
@@ -714,5 +962,228 @@ mod tests {
             .expect("fetch")
             .expect("contract should still exist");
         assert_eq!(fetched.contract.id(), contract.id());
+    }
+
+    /// `documentsSummable: "score"` on a freshly-added doctype must
+    /// materialize a `SumTree` at the primary-key tree position.
+    /// Regression for the pre-fix `_` catch-all in
+    /// `update_contract_operations_v0` that silently fell through to
+    /// `NormalTree`, diverging from `insert_contract_v0`'s dispatch.
+    #[test]
+    fn test_update_contract_v0_adds_new_documents_summable_type_creates_sum_tree() {
+        let (drive, contract, _) = update_contract_with_new_document_type(
+            "brandNewSummableDocType",
+            score_document_schema(true, false),
+        );
+
+        let elem = read_primary_key_tree(&drive, &contract, "brandNewSummableDocType");
+        match elem {
+            Element::SumTree(_, sum, _) => {
+                assert_eq!(sum, 0, "freshly created SumTree should have sum 0");
+            }
+            other => panic!(
+                "new documentsSummable doctype must materialize a SumTree primary-key tree, got {:?}",
+                other
+            ),
+        }
+    }
+
+    /// `documentsSummable + rangeSummable` resolves to
+    /// `ProvableSumTree` at the doctype level — the variant
+    /// `verify_range_sum_*` walks. Regression for the same `_`
+    /// catch-all that would have produced `NormalTree`.
+    #[test]
+    fn test_update_contract_v0_adds_new_range_summable_type_creates_provable_sum_tree() {
+        let (drive, contract, _) = update_contract_with_new_document_type(
+            "brandNewRangeSummableDocType",
+            score_document_schema(true, true),
+        );
+
+        let elem = read_primary_key_tree(&drive, &contract, "brandNewRangeSummableDocType");
+        match elem {
+            Element::ProvableSumTree(_, sum, _) => {
+                assert_eq!(sum, 0, "freshly created ProvableSumTree should have sum 0");
+            }
+            other => panic!(
+                "new rangeSummable doctype must materialize a ProvableSumTree primary-key tree, \
+                 got {:?}",
+                other
+            ),
+        }
+    }
+
+    /// `documentsAverageable: "score"` desugars to count + sum →
+    /// the primary-key tree must be `CountSumTree` (count and sum
+    /// aggregates fused on one tree). Regression for the same `_`
+    /// catch-all that pre-fix produced `NormalTree`.
+    #[test]
+    fn test_update_contract_v0_adds_new_averageable_type_creates_count_sum_tree() {
+        let (drive, contract, _) = update_contract_with_new_document_type(
+            "brandNewAverageableDocType",
+            averageable_document_schema(false),
+        );
+
+        let elem = read_primary_key_tree(&drive, &contract, "brandNewAverageableDocType");
+        match elem {
+            Element::CountSumTree(_, count, sum, _) => {
+                assert_eq!(
+                    (count, sum),
+                    (0, 0),
+                    "freshly created CountSumTree should have count=0 and sum=0"
+                );
+            }
+            other => panic!(
+                "new documentsAverageable doctype must materialize a CountSumTree primary-key \
+                 tree, got {:?}",
+                other
+            ),
+        }
+    }
+
+    /// `rangeAverageable: true` promotes both range axes →
+    /// primary-key tree must be `ProvableCountProvableSumTree`
+    /// (PCPS — the combined provable variant from grovedb #670).
+    /// Regression for the same `_` catch-all.
+    #[test]
+    fn test_update_contract_v0_adds_new_range_averageable_type_creates_pcps_tree() {
+        let (drive, contract, _) = update_contract_with_new_document_type(
+            "brandNewRangeAverageableDocType",
+            averageable_document_schema(true),
+        );
+
+        let elem = read_primary_key_tree(&drive, &contract, "brandNewRangeAverageableDocType");
+        match elem {
+            Element::ProvableCountProvableSumTree(_, count, sum, _) => {
+                assert_eq!(
+                    (count, sum),
+                    (0, 0),
+                    "freshly created PCPS tree should have count=0 and sum=0"
+                );
+            }
+            other => panic!(
+                "new rangeAverageable doctype must materialize a ProvableCountProvableSumTree \
+                 primary-key tree, got {:?}",
+                other
+            ),
+        }
+    }
+
+    /// Top-level index dispatch on a freshly added doctype: an
+    /// index with `summable: "amount"` (no rangeSummable / range-
+    /// countable) — the top-level property-name tree (at
+    /// `[..doctype, "userId"]`) stays `NormalTree`. `summable` only
+    /// affects the value-tree at the terminator level under the
+    /// userId-keyed branch; per the 4-way `(range_countable,
+    /// range_summable)` dispatch, the top-level structure under
+    /// `(false, false)` is NormalTree. This pins the un-promoted
+    /// top-level shape; deeper-level summable dispatch is exercised
+    /// by `add_indices_for_index_level_for_contract_operations`
+    /// tests.
+    #[test]
+    fn test_update_contract_v0_summable_only_top_level_index_stays_normal_tree() {
+        let (drive, contract, _) = update_contract_with_new_document_type(
+            "brandNewIndexedSummable",
+            schema_with_indexed_summable(true, false, false, false),
+        );
+
+        let elem =
+            read_top_level_index_tree(&drive, &contract, "brandNewIndexedSummable", "userId");
+        assert!(
+            matches!(elem, Element::Tree(..)),
+            "summable-only index without rangeSummable keeps top-level NormalTree (point-lookup \
+             sum lives at the terminator); got {:?}",
+            elem
+        );
+    }
+
+    /// Index with `rangeSummable: true` on a non-key range field
+    /// must materialize a `ProvableSumTree` at the property-name
+    /// level (`[..doctype, "userId"]`). Regression for the pre-fix
+    /// `batch_insert_empty_tree` unconditional NormalTree at the
+    /// top-level-index step.
+    #[test]
+    fn test_update_contract_v0_adds_new_range_summable_top_level_index_creates_provable_sum_tree() {
+        let (drive, contract, _) = update_contract_with_new_document_type(
+            "brandNewIndexedRangeSummable",
+            schema_with_indexed_summable(true, true, false, false),
+        );
+
+        let elem =
+            read_top_level_index_tree(&drive, &contract, "brandNewIndexedRangeSummable", "userId");
+        match elem {
+            Element::ProvableSumTree(_, sum, _) => {
+                assert_eq!(
+                    sum, 0,
+                    "freshly created top-level ProvableSumTree should have sum 0"
+                );
+            }
+            other => panic!(
+                "rangeSummable top-level index must materialize a ProvableSumTree at the \
+                 property-name level, got {:?}",
+                other
+            ),
+        }
+    }
+
+    /// Index with both `rangeCountable` and `rangeSummable` →
+    /// `ProvableCountProvableSumTree` (PCPS) at the property-name
+    /// level. Regression for the missing `(true, true)` dispatch
+    /// arm pre-fix.
+    #[test]
+    fn test_update_contract_v0_adds_new_range_count_and_summable_top_level_index_creates_pcps() {
+        let (drive, contract, _) = update_contract_with_new_document_type(
+            "brandNewIndexedRangeCountSummable",
+            schema_with_indexed_summable(true, true, true, true),
+        );
+
+        let elem = read_top_level_index_tree(
+            &drive,
+            &contract,
+            "brandNewIndexedRangeCountSummable",
+            "userId",
+        );
+        match elem {
+            Element::ProvableCountProvableSumTree(_, count, sum, _) => {
+                assert_eq!(
+                    (count, sum),
+                    (0, 0),
+                    "freshly created top-level PCPS tree should have count=0 and sum=0"
+                );
+            }
+            other => panic!(
+                "rangeCountable + rangeSummable top-level index must materialize a \
+                 ProvableCountProvableSumTree at the property-name level, got {:?}",
+                other
+            ),
+        }
+    }
+
+    /// Index with `rangeCountable: true` (only) → property-name
+    /// tree must be `ProvableCountTree`. Pins the (true, false)
+    /// arm of the 4-way dispatch so a refactor that consolidates
+    /// arms can't silently regress.
+    #[test]
+    fn test_update_contract_v0_adds_new_range_countable_top_level_index_creates_provable_count_tree(
+    ) {
+        let (drive, contract, _) = update_contract_with_new_document_type(
+            "brandNewIndexedRangeCountable",
+            schema_with_indexed_summable(false, false, true, true),
+        );
+
+        let elem =
+            read_top_level_index_tree(&drive, &contract, "brandNewIndexedRangeCountable", "userId");
+        match elem {
+            Element::ProvableCountTree(_, count, _) => {
+                assert_eq!(
+                    count, 0,
+                    "freshly created top-level ProvableCountTree should have count 0"
+                );
+            }
+            other => panic!(
+                "rangeCountable top-level index must materialize a ProvableCountTree at the \
+                 property-name level, got {:?}",
+                other
+            ),
+        }
     }
 }

@@ -191,7 +191,7 @@ fn student_skill(student_idx: u64) -> i64 {
         h = h.wrapping_mul(0x100000001b3);
     }
     // Three independent uniforms in [-128, 127], averaged → ≈ N(0, 43²).
-    let u1 = ((h >> 0) & 0xff) as i64 - 128;
+    let u1 = (h & 0xff) as i64 - 128;
     let u2 = ((h >> 8) & 0xff) as i64 - 128;
     let u3 = ((h >> 16) & 0xff) as i64 - 128;
     // Scaled so most students land in [-10, +10] with the tails reaching
@@ -243,6 +243,7 @@ struct AvgBenchFixture {
     /// Maximum possible `(student, class, semester)` triples the bench
     /// walked. Used by [`fixture_marker`] / [`fixture_path`] so cached
     /// fixtures with the same triple count are reused across runs.
+    #[allow(dead_code)]
     row_count: u64,
     /// **Actual number of grade documents inserted** after the
     /// `is_enrolled` filter dropped non-enrolled triples. This is the
@@ -1902,7 +1903,7 @@ fn probe_value_tree_types(fixture: &AvgBenchFixture, _platform_version: &Platfor
         .expect("grade doc type");
     use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
     let serialized_semester = document_type
-        .serialize_value_for_key("semester", &Value::I64(20205), &PlatformVersion::latest())
+        .serialize_value_for_key("semester", &Value::I64(20205), PlatformVersion::latest())
         .expect("semester serialize");
 
     let cases: [(&'static str, &'static str, Vec<u8>); 3] = [
