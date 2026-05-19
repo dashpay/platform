@@ -36,16 +36,8 @@
 #[cfg(feature = "server")]
 pub mod drive_dispatcher;
 
-/// Documentation-only module cataloging the grovedb PR 670 primitives
-/// this query surface targets. See its docs.
-#[cfg(any(feature = "server", feature = "verify"))]
-pub mod grovedb_pr_670;
-
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod index_picker;
-
-#[cfg(any(feature = "server", feature = "verify"))]
-pub mod mode_detection;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod path_query;
