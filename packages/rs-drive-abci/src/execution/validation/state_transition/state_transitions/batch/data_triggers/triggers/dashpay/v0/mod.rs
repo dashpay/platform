@@ -11,9 +11,11 @@ use drive::state_transition_action::batch::batched_transition::document_transiti
 use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
 use dpp::system_data_contracts::dashpay_contract::v1::document_types::contact_request::properties
 ::{TO_USER_ID};
+use dpp::fee::fee_result::FeeResult;
 use dpp::version::PlatformVersion;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContextMethodsV0;
 use crate::execution::validation::state_transition::batch::data_triggers::{DataTriggerExecutionContext, DataTriggerExecutionResult};
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 
 /// Creates a data trigger for handling contact request documents.
 ///
@@ -71,14 +73,19 @@ pub(super) fn create_contact_request_data_trigger_v0(
         return Ok((result, dpp::fee::fee_result::FeeResult::default()));
     }
 
-    // TODO: Calculate fee operations
-
-    // Recipient identity must exist
-    let to_identity = context.platform.drive.fetch_identity_balance(
-        to_user_id.to_buffer(),
-        context.transaction,
-        platform_version,
-    )?;
+    // Recipient identity must exist.
+    //
+    // Use `fetch_identity_balance_with_costs` so the grovedb cost is
+    // returned alongside the balance, then surface it via the returned
+    // FeeResult so the caller bills it on `transform_into_action: 1`.
+    let (to_identity, balance_fee_result) =
+        context.platform.drive.fetch_identity_balance_with_costs(
+            to_user_id.to_buffer(),
+            context.platform.state.last_block_info(),
+            true,
+            context.transaction,
+            platform_version,
+        )?;
 
     if !is_dry_run && to_identity.is_none() {
         let err = DataTriggerConditionError::new(
@@ -89,10 +96,10 @@ pub(super) fn create_contact_request_data_trigger_v0(
 
         result.add_error(err);
 
-        return Ok((result, dpp::fee::fee_result::FeeResult::default()));
+        return Ok((result, balance_fee_result));
     }
 
-    Ok((result, dpp::fee::fee_result::FeeResult::default()))
+    Ok((result, balance_fee_result))
 }
 
 #[cfg(test)]
