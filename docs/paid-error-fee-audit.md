@@ -13,28 +13,22 @@ Non-batch state transitions already had paid-error semantics before #3616, so th
 
 **What this looks like in practice** (modeled on the `failed_per_transition_action` versioning that #3616 introduced):
 
-1. Add a new version field on the relevant struct in `rs-platform-version/src/version/dpp_versions/` or `drive_abci_versions/`. Example:
-   ```rust
-   // drive_abci_validation_versions/mod.rs
-   pub struct BatchStateTransitionValidationVersions {
-       // ...existing fields...
-       pub transform_into_action_billing: FeatureVersion,  // 0 = pre-fix, 1 = bill transformer reads
-   }
-   ```
-2. In `v11.rs`/`v12.rs` set `transform_into_action_billing: 0`. In the new `v13.rs` (or wherever the next bump lands) set `transform_into_action_billing: 1`.
-3. In the call site, dispatch on the field:
+1. Bump (or add) a version field on the relevant struct in `rs-platform-version/src/version/dpp_versions/` or `drive_abci_versions/`. Existing pattern reuses the dedicated field that already gates the function — e.g. `batch_state_transition.transform_into_action: 0 → 1`.
+2. In `v11.rs` (or earlier) the field stays at its old value; in `v12.rs` (or the targeted version) the field gets the new value.
+3. **Add a new function version** `_v1` alongside the existing `_v0` with the new behavior. `_v0` stays **byte-identical** to the version that shipped.
+4. Dispatch on the field at the call site — the version branch happens **outside** the function, not inside:
    ```rust
    match platform_version.drive_abci.validation_and_processing
-       .state_transitions.batch_state_transition.transform_into_action_billing
+       .state_transitions.batch_state_transition.transform_into_action
    {
-       0 => /* old behavior: drop fees */,
-       1 => /* new behavior: bill fees */,
+       0 => self.transform_into_action_v0(/* old signature */),
+       1 => self.transform_into_action_v1(/* new signature, threaded ctx */),
        v => return Err(UnknownVersionMismatch { ... }),
    }
    ```
-4. **Never modify** an existing `_v0` or `_v1` function body that has shipped. If the new behavior needs different code, create `_v1` / `_v2` alongside and dispatch.
+5. **Never modify** an existing `_v0` (or any shipped `_vN`) function body. If a new field value needs different behavior, add `_v(N+1)` and route to it.
 
-**Caveat on file naming** (per the comment at `transformer/v0/mod.rs:1-22`): the `_v0` suffix on batch transformer functions has been retained across behavior changes when the change is finer-grained than a full transformer rewrite — instead, protocol behavior is gated at the *version-field* granularity inside the function. That pattern is preferred when adding billing because duplicating the ~1100-line transformer body for one fee fix would be silly. **Bottom line:** new version *field* + branch inside the existing function, not a new file. Reserve a new `_vN` file only if the change is large enough to make in-function branching unwieldy.
+**Exception for the ~1100-line transformer body** (per the comment at `transformer/v0/mod.rs:1-22`): the `try_into_action_v0` / `transform_document_transition_v0` / etc. functions in that file are intentionally kept at `_v0` and gated at *finer* version-field granularity inside them (e.g. `failed_per_transition_action`, `flatten`, `merge_many`). Bumping their suffix would force copy-pasting the entire file as a v0 archive — exactly the regression #3616 set out to avoid. The B7 fix follows this pattern: `try_into_action_v0` is unchanged and continues to be the single transformer entry-point; only the *outer wrapper* `transform_into_action_v0` got a `_v1` sibling to thread the ctx through.
 
 ## Fee plumbing — how a drive read becomes a charge
 
@@ -255,19 +249,27 @@ Following the `failed_per_transition_action` model from #3616:
 4. New v13.rs in `rs-platform-version/src/version/`: wires `DRIVE_ABCI_VALIDATION_VERSIONS_V9` into `PLATFORM_V13`.
 5. `protocol_version.rs:68` `LATEST_PLATFORM_VERSION = &PLATFORM_V13`.
 
-### Code-level branch points
+### Code-level branch points (B7, as shipped)
 
-Per the file-header comment at `transformer/v0/mod.rs:1-22`, we **do not bump the `_v0` suffix**; we branch *inside* the existing function based on the version field.
+Two function versions side-by-side; dispatch outside.
 
-| Branch site | v0 behavior (PV11–PV12, frozen) | v1 behavior (PV13+, new) |
+| Branch site | v0 behavior (PV11, frozen — `transform_into_action: 0`) | v1 behavior (PV12, new — `transform_into_action: 1`) |
 |---|---|---|
-| `batch/mod.rs:57-84` `transform_into_action` | `_execution_context` ignored; call wrapper without ctx | `execution_context` passed to wrapper |
-| `state/v0/mod.rs:323-344` `transform_into_action_v0` | Create local ctx, drop on return | Accept ctx parameter, use outer; no local |
-| `state/v0/fetch_documents.rs:128` `fetch_documents_for_transitions_knowing_contract_and_document_type` | Discard `documents_outcome.cost()` | Wrap return type to `(Vec<Document>, FeeResult)`; caller adds to ctx |
-| `transformer/v0/mod.rs:511` (callsite for ↑) | No fee accounting | After call, `execution_context.add_operation(PrecalculatedOperation(fee))` |
-| Transformer add_operation calls (lines 586, 596, 606, 619, 629, 639, 649, 659, 669, 679, 689, 748, 819, 829, 894, 959) | Land in local ctx (dropped) | Land in outer ctx (billed) — no code change, behavior changes via ctx threading alone |
+| `batch/mod.rs:57-84` `transform_into_action` | Match arm `0` → calls `transform_into_action_v0(...)` (no ctx) | Match arm `1` → calls `transform_into_action_v1(..., execution_context, ...)` |
+| `state/v0/mod.rs::transform_into_action_v0` | **Byte-identical to v3.1-dev original.** Creates local ctx, calls `try_into_action_v0`, drops local on return | Untouched |
+| `state/v0/mod.rs::transform_into_action_v1` | N/A | New function. Takes the outer `execution_context` and threads it into `try_into_action_v0` |
+| Transformer add_operation calls inside `try_into_action_v0` (lines 586, 596, 606, 619, 629, 639, 649, 659, 669, 679, 689, 748, 819, 829, 894, 959) | Land in the local ctx that `_v0` drops | Land in the outer ctx that `_v1` threads → billed to the user |
 
-The function signatures changing means PV11/PV12 callers need a way to invoke the old behavior. Simplest pattern: make the new signature additive (`Option<&mut StateTransitionExecutionContext>` or similar) and branch on the version field internally.
+The transformer body (`try_into_action_v0` and all its helpers in `transformer/v0/mod.rs`) is **unchanged** — same single function, called by both wrappers. Only the wrapper's choice of which ctx to pass differs.
+
+### Code-level branch points (B4, next commit)
+
+| Branch site | v0 behavior (PV11, frozen) | v1 behavior (PV12, new) |
+|---|---|---|
+| `state/v0/fetch_documents.rs::fetch_documents_for_transitions_knowing_contract_and_document_type` | Discards `documents_outcome.cost()` (keeps current signature) | New function variant returns `(Vec<Document>, FeeResult)` |
+| `transformer/v0/mod.rs:511` (callsite for ↑) | No fee accounting (kept for v0 transformer wrapper, called only from `_v0` path) | After call, `execution_context.add_operation(PrecalculatedOperation(fee))` |
+
+To preserve the `try_into_action_v0` single-entry-point invariant, B4 will likely thread cost via a return-value channel that the existing function can ignore — see B4 implementation notes when that commit lands.
 
 ### Test scenarios
 

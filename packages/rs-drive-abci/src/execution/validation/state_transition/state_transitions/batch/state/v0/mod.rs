@@ -59,6 +59,20 @@ pub(in crate::execution::validation::state_transition::state_transitions::batch)
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         validation_mode: ValidationMode,
+        tx: TransactionArg,
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
+
+    /// PROTOCOL_VERSION_12+: same as v0 but threads the caller's
+    /// `execution_context` into `try_into_action_v0` so per-transition
+    /// fee_results accumulated by the transformer
+    /// (`try_from_borrowed_*_with_contract_lookup`) are billed to the
+    /// user instead of being dropped via a local ctx. See B7 in
+    /// docs/paid-error-fee-audit.md.
+    fn transform_into_action_v1(
+        &self,
+        platform: &PlatformStateRef,
+        block_info: &BlockInfo,
+        validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
@@ -326,62 +340,40 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         validation_mode: ValidationMode,
-        execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version = platform.state.current_platform_version()?;
 
-        // The `transform_into_action` field gates whether transformer-phase
-        // `add_operation` calls are billed back to the user.
-        //
-        // - v0 (PROTOCOL_VERSION_11 and below): the transformer accumulates
-        //   into a local `StateTransitionExecutionContext` that is dropped on
-        //   return — every per-transition fee_result added by
-        //   `try_from_borrowed_*_with_contract_lookup` is discarded. Preserved
-        //   verbatim for chain replay.
-        // - v1 (PROTOCOL_VERSION_12+): the outer `execution_context` is
-        //   threaded into `try_into_action_v0` so the transformer's
-        //   add_operation calls actually reach the user's bill (issue B7 in
-        //   docs/paid-error-fee-audit.md).
-        match platform_version
-            .drive_abci
-            .validation_and_processing
-            .state_transitions
-            .batch_state_transition
-            .transform_into_action
-        {
-            0 => {
-                let mut local_execution_context =
-                    StateTransitionExecutionContext::default_for_platform_version(
-                        platform_version,
-                    )?;
+        let mut execution_context =
+            StateTransitionExecutionContext::default_for_platform_version(platform_version)?;
 
-                let validation_result = self.try_into_action_v0(
-                    platform,
-                    block_info,
-                    validation_mode.should_validate_batch_valid_against_state(),
-                    tx,
-                    &mut local_execution_context,
-                )?;
+        let validation_result = self.try_into_action_v0(
+            platform,
+            block_info,
+            validation_mode.should_validate_batch_valid_against_state(),
+            tx,
+            &mut execution_context,
+        )?;
 
-                Ok(validation_result.map(Into::into))
-            }
-            1 => {
-                let validation_result = self.try_into_action_v0(
-                    platform,
-                    block_info,
-                    validation_mode.should_validate_batch_valid_against_state(),
-                    tx,
-                    execution_context,
-                )?;
+        Ok(validation_result.map(Into::into))
+    }
 
-                Ok(validation_result.map(Into::into))
-            }
-            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                method: "documents batch transition: transform_into_action_v0".to_string(),
-                known_versions: vec![0, 1],
-                received: version,
-            })),
-        }
+    fn transform_into_action_v1(
+        &self,
+        platform: &PlatformStateRef,
+        block_info: &BlockInfo,
+        validation_mode: ValidationMode,
+        execution_context: &mut StateTransitionExecutionContext,
+        tx: TransactionArg,
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        let validation_result = self.try_into_action_v0(
+            platform,
+            block_info,
+            validation_mode.should_validate_batch_valid_against_state(),
+            tx,
+            execution_context,
+        )?;
+
+        Ok(validation_result.map(Into::into))
     }
 }

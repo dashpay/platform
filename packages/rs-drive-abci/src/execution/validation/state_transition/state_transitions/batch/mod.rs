@@ -67,11 +67,6 @@ impl StateTransitionActionTransformer for BatchTransition {
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version = platform.state.current_platform_version()?;
 
-        // Dispatch always calls `transform_into_action_v0` (the only function
-        // version that exists); the version field is interpreted *inside* that
-        // function to decide whether the outer `execution_context` is threaded
-        // through to the transformer or whether a dropped-on-return local ctx
-        // is used (v11-and-below behavior). See B7 in docs/paid-error-fee-audit.md.
         match platform_version
             .drive_abci
             .validation_and_processing
@@ -79,7 +74,14 @@ impl StateTransitionActionTransformer for BatchTransition {
             .batch_state_transition
             .transform_into_action
         {
-            0 | 1 => self.transform_into_action_v0(
+            // PROTOCOL_VERSION_11 and below: legacy `_v0` drops every
+            // transformer-phase fee_result via a local execution_context.
+            // Preserved verbatim for chain replay.
+            0 => self.transform_into_action_v0(&platform.into(), block_info, validation_mode, tx),
+            // PROTOCOL_VERSION_12+: `_v1` threads the outer execution_context
+            // into the transformer so per-transition fees are billed. See B7
+            // in docs/paid-error-fee-audit.md.
+            1 => self.transform_into_action_v1(
                 &platform.into(),
                 block_info,
                 validation_mode,
