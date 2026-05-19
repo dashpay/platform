@@ -15,7 +15,7 @@
 //! [`IdentityManager::apply_identity_key_entry`].
 
 use super::{IdentityLocation, IdentityManager};
-use crate::changeset::{IdentityEntry, IdentityKeyEntry};
+use crate::changeset::{ContactChangeSet, IdentityEntry, IdentityKeyEntry, IdentityKeysChangeSet};
 use crate::wallet::identity::state::managed_identity::ManagedIdentity;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -179,6 +179,87 @@ impl IdentityManager {
     pub(crate) fn apply_identity_key_removal(&mut self, identity_id: &Identifier, key_id: KeyID) {
         if let Some(managed) = self.locate_mut(identity_id) {
             managed.identity.public_keys_mut().remove(&key_id);
+        }
+    }
+
+    /// Layer a [`ContactChangeSet`] + [`IdentityKeysChangeSet`] onto the
+    /// already-restored managed identities.
+    ///
+    /// Single source of truth for the contact / identity-key routing —
+    /// shared by the runtime changeset-replay path
+    /// ([`apply_changeset`](crate::wallet::PlatformWalletInfo::apply_changeset))
+    /// and the persister rehydration path
+    /// ([`load_from_persistor`](crate::PlatformWalletManager::load_from_persistor)).
+    /// Identity keys are applied first so a contact entry never lands
+    /// before its owner's keys; orphan entries (owner not in the
+    /// wallet) are logged and skipped, never fatal. `removed_*` are
+    /// honoured for the replay path; the rehydration feed leaves them
+    /// empty.
+    pub(crate) fn apply_contacts_and_keys(
+        &mut self,
+        contacts: ContactChangeSet,
+        identity_keys: IdentityKeysChangeSet,
+        network: Network,
+    ) {
+        let IdentityKeysChangeSet { upserts, removed } = identity_keys;
+        for (_key, entry) in upserts {
+            self.apply_identity_key_entry(entry, network);
+        }
+        for (identity_id, key_id) in removed {
+            self.apply_identity_key_removal(&identity_id, key_id);
+        }
+
+        let ContactChangeSet {
+            sent_requests,
+            removed_sent,
+            incoming_requests,
+            removed_incoming,
+            established,
+        } = contacts;
+        for (key, entry) in sent_requests {
+            match self.managed_identity_mut(&key.owner_id) {
+                Some(managed) => {
+                    managed
+                        .sent_contact_requests
+                        .insert(entry.request.recipient_id, entry.request);
+                }
+                None => tracing::warn!(
+                    owner = %key.owner_id,
+                    "skipping sent contact request: owner identity not in wallet"
+                ),
+            }
+        }
+        for (key, entry) in incoming_requests {
+            match self.managed_identity_mut(&key.owner_id) {
+                Some(managed) => {
+                    managed
+                        .incoming_contact_requests
+                        .insert(entry.request.sender_id, entry.request);
+                }
+                None => tracing::warn!(
+                    owner = %key.owner_id,
+                    "skipping incoming contact request: owner identity not in wallet"
+                ),
+            }
+        }
+        for key in removed_sent {
+            if let Some(managed) = self.managed_identity_mut(&key.owner_id) {
+                managed.sent_contact_requests.remove(&key.recipient_id);
+            }
+        }
+        for key in removed_incoming {
+            if let Some(managed) = self.managed_identity_mut(&key.owner_id) {
+                managed.incoming_contact_requests.remove(&key.sender_id);
+            }
+        }
+        for (key, established) in established {
+            match self.managed_identity_mut(&key.owner_id) {
+                Some(managed) => managed.apply_established_contact(established),
+                None => tracing::warn!(
+                    owner = %key.owner_id,
+                    "skipping established contact: owner identity not in wallet"
+                ),
+            }
         }
     }
 }
