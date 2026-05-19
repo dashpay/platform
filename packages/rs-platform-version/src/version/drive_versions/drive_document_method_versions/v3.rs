@@ -38,7 +38,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V3: DriveDocumentMethodVersions =
             // per-node aggregate bytes on summable / range_summable
             // / count-sum / PCPS value trees.
             remove_indices_for_index_level_for_contract_operations: 1,
-            remove_indices_for_top_index_level_for_contract_operations: 0,
+            remove_indices_for_top_index_level_for_contract_operations: 1,
             delete_document_for_contract_id_with_named_type_operations: 0,
             delete_document_for_contract_with_named_type_operations: 0,
             delete_document_for_contract_operations: 0,
