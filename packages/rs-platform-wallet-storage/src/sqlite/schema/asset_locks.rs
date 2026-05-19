@@ -67,6 +67,7 @@ fn status_str(s: &AssetLockStatus) -> &'static str {
         AssetLockStatus::Broadcast => "broadcast",
         AssetLockStatus::InstantSendLocked => "is_locked",
         AssetLockStatus::ChainLocked => "chain_locked",
+        AssetLockStatus::Consumed => "consumed",
     }
 }
 
