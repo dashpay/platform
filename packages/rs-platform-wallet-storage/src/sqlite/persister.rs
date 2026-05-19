@@ -19,12 +19,13 @@ use crate::sqlite::schema::{self, PER_WALLET_TABLES};
 use crate::sqlite::util::permissions::apply_secure_permissions;
 use crate::sqlite::util::safe_cast;
 
-/// Sub-areas of `ClientStartState` that `load()` does not yet
-/// reconstruct (blocked on upstream `Wallet::from_persisted`).
-///
-/// Surfaced via the structured `tracing::info!` summary on every
-/// `load()` (`unimplemented` + `wallets_pending_rehydration` fields).
-pub(crate) const LOAD_UNIMPLEMENTED: &[&str] = &["ClientStartState::wallets"];
+/// Sub-areas still deferred after full signing-wallet rehydration
+/// landed. `contacts` + `identity_keys` need a changeset-shape change
+/// (PR-3); `last_applied_chain_lock` re-warms on the first post-load
+/// SPV chainlock (no V001 column). Surfaced via the structured
+/// `tracing::info!` summary on every `load()`.
+pub(crate) const LOAD_UNIMPLEMENTED: &[&str] =
+    &["contacts", "identity_keys", "core::last_applied_chain_lock"];
 
 /// Outcome of a `prune_backups` call.
 #[derive(Debug, Clone)]
@@ -613,11 +614,14 @@ impl PlatformWalletPersistence for SqlitePersister {
 
     /// Load every wallet's start-state from disk.
     ///
-    /// Populates `platform_addresses` per wallet. `wallets` stays empty
-    /// pending an upstream `key_wallet::Wallet::from_persisted`
-    /// constructor — the count of wallets that *would* be rehydrated is
-    /// surfaced as the structured field `wallets_pending_rehydration`
-    /// on the `tracing::info!` summary.
+    /// Populates both `platform_addresses` and the keyless per-wallet
+    /// `wallets` rehydration payload (network, birth height, account
+    /// manifest, reconstructed core state, identities, and the
+    /// `Consumed`-filtered asset-lock feed). The return type carries
+    /// **no** `Wallet` and no key material — the manager re-derives the
+    /// signing wallet from the runtime `SeedProvider` and runs the
+    /// wrong-seed gate before applying any of this. The structured
+    /// `tracing::info!` summary reports `wallets_rehydrated`.
     ///
     /// Fail-hard: any row that fails to decode (or carries a malformed
     /// `wallet_id`) aborts the whole load with a typed
@@ -667,9 +671,7 @@ impl PlatformWalletPersistence for SqlitePersister {
         let mut state = ClientStartState::default();
 
         let addrs_all = schema::platform_addrs::load_all(&conn).map_err(PersistenceError::from)?;
-        let wallets_seen = addrs_all.len();
         let mut addresses_loaded: usize = 0;
-
         for (wallet_id, (addrs, count)) in addrs_all {
             if count > 0 || addrs.sync_height > 0 || addrs.sync_timestamp > 0 {
                 addresses_loaded += count;
@@ -677,11 +679,59 @@ impl PlatformWalletPersistence for SqlitePersister {
             }
         }
 
+        // Per-wallet keyless rehydration payload. The persister never
+        // mints a `Wallet` or touches key material — it hands back the
+        // network/birth-height + account manifest + reconstructed core
+        // state + identities + the Consumed-filtered asset-lock feed.
+        // The manager re-derives the wallet from the runtime
+        // SeedProvider, runs the wrong-seed gate, then applies this.
+        let wallet_ids = schema::wallet_meta::list_ids(&conn).map_err(PersistenceError::from)?;
+        let wallets_seen = wallet_ids.len();
+        for wallet_id in wallet_ids {
+            let (network_str, birth_height) = schema::wallet_meta::fetch(&conn, &wallet_id)
+                .map_err(PersistenceError::from)?
+                .ok_or_else(|| {
+                    PersistenceError::backend(format!(
+                        "wallet_metadata row vanished mid-load for {}",
+                        hex::encode(wallet_id)
+                    ))
+                })?;
+            let network = schema::wallet_meta::parse_network(&network_str).ok_or_else(|| {
+                PersistenceError::backend(format!(
+                    "unknown persisted network {:?} for wallet {}",
+                    network_str,
+                    hex::encode(wallet_id)
+                ))
+            })?;
+
+            let account_manifest =
+                schema::accounts::load_state(&conn, &wallet_id).map_err(PersistenceError::from)?;
+            let core_state = schema::core_state::load_state(&conn, &wallet_id, network)
+                .map_err(PersistenceError::from)?;
+            let identity_manager = schema::identities::load_state(&conn, &wallet_id)
+                .map_err(PersistenceError::from)?;
+            let unused_asset_locks = schema::asset_locks::load_unconsumed(&conn, &wallet_id)
+                .map_err(PersistenceError::from)?;
+
+            state.wallets.insert(
+                wallet_id,
+                platform_wallet::changeset::ClientWalletStartState {
+                    network,
+                    birth_height,
+                    account_manifest,
+                    core_state,
+                    identity_manager,
+                    unused_asset_locks,
+                },
+            );
+        }
+        let wallets_rehydrated = state.wallets.len();
+
         tracing::info!(
             wallets_seen,
             addresses_loaded,
-            wallets_rehydrated = 0usize,
-            wallets_pending_rehydration = wallets_seen,
+            wallets_rehydrated,
+            wallets_pending_rehydration = 0usize,
             unimplemented = ?LOAD_UNIMPLEMENTED,
             "load() summary"
         );
