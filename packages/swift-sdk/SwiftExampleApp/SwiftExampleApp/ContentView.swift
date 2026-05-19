@@ -119,10 +119,24 @@ struct ContentView: View {
                     }
                     .tag(RootTab.settings)
             }
+            .disabled(platformState.isSwitchingNetwork)
             .overlay(alignment: .top) {
                 let state = walletManager.spvProgress.overallState
                 if state == .syncing || state == .waitingForConnections {
                     GlobalSyncIndicator(showDetails: selectedTab == .sync && appUIState.showWalletsSyncDetails)
+                }
+            }
+            .overlay {
+                if platformState.isSwitchingNetwork {
+                    ZStack {
+                        Color.black.opacity(0.12)
+                            .ignoresSafeArea()
+                        ProgressView("Switching to \(platformState.currentNetwork.displayName)...")
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 14)
+                            .background(.regularMaterial)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
                 }
             }
             .onAppear { checkForOrphanMnemonic() }

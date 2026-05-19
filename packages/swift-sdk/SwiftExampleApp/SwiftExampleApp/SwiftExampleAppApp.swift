@@ -19,6 +19,11 @@ final class AppUIState: ObservableObject {
     @Published var showWalletsSyncDetails: Bool = true
 }
 
+private struct PendingWalletManagerActivation: Equatable {
+    let requestID: UInt64
+    let network: Network
+}
+
 @main
 struct SwiftExampleAppApp: App {
     // SwiftData container — shared across services and views.
@@ -52,7 +57,7 @@ struct SwiftExampleAppApp: App {
     @State private var isInitialized = false
     @State private var bootstrapError: Error?
     @State private var bootstrapTask: Task<Void, Never>?
-    @State private var pendingWalletManagerNetwork: Network?
+    @State private var pendingWalletManagerActivation: PendingWalletManagerActivation?
 
     /// Resolver that backs the platform-wallet-ffi `MnemonicResolverHandle`
     /// for shielded wallet binding. Reuses the default `WalletStorage`
@@ -132,31 +137,35 @@ struct SwiftExampleAppApp: App {
                 })) { _, _ in
                     rebindWalletScopedServices()
                 }
-                // Network switch: remember the requested network when
-                // the picker changes, but do not activate the wallet
-                // manager yet. `currentNetwork` publishes before
-                // AppState's async SDK rebuild finishes, so activating
-                // here would cache a manager configured with the
-                // previous network's SDK.
-                .onChange(of: platformState.currentNetwork) { _, newNetwork in
-                    pendingWalletManagerNetwork = newNetwork
+                // Remember every SDK rebuild request, including
+                // same-network ones (for example regtest endpoint
+                // flips), but do not activate a wallet manager until
+                // AppState publishes the matching rebuilt SDK.
+                .onChange(of: platformState.sdkRebuildRequestID) { _, requestID in
+                    guard requestID != 0 else { return }
+                    pendingWalletManagerActivation = PendingWalletManagerActivation(
+                        requestID: requestID,
+                        network: platformState.currentNetwork
+                    )
                 }
-                // Once AppState reports the SDK rebuild is complete,
-                // activate only the pending network-switch manager.
-                // Same-network SDK rebuilds (for example Docker/local
-                // endpoint toggles) are intentionally ignored here
-                // because WalletManagerStore caches managers by
-                // Network and cannot safely reconfigure an existing
-                // manager for a different SDK/backend.
-                .onChange(of: platformState.isSwitchingNetwork) { _, isSwitching in
-                    guard !isSwitching,
-                          let pendingNetwork = pendingWalletManagerNetwork,
-                          pendingNetwork == platformState.currentNetwork
+                // Activate once the rebuilt SDK that corresponds to
+                // the pending request has been published.
+                .onChange(of: platformState.readySDKRequestID) { _, readyRequestID in
+                    guard let pending = pendingWalletManagerActivation,
+                          readyRequestID == pending.requestID,
+                          pending.network == platformState.currentNetwork
                     else { return }
-                    if activateManager(for: pendingNetwork) {
-                        pendingWalletManagerNetwork = nil
+                    if activateManager(for: pending.network) {
+                        pendingWalletManagerActivation = nil
                         rebindWalletScopedServices()
                     }
+                }
+                .onChange(of: platformState.isSwitchingNetwork) { _, isSwitching in
+                    guard !isSwitching,
+                          let pending = pendingWalletManagerActivation,
+                          pending.requestID != platformState.readySDKRequestID
+                    else { return }
+                    pendingWalletManagerActivation = nil
                 }
         }
     }

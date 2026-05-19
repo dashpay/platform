@@ -25,6 +25,8 @@ class AppState: ObservableObject {
     /// this counter and the spawned task only clears the flag when its
     /// captured id still matches.
     private var networkSwitchRequestID: UInt64 = 0
+    @Published private(set) var sdkRebuildRequestID: UInt64 = 0
+    @Published private(set) var readySDKRequestID: UInt64 = 0
 
     @Published var currentNetwork: Network {
         didSet {
@@ -53,6 +55,7 @@ class AppState: ObservableObject {
     private func beginNetworkSwitch() {
         networkSwitchRequestID &+= 1
         let requestID = networkSwitchRequestID
+        sdkRebuildRequestID = requestID
         isSwitchingNetwork = true
         Task {
             await switchNetwork(to: currentNetwork, requestID: requestID)
@@ -162,6 +165,7 @@ class AppState: ObservableObject {
             // Load known contracts into the SDK's trusted provider
             await loadKnownContractsIntoSDK(sdk: newSDK, modelContext: modelContext)
             guard isCurrent(requestID) else { return }
+            readySDKRequestID = requestID
 
             isLoading = false
         } catch {

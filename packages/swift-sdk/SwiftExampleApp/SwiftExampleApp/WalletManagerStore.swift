@@ -39,6 +39,11 @@ import SwiftDashSDK
 /// dev-focused example app where flipping is common.
 @MainActor
 final class WalletManagerStore: ObservableObject {
+    private struct ManagerEntry {
+        let sdkIdentity: ObjectIdentifier
+        let manager: PlatformWalletManager
+    }
+
     /// Currently-active manager. Reassigned when the user switches
     /// networks; SwiftUI re-injects this into the env object so
     /// every `@EnvironmentObject var walletManager:
@@ -54,7 +59,7 @@ final class WalletManagerStore: ObservableObject {
 
     /// Per-network managers. Lazily populated on first activation
     /// of each network; lookup is O(1).
-    private var managers: [Network: PlatformWalletManager] = [:]
+    private var managers: [Network: ManagerEntry] = [:]
 
     /// SwiftData container shared across every manager. Each
     /// manager's persistence handler narrows its `loadWalletList`
@@ -85,9 +90,10 @@ final class WalletManagerStore: ObservableObject {
     /// network) that need a manager for a non-active network without
     /// triggering a user-visible network switch.
     func activate(network: Network, sdk: SDK, makeActive: Bool = true) throws {
-        if let existing = managers[network] {
-            if makeActive && existing !== activeManager {
-                activeManager = existing
+        let sdkIdentity = ObjectIdentifier(sdk)
+        if let existing = managers[network], existing.sdkIdentity == sdkIdentity {
+            if makeActive && existing.manager !== activeManager {
+                activeManager = existing.manager
             }
             return
         }
@@ -107,7 +113,10 @@ final class WalletManagerStore: ObservableObject {
                     + "\(network.displayName): \(error.localizedDescription)"
             )
         }
-        managers[network] = manager
+        managers[network] = ManagerEntry(
+            sdkIdentity: sdkIdentity,
+            manager: manager
+        )
         if makeActive {
             activeManager = manager
         }
@@ -118,7 +127,7 @@ final class WalletManagerStore: ObservableObject {
     /// Memory Explorer) that want to inspect a specific network's
     /// state without forcing it active.
     func manager(for network: Network) -> PlatformWalletManager? {
-        managers[network]
+        managers[network]?.manager
     }
 
     /// Get-or-build the manager for `network` without changing the
@@ -135,11 +144,11 @@ final class WalletManagerStore: ObservableObject {
     /// the testnet manager lands as a testnet row).
     func backgroundManager(for network: Network) throws -> PlatformWalletManager {
         if let existing = managers[network] {
-            return existing
+            return existing.manager
         }
         let sdk = try SDK(network: network)
         try activate(network: network, sdk: sdk, makeActive: false)
-        guard let manager = managers[network] else {
+        guard let manager = managers[network]?.manager else {
             throw PlatformWalletError.invalidParameter(
                 "Failed to materialize manager for \(network.displayName)"
             )
