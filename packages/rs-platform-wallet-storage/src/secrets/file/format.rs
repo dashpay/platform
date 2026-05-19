@@ -3,32 +3,50 @@
 //!
 //! ```text
 //! MAGIC          9  b"PWSVAULT1"
-//! format_version u32 LE  (= 1)
+//! format_version u32 LE  (= 2)
 //! kdf_id         u8   (1 = Argon2id)
 //! m_kib          u32 LE
 //! t              u32 LE
 //! p              u32 LE
 //! salt_len       u8   (= 32)
 //! salt           32
+//! verify_nonce   24   XNonce for the passphrase-verification token
+//! verify_ct_len  u32 LE
+//! verify_ct      AEAD(VERIFY_CONSTANT) under the header key
 //! ── header ends ──
 //! entries, each: label_len u16 LE | label | nonce 24 | ct_len u32 LE | ct+tag
 //! ```
 //!
 //! The whole file is one logical map for a single `wallet_id`; KDF
-//! params/salt are therefore per-wallet.
+//! params/salt are therefore per-wallet. `verify_ct` is an AEAD seal of
+//! a fixed constant under the header-derived key — a wrong passphrase
+//! fails its tag, so a mismatched key is rejected before any entry is
+//! written or read (no mixed-key corruption).
 
 use super::super::error::SecretStoreError;
 use super::crypto::{KdfParams, NONCE_LEN, SALT_LEN};
 
 pub(crate) const MAGIC: &[u8; 9] = b"PWSVAULT1";
-pub(crate) const FORMAT_VERSION: u32 = 1;
+pub(crate) const FORMAT_VERSION: u32 = 2;
 pub(crate) const KDF_ID_ARGON2ID: u8 = 1;
 
-/// Parsed header (KDF params + salt).
+/// Fixed plaintext sealed under the header key to form the passphrase-
+/// verification token. Its only purpose is the AEAD tag check; the
+/// value itself is not secret.
+pub(crate) const VERIFY_CONSTANT: &[u8] = b"PWSVAULT-VERIFY-v1";
+
+/// AAD slot label for the verification token. The leading NUL keeps it
+/// disjoint from every allowlisted entry label (SEC-REQ-4.3), so the
+/// token can never alias a real entry's AAD.
+pub(crate) const VERIFY_LABEL: &str = "\0verify";
+
+/// Parsed header (KDF params + salt + passphrase-verification token).
 #[derive(Debug, Clone)]
 pub(crate) struct Header {
     pub params: KdfParams,
     pub salt: [u8; SALT_LEN],
+    pub verify_nonce: [u8; NONCE_LEN],
+    pub verify_ct: Vec<u8>,
 }
 
 /// One decrypted-on-demand vault entry.
@@ -53,6 +71,14 @@ pub(crate) fn aad(format_version: u32, wallet_id: &[u8; 32], label: &str) -> Vec
     v
 }
 
+/// AAD for the passphrase-verification token — the same canonical
+/// construction as entry AAD but bound to [`VERIFY_LABEL`], so the
+/// token is cryptographically tied to this `(version, wallet_id)` and
+/// cannot be replayed into an entry slot.
+pub(crate) fn verify_aad(format_version: u32, wallet_id: &[u8; 32]) -> Vec<u8> {
+    aad(format_version, wallet_id, VERIFY_LABEL)
+}
+
 /// Serialize a full vault (header + entries) to bytes. Contains only
 /// salt/params (non-secret) + ciphertext — never plaintext.
 pub(crate) fn serialize(header: &Header, entries: &[Entry]) -> Vec<u8> {
@@ -65,6 +91,9 @@ pub(crate) fn serialize(header: &Header, entries: &[Entry]) -> Vec<u8> {
     out.extend_from_slice(&header.params.p.to_le_bytes());
     out.push(SALT_LEN as u8);
     out.extend_from_slice(&header.salt);
+    out.extend_from_slice(&header.verify_nonce);
+    out.extend_from_slice(&(header.verify_ct.len() as u32).to_le_bytes());
+    out.extend_from_slice(&header.verify_ct);
     for e in entries {
         let lb = e.label.as_bytes();
         out.extend_from_slice(&(lb.len() as u16).to_le_bytes());
@@ -133,6 +162,10 @@ pub(crate) fn deserialize(buf: &[u8]) -> Result<(Header, Vec<Entry>), SecretStor
     }
     let mut salt = [0u8; SALT_LEN];
     salt.copy_from_slice(r.take(SALT_LEN)?);
+    let mut verify_nonce = [0u8; NONCE_LEN];
+    verify_nonce.copy_from_slice(r.take(NONCE_LEN)?);
+    let verify_ct_len = r.u32()? as usize;
+    let verify_ct = r.take(verify_ct_len)?.to_vec();
 
     let mut entries = Vec::new();
     while r.pos < buf.len() {
@@ -154,6 +187,8 @@ pub(crate) fn deserialize(buf: &[u8]) -> Result<(Header, Vec<Entry>), SecretStor
         Header {
             params: KdfParams { m_kib, t, p },
             salt,
+            verify_nonce,
+            verify_ct,
         },
         entries,
     ))
@@ -177,12 +212,18 @@ mod tests {
         });
     }
 
-    #[test]
-    fn serialize_deserialize_roundtrip() {
-        let header = Header {
+    fn test_header() -> Header {
+        Header {
             params: KdfParams::default_target(),
             salt: [7u8; SALT_LEN],
-        };
+            verify_nonce: [5u8; NONCE_LEN],
+            verify_ct: vec![0xCC; 34],
+        }
+    }
+
+    #[test]
+    fn serialize_deserialize_roundtrip() {
+        let header = test_header();
         let entries = vec![
             Entry {
                 label: "bip39_mnemonic".into(),
@@ -199,6 +240,8 @@ mod tests {
         let (h2, e2) = deserialize(&bytes).unwrap();
         assert_eq!(h2.params, header.params);
         assert_eq!(h2.salt, header.salt);
+        assert_eq!(h2.verify_nonce, header.verify_nonce);
+        assert_eq!(h2.verify_ct, header.verify_ct);
         assert_eq!(e2.len(), 2);
         assert_eq!(e2[0].label, "bip39_mnemonic");
         assert_eq!(e2[1].ciphertext, vec![5, 6]);
@@ -210,13 +253,7 @@ mod tests {
             deserialize(b"NOPENOPE...."),
             Err(SecretStoreError::MalformedVault)
         ));
-        let mut bytes = serialize(
-            &Header {
-                params: KdfParams::default_target(),
-                salt: [0u8; SALT_LEN],
-            },
-            &[],
-        );
+        let mut bytes = serialize(&test_header(), &[]);
         let v = MAGIC.len();
         bytes[v..v + 4].copy_from_slice(&999u32.to_le_bytes());
         assert!(matches!(
@@ -227,13 +264,7 @@ mod tests {
 
     #[test]
     fn rejects_truncated() {
-        let bytes = serialize(
-            &Header {
-                params: KdfParams::default_target(),
-                salt: [0u8; SALT_LEN],
-            },
-            &[],
-        );
+        let bytes = serialize(&test_header(), &[]);
         assert!(matches!(
             deserialize(&bytes[..bytes.len() - 5]),
             Err(SecretStoreError::MalformedVault)

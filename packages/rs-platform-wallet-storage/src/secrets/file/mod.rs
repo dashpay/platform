@@ -22,9 +22,13 @@ mod format;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crypto::{KdfParams, SALT_LEN};
 use format::{Entry, Header};
+
+/// Process-local counter for unique temp-file names (C7).
+static COUNTER: AtomicU64 = AtomicU64::new(0);
 
 use super::error::SecretStoreError;
 use super::secret::{SecretBytes, SecretString};
@@ -57,6 +61,55 @@ impl EncryptedFileStore {
         self.dir.join(format!("{}.pwsvault", wallet_id.to_hex()))
     }
 
+    /// Build a fresh header for a brand-new vault: random salt, default
+    /// Argon2 params, and a passphrase-verification token sealed under
+    /// the freshly derived key (SEC-REQ-2.2.x; the token is the
+    /// mixed-key-corruption guard).
+    fn new_header(
+        &self,
+        wallet_id: &WalletId,
+        passphrase: &SecretString,
+    ) -> Result<(Header, SecretBytes), SecretStoreError> {
+        let mut salt = [0u8; SALT_LEN];
+        crypto::random_bytes(&mut salt)?;
+        let params = KdfParams::default_target();
+        let key = crypto::derive_key(passphrase.expose_secret().as_bytes(), &salt, params)?;
+        let v_aad = format::verify_aad(format::FORMAT_VERSION, wallet_id.as_bytes());
+        let (verify_nonce, verify_ct) = crypto::seal(&key, &v_aad, format::VERIFY_CONSTANT)?;
+        Ok((
+            Header {
+                params,
+                salt,
+                verify_nonce,
+                verify_ct,
+            },
+            key,
+        ))
+    }
+
+    /// Derive the key from the supplied passphrase and verify it
+    /// against the header's token *before* any entry is touched. A
+    /// wrong passphrase fails the token's AEAD tag (constant-time) and
+    /// yields `WrongPassphrase` with no plaintext — defeating the
+    /// mixed-key-corruption defect (Marvin QA-001 / SEC-REQ-2.2.x).
+    fn derive_and_verify(
+        &self,
+        wallet_id: &WalletId,
+        header: &Header,
+    ) -> Result<SecretBytes, SecretStoreError> {
+        let key = crypto::derive_key(
+            self.passphrase.expose_secret().as_bytes(),
+            &header.salt,
+            header.params,
+        )?;
+        let v_aad = format::verify_aad(format::FORMAT_VERSION, wallet_id.as_bytes());
+        match crypto::open(&key, &header.verify_nonce, &v_aad, &header.verify_ct) {
+            Ok(_) => Ok(key),
+            Err(SecretStoreError::Decrypt) => Err(SecretStoreError::WrongPassphrase),
+            Err(e) => Err(e),
+        }
+    }
+
     /// Read + parse a vault file, or `None` if it does not exist.
     /// Refuses a pre-existing file with looser-than-0600 perms
     /// (SEC-REQ-2.2.10).
@@ -83,9 +136,12 @@ impl EncryptedFileStore {
         entries: &[Entry],
     ) -> Result<(), SecretStoreError> {
         let serialized = format::serialize(header, entries);
-        let tmp = path.with_extension("pwsvault.tmp");
-        // Remove a stale temp so O_EXCL can take a clean lock.
-        let _ = fs::remove_file(&tmp);
+        // Unique temp name (pid + monotonic counter) created with
+        // O_EXCL — no fixed name and no destination pre-remove, so a
+        // crash can never leave the vault absent and two writers can't
+        // collide on the temp (Marvin QA-004).
+        let unique = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let tmp = path.with_extension(format!("pwsvault.tmp.{}.{unique}", std::process::id()));
         let result = (|| -> Result<(), SecretStoreError> {
             let mut opts = OpenOptions::new();
             opts.write(true).create_new(true);
@@ -95,10 +151,11 @@ impl EncryptedFileStore {
             f.write_all(&serialized)?;
             f.sync_all()?;
             fs::rename(&tmp, path)?;
+            // The directory entry must be fsync'd too, or a crash can
+            // lose the rename (SEC-REQ-2.2.11).
             if let Some(parent) = path.parent() {
-                if let Ok(d) = fs::File::open(parent) {
-                    let _ = d.sync_all();
-                }
+                let d = fs::File::open(parent)?;
+                d.sync_all()?;
             }
             Ok(())
         })();
@@ -122,20 +179,8 @@ impl EncryptedFileStore {
             self.passphrase = new_passphrase;
             return Ok(());
         };
-        let old_key = crypto::derive_key(
-            self.passphrase.expose_secret().as_bytes(),
-            &old_header.salt,
-            old_header.params,
-        )?;
-
-        let mut new_salt = [0u8; SALT_LEN];
-        crypto::random_bytes(&mut new_salt)?;
-        let new_params = KdfParams::default_target();
-        let new_key = crypto::derive_key(
-            new_passphrase.expose_secret().as_bytes(),
-            &new_salt,
-            new_params,
-        )?;
+        let old_key = self.derive_and_verify(&wallet_id, &old_header)?;
+        let (new_header, new_key) = self.new_header(&wallet_id, &new_passphrase)?;
 
         let mut new_entries = Vec::with_capacity(old_entries.len());
         for e in &old_entries {
@@ -149,10 +194,6 @@ impl EncryptedFileStore {
                 ciphertext: ct,
             });
         }
-        let new_header = Header {
-            params: new_params,
-            salt: new_salt,
-        };
         self.write_vault(&path, &new_header, &new_entries)?;
         self.passphrase = new_passphrase;
         Ok(())
@@ -163,25 +204,16 @@ impl SecretStore for EncryptedFileStore {
     fn put(&self, wallet_id: WalletId, label: &str, bytes: &[u8]) -> Result<(), SecretStoreError> {
         let label = validated_label(label)?.to_string();
         let path = self.vault_path(&wallet_id);
-        let (header, mut entries) = match self.read_vault(&path)? {
-            Some(v) => v,
+        let (header, key, mut entries) = match self.read_vault(&path)? {
+            Some((header, entries)) => {
+                let key = self.derive_and_verify(&wallet_id, &header)?;
+                (header, key, entries)
+            }
             None => {
-                let mut salt = [0u8; SALT_LEN];
-                crypto::random_bytes(&mut salt)?;
-                (
-                    Header {
-                        params: KdfParams::default_target(),
-                        salt,
-                    },
-                    Vec::new(),
-                )
+                let (header, key) = self.new_header(&wallet_id, &self.passphrase)?;
+                (header, key, Vec::new())
             }
         };
-        let key = crypto::derive_key(
-            self.passphrase.expose_secret().as_bytes(),
-            &header.salt,
-            header.params,
-        )?;
         let aad = format::aad(format::FORMAT_VERSION, wallet_id.as_bytes(), &label);
         let (nonce, ciphertext) = crypto::seal(&key, &aad, bytes)?;
         entries.retain(|e| e.label != label);
@@ -203,14 +235,10 @@ impl SecretStore for EncryptedFileStore {
         let Some((header, entries)) = self.read_vault(&path)? else {
             return Ok(None);
         };
+        let key = self.derive_and_verify(&wallet_id, &header)?;
         let Some(entry) = entries.iter().find(|e| e.label == label) else {
             return Ok(None);
         };
-        let key = crypto::derive_key(
-            self.passphrase.expose_secret().as_bytes(),
-            &header.salt,
-            header.params,
-        )?;
         let aad = format::aad(format::FORMAT_VERSION, wallet_id.as_bytes(), label);
         match crypto::open(&key, &entry.nonce, &aad, &entry.ciphertext) {
             Ok(pt) => Ok(Some(pt)),
@@ -225,6 +253,9 @@ impl SecretStore for EncryptedFileStore {
         let Some((header, mut entries)) = self.read_vault(&path)? else {
             return Ok(());
         };
+        // Verify the passphrase before mutating, so a wrong pass can
+        // neither delete an entry nor rewrite the vault.
+        self.derive_and_verify(&wallet_id, &header)?;
         let before = entries.len();
         entries.retain(|e| e.label != label);
         if entries.len() == before {
@@ -401,7 +432,7 @@ mod tests {
             .filter(|e| {
                 let n = e.file_name();
                 let n = n.to_string_lossy();
-                n.ends_with(".bak") || n.ends_with(".tmp")
+                n.ends_with(".bak") || n.contains(".tmp")
             })
             .collect();
         assert!(stale.is_empty(), "rekey left stale files: {stale:?}");
@@ -410,6 +441,61 @@ mod tests {
             old.get(wid(1), "seed"),
             Err(SecretStoreError::WrongPassphrase)
         ));
+    }
+
+    #[test]
+    fn put_with_wrong_passphrase_to_existing_vault_is_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        store(dir.path()).put(wid(1), "seed", b"orig").unwrap();
+        let wrong = EncryptedFileStore::open(dir.path(), SecretString::new("pw-wrong")).unwrap();
+        // The defect: this used to write a mixed-key entry and return Ok.
+        let err = wrong.put(wid(1), "seed2", b"intruder").unwrap_err();
+        assert!(matches!(err, SecretStoreError::WrongPassphrase));
+        // Original vault still fully readable with the correct pass.
+        let ok = store(dir.path());
+        assert_eq!(
+            ok.get(wid(1), "seed").unwrap().unwrap().expose_secret(),
+            b"orig"
+        );
+        // The rejected slot was never written.
+        assert!(ok.get(wid(1), "seed2").unwrap().is_none());
+    }
+
+    #[test]
+    fn get_and_delete_with_wrong_passphrase_are_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        store(dir.path()).put(wid(1), "seed", b"orig").unwrap();
+        let wrong = EncryptedFileStore::open(dir.path(), SecretString::new("pw-wrong")).unwrap();
+        assert!(matches!(
+            wrong.get(wid(1), "seed"),
+            Err(SecretStoreError::WrongPassphrase)
+        ));
+        assert!(matches!(
+            wrong.delete(wid(1), "seed"),
+            Err(SecretStoreError::WrongPassphrase)
+        ));
+        // delete must not have mutated the vault.
+        let ok = store(dir.path());
+        assert_eq!(
+            ok.get(wid(1), "seed").unwrap().unwrap().expose_secret(),
+            b"orig"
+        );
+    }
+
+    #[test]
+    fn correct_passphrase_round_trips_unchanged() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = store(dir.path());
+        s.put(wid(1), "seed", b"orig").unwrap();
+        s.put(wid(1), "seed2", b"second").unwrap();
+        assert_eq!(
+            s.get(wid(1), "seed").unwrap().unwrap().expose_secret(),
+            b"orig"
+        );
+        assert_eq!(
+            s.get(wid(1), "seed2").unwrap().unwrap().expose_secret(),
+            b"second"
+        );
     }
 
     #[test]
