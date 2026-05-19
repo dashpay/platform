@@ -1,6 +1,7 @@
-//! `account_registrations` + `account_address_pools` writers.
+//! `account_registrations` + `account_address_pools` writers and the
+//! keyless account-manifest reader.
 
-use rusqlite::{params, Transaction};
+use rusqlite::{params, Connection, Transaction};
 
 use platform_wallet::changeset::{AccountAddressPoolEntry, AccountRegistrationEntry};
 use platform_wallet::wallet::platform_wallet::WalletId;
@@ -70,6 +71,38 @@ pub fn apply_pools(
         ])?;
     }
     Ok(())
+}
+
+/// Read every `account_registrations` row for `wallet_id` back into a
+/// keyless [`AccountRegistrationEntry`] manifest.
+///
+/// This is the account-set oracle for rehydration: it dictates which
+/// accounts must be re-derived and supplies the per-account xpubs the
+/// wrong-account gate cross-checks against. It mints no `Wallet` — the
+/// `account_xpub_bytes` blob carries only the public xpub plus the
+/// account type (PUBLIC material only).
+///
+/// Rows are returned ordered by `(account_type, account_index)` so the
+/// manifest is deterministic across reopens. Any row whose blob fails
+/// to decode is a hard, typed [`WalletStorageError`] — corruption is
+/// never silently dropped.
+pub fn load_state(
+    conn: &Connection,
+    wallet_id: &WalletId,
+) -> Result<Vec<AccountRegistrationEntry>, WalletStorageError> {
+    let mut stmt = conn.prepare(
+        "SELECT account_xpub_bytes FROM account_registrations \
+         WHERE wallet_id = ?1 ORDER BY account_type, account_index",
+    )?;
+    let rows = stmt.query_map(params![wallet_id.as_slice()], |row| {
+        row.get::<_, Vec<u8>>(0)
+    })?;
+    let mut out = Vec::new();
+    for r in rows {
+        let payload = r?;
+        out.push(blob::decode::<AccountRegistrationEntry>(&payload)?);
+    }
+    Ok(out)
 }
 
 /// Stable database label for an `AccountType` variant.
