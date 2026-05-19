@@ -74,7 +74,9 @@ struct WalletDetailView: View {
             .padding(.top, 8)
 
             // Balance Card
-            BalanceCardView(wallet: wallet)
+            BalanceCardView(wallet: wallet) {
+                showFundPlatformAddress = true
+            }
                 .padding()
 
             // Action Buttons
@@ -94,15 +96,6 @@ struct WalletDetailView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
-
-                Button {
-                    showFundPlatformAddress = true
-                } label: {
-                    Label("Fund L2", systemImage: "arrow.right.circle.fill")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .accessibilityIdentifier("walletDetail.fundPlatformAddressButton")
             }
             .padding(.horizontal)
 
@@ -670,6 +663,12 @@ struct WalletInfoView: View {
 
 struct BalanceCardView: View {
     let wallet: PersistentWallet
+    /// Invoked when the user taps the "+" affordance next to the
+    /// Platform Balance row. The parent owns the sheet presentation
+    /// state, so we surface the intent rather than presenting here.
+    /// `nil` hides the affordance entirely (e.g. for read-only
+    /// surfaces).
+    var onFundPlatform: (() -> Void)?
     @EnvironmentObject var walletManager: PlatformWalletManager
     @EnvironmentObject var platformState: AppState
     @EnvironmentObject var shieldedService: ShieldedService
@@ -678,8 +677,9 @@ struct BalanceCardView: View {
     @Query private var addressBalances: [PersistentPlatformAddress]
     @Query private var syncStates: [PersistentPlatformAddressesSyncState]
 
-    init(wallet: PersistentWallet) {
+    init(wallet: PersistentWallet, onFundPlatform: (() -> Void)? = nil) {
         self.wallet = wallet
+        self.onFundPlatform = onFundPlatform
         let walletId = wallet.walletId
         let walletNetworkRaw = (wallet.network ?? .testnet).rawValue
         _addressBalances = Query(
@@ -740,13 +740,24 @@ struct BalanceCardView: View {
                     unit: .duffs
                 )
 
-                // Platform Balance row
+                // Platform Balance row — when `onFundPlatform` is
+                // wired (i.e. on the editable Wallet Detail surface),
+                // a trailing `+` button opens the Core→Platform
+                // funding sheet. Read-only call sites pass `nil` and
+                // the affordance disappears.
                 WalletBalanceRow(
                     label: "Platform Balance",
                     amount: platformBalance,
                     color: .blue,
                     unit: .credits,
-                    showSyncIndicator: platformBalanceSyncService.isSyncing
+                    showSyncIndicator: platformBalanceSyncService.isSyncing,
+                    trailingAction: onFundPlatform.map { fund in
+                        WalletBalanceRow.TrailingAction(
+                            systemImage: "plus.circle.fill",
+                            accessibilityLabel: "Fund Platform Balance from Core",
+                            action: fund
+                        )
+                    }
                 )
 
                 // Shielded Balance row
@@ -772,12 +783,23 @@ private enum WalletBalanceUnit {
 }
 
 private struct WalletBalanceRow: View {
+    /// Tappable affordance shown at the trailing edge of the row.
+    /// Used today by the Platform Balance row to surface a "fund
+    /// from Core" entry point without crowding the action button
+    /// strip at the top of the wallet detail screen.
+    struct TrailingAction {
+        let systemImage: String
+        let accessibilityLabel: String
+        let action: () -> Void
+    }
+
     let label: String
     var amount: UInt64
     var incoming: UInt64 = 0
     var color: Color
     var unit: WalletBalanceUnit = .duffs
     var showSyncIndicator: Bool = false
+    var trailingAction: TrailingAction? = nil
 
     var body: some View {
         HStack {
@@ -809,6 +831,15 @@ private struct WalletBalanceRow: View {
                         .font(.caption2)
                         .foregroundColor(.orange)
                 }
+            }
+            if let trailing = trailingAction {
+                Button(action: trailing.action) {
+                    Image(systemName: trailing.systemImage)
+                        .font(.title3)
+                        .foregroundColor(color)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(trailing.accessibilityLabel)
             }
         }
     }
