@@ -34,9 +34,30 @@
 //!   IS-lock event arriving in the former check/await gap is no longer
 //!   lost. Under concurrent load (N parallel `wait_for_proof` waiters)
 //!   this is exactly the path that previously stalled on
-//!   `FinalityTimeout`; the all-tasks-`Ok` assertion below fails if
-//!   that pre-arm regresses, making AL-001 the concurrent regression
-//!   guard for #3634's Found-008 fix.
+//!   `FinalityTimeout`; a failing task fails this guard loudly.
+//!
+//!   `FinalityTimeout` has two causes and Step 4 classifies which via
+//!   the in-process tracked-lock status (NOT log-scraping): if the
+//!   proof materialised (lock `InstantSendLocked`/`ChainLocked`) but
+//!   the waiter still timed out → Found-008 regression, fail as such;
+//!   if no proof materialised (lock still `Built`/`Broadcast`) → the
+//!   chain never produced finality in the production budget — testnet
+//!   IS-lock/ChainLock liveness under concurrency, still a hard fail
+//!   but classified ENVIRONMENTAL so it is not misread as Found-008
+//!   (validation run #544: 2/3 asset-lock txs got no IS-lock and
+//!   testnet ChainLock cadence stalled ~242 s vs the production 300 s
+//!   `wait_for_proof` budget — the #3634 pre-arm woke the waiter on
+//!   every event; zero missed wakeups).
+//!
+//!   NOTE — the finality budget is a PRODUCTION constant
+//!   (`asset_lock/build.rs` `wait_for_proof(.., 300 s)`,
+//!   `registration.rs` `CL_FALLBACK_TIMEOUT = 180 s`), reached via
+//!   `top_up_identity_with_funding`. AL-001 has no test-side timeout
+//!   lever and deliberately does not retune production finality timing
+//!   (matches commit 7e57f7227a's "al_001 untouched (env)" decision):
+//!   the environmental classification + diagnostic message is the
+//!   correct test-side response, not inflating a shared production
+//!   timeout for every identity registration/top-up in the codebase.
 //! - Found-012 (account-type tunnel vision in `validate_or_upgrade_proof`)
 //!   is also on the path. If any of the N asset-lock transactions
 //!   ends up funded from a non-BIP-44 account, the test hits
@@ -330,11 +351,74 @@ async fn al_001_concurrent_asset_lock_builds() {
             .unwrap_or_else(|e| panic!("task {i} panicked: {e}"));
         results.push(res);
     }
+
+    // Found-008-vs-environmental discriminator.
+    //
+    // A failing task is ALWAYS a hard failure here — this guard never
+    // green-paints. But a `FinalityTimeout` has two distinct causes and
+    // the panic message must say which, so CI / a human can tell a real
+    // regression from testnet variance without log-scraping 20k+ lines
+    // (dashpay/platform#3641, validation run #544):
+    //
+    //   - Found-008 regression (the #3634 `sync/proof.rs` waiter pre-arm
+    //     broke): the proof DID materialise — the tracked asset lock
+    //     reached `InstantSendLocked`/`ChainLocked` — but `wait_for_proof`
+    //     was not woken to consume it and still returned `FinalityTimeout`.
+    //     This is the missed-wakeup signature; fail LOUDLY as Found-008.
+    //
+    //   - Environmental: the chain never produced the finality proof in
+    //     budget — the tracked lock is still `Built`/`Broadcast` with
+    //     `proof: None`. testnet IS-lock + ChainLock liveness, not a
+    //     code defect. Still a hard failure (the run did not prove the
+    //     guard green), but classified so it is not misread as Found-008.
+    //
+    // Status is read from the in-process tracked-lock registry
+    // (`list_tracked_locks`), not logs — a robust, non-brittle signal.
+    let tracked_for_diag = s
+        .test_wallet
+        .platform_wallet()
+        .asset_locks()
+        .list_tracked_locks()
+        .await;
     for (i, res) in results.iter().enumerate() {
-        assert!(
-            res.is_ok(),
-            "POST-pin violated: concurrent top-up task {i} failed: {res:?}"
-        );
+        let Err(err) = res else {
+            continue;
+        };
+        if let PlatformWalletError::FinalityTimeout(out_point) = err {
+            let lock = tracked_for_diag.iter().find(|l| l.out_point == *out_point);
+            let proof_materialised = lock.is_some_and(|l| {
+                matches!(
+                    l.status,
+                    AssetLockStatus::InstantSendLocked | AssetLockStatus::ChainLocked
+                ) || l.proof.is_some()
+            });
+            if proof_materialised {
+                panic!(
+                    "FOUND-008 REGRESSION (task {i}): the asset-lock proof \
+                     for {out_point:?} materialised (tracked status {:?}, \
+                     proof present) but `wait_for_proof` was not woken to \
+                     consume it and returned FinalityTimeout. This is the \
+                     missed-wakeup signature the #3634 `sync/proof.rs` \
+                     waiter pre-arm exists to prevent — the pre-arm has \
+                     regressed. See dashpay/platform#3641.",
+                    lock.map(|l| &l.status)
+                );
+            }
+            panic!(
+                "ENVIRONMENTAL (task {i}, NOT Found-008): FinalityTimeout \
+                 for {out_point:?} with no proof materialised (tracked \
+                 status {:?}). The chain did not produce an InstantSend \
+                 lock or ChainLock for this asset-lock tx within the \
+                 production finality budget — testnet IS-lock / ChainLock \
+                 liveness under N-way concurrent load, not a code \
+                 regression and not the Found-008 pre-arm (which only \
+                 matters once a proof exists to be woken for). Re-run \
+                 solo during a healthier testnet window. See \
+                 dashpay/platform#3641 and validation run #544.",
+                lock.map(|l| &l.status)
+            );
+        }
+        panic!("POST-pin violated: concurrent top-up task {i} failed: {res:?}");
     }
 
     // Step 5: walk the tracked-asset-locks registry. Every IdentityTopUp

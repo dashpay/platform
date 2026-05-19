@@ -14,7 +14,6 @@ pub mod cr_004_legacy_bip32_utxo_update_after_spend;
 pub mod dpns_001_register_name;
 // Found-bug pins (see TEST_SPEC.md ### Found bugs)
 pub mod found_004_fund_from_asset_lock_silent_fallback;
-pub mod found_008_lock_notify_missed_wakeup;
 pub mod found_012_account_type_tunnel_vision;
 pub mod found_013_recover_asset_lock_silent_failure;
 pub mod found_017_register_wallet_store_error_lost;
