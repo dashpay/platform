@@ -50,9 +50,18 @@ struct FundPlatformAddressView: View {
 
     // MARK: - Submit state
 
-    @State private var isSubmitting: Bool = false
+    /// Pre-submit error (e.g. KeychainSigner / handle lookup failed
+    /// synchronously before the FFI call). In-flight failures land
+    /// on the controller's `.failed` phase and are rendered by
+    /// `AddressFundingProgressView`'s terminal section instead.
     @State private var submitError: SubmitError? = nil
-    @State private var newBalance: UInt64? = nil
+
+    /// Controller for the in-flight funding attempt. Non-nil swaps
+    /// the form body for `AddressFundingProgressSection` + a
+    /// terminal section that follows the controller's phase.
+    /// Lifetime-owned by `walletManager.addressFundingCoordinator`
+    /// so view dismissal mid-flight doesn't lose the work.
+    @State private var activeController: AddressFundingController? = nil
 
     /// 1 DASH = 1e8 duffs (Core side). The asset-lock builder takes
     /// duffs; we convert here for display ergonomics only.
@@ -68,8 +77,13 @@ struct FundPlatformAddressView: View {
     var body: some View {
         NavigationStack {
             Form {
-                if newBalance != nil {
-                    successSection
+                if let controller = activeController {
+                    // Form sections inside a Form render as siblings,
+                    // not nested; the progress section + terminal
+                    // section follow the same shape as
+                    // `RegistrationProgressView`.
+                    AddressFundingProgressSection(controller: controller)
+                    progressTerminalSection(controller: controller)
                 } else {
                     walletSection
                     coreFundingSection
@@ -86,7 +100,7 @@ struct FundPlatformAddressView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") { dismiss() }
-                        .disabled(isSubmitting)
+                        .disabled(activeController?.phase == .inFlight)
                 }
             }
             .alert(item: $submitError) { err in
@@ -200,7 +214,7 @@ struct FundPlatformAddressView: View {
                 TextField("Amount", text: $amountDash)
                     .keyboardType(.decimalPad)
                     .textFieldStyle(.roundedBorder)
-                    .disabled(isSubmitting)
+                    .disabled(activeController != nil)
                 Text("DASH")
                     .foregroundColor(.secondary)
             }
@@ -221,42 +235,76 @@ struct FundPlatformAddressView: View {
                 submit()
             } label: {
                 HStack {
-                    if isSubmitting {
-                        ProgressView().controlSize(.small).tint(.white)
-                        Text("Funding…")
-                    } else {
-                        Text("Fund Address")
-                    }
+                    Text("Fund Address")
                     Spacer()
                 }
                 .foregroundColor(.white)
             }
             .frame(maxWidth: .infinity)
             .listRowBackground(Color.accentColor)
-            .disabled(isSubmitting)
         }
     }
 
+    /// Inline terminal section that follows the controller's
+    /// `.completed` / `.failed` phase. Mirrors the
+    /// `terminalSection` shape on `AddressFundingProgressView`,
+    /// but embedded directly in this view's `Form` so the user
+    /// gets the full result without a separate navigation push.
     @ViewBuilder
-    private var successSection: some View {
-        Section {
-            HStack {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundColor(.green)
-                Text("Address funded")
-                    .fontWeight(.semibold)
-            }
-            if let bal = newBalance {
-                HStack {
-                    Text("New balance")
-                    Spacer()
-                    Text(formatCredits(bal))
-                        .foregroundColor(.secondary)
+    private func progressTerminalSection(
+        controller: AddressFundingController
+    ) -> some View {
+        switch controller.phase {
+        case .completed(let newBalance):
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Address funded", systemImage: "checkmark.seal.fill")
+                        .foregroundColor(.green)
+                        .font(.headline)
+                    HStack {
+                        Text("New balance")
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Text(formatCredits(newBalance))
+                            .font(.system(.body, design: .monospaced))
+                    }
+                    Button {
+                        walletManager.addressFundingCoordinator.dismiss(
+                            walletId: controller.walletId,
+                            platformAccountIndex: controller.platformAccountIndex,
+                            recipientHash: controller.recipientHash
+                        )
+                        dismiss()
+                    } label: {
+                        Text("Done")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .padding(.top, 4)
                 }
             }
-            Button("Done") { dismiss() }
-        } header: {
-            Text("Success")
+        case .failed(let message):
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Funding failed", systemImage: "xmark.octagon.fill")
+                        .foregroundColor(.red)
+                        .font(.headline)
+                    Text(message)
+                        .font(.callout)
+                        .foregroundColor(.primary)
+                        .textSelection(.enabled)
+                    Button("Dismiss") {
+                        walletManager.addressFundingCoordinator.dismiss(
+                            walletId: controller.walletId,
+                            platformAccountIndex: controller.platformAccountIndex,
+                            recipientHash: controller.recipientHash
+                        )
+                        dismiss()
+                    }
+                }
+            }
+        default:
+            EmptyView()
         }
     }
 
@@ -334,7 +382,7 @@ struct FundPlatformAddressView: View {
             && platformAccountIndex != nil
             && selectedRecipientHash != nil
             && (parsedDuffs ?? 0) >= Self.minDuffs
-            && !isSubmitting
+            && activeController == nil
     }
 
     // MARK: - Actions
@@ -379,39 +427,52 @@ struct FundPlatformAddressView: View {
             return
         }
         let signer = KeychainSigner(modelContainer: modelContext.container)
+        let walletId = wallet.walletId
+        let recipientHash = recipient.addressHash
+        let recipientType = recipient.addressType
 
-        isSubmitting = true
-        Task {
-            defer { isSubmitting = false }
-            do {
+        // Single-flight gate via the coordinator. The same slot
+        // re-presents the existing controller on a duplicate tap
+        // so two FFI calls never race for the same asset lock.
+        let coordinator = walletManager.addressFundingCoordinator
+        let controller = coordinator.startFunding(
+            walletId: walletId,
+            platformAccountIndex: platformAcct,
+            recipientHash: recipientHash,
+            body: {
+                // FFI body — runs on a background priority detached
+                // Task owned by the controller. Returns the proof-
+                // attested credit balance of the recipient address
+                // so the terminal section can surface a meaningful
+                // number.
                 let updates = try await addressWallet.fundFromCoreAssetLock(
                     amountDuffs: duffs,
                     fundingAccountIndex: fundingAccountIndex,
                     platformAccountIndex: platformAcct,
                     recipients: [
-                        // Single recipient — the auto-picked unused
-                        // address — gets the entire remainder after
+                        // Single recipient — gets the remainder after
                         // the on-chain fee. `credits = nil` is the
                         // canonical "receive remainder" marker.
                         ManagedPlatformAddressWallet.FundingRecipient(
-                            addressType: recipient.addressType,
-                            hash: recipient.addressHash,
+                            addressType: recipientType,
+                            hash: recipientHash,
                             credits: nil
                         )
                     ],
                     signer: signer
                 )
-                // The remainder recipient's balance reflects the
-                // proof-attested credit total. Surface it so the
-                // success row is meaningful.
-                let credited = updates.first(where: { $0.hash == recipient.addressHash })?.balance ?? 0
-                newBalance = credited
-            } catch let err as PlatformWalletError {
-                submitError = SubmitError(message: err.localizedDescription)
-            } catch {
-                submitError = SubmitError(message: "\(error)")
+                return updates
+                    .first(where: { $0.hash == recipientHash })?.balance ?? 0
             }
-        }
+        )
+
+        // Stash the controller; setting it flips the body to the
+        // progress section in place of the form. The controller's
+        // canonical lifetime owner is the coordinator — if the user
+        // dismisses the sheet mid-flight, the same controller is
+        // reachable via the (forthcoming) "Pending Platform Funding"
+        // surface on the wallet detail screen.
+        activeController = controller
     }
 
     // MARK: - Helpers
