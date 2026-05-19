@@ -266,7 +266,7 @@ struct IdentitiesContentView: View {
 
     /// Pure anti-join across all wallets. A lock is *visible* on the
     /// Resumable Registrations surface iff
-    /// - `statusRaw >= 1` (Broadcast or higher), AND
+    /// - `statusRaw` is in `1...3` (Broadcast through ChainLocked), AND
     /// - no `(walletId, identityIndex)` slot is in `usedSlots`.
     ///
     /// `usedSlots` is the **union** of two sources of slot
@@ -294,6 +294,18 @@ struct IdentitiesContentView: View {
     /// out: a tight crash window between TX build and broadcast
     /// with no useful UX action to take.
     ///
+    /// The upper bound (`<= 3`, ChainLocked) excludes `statusRaw == 4`
+    /// (Consumed) — the terminal state set when a lock has already
+    /// funded an identity. In the happy path the anti-join against
+    /// `PersistentIdentity` would hide a Consumed lock anyway
+    /// (every successful registration writes both rows at the same
+    /// slot), but the local-only delete-identity action removes
+    /// the identity row WITHOUT the asset-lock row, which frees the
+    /// slot in the anti-join. Without this upper bound a Consumed
+    /// lock would re-surface as a perpetual-spinner row whose
+    /// "Resume" path can't advance — `resume_asset_lock` rejects
+    /// Consumed entries with "already Consumed — nothing to resume".
+    ///
     /// Generic over `AssetLockResumeRow` so the pure filter is
     /// unit-testable without a SwiftData container.
     nonisolated static func crossWalletResumableLocks<R: AssetLockResumeRow>(
@@ -301,7 +313,7 @@ struct IdentitiesContentView: View {
         usedSlots: Set<UsedSlot>
     ) -> [R] {
         locks.filter { lock in
-            guard lock.statusRaw >= 1 else { return false }
+            guard lock.statusRaw >= 1 && lock.statusRaw <= 3 else { return false }
             let slot = UInt32(bitPattern: lock.identityIndexRaw)
             return !usedSlots.contains(
                 UsedSlot(walletId: lock.walletId, slot: slot)

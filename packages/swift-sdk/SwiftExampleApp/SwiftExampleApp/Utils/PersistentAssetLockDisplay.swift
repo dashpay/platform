@@ -34,7 +34,18 @@ extension AssetLockResumeRow {
     /// should see it (as "Waiting for InstantSendLock…") so an
     /// in-flight crash-recovery situation has visible continuity
     /// through the IS-lock arrival.
-    var isVisibleAsResumable: Bool { statusRaw >= 1 }
+    ///
+    /// Upper bound at `3` (ChainLocked) is load-bearing: status `4`
+    /// (Consumed) is the terminal state for a lock that already
+    /// funded an identity, and the underlying `resume_asset_lock`
+    /// rejects Consumed entries with "already Consumed — nothing
+    /// to resume". Without the upper bound, the "Delete identity
+    /// locally" action — which removes `PersistentIdentity` but
+    /// leaves the `PersistentAssetLock` alive — frees the
+    /// `(walletId, identityIndex)` slot in the anti-join and the
+    /// Consumed row would re-surface as a perpetual-spinner row
+    /// that can't be advanced.
+    var isVisibleAsResumable: Bool { statusRaw >= 1 && statusRaw <= 3 }
 }
 
 /// Human-readable label for `PersistentAssetLock.statusRaw`. Kept

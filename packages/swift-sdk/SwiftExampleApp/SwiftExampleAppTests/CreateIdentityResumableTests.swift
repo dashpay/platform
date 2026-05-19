@@ -86,17 +86,23 @@ final class CreateIdentityResumableTests: XCTestCase {
         XCTAssertEqual(result, locks)
     }
 
-    /// Defensive: any unknown future status (e.g. 4) should still
-    /// pass the `>= 1` floor. If we ever flip from "≥1 means
-    /// surfaced" to a closed set, this test will need updating —
-    /// that's intentional, the surprise is signal.
-    func testForwardCompatibleStatusFloor() {
+    /// `statusRaw == 4` (Consumed) is the terminal state for a lock
+    /// that already funded an identity. It must NOT surface on the
+    /// Resumable Registrations list: in the happy path the anti-join
+    /// against `PersistentIdentity` hides it, but the local-only
+    /// delete-identity action removes the identity row WITHOUT the
+    /// asset-lock row, which frees the slot in the anti-join. Without
+    /// the upper bound (`<= 3`) on the filter, a Consumed lock would
+    /// re-surface as a perpetual-spinner row that can't be advanced
+    /// (`resume_asset_lock` rejects Consumed entries with
+    /// "already Consumed — nothing to resume").
+    func testConsumedLocksAreHiddenFromResumableList() {
         let lock = FakeAssetLockRow(walletId: walletA, statusRaw: 4, identityIndexRaw: 0)
         let result = IdentitiesContentView.crossWalletResumableLocks(
             in: [lock],
             usedSlots: []
         )
-        XCTAssertEqual(result, [lock])
+        XCTAssertEqual(result, [])
     }
 
     // MARK: - anti-join
