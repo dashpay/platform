@@ -114,7 +114,6 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V6: DriveAbciValidationVersions =
                 revision: 0,
                 transform_into_action: 0,
                 failed_per_transition_action: 0,
-                fetch_documents_for_transitions_billing: 0,
                 data_triggers: DriveAbciValidationDataTriggerAndBindingVersions {
                     bindings: 0,
                     triggers: DriveAbciValidationDataTriggerVersions {

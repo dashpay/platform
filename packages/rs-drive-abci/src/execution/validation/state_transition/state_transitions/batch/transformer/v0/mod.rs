@@ -519,19 +519,17 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 platform_version,
             )?;
 
-        // The `fetch_documents_for_transitions_billing` field gates whether
-        // the `query_documents` cost is billed to the user. v0
-        // (PROTOCOL_VERSION_11 and below) preserves the legacy
-        // discard-cost behavior for chain replay; v1 (PROTOCOL_VERSION_12+)
-        // adds the fee to the execution_context (which on v1 of
-        // `transform_into_action` is the outer ctx that reaches the
-        // user's bill).
+        // Reuse the `transform_into_action` field that already gates whether
+        // this transformer's execution_context is the outer (threaded) one
+        // or a dropped-on-return local. On v0 the document-query cost would
+        // land in the dropped local — billing it would be wasted work, so we
+        // skip. On v1 the ctx reaches the user's bill, so we bill the cost.
         match platform_version
             .drive_abci
             .validation_and_processing
             .state_transitions
             .batch_state_transition
-            .fetch_documents_for_transitions_billing
+            .transform_into_action
         {
             0 => {}
             1 => {
@@ -542,9 +540,8 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
             version => {
                 return Err(Error::Execution(
                     crate::error::execution::ExecutionError::UnknownVersionMismatch {
-                        method:
-                            "documents batch transition: fetch_documents_for_transitions_billing"
-                                .to_string(),
+                        method: "documents batch transition: fetch_documents query billing"
+                            .to_string(),
                         known_versions: vec![0, 1],
                         received: version,
                     },
