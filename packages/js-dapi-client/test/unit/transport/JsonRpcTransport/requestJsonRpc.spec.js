@@ -73,7 +73,7 @@ describe('requestJsonRpc', () => {
     expect(result).to.equal('passed');
   });
 
-  it('should make https rpc request with self-signed certificate and return result', async () => {
+  it('should pass an undici Agent that skips TLS verification when selfSigned is true', async () => {
     protocol = 'https';
     selfSigned = true;
 
@@ -96,6 +96,39 @@ describe('requestJsonRpc', () => {
     );
 
     expect(result).to.equal('passed');
+
+    // Verify fetch was actually given a dispatcher that disables TLS verification.
+    // Without this, the selfSigned flag would be silently inert in Node.
+    // eslint-disable-next-line
+    const [, requestOptions] = fetch.firstCall.args;
+    expect(requestOptions.dispatcher).to.exist();
+  });
+
+  it('should not pass a dispatcher when selfSigned is false', async () => {
+    protocol = 'https';
+    selfSigned = false;
+
+    // eslint-disable-next-line
+    fetch.resolves(new Response(
+      JSON.stringify({ result: 'passed', error: null }),
+      {
+        status: 200,
+      },
+    ));
+
+    await requestJsonRpc(
+      protocol,
+      host,
+      port,
+      selfSigned,
+      'httpsRequest',
+      params,
+      { timeout },
+    );
+
+    // eslint-disable-next-line
+    const [, requestOptions] = fetch.firstCall.args;
+    expect(requestOptions.dispatcher).to.equal(undefined);
   });
 
   it('should throw WrongHttpCodeError if response status is not 200', async () => {
